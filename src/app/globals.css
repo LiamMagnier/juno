@@ -1,0 +1,261 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Juno design system
+ * ------------------
+ * Warm-paper light theme / warm-charcoal dark theme.
+ * Accent is swappable at runtime via [data-accent] on <html> and drives
+ * --primary + --ring. next-themes manages the `.dark` class on <html>.
+ */
+
+@layer base {
+  :root {
+    /* fonts provided by next/font (see layout.tsx): --font-sans, --font-serif, --font-mono */
+    --background: 48 33% 97%;
+    --foreground: 30 3% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 30 3% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 3% 12%;
+
+    --primary: 15 63% 60%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 50 23% 95%;
+    --secondary-foreground: 30 3% 18%;
+
+    --muted: 50 23% 95%;
+    --muted-foreground: 40 4% 40%;
+
+    --accent: 48 28% 92%;
+    --accent-foreground: 30 3% 18%;
+
+    --destructive: 11 51% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 140 33% 46%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 40 57% 51%;
+    --source: 187 62% 34%;
+
+    --border: 43 23% 88%;
+    --input: 43 23% 85%;
+    --ring: 15 63% 60%;
+
+    --sidebar: 50 23% 95%;
+    --sidebar-foreground: 40 4% 30%;
+    --sidebar-border: 43 23% 88%;
+    --sidebar-accent: 48 28% 91%;
+
+    --radius: 24px;
+
+    /* Motion tokens — mirror tailwind ease-* / duration-* (Slice 0). */
+    --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --ease-out-soft: cubic-bezier(0.33, 1, 0.68, 1);
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-fast: 120ms;
+    --dur-base: 220ms;
+    --dur-slow: 360ms;
+    --dur-flash: 4000ms;
+
+    /* Dot/ASCII signature atom. */
+    --dot-size: 5px;
+    --dot-gap: 3px;
+
+    /* Elevation (light) — warm, soft, low-throw + 1px inner top-highlight on floats. */
+    --shadow-soft: 0 1px 2px hsl(30 10% 20% / 0.05), 0 4px 12px -4px hsl(30 10% 20% / 0.08);
+    --shadow-float: 0 4px 14px -4px hsl(30 10% 16% / 0.12), 0 14px 36px -10px hsl(30 10% 16% / 0.14), inset 0 1px 0 hsl(0 0% 100% / 0.65);
+    --shadow-glass: 0 8px 32px -10px hsl(30 12% 12% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.55);
+  }
+
+  .dark {
+    --background: 40 6% 10%;
+    --foreground: 45 24% 93%;
+
+    --card: 40 4% 13%;
+    --card-foreground: 45 24% 93%;
+
+    --popover: 40 3% 19%;
+    --popover-foreground: 45 24% 93%;
+
+    --primary: 17 66% 62%;
+    --primary-foreground: 40 6% 10%;
+
+    --secondary: 45 5% 16%;
+    --secondary-foreground: 45 22% 90%;
+
+    --muted: 45 5% 16%;
+    --muted-foreground: 37 7% 63%;
+
+    --accent: 40 3% 19%;
+    --accent-foreground: 45 22% 90%;
+
+    --destructive: 11 51% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 140 33% 53%;
+    --success-foreground: 40 6% 10%;
+
+    --warning: 40 60% 58%;
+    --source: 187 58% 49%;
+
+    --border: 36 5% 21%;
+    --input: 36 5% 24%;
+    --ring: 17 66% 62%;
+
+    --sidebar: 40 6% 10%;
+    --sidebar-foreground: 37 7% 70%;
+    --sidebar-border: 36 5% 18%;
+    --sidebar-accent: 45 5% 16%;
+
+    /* Elevation (dark) — deeper throw + faint warm top inner-highlight for real lift,
+       not an inverted light shadow. */
+    --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
+    --shadow-float: 0 4px 16px -4px hsl(0 0% 0% / 0.45), 0 16px 40px -12px hsl(0 0% 0% / 0.5), inset 0 1px 0 hsl(45 24% 93% / 0.06);
+    --shadow-glass: 0 8px 32px -10px hsl(0 0% 0% / 0.55), inset 0 1px 0 hsl(45 24% 93% / 0.07);
+  }
+
+  /* ---- Accent overrides (coral is the default; drive --primary + --ring) ---- */
+  :root[data-accent="coral"]  { --primary: 15 63% 60%;  --ring: 15 63% 60%;  --primary-foreground: 0 0% 100%; }
+  .dark[data-accent="coral"]  { --primary: 17 66% 62%;  --ring: 17 66% 62%;  --primary-foreground: 40 6% 10%; }
+
+  :root[data-accent="teal"]   { --primary: 180 63% 33%; --ring: 180 63% 33%; --primary-foreground: 0 0% 100%; }
+  .dark[data-accent="teal"]   { --primary: 187 58% 49%; --ring: 187 58% 49%; --primary-foreground: 40 6% 10%; }
+
+  :root[data-accent="violet"] { --primary: 249 59% 64%; --ring: 249 59% 64%; --primary-foreground: 0 0% 100%; }
+  .dark[data-accent="violet"] { --primary: 249 66% 71%; --ring: 249 66% 71%; --primary-foreground: 40 6% 10%; }
+
+  :root[data-accent="amber"]  { --primary: 39 67% 55%;  --ring: 39 67% 55%;  --primary-foreground: 30 40% 12%; }
+  .dark[data-accent="amber"]  { --primary: 38 73% 63%;  --ring: 38 73% 63%;  --primary-foreground: 30 40% 10%; }
+
+  :root[data-accent="sage"]   { --primary: 120 18% 52%; --ring: 120 18% 52%; --primary-foreground: 0 0% 100%; }
+  .dark[data-accent="sage"]   { --primary: 120 23% 61%; --ring: 120 23% 61%; --primary-foreground: 40 6% 10%; }
+
+  * {
+    border-color: hsl(var(--border));
+  }
+
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-serif), ui-serif, Georgia, "Times New Roman", serif;
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* App-wide film grain (2–3%), quiet and non-interactive. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    pointer-events: none;
+    opacity: 0.022;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+  }
+
+  /* Focus visibility for keyboard users */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+
+  /* Thin, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 9999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background-color: hsl(var(--muted-foreground) / 0.5); }
+}
+
+@layer components {
+  /* Markdown prose used in chat messages */
+  .prose-juno {
+    line-height: 1.65;
+    word-break: break-word;
+  }
+  .prose-juno > * + * { margin-top: 0.85em; }
+  .prose-juno h1, .prose-juno h2, .prose-juno h3, .prose-juno h4 {
+    font-weight: 600;
+    line-height: 1.3;
+    margin-top: 1.3em;
+  }
+  .prose-juno h1 { font-size: 1.5em; }
+  .prose-juno h2 { font-size: 1.3em; }
+  .prose-juno h3 { font-size: 1.12em; }
+  .prose-juno p { margin: 0; }
+  .prose-juno a { color: hsl(var(--primary)); text-decoration: underline; text-underline-offset: 2px; }
+  .prose-juno ul, .prose-juno ol { padding-left: 1.4em; }
+  .prose-juno ul { list-style: disc; }
+  .prose-juno ol { list-style: decimal; }
+  .prose-juno li { margin: 0.2em 0; }
+  .prose-juno li > ul, .prose-juno li > ol { margin-top: 0.2em; }
+  .prose-juno blockquote {
+    border-left: 3px solid hsl(var(--border));
+    padding-left: 1em;
+    color: hsl(var(--muted-foreground));
+  }
+  .prose-juno code:not(pre code) {
+    background: hsl(var(--muted));
+    padding: 0.15em 0.4em;
+    border-radius: 0.35rem;
+    font-size: 0.875em;
+    font-family: var(--font-mono);
+  }
+  /* Code-block chrome (border/radius/header) is owned by the CodeBlock component
+     in markdown.tsx; the bare <pre> only handles scroll + sizing here. */
+  .prose-juno pre {
+    overflow-x: auto;
+    font-size: 0.85em;
+  }
+  .prose-juno pre code { font-family: var(--font-mono); background: transparent; }
+  .prose-juno table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+  .prose-juno th, .prose-juno td { border: 1px solid hsl(var(--border)); padding: 0.45em 0.7em; text-align: left; }
+  .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
+}
+
+@layer utilities {
+  /* Loading skeleton shimmer */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: hsl(var(--muted));
+  }
+  .skeleton::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+  .text-balance { text-wrap: balance; }
+}
+
+/* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ---- */
+.hljs { color: hsl(var(--foreground)); background: transparent; }
+.hljs-comment, .hljs-quote { color: hsl(var(--muted-foreground)); font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: hsl(var(--primary)); }
+.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type, .hljs-addition { color: hsl(152 56% 42%); }
+.dark .hljs-string, .dark .hljs-title, .dark .hljs-section, .dark .hljs-attribute, .dark .hljs-literal, .dark .hljs-type, .dark .hljs-addition { color: hsl(152 50% 56%); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-meta, .hljs-link { color: hsl(32 80% 46%); }
+.dark .hljs-number, .dark .hljs-symbol, .dark .hljs-bullet, .dark .hljs-meta, .dark .hljs-link { color: hsl(38 90% 60%); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }

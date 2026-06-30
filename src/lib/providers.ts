@@ -1,0 +1,110 @@
+/**
+ * Model providers. Anthropic uses its native SDK; every other provider exposes
+ * an OpenAI-compatible API, so they all share one adapter (see openai-compat.ts)
+ * with a per-provider base URL + API key. A provider is "configured" when its
+ * API key env var is set; models from unconfigured providers are hidden/disabled.
+ */
+
+export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance";
+
+interface ProviderDef {
+  label: string;
+  apiKeyEnv: string;
+  baseUrlEnv?: string; // optional override (regional endpoints, proxies, Azure…)
+  defaultBaseUrl?: string; // undefined => native Anthropic SDK
+  kind: "anthropic" | "openai";
+  docsUrl: string;
+}
+
+export const PROVIDERS: Record<Provider, ProviderDef> = {
+  anthropic: {
+    label: "Anthropic · Claude",
+    apiKeyEnv: "ANTHROPIC_API_KEY",
+    kind: "anthropic",
+    docsUrl: "https://console.anthropic.com/settings/keys",
+  },
+  openai: {
+    label: "OpenAI · GPT",
+    apiKeyEnv: "OPENAI_API_KEY",
+    baseUrlEnv: "OPENAI_BASE_URL",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    kind: "openai",
+    docsUrl: "https://platform.openai.com/api-keys",
+  },
+  google: {
+    label: "Google · Gemini",
+    apiKeyEnv: "GOOGLE_API_KEY",
+    baseUrlEnv: "GOOGLE_BASE_URL",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    kind: "openai",
+    docsUrl: "https://aistudio.google.com/apikey",
+  },
+  zhipu: {
+    label: "Zhipu · GLM",
+    apiKeyEnv: "ZHIPU_API_KEY",
+    baseUrlEnv: "ZHIPU_BASE_URL",
+    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    kind: "openai",
+    docsUrl: "https://open.bigmodel.cn/usercenter/apikeys",
+  },
+  moonshot: {
+    label: "Moonshot · Kimi",
+    apiKeyEnv: "MOONSHOT_API_KEY",
+    baseUrlEnv: "MOONSHOT_BASE_URL",
+    defaultBaseUrl: "https://api.moonshot.ai/v1",
+    kind: "openai",
+    docsUrl: "https://platform.moonshot.ai/console/api-keys",
+  },
+  deepseek: {
+    label: "DeepSeek",
+    apiKeyEnv: "DEEPSEEK_API_KEY",
+    baseUrlEnv: "DEEPSEEK_BASE_URL",
+    defaultBaseUrl: "https://api.deepseek.com",
+    kind: "openai",
+    docsUrl: "https://platform.deepseek.com/api_keys",
+  },
+  mistral: {
+    label: "Mistral",
+    apiKeyEnv: "MISTRAL_API_KEY",
+    baseUrlEnv: "MISTRAL_BASE_URL",
+    defaultBaseUrl: "https://api.mistral.ai/v1",
+    kind: "openai",
+    docsUrl: "https://console.mistral.ai/api-keys",
+  },
+  xai: {
+    label: "xAI · Grok",
+    apiKeyEnv: "XAI_API_KEY",
+    baseUrlEnv: "XAI_BASE_URL",
+    defaultBaseUrl: "https://api.x.ai/v1",
+    kind: "openai",
+    docsUrl: "https://console.x.ai",
+  },
+  seedance: {
+    label: "ByteDance · Seedance",
+    apiKeyEnv: "SEEDANCE_API_KEY",
+    baseUrlEnv: "SEEDANCE_BASE_URL",
+    defaultBaseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+    kind: "openai",
+    docsUrl: "https://www.volcengine.com/docs/82379",
+  },
+};
+
+export const PROVIDER_LIST = Object.keys(PROVIDERS) as Provider[];
+
+export function providerApiKey(p: Provider): string | undefined {
+  return process.env[PROVIDERS[p].apiKeyEnv]?.trim() || undefined;
+}
+
+export function providerBaseUrl(p: Provider): string | undefined {
+  const def = PROVIDERS[p];
+  if (!def.baseUrlEnv) return def.defaultBaseUrl;
+  return process.env[def.baseUrlEnv]?.trim() || def.defaultBaseUrl;
+}
+
+export function isProviderConfigured(p: Provider): boolean {
+  return Boolean(providerApiKey(p));
+}
+
+export function configuredProviders(): Provider[] {
+  return PROVIDER_LIST.filter(isProviderConfigured);
+}

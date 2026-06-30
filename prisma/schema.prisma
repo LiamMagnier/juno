@@ -1,0 +1,493 @@
+// Juno — Prisma schema (PostgreSQL)
+// Run `npx prisma migrate dev` (local) or `npx prisma migrate deploy` (prod).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Auth (NextAuth / Auth.js with Prisma adapter + JWT sessions)
+// ----------------------------------------------------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  image          String?
+  hashedPassword String? // null for OAuth-only users
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts        Account[]
+  sessions        Session[]
+  settings        Settings?
+  subscription    Subscription?
+  folders         Folder[]
+  conversations   Conversation[]
+  memories        MemoryEntry[]
+  memorySummary   MemorySummary?
+  attachments     Attachment[]
+  usage           Usage[]
+  featureRequests FeatureRequest[]
+  votes           FeatureVote[]
+  featureComments FeatureComment[]
+  projects        Project[]
+  authoredAnnouncements Announcement[] @relation("AnnouncementAuthor")
+  announcementDismissals AnnouncementDismissal[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ----------------------------------------------------------------------------
+// Settings / profile preferences
+// ----------------------------------------------------------------------------
+
+model Settings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+  theme              Theme    @default(SYSTEM)
+  accent             String   @default("coral")
+  defaultModel       String   @default("claude-sonnet-4-6")
+  customInstructions String   @default("") @db.Text
+  responseLanguage   String   @default("auto")
+  memoryEnabled      Boolean  @default(true)
+  voiceId            String? // preferred TTS voice id
+  favoriteModels     String[] @default([]) // model ids the user starred
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------------------------------
+// Conversations & messages
+// ----------------------------------------------------------------------------
+
+model Folder {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+
+  @@index([userId])
+}
+
+model Conversation {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String   @default("New chat")
+  model         String   @default("claude-opus-4-8")
+  pinned        Boolean  @default(false)
+  folderId      String?
+  projectId     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  lastMessageAt DateTime @default(now())
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder      Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  messages    Message[]
+  attachments Attachment[]
+  artifacts   Artifact[]
+
+  @@index([userId, lastMessageAt])
+  @@index([userId, pinned])
+  @@index([projectId])
+}
+
+model Project {
+  id           String   @id @default(cuid())
+  userId       String
+  name         String   @default("Untitled project")
+  instructions String   @default("") @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  files         Attachment[]
+
+  @@index([userId, updatedAt])
+}
+
+model Message {
+  id             String    @id @default(cuid())
+  conversationId String
+  role           Role
+  content        String    @db.Text
+  reasoning      String?   @db.Text // visible chain-of-thought when a thinking model is used
+  model          String?
+  feedback       Feedback? // thumbs up/down on assistant messages
+  promptTokens   Int?
+  completionTokens Int?
+  sources        Json? // web-search citations: [{ title, url, snippet }]
+  activity       Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
+  createdAt      DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  attachments  Attachment[]
+  artifacts    Artifact[]
+
+  @@index([conversationId, createdAt])
+}
+
+model Attachment {
+  id             String         @id @default(cuid())
+  userId         String
+  conversationId String?
+  messageId      String?
+  kind           AttachmentKind
+  fileName       String
+  mimeType       String
+  size           Int
+  storageKey     String // object key in the bucket
+  extractedText  String?        @db.Text // text content extracted from documents
+  width          Int?
+  height         Int?
+  createdAt      DateTime       @default(now())
+
+  projectId      String?
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([conversationId])
+  @@index([messageId])
+  @@index([projectId])
+}
+
+// ----------------------------------------------------------------------------
+// Memory
+// ----------------------------------------------------------------------------
+
+model MemoryEntry {
+  id        String       @id @default(cuid())
+  userId    String
+  content   String       @db.Text
+  source    MemorySource @default(AUTO)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// A periodically-regenerated, deduped summary of the user's memories (markdown,
+// organized into sections). Used in context instead of the raw entry list.
+model MemorySummary {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  content    String   @db.Text
+  entryCount Int      @default(0) // # of memory entries this summary was built from
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ----------------------------------------------------------------------------
+// Artifacts (canvas)
+// ----------------------------------------------------------------------------
+
+model Artifact {
+  id             String       @id @default(cuid())
+  conversationId String
+  messageId      String?
+  identifier     String // stable id used by the model to update an artifact
+  title          String
+  type           ArtifactType
+  language       String? // for code artifacts
+  currentVersion Int          @default(1)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  message      Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  versions     ArtifactVersion[]
+
+  @@unique([conversationId, identifier])
+  @@index([conversationId])
+}
+
+model ArtifactVersion {
+  id         String   @id @default(cuid())
+  artifactId String
+  version    Int
+  content    String   @db.Text
+  createdAt  DateTime @default(now())
+
+  artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@unique([artifactId, version])
+}
+
+// ----------------------------------------------------------------------------
+// Billing & usage
+// ----------------------------------------------------------------------------
+
+model Subscription {
+  id                   String     @id @default(cuid())
+  userId               String     @unique
+  plan                 Plan       @default(FREE)
+  status               SubStatus  @default(ACTIVE)
+  stripeCustomerId     String?    @unique
+  stripeSubscriptionId String?    @unique
+  stripePriceId        String?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean    @default(false)
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Monthly usage counter for quota enforcement. `period` is "YYYY-MM".
+model Usage {
+  id           String @id @default(cuid())
+  userId       String
+  period       String
+  messageCount Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, period])
+  @@index([userId])
+}
+
+// Fixed-window rate limiting (works across serverless instances).
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+// ----------------------------------------------------------------------------
+// Product / model release announcements
+// ----------------------------------------------------------------------------
+
+model Announcement {
+  id          String    @id @default(cuid())
+  title       String
+  description String    @db.Text
+  imageUrl    String?
+  videoUrl    String?
+  provider    String?
+  modelName   String?
+  newsLabel   String?
+  newsHref    String?
+  ctaLabel    String?
+  ctaHref     String?
+  published   Boolean   @default(false)
+  startsAt    DateTime  @default(now())
+  endsAt      DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  createdBy  User @relation("AnnouncementAuthor", fields: [createdById], references: [id], onDelete: Cascade)
+  dismissals AnnouncementDismissal[]
+
+  @@index([published, startsAt])
+  @@index([createdAt])
+}
+
+model AnnouncementDismissal {
+  id             String   @id @default(cuid())
+  userId         String
+  announcementId String
+  dismissedAt    DateTime @default(now())
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, announcementId])
+  @@index([announcementId])
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum MemorySource {
+  AUTO
+  MANUAL
+}
+
+enum AttachmentKind {
+  IMAGE
+  FILE
+}
+
+enum ArtifactType {
+  HTML
+  REACT
+  CODE
+  MARKDOWN
+  SVG
+  MERMAID
+}
+
+enum Plan {
+  FREE
+  PRO
+  MAX
+  OWNER
+}
+
+enum SubStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum Feedback {
+  UP
+  DOWN
+}
+
+// ---- Feature Requests & Roadmap ----
+
+model FeatureRequest {
+  id            String          @id @default(cuid())
+  authorId      String
+  title         String
+  description   String          @db.Text
+  category      FeatureCategory @default(OTHER)
+  status        FeatureStatus   @default(UNDER_REVIEW)
+  pinned        Boolean         @default(false)
+  declineReason String?
+  mergedIntoId  String? // duplicate handling
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  author   User                 @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  votes    FeatureVote[]
+  comments FeatureComment[]
+  events   FeatureStatusEvent[]
+
+  @@index([status, createdAt])
+}
+
+model FeatureVote {
+  id        String   @id @default(cuid())
+  requestId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  request FeatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  user    User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, userId]) // one vote per user
+  @@index([userId])
+}
+
+model FeatureComment {
+  id        String   @id @default(cuid())
+  requestId String
+  authorId  String
+  body      String   @db.Text
+  official  Boolean  @default(false) // OWNER/team reply styling
+  createdAt DateTime @default(now())
+
+  request FeatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author  User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+}
+
+model FeatureStatusEvent {
+  id        String        @id @default(cuid())
+  requestId String
+  status    FeatureStatus
+  note      String?
+  createdAt DateTime      @default(now())
+
+  request FeatureRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, createdAt])
+}
+
+enum FeatureStatus {
+  UNDER_REVIEW
+  PLANNED
+  IN_PROGRESS
+  SHIPPED
+  DECLINED
+}
+
+enum FeatureCategory {
+  CHAT
+  MODELS
+  CANVAS
+  MEMORY
+  VOICE
+  FILES
+  BILLING
+  UI
+  INTEGRATIONS
+  OTHER
+}
