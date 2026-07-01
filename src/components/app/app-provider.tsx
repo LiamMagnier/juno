@@ -59,7 +59,9 @@ export interface ComposerPrefs {
   voiceInput: string | null;
 }
 
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: null, webSearch: false, canvas: true, voiceInput: null };
+// webSearch defaults ON — it's only ever applied to models that actually support
+// native web search, so leaving it on gives up-to-date answers by default.
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: null, webSearch: true, canvas: true, voiceInput: null };
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {

@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   ArrowUp,
   AudioLines,
@@ -78,11 +79,10 @@ const EFFORTS: { value: "low" | "medium" | "high" | null; label: string }[] = [
   { value: "high", label: "Think · High" },
 ];
 
-// Slash commands typed into the composer. Currently just "/model" to switch model.
-type SlashCommand = { id: string; label: string; hint: string };
+// Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").
+type SlashCommand = { id: string; label: string; hint: string; run?: () => void };
 type SlashItem = ModelInfo | SlashCommand;
 type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; items: SlashCommand[] } | null;
-const SLASH_COMMANDS: SlashCommand[] = [{ id: "model", label: "/model", hint: "Switch the AI model" }];
 
 
 export function Composer({
@@ -170,7 +170,35 @@ export function Composer({
     requestAnimationFrame(autoresize);
   };
 
-  // ——— Slash commands (type "/model" to switch model quickly) ———
+  // ——— Slash commands (type "/" then a command, e.g. "/model", "/projects") ———
+  const router = useRouter();
+  const commands = React.useMemo<SlashCommand[]>(
+    () => [
+      { id: "model", label: "/model", hint: "Switch the AI model" },
+      { id: "artifact", label: "/artifact", hint: "Start a canvas / artifact" },
+      {
+        id: "search",
+        label: "/search",
+        hint: webSearchEnabled ? "Turn web search off" : "Turn web search on",
+        run: () => onToggleWebSearch?.(!webSearchEnabled),
+      },
+      { id: "projects", label: "/projects", hint: "Open your projects", run: () => router.push("/projects") },
+      { id: "library", label: "/library", hint: "Open your library", run: () => router.push("/library") },
+      { id: "memory", label: "/memory", hint: "Open memory", run: () => router.push("/memory") },
+      ...(onOpenVoiceMode ? [{ id: "voice", label: "/voice", hint: "Start voice mode", run: onOpenVoiceMode }] : []),
+      {
+        id: "new",
+        label: "/new",
+        hint: "Start a new chat",
+        run: () => {
+          window.dispatchEvent(new CustomEvent("juno:new-chat"));
+          router.push("/chat");
+        },
+      },
+    ],
+    [webSearchEnabled, onToggleWebSearch, onOpenVoiceMode, router]
+  );
+
   const slash = React.useMemo((): SlashState => {
     if (!text.startsWith("/")) return null;
     const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
@@ -181,14 +209,14 @@ export function Composer({
         .slice(0, 8);
       return { kind: "model", items };
     }
-    const cmdMatch = text.match(/^\/(\w*)$/);
+    const cmdMatch = text.match(/^\/([\w-]*)$/);
     if (cmdMatch) {
       const c = cmdMatch[1].toLowerCase();
-      const items = SLASH_COMMANDS.filter((cmd) => cmd.id.startsWith(c));
+      const items = commands.filter((cmd) => cmd.id.startsWith(c));
       return items.length ? { kind: "command", items } : null;
     }
     return null;
-  }, [text, models]);
+  }, [text, models, commands]);
 
   const [slashIndex, setSlashIndex] = React.useState(0);
   const [slashDismissed, setSlashDismissed] = React.useState(false);
@@ -204,10 +232,28 @@ export function Composer({
       onModelChange(item.id);
       setText("");
       requestAnimationFrame(autoresize);
-    } else if (item.id === "model") {
+      return;
+    }
+    if (item.id === "model") {
       setText("/model ");
       requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
     }
+    if (item.id === "artifact") {
+      onToggleCanvas(true);
+      setText("Create an artifact that ");
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (el) {
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+        }
+      });
+      return;
+    }
+    item.run?.();
+    setText("");
+    requestAnimationFrame(autoresize);
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -545,6 +591,21 @@ export function Composer({
                   <span className="flex-1">Memory</span>
                   <Switch checked={settings.memoryEnabled} className="pointer-events-none" />
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!canWebSearch}
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    onToggleWebSearch?.(!webSearchEnabled);
+                  }}
+                >
+                  <Globe className="text-muted-foreground" />
+                  <span className="flex-1">Web search</span>
+                  {canWebSearch ? (
+                    <Switch checked={webSearchEnabled} className="pointer-events-none" />
+                  ) : (
+                    <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
+                  )}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -575,26 +636,6 @@ export function Composer({
               </DropdownMenu>
             )}
 
-            {canWebSearch && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onToggleWebSearch?.(!webSearchEnabled)}
-                    aria-pressed={webSearchEnabled}
-                    className={cn(
-                      "h-7 gap-1.5 rounded-[20px] px-2 font-mono text-[13px]",
-                      webSearchEnabled ? "bg-primary/10 text-primary" : "text-muted-foreground"
-                    )}
-                  >
-                    <Globe className="h-3.5 w-3.5" /> Search
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{webSearchEnabled ? "Web search is on" : "Search the web for this message"}</TooltipContent>
-              </Tooltip>
-            )}
           </div>
 
           {/* Right: voice mode, dictation mic, send */}
