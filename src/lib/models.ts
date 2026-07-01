@@ -116,7 +116,8 @@ const GENERATIVE: ModelInfo[] = [
   gen("openai", "gpt-image-1", "GPT Image", "OpenAI's image model — crisp text & detail.", "PRO", "image", 3),
   gen("google", "gemini-2.5-flash-image", "Nano Banana", "Gemini 2.5 Flash image — fast, editable.", "PRO", "image", 2),
   gen("xai", "grok-2-image", "Grok Image", "xAI image generation.", "PRO", "image", 2),
-  gen("zhipu", "cogview-4", "CogView 4", "Zhipu's image model.", "PRO", "image", 2),
+  gen("zhipu", "glm-image", "GLM-Image", "Zhipu's GLM image model.", "PRO", "image", 2),
+  gen("zhipu", "cogview-4", "CogView 4", "Zhipu's CogView image model.", "PRO", "image", 2),
   // —— Video ——
   gen("google", "veo-3.0-generate-001", "Veo 3", "Google text-to-video with audio.", "MAX", "video", 3),
   gen("seedance", "seedance-1-0-pro-250528", "Seedance 1.0 Pro", "ByteDance cinematic text-to-video.", "MAX", "video", 3),
@@ -124,6 +125,39 @@ const GENERATIVE: ModelInfo[] = [
 ];
 
 export const GEN_MODELS: ModelInfo[] = GENERATIVE;
+
+// —— Voice input (speech-to-text) models ——
+// Not part of the chat/gen registries; used only by voice mode + the ASR route.
+// id "browser" means the on-device Web Speech API; others are "<provider>:<model>".
+export interface VoiceInputModel {
+  id: string;
+  label: string;
+  description: string;
+  provider: Provider | null;
+  providerModel: string | null;
+}
+
+export const VOICE_INPUT_MODELS: VoiceInputModel[] = [
+  {
+    id: "zhipu:glm-asr-2512",
+    label: "GLM-ASR-2512",
+    description: "Zhipu server-side speech recognition — multilingual, high accuracy.",
+    provider: "zhipu",
+    providerModel: "glm-asr-2512",
+  },
+  {
+    id: "browser",
+    label: "Browser (on-device)",
+    description: "Instant, private, on-device recognition. Chrome & Edge only.",
+    provider: null,
+    providerModel: null,
+  },
+];
+
+/** Resolve a stored voice-input id to a model (falls back to the first entry). */
+export function resolveVoiceInput(id: string | null | undefined): VoiceInputModel {
+  return VOICE_INPUT_MODELS.find((m) => m.id === id) ?? VOICE_INPUT_MODELS[0];
+}
 
 export const MODELS: Record<string, ModelInfo> = Object.fromEntries(
   [...CURATED, ...GENERATIVE].map((m) => [m.id, m])

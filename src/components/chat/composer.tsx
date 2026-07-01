@@ -35,8 +35,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModelSelector } from "@/components/chat/model-selector";
-import { resolveModel } from "@/lib/models";
+import { resolveModel, type ModelInfo } from "@/lib/models";
+import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
+import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useApp } from "@/components/app/app-provider";
@@ -76,6 +78,12 @@ const EFFORTS: { value: "low" | "medium" | "high" | null; label: string }[] = [
   { value: "high", label: "Think · High" },
 ];
 
+// Slash commands typed into the composer. Currently just "/model" to switch model.
+type SlashCommand = { id: string; label: string; hint: string };
+type SlashItem = ModelInfo | SlashCommand;
+type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; items: SlashCommand[] } | null;
+const SLASH_COMMANDS: SlashCommand[] = [{ id: "model", label: "/model", hint: "Switch the AI model" }];
+
 
 export function Composer({
   conversationId,
@@ -98,7 +106,7 @@ export function Composer({
   selectedProjectId = null,
   onPickProject,
 }: ComposerProps) {
-  const { features, settings, setSettings, quota } = useApp();
+  const { features, settings, setSettings, quota, models } = useApp();
   const resolved = resolveModel(model);
   const supportsReasoning = resolved?.reasoning ?? false;
   const modality = resolved?.modality ?? "chat";
@@ -162,7 +170,70 @@ export function Composer({
     requestAnimationFrame(autoresize);
   };
 
+  // ——— Slash commands (type "/model" to switch model quickly) ———
+  const slash = React.useMemo((): SlashState => {
+    if (!text.startsWith("/")) return null;
+    const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
+    if (modelMatch) {
+      const q = (modelMatch[1] ?? "").toLowerCase().trim();
+      const items = models
+        .filter((m) => !q || m.name.toLowerCase().includes(q) || (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q))
+        .slice(0, 8);
+      return { kind: "model", items };
+    }
+    const cmdMatch = text.match(/^\/(\w*)$/);
+    if (cmdMatch) {
+      const c = cmdMatch[1].toLowerCase();
+      const items = SLASH_COMMANDS.filter((cmd) => cmd.id.startsWith(c));
+      return items.length ? { kind: "command", items } : null;
+    }
+    return null;
+  }, [text, models]);
+
+  const [slashIndex, setSlashIndex] = React.useState(0);
+  const [slashDismissed, setSlashDismissed] = React.useState(false);
+  const slashOpen = !!slash && !slashDismissed && slash.items.length > 0;
+
+  React.useEffect(() => setSlashIndex(0), [text]);
+  React.useEffect(() => {
+    if (!text.startsWith("/")) setSlashDismissed(false);
+  }, [text]);
+
+  const applySlash = (item: SlashItem) => {
+    if ("providerModel" in item) {
+      onModelChange(item.id);
+      setText("");
+      requestAnimationFrame(autoresize);
+    } else if (item.id === "model") {
+      setText("/model ");
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    }
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen && slash) {
+      const n = slash.items.length;
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % n);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + n) % n);
+        return;
+      }
+      if ((e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) || e.key === "Tab") {
+        e.preventDefault();
+        applySlash(slash.items[Math.min(slashIndex, n - 1)]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       submit();
@@ -320,6 +391,49 @@ export function Composer({
             <Button type="button" variant="outline" size="sm" onClick={attachAsFile} className="h-7 shrink-0 gap-1.5">
               <FileUp className="h-3.5 w-3.5" /> Attach as file
             </Button>
+          </div>
+        )}
+
+        {slashOpen && slash && (
+          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 overflow-hidden rounded-xl border bg-popover/95 shadow-float backdrop-blur">
+            <div className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {slash.kind === "model" ? "Switch model" : "Commands"}
+            </div>
+            <div className="max-h-64 overflow-y-auto p-1">
+              {slash.kind === "model"
+                ? slash.items.map((m, i) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onMouseEnter={() => setSlashIndex(i)}
+                      onClick={() => applySlash(m)}
+                      className={cn(
+                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left",
+                        i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
+                      )}
+                    >
+                      <ProviderLogo provider={m.provider} className="h-5 w-5" />
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
+                      {m.id === model && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                    </button>
+                  ))
+                : slash.items.map((c, i) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onMouseEnter={() => setSlashIndex(i)}
+                      onClick={() => applySlash(c)}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left",
+                        i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
+                      )}
+                    >
+                      <span className="font-mono text-sm text-primary">{c.label}</span>
+                      <span className="text-xs text-muted-foreground">{c.hint}</span>
+                    </button>
+                  ))}
+            </div>
           </div>
         )}
 
