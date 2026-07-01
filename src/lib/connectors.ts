@@ -25,6 +25,8 @@ export interface ConnectorDef {
   capability: string;
   authorizeUrl: string;
   tokenUrl: string;
+  /** OAuth2 refresh endpoint, when the provider issues expiring tokens (Figma). */
+  refreshUrl?: string;
   scope: string;
   cfg: { clientId?: string; clientSecret?: string; mcpUrl?: string };
   /** Best-effort human label (account handle) fetched after linking. */
@@ -61,6 +63,7 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
     capability: "Let the model read your Figma designs and components.",
     authorizeUrl: "https://www.figma.com/oauth",
     tokenUrl: "https://api.figma.com/v1/oauth/token",
+    refreshUrl: "https://api.figma.com/v1/oauth/refresh",
     scope: "file_read",
     cfg: env.connectors.figma,
     async fetchAccountLabel(accessToken) {
@@ -131,6 +134,38 @@ export async function exchangeCodeForTokens(def: ConnectorDef, code: string): Pr
   return {
     accessToken: data.access_token,
     refreshToken: data.refresh_token,
+    scope: data.scope,
+    expiresInSec: data.expires_in,
+  };
+}
+
+/** Exchange a refresh token for a fresh access token (providers with expiring tokens). */
+export async function refreshTokens(def: ConnectorDef, refreshToken: string): Promise<ConnectorTokens> {
+  if (!def.refreshUrl) throw new Error(`${def.label} does not support token refresh`);
+  const body = new URLSearchParams({
+    client_id: def.cfg.clientId!,
+    client_secret: def.cfg.clientSecret!,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+  const res = await fetch(def.refreshUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    body,
+  });
+  if (!res.ok) throw new Error(`Token refresh failed (${res.status})`);
+  const data = (await res.json()) as {
+    access_token?: string;
+    refresh_token?: string;
+    scope?: string;
+    expires_in?: number;
+    error?: string;
+    error_description?: string;
+  };
+  if (!data.access_token) throw new Error(data.error_description || data.error || "No access token returned");
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token, // may be absent — caller keeps the old one
     scope: data.scope,
     expiresInSec: data.expires_in,
   };

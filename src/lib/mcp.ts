@@ -2,8 +2,9 @@ import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { prisma } from "@/lib/prisma";
-import { getConnector, isConnectorConfigured } from "@/lib/connectors";
-import { decryptSecret } from "@/lib/crypto";
+import { getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
+import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import type { Connection } from "@prisma/client";
 
 /*
  * Bridges linked connectors (see connectors.ts) to the model at generation time:
@@ -19,6 +20,36 @@ export interface ActiveConnector {
   token: string;
 }
 
+// Refresh ~1 min before expiry so a token doesn't die mid-request.
+const EXPIRY_SKEW_MS = 60_000;
+
+/** Refresh an expiring token, persist the new one, and return it (null on failure). */
+async function refreshConnection(def: ConnectorDef, row: Connection): Promise<string | null> {
+  if (!def.refreshUrl || !row.refreshToken) return null;
+  let refreshToken: string;
+  try {
+    refreshToken = decryptSecret(row.refreshToken);
+  } catch {
+    return null;
+  }
+  try {
+    const t = await refreshTokens(def, refreshToken);
+    await prisma.connection.update({
+      where: { id: row.id },
+      data: {
+        accessToken: encryptSecret(t.accessToken),
+        // Providers may or may not rotate the refresh token — keep the old one if not.
+        refreshToken: t.refreshToken ? encryptSecret(t.refreshToken) : row.refreshToken,
+        scope: t.scope ?? row.scope,
+        expiresAt: t.expiresInSec ? new Date(Date.now() + t.expiresInSec * 1000) : null,
+      },
+    });
+    return t.accessToken;
+  } catch {
+    return null;
+  }
+}
+
 /** Resolve the connectors the user asked for into usable (configured, linked) endpoints. */
 export async function getActiveConnectors(userId: string, requestedIds?: string[]): Promise<ActiveConnector[]> {
   if (!requestedIds || requestedIds.length === 0) return [];
@@ -28,14 +59,20 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   for (const row of rows) {
     const def = getConnector(row.provider);
     if (!def || !isConnectorConfigured(def) || !def.cfg.mcpUrl) continue;
-    // Skip expired tokens (no refresh yet) rather than forward a dead credential.
-    if (row.expiresAt && row.expiresAt.getTime() < Date.now() + 30_000) continue;
-    let token: string;
-    try {
-      token = decryptSecret(row.accessToken);
-    } catch {
-      continue; // key rotated / corrupt — skip rather than fail the whole chat
+
+    let token: string | null = null;
+    const nearExpiry = !!row.expiresAt && row.expiresAt.getTime() < Date.now() + EXPIRY_SKEW_MS;
+    if (nearExpiry) {
+      // Expiring (e.g. Figma) — refresh it so the connector keeps working; skip if we can't.
+      token = await refreshConnection(def, row);
+    } else {
+      try {
+        token = decryptSecret(row.accessToken);
+      } catch {
+        token = null; // key rotated / corrupt
+      }
     }
+    if (!token) continue;
     out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, token });
   }
   return out;
