@@ -486,8 +486,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             </div>
           ) : (
             // Empty / greeting view
-            <div className="min-h-0 flex-1 overflow-y-auto relative h-full flex flex-col justify-center">
-              <div className="mx-auto flex w-full max-w-5xl flex-col items-center justify-center px-3 py-6 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:px-5 md:py-10">
+            <div className="min-h-0 flex-1 overflow-y-auto relative h-full flex flex-col">
+              <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
                 <div className="relative w-full flex flex-col items-center justify-center">
                   {/* Headers cross-fade (CSS Grid overlap) */}
                   <div className="grid grid-cols-1 grid-rows-1 w-full justify-items-center mb-5 sm:mb-6">
@@ -550,19 +550,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     </div>
                   </div>
 
-                  {/* Normal Mode Disclaimer (moved to bottom, below suggestion pills) */}
-                  <div
-                    className={cn(
-                      "transition-all duration-500 ease-out-soft mt-5 sm:mt-6",
-                      privateMode ? "pointer-events-none opacity-0 h-0 overflow-hidden" : "opacity-100 h-auto"
-                    )}
-                  >
-                    <p className="text-center text-caption text-muted-foreground">
-                      Juno can be wrong — worth a second look on anything that matters.
-                    </p>
-                  </div>
                 </div>
               </div>
+
+              {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
+              <p
+                className={cn(
+                  "shrink-0 pb-2 text-center text-caption text-muted-foreground select-none transition-opacity duration-500 ease-out-soft",
+                  privateMode ? "pointer-events-none opacity-0" : "opacity-100"
+                )}
+              >
+                Juno can be wrong — worth a second look on anything that matters.
+              </p>
             </div>
           )}
         </div>
