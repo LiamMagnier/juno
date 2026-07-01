@@ -28,7 +28,10 @@ export interface ConnectorDef {
   /** OAuth2 refresh endpoint, when the provider issues expiring tokens (Figma). */
   refreshUrl?: string;
   scope: string;
-  cfg: { clientId?: string; clientSecret?: string; mcpUrl?: string };
+  /** How client credentials are sent on token/refresh calls. Figma requires
+   *  HTTP Basic auth; GitHub accepts them in the form body. */
+  authStyle: "body" | "basic";
+  cfg: { clientId?: string; clientSecret?: string; scope?: string; mcpUrl?: string };
   /** Best-effort human label (account handle) fetched after linking. */
   fetchAccountLabel(accessToken: string): Promise<string | null>;
 }
@@ -42,6 +45,7 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
     authorizeUrl: "https://github.com/login/oauth/authorize",
     tokenUrl: "https://github.com/login/oauth/access_token",
     scope: "repo read:user",
+    authStyle: "body",
     cfg: env.connectors.github,
     async fetchAccountLabel(accessToken) {
       try {
@@ -64,7 +68,10 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
     authorizeUrl: "https://www.figma.com/oauth",
     tokenUrl: "https://api.figma.com/v1/oauth/token",
     refreshUrl: "https://api.figma.com/v1/oauth/refresh",
-    scope: "file_read",
+    // New Figma OAuth: granular, colon-namespaced scopes (old "file_read" is gone).
+    // Must match what's enabled in the app's "OAuth scopes" tab; override via env.
+    scope: env.connectors.figma.scope || "file_content:read",
+    authStyle: "basic",
     cfg: env.connectors.figma,
     async fetchAccountLabel(accessToken) {
       try {
@@ -107,21 +114,35 @@ export function buildAuthorizeUrl(def: ConnectorDef, state: string): string {
   return u.toString();
 }
 
+/** Build the OAuth token-request headers, putting client creds where the provider
+ *  wants them (Basic auth header for Figma, form body for GitHub). */
+function tokenRequestHeaders(def: ConnectorDef, body: URLSearchParams): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
+  if (def.authStyle === "basic") {
+    headers.Authorization = "Basic " + Buffer.from(`${def.cfg.clientId}:${def.cfg.clientSecret}`).toString("base64");
+  } else {
+    body.set("client_id", def.cfg.clientId!);
+    body.set("client_secret", def.cfg.clientSecret!);
+  }
+  return headers;
+}
+
 /** Exchange an authorization code for tokens (generic OAuth2 auth-code flow). */
 export async function exchangeCodeForTokens(def: ConnectorDef, code: string): Promise<ConnectorTokens> {
   const body = new URLSearchParams({
-    client_id: def.cfg.clientId!,
-    client_secret: def.cfg.clientSecret!,
     code,
     redirect_uri: connectorRedirectUri(def.id),
     grant_type: "authorization_code",
   });
   const res = await fetch(def.tokenUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    headers: tokenRequestHeaders(def, body),
     body,
   });
-  if (!res.ok) throw new Error(`Token exchange failed (${res.status})`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`Token exchange failed (${res.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`);
+  }
   const data = (await res.json()) as {
     access_token?: string;
     refresh_token?: string;
@@ -143,14 +164,12 @@ export async function exchangeCodeForTokens(def: ConnectorDef, code: string): Pr
 export async function refreshTokens(def: ConnectorDef, refreshToken: string): Promise<ConnectorTokens> {
   if (!def.refreshUrl) throw new Error(`${def.label} does not support token refresh`);
   const body = new URLSearchParams({
-    client_id: def.cfg.clientId!,
-    client_secret: def.cfg.clientSecret!,
     refresh_token: refreshToken,
     grant_type: "refresh_token",
   });
   const res = await fetch(def.refreshUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+    headers: tokenRequestHeaders(def, body),
     body,
   });
   if (!res.ok) throw new Error(`Token refresh failed (${res.status})`);

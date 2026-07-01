@@ -43,6 +43,8 @@ export const env = {
     figma: {
       clientId: process.env.FIGMA_OAUTH_CLIENT_ID,
       clientSecret: process.env.FIGMA_OAUTH_CLIENT_SECRET,
+      // Space-separated OAuth scopes; must match what's enabled in the Figma app.
+      scope: process.env.FIGMA_OAUTH_SCOPE,
       mcpUrl: process.env.FIGMA_MCP_URL, // Figma remote MCP endpoint (no default)
     },
   },

@@ -27,7 +27,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
-  if (url.searchParams.get("error") || !code || !state) return back(req, "denied", id);
+  const providerError = url.searchParams.get("error");
+  if (providerError || !code || !state) {
+    if (providerError) console.error("[connectors] provider returned error", def.id, providerError, url.searchParams.get("error_description"));
+    return back(req, "denied", id);
+  }
 
   // Validate the signed state and match it to this user + connector + nonce cookie.
   const decoded = verifyState(state);
@@ -48,7 +52,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let tokens;
   try {
     tokens = await exchangeCodeForTokens(def, code);
-  } catch {
+  } catch (err) {
+    console.error("[connectors] token exchange failed", def.id, err instanceof Error ? err.message : err);
     return back(req, "exchange_failed", id);
   }
 
