@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import type { ClientAttachment } from "@/types/chat";
 
 export interface PendingUpload {
@@ -75,6 +76,30 @@ export function useUploads(conversationId: string | null) {
     [uploadOne, conversationId]
   );
 
+  // Add already-stored attachments (e.g. cloned from the Library) as ready-to-send
+  // chips — no upload needed, they already have a server-side id. Capped at
+  // MAX_ATTACHMENTS so a send can never exceed the server's per-message limit.
+  const addAttachments = React.useCallback((attachments: ClientAttachment[]) => {
+    if (attachments.length === 0) return;
+    setUploads((prev) => {
+      const existing = new Set(prev.map((u) => u.attachment?.id).filter(Boolean));
+      const headroom = Math.max(0, MAX_ATTACHMENTS - prev.length);
+      const fresh = attachments.filter((a) => !existing.has(a.id));
+      const next = fresh.slice(0, headroom).map((a) => ({
+        localId: `lib-${a.id}-${counter++}`,
+        fileName: a.fileName,
+        size: a.size,
+        progress: 100,
+        status: "done" as const,
+        attachment: a,
+      }));
+      if (fresh.length > next.length) {
+        toast.error(`You can attach up to ${MAX_ATTACHMENTS} files per message.`);
+      }
+      return next.length ? [...prev, ...next] : prev;
+    });
+  }, []);
+
   const remove = React.useCallback((localId: string) => {
     setUploads((prev) => prev.filter((u) => u.localId !== localId));
   }, []);
@@ -87,5 +112,5 @@ export function useUploads(conversationId: string | null) {
   );
   const isUploading = uploads.some((u) => u.status === "uploading");
 
-  return { uploads, addFiles, remove, clear, readyAttachments, isUploading };
+  return { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading };
 }

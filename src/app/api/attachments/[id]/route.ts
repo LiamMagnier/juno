@@ -40,11 +40,16 @@ export async function DELETE(
     return NextResponse.json({ error: "Attachment not found." }, { status: 404 });
   }
 
-  // Delete from storage (AWS S3 or Local disk)
-  await deleteObject(attachment.storageKey).catch(() => {});
-
-  // Delete from DB
+  // Delete the DB row first, then the object — but only if no other attachment
+  // still references the same stored object. Library "attach" clones share a
+  // storageKey, so deleting one clone must not pull the file out from under
+  // the original (or its siblings).
   await prisma.attachment.delete({ where: { id: attachment.id } });
+
+  const stillReferenced = await prisma.attachment.count({ where: { storageKey: attachment.storageKey } });
+  if (stillReferenced === 0) {
+    await deleteObject(attachment.storageKey).catch(() => {});
+  }
 
   return NextResponse.json({ ok: true });
 }

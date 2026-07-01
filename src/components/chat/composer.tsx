@@ -14,6 +14,7 @@ import {
   FileUp,
   Globe,
   LayoutTemplate,
+  Library,
   Loader2,
   Mic,
   Plus,
@@ -36,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { LibraryPicker } from "@/components/chat/library-picker";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
@@ -122,11 +124,12 @@ export function Composer({
   const [text, setText] = React.useState("");
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<{ id: string; name: string; conversationCount: number }[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-  const { uploads, addFiles, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
+  const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
   const sendAttachments = privateMode ? [] : readyAttachments;
   const uploading = privateMode ? false : isUploading;
 
@@ -525,6 +528,16 @@ export function Composer({
                     <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
                   )}
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  disabled={!features.storage || privateMode}
+                  onSelect={() => setLibraryOpen(true)}
+                >
+                  <Library className="text-muted-foreground" />
+                  <span className="flex-1">Add from library</span>
+                  {(privateMode || !features.storage) && (
+                    <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                  )}
+                </DropdownMenuItem>
                 <DropdownMenuItem disabled={privateMode} onSelect={() => startCanvas()}>
                   <SquarePen className="text-muted-foreground" />
                   <span className="flex-1">Create a canvas</span>
@@ -720,6 +733,10 @@ export function Composer({
             e.target.value = "";
           }}
         />
+
+        {!privateMode && features.storage && (
+          <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={addAttachments} existingCount={uploads.length} />
+        )}
       </div>
       {!hideDisclaimer && (
         <p className="mt-2 text-center text-caption text-muted-foreground">
