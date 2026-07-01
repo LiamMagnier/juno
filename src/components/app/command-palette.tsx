@@ -49,6 +49,9 @@ export function CommandPalette() {
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const listRef = React.useRef<HTMLDivElement>(null);
+  // True when `active` last changed via the keyboard, so we only auto-scroll then
+  // (not while the mouse is hovering rows).
+  const keyboardNav = React.useRef(false);
 
   const go = React.useCallback((href: string) => {
     router.push(href);
@@ -125,12 +128,24 @@ export function CommandPalette() {
     setActive((a) => Math.min(a, Math.max(0, items.length - 1)));
   }, [items.length]);
 
+  // Keep the highlighted row in view when navigating with the arrow keys.
+  React.useEffect(() => {
+    if (!keyboardNav.current) return;
+    keyboardNav.current = false;
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-index="${active}"]`);
+    // For the first row, scroll to the very top so its group header shows too.
+    if (active === 0) listRef.current?.scrollTo({ top: 0 });
+    else el?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      keyboardNav.current = true;
       setActive((a) => Math.min(a + 1, items.length - 1));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+      keyboardNav.current = true;
       setActive((a) => Math.max(a - 1, 0));
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -184,6 +199,7 @@ export function CommandPalette() {
                     )}
                     <button
                       type="button"
+                      data-index={i}
                       onMouseMove={() => setActive(i)}
                       onClick={() => c.run()}
                       aria-selected={active === i}
