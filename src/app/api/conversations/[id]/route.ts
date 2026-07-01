@@ -45,7 +45,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
-  const updated = await prisma.conversation.update({ where: { id }, data: parsed.data });
+  const data = {
+    ...parsed.data,
+    ...(parsed.data.title != null ? { titleSource: "manual" } : {}),
+  };
+  const updated = await prisma.conversation.update({ where: { id }, data });
   return NextResponse.json({ conversation: serializeConversation(updated) });
 }
 

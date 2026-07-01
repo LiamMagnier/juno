@@ -17,7 +17,7 @@ import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { PLANS } from "@/lib/plans";
 import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
-import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort } from "@/types/chat";
+import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort, TitleSource } from "@/types/chat";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -26,6 +26,15 @@ interface ChatViewProps {
   initialModel: string;
   projectId?: string;
   initialPrompt?: string;
+}
+
+type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
+
+function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT"; content: string }[] {
+  return messages
+    .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
+    .slice(0, 8)
+    .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
 }
 
 function PrivateGhostMark({ className }: { className?: string }) {
@@ -42,7 +51,18 @@ function PrivateGhostMark({ className }: { className?: string }) {
 }
 
 export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt }: ChatViewProps) {
-  const { settings, quota, setQuota, upsertConversation, updateConversation, setActiveConversationId, composerPrefs, setComposerPrefs } = useApp();
+  const {
+    settings,
+    quota,
+    setQuota,
+    conversations,
+    upsertConversation,
+    updateConversation,
+    activeConversationId,
+    setActiveConversationId,
+    composerPrefs,
+    setComposerPrefs,
+  } = useApp();
   const router = useRouter();
   const tts = useTts();
   // Tracks a conversation created on the new-chat page so we can switch to its
@@ -70,6 +90,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // The project this chat belongs to. For a brand-new chat it's the target the
   // first message will be created in; for an existing chat, changes are PATCHed.
   const [activeProjectId, setActiveProjectId] = React.useState<string | null>(projectId ?? null);
+  const localGenerationSeenRef = React.useRef(false);
+  const scheduleAutoTitleRef = React.useRef<(phase: AutoTitlePhase, delay?: number) => void>(() => {});
 
   React.useEffect(() => {
     setActiveConversationId(conversationId);
@@ -86,8 +108,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     reasoningEffort: reasoningEffort ?? undefined,
     privateMode,
     onQuota: setQuota,
-    onTitle: (id, title) => updateConversation(id, { title }),
-    onMeta: ({ conversationId: id, title, isNew }) => {
+    onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
+    onMeta: ({ conversationId: id, title, titleSource, isNew }) => {
+      localGenerationSeenRef.current = true;
       if (isNew) {
         // Don't navigate mid-stream (it would remount and drop the stream).
         // Remember the id; we switch to /chat/[id] once the reply completes.
@@ -96,6 +119,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         const convo: ClientConversation = {
           id,
           title,
+          titleSource,
           model,
           pinned: false,
           folderId: null,
@@ -105,13 +129,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         };
         upsertConversation(convo);
       } else {
-        updateConversation(id, { title, lastMessageAt: new Date().toISOString() });
+        updateConversation(id, { title, titleSource, lastMessageAt: new Date().toISOString() });
       }
     },
     onDone: (_assistant, meta) => {
       const id = createdIdRef.current ?? conversationId;
       if (!privateMode && id && meta?.title) {
         updateConversation(id, { title: meta.title, lastMessageAt: new Date().toISOString() });
+      }
+      if (!privateMode && id) {
+        scheduleAutoTitleRef.current(meta?.finishReason === "user_stopped" ? "stopped" : "completed", 80);
       }
       if (meta?.projectId && meta.projectName) {
         window.dispatchEvent(new CustomEvent("projects:sync"));
@@ -135,12 +162,120 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
   });
 
+  const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
+  const latestConversationsRef = React.useRef(conversations);
+  const latestMessagesRef = React.useRef(chat.messages);
+  const titleDebounceRef = React.useRef<number | null>(null);
+  const titleRequestSeqRef = React.useRef(0);
+  const titlePhaseMapRef = React.useRef<Map<string, Set<AutoTitlePhase>>>(new Map());
+
+  React.useEffect(() => {
+    latestConversationsRef.current = conversations;
+  }, [conversations]);
+
+  React.useEffect(() => {
+    latestMessagesRef.current = chat.messages;
+  }, [chat.messages]);
+
+  const runAutoTitle = React.useCallback(
+    async (phase: AutoTitlePhase) => {
+      const id = currentConversationId;
+      if (!id || privateMode) return;
+      const latest = latestConversationsRef.current.find((c) => c.id === id);
+      if (latest?.titleSource === "manual") return;
+      const messages = titleMessages(latestMessagesRef.current);
+      if (!messages.some((m) => m.role === "USER")) return;
+
+      const requestId = ++titleRequestSeqRef.current;
+      try {
+        const res = await fetch(`/api/conversations/${id}/title`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phase, messages }),
+        });
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as
+          | { title?: unknown; titleSource?: unknown; projectId?: unknown; projectName?: unknown }
+          | null;
+        if (requestId !== titleRequestSeqRef.current || !data || typeof data.title !== "string") return;
+
+        const current = latestConversationsRef.current.find((c) => c.id === id);
+        if (!current || current.titleSource === "manual") return;
+        const titleSource: TitleSource =
+          data.titleSource === "default" || data.titleSource === "manual" || data.titleSource === "ai" ? data.titleSource : "ai";
+        if (data.title && (data.title !== current.title || titleSource !== current.titleSource)) {
+          updateConversation(id, { title: data.title, titleSource });
+        }
+        if (typeof data.projectId === "string" && typeof data.projectName === "string" && data.projectName) {
+          window.dispatchEvent(new CustomEvent("projects:sync"));
+        } else if (typeof data.projectId === "string") {
+          window.setTimeout(() => window.dispatchEvent(new CustomEvent("projects:sync")), 1800);
+        }
+      } catch {
+        // Title generation is best-effort and must never affect the active stream.
+      }
+    },
+    [currentConversationId, privateMode, updateConversation]
+  );
+
+  const scheduleAutoTitle = React.useCallback(
+    (phase: AutoTitlePhase, delay = 240) => {
+      const id = currentConversationId;
+      if (!id || privateMode) return;
+      const latest = latestConversationsRef.current.find((c) => c.id === id);
+      if (latest?.titleSource === "manual") return;
+      if (!localGenerationSeenRef.current && latest?.titleSource !== "default") return;
+      const phases = titlePhaseMapRef.current.get(id) ?? new Set<AutoTitlePhase>();
+      if (phases.has(phase)) return;
+      phases.add(phase);
+      titlePhaseMapRef.current.set(id, phases);
+      if (titleDebounceRef.current != null) window.clearTimeout(titleDebounceRef.current);
+      titleDebounceRef.current = window.setTimeout(() => {
+        titleDebounceRef.current = null;
+        void runAutoTitle(phase);
+      }, delay);
+    },
+    [currentConversationId, privateMode, runAutoTitle]
+  );
+
+  React.useEffect(() => {
+    scheduleAutoTitleRef.current = scheduleAutoTitle;
+  }, [scheduleAutoTitle]);
+
+  React.useEffect(() => {
+    if (!currentConversationId || privateMode) return;
+    if (chat.messages.some((m) => m.role === "USER" && m.content.trim())) scheduleAutoTitle("first_user", 160);
+  }, [chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
+
+  React.useEffect(() => {
+    if (!currentConversationId || privateMode) return;
+    if (chat.status === "thinking") scheduleAutoTitle("thinking", 240);
+    if (chat.status === "writing") {
+      const latestAssistant = [...chat.messages].reverse().find((m) => m.role === "ASSISTANT");
+      if ((latestAssistant?.content.length ?? 0) >= 24) scheduleAutoTitle("writing", 360);
+    }
+    if (chat.status === "idle") {
+      const latestAssistant = [...chat.messages].reverse().find((m) => m.role === "ASSISTANT");
+      if (latestAssistant && !latestAssistant.streaming && (latestAssistant.content || latestAssistant.reasoning)) {
+        scheduleAutoTitle(latestAssistant.finishReason === "user_stopped" ? "stopped" : "completed", 420);
+      }
+    }
+  }, [chat.status, chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
+
+  React.useEffect(() => {
+    return () => {
+      if (titleDebounceRef.current != null) window.clearTimeout(titleDebounceRef.current);
+      titleRequestSeqRef.current += 1;
+    };
+  }, []);
+
   // When the sidebar (or any other UI) fires "juno:new-chat", reset the
   // ChatView even if the URL didn't change (Next.js ignores push to the
   // same route, so the component won't remount on its own).
   React.useEffect(() => {
     const handler = () => {
       createdIdRef.current = null;
+      localGenerationSeenRef.current = false;
       chat.reset();
       setOpenArtifactId(null);
       setFullscreen(false);

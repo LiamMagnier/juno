@@ -56,7 +56,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  await prisma.project.update({ where: { id }, data: parsed.data });
+  const data = {
+    ...parsed.data,
+    ...(parsed.data.name != null ? { nameSource: "manual" } : {}),
+  };
+  await prisma.project.update({ where: { id }, data });
   return NextResponse.json({ ok: true });
 }
 

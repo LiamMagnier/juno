@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
 import { resolveModel } from "@/lib/models";
-import type { ClientArtifact, ClientAttachment, ClientMessage, ClientQuota, GenerationStatus, ReasoningEffort } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMessage, ClientQuota, GenerationStatus, ReasoningEffort, TitleSource } from "@/types/chat";
 
 export type ChatMessage = ClientMessage & {
   streaming?: boolean;
@@ -26,8 +26,8 @@ interface UseChatOptions {
   webSearch?: boolean;
   reasoningEffort?: ReasoningEffort;
   privateMode?: boolean;
-  onMeta?: (meta: { conversationId: string; title: string; isNew: boolean }) => void;
-  onTitle?: (conversationId: string, title: string) => void;
+  onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
+  onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
   onQuota?: (quota: ClientQuota) => void;
   onArtifactsUpdated?: (artifacts: ClientArtifact[], newlyCreated: ClientArtifact[]) => void;
   onMemoryUpdated?: () => void;
@@ -104,12 +104,18 @@ export function useChat(opts: UseChatOptions) {
               } else if (opts.privateMode) {
                 setMessages((prev) => prev.map((m) => (m.pending && m.role === "USER" ? { ...m, pending: false } : m)));
               }
-              if (!opts.privateMode) opts.onMeta?.({ conversationId: chunk.conversationId, title: chunk.title, isNew });
+              if (!opts.privateMode)
+                opts.onMeta?.({
+                  conversationId: chunk.conversationId,
+                  title: chunk.title,
+                  titleSource: chunk.titleSource ?? "default",
+                  isNew,
+                });
               break;
             }
             case "title": {
               // Auto-generated title arrived mid/post-stream — update the sidebar live.
-              if (!opts.privateMode) opts.onTitle?.(chunk.conversationId, chunk.title);
+              if (!opts.privateMode) opts.onTitle?.(chunk.conversationId, chunk.title, chunk.titleSource);
               break;
             }
             case "activity": {

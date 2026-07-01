@@ -20,7 +20,7 @@ export async function POST() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const conversation = await prisma.conversation.create({ data: { userId: user.id } });
+  const conversation = await prisma.conversation.create({ data: { userId: user.id, titleSource: "default" } });
   return NextResponse.json({ conversation: serializeConversation(conversation) }, { status: 201 });
 }
 

@@ -16,6 +16,7 @@ import type {
   ClientSource,
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
+import { coerceTitleSource } from "@/lib/title-ownership";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -106,6 +107,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
   return {
     id: conv.id,
     title: conv.title,
+    titleSource: coerceTitleSource(conv.titleSource),
     model: conv.model,
     pinned: conv.pinned,
     folderId: conv.folderId,

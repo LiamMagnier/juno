@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   Box,
   Check,
+  ChevronRight,
   Command,
   Folder,
   Library,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
+import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -76,6 +78,8 @@ export function AppSidebar({
   const [mounted, setMounted] = React.useState(false);
   const [projects, setProjects] = React.useState<{ id: string; name: string }[]>([]);
   const [starredProjectIds, setStarredProjectIds] = React.useState<string[]>([]);
+  const [starredCollapsed, setStarredCollapsed] = React.useState(false);
+  const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
 
   const loadProjects = React.useCallback(async () => {
     try {
@@ -104,6 +108,13 @@ export function AppSidebar({
     loadProjects();
     loadStarred();
 
+    try {
+      const starred = localStorage.getItem("juno:sidebar:starred:collapsed");
+      if (starred) setStarredCollapsed(JSON.parse(starred));
+      const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
+      if (recents) setRecentsCollapsed(JSON.parse(recents));
+    } catch {}
+
     const handleSync = () => {
       loadProjects();
       loadStarred();
@@ -116,6 +127,22 @@ export function AppSidebar({
       window.removeEventListener("starred:sync", handleSync);
     };
   }, [loadProjects, loadStarred]);
+
+  const toggleStarredCollapsed = () => {
+    const next = !starredCollapsed;
+    setStarredCollapsed(next);
+    try {
+      localStorage.setItem("juno:sidebar:starred:collapsed", JSON.stringify(next));
+    } catch {}
+  };
+
+  const toggleRecentsCollapsed = () => {
+    const next = !recentsCollapsed;
+    setRecentsCollapsed(next);
+    try {
+      localStorage.setItem("juno:sidebar:recents:collapsed", JSON.stringify(next));
+    } catch {}
+  };
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -281,23 +308,27 @@ export function AppSidebar({
               const hasStarred = starredProjects.length > 0 || pinned.length > 0;
               if (!hasStarred) return null;
               return (
-                <Section label="Starred" count={starredProjects.length + pinned.length} icon={Star}>
+                <Section
+                  label="Starred"
+                  count={starredProjects.length + pinned.length}
+                  collapsible
+                  isCollapsed={starredCollapsed}
+                  onToggleCollapse={toggleStarredCollapsed}
+                >
                   {/* Starred Projects */}
                   {starredProjects.map((p) => (
-                    <div
+                    <Link
                       key={p.id}
-                      className="group relative flex items-center rounded-md pr-1 transition-all duration-fast hover:bg-sidebar-accent hover:translate-x-0.5"
+                      href={`/projects/${p.id}`}
+                      onClick={() => setSidebarOpen(false)}
+                      className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[14px] font-medium transition-all duration-fast hover:bg-sidebar-accent hover:translate-x-0.5 text-sidebar-foreground hover:text-foreground"
+                      title={p.name}
                     >
-                      <Link
-                        href={`/projects/${p.id}`}
-                        onClick={() => setSidebarOpen(false)}
-                        className="flex min-w-0 flex-1 items-center gap-2 truncate px-3 py-2 text-sm text-sidebar-foreground/80 hover:text-foreground font-medium"
-                        title={p.name}
-                      >
-                        <Box className="h-4 w-full max-w-[16px] shrink-0 text-muted-foreground/75 transition-transform duration-fast group-hover:scale-105" />
-                        <span className="truncate">{p.name}</span>
-                      </Link>
-                    </div>
+                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
+                        <Box className="h-[18px] w-[18px]" />
+                      </span>
+                      <span className="truncate">{p.name}</span>
+                    </Link>
                   ))}
                   {/* Starred/Pinned Chats */}
                   {pinned.map((c) => (
@@ -317,24 +348,37 @@ export function AppSidebar({
                 </Section>
               );
             })()}
-            {groups.map(([label, items]) => (
-              <Section key={label} label={label} count={items.length}>
-                {items.map((c) => (
-                  <ConversationRow
-                    key={c.id}
-                    conversation={c}
-                    active={c.id === activeConversationId}
-                    renaming={renamingId === c.id}
-                    setRenaming={setRenamingId}
-                    projects={projects}
-                    onUpdate={updateConversation}
-                    onRemove={removeConversation}
-                    onNavigate={() => setSidebarOpen(false)}
-                    onRequestConfirm={setConfirm}
-                  />
+            {filtered.filter((c) => !c.pinned).length > 0 && (
+              <Section
+                label="Recent"
+                count={filtered.filter((c) => !c.pinned).length}
+                collapsible
+                isCollapsed={recentsCollapsed}
+                onToggleCollapse={toggleRecentsCollapsed}
+              >
+                {groups.map(([groupLabel, items]) => (
+                  <div key={groupLabel} className="space-y-0.5">
+                    <div className="flex items-center px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50">
+                      {groupLabel}
+                    </div>
+                    {items.map((c) => (
+                      <ConversationRow
+                        key={c.id}
+                        conversation={c}
+                        active={c.id === activeConversationId}
+                        renaming={renamingId === c.id}
+                        setRenaming={setRenamingId}
+                        projects={projects}
+                        onUpdate={updateConversation}
+                        onRemove={removeConversation}
+                        onNavigate={() => setSidebarOpen(false)}
+                        onRequestConfirm={setConfirm}
+                      />
+                    ))}
+                  </div>
                 ))}
               </Section>
-            ))}
+            )}
           </>
         )}
       </div>
@@ -447,20 +491,46 @@ function Section({
   count,
   icon: Icon,
   children,
+  collapsible,
+  isCollapsed,
+  onToggleCollapse,
 }: {
   label: string;
   count?: number;
   icon?: typeof Star;
   children: React.ReactNode;
+  collapsible?: boolean;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
+  const headerContent = (
+    <div
+      className={cn(
+        "flex items-center gap-2.5 px-2 py-1.5 text-left select-none rounded-md transition-colors duration-fast",
+        collapsible && "cursor-pointer hover:bg-sidebar-accent/50 text-foreground"
+      )}
+      onClick={collapsible ? onToggleCollapse : undefined}
+    >
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80">
+        {collapsible ? (
+          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast", !isCollapsed && "rotate-90")} />
+        ) : Icon ? (
+          <Icon className="h-3.5 w-3.5 text-muted-foreground/75" />
+        ) : null}
+      </span>
+      <span className="flex-1 font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">
+        {label}
+      </span>
+      {count != null && !isCollapsed && (
+        <span className="font-mono text-[10px] text-muted-foreground/50 pr-1">{count}</span>
+      )}
+    </div>
+  );
+
   return (
     <div className="mb-3">
-      <div className="flex items-center gap-1.5 px-3 py-1.5">
-        {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground/75" />}
-        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">{label}</span>
-        {count != null && <span className="font-mono text-[10px] text-muted-foreground/50">{count}</span>}
-      </div>
-      <div className="space-y-0.5 px-2">{children}</div>
+      {headerContent}
+      {!isCollapsed && <div className="space-y-0.5">{children}</div>}
     </div>
   );
 }
@@ -526,12 +596,13 @@ function ConversationRow({
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "pinned" | "folderId" | "projectId">>) => {
-    onUpdate(conversation.id, data);
+  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "folderId" | "projectId">>) => {
+    const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
+    onUpdate(conversation.id, optimistic);
     const res = await fetch(`/api/conversations/${conversation.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify(data.titleSource == null ? data : { ...data, titleSource: undefined }),
     });
     if (!res.ok) toast.error("Update failed.");
   };
@@ -566,7 +637,7 @@ function ConversationRow({
 
   if (renaming) {
     return (
-      <div className="flex items-center gap-1 px-2">
+      <div className="flex items-center gap-1 pl-2 pr-1 py-1">
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -576,7 +647,7 @@ function ConversationRow({
             if (e.key === "Enter") commitRename();
             if (e.key === "Escape") setRenaming(null);
           }}
-          className="h-8"
+          className="h-8 w-full"
         />
         <Button size="icon-sm" variant="ghost" onClick={commitRename} aria-label="Save">
           <Check className="h-4 w-4" />
@@ -588,7 +659,7 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-md pr-1 transition-all duration-fast hover:translate-x-0.5",
+        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast hover:translate-x-0.5",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
@@ -596,11 +667,18 @@ function ConversationRow({
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
-        className={cn("flex min-w-0 flex-1 items-center gap-2 truncate px-3 py-2 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground", active && "font-semibold text-foreground")}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
+          active && "font-semibold text-foreground"
+        )}
         title={conversation.title}
       >
-        {conversation.pinned && <Star className="h-3.5 w-3.5 shrink-0 fill-primary text-primary transition-transform duration-fast group-hover:scale-105" />}
-        <span className="truncate">{conversation.title}</span>
+        {conversation.pinned && (
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
+            <Star className="h-[14px] w-[14px] fill-primary text-primary" />
+          </span>
+        )}
+        <AnimatedTitle title={conversation.title} className="min-w-0 flex-1" />
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

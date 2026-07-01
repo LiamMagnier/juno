@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Menu, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
+import { AnimatedTitle } from "@/components/app/animated-title";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
@@ -17,9 +18,10 @@ const COLLAPSE_KEY = "juno:sidebar-collapsed";
 const PREFETCH_ROUTES = ["/chat", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { sidebarOpen, setSidebarOpen } = useApp();
+  const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
   const [collapsed, setCollapsed] = React.useState(false);
+  const activeTitle = activeConversationId ? conversations.find((c) => c.id === activeConversationId)?.title : null;
 
   React.useEffect(() => {
     try {
@@ -77,7 +79,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="font-serif text-xl font-semibold tracking-tight text-foreground">Juno</span>
+          <AnimatedTitle
+            title={activeTitle || "Juno"}
+            className="min-w-0 flex-1"
+            textClassName="font-serif text-xl font-semibold tracking-tight text-foreground"
+          />
           <Button
             variant="ghost"
             size="icon"

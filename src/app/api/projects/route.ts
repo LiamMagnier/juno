@@ -53,7 +53,12 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   const project = await prisma.project.create({
-    data: { userId: user.id, name: parsed.data.name ?? "Untitled project", instructions: parsed.data.instructions ?? "" },
+    data: {
+      userId: user.id,
+      name: parsed.data.name ?? "Untitled project",
+      nameSource: parsed.data.name ? "manual" : "default",
+      instructions: parsed.data.instructions ?? "",
+    },
     select: { id: true },
   });
   return NextResponse.json({ id: project.id }, { status: 201 });

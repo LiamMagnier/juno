@@ -165,6 +165,14 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        "title-in": {
+          "0%": { opacity: "0", transform: "translateY(4px) scale(0.985)", backgroundColor: "hsl(var(--primary) / 0.12)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)", backgroundColor: "transparent" },
+        },
+        "title-out": {
+          "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
+          "100%": { opacity: "0", transform: "translateY(-4px) scale(0.985)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -177,6 +185,8 @@ const config: Config = {
         drift: "drift 18s ease-in-out infinite",
         "rise-in": "rise-in 0.32s cubic-bezier(0.32,0.72,0,1)",
         "dot-wave": "dot-wave 1.2s ease-in-out infinite",
+        "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
+        "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",
       },
     },
   },

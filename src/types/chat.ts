@@ -5,6 +5,7 @@ export type FeedbackValue = "UP" | "DOWN" | null;
 export type AttachmentKind = "IMAGE" | "FILE";
 export type ReasoningEffort = "low" | "medium" | "high" | "max";
 export type GenerationStatus = "idle" | "submitting" | "thinking" | "writing" | "stopping" | "error";
+export type TitleSource = "default" | "ai" | "manual";
 export type ChatFinishReason =
   | "stop"
   | "length"
@@ -82,6 +83,7 @@ export interface ClientArtifact {
 export interface ClientConversation {
   id: string;
   title: string;
+  titleSource: TitleSource;
   model: string;
   pinned: boolean;
   folderId: string | null;
@@ -99,8 +101,8 @@ export interface ClientQuota {
 
 // ---- Streaming protocol (server -> client over SSE) ----
 export type StreamChunk =
-  | { type: "meta"; conversationId: string; userMessageId: string | null; title: string; generationId?: string }
-  | { type: "title"; conversationId: string; title: string }
+  | { type: "meta"; conversationId: string; userMessageId: string | null; title: string; titleSource?: TitleSource; generationId?: string }
+  | { type: "title"; conversationId: string; title: string; titleSource?: TitleSource }
   | { type: "activity"; event: ClientActivityEvent }
   | { type: "sources"; sources: ClientSource[] }
   | { type: "reasoning"; text: string }

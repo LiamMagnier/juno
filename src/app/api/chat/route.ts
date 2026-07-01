@@ -14,12 +14,12 @@ import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, autoExtractMemories, maybeConsolidate } from "@/lib/memory";
-import { generateChatTitle, generateProjectName } from "@/lib/titles";
 import { persistArtifacts } from "@/lib/artifacts-store";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate } from "@/lib/utils";
+import { coerceTitleSource } from "@/lib/title-ownership";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -415,7 +415,7 @@ export async function POST(req: Request) {
       projectId = proj?.id ?? null;
     }
     conversation = await prisma.conversation.create({
-      data: { userId: user.id, model: modelId, title: truncate(input.message ?? "New chat", 48), projectId },
+      data: { userId: user.id, model: modelId, title: truncate(input.message ?? "New chat", 48), titleSource: "default", projectId },
     });
   }
 
@@ -509,6 +509,7 @@ export async function POST(req: Request) {
   const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
+  const convoTitleSource = coerceTitleSource(conversation.titleSource);
   const generationId = input.generationId ?? crypto.randomUUID();
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
@@ -518,17 +519,10 @@ export async function POST(req: Request) {
     conversationId,
   });
   let assistantFull = ""; // captured for background memory extraction
-
-  // A cheap, configured model used for background labelling (titles) + memory work.
   const cheapModel =
     MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
     MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ??
     modelInfo;
-
-  // Auto-title the chat on its first exchange after the assistant response is saved.
-  const firstUserText = (history.find((m) => m.role === "USER")?.content ?? input.message ?? "").trim();
-  const wantsTitle = !input.regenerate && history.filter((m) => m.role === "USER").length <= 1 && !!firstUserText;
-  const titleProvisionals = new Set([truncate(firstUserText, 48), truncate(input.message ?? "New chat", 48), "New chat"]);
 
   // Generation + persistence is detached from the request lifecycle: we do not
   // pass req.signal to the model, so navigating away can drop the browser stream
@@ -564,7 +558,7 @@ export async function POST(req: Request) {
         return entry;
       };
 
-      send({ type: "meta", conversationId, userMessageId, title: convoTitle, generationId });
+      send({ type: "meta", conversationId, userMessageId, title: convoTitle, titleSource: convoTitleSource, generationId });
 
       const attachmentCount = history.reduce((sum, msg) => sum + msg.attachments.length, 0);
       const contextDetails = [plural(history.length, "message")];
@@ -689,40 +683,6 @@ export async function POST(req: Request) {
 
         assistantFull = full;
 
-        let finalConversationTitle = convoTitle;
-        let finalProjectName: string | null = null;
-        let finalProjectId: string | null = conversation.projectId;
-        if (wantsTitle && finishReason !== "user_stopped") {
-          const generatedTitle = await generateChatTitle(cheapModel, firstUserText, full).catch(() => null);
-          const fallbackTitle = truncate(firstUserText, 48) || "New chat";
-          const convo = await prisma.conversation
-            .findUnique({ where: { id: conversationId }, select: { title: true, projectId: true } })
-            .catch(() => null);
-          finalProjectId = convo?.projectId ?? finalProjectId;
-          if (convo && titleProvisionals.has(convo.title)) {
-            finalConversationTitle = generatedTitle ?? fallbackTitle;
-            if (finalConversationTitle !== convo.title) {
-              await prisma.conversation.update({ where: { id: conversationId }, data: { title: finalConversationTitle } }).catch(() => {});
-            }
-          } else {
-            finalConversationTitle = convo?.title ?? finalConversationTitle;
-          }
-
-          if (finalProjectId) {
-            const proj = await prisma.project
-              .findUnique({ where: { id: finalProjectId }, select: { name: true, instructions: true } })
-              .catch(() => null);
-            if (proj && proj.name === "Untitled project") {
-              finalProjectName =
-                (await generateProjectName(cheapModel, {
-                  firstUser: full ? `${firstUserText}\n\n${full.slice(0, 1000)}` : firstUserText,
-                  instructions: proj.instructions,
-                }).catch(() => null)) ?? finalConversationTitle;
-              await prisma.project.update({ where: { id: finalProjectId }, data: { name: finalProjectName } }).catch(() => {});
-            }
-          }
-        }
-
         if (promptTokens != null || completionTokens != null) {
           sendActivity({
             kind: "usage",
@@ -754,9 +714,7 @@ export async function POST(req: Request) {
           memoryUpdated,
           quota: consumed.quota,
           finishReason,
-          title: finalConversationTitle,
-          projectId: finalProjectId,
-          projectName: finalProjectName,
+          projectId: conversation.projectId,
         });
         console.info("[chat] generation complete", {
           generationId,

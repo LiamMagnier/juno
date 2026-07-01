@@ -119,6 +119,7 @@ model Conversation {
   id            String   @id @default(cuid())
   userId        String
   title         String   @default("New chat")
+  titleSource   String   @default("default")
   model         String   @default("claude-opus-4-8")
   pinned        Boolean  @default(false)
   folderId      String?
@@ -143,6 +144,7 @@ model Project {
   id           String   @id @default(cuid())
   userId       String
   name         String   @default("Untitled project")
+  nameSource   String   @default("default")
   instructions String   @default("") @db.Text
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
