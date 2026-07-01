@@ -1,5 +1,5 @@
 import type { Attachment, Role } from "@prisma/client";
-import type { ClientSource } from "@/types/chat";
+import type { ChatFinishReason, ClientSource } from "@/types/chat";
 
 /** A persisted message reduced to what model adapters need. */
 export type MessageForModel = { role: Role; content: string; attachments: Attachment[] };
@@ -9,4 +9,5 @@ export type LlmEvent =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string } // visible chain-of-thought / thinking
   | { type: "sources"; sources: ClientSource[] }
-  | { type: "usage"; input?: number; output?: number };
+  | { type: "usage"; input?: number; output?: number }
+  | { type: "finish"; reason: ChatFinishReason; raw?: string };

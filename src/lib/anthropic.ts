@@ -1,8 +1,10 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "@/lib/env";
+import { normalizeFinishReason } from "@/lib/finish-reason";
 import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
+import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 let anthropic: Anthropic | null = null;
@@ -160,11 +162,11 @@ export async function* streamAnthropic(
   history: MessageForModel[],
   maxTokens: number,
   signal?: AbortSignal,
-  reasoningEffort?: "low" | "medium" | "high",
+  reasoningEffort?: ReasoningEffort,
   webSearch?: boolean
 ): AsyncGenerator<LlmEvent> {
   const messages = await toAnthropicMessages(history);
-  const budget = reasoningEffort ? { low: 1024, medium: 4096, high: 8000 }[reasoningEffort] : 0;
+  const budget = reasoningEffort ? { low: 1024, medium: 4096, high: 8000, max: 12000 }[reasoningEffort] : 0;
   const stream = await getAnthropic().messages.create(
     {
       model: model.providerModel,
@@ -200,6 +202,8 @@ export async function* streamAnthropic(
       }
     } else if (event.type === "message_delta") {
       yield { type: "usage", output: event.usage?.output_tokens };
+      const stopReason = (event.delta as { stop_reason?: string | null }).stop_reason;
+      if (stopReason) yield { type: "finish", reason: normalizeFinishReason(stopReason), raw: stopReason };
     }
   }
 }

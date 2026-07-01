@@ -10,6 +10,8 @@ import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt } from "@/lib/anthropic";
+import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
+import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, autoExtractMemories, maybeConsolidate } from "@/lib/memory";
 import { generateChatTitle, generateProjectName } from "@/lib/titles";
@@ -18,11 +20,11 @@ import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate } from "@/lib/utils";
-import type { StreamChunk, ClientSource, ClientActivityEvent } from "@/types/chat";
+import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const HISTORY_LIMIT = 24;
 
@@ -39,7 +41,8 @@ const bodySchema = z.object({
   voiceMode: z.boolean().optional(),
   canvasEnabled: z.boolean().optional(),
   webSearch: z.boolean().optional(),
-  reasoningEffort: z.enum(["low", "medium", "high"]).optional(),
+  reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
+  generationId: z.string().trim().min(8).max(120).optional(),
   privateMode: z.boolean().optional(),
   privateHistory: z
     .array(
@@ -69,6 +72,37 @@ function sourceHost(url: string) {
   } catch {
     return url;
   }
+}
+
+function effectiveReasoningEffort(model: ModelInfo, requested?: ReasoningEffort): ReasoningEffort | undefined {
+  if (!model.reasoning) return undefined;
+  return requested ?? (model.provider === "zhipu" ? "high" : undefined);
+}
+
+function isAbortLike(err: unknown): boolean {
+  const e = err as { name?: string; code?: string; message?: string };
+  return e?.name === "AbortError" || e?.code === "ABORT_ERR" || /aborted|aborterror|cancelled|canceled/i.test(e?.message ?? "");
+}
+
+function classifyErrorFinishReason(err: unknown): ChatFinishReason {
+  if (isAbortLike(err)) return "user_stopped";
+  const message = String((err as { message?: string })?.message ?? err ?? "").toLowerCase();
+  if (/network|socket|econn|etimedout|timeout|terminated|fetch failed|connection/i.test(message)) return "network_error";
+  if (/context.*(length|window)|maximum context|context_length_exceeded/i.test(message)) return "model_context_window_exceeded";
+  if (/sensitive|safety|content.?filter/i.test(message)) return "sensitive";
+  return "error";
+}
+
+function appendFinishWarning(
+  reason: ChatFinishReason,
+  sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent
+) {
+  if (reason === "stop") return;
+  sendActivity({
+    kind: "warning",
+    title: finishReasonTitle(reason),
+    detail: finishReasonDetail(reason),
+  });
 }
 
 export async function POST(req: Request) {
@@ -144,10 +178,24 @@ export async function POST(req: Request) {
       projectContext: "",
     });
     const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
+    const generationId = input.generationId ?? crypto.randomUUID();
+    const generationController = new AbortController();
+    const unregisterGeneration = registerGeneration(generationId, {
+      userId: user.id,
+      controller: generationController,
+      model: modelId,
+      conversationId: "private",
+    });
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (chunk: StreamChunk) => controller.enqueue(encodeChunk(chunk));
+        const send = (chunk: StreamChunk) => {
+          try {
+            controller.enqueue(encodeChunk(chunk));
+          } catch {
+            /* client disconnected */
+          }
+        };
         const activityLog: ClientActivityEvent[] = [];
         const sourceUrls = new Set<string>();
         let activityCounter = 0;
@@ -156,6 +204,7 @@ export async function POST(req: Request) {
         let promptTokens: number | undefined;
         let completionTokens: number | undefined;
         let writingStarted = false;
+        let finishReason: ChatFinishReason = "stop";
         const webSources: ClientSource[] = [];
 
         const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
@@ -169,7 +218,7 @@ export async function POST(req: Request) {
           return entry;
         };
 
-        send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat" });
+        send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
         sendActivity({
           kind: "context",
           title: "Reading private context",
@@ -180,11 +229,12 @@ export async function POST(req: Request) {
           title: "Selected model",
           detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
         });
-        if (modelInfo.reasoning && input.reasoningEffort) {
+        const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
+        if (reasoningEffort) {
           sendActivity({
             kind: "reasoning",
             title: "Reasoning mode enabled",
-            detail: `${input.reasoningEffort[0].toUpperCase()}${input.reasoningEffort.slice(1)} effort`,
+            detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
           });
         }
         if (useWebSearch) {
@@ -207,8 +257,8 @@ export async function POST(req: Request) {
             system,
             history: privateHistory,
             maxTokens: PLANS[plan].maxOutputTokens,
-            signal: req.signal,
-            reasoningEffort: modelInfo.reasoning ? input.reasoningEffort : undefined,
+            signal: generationController.signal,
+            reasoningEffort,
             webSearch: useWebSearch,
           })) {
             if (ev.type === "text") {
@@ -237,6 +287,8 @@ export async function POST(req: Request) {
             } else if (ev.type === "usage") {
               if (ev.input != null) promptTokens = ev.input;
               if (ev.output != null) completionTokens = ev.output;
+            } else if (ev.type === "finish") {
+              finishReason = ev.reason;
             }
           }
 
@@ -252,9 +304,10 @@ export async function POST(req: Request) {
                 .join(" · "),
             });
           }
+          appendFinishWarning(finishReason, sendActivity);
           sendActivity({
             kind: "done",
-            title: "Finished private response",
+            title: finishReason === "stop" ? "Finished private response" : finishReasonTitle(finishReason),
             detail: webSources.length ? plural(webSources.length, "source") : "Not saved",
           });
 
@@ -271,22 +324,75 @@ export async function POST(req: Request) {
               attachments: [],
               sources: webSources.length ? webSources : undefined,
               activity: activityLog,
+              finishReason,
             },
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,
+            finishReason,
+          });
+          console.info("[chat] private generation complete", {
+            generationId,
+            provider: modelInfo.provider,
+            model: modelInfo.providerModel,
+            finishReason,
+            promptTokens: promptTokens ?? null,
+            completionTokens: completionTokens ?? null,
           });
         } catch (err) {
-          console.error("[chat] private generation error", err);
-          const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
-          sendActivity({
-            kind: "warning",
-            title: "Generation failed",
-            detail: providerErrorMessage(err, PROVIDERS[modelInfo.provider].label),
+          const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
+          console.error("[chat] private generation error", {
+            generationId,
+            provider: modelInfo.provider,
+            model: modelInfo.providerModel,
+            finishReason: reason,
+            message: err instanceof Error ? err.message : String(err),
           });
-          send({ type: "error", message: providerErrorMessage(err, PROVIDERS[modelInfo.provider].label), quota });
+          if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
+            appendFinishWarning(reason, sendActivity);
+            send({
+              type: "done",
+              message: {
+                id: `private-${Date.now()}`,
+                role: "ASSISTANT",
+                content: full,
+                reasoning: reasoning || undefined,
+                model: modelId,
+                feedback: null,
+                createdAt: new Date().toISOString(),
+                attachments: [],
+                sources: webSources.length ? webSources : undefined,
+                activity: activityLog,
+                finishReason: reason,
+              },
+              artifacts: [],
+              memoryUpdated: false,
+              quota: consumed.quota,
+              finishReason: reason,
+            });
+            console.info("[chat] private partial generation complete", {
+              generationId,
+              provider: modelInfo.provider,
+              model: modelInfo.providerModel,
+              finishReason: reason,
+            });
+          } else {
+            const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
+            const message = reason === "user_stopped" ? "Generation stopped before any output." : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+            sendActivity({
+              kind: "warning",
+              title: finishReasonTitle(reason),
+              detail: message,
+            });
+            send({ type: "error", message, quota, finishReason: reason });
+          }
         } finally {
-          controller.close();
+          unregisterGeneration();
+          try {
+            controller.close();
+          } catch {
+            /* already closed */
+          }
         }
       },
     });
@@ -403,11 +509,30 @@ export async function POST(req: Request) {
   const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
+  const generationId = input.generationId ?? crypto.randomUUID();
+  const generationController = new AbortController();
+  const unregisterGeneration = registerGeneration(generationId, {
+    userId: user.id,
+    controller: generationController,
+    model: modelId,
+    conversationId,
+  });
   let assistantFull = ""; // captured for background memory extraction
 
-  // Generation + persistence, detached from the request lifecycle: we deliberately
-  // do NOT pass req.signal to the model, so if the user navigates away mid-stream
-  // the answer keeps generating and is still saved for when they come back.
+  // A cheap, configured model used for background labelling (titles) + memory work.
+  const cheapModel =
+    MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
+    MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ??
+    modelInfo;
+
+  // Auto-title the chat on its first exchange after the assistant response is saved.
+  const firstUserText = (history.find((m) => m.role === "USER")?.content ?? input.message ?? "").trim();
+  const wantsTitle = !input.regenerate && history.filter((m) => m.role === "USER").length <= 1 && !!firstUserText;
+  const titleProvisionals = new Set([truncate(firstUserText, 48), truncate(input.message ?? "New chat", 48), "New chat"]);
+
+  // Generation + persistence is detached from the request lifecycle: we do not
+  // pass req.signal to the model, so navigating away can drop the browser stream
+  // without losing the saved answer. The explicit cancel endpoint aborts it.
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
@@ -426,6 +551,7 @@ export async function POST(req: Request) {
       let promptTokens: number | undefined;
       let completionTokens: number | undefined;
       let writingStarted = false;
+      let finishReason: ChatFinishReason = "stop";
 
       const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
         const entry: ClientActivityEvent = {
@@ -438,7 +564,7 @@ export async function POST(req: Request) {
         return entry;
       };
 
-      send({ type: "meta", conversationId, userMessageId, title: convoTitle });
+      send({ type: "meta", conversationId, userMessageId, title: convoTitle, generationId });
 
       const attachmentCount = history.reduce((sum, msg) => sum + msg.attachments.length, 0);
       const contextDetails = [plural(history.length, "message")];
@@ -456,11 +582,12 @@ export async function POST(req: Request) {
         title: "Selected model",
         detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
       });
-      if (modelInfo.reasoning && input.reasoningEffort) {
+      const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
+      if (reasoningEffort) {
         sendActivity({
           kind: "reasoning",
           title: "Reasoning mode enabled",
-          detail: `${input.reasoningEffort[0].toUpperCase()}${input.reasoningEffort.slice(1)} effort`,
+          detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
         });
       }
       if (useWebSearch) {
@@ -483,8 +610,10 @@ export async function POST(req: Request) {
           system,
           history,
           maxTokens: PLANS[plan].maxOutputTokens,
-          // No signal here: keep generating even if the client disconnects mid-stream.
-          reasoningEffort: modelInfo.reasoning ? input.reasoningEffort : undefined,
+          // Not tied to req.signal: route changes can drop the browser stream
+          // without killing generation; the explicit cancel endpoint aborts this.
+          signal: generationController.signal,
+          reasoningEffort,
           webSearch: useWebSearch,
         })) {
           if (ev.type === "text") {
@@ -513,6 +642,8 @@ export async function POST(req: Request) {
           } else if (ev.type === "usage") {
             if (ev.input != null) promptTokens = ev.input;
             if (ev.output != null) completionTokens = ev.output;
+          } else if (ev.type === "finish") {
+            finishReason = ev.reason;
           }
         }
 
@@ -547,16 +678,50 @@ export async function POST(req: Request) {
           memoryUpdated = created > 0;
         }
 
-        // Touch the conversation; set a title from the first exchange if still default.
-        const firstUserText = history.find((m) => m.role === "USER")?.content;
+        // Touch the conversation after the assistant message has been persisted.
         await prisma.conversation.update({
           where: { id: conversationId },
           data: {
             lastMessageAt: new Date(),
             model: modelId,
-            ...(convoTitle === "New chat" && firstUserText ? { title: truncate(firstUserText, 48) } : {}),
           },
         });
+
+        assistantFull = full;
+
+        let finalConversationTitle = convoTitle;
+        let finalProjectName: string | null = null;
+        let finalProjectId: string | null = conversation.projectId;
+        if (wantsTitle && finishReason !== "user_stopped") {
+          const generatedTitle = await generateChatTitle(cheapModel, firstUserText, full).catch(() => null);
+          const fallbackTitle = truncate(firstUserText, 48) || "New chat";
+          const convo = await prisma.conversation
+            .findUnique({ where: { id: conversationId }, select: { title: true, projectId: true } })
+            .catch(() => null);
+          finalProjectId = convo?.projectId ?? finalProjectId;
+          if (convo && titleProvisionals.has(convo.title)) {
+            finalConversationTitle = generatedTitle ?? fallbackTitle;
+            if (finalConversationTitle !== convo.title) {
+              await prisma.conversation.update({ where: { id: conversationId }, data: { title: finalConversationTitle } }).catch(() => {});
+            }
+          } else {
+            finalConversationTitle = convo?.title ?? finalConversationTitle;
+          }
+
+          if (finalProjectId) {
+            const proj = await prisma.project
+              .findUnique({ where: { id: finalProjectId }, select: { name: true, instructions: true } })
+              .catch(() => null);
+            if (proj && proj.name === "Untitled project") {
+              finalProjectName =
+                (await generateProjectName(cheapModel, {
+                  firstUser: full ? `${firstUserText}\n\n${full.slice(0, 1000)}` : firstUserText,
+                  instructions: proj.instructions,
+                }).catch(() => null)) ?? finalConversationTitle;
+              await prisma.project.update({ where: { id: finalProjectId }, data: { name: finalProjectName } }).catch(() => {});
+            }
+          }
+        }
 
         if (promptTokens != null || completionTokens != null) {
           sendActivity({
@@ -570,6 +735,7 @@ export async function POST(req: Request) {
               .join(" · "),
           });
         }
+        appendFinishWarning(finishReason, sendActivity);
         sendActivity({
           kind: "done",
           title: "Finished response",
@@ -581,26 +747,106 @@ export async function POST(req: Request) {
           include: { attachments: true },
         });
 
-        assistantFull = full;
         send({
           type: "done",
-          message: await serializeMessage(assistantWithActivity),
+          message: { ...(await serializeMessage(assistantWithActivity)), finishReason },
           artifacts,
           memoryUpdated,
           quota: consumed.quota,
+          finishReason,
+          title: finalConversationTitle,
+          projectId: finalProjectId,
+          projectName: finalProjectName,
+        });
+        console.info("[chat] generation complete", {
+          generationId,
+          conversationId,
+          provider: modelInfo.provider,
+          model: modelInfo.providerModel,
+          finishReason,
+          promptTokens: promptTokens ?? null,
+          completionTokens: completionTokens ?? null,
         });
       } catch (err) {
-        console.error("[chat] generation error", err);
-        // Generation failed: the user got nothing, so refund the consumed message
-        // and report the corrected quota so the UI doesn't go stale.
-        const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
-        sendActivity({
-          kind: "warning",
-          title: "Generation failed",
-          detail: providerErrorMessage(err, PROVIDERS[modelInfo.provider].label),
+        const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
+        console.error("[chat] generation error", {
+          generationId,
+          conversationId,
+          provider: modelInfo.provider,
+          model: modelInfo.providerModel,
+          finishReason: reason,
+          message: err instanceof Error ? err.message : String(err),
         });
-        send({ type: "error", message: providerErrorMessage(err, PROVIDERS[modelInfo.provider].label), quota });
+
+        if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
+          try {
+            appendFinishWarning(reason, sendActivity);
+            if (staleAssistantId) {
+              await prisma.artifact.deleteMany({ where: { messageId: staleAssistantId } });
+              await prisma.message.delete({ where: { id: staleAssistantId } }).catch(() => {});
+            }
+            const assistant = await prisma.message.create({
+              data: {
+                conversationId,
+                role: "ASSISTANT",
+                content: full,
+                ...(reasoning ? { reasoning } : {}),
+                model: modelId,
+                promptTokens,
+                completionTokens,
+                ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
+                activity: activityLog as unknown as Prisma.InputJsonValue,
+              },
+              include: { attachments: true },
+            });
+            const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
+            await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), model: modelId } });
+            const assistantWithActivity = await prisma.message.update({
+              where: { id: assistant.id },
+              data: { activity: activityLog as unknown as Prisma.InputJsonValue },
+              include: { attachments: true },
+            });
+            assistantFull = full;
+            send({
+              type: "done",
+              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason },
+              artifacts,
+              memoryUpdated: false,
+              quota: consumed.quota,
+              finishReason: reason,
+              title: convoTitle,
+              projectId: conversation.projectId,
+            });
+            console.info("[chat] partial generation persisted", {
+              generationId,
+              conversationId,
+              provider: modelInfo.provider,
+              model: modelInfo.providerModel,
+              finishReason: reason,
+            });
+          } catch (persistErr) {
+            console.error("[chat] failed to persist partial generation", {
+              generationId,
+              conversationId,
+              message: persistErr instanceof Error ? persistErr.message : String(persistErr),
+            });
+            const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
+            send({ type: "error", message: providerErrorMessage(persistErr, PROVIDERS[modelInfo.provider].label), quota, finishReason: "error" });
+          }
+        } else {
+          // Generation failed before useful output, so refund the consumed message
+          // and report the corrected quota so the UI doesn't go stale.
+          const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
+          const message = reason === "user_stopped" ? "Generation stopped before any output." : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+          sendActivity({
+            kind: "warning",
+            title: finishReasonTitle(reason),
+            detail: message,
+          });
+          send({ type: "error", message, quota, finishReason: reason });
+        }
       } finally {
+        unregisterGeneration();
         try {
           controller.close();
         } catch {
@@ -619,52 +865,11 @@ export async function POST(req: Request) {
   });
 
   // `after` runs once the response is settled — including when the client
-  // disconnects. Awaiting genPromise here keeps the serverless function alive
-  // until the answer is fully generated and saved, so navigating away no longer
-  // loses the reply. Then extract durable memories with a cheap model.
-  // A cheap, configured model for background labelling + memory work.
-  const cheapModel =
-    MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
-    MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ??
-    modelInfo;
-
+  // disconnects. Awaiting genPromise keeps the serverless function alive until the
+  // answer is fully generated and saved, then extracts durable memories.
   after(async () => {
     await genPromise?.catch(() => {});
     if (!assistantFull) return;
-
-    // Auto-name the chat (and its project) from the first exchange — runs once,
-    // only on the first user turn, and never overwrites a manual rename.
-    if (!input.regenerate && history.filter((m) => m.role === "USER").length <= 1) {
-      const firstUser = (history.find((m) => m.role === "USER")?.content ?? input.message ?? "").trim();
-      if (firstUser) {
-        // The provisional title is the truncated first message; the create path
-        // uses the raw message and the persist path the trimmed one — accept both.
-        const provisionals = new Set([truncate(firstUser, 48), truncate(input.message ?? "New chat", 48), "New chat"]);
-        const title = await generateChatTitle(cheapModel, firstUser, assistantFull).catch(() => null);
-        const convo = await prisma.conversation
-          .findUnique({ where: { id: conversationId }, select: { title: true, projectId: true } })
-          .catch(() => null);
-        // Only replace the auto/provisional title, never one the user set.
-        if (convo && title && provisionals.has(convo.title)) {
-          await prisma.conversation.update({ where: { id: conversationId }, data: { title } }).catch(() => {});
-        }
-        // Name the project it lives in, but only while it's still untitled.
-        if (convo?.projectId) {
-          const proj = await prisma.project
-            .findUnique({ where: { id: convo.projectId }, select: { name: true, instructions: true } })
-            .catch(() => null);
-          if (proj && proj.name === "Untitled project") {
-            const projectName = await generateProjectName(cheapModel, {
-              firstUser,
-              instructions: proj.instructions,
-            }).catch(() => null);
-            if (projectName) {
-              await prisma.project.update({ where: { id: convo.projectId }, data: { name: projectName } }).catch(() => {});
-            }
-          }
-        }
-      }
-    }
 
     // Proactive memory extraction — deduped/consolidated with the same cheap model.
     if (memoryEnabled) {

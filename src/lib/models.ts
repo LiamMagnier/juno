@@ -101,6 +101,7 @@ const CURATED: ModelInfo[] = [
   curated("google", "gemini-2.5-pro", "Gemini 2.5 Pro", "Google's most capable Gemini.", "PRO", true),
   curated("zhipu", "glm-4.5-flash", "GLM-4.5 Flash", "Fast, low-cost GLM.", "FREE", false),
   curated("zhipu", "glm-4.6", "GLM-4.6", "Zhipu's flagship GLM.", "PRO", false),
+  curated("zhipu", "glm-5.2", "GLM-5.2", "Z.AI's thinking model with long-context reasoning.", "PRO", false),
   curated("moonshot", "kimi-k2", "Kimi K2", "Long-context agentic model.", "PRO", false),
   curated("deepseek", "deepseek-chat", "DeepSeek Chat", "Fast general-purpose model.", "FREE", false),
   curated("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", "Strong reasoning model.", "PRO", false),

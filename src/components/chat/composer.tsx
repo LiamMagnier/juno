@@ -46,7 +46,7 @@ import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { formatBytes, cn } from "@/lib/utils";
 import type { ModelId } from "@/lib/models";
-import type { ClientAttachment } from "@/types/chat";
+import type { ClientAttachment, GenerationStatus, ReasoningEffort } from "@/types/chat";
 
 interface ComposerProps {
   conversationId: string | null;
@@ -54,6 +54,7 @@ interface ComposerProps {
   onModelChange: (m: ModelId) => void;
   onSend: (text: string, attachments: ClientAttachment[]) => void;
   isBusy: boolean;
+  status: GenerationStatus;
   onStop: () => void;
   onOpenVoiceMode?: () => void;
   quotaReached?: boolean;
@@ -61,8 +62,8 @@ interface ComposerProps {
   onToggleCanvas: (v: boolean) => void;
   webSearchEnabled?: boolean;
   onToggleWebSearch?: (v: boolean) => void;
-  reasoningEffort: "low" | "medium" | "high" | null;
-  onReasoningChange: (e: "low" | "medium" | "high" | null) => void;
+  reasoningEffort: ReasoningEffort | null;
+  onReasoningChange: (e: ReasoningEffort | null) => void;
   placeholder?: string;
   privateMode?: boolean;
   hideDisclaimer?: boolean;
@@ -72,11 +73,12 @@ interface ComposerProps {
   onPickProject?: (projectId: string | null) => void;
 }
 
-const EFFORTS: { value: "low" | "medium" | "high" | null; label: string }[] = [
+const EFFORTS: { value: ReasoningEffort | null; label: string }[] = [
   { value: null, label: "Instant" },
   { value: "low", label: "Think · Low" },
   { value: "medium", label: "Think · Medium" },
   { value: "high", label: "Think · High" },
+  { value: "max", label: "Think · Max" },
 ];
 
 // Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").
@@ -91,6 +93,7 @@ export function Composer({
   onModelChange,
   onSend,
   isBusy,
+  status,
   onStop,
   onOpenVoiceMode,
   quotaReached,
@@ -151,6 +154,14 @@ export function Composer({
 
   const canSend = (text.trim().length > 0 || sendAttachments.length > 0) && !isBusy && !uploading && !quotaReached;
   const longText = text.trim().length > 1500 || text.split("\n").length > 30;
+  const activeLabel =
+    status === "stopping"
+      ? "Stopping..."
+      : status === "writing"
+        ? "Writing..."
+        : status === "thinking" || status === "submitting"
+          ? "Thinking..."
+          : null;
 
   const attachAsFile = () => {
     const content = text;
@@ -640,6 +651,13 @@ export function Composer({
 
           {/* Right: voice mode, dictation mic, send */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
+            {activeLabel && (
+              <span role="status" className="mr-1 hidden items-center gap-1.5 font-mono text-[11px] uppercase text-muted-foreground sm:inline-flex">
+                <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" aria-hidden="true" />
+                {activeLabel}
+              </span>
+            )}
+
             {onOpenVoiceMode && (
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -675,9 +693,12 @@ export function Composer({
               type="button"
               size="icon"
               onClick={isBusy ? onStop : submit}
-              disabled={!isBusy && !canSend}
-              aria-label={isBusy ? "Stop generating" : "Send message"}
-              className="rounded-full coarse:h-11 coarse:w-11"
+              disabled={isBusy ? status === "stopping" : !canSend}
+              aria-label={isBusy ? (status === "stopping" ? "Stopping generation" : "Stop generating") : "Send message"}
+              className={cn(
+                "coarse:h-11 coarse:w-11",
+                isBusy ? "w-12 rounded-[14px] shadow-soft ring-2 ring-primary/20" : "rounded-full"
+              )}
             >
               {isBusy ? (
                 <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />

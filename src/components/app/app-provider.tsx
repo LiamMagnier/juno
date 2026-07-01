@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings } from "@/types/app";
-import type { ClientConversation, ClientQuota } from "@/types/chat";
+import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
@@ -45,7 +45,7 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
   };
 }
 
-export type ReasoningEffort = "low" | "medium" | "high" | null;
+export type ReasoningEffort = ComposerReasoningEffort | null;
 
 /**
  * Composer toggles that should stick across chats, navigation, and refreshes —
@@ -61,14 +61,20 @@ export interface ComposerPrefs {
 
 // webSearch defaults ON — it's only ever applied to models that actually support
 // native web search, so leaving it on gives up-to-date answers by default.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: null, webSearch: true, canvas: true, voiceInput: null };
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, voiceInput: null };
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   if (!v || typeof v !== "object") return {};
   const o = v as Record<string, unknown>;
   const out: Partial<ComposerPrefs> = {};
-  if (o.reasoningEffort === null || o.reasoningEffort === "low" || o.reasoningEffort === "medium" || o.reasoningEffort === "high") {
+  if (
+    o.reasoningEffort === null ||
+    o.reasoningEffort === "low" ||
+    o.reasoningEffort === "medium" ||
+    o.reasoningEffort === "high" ||
+    o.reasoningEffort === "max"
+  ) {
     out.reasoningEffort = o.reasoningEffort as ReasoningEffort;
   }
   if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;

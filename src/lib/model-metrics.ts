@@ -1,7 +1,7 @@
 import type { ModelInfo } from "@/lib/models";
 import type { Provider } from "@/lib/providers";
 
-export type ReasoningEffort = "low" | "medium" | "high" | null;
+export type ReasoningEffort = "low" | "medium" | "high" | "max" | null;
 
 export interface ModelMetrics {
   inputUsdPerMTok: number;
@@ -118,6 +118,7 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
 }
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {
+  if (effort === "max") return 2;
   if (effort === "high") return 1.65;
   if (effort === "medium") return 1.25;
   if (effort === "low") return 1.08;
@@ -127,8 +128,8 @@ export function reasoningMultiplier(effort: ReasoningEffort): number {
 export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, supportsReasoning: boolean): ModelMetrics {
   if (!supportsReasoning || !effort) return metrics;
   const multiplier = reasoningMultiplier(effort);
-  const intelligenceBoost = effort === "high" ? 2 : effort === "medium" ? 1 : 0.4;
-  const speedPenalty = effort === "high" ? 0.62 : effort === "medium" ? 0.82 : 0.93;
+  const intelligenceBoost = effort === "max" ? 2.4 : effort === "high" ? 2 : effort === "medium" ? 1 : 0.4;
+  const speedPenalty = effort === "max" ? 0.48 : effort === "high" ? 0.62 : effort === "medium" ? 0.82 : 0.93;
   return {
     ...metrics,
     outputUsdPerMTok: roundMoney(metrics.outputUsdPerMTok * multiplier),

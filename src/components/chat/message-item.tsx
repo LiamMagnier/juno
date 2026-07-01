@@ -122,6 +122,7 @@ interface MessageItemProps {
   artifactsByIdentifier: Map<string, ClientArtifact>;
   onOpenArtifact: (identifier: string) => void;
   onRegenerate: () => void;
+  onContinue: () => void;
   onEdit: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   onSpeak?: (id: string, text: string) => void;
@@ -137,6 +138,7 @@ export function MessageItem({
   artifactsByIdentifier,
   onOpenArtifact,
   onRegenerate,
+  onContinue,
   onEdit,
   onFeedback,
   onSpeak,
@@ -225,6 +227,20 @@ export function MessageItem({
   // Assistant message
   const parts = splitMessageContent(message.content);
   const showCursor = message.streaming && message.content.length === 0;
+  const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
+  const canContinue = isLast && !busy && (message.finishReason === "length" || message.finishReason === "network_error");
+  const finishNote =
+    message.finishReason === "length"
+      ? "The model stopped at its token limit."
+      : message.finishReason === "network_error"
+        ? "The stream was interrupted. The partial answer was preserved."
+        : message.finishReason === "user_stopped"
+          ? "Stopped by user."
+          : message.finishReason === "tool_calls"
+            ? "The model requested tools, but no tool flow is enabled for this request."
+            : message.finishReason === "sensitive"
+              ? "The provider stopped the response for safety reasons."
+              : null;
 
   return (
     <div className={cn("group flex gap-3", animateIn && "motion-safe:animate-rise-in")}>
@@ -245,7 +261,7 @@ export function MessageItem({
           <div className="flex h-6 items-center">
             <ThinkingDots />
           </div>
-        ) : message.error ? (
+        ) : message.error && !hasPartialWithError ? (
           <div className="space-y-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
             <p>{message.content}</p>
             {isLast && !busy && (
@@ -302,6 +318,16 @@ export function MessageItem({
                 className="ml-1 inline-block h-2 w-2 translate-y-[1px] rounded-full bg-primary align-middle motion-safe:animate-pulse"
                 aria-hidden="true"
               />
+            )}
+            {(message.errorMessage || finishNote || canContinue) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
+                <span className="min-w-0 flex-1">{message.errorMessage ?? finishNote}</span>
+                {canContinue && (
+                  <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
+                    <RefreshCw className="h-3.5 w-3.5" /> Continue
+                  </Button>
+                )}
+              </div>
             )}
           </div>
         )}

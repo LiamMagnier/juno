@@ -3,6 +3,18 @@ import type { ArtifactType } from "@/lib/message-content";
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
 export type AttachmentKind = "IMAGE" | "FILE";
+export type ReasoningEffort = "low" | "medium" | "high" | "max";
+export type GenerationStatus = "idle" | "submitting" | "thinking" | "writing" | "stopping" | "error";
+export type ChatFinishReason =
+  | "stop"
+  | "length"
+  | "network_error"
+  | "model_context_window_exceeded"
+  | "sensitive"
+  | "tool_calls"
+  | "user_stopped"
+  | "error"
+  | "unknown";
 
 export interface ClientAttachment {
   id: string;
@@ -26,6 +38,8 @@ export interface ClientMessage {
   attachments: ClientAttachment[];
   sources?: ClientSource[];
   activity?: ClientActivityEvent[];
+  finishReason?: ChatFinishReason | null;
+  errorMessage?: string | null;
 }
 
 export interface ClientSource {
@@ -85,7 +99,8 @@ export interface ClientQuota {
 
 // ---- Streaming protocol (server -> client over SSE) ----
 export type StreamChunk =
-  | { type: "meta"; conversationId: string; userMessageId: string | null; title: string }
+  | { type: "meta"; conversationId: string; userMessageId: string | null; title: string; generationId?: string }
+  | { type: "title"; conversationId: string; title: string }
   | { type: "activity"; event: ClientActivityEvent }
   | { type: "sources"; sources: ClientSource[] }
   | { type: "reasoning"; text: string }
@@ -96,8 +111,12 @@ export type StreamChunk =
       artifacts: ClientArtifact[];
       memoryUpdated: boolean;
       quota: ClientQuota;
+      finishReason?: ChatFinishReason;
+      title?: string;
+      projectId?: string | null;
+      projectName?: string | null;
     }
-  | { type: "error"; message: string; quota?: ClientQuota };
+  | { type: "error"; message: string; quota?: ClientQuota; finishReason?: ChatFinishReason; preservePartial?: boolean };
 
 export interface ChatRequestBody {
   conversationId?: string;
@@ -108,4 +127,6 @@ export interface ChatRequestBody {
   regenerate?: boolean;
   voiceMode?: boolean;
   webSearch?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  generationId?: string;
 }

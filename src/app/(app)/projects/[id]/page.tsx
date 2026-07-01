@@ -43,6 +43,7 @@ import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { formatBytes, cn } from "@/lib/utils";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
+import type { ReasoningEffort } from "@/types/chat";
 
 interface Detail {
   project: { id: string; name: string; instructions: string; updatedAt: string };
@@ -73,7 +74,7 @@ export default function ProjectDetailPage() {
   const [allProjects, setAllProjects] = React.useState<{ id: string; name: string }[]>([]);
 
   // Composer states
-  const [reasoningEffort, setReasoningEffort] = React.useState<"low" | "medium" | "high" | null>(null);
+  const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
   const [canvasEnabled, setCanvasEnabled] = React.useState(true);
   const [selectedModel, setSelectedModel] = React.useState<string>("claude-opus-4-8");
 
@@ -430,6 +431,7 @@ export default function ProjectDetailPage() {
                 onModelChange={(m) => setSelectedModel(m)}
                 onSend={(text) => handleSend(text)}
                 isBusy={false}
+                status="idle"
                 onStop={() => {}}
                 canvasEnabled={canvasEnabled}
                 onToggleCanvas={setCanvasEnabled}

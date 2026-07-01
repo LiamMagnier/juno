@@ -71,6 +71,7 @@ const THINKING_OPTIONS: { effort: ReasoningEffort; label: string }[] = [
   { effort: "low", label: "Low" },
   { effort: "medium", label: "Medium" },
   { effort: "high", label: "High" },
+  { effort: "max", label: "Max" },
 ];
 
 function ModelDetailPanel({

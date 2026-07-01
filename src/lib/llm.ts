@@ -3,12 +3,11 @@ import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamGeminiSearch } from "@/lib/gemini-search";
 import type { ModelInfo } from "@/lib/models";
+import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 /** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
-export type ReasoningEffort = "low" | "medium" | "high";
-
 // Safe upper bound on generated tokens per provider. The requested cap (from the
 // user's plan) is clamped to this so a high value never exceeds a model's own
 // limit. Anthropic is kept lower because its thinking budget is added on top.
@@ -16,7 +15,7 @@ const PROVIDER_MAX_OUTPUT: Record<string, number> = {
   anthropic: 20000,
   openai: 16000,
   google: 32000,
-  zhipu: 32000,
+  zhipu: 131072,
   moonshot: 16384,
   deepseek: 16384,
   mistral: 16384,

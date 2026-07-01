@@ -17,7 +17,7 @@ import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { PLANS } from "@/lib/plans";
 import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
-import type { ClientArtifact, ClientMessage, ClientConversation } from "@/types/chat";
+import type { ClientArtifact, ClientMessage, ClientConversation, ReasoningEffort } from "@/types/chat";
 
 interface ChatViewProps {
   conversationId: string | null;
@@ -63,7 +63,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
   const setReasoningEffort = React.useCallback(
-    (e: "low" | "medium" | "high" | null) => setComposerPrefs({ reasoningEffort: e }),
+    (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
     [setComposerPrefs]
   );
   const [privateMode, setPrivateMode] = React.useState(false);
@@ -86,6 +86,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     reasoningEffort: reasoningEffort ?? undefined,
     privateMode,
     onQuota: setQuota,
+    onTitle: (id, title) => updateConversation(id, { title }),
     onMeta: ({ conversationId: id, title, isNew }) => {
       if (isNew) {
         // Don't navigate mid-stream (it would remount and drop the stream).
@@ -107,7 +108,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         updateConversation(id, { title, lastMessageAt: new Date().toISOString() });
       }
     },
-    onDone: () => {
+    onDone: (_assistant, meta) => {
+      const id = createdIdRef.current ?? conversationId;
+      if (!privateMode && id && meta?.title) {
+        updateConversation(id, { title: meta.title, lastMessageAt: new Date().toISOString() });
+      }
+      if (meta?.projectId && meta.projectName) {
+        window.dispatchEvent(new CustomEvent("projects:sync"));
+      }
       // First reply of a brand-new chat finished and is persisted — move to the
       // real route so the URL/router are in sync and the conversation is linkable.
       if (privateMode) return;
@@ -233,6 +241,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onModelChange={setModel}
       onSend={(text, attachments) => chat.send(text, attachments)}
       isBusy={chat.isBusy}
+      status={chat.status}
       onStop={chat.stop}
       onOpenVoiceMode={planAllowsVoice ? () => setVoiceOpen(true) : undefined}
       quotaReached={quotaReached}
@@ -321,6 +330,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 artifacts={chat.artifacts}
                 onOpenArtifact={openArtifactByIdentifier}
                 onRegenerate={chat.regenerate}
+                onContinue={chat.continueResponse}
                 onEdit={chat.editAndResend}
                 onFeedback={chat.setFeedback}
                 onSpeak={handleSpeak}

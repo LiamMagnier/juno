@@ -2,7 +2,9 @@ import "server-only";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
+import { normalizeFinishReason } from "@/lib/finish-reason";
 import type { ModelInfo } from "@/lib/models";
+import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 const clients = new Map<Provider, OpenAI>();
@@ -74,10 +76,12 @@ export async function* streamOpenAICompat(
   history: MessageForModel[],
   maxTokens: number,
   signal?: AbortSignal,
-  reasoningEffort?: "low" | "medium" | "high",
+  reasoningEffort?: ReasoningEffort,
   webSearch?: boolean
 ): AsyncGenerator<LlmEvent> {
   const messages = await toOpenAIMessages(system, history, model.vision);
+  const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
+  const effectiveReasoningEffort = isZhipuThinking ? reasoningEffort ?? "high" : reasoningEffort;
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
@@ -88,7 +92,10 @@ export async function* streamOpenAICompat(
     // if a specific endpoint ever rejects it.)
     stream_options: { include_usage: true },
   };
-  if (reasoningEffort) params.reasoning_effort = reasoningEffort;
+  if (effectiveReasoningEffort) (params as Record<string, unknown>)["reasoning_effort"] = effectiveReasoningEffort;
+  if (isZhipuThinking) {
+    params.thinking = { type: "enabled" };
+  }
   if (model.provider === "openai") {
     // GPT-5 reasoning models count hidden reasoning toward max_completion_tokens,
     // so a tight cap can yield empty/truncated output — give it headroom.
@@ -102,9 +109,19 @@ export async function* streamOpenAICompat(
   }
 
   const seen = new Set<string>();
+  let finishReason: string | undefined;
+  console.info("[llm:openai-compat] stream start", {
+    provider: model.provider,
+    model: model.providerModel,
+    maxTokens,
+    reasoningEffort: effectiveReasoningEffort ?? null,
+    thinking: isZhipuThinking,
+    webSearch: !!webSearch,
+  });
   const stream = await client(model.provider).chat.completions.create(params, { signal });
   for await (const chunk of stream) {
-    const choiceDelta = chunk.choices?.[0]?.delta;
+    const choice = chunk.choices?.[0];
+    const choiceDelta = choice?.delta;
     // Reasoning models stream their chain-of-thought separately from the answer:
     // DeepSeek/GLM use `reasoning_content`, some others use `reasoning`.
     const reasoning = (choiceDelta as unknown as { reasoning_content?: string; reasoning?: string } | undefined);
@@ -125,5 +142,17 @@ export async function* streamOpenAICompat(
       }
     }
     if (chunk.usage) yield { type: "usage", input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens };
+    if (choice?.finish_reason) {
+      finishReason = choice.finish_reason;
+      yield { type: "finish", reason: normalizeFinishReason(choice.finish_reason), raw: choice.finish_reason };
+    }
   }
+  if (!finishReason) {
+    yield { type: "finish", reason: "stop" };
+  }
+  console.info("[llm:openai-compat] stream finish", {
+    provider: model.provider,
+    model: model.providerModel,
+    finishReason: finishReason ?? "stop",
+  });
 }

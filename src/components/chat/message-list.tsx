@@ -13,6 +13,7 @@ interface MessageListProps {
   artifacts: ClientArtifact[];
   onOpenArtifact: (identifier: string) => void;
   onRegenerate: () => void;
+  onContinue: () => void;
   onEdit: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   onSpeak?: (id: string, text: string) => void;
@@ -77,6 +78,7 @@ export function MessageList(props: MessageListProps) {
               artifactsByIdentifier={artifactsByIdentifier}
               onOpenArtifact={props.onOpenArtifact}
               onRegenerate={props.onRegenerate}
+              onContinue={props.onContinue}
               onEdit={props.onEdit}
               onFeedback={props.onFeedback}
               onSpeak={props.onSpeak}
