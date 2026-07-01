@@ -81,17 +81,33 @@ function buildPrompts(category: StarterCategory, ctx: StarterContext): string[] 
   }
 }
 
-function greeting() {
+// Time-of-day greeting buckets. Each hour range has a few phrases so the welcome
+// feels fresh — including playful late-night ones (e.g. "Moonlight chat" at 3am).
+const TIME_GREETINGS: { from: number; to: number; phrases: string[] }[] = [
+  { from: 0, to: 5, phrases: ["Moonlight chat", "Burning the midnight oil", "Late-night thoughts", "The world's asleep", "Night owl mode", "Can't sleep?"] },
+  { from: 5, to: 7, phrases: ["Rise and shine", "Early bird", "Up before the sun", "Dawn patrol"] },
+  { from: 7, to: 12, phrases: ["Good morning", "Morning", "Bright and early", "Fresh start", "Rise and grind"] },
+  { from: 12, to: 14, phrases: ["Good afternoon", "Midday check-in", "Lunch-hour thoughts"] },
+  { from: 14, to: 18, phrases: ["Good afternoon", "Afternoon", "Hitting your stride", "Halfway there"] },
+  { from: 18, to: 22, phrases: ["Good evening", "Winding down", "Evening", "Golden hour"] },
+  { from: 22, to: 24, phrases: ["Good evening", "Late shift", "Still going", "Night owl"] },
+];
+
+function pickGreeting(random: boolean): string {
   const h = new Date().getHours();
-  if (h < 12) return "Good morning";
-  if (h < 18) return "Good afternoon";
-  return "Good evening";
+  const bucket = TIME_GREETINGS.find((b) => h >= b.from && h < b.to) ?? TIME_GREETINGS[2];
+  const idx = random ? Math.floor(Math.random() * bucket.phrases.length) : h % bucket.phrases.length;
+  return bucket.phrases[idx];
 }
 
 /** The serif greeting + signature mark — sits above the centered composer. */
 export function EmptyGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
+  // Deterministic during SSR (stable hydration), then pick a random,
+  // time-appropriate phrase once mounted on the client so it varies per visit.
+  const [phrase, setPhrase] = React.useState(() => pickGreeting(false));
+  React.useEffect(() => setPhrase(pickGreeting(true)), []);
 
   return (
     <div className="flex flex-col items-center text-center">
@@ -99,7 +115,7 @@ export function EmptyGreeting() {
         className="text-3xl font-serif font-normal tracking-tight motion-safe:animate-rise-in [animation-delay:80ms] [animation-fill-mode:backwards] sm:text-display"
         suppressHydrationWarning
       >
-        {greeting()}
+        {phrase}
         {firstName ? (
           <>
             , <span className="italic text-primary">{firstName}</span>

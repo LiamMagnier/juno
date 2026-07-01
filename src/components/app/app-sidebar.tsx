@@ -9,7 +9,6 @@ import {
   Check,
   Command,
   Folder,
-  FolderPlus,
   Library,
   MoreHorizontal,
   PanelLeftClose,
@@ -26,7 +25,6 @@ import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -39,8 +37,10 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useApp } from "@/components/app/app-provider";
@@ -70,8 +70,6 @@ export function AppSidebar({
   const [query, setQuery] = React.useState("");
   const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
-  const [folderOpen, setFolderOpen] = React.useState(false);
-  const [folderDraft, setFolderDraft] = React.useState("");
   const [confirm, setConfirm] = React.useState<ConfirmState>(null);
   // Date grouping (Today/Yesterday/…) depends on the local clock, so defer the
   // list to after mount to keep SSR and the first client render in agreement.
@@ -145,29 +143,6 @@ export function AppSidebar({
     setSidebarOpen(false);
   };
 
-  const createFolder = async (name: string) => {
-    const res = await fetch("/api/folders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name }),
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setFolders([...folders, data.folder]);
-    } else toast.error("Could not create folder.");
-  };
-
-  const submitFolder = () => {
-    const name = folderDraft.trim();
-    if (!name) return;
-    setFolderOpen(false);
-    createFolder(name);
-  };
-
-  const openNewFolder = () => {
-    setFolderDraft("");
-    setFolderOpen(true);
-  };
 
   const deleteFolder = (id: string) => {
     setConfirm({
@@ -268,27 +243,21 @@ export function AppSidebar({
 
       <div className="pt-2" />
 
-      <div className="flex flex-wrap gap-1 px-3 pb-2">
-        {folders.length > 0 && (
+      {folders.length > 0 && (
+        <div className="flex flex-wrap gap-1 px-3 pb-2">
           <FolderChip active={folderFilter === null} onClick={() => setFolderFilter(null)}>All</FolderChip>
-        )}
-        {folders.map((f) => (
-          <FolderChip
-            key={f.id}
-            active={folderFilter === f.id}
-            onClick={() => setFolderFilter(f.id)}
-            onDelete={() => deleteFolder(f.id)}
-          >
-            {f.name}
-          </FolderChip>
-        ))}
-        <button
-          onClick={openNewFolder}
-          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground transition-colors duration-fast hover:bg-sidebar-accent hover:text-foreground"
-        >
-          <FolderPlus className="h-3 w-3" /> New folder
-        </button>
-      </div>
+          {folders.map((f) => (
+            <FolderChip
+              key={f.id}
+              active={folderFilter === f.id}
+              onClick={() => setFolderFilter(f.id)}
+              onDelete={() => deleteFolder(f.id)}
+            >
+              {f.name}
+            </FolderChip>
+          ))}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {!mounted ? (
@@ -375,35 +344,6 @@ export function AppSidebar({
       </div>
 
       {/* New-folder dialog (replaces window.prompt) */}
-      <Dialog open={folderOpen} onOpenChange={setFolderOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-serif">New folder</DialogTitle>
-            <DialogDescription>Group related conversations together.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="folder-name">Folder name</Label>
-            <Input
-              id="folder-name"
-              value={folderDraft}
-              onChange={(e) => setFolderDraft(e.target.value)}
-              placeholder="e.g. Work, Research, Side project"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") submitFolder();
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setFolderOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={submitFolder} disabled={!folderDraft.trim()}>
-              Create folder
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Confirm dialog (replaces window.confirm) */}
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
@@ -685,19 +625,26 @@ function ConversationRow({
             <Pencil className="h-4 w-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Move to project</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-            {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
-          </DropdownMenuItem>
-          {projects.map((p) => (
-            <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-              {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
-              <span className="truncate">{p.name}</span>
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem onSelect={() => router.push("/projects")}>
-            <Plus className="h-4 w-4" /> New project…
-          </DropdownMenuItem>
+          <DropdownMenuSub>
+            <DropdownMenuSubTrigger>
+              <Box className="h-4 w-4" /> Add to project
+            </DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-56">
+              <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+                {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
+              </DropdownMenuItem>
+              {projects.map((p) => (
+                <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+                  {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
+                  <span className="truncate">{p.name}</span>
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => router.push("/projects")}>
+                <Plus className="h-4 w-4" /> New project…
+              </DropdownMenuItem>
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={remove}
