@@ -60,13 +60,13 @@ export default function ProjectsPage() {
   }, [load]);
 
   const create = async () => {
-    if (!name.trim()) return;
     setCreating(true);
     try {
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
+        // No name → created as "Untitled project" and auto-named from its first chat.
+        body: JSON.stringify({ name: name.trim() || undefined }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Could not create project.");
@@ -281,7 +281,7 @@ export default function ProjectsPage() {
                               <span>Rename</span>
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                            <DropdownMenuItem onSelect={() => setDeletingProject(p)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
                               <Trash2 className="h-4 w-4 mr-2" />
                               <span>Delete</span>
                             </DropdownMenuItem>
@@ -317,15 +317,15 @@ export default function ProjectsPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="font-serif">New project</DialogTitle>
-            <DialogDescription>Give it a name — you can add instructions and files next.</DialogDescription>
+            <DialogDescription>Name it, or leave it blank and Juno will name it from your first chat.</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="proj-name">Project name</Label>
+            <Label htmlFor="proj-name">Project name <span className="text-muted-foreground font-normal">(optional)</span></Label>
             <Input
               id="proj-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Learning Swift, Marketing site"
+              placeholder="Leave blank to auto-name it"
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") create();
@@ -334,7 +334,7 @@ export default function ProjectsPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={create} disabled={creating || !name.trim()}>{creating ? "Creating…" : "Create project"}</Button>
+            <Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create project"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

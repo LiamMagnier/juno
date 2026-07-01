@@ -39,7 +39,9 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  name: z.string().trim().min(1).max(120),
+  // Optional: an unnamed project is created as "Untitled project" and gets an
+  // auto-generated name from its first chat.
+  name: z.string().trim().min(1).max(120).optional(),
   instructions: z.string().max(20_000).optional(),
 });
 
@@ -51,7 +53,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   const project = await prisma.project.create({
-    data: { userId: user.id, name: parsed.data.name, instructions: parsed.data.instructions ?? "" },
+    data: { userId: user.id, name: parsed.data.name ?? "Untitled project", instructions: parsed.data.instructions ?? "" },
     select: { id: true },
   });
   return NextResponse.json({ id: project.id }, { status: 201 });

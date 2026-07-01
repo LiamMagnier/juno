@@ -413,7 +413,7 @@ export default function ProjectDetailPage() {
                       <span>Rename project</span>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive/10 focus:text-destructive">
+                    <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
                       <Trash2 className="h-4 w-4 mr-2" />
                       <span>Delete project</span>
                     </DropdownMenuItem>

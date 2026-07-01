@@ -12,6 +12,7 @@ import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt } from "@/lib/anthropic";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, autoExtractMemories, maybeConsolidate } from "@/lib/memory";
+import { generateChatTitle, generateProjectName } from "@/lib/titles";
 import { persistArtifacts } from "@/lib/artifacts-store";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import { serializeMessage } from "@/lib/serializers";
@@ -621,22 +622,61 @@ export async function POST(req: Request) {
   // disconnects. Awaiting genPromise here keeps the serverless function alive
   // until the answer is fully generated and saved, so navigating away no longer
   // loses the reply. Then extract durable memories with a cheap model.
-  const extractionModel = memoryEnabled
-    ? MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
-      MODEL_LIST.find((m) => isProviderConfigured(m.provider))
-    : undefined;
+  // A cheap, configured model for background labelling + memory work.
+  const cheapModel =
+    MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
+    MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ??
+    modelInfo;
+
   after(async () => {
     await genPromise?.catch(() => {});
-    if (extractionModel && assistantFull) {
+    if (!assistantFull) return;
+
+    // Auto-name the chat (and its project) from the first exchange — runs once,
+    // only on the first user turn, and never overwrites a manual rename.
+    if (!input.regenerate && history.filter((m) => m.role === "USER").length <= 1) {
+      const firstUser = (history.find((m) => m.role === "USER")?.content ?? input.message ?? "").trim();
+      if (firstUser) {
+        // The provisional title is the truncated first message; the create path
+        // uses the raw message and the persist path the trimmed one — accept both.
+        const provisionals = new Set([truncate(firstUser, 48), truncate(input.message ?? "New chat", 48), "New chat"]);
+        const title = await generateChatTitle(cheapModel, firstUser, assistantFull).catch(() => null);
+        const convo = await prisma.conversation
+          .findUnique({ where: { id: conversationId }, select: { title: true, projectId: true } })
+          .catch(() => null);
+        // Only replace the auto/provisional title, never one the user set.
+        if (convo && title && provisionals.has(convo.title)) {
+          await prisma.conversation.update({ where: { id: conversationId }, data: { title } }).catch(() => {});
+        }
+        // Name the project it lives in, but only while it's still untitled.
+        if (convo?.projectId) {
+          const proj = await prisma.project
+            .findUnique({ where: { id: convo.projectId }, select: { name: true, instructions: true } })
+            .catch(() => null);
+          if (proj && proj.name === "Untitled project") {
+            const projectName = await generateProjectName(cheapModel, {
+              firstUser,
+              instructions: proj.instructions,
+            }).catch(() => null);
+            if (projectName) {
+              await prisma.project.update({ where: { id: convo.projectId }, data: { name: projectName } }).catch(() => {});
+            }
+          }
+        }
+      }
+    }
+
+    // Proactive memory extraction — deduped/consolidated with the same cheap model.
+    if (memoryEnabled) {
       await autoExtractMemories({
         userId: user.id,
-        model: extractionModel,
+        model: cheapModel,
         history,
         assistantText: assistantFull,
         existing: [memoryProfile.summary ?? "", ...memoryProfile.recent].filter(Boolean),
       }).catch(() => {});
       // Periodically re-summarize so the memory stays tidy and deduped.
-      await maybeConsolidate(user.id, extractionModel).catch(() => {});
+      await maybeConsolidate(user.id, cheapModel).catch(() => {});
     }
   });
 

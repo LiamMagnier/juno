@@ -268,21 +268,27 @@ export function AppSidebar({
 
       <div className="pt-2" />
 
-      {folders.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-3 pb-2">
+      <div className="flex flex-wrap gap-1 px-3 pb-2">
+        {folders.length > 0 && (
           <FolderChip active={folderFilter === null} onClick={() => setFolderFilter(null)}>All</FolderChip>
-          {folders.map((f) => (
-            <FolderChip
-              key={f.id}
-              active={folderFilter === f.id}
-              onClick={() => setFolderFilter(f.id)}
-              onDelete={() => deleteFolder(f.id)}
-            >
-              {f.name}
-            </FolderChip>
-          ))}
-        </div>
-      )}
+        )}
+        {folders.map((f) => (
+          <FolderChip
+            key={f.id}
+            active={folderFilter === f.id}
+            onClick={() => setFolderFilter(f.id)}
+            onDelete={() => deleteFolder(f.id)}
+          >
+            {f.name}
+          </FolderChip>
+        ))}
+        <button
+          onClick={openNewFolder}
+          className="inline-flex items-center gap-1 rounded-full border border-dashed px-2.5 py-1 text-xs text-muted-foreground transition-colors duration-fast hover:bg-sidebar-accent hover:text-foreground"
+        >
+          <FolderPlus className="h-3 w-3" /> New folder
+        </button>
+      </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {!mounted ? (
@@ -332,11 +338,10 @@ export function AppSidebar({
                       active={c.id === activeConversationId}
                       renaming={renamingId === c.id}
                       setRenaming={setRenamingId}
-                      folders={folders}
+                      projects={projects}
                       onUpdate={updateConversation}
                       onRemove={removeConversation}
                       onNavigate={() => setSidebarOpen(false)}
-                      onNewFolder={openNewFolder}
                       onRequestConfirm={setConfirm}
                     />
                   ))}
@@ -352,11 +357,10 @@ export function AppSidebar({
                     active={c.id === activeConversationId}
                     renaming={renamingId === c.id}
                     setRenaming={setRenamingId}
-                    folders={folders}
+                    projects={projects}
                     onUpdate={updateConversation}
                     onRemove={removeConversation}
                     onNavigate={() => setSidebarOpen(false)}
-                    onNewFolder={openNewFolder}
                     onRequestConfirm={setConfirm}
                   />
                 ))}
@@ -563,28 +567,26 @@ function ConversationRow({
   active,
   renaming,
   setRenaming,
-  folders,
+  projects,
   onUpdate,
   onRemove,
   onNavigate,
-  onNewFolder,
   onRequestConfirm,
 }: {
   conversation: ClientConversation;
   active: boolean;
   renaming: boolean;
   setRenaming: (id: string | null) => void;
-  folders: { id: string; name: string }[];
+  projects: { id: string; name: string }[];
   onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
   onRemove: (id: string) => void;
   onNavigate: () => void;
-  onNewFolder: () => void;
   onRequestConfirm: (c: ConfirmState) => void;
 }) {
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "pinned" | "folderId">>) => {
+  const patch = async (data: Partial<Pick<ClientConversation, "title" | "pinned" | "folderId" | "projectId">>) => {
     onUpdate(conversation.id, data);
     const res = await fetch(`/api/conversations/${conversation.id}`, {
       method: "PATCH",
@@ -683,20 +685,24 @@ function ConversationRow({
             <Pencil className="h-4 w-4" /> Rename
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel>Move to folder</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => patch({ folderId: null })}>
-            {conversation.folderId === null && <Check className="h-4 w-4" />} No folder
+          <DropdownMenuLabel>Move to project</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+            {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
           </DropdownMenuItem>
-          {folders.map((f) => (
-            <DropdownMenuItem key={f.id} onSelect={() => patch({ folderId: f.id })}>
-              {conversation.folderId === f.id ? <Check className="h-4 w-4" /> : <Folder className="h-4 w-4" />} {f.name}
+          {projects.map((p) => (
+            <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+              {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
+              <span className="truncate">{p.name}</span>
             </DropdownMenuItem>
           ))}
-          <DropdownMenuItem onSelect={onNewFolder}>
-            <FolderPlus className="h-4 w-4" /> New folder…
+          <DropdownMenuItem onSelect={() => router.push("/projects")}>
+            <Plus className="h-4 w-4" /> New project…
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={remove} className="text-destructive focus:text-destructive">
+          <DropdownMenuItem
+            onSelect={remove}
+            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+          >
             <Trash2 className="h-4 w-4" /> Delete
           </DropdownMenuItem>
         </DropdownMenuContent>
