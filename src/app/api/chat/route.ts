@@ -22,6 +22,7 @@ import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
+import { getActiveConnectors } from "@/lib/mcp";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -44,6 +45,7 @@ const bodySchema = z.object({
   canvasEnabled: z.boolean().optional(),
   webSearch: z.boolean().optional(),
   reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
+  connectors: z.array(z.string()).max(5).optional(),
   generationId: z.string().trim().min(8).max(120).optional(),
   privateMode: z.boolean().optional(),
   privateHistory: z
@@ -175,6 +177,11 @@ export async function POST(req: Request) {
   }
   const modelId = modelInfo.id;
 
+  // Linked tool connectors (GitHub/Figma…) the user enabled for this message.
+  // Never honored in private mode — they'd send the message to a third party.
+  const activeConnectors =
+    !input.privateMode && input.connectors?.length ? await getActiveConnectors(user.id, input.connectors) : [];
+
   if (input.privateMode) {
     if (input.regenerate) return NextResponse.json({ error: "Regenerate is not available in private chat." }, { status: 400 });
 
@@ -256,6 +263,13 @@ export async function POST(req: Request) {
           title: "Selected model",
           detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
         });
+        if (activeConnectors.length) {
+          sendActivity({
+            kind: "tool",
+            title: "Connected tools ready",
+            detail: activeConnectors.map((c) => c.label).join(" · "),
+          });
+        }
         const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
         if (reasoningEffort) {
           sendActivity({
@@ -287,6 +301,7 @@ export async function POST(req: Request) {
             signal: generationController.signal,
             reasoningEffort,
             webSearch: useWebSearch,
+            connectors: activeConnectors,
           })) {
             if (ev.type === "text") {
               if (!writingStarted) {
@@ -295,6 +310,8 @@ export async function POST(req: Request) {
               }
               full += ev.text;
               send({ type: "delta", text: ev.text });
+            } else if (ev.type === "tool") {
+              if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
             } else if (ev.type === "reasoning") {
               reasoning += ev.text;
               send({ type: "reasoning", text: ev.text });
@@ -606,6 +623,13 @@ export async function POST(req: Request) {
         title: "Selected model",
         detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
       });
+      if (activeConnectors.length) {
+        sendActivity({
+          kind: "tool",
+          title: "Connected tools ready",
+          detail: activeConnectors.map((c) => c.label).join(" · "),
+        });
+      }
       const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
       if (reasoningEffort) {
         sendActivity({
@@ -639,6 +663,7 @@ export async function POST(req: Request) {
           signal: generationController.signal,
           reasoningEffort,
           webSearch: useWebSearch,
+          connectors: activeConnectors,
         })) {
           if (ev.type === "text") {
             if (!writingStarted) {
@@ -647,6 +672,8 @@ export async function POST(req: Request) {
             }
             full += ev.text;
             send({ type: "delta", text: ev.text });
+          } else if (ev.type === "tool") {
+            if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
           } else if (ev.type === "reasoning") {
             reasoning += ev.text;
             send({ type: "reasoning", text: ev.text });

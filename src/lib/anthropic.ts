@@ -197,6 +197,13 @@ function markConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): vo
 }
 
 /** Stream a completion from Anthropic, yielding text + usage events. */
+export interface AnthropicMcpServer {
+  type: "url";
+  url: string;
+  name: string;
+  authorization_token: string;
+}
+
 export async function* streamAnthropic(
   model: ModelInfo,
   system: string,
@@ -204,7 +211,8 @@ export async function* streamAnthropic(
   maxTokens: number,
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
-  webSearch?: boolean
+  webSearch?: boolean,
+  mcpServers?: AnthropicMcpServer[]
 ): AsyncGenerator<LlmEvent> {
   const messages = await toAnthropicMessages(history);
   markConversationCacheBreakpoint(messages);
@@ -213,6 +221,7 @@ export async function* streamAnthropic(
     { type: "text", text: system, cache_control: { type: "ephemeral" } },
   ];
   const budget = reasoningEffort ? { low: 1024, medium: 4096, high: 8000, max: 12000 }[reasoningEffort] : 0;
+  const useMcp = !!mcpServers && mcpServers.length > 0;
   const stream = await getAnthropic().messages.create(
     {
       model: model.providerModel,
@@ -224,8 +233,10 @@ export async function* streamAnthropic(
       ...(budget ? { thinking: { type: "enabled", budget_tokens: budget } } : {}),
       // Claude's native web search server tool — searches + cites inline.
       ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] } : {}),
+      // Native MCP connector: Claude calls the linked servers (GitHub/Figma…) itself.
+      ...(useMcp ? { mcp_servers: mcpServers } : {}),
     } as Anthropic.Messages.MessageCreateParamsStreaming,
-    { signal }
+    { signal, ...(useMcp ? { headers: { "anthropic-beta": "mcp-client-2025-04-04" } } : {}) }
   );
   const seen = new Set<string>();
   for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
@@ -241,6 +252,9 @@ export async function* streamAnthropic(
       yield { type: "text", text: event.delta.text };
     } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
       yield { type: "reasoning", text: event.delta.thinking };
+    } else if (event.type === "content_block_start" && (event.content_block as { type?: string }).type === "mcp_tool_use") {
+      const block = event.content_block as { name?: string; server_name?: string };
+      yield { type: "tool", server: block.server_name || "connector", name: block.name || "tool", phase: "call" };
     } else if (event.type === "content_block_start" && event.content_block.type === "web_search_tool_result") {
       const content = (event.content_block as { content?: unknown }).content;
       if (Array.isArray(content)) {

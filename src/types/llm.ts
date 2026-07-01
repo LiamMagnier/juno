@@ -9,6 +9,7 @@ export type LlmEvent =
   | { type: "text"; text: string }
   | { type: "reasoning"; text: string } // visible chain-of-thought / thinking
   | { type: "sources"; sources: ClientSource[] }
+  | { type: "tool"; server: string; name: string; phase: "call" | "result"; detail?: string }
   | {
       type: "usage";
       input?: number;

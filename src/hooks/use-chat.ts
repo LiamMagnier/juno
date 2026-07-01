@@ -25,6 +25,7 @@ interface UseChatOptions {
   canvasEnabled?: boolean;
   webSearch?: boolean;
   reasoningEffort?: ReasoningEffort;
+  connectors?: string[];
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
   onTitle?: (conversationId: string, title: string, titleSource?: TitleSource) => void;
@@ -302,6 +303,7 @@ export function useChat(opts: UseChatOptions) {
           canvasEnabled: opts.privateMode ? false : opts.canvasEnabled,
           webSearch: opts.webSearch,
           reasoningEffort: opts.reasoningEffort,
+          connectors: opts.connectors,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -320,6 +322,7 @@ export function useChat(opts: UseChatOptions) {
       opts.canvasEnabled,
       opts.webSearch,
       opts.reasoningEffort,
+      opts.connectors,
       opts.projectId,
       opts.privateMode,
       messages,
@@ -347,10 +350,11 @@ export function useChat(opts: UseChatOptions) {
         voiceMode: opts.voiceMode,
         canvasEnabled: opts.canvasEnabled,
         reasoningEffort: opts.reasoningEffort,
+        connectors: opts.connectors,
       },
       assistantTempId
     );
-  }, [status, runGeneration, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort]);
+  }, [status, runGeneration, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.connectors]);
 
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
@@ -383,11 +387,12 @@ export function useChat(opts: UseChatOptions) {
           model: opts.model,
           canvasEnabled: opts.canvasEnabled,
           reasoningEffort: opts.reasoningEffort,
+          connectors: opts.connectors,
         },
         assistantTempId
       );
     },
-    [status, runGeneration, opts.model, opts.canvasEnabled, opts.reasoningEffort]
+    [status, runGeneration, opts.model, opts.canvasEnabled, opts.reasoningEffort, opts.connectors]
   );
 
   const stop = React.useCallback(() => {

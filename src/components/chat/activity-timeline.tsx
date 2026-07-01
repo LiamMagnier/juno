@@ -12,6 +12,7 @@ import {
   Globe,
   PenLine,
   Search,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ const ICONS: Record<ActivityKind, LucideIcon> = {
   usage: Gauge,
   done: CheckCircle2,
   warning: AlertCircle,
+  tool: Wrench,
 };
 
 const ICON_TONE: Record<ActivityKind, string> = {
@@ -40,6 +42,7 @@ const ICON_TONE: Record<ActivityKind, string> = {
   usage: "text-muted-foreground",
   done: "text-success",
   warning: "text-warning",
+  tool: "text-primary",
 };
 
 function domainOf(url: string) {

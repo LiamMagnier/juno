@@ -30,6 +30,7 @@ const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "usage",
   "done",
   "warning",
+  "tool",
 ]);
 
 function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {

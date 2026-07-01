@@ -17,6 +17,7 @@ import {
   Library,
   Loader2,
   Mic,
+  Plug,
   Plus,
   Square,
   SquarePen,
@@ -66,6 +67,8 @@ interface ComposerProps {
   onToggleWebSearch?: (v: boolean) => void;
   reasoningEffort: ReasoningEffort | null;
   onReasoningChange: (e: ReasoningEffort | null) => void;
+  connectorsEnabled?: string[];
+  onToggleConnector?: (id: string) => void;
   placeholder?: string;
   privateMode?: boolean;
   hideDisclaimer?: boolean;
@@ -105,6 +108,8 @@ export function Composer({
   onToggleWebSearch,
   reasoningEffort,
   onReasoningChange,
+  connectorsEnabled = [],
+  onToggleConnector,
   placeholder: customPlaceholder,
   privateMode = false,
   hideDisclaimer = false,
@@ -127,6 +132,7 @@ export function Composer({
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<{ id: string; name: string; conversationCount: number }[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(false);
+  const [connectors, setConnectors] = React.useState<{ id: string; label: string; connected: boolean }[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
@@ -344,6 +350,16 @@ export function Composer({
   React.useEffect(() => {
     if (plusOpen && !privateMode) loadProjects();
   }, [plusOpen, privateMode, loadProjects]);
+
+  // Load the user's connected tools when the menu opens so they can be toggled.
+  React.useEffect(() => {
+    if (plusOpen && !privateMode && onToggleConnector) {
+      fetch("/api/connectors")
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setConnectors(((d?.connectors ?? []) as { id: string; label: string; connected: boolean }[]).filter((c) => c.connected)))
+        .catch(() => {});
+    }
+  }, [plusOpen, privateMode, onToggleConnector]);
 
   React.useEffect(() => {
     if (selectedProjectId && projects.length === 0 && !privateMode) loadProjects();
@@ -630,6 +646,37 @@ export function Composer({
                     <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
                   )}
                 </DropdownMenuItem>
+
+                {onToggleConnector && !privateMode && modality === "chat" && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.15em]">
+                      <Plug className="h-3.5 w-3.5" />
+                      Connectors
+                    </DropdownMenuLabel>
+                    {connectors.length === 0 ? (
+                      <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                        <Plug className="text-muted-foreground" />
+                        <span className="flex-1">Connect GitHub or Figma</span>
+                        <span className="text-caption text-muted-foreground/60">set up</span>
+                      </DropdownMenuItem>
+                    ) : (
+                      connectors.map((c) => (
+                        <DropdownMenuItem
+                          key={c.id}
+                          onSelect={(e) => {
+                            e.preventDefault();
+                            onToggleConnector(c.id);
+                          }}
+                        >
+                          <Plug className="text-muted-foreground" />
+                          <span className="flex-1">{c.label}</span>
+                          <Switch checked={connectorsEnabled.includes(c.id)} className="pointer-events-none" />
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 

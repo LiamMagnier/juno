@@ -6,6 +6,7 @@ import { normalizeFinishReason } from "@/lib/finish-reason";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
+import type { McpToolset } from "@/lib/mcp";
 
 const clients = new Map<Provider, OpenAI>();
 
@@ -79,7 +80,13 @@ async function toOpenAIMessages(
   return out;
 }
 
-/** Stream a completion from any OpenAI-compatible provider (OpenAI, Gemini, GLM, Kimi). */
+// Cap the agentic tool loop so a misbehaving model can't call tools forever.
+const MAX_TOOL_ROUNDS = 6;
+
+/** Stream a completion from any OpenAI-compatible provider (OpenAI, Gemini, GLM, Kimi).
+ *  When `toolset` is provided, runs an MCP tool-use loop: the model may call the
+ *  connected tools, we execute them, feed results back, and continue until it
+ *  produces a final answer (bounded by MAX_TOOL_ROUNDS). */
 export async function* streamOpenAICompat(
   model: ModelInfo,
   system: string,
@@ -87,11 +94,13 @@ export async function* streamOpenAICompat(
   maxTokens: number,
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
-  webSearch?: boolean
+  webSearch?: boolean,
+  toolset?: McpToolset
 ): AsyncGenerator<LlmEvent> {
   const messages = await toOpenAIMessages(system, history, model.vision);
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
   const effectiveReasoningEffort = isZhipuThinking ? reasoningEffort ?? "high" : reasoningEffort;
+  const hasTools = !!toolset && toolset.tools.length > 0;
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
@@ -117,9 +126,16 @@ export async function* streamOpenAICompat(
   if (webSearch && model.provider === "xai") {
     params.search_parameters = { mode: "auto", return_citations: true };
   }
+  if (hasTools) params.tools = toolset!.tools;
 
   const seen = new Set<string>();
-  let finishReason: string | undefined;
+  const c = client(model.provider);
+  let cumInput = 0;
+  let cumOutput = 0;
+  let cumCached = 0;
+  let sawUsage = false;
+  let lastFinish: string | undefined;
+
   console.info("[llm:openai-compat] stream start", {
     provider: model.provider,
     model: model.providerModel,
@@ -127,52 +143,104 @@ export async function* streamOpenAICompat(
     reasoningEffort: effectiveReasoningEffort ?? null,
     thinking: isZhipuThinking,
     webSearch: !!webSearch,
+    tools: hasTools ? toolset!.tools.length : 0,
   });
-  const stream = await client(model.provider).chat.completions.create(params, { signal });
-  for await (const chunk of stream) {
-    const choice = chunk.choices?.[0];
-    const choiceDelta = choice?.delta;
-    // Reasoning models stream their chain-of-thought separately from the answer:
-    // DeepSeek/GLM use `reasoning_content`, some others use `reasoning`.
-    const reasoning = (choiceDelta as unknown as { reasoning_content?: string; reasoning?: string } | undefined);
-    const reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
-    if (reasoningText) yield { type: "reasoning", text: reasoningText };
-    const delta = choiceDelta?.content;
-    if (delta) yield { type: "text", text: delta };
-    // xAI surfaces citations (array of URLs) on the streamed chunks.
-    const citations = (chunk as unknown as { citations?: string[] }).citations;
-    if (citations?.length) {
-      const fresh = citations.filter((u) => u && !seen.has(u));
-      for (const u of fresh) seen.add(u);
-      if (fresh.length) {
-        yield {
-          type: "sources",
-          sources: fresh.map((url) => ({ title: url, url, snippet: "" })),
-        };
+
+  // One extra round beyond the tool cap, forced to answer (tool_choice "none"),
+  // so a run that keeps calling tools still ends with a real reply.
+  const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
+  for (let round = 0; round < maxRounds; round++) {
+    const isFinalRound = round === maxRounds - 1;
+    params.messages = messages;
+    if (hasTools) (params as Record<string, unknown>).tool_choice = isFinalRound ? "none" : "auto";
+    const stream = await c.chat.completions.create(params, { signal });
+
+    let assistantText = "";
+    let finishReason: string | undefined;
+    // Per-round usage — overwrite (last chunk wins) so a provider that repeats
+    // usage on every chunk isn't double-counted; totals are summed across rounds.
+    let roundInput = 0;
+    let roundOutput = 0;
+    let roundCached = 0;
+    let roundSawUsage = false;
+    // Accumulate streamed tool-call fragments by their choice index.
+    const toolCalls = new Map<number, { id: string; name: string; args: string }>();
+
+    for await (const chunk of stream) {
+      const choice = chunk.choices?.[0];
+      const choiceDelta = choice?.delta;
+      const reasoning = choiceDelta as unknown as { reasoning_content?: string; reasoning?: string } | undefined;
+      const reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
+      if (reasoningText) yield { type: "reasoning", text: reasoningText };
+      const delta = choiceDelta?.content;
+      if (delta) {
+        assistantText += delta;
+        yield { type: "text", text: delta };
       }
+      for (const tc of choiceDelta?.tool_calls ?? []) {
+        const cur = toolCalls.get(tc.index) ?? { id: "", name: "", args: "" };
+        if (tc.id) cur.id = tc.id;
+        if (tc.function?.name) cur.name = tc.function.name;
+        if (tc.function?.arguments) cur.args += tc.function.arguments;
+        toolCalls.set(tc.index, cur);
+      }
+      const citations = (chunk as unknown as { citations?: string[] }).citations;
+      if (citations?.length) {
+        const fresh = citations.filter((u) => u && !seen.has(u));
+        for (const u of fresh) seen.add(u);
+        if (fresh.length) yield { type: "sources", sources: fresh.map((url) => ({ title: url, url, snippet: "" })) };
+      }
+      if (chunk.usage) {
+        roundSawUsage = true;
+        roundInput = chunk.usage.prompt_tokens ?? roundInput;
+        roundOutput = chunk.usage.completion_tokens ?? roundOutput;
+        roundCached = (chunk.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details?.cached_tokens ?? roundCached;
+      }
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
-    if (chunk.usage) {
-      // Many OpenAI-compatible providers (OpenAI, DeepSeek, GLM…) auto-cache the
-      // prompt prefix and report the hit under prompt_tokens_details.cached_tokens.
-      const cachedTokens = (chunk.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details?.cached_tokens;
-      yield {
-        type: "usage",
-        input: chunk.usage.prompt_tokens,
-        output: chunk.usage.completion_tokens,
-        cacheRead: cachedTokens || undefined,
-      };
+    if (roundSawUsage) {
+      sawUsage = true;
+      cumInput += roundInput;
+      cumOutput += roundOutput;
+      cumCached += roundCached;
     }
-    if (choice?.finish_reason) {
-      finishReason = choice.finish_reason;
-      yield { type: "finish", reason: normalizeFinishReason(choice.finish_reason), raw: choice.finish_reason };
+    lastFinish = finishReason;
+
+    // Model asked to call tools — execute them and loop with the results. Never
+    // on the final (forced-answer) round, so the tool results always get consumed.
+    const calls = [...toolCalls.entries()].sort((a, b) => a[0] - b[0]).map(([, v]) => v).filter((v) => v.id && v.name);
+    if (hasTools && !isFinalRound && finishReason === "tool_calls" && calls.length > 0) {
+      messages.push({
+        role: "assistant",
+        content: assistantText || null,
+        tool_calls: calls.map((v) => ({ id: v.id, type: "function", function: { name: v.name, arguments: v.args || "{}" } })),
+      } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+      for (const v of calls) {
+        const label = toolset!.labelFor(v.name);
+        yield { type: "tool", server: label, name: v.name, phase: "call" };
+        let parsedArgs: Record<string, unknown> = {};
+        try {
+          parsedArgs = v.args ? JSON.parse(v.args) : {};
+        } catch {
+          parsedArgs = {};
+        }
+        const result = await toolset!.execute(v.name, parsedArgs, signal);
+        messages.push({ role: "tool", tool_call_id: v.id, content: result } as OpenAI.Chat.Completions.ChatCompletionMessageParam);
+        yield { type: "tool", server: label, name: v.name, phase: "result" };
+      }
+      continue;
     }
+    break; // final answer produced (or tools disabled)
   }
-  if (!finishReason) {
-    yield { type: "finish", reason: "stop" };
-  }
+
+  if (sawUsage) yield { type: "usage", input: cumInput, output: cumOutput, cacheRead: cumCached || undefined };
+  // A still-trailing "tool_calls" means even the forced-answer round wanted more
+  // tools — report "length" so the UI warns + offers Continue (not a fake stop).
+  const finalRaw = lastFinish === "tool_calls" ? "length" : lastFinish;
+  yield { type: "finish", reason: normalizeFinishReason(finalRaw ?? "stop"), raw: finalRaw };
   console.info("[llm:openai-compat] stream finish", {
     provider: model.provider,
     model: model.providerModel,
-    finishReason: finishReason ?? "stop",
+    finishReason: finalRaw ?? "stop",
   });
 }

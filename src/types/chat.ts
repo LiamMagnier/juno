@@ -55,7 +55,7 @@ export interface ClientSource {
   snippet: string;
 }
 
-export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning";
+export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning" | "tool";
 
 export interface ClientActivityEvent {
   id: string;

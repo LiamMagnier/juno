@@ -86,6 +86,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
     [setComposerPrefs]
   );
+  // Tool connectors (GitHub/Figma…) enabled for the next message.
+  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>([]);
+  const toggleConnector = React.useCallback(
+    (id: string) => setEnabledConnectors((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
+    []
+  );
   const [privateMode, setPrivateMode] = React.useState(false);
   // The project this chat belongs to. For a brand-new chat it's the target the
   // first message will be created in; for an existing chat, changes are PATCHed.
@@ -106,6 +112,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     canvasEnabled: privateMode ? false : canvasEnabled,
     webSearch: webSearchEnabled,
     reasoningEffort: reasoningEffort ?? undefined,
+    connectors: enabledConnectors,
     privateMode,
     onQuota: setQuota,
     onTitle: (id, title, titleSource) => updateConversation(id, { title, titleSource: titleSource ?? "ai" }),
@@ -280,6 +287,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       setOpenArtifactId(null);
       setFullscreen(false);
       setPrivateMode(false);
+      setEnabledConnectors([]);
       setActiveConversationId(null);
     };
     window.addEventListener("juno:new-chat", handler);
@@ -296,6 +304,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     chat.reset();
     setOpenArtifactId(null);
     setFullscreen(false);
+    // Connectors reach third-party servers, so never carry them into incognito.
+    if (next) setEnabledConnectors([]);
     if (next && conversationId) router.push("/chat");
   }, [chat, conversationId, privateMode, router]);
 
@@ -386,6 +396,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onToggleWebSearch={setWebSearchEnabled}
       reasoningEffort={reasoningEffort}
       onReasoningChange={setReasoningEffort}
+      connectorsEnabled={enabledConnectors}
+      onToggleConnector={toggleConnector}
       privateMode={privateMode}
       placeholder={privateMode ? "How can I help you today?" : undefined}
       selectedProjectId={activeProjectId}

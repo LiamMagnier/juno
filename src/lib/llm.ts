@@ -2,6 +2,7 @@ import "server-only";
 import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamGeminiSearch } from "@/lib/gemini-search";
+import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -28,7 +29,7 @@ export function clampMaxTokens(provider: string, requested: number): number {
   return Math.min(Math.max(1024, requested), PROVIDER_MAX_OUTPUT[provider] ?? 8192);
 }
 
-export function streamChat(opts: {
+export async function* streamChat(opts: {
   model: ModelInfo;
   system: string;
   history: MessageForModel[];
@@ -36,16 +37,40 @@ export function streamChat(opts: {
   signal?: AbortSignal;
   reasoningEffort?: ReasoningEffort;
   webSearch?: boolean;
+  /** Linked tool connectors (GitHub/Figma…) to expose to the model. */
+  connectors?: ActiveConnector[];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch } = opts;
   const maxTokens = clampMaxTokens(model.provider, opts.maxTokens);
+  const active = opts.connectors ?? [];
+
   // Native web search uses each provider's own tool/grounding (no third party).
   if (webSearch && model.provider === "google") {
-    return streamGeminiSearch(model, system, history, maxTokens, signal);
+    yield* streamGeminiSearch(model, system, history, maxTokens, signal);
+    return;
   }
-  return model.provider === "anthropic"
-    ? streamAnthropic(model, system, history, maxTokens, signal, reasoningEffort, webSearch)
-    : streamOpenAICompat(model, system, history, maxTokens, signal, reasoningEffort, webSearch);
+  if (model.provider === "anthropic") {
+    // Claude reaches MCP servers itself via the native connector.
+    yield* streamAnthropic(
+      model, system, history, maxTokens, signal, reasoningEffort, webSearch,
+      active.length ? anthropicMcpServers(active) : undefined
+    );
+    return;
+  }
+  // Everyone else: we open the MCP tools here and run the tool loop ourselves.
+  let toolset: McpToolset | undefined;
+  if (active.length) {
+    try {
+      toolset = await openMcpToolset(active);
+    } catch {
+      toolset = undefined;
+    }
+  }
+  try {
+    yield* streamOpenAICompat(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset);
+  } finally {
+    if (toolset) await toolset.close();
+  }
 }
 
 /** Turn a provider/SDK error into a clear, user-facing message. */
