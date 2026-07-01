@@ -75,10 +75,10 @@ interface ComposerProps {
 
 const EFFORTS: { value: ReasoningEffort | null; label: string }[] = [
   { value: null, label: "Instant" },
-  { value: "low", label: "Think · Low" },
-  { value: "medium", label: "Think · Medium" },
-  { value: "high", label: "Think · High" },
-  { value: "max", label: "Think · Max" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "max", label: "Max" },
 ];
 
 // Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").

@@ -1,4 +1,5 @@
 import "server-only";
+import { normalizeFinishReason } from "@/lib/finish-reason";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/models";
@@ -74,10 +75,15 @@ export async function* streamGeminiSearch(
   const sources = new Map<string, ClientSource>();
   let usageIn: number | undefined;
   let usageOut: number | undefined;
+  let finishReason: string | undefined;
 
   const handle = (json: string) => {
     let data: {
-      candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] }; groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] } }[];
+      candidates?: {
+        content?: { parts?: { text?: string; thought?: boolean }[] };
+        finishReason?: string;
+        groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] };
+      }[];
       usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
     };
     try {
@@ -87,6 +93,10 @@ export async function* streamGeminiSearch(
     }
     const events: LlmEvent[] = [];
     const cand = data.candidates?.[0];
+    if (cand?.finishReason) {
+      finishReason = cand.finishReason;
+      events.push({ type: "finish", reason: normalizeFinishReason(cand.finishReason), raw: cand.finishReason });
+    }
     for (const p of cand?.content?.parts ?? []) {
       if (!p.text) continue;
       events.push(p.thought ? { type: "reasoning", text: p.text } : { type: "text", text: p.text });
@@ -120,4 +130,5 @@ export async function* streamGeminiSearch(
 
   if (sources.size) yield { type: "sources", sources: [...sources.values()] };
   if (usageIn != null || usageOut != null) yield { type: "usage", input: usageIn, output: usageOut };
+  if (!finishReason) yield { type: "finish", reason: "stop" };
 }
