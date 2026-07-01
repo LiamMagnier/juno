@@ -42,7 +42,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
 }
 
 export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt }: ChatViewProps) {
-  const { settings, quota, setQuota, upsertConversation, updateConversation, setActiveConversationId } = useApp();
+  const { settings, quota, setQuota, upsertConversation, updateConversation, setActiveConversationId, composerPrefs, setComposerPrefs } = useApp();
   const router = useRouter();
   const tts = useTts();
   // Tracks a conversation created on the new-chat page so we can switch to its
@@ -55,9 +55,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [fullscreen, setFullscreen] = React.useState(false);
   const [memoryFlash, setMemoryFlash] = React.useState(false);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
-  const [canvasEnabled, setCanvasEnabled] = React.useState(true);
-  const [webSearchEnabled, setWebSearchEnabled] = React.useState(false);
-  const [reasoningEffort, setReasoningEffort] = React.useState<"low" | "medium" | "high" | null>(null);
+  // Sticky composer toggles live in AppProvider so they survive ChatView remounts
+  // (e.g. the new-chat → /chat/[id] navigation after the first reply) and refreshes.
+  const canvasEnabled = composerPrefs.canvas;
+  const webSearchEnabled = composerPrefs.webSearch;
+  const reasoningEffort = composerPrefs.reasoningEffort;
+  const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
+  const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
+  const setReasoningEffort = React.useCallback(
+    (e: "low" | "medium" | "high" | null) => setComposerPrefs({ reasoningEffort: e }),
+    [setComposerPrefs]
+  );
   const [privateMode, setPrivateMode] = React.useState(false);
   // The project this chat belongs to. For a brand-new chat it's the target the
   // first message will be created in; for an existing chat, changes are PATCHed.

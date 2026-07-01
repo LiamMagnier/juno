@@ -404,9 +404,19 @@ export async function POST(req: Request) {
   const convoTitle = conversation.title;
   let assistantFull = ""; // captured for background memory extraction
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (chunk: StreamChunk) => controller.enqueue(encodeChunk(chunk));
+  // Generation + persistence, detached from the request lifecycle: we deliberately
+  // do NOT pass req.signal to the model, so if the user navigates away mid-stream
+  // the answer keeps generating and is still saved for when they come back.
+  const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
+      // Once the client disconnects the controller is closed; swallow the enqueue
+      // error so generation and persistence keep running regardless.
+      const send = (chunk: StreamChunk) => {
+        try {
+          controller.enqueue(encodeChunk(chunk));
+        } catch {
+          /* client disconnected — keep going so the answer is still saved */
+        }
+      };
       const activityLog: ClientActivityEvent[] = [];
       const sourceUrls = new Set<string>();
       let activityCounter = 0;
@@ -472,7 +482,7 @@ export async function POST(req: Request) {
           system,
           history,
           maxTokens: MAX_OUTPUT_TOKENS,
-          signal: req.signal,
+          // No signal here: keep generating even if the client disconnects mid-stream.
           reasoningEffort: modelInfo.reasoning ? input.reasoningEffort : undefined,
           webSearch: useWebSearch,
         })) {
@@ -590,32 +600,45 @@ export async function POST(req: Request) {
         });
         send({ type: "error", message: providerErrorMessage(err, PROVIDERS[modelInfo.provider].label), quota });
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          /* already closed because the client disconnected */
+        }
       }
+  };
+
+  // Start generating as soon as the response body is read, and keep a handle so
+  // we can await it (below) even after the client disconnects.
+  let genPromise: Promise<void> | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      genPromise = generate(controller);
     },
   });
 
-  // After the reply is sent, extract durable memories in the background using a
-  // cheap model — proactive memory that doesn't depend on inline tags.
-  if (memoryEnabled) {
-    const extractionModel =
-      MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
-      MODEL_LIST.find((m) => isProviderConfigured(m.provider));
-    if (extractionModel) {
-      after(async () => {
-        if (!assistantFull) return;
-        await autoExtractMemories({
-          userId: user.id,
-          model: extractionModel,
-          history,
-          assistantText: assistantFull,
-          existing: [memoryProfile.summary ?? "", ...memoryProfile.recent].filter(Boolean),
-        }).catch(() => {});
-        // Periodically re-summarize so the memory stays tidy and deduped.
-        await maybeConsolidate(user.id, extractionModel).catch(() => {});
-      });
+  // `after` runs once the response is settled — including when the client
+  // disconnects. Awaiting genPromise here keeps the serverless function alive
+  // until the answer is fully generated and saved, so navigating away no longer
+  // loses the reply. Then extract durable memories with a cheap model.
+  const extractionModel = memoryEnabled
+    ? MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
+      MODEL_LIST.find((m) => isProviderConfigured(m.provider))
+    : undefined;
+  after(async () => {
+    await genPromise?.catch(() => {});
+    if (extractionModel && assistantFull) {
+      await autoExtractMemories({
+        userId: user.id,
+        model: extractionModel,
+        history,
+        assistantText: assistantFull,
+        existing: [memoryProfile.summary ?? "", ...memoryProfile.recent].filter(Boolean),
+      }).catch(() => {});
+      // Periodically re-summarize so the memory stays tidy and deduped.
+      await maybeConsolidate(user.id, extractionModel).catch(() => {});
     }
-  }
+  });
 
   return new Response(stream, { headers: SSE_HEADERS });
 }

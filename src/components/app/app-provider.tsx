@@ -45,6 +45,33 @@ function hexToHsl(hex: string): { h: number; s: number; l: number } {
   };
 }
 
+export type ReasoningEffort = "low" | "medium" | "high" | null;
+
+/**
+ * Composer toggles that should stick across chats, navigation, and refreshes —
+ * lifted here (persistent across ChatView remounts) and mirrored to localStorage.
+ */
+export interface ComposerPrefs {
+  reasoningEffort: ReasoningEffort;
+  webSearch: boolean;
+  canvas: boolean;
+}
+
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: null, webSearch: false, canvas: true };
+const COMPOSER_PREFS_KEY = "juno:composer-prefs";
+
+function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
+  if (!v || typeof v !== "object") return {};
+  const o = v as Record<string, unknown>;
+  const out: Partial<ComposerPrefs> = {};
+  if (o.reasoningEffort === null || o.reasoningEffort === "low" || o.reasoningEffort === "medium" || o.reasoningEffort === "high") {
+    out.reasoningEffort = o.reasoningEffort as ReasoningEffort;
+  }
+  if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;
+  if (typeof o.canvas === "boolean") out.canvas = o.canvas;
+  return out;
+}
+
 interface AppContextValue {
   user: AppUser;
   settings: ClientSettings;
@@ -62,6 +89,9 @@ interface AppContextValue {
   setFolders: (f: ClientFolder[]) => void;
   activeConversationId: string | null;
   setActiveConversationId: (id: string | null) => void;
+  // Sticky composer preferences (persist across chats + refresh via localStorage).
+  composerPrefs: ComposerPrefs;
+  setComposerPrefs: (patch: Partial<ComposerPrefs>) => void;
   // mobile sidebar
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
@@ -82,6 +112,9 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   const [folders, setFolders] = React.useState(bootstrap.folders);
   const [activeConversationId, setActiveConversationId] = React.useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  // Start from defaults so SSR and first client render match; load the persisted
+  // values right after mount to avoid a hydration mismatch.
+  const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(DEFAULT_COMPOSER_PREFS);
   // Live list of models from each configured provider's API (curated set until loaded).
   const [models, setModels] = React.useState<ModelInfo[]>(MODEL_LIST);
   const { resolvedTheme } = useTheme();
@@ -134,6 +167,27 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
     };
   }, []);
 
+  React.useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY);
+      if (raw) setComposerPrefsState((prev) => ({ ...prev, ...sanitizeComposerPrefs(JSON.parse(raw)) }));
+    } catch {
+      /* ignore malformed / unavailable storage */
+    }
+  }, []);
+
+  const setComposerPrefs = React.useCallback((patch: Partial<ComposerPrefs>) => {
+    setComposerPrefsState((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next));
+      } catch {
+        /* storage may be unavailable (private mode / quota) */
+      }
+      return next;
+    });
+  }, []);
+
   const setSettings = React.useCallback((patch: Partial<ClientSettings>) => {
     setSettingsState((prev) => ({ ...prev, ...patch }));
   }, []);
@@ -171,6 +225,8 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
       setFolders,
       activeConversationId,
       setActiveConversationId,
+      composerPrefs,
+      setComposerPrefs,
       sidebarOpen,
       setSidebarOpen,
     }),
@@ -178,6 +234,8 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
       activeConversationId,
       bootstrap.features,
       bootstrap.user,
+      composerPrefs,
+      setComposerPrefs,
       conversations,
       folders,
       models,
