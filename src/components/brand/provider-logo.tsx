@@ -39,8 +39,8 @@ const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
     dark: "/provider-logos/dark/seedance.png",
   },
   minimax: {
-    light: "/provider-logos/light/minimax.svg",
-    dark: "/provider-logos/dark/minimax.svg",
+    light: "/provider-logos/light/minimax.png",
+    dark: "/provider-logos/dark/minimax.png",
   },
 };
 
