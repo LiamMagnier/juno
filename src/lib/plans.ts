@@ -10,6 +10,8 @@ export interface PlanConfig {
   /** Monthly message allowance. null = effectively unlimited. */
   monthlyMessages: number | null;
   maxUploadMb: number;
+  /** Max tokens the model may generate per reply (clamped to each model's own limit). */
+  maxOutputTokens: number;
   voice: boolean;
   canvas: boolean;
   webSearch: boolean;
@@ -26,6 +28,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     tagline: "Create an account and look around.",
     monthlyMessages: 0,
     maxUploadMb: 5,
+    maxOutputTokens: 8192,
     voice: false,
     canvas: true,
     webSearch: false,
@@ -43,6 +46,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     tagline: "For everyday power use.",
     monthlyMessages: 1500,
     maxUploadMb: 20,
+    maxOutputTokens: 16384,
     voice: true,
     canvas: true,
     webSearch: true,
@@ -63,6 +67,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     tagline: "For professionals who live in Juno.",
     monthlyMessages: null,
     maxUploadMb: 50,
+    maxOutputTokens: 32768,
     voice: true,
     canvas: true,
     webSearch: true,
@@ -84,6 +89,8 @@ export const PLANS: Record<Plan, PlanConfig> = {
     tagline: "Full, unlimited access to everything.",
     monthlyMessages: null,
     maxUploadMb: 1000,
+    // Effectively unlimited — clamped down to whatever each model actually allows.
+    maxOutputTokens: 200000,
     voice: true,
     canvas: true,
     webSearch: true,

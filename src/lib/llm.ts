@@ -9,6 +9,26 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
 export type ReasoningEffort = "low" | "medium" | "high";
 
+// Safe upper bound on generated tokens per provider. The requested cap (from the
+// user's plan) is clamped to this so a high value never exceeds a model's own
+// limit. Anthropic is kept lower because its thinking budget is added on top.
+const PROVIDER_MAX_OUTPUT: Record<string, number> = {
+  anthropic: 20000,
+  openai: 16000,
+  google: 32000,
+  zhipu: 32000,
+  moonshot: 16384,
+  deepseek: 16384,
+  mistral: 16384,
+  xai: 16384,
+  seedance: 8192,
+};
+
+/** Clamp a requested output-token cap to what the provider's models actually allow. */
+export function clampMaxTokens(provider: string, requested: number): number {
+  return Math.min(Math.max(1024, requested), PROVIDER_MAX_OUTPUT[provider] ?? 8192);
+}
+
 export function streamChat(opts: {
   model: ModelInfo;
   system: string;
@@ -18,7 +38,8 @@ export function streamChat(opts: {
   reasoningEffort?: ReasoningEffort;
   webSearch?: boolean;
 }): AsyncGenerator<LlmEvent> {
-  const { model, system, history, maxTokens, signal, reasoningEffort, webSearch } = opts;
+  const { model, system, history, signal, reasoningEffort, webSearch } = opts;
+  const maxTokens = clampMaxTokens(model.provider, opts.maxTokens);
   // Native web search uses each provider's own tool/grounding (no third party).
   if (webSearch && model.provider === "google") {
     return streamGeminiSearch(model, system, history, maxTokens, signal);

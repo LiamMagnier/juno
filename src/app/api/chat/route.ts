@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
-import { isModelId, getModel, DEFAULT_MODEL, MAX_OUTPUT_TOKENS, MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt } from "@/lib/anthropic";
@@ -206,7 +206,7 @@ export async function POST(req: Request) {
             model: modelInfo,
             system,
             history: privateHistory,
-            maxTokens: MAX_OUTPUT_TOKENS,
+            maxTokens: PLANS[plan].maxOutputTokens,
             signal: req.signal,
             reasoningEffort: modelInfo.reasoning ? input.reasoningEffort : undefined,
             webSearch: useWebSearch,
@@ -482,7 +482,7 @@ export async function POST(req: Request) {
           model: modelInfo,
           system,
           history,
-          maxTokens: MAX_OUTPUT_TOKENS,
+          maxTokens: PLANS[plan].maxOutputTokens,
           // No signal here: keep generating even if the client disconnects mid-stream.
           reasoningEffort: modelInfo.reasoning ? input.reasoningEffort : undefined,
           webSearch: useWebSearch,

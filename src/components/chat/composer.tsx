@@ -491,7 +491,7 @@ export function Composer({
           onPaste={onPaste}
           rows={1}
           placeholder={placeholder}
-          className="max-h-[200px] min-h-[96px] w-full resize-none bg-transparent px-3.5 py-4 text-body leading-relaxed outline-none placeholder:text-muted-foreground sm:px-4"
+          className="max-h-[200px] min-h-[86px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body leading-relaxed outline-none placeholder:text-muted-foreground sm:px-4"
         />
 
         <div className="flex flex-wrap items-center gap-1 px-2 pb-2">

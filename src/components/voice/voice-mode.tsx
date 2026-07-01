@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronDown, Mic, X } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, Mic, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -118,7 +118,7 @@ export function VoiceMode({
       utteranceRef.current = (utteranceRef.current + " " + t).trim();
     },
     onEnd: () => {
-      if (closedRef.current || serverAsrRef.current) return;
+      if (closedRef.current || serverAsrRef.current || typingRef.current) return;
       const text = utteranceRef.current.trim();
       utteranceRef.current = "";
       if (text) void handleUtterance(text);
@@ -138,6 +138,7 @@ export function VoiceMode({
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [userText, setUserText] = React.useState("");
   const [assistantText, setAssistantText] = React.useState("");
+  const [typed, setTyped] = React.useState("");
 
   const convoIdRef = React.useRef<string | null>(conversationId);
   const utteranceRef = React.useRef("");
@@ -148,6 +149,9 @@ export function VoiceMode({
   const statusRef = React.useRef(status);
   statusRef.current = status;
   const resumeRef = React.useRef<() => void>(() => {});
+  // True while a typed message is being sent, so the browser recognizer's onEnd
+  // doesn't also fire and double-submit.
+  const typingRef = React.useRef(false);
 
   const handleUtterance = React.useCallback(
     async (text: string) => {
@@ -227,6 +231,7 @@ export function VoiceMode({
   // (Re)start listening in whichever mode is active.
   const resume = React.useCallback(() => {
     if (closedRef.current) return;
+    typingRef.current = false;
     setErrorMsg(null);
     setUserText("");
     setStatus("listening");
@@ -300,15 +305,28 @@ export function VoiceMode({
     }
   };
 
+  // Type instead of speaking — sends the text as if it were an utterance.
+  const sendTyped = () => {
+    const t = typed.trim();
+    if (!t || status === "thinking") return;
+    typingRef.current = true;
+    setTyped("");
+    utteranceRef.current = "";
+    if (serverAsrRef.current) rec.cancel();
+    else sr.stop();
+    tts.stop();
+    void handleUtterance(t);
+  };
+
   const unsupported = !serverAsr && !sr.supported;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-background/95 backdrop-blur-xl">
-      {/* Voice engine selector */}
-      <div className="absolute left-4 top-4">
+    <div className="fixed inset-0 z-50 flex flex-col bg-background text-foreground">
+      {/* Top bar: voice-engine selector */}
+      <div className="flex items-center justify-between px-3 py-3 sm:px-4">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-1.5 font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <Button variant="ghost" size="sm" className="gap-1.5 rounded-full font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
               <Mic className="h-3.5 w-3.5" /> {voiceInput.label}
               <ChevronDown className="h-3.5 w-3.5" />
             </Button>
@@ -329,48 +347,90 @@ export function VoiceMode({
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        <span className="font-serif text-base text-muted-foreground">Juno Voice</span>
+        <div className="w-[92px]" aria-hidden />
       </div>
 
-      <Button variant="ghost" size="icon" onClick={close} className="absolute right-4 top-4" aria-label="Close voice mode">
-        <X className="h-5 w-5" />
-      </Button>
-
-      {unsupported ? (
-        <div className="max-w-sm px-6 text-center">
-          <p className="text-lg font-medium">On-device voice input isn&apos;t supported in this browser.</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Switch to <span className="font-medium text-foreground">GLM-ASR</span> above for server recognition, or try Chrome/Edge.
-          </p>
-          <Button onClick={close} className="mt-6">Go back</Button>
-        </div>
-      ) : (
-        <>
-          <button onClick={onOrbClick} className="relative h-60 w-60" aria-label="Voice orb — tap to talk or interrupt">
-            <VoiceOrb status={status} className="h-full w-full" />
-            <Mic className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2 text-foreground/70" />
-          </button>
-
-          <p className="mt-8 font-mono text-xs uppercase tracking-[0.25em] text-muted-foreground">{STATUS_LABEL[status]}</p>
-
-          <div className="mt-4 min-h-[3.5rem] max-w-lg px-6 text-center">
-            {status === "error" && errorMsg ? (
-              <p className="text-balance text-sm text-destructive">{errorMsg}</p>
-            ) : assistantText ? (
-              <p className="text-balance font-serif text-xl leading-relaxed">{assistantText}</p>
-            ) : userText ? (
-              <p className="text-balance font-mono text-sm text-muted-foreground">“{userText}”</p>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {serverAsr ? "Speak, then tap the orb when you're done." : "Start speaking, or tap the orb when you're done."}
-              </p>
-            )}
+      {/* Center: orb + live transcript */}
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 px-6">
+        {unsupported ? (
+          <div className="max-w-sm text-center">
+            <p className="text-lg font-medium">On-device voice input isn&apos;t supported in this browser.</p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Switch to <span className="font-medium text-foreground">GLM-ASR</span> above for server recognition, or just type below.
+            </p>
           </div>
+        ) : (
+          <>
+            <button
+              onClick={onOrbClick}
+              className="relative h-32 w-32 transition-transform duration-300 ease-out-soft hover:scale-105 active:scale-95"
+              aria-label="Voice orb — tap to talk or interrupt"
+            >
+              <VoiceOrb status={status} className="h-full w-full" />
+            </button>
+            <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-muted-foreground">{STATUS_LABEL[status]}</p>
+            {(status === "error" && errorMsg) || assistantText || userText ? (
+              <div className="min-h-[2rem] max-w-xl text-center">
+                {status === "error" && errorMsg ? (
+                  <p className="text-balance text-sm text-destructive">{errorMsg}</p>
+                ) : assistantText ? (
+                  <p className="text-balance font-serif text-lg leading-relaxed">{assistantText}</p>
+                ) : (
+                  <p className="text-balance font-mono text-sm text-muted-foreground">“{userText}”</p>
+                )}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
 
-          <p className="absolute bottom-6 font-mono text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-            {serverAsr ? "Tap orb when done · Esc to close" : "Tap orb to interrupt · Esc to close"}
-          </p>
-        </>
-      )}
+      {/* Bottom input bar (ChatGPT-style) */}
+      <div className="px-3 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-4">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            sendTyped();
+          }}
+          className="mx-auto flex max-w-2xl items-center gap-1.5 rounded-full border border-border/70 bg-card/85 p-2 shadow-soft backdrop-blur"
+        >
+          <span className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground/70" aria-hidden>
+            <Plus className="h-5 w-5" />
+          </span>
+          <input
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="Type"
+            aria-label="Type a message"
+            className="min-w-0 flex-1 bg-transparent px-1 text-body outline-none placeholder:text-muted-foreground"
+          />
+          {typed.trim() ? (
+            <Button type="submit" size="icon" className="h-9 w-9 rounded-full" aria-label="Send">
+              <ArrowUp className="h-4 w-4" />
+            </Button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOrbClick}
+              aria-label={status === "speaking" ? "Interrupt" : "Talk"}
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full transition-colors",
+                status === "listening" ? "text-primary" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={close}
+            aria-label="Close voice mode"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background transition-transform hover:scale-105"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </form>
+      </div>
     </div>
   );
 }
