@@ -1,3 +1,8 @@
+// Max attachments per message. Shared by the composer, the library picker, and
+// the /api/chat request schema so they can never disagree (a mismatch silently
+// rejects the whole send).
+export const MAX_ATTACHMENTS = 10;
+
 export const IMAGE_MIME = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 // Document/text types we accept and can pass to the model. (No text/html — see below.)

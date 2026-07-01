@@ -12,7 +12,7 @@ import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent } from "@/lib/message-content";
-import { cn, formatBytes } from "@/lib/utils";
+import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
 import type { ChatMessage } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientSource } from "@/types/chat";
 
@@ -330,6 +330,21 @@ export function MessageItem({
               </div>
             )}
           </div>
+        )}
+
+        {!message.streaming && !message.error && (message.promptTokens != null || message.completionTokens != null) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p className="mt-1 w-fit cursor-default font-mono text-[10px] text-muted-foreground/60">
+                {formatTokens((message.promptTokens ?? 0) + (message.completionTokens ?? 0))} tokens
+                {message.costUsd != null && message.costUsd > 0 ? ` · ~${formatUsd(message.costUsd)}` : ""}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent>
+              {formatTokens(message.promptTokens ?? 0)} in · {formatTokens(message.completionTokens ?? 0)} out
+              {message.costUsd != null && message.costUsd > 0 ? ` · estimated ${formatUsd(message.costUsd)}` : ""}
+            </TooltipContent>
+          </Tooltip>
         )}
 
         {!message.streaming && !message.error && (

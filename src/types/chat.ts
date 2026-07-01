@@ -41,6 +41,12 @@ export interface ClientMessage {
   activity?: ClientActivityEvent[];
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
+  /** Total prompt (input) tokens for this generation, cache included. */
+  promptTokens?: number | null;
+  /** Output (completion) tokens generated. */
+  completionTokens?: number | null;
+  /** Estimated USD cost of this generation (approximate, shown as "~$…"). */
+  costUsd?: number | null;
 }
 
 export interface ClientSource {

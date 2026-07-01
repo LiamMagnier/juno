@@ -17,6 +17,8 @@ import type {
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
 import { coerceTitleSource } from "@/lib/title-ownership";
+import { resolveModel } from "@/lib/models";
+import { estimateCostUsd } from "@/lib/pricing";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -71,6 +73,13 @@ export async function serializeAttachment(att: Attachment): Promise<ClientAttach
 }
 
 export async function serializeMessage(msg: Message & { attachments: Attachment[] }): Promise<ClientMessage> {
+  // Estimated cost from the persisted token counts. Reload lacks the cache split,
+  // so this is an upper-bound estimate; the live stream sends an exact value.
+  const model = msg.model ? resolveModel(msg.model) : null;
+  const costUsd =
+    model && (msg.promptTokens != null || msg.completionTokens != null)
+      ? estimateCostUsd(model, { input: msg.promptTokens ?? 0, output: msg.completionTokens ?? 0 })
+      : undefined;
   return {
     id: msg.id,
     role: msg.role,
@@ -82,6 +91,9 @@ export async function serializeMessage(msg: Message & { attachments: Attachment[
     attachments: await Promise.all(msg.attachments.map(serializeAttachment)),
     sources: (msg.sources as ClientSource[] | null) ?? undefined,
     activity: serializeActivity(msg.activity),
+    promptTokens: msg.promptTokens,
+    completionTokens: msg.completionTokens,
+    costUsd,
   };
 }
 

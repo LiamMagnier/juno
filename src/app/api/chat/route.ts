@@ -18,8 +18,10 @@ import { persistArtifacts } from "@/lib/artifacts-store";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
-import { truncate } from "@/lib/utils";
+import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
+import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -35,7 +37,7 @@ const bodySchema = z.object({
   conversationId: z.string().cuid().optional(),
   projectId: z.string().cuid().optional(),
   message: z.string().max(50_000).optional(),
-  attachmentIds: z.array(z.string().cuid()).max(10).optional(),
+  attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
   model: z.string().optional(),
   regenerate: z.boolean().optional(),
   voiceMode: z.boolean().optional(),
@@ -57,6 +59,29 @@ const bodySchema = z.object({
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
+}
+
+/**
+ * Normalize a generation's token usage and build the "Token usage recorded"
+ * detail line + an estimated cost. `totalInput` reconciles per-provider
+ * conventions (Anthropic input excludes cache; OpenAI prompt_tokens includes it)
+ * so the displayed numbers mean the same thing everywhere.
+ */
+function buildUsage(
+  model: ModelInfo,
+  raw: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }
+): { detail: string; cost: number; totalInput: number; output: number } {
+  const n = normalizeUsage(model.provider, raw);
+  const cost = estimateCostUsd(model, raw);
+  const cached = n.cacheRead + n.cacheWrite;
+  const detail = [
+    n.totalInput ? `${n.totalInput.toLocaleString()} input${cached ? ` (${cached.toLocaleString()} cached)` : ""}` : null,
+    n.output ? `${n.output.toLocaleString()} output` : null,
+    cost > 0 ? `~${formatUsd(cost)}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return { detail, cost, totalInput: n.totalInput, output: n.output };
 }
 
 function searchToolLabel(provider: ModelInfo["provider"]) {
@@ -203,6 +228,8 @@ export async function POST(req: Request) {
         let reasoning = "";
         let promptTokens: number | undefined;
         let completionTokens: number | undefined;
+        let cacheReadTokens: number | undefined;
+        let cacheWriteTokens: number | undefined;
         let writingStarted = false;
         let finishReason: ChatFinishReason = "stop";
         const webSources: ClientSource[] = [];
@@ -287,22 +314,16 @@ export async function POST(req: Request) {
             } else if (ev.type === "usage") {
               if (ev.input != null) promptTokens = ev.input;
               if (ev.output != null) completionTokens = ev.output;
+              if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
+              if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
             } else if (ev.type === "finish") {
               finishReason = ev.reason;
             }
           }
 
+          const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
           if (promptTokens != null || completionTokens != null) {
-            sendActivity({
-              kind: "usage",
-              title: "Token usage recorded",
-              detail: [
-                promptTokens != null ? `${promptTokens.toLocaleString()} input` : null,
-                completionTokens != null ? `${completionTokens.toLocaleString()} output` : null,
-              ]
-                .filter(Boolean)
-                .join(" · "),
-            });
+            sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
           }
           appendFinishWarning(finishReason, sendActivity);
           sendActivity({
@@ -325,6 +346,9 @@ export async function POST(req: Request) {
               sources: webSources.length ? webSources : undefined,
               activity: activityLog,
               finishReason,
+              promptTokens: usage.totalInput || undefined,
+              completionTokens: usage.output || undefined,
+              costUsd: usage.cost || undefined,
             },
             artifacts: [],
             memoryUpdated: false,
@@ -350,6 +374,7 @@ export async function POST(req: Request) {
           });
           if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
             appendFinishWarning(reason, sendActivity);
+            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
             send({
               type: "done",
               message: {
@@ -364,6 +389,9 @@ export async function POST(req: Request) {
                 sources: webSources.length ? webSources : undefined,
                 activity: activityLog,
                 finishReason: reason,
+                promptTokens: partialUsage.totalInput || undefined,
+                completionTokens: partialUsage.output || undefined,
+                costUsd: partialUsage.cost || undefined,
               },
               artifacts: [],
               memoryUpdated: false,
@@ -544,6 +572,8 @@ export async function POST(req: Request) {
       let reasoning = "";
       let promptTokens: number | undefined;
       let completionTokens: number | undefined;
+      let cacheReadTokens: number | undefined;
+      let cacheWriteTokens: number | undefined;
       let writingStarted = false;
       let finishReason: ChatFinishReason = "stop";
 
@@ -636,10 +666,15 @@ export async function POST(req: Request) {
           } else if (ev.type === "usage") {
             if (ev.input != null) promptTokens = ev.input;
             if (ev.output != null) completionTokens = ev.output;
+            if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
+            if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
           } else if (ev.type === "finish") {
             finishReason = ev.reason;
           }
         }
+
+        // Reconcile token usage across providers and estimate the $ cost once.
+        const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
 
         // Generation succeeded — now it's safe to drop the answer being regenerated
         // (and only the artifacts that message actually created).
@@ -648,7 +683,8 @@ export async function POST(req: Request) {
           await prisma.message.delete({ where: { id: staleAssistantId } }).catch(() => {});
         }
 
-        // Persist the assistant message.
+        // Persist the assistant message. promptTokens stores the full prompt size
+        // (cache included) so the reloaded cost estimate lines up with the stream.
         const assistant = await prisma.message.create({
           data: {
             conversationId,
@@ -656,8 +692,8 @@ export async function POST(req: Request) {
             content: full,
             ...(reasoning ? { reasoning } : {}),
             model: modelId,
-            promptTokens,
-            completionTokens,
+            promptTokens: usage.totalInput || promptTokens || null,
+            completionTokens: usage.output || completionTokens || null,
             ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
             activity: activityLog as unknown as Prisma.InputJsonValue,
           },
@@ -684,16 +720,7 @@ export async function POST(req: Request) {
         assistantFull = full;
 
         if (promptTokens != null || completionTokens != null) {
-          sendActivity({
-            kind: "usage",
-            title: "Token usage recorded",
-            detail: [
-              promptTokens != null ? `${promptTokens.toLocaleString()} input` : null,
-              completionTokens != null ? `${completionTokens.toLocaleString()} output` : null,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-          });
+          sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
         }
         appendFinishWarning(finishReason, sendActivity);
         sendActivity({
@@ -709,7 +736,7 @@ export async function POST(req: Request) {
 
         send({
           type: "done",
-          message: { ...(await serializeMessage(assistantWithActivity)), finishReason },
+          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost || undefined },
           artifacts,
           memoryUpdated,
           quota: consumed.quota,
@@ -739,6 +766,7 @@ export async function POST(req: Request) {
         if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
           try {
             appendFinishWarning(reason, sendActivity);
+            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
             if (staleAssistantId) {
               await prisma.artifact.deleteMany({ where: { messageId: staleAssistantId } });
               await prisma.message.delete({ where: { id: staleAssistantId } }).catch(() => {});
@@ -750,8 +778,8 @@ export async function POST(req: Request) {
                 content: full,
                 ...(reasoning ? { reasoning } : {}),
                 model: modelId,
-                promptTokens,
-                completionTokens,
+                promptTokens: partialUsage.totalInput || promptTokens || null,
+                completionTokens: partialUsage.output || completionTokens || null,
                 ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
                 activity: activityLog as unknown as Prisma.InputJsonValue,
               },
@@ -767,7 +795,7 @@ export async function POST(req: Request) {
             assistantFull = full;
             send({
               type: "done",
-              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason },
+              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost || undefined },
               artifacts,
               memoryUpdated: false,
               quota: consumed.quota,

@@ -22,14 +22,21 @@ function client(provider: Provider): OpenAI {
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
+// Only the most recent messages re-embed full images; older ones become a text
+// placeholder so a long chat doesn't re-upload megabytes every turn (kept in
+// sync with the Anthropic adapter's lookback).
+const BINARY_ATTACHMENT_LOOKBACK = 8;
+
 async function toOpenAIMessages(
   system: string,
   history: MessageForModel[],
   vision: boolean
 ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
   const out: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: "system", content: system }];
+  const binaryFrom = Math.max(0, history.length - BINARY_ATTACHMENT_LOOKBACK);
 
-  for (const msg of history) {
+  for (let i = 0; i < history.length; i++) {
+    const msg = history[i];
     if (msg.role === "SYSTEM") continue;
     if (msg.role === "ASSISTANT") {
       out.push({ role: "assistant", content: msg.content || "(no content)" });
@@ -41,17 +48,20 @@ async function toOpenAIMessages(
       continue;
     }
 
+    const embedBinary = i >= binaryFrom;
     const parts: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
     if (msg.content.trim()) parts.push({ type: "text", text: msg.content });
 
     for (const att of msg.attachments) {
       try {
-        if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision) {
+        if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && embedBinary) {
           const { bytes } = await getObjectBytes(att.storageKey);
           parts.push({
             type: "image_url",
             image_url: { url: `data:${att.mimeType};base64,${Buffer.from(bytes).toString("base64")}` },
           });
+        } else if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType) && vision && !embedBinary) {
+          parts.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
         } else if (att.extractedText) {
           parts.push({ type: "text", text: `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}` });
         } else {
@@ -141,7 +151,17 @@ export async function* streamOpenAICompat(
         };
       }
     }
-    if (chunk.usage) yield { type: "usage", input: chunk.usage.prompt_tokens, output: chunk.usage.completion_tokens };
+    if (chunk.usage) {
+      // Many OpenAI-compatible providers (OpenAI, DeepSeek, GLM…) auto-cache the
+      // prompt prefix and report the hit under prompt_tokens_details.cached_tokens.
+      const cachedTokens = (chunk.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details?.cached_tokens;
+      yield {
+        type: "usage",
+        input: chunk.usage.prompt_tokens,
+        output: chunk.usage.completion_tokens,
+        cacheRead: cachedTokens || undefined,
+      };
+    }
     if (choice?.finish_reason) {
       finishReason = choice.finish_reason;
       yield { type: "finish", reason: normalizeFinishReason(choice.finish_reason), raw: choice.finish_reason };

@@ -17,6 +17,12 @@ export function getAnthropic(): Anthropic {
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
+// Large binary attachments (images / PDFs) are only re-embedded for the most
+// recent slice of the conversation. Older ones become a lightweight text
+// placeholder so a long chat doesn't re-upload megabytes — and blow the context
+// window — on every turn. Extracted document text (cheap) is always kept.
+const BINARY_ATTACHMENT_LOOKBACK = 8;
+
 export interface SystemPromptOptions {
   userName?: string | null;
   customInstructions?: string;
@@ -104,8 +110,11 @@ Your reply will be read aloud. Keep it concise and conversational. Do not use Ma
 /** Convert persisted messages (+ their attachments) into Anthropic message params. */
 export async function toAnthropicMessages(messages: MessageForModel[]): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
+  // Only the last few messages re-embed heavy binaries; older ones are summarized.
+  const binaryFrom = Math.max(0, messages.length - BINARY_ATTACHMENT_LOOKBACK);
 
-  for (const msg of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
     if (msg.role === "SYSTEM") continue;
     const role = msg.role === "ASSISTANT" ? "assistant" : "user";
 
@@ -114,6 +123,8 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
       continue;
     }
 
+    const embedBinary = i >= binaryFrom;
+
     // User message with attachments → multimodal content blocks.
     const blocks: Anthropic.ContentBlockParam[] = [];
     if (msg.content.trim()) blocks.push({ type: "text", text: msg.content });
@@ -121,21 +132,31 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
     for (const att of msg.attachments) {
       try {
         if (att.kind === "IMAGE" && IMAGE_TYPES.includes(att.mimeType)) {
-          const { bytes } = await getObjectBytes(att.storageKey);
-          blocks.push({
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: att.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-              data: Buffer.from(bytes).toString("base64"),
-            },
-          });
+          if (!embedBinary) {
+            blocks.push({ type: "text", text: `[Image "${att.fileName}" shared earlier in the conversation.]` });
+          } else {
+            const { bytes } = await getObjectBytes(att.storageKey);
+            blocks.push({
+              type: "image",
+              source: {
+                type: "base64",
+                media_type: att.mimeType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                data: Buffer.from(bytes).toString("base64"),
+              },
+            });
+          }
         } else if (att.mimeType === "application/pdf") {
-          const { bytes } = await getObjectBytes(att.storageKey);
-          blocks.push({
-            type: "document",
-            source: { type: "base64", media_type: "application/pdf", data: Buffer.from(bytes).toString("base64") },
-          });
+          if (!embedBinary && att.extractedText) {
+            blocks.push({ type: "text", text: `Attached file "${att.fileName}" (shared earlier):\n\n${att.extractedText.slice(0, 100_000)}` });
+          } else if (!embedBinary) {
+            blocks.push({ type: "text", text: `[PDF "${att.fileName}" shared earlier in the conversation.]` });
+          } else {
+            const { bytes } = await getObjectBytes(att.storageKey);
+            blocks.push({
+              type: "document",
+              source: { type: "base64", media_type: "application/pdf", data: Buffer.from(bytes).toString("base64") },
+            });
+          }
         } else if (att.extractedText) {
           blocks.push({
             type: "text",
@@ -155,6 +176,26 @@ export async function toAnthropicMessages(messages: MessageForModel[]): Promise<
   return result;
 }
 
+/**
+ * Add an Anthropic prompt-cache breakpoint to the last content block of the last
+ * message. Combined with the cached system prompt, this caches the whole growing
+ * conversation prefix: each turn reads the previous turn's cache (~0.1x input
+ * cost) and only writes the delta — a large saving on long, expensive, or
+ * high-thinking chats. Anthropic ignores the marker below its min-cacheable size.
+ */
+function markConversationCacheBreakpoint(messages: Anthropic.MessageParam[]): void {
+  const last = messages[messages.length - 1];
+  if (!last) return;
+  const cacheControl = { type: "ephemeral" as const };
+  if (typeof last.content === "string") {
+    last.content = [{ type: "text", text: last.content || "(no content)", cache_control: cacheControl }];
+    return;
+  }
+  const block = last.content[last.content.length - 1];
+  // cache_control is honored on text/image/document blocks — exactly what we emit.
+  if (block) (block as { cache_control?: typeof cacheControl }).cache_control = cacheControl;
+}
+
 /** Stream a completion from Anthropic, yielding text + usage events. */
 export async function* streamAnthropic(
   model: ModelInfo,
@@ -166,13 +207,18 @@ export async function* streamAnthropic(
   webSearch?: boolean
 ): AsyncGenerator<LlmEvent> {
   const messages = await toAnthropicMessages(history);
+  markConversationCacheBreakpoint(messages);
+  // Cache the (large, stable) system prompt so it isn't re-billed every turn.
+  const systemBlocks: Anthropic.TextBlockParam[] = [
+    { type: "text", text: system, cache_control: { type: "ephemeral" } },
+  ];
   const budget = reasoningEffort ? { low: 1024, medium: 4096, high: 8000, max: 12000 }[reasoningEffort] : 0;
   const stream = await getAnthropic().messages.create(
     {
       model: model.providerModel,
       // max_tokens must exceed the thinking budget; keep room for the answer.
       max_tokens: budget ? budget + maxTokens : maxTokens,
-      system,
+      system: systemBlocks,
       messages,
       stream: true,
       ...(budget ? { thinking: { type: "enabled", budget_tokens: budget } } : {}),
@@ -184,7 +230,13 @@ export async function* streamAnthropic(
   const seen = new Set<string>();
   for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
     if (event.type === "message_start") {
-      yield { type: "usage", input: event.message.usage?.input_tokens };
+      const u = event.message.usage;
+      yield {
+        type: "usage",
+        input: u?.input_tokens,
+        cacheRead: u?.cache_read_input_tokens ?? undefined,
+        cacheWrite: u?.cache_creation_input_tokens ?? undefined,
+      };
     } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       yield { type: "text", text: event.delta.text };
     } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
