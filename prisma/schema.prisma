@@ -41,6 +41,30 @@ model User {
   projects        Project[]
   authoredAnnouncements Announcement[] @relation("AnnouncementAuthor")
   announcementDismissals AnnouncementDismissal[]
+  connections     Connection[]
+}
+
+// ----------------------------------------------------------------------------
+// External tool connectors (GitHub, Figma, …) linked via OAuth. Tokens are
+// stored encrypted at rest and exposed to the model as MCP tools.
+// ----------------------------------------------------------------------------
+
+model Connection {
+  id           String    @id @default(cuid())
+  userId       String
+  provider     String // connector id: "github" | "figma"
+  accessToken  String    @db.Text // encrypted (AES-256-GCM)
+  refreshToken String?   @db.Text // encrypted
+  scope        String?
+  accountLabel String? // human label: GitHub login / Figma handle
+  expiresAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider])
+  @@index([userId])
 }
 
 model Account {

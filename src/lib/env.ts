@@ -31,6 +31,22 @@ export const env = {
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
 
+  // External tool connectors (OAuth apps you register once). A connector's
+  // "Connect" button is shown only when its client id + secret are present.
+  connectors: {
+    github: {
+      clientId: process.env.GITHUB_OAUTH_CLIENT_ID,
+      clientSecret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
+      // Remote MCP server the model will call with the user's token.
+      mcpUrl: process.env.GITHUB_MCP_URL ?? "https://api.githubcopilot.com/mcp/",
+    },
+    figma: {
+      clientId: process.env.FIGMA_OAUTH_CLIENT_ID,
+      clientSecret: process.env.FIGMA_OAUTH_CLIENT_SECRET,
+      mcpUrl: process.env.FIGMA_MCP_URL, // Figma remote MCP endpoint (no default)
+    },
+  },
+
   // Storage (S3-compatible — required only for uploads)
   s3: {
     endpoint: process.env.S3_ENDPOINT,
