@@ -65,6 +65,12 @@ const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Grok", match: /^grok-?\d+$/i, minPlan: "PRO", vision: true },
     { label: "Grok mini", match: /grok.*mini/i, minPlan: "FREE", vision: true },
   ],
+  minimax: [
+    { label: "MiniMax M3", match: /^minimax-m3$/i, minPlan: "PRO", vision: true },
+    { label: "MiniMax M2.7 Highspeed", match: /^minimax-m2\.7-highspeed$/i, minPlan: "FREE", vision: false },
+    { label: "MiniMax M2.7", match: /^minimax-m2\.7$/i, minPlan: "PRO", vision: false },
+    { label: "MiniMax M2.5", match: /^minimax-m2\.5/i, minPlan: "FREE", vision: false },
+  ],
 };
 
 const stripPrefix = (id: string) => id.replace(/^models\//i, "");

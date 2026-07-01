@@ -38,6 +38,10 @@ const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
     light: "/provider-logos/light/seedance.png",
     dark: "/provider-logos/dark/seedance.png",
   },
+  minimax: {
+    light: "/provider-logos/light/minimax.svg",
+    dark: "/provider-logos/dark/minimax.svg",
+  },
 };
 
 export function providerLogoSrc(provider: Provider, theme: "light" | "dark" = "light"): string {

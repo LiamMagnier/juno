@@ -25,12 +25,12 @@ export interface ModelInfo {
 // NOTE: these regexes + guess functions are declared BEFORE `curated()`/`CURATED`
 // because that array is built at module load and calls guessReasoning/guessCost
 // (avoids a temporal-dead-zone "before initialization" crash).
-const VISION_RE = /(4o|gpt-5|gpt-4\.1|o[134]\b|gemini|claude|vision|vl|pixtral|maverick|scout|llava)/i;
+const VISION_RE = /(4o|gpt-5|gpt-4\.1|o[134]\b|gemini|claude|minimax-m3|vision|vl|pixtral|maverick|scout|llava)/i;
 const FREE_RE = /(flash|mini|nano|lite|haiku|air|small|8b|free|^glm-4\.5)/i;
 const EXPENSIVE_RE = /(opus|gpt-5(?!.*(mini|nano))|^o\d|-o\d|large|grok-?\d|reasoner|ultra|max\b|405b|magistral-medium)/i;
 const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
-  /(reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-r|[-/]r1|qwq|claude-(opus|sonnet)|glm-(4\.6|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-[3-9])/i;
+  /(reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-r|[-/]r1|qwq|claude-(opus|sonnet)|minimax-m[2-9]|glm-(4\.6|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-[3-9])/i;
 
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
@@ -108,6 +108,10 @@ const CURATED: ModelInfo[] = [
   curated("mistral", "mistral-large-latest", "Mistral Large", "Mistral's flagship.", "PRO", false),
   curated("mistral", "mistral-small-latest", "Mistral Small", "Fast, low-cost Mistral.", "FREE", false),
   curated("xai", "grok-4", "Grok 4", "xAI's flagship Grok.", "PRO", true),
+  curated("minimax", "MiniMax-M3", "MiniMax M3", "Agentic reasoning, coding, tools, and long-context multimodal input.", "PRO", true),
+  curated("minimax", "MiniMax-M2.7", "MiniMax M2.7", "Strong recursive reasoning model with long context.", "PRO", false),
+  curated("minimax", "MiniMax-M2.7-highspeed", "MiniMax M2.7 Highspeed", "M2.7 with faster output for everyday work.", "FREE", false),
+  curated("minimax", "MiniMax-M2.5", "MiniMax M2.5", "High-value long-context reasoning model.", "FREE", false),
 ];
 
 // Image & video generation models. Grouped by lab in the picker; each runs
@@ -119,10 +123,13 @@ const GENERATIVE: ModelInfo[] = [
   gen("xai", "grok-2-image", "Grok Image", "xAI image generation.", "PRO", "image", 2),
   gen("zhipu", "glm-image", "GLM-Image", "Zhipu's GLM image model.", "PRO", "image", 2),
   gen("zhipu", "cogview-4", "CogView 4", "Zhipu's CogView image model.", "PRO", "image", 2),
+  gen("minimax", "image-01", "MiniMax Image 01", "Fine-grained text-to-image generation with custom aspect ratios.", "PRO", "image", 2),
   // —— Video ——
   gen("google", "veo-3.0-generate-001", "Veo 3", "Google text-to-video with audio.", "MAX", "video", 3),
   gen("seedance", "seedance-1-0-pro-250528", "Seedance 1.0 Pro", "ByteDance cinematic text-to-video.", "MAX", "video", 3),
   gen("zhipu", "cogvideox-3", "CogVideoX", "Zhipu text-to-video.", "MAX", "video", 3),
+  gen("minimax", "MiniMax-Hailuo-2.3", "Hailuo 2.3", "MiniMax text-to-video with strong motion and prompt adherence.", "MAX", "video", 3),
+  gen("minimax", "MiniMax-Hailuo-2.3-Fast", "Hailuo 2.3 Fast", "Faster MiniMax image-to-video generation.", "MAX", "video", 3),
 ];
 
 export const GEN_MODELS: ModelInfo[] = GENERATIVE;

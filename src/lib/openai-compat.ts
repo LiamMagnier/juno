@@ -99,7 +99,10 @@ export async function* streamOpenAICompat(
 ): AsyncGenerator<LlmEvent> {
   const messages = await toOpenAIMessages(system, history, model.vision);
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
-  const effectiveReasoningEffort = isZhipuThinking ? reasoningEffort ?? "high" : reasoningEffort;
+  const isMiniMax = model.provider === "minimax";
+  // The route already clamped the effort to what this model supports; relay it.
+  // For GLM (on/off thinking) an effort means enabled, its absence means off.
+  const effectiveReasoningEffort = reasoningEffort;
   const hasTools = !!toolset && toolset.tools.length > 0;
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
@@ -113,7 +116,14 @@ export async function* streamOpenAICompat(
   };
   if (effectiveReasoningEffort) (params as Record<string, unknown>)["reasoning_effort"] = effectiveReasoningEffort;
   if (isZhipuThinking) {
-    params.thinking = { type: "enabled" };
+    // Instant (no effort) turns GLM thinking off; any effort turns it on.
+    params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
+  }
+  if (isMiniMax) {
+    params.reasoning_split = true;
+    if (model.providerModel.toLowerCase() === "minimax-m3") {
+      params.thinking = { type: effectiveReasoningEffort ? "adaptive" : "disabled" };
+    }
   }
   if (model.provider === "openai") {
     // GPT-5 reasoning models count hidden reasoning toward max_completion_tokens,
@@ -163,14 +173,24 @@ export async function* streamOpenAICompat(
     let roundOutput = 0;
     let roundCached = 0;
     let roundSawUsage = false;
+    let minimaxReasoningBuffer = "";
     // Accumulate streamed tool-call fragments by their choice index.
     const toolCalls = new Map<number, { id: string; name: string; args: string }>();
 
     for await (const chunk of stream) {
       const choice = chunk.choices?.[0];
       const choiceDelta = choice?.delta;
-      const reasoning = choiceDelta as unknown as { reasoning_content?: string; reasoning?: string } | undefined;
-      const reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
+      const reasoning = choiceDelta as unknown as
+        | { reasoning_content?: string; reasoning?: string; reasoning_details?: Array<{ text?: string }> }
+        | undefined;
+      let reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
+      if (!reasoningText && reasoning?.reasoning_details?.length) {
+        const fullReasoning = reasoning.reasoning_details.map((d) => d.text ?? "").join("");
+        reasoningText = fullReasoning.startsWith(minimaxReasoningBuffer)
+          ? fullReasoning.slice(minimaxReasoningBuffer.length)
+          : fullReasoning;
+        minimaxReasoningBuffer = fullReasoning;
+      }
       if (reasoningText) yield { type: "reasoning", text: reasoningText };
       const delta = choiceDelta?.content;
       if (delta) {

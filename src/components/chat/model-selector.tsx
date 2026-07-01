@@ -16,6 +16,7 @@ import {
   expensivenessScore,
   formatContext,
   getModelMetrics,
+  reasoningOptions,
   type ReasoningEffort,
 } from "@/lib/model-metrics";
 import { providerAccent } from "@/lib/provider-colors";
@@ -66,14 +67,6 @@ function CapabilityChip({ icon: Icon, label }: { icon: typeof Brain; label: stri
   );
 }
 
-const THINKING_OPTIONS: { effort: ReasoningEffort; label: string }[] = [
-  { effort: null, label: "Instant" },
-  { effort: "low", label: "Low" },
-  { effort: "medium", label: "Medium" },
-  { effort: "high", label: "High" },
-  { effort: "max", label: "Max" },
-];
-
 function ModelDetailPanel({
   model,
   reasoningEffort,
@@ -103,6 +96,8 @@ function ModelDetailPanel({
   const effectiveEffort: ReasoningEffort = preview ? preview.effort : reasoningEffort;
   const metrics = applyReasoning(getModelMetrics(model), effectiveEffort, model.reasoning);
   const thinking = model.reasoning && !!effectiveEffort;
+  // Only the thinking modes this model actually supports (real per-model data).
+  const options = reasoningOptions(model);
 
   const bars: { label: string; key: MetricKey }[] = [
     { label: "Intelligence", key: "intelligence" },
@@ -150,40 +145,41 @@ function ModelDetailPanel({
         <div className="flex items-center justify-between">
           <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Thinking</span>
           <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">
-            {thinking ? `${effectiveEffort} effort` : "Instant"}
+            {model.reasoning && options.length === 0 ? "Always on" : thinking ? `${effectiveEffort} effort` : "Instant"}
           </span>
         </div>
-        <div className="mt-2 grid grid-cols-4 gap-1.5">
-          {THINKING_OPTIONS.map((o) => {
-            const disabled = o.effort !== null && !model.reasoning;
-            const active = effectiveEffort === o.effort;
-            return (
-              <button
-                key={o.label}
-                type="button"
-                disabled={disabled}
-                onMouseEnter={() => !disabled && setPreview({ effort: o.effort })}
-                onFocus={() => !disabled && setPreview({ effort: o.effort })}
-                onMouseLeave={() => setPreview(null)}
-                onBlur={() => setPreview(null)}
-                onClick={() => !disabled && onCommit?.(o.effort)}
-                className={cn(
-                  "rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors",
-                  active
-                    ? "bg-primary/15 text-primary ring-1 ring-primary/40"
-                    : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground",
-                  disabled && "cursor-not-allowed opacity-40 hover:bg-muted/60 hover:text-muted-foreground"
-                )}
-              >
-                {o.label}
-              </button>
-            );
-          })}
-        </div>
+        {options.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {options.map((o) => {
+              const active = effectiveEffort === o.value;
+              return (
+                <button
+                  key={o.label}
+                  type="button"
+                  onMouseEnter={() => setPreview({ effort: o.value })}
+                  onFocus={() => setPreview({ effort: o.value })}
+                  onMouseLeave={() => setPreview(null)}
+                  onBlur={() => setPreview(null)}
+                  onClick={() => onCommit?.(o.value)}
+                  className={cn(
+                    "flex-1 basis-16 rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors",
+                    active
+                      ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                      : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+                  )}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
         <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          {model.reasoning
+          {options.length > 0
             ? "Pick a level to switch to this model with that thinking effort."
-            : "This model replies instantly. Click Instant to use it."}
+            : model.reasoning
+              ? "This model always reasons — no effort control."
+              : "This model replies instantly."}
         </p>
       </div>
     </div>

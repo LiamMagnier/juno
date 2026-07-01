@@ -48,6 +48,42 @@ async function generateGoogleImage(model: ModelInfo, prompt: string): Promise<Ge
   return { bytes: Buffer.from(inline.data, "base64"), mimeType, ext: extFor(mimeType) };
 }
 
+async function generateMiniMaxImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
+  const apiKey = providerApiKey("minimax");
+  if (!apiKey) throw new Error("MiniMax API key is not configured.");
+  const base = (providerBaseUrl("minimax") ?? "https://api.minimax.io/v1").replace(/\/$/, "");
+  const res = await fetch(`${base}/image_generation`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: model.providerModel,
+      prompt: prompt.slice(0, 1500),
+      aspect_ratio: "1:1",
+      response_format: "url",
+      n: 1,
+      prompt_optimizer: true,
+    }),
+  });
+  const text = await res.text();
+  let data: {
+    data?: { image_urls?: string[]; image_base64?: string[]; images?: Array<{ url?: string; b64_json?: string; base64?: string }> };
+    base_resp?: { status_code?: number; status_msg?: string };
+  } = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = {};
+  }
+  if (!res.ok || (data.base_resp?.status_code != null && data.base_resp.status_code !== 0)) {
+    throw new Error(`MiniMax image generation failed (${res.status}). ${(data.base_resp?.status_msg || text).slice(0, 160)}`);
+  }
+  const b64 = data.data?.image_base64?.[0] ?? data.data?.images?.find((i) => i.b64_json || i.base64)?.b64_json ?? data.data?.images?.find((i) => i.base64)?.base64;
+  if (b64) return { bytes: Buffer.from(b64, "base64"), mimeType: "image/png", ext: "png" };
+  const url = data.data?.image_urls?.[0] ?? data.data?.images?.find((i) => i.url)?.url;
+  if (url) return { bytes: await downloadBytes(url), mimeType: "image/png", ext: "png" };
+  throw new Error("MiniMax returned no image — try rephrasing your prompt.");
+}
+
 // OpenAI + xAI (and other OpenAI-compatible labs) expose /images/generations.
 async function generateOpenAICompatImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
   const apiKey = providerApiKey(model.provider);
@@ -66,5 +102,6 @@ async function generateOpenAICompatImage(model: ModelInfo, prompt: string): Prom
 
 export async function generateImage(model: ModelInfo, prompt: string): Promise<GeneratedImage> {
   if (model.provider === "google") return generateGoogleImage(model, prompt);
+  if (model.provider === "minimax") return generateMiniMaxImage(model, prompt);
   return generateOpenAICompatImage(model, prompt);
 }

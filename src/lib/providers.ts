@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance";
+export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax";
 
 interface ProviderDef {
   label: string;
@@ -86,6 +86,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://ark.cn-beijing.volces.com/api/v3",
     kind: "openai",
     docsUrl: "https://www.volcengine.com/docs/82379",
+  },
+  minimax: {
+    label: "MiniMax",
+    apiKeyEnv: "MINIMAX_API_KEY",
+    baseUrlEnv: "MINIMAX_BASE_URL",
+    defaultBaseUrl: "https://api.minimax.io/v1",
+    kind: "openai",
+    docsUrl: "https://platform.minimax.io/docs/api-reference/text-openai-api",
   },
 };
 

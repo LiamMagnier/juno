@@ -21,6 +21,7 @@ import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
+import { clampReasoningEffort } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
@@ -102,8 +103,9 @@ function sourceHost(url: string) {
 }
 
 function effectiveReasoningEffort(model: ModelInfo, requested?: ReasoningEffort): ReasoningEffort | undefined {
-  if (!model.reasoning) return undefined;
-  return requested ?? (model.provider === "zhipu" ? "high" : undefined);
+  // Coerce to a tier the model actually supports (e.g. "max" -> "high" on Gemini),
+  // so we never send an unsupported effort to the provider.
+  return clampReasoningEffort(model, requested ?? null) ?? undefined;
 }
 
 function isAbortLike(err: unknown): boolean {

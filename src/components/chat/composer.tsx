@@ -40,6 +40,7 @@ import {
 import { ModelSelector } from "@/components/chat/model-selector";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { resolveModel, type ModelInfo } from "@/lib/models";
+import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
 import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -78,14 +79,6 @@ interface ComposerProps {
   onPickProject?: (projectId: string | null) => void;
 }
 
-const EFFORTS: { value: ReasoningEffort | null; label: string }[] = [
-  { value: null, label: "Instant" },
-  { value: "low", label: "Low" },
-  { value: "medium", label: "Medium" },
-  { value: "high", label: "High" },
-  { value: "max", label: "Max" },
-];
-
 // Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").
 type SlashCommand = { id: string; label: string; hint: string; run?: () => void };
 type SlashItem = ModelInfo | SlashCommand;
@@ -118,8 +111,23 @@ export function Composer({
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
   const resolved = resolveModel(model);
-  const supportsReasoning = resolved?.reasoning ?? false;
+  // Only the thinking tiers this specific model actually supports (real data).
+  const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
   const modality = resolved?.modality ?? "chat";
+
+  // Switching models: drop a thinking effort the new model can't do (e.g. "max"
+  // when moving to Gemini) so we never show — or send — an unsupported tier.
+  const changeModel = React.useCallback(
+    (m: ModelId) => {
+      onModelChange(m);
+      const next = resolveModel(m);
+      if (next) {
+        const opts = reasoningOptions(next);
+        if (!opts.some((o) => o.value === reasoningEffort)) onReasoningChange(defaultReasoning(next));
+      }
+    },
+    [onModelChange, onReasoningChange, reasoningEffort]
+  );
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
   const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
@@ -249,7 +257,7 @@ export function Composer({
 
   const applySlash = (item: SlashItem) => {
     if ("providerModel" in item) {
-      onModelChange(item.id);
+      changeModel(item.id);
       setText("");
       requestAnimationFrame(autoresize);
       return;
@@ -680,9 +688,9 @@ export function Composer({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <ModelSelector value={model} onChange={onModelChange} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
+            <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
 
-            {supportsReasoning && (
+            {effortOptions.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -692,11 +700,11 @@ export function Composer({
                     className={cn("h-7 gap-1.5 px-2 font-mono text-[13px]", reasoningEffort ? "text-primary" : "text-muted-foreground")}
                   >
                     <Brain className="h-3.5 w-3.5" />
-                    {EFFORTS.find((e) => e.value === reasoningEffort)?.label ?? "Instant"}
+                    {(effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0]).label}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-48">
-                  {EFFORTS.map((e) => (
+                  {effortOptions.map((e) => (
                     <DropdownMenuItem key={e.label} onSelect={() => onReasoningChange(e.value)}>
                       <Brain className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="flex-1">{e.label}</span>

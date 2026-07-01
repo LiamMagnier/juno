@@ -22,6 +22,7 @@ const PROVIDER_MAX_OUTPUT: Record<string, number> = {
   mistral: 16384,
   xai: 16384,
   seedance: 8192,
+  minimax: 131072,
 };
 
 /** Clamp a requested output-token cap to what the provider's models actually allow. */
@@ -92,5 +93,9 @@ export function providerErrorMessage(err: unknown, providerLabel?: string): stri
     return `${who} is busy or rate-limiting right now. Try again in a moment.`;
   if (status === 404 || /not found|does not exist|unknown model|no such model/i.test(lower))
     return `That model isn't available from ${providerLabel ?? "the provider"} right now. Pick another model.`;
+  // 5xx (incl. Google's frequent 503 "no body") — a transient fault on the
+  // provider's side, not the user's request. Suggest a retry instead of a raw code.
+  if ((typeof status === "number" && status >= 500) || /50[0-4]|server error|unavailable|bad gateway|gateway timeout|no body|internal error/i.test(lower))
+    return `${who} is temporarily unavailable (a server error on their end). Please try again in a moment.`;
   return raw ? `${who} returned an error: ${raw.slice(0, 220)}` : "Juno ran into a problem generating a response. Please try again.";
 }
