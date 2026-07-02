@@ -11,6 +11,7 @@ export const PROVIDER_ACCENTS: Record<Provider, string> = {
   xai: "#0f0f0f",
   seedance: "#7c3aed",
   minimax: "#18a0a0",
+  mimo: "#ff6a00",
 };
 
 export function providerAccent(provider: Provider): string {

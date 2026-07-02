@@ -44,12 +44,12 @@ export interface ModelInfo {
 // NOTE: these regexes + guess functions are declared BEFORE the registry
 // because it is built at module load and calls guessReasoning/guessCost
 // (avoids a temporal-dead-zone "before initialization" crash).
-const VISION_RE = /(4o|gpt-5|gpt-4\.1|gemini|claude|minimax-m3|kimi-k2\.[5-9]|vision|vl|pixtral|maverick|scout|llava|glm-5v|-image)/i;
+const VISION_RE = /(4o|gpt-5|gpt-4\.1|gemini|claude|minimax-m3|mimo-v2\.5-pro|kimi-k2\.[5-9]|vision|vl|pixtral|maverick|scout|llava|glm-5v|-image)/i;
 const FREE_RE = /(flash|mini|nano|lite|haiku|air|small|8b|14b|free|highspeed|v4-flash)/i;
 const EXPENSIVE_RE = /(opus|fable|mythos|gpt-5\.\d-pro|^o\d|-o\d|large|grok-4|reasoner|ultra|max\b|405b|magistral-medium|v4-pro)/i;
 const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
-  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
+  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
 
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
@@ -201,6 +201,10 @@ const CURATED: ModelInfo[] = [
   def({ provider: "minimax", id: "MiniMax-M2.7-highspeed", name: "MiniMax M2.7 Highspeed", family: "m-highspeed", status: "current", minPlan: "FREE", cost: 2, contextWindow: 204_800, description: "Fastest MiniMax text tier for low-latency agent loops." }),
   def({ provider: "minimax", id: "MiniMax-M2.7", name: "MiniMax M2.7", family: "m", status: "legacy", minPlan: "PRO", cost: 1, contextWindow: 204_800, description: "Agentic coding without 1M context — superseded by M3." }),
   def({ provider: "minimax", id: "MiniMax-M2.5", name: "MiniMax M2.5", family: "m", status: "legacy", minPlan: "FREE", cost: 1, contextWindow: 204_800, description: "Older agentic model." }),
+
+  // —— MiMo (Xiaomi MiMo AI Labs) ——
+  def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "current", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Xiaomi MiMo's reasoning, coding and agentic flagship." }),
+  def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs

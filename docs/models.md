@@ -86,6 +86,12 @@ Sources: platform.minimax.io models-intro · pricing-paygo · image/video guides
 - Legacy: MiniMax-M2.7, MiniMax-M2.5 (M2.1/M2/Hailuo-02/S2V-01 also callable, unregistered).
 - MiniMax publishes no deprecation dates. Casing is exact: `MiniMax-M3`, `MiniMax-Hailuo-2.3`.
 
+## MiMo (Xiaomi) — checked 2026-07-02
+Sources: mimo.mi.com docs (quick-start / pricing) · litellm xiaomi_mimo provider.
+- Current: `mimo-v2.5-pro` (reasoning/coding/agentic flagship, multimodal, 256k ctx), `mimo-v2-flash` (efficient/fast tier).
+- OpenAI-compatible endpoint `https://api.xiaomimimo.com/v1`; also exposes an Anthropic-format endpoint at `/anthropic`. Pay-as-you-go keys are `sk-…`, Token-Plan keys are `tp-…`.
+- Reasoning via OpenAI-style `reasoning_effort`. Casing is lowercase: `mimo-v2.5-pro`.
+
 ---
 
 ## Maintenance checklist

@@ -23,6 +23,7 @@ const PROVIDER_MAX_OUTPUT: Record<string, number> = {
   xai: 16384,
   seedance: 8192,
   minimax: 131072,
+  mimo: 16384,
 };
 
 /** Clamp a requested output-token cap to what the provider's models actually allow. */

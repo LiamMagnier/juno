@@ -138,6 +138,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["m2.5"], metric: metric(0.2, 0.8, 204_800, 5, 7) },
     { hints: ["m2"], metric: metric(0.3, 1.2, 204_800, 5, 7) },
   ],
+  mimo: [
+    { hints: ["flash"], metric: metric(0.2, 0.8, 256_000, 9, 8) },
+    { hints: ["pro"], metric: metric(0.4, 1.6, 256_000, 5, 9) },
+  ],
 };
 
 // Sensible per-provider default so an unrecognized model still gets real-ish
@@ -152,6 +156,7 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   mistral: metric(0.5, 2.2, 262_144, 6, 7),
   xai: metric(2, 10, 1_000_000, 5, 8),
   minimax: metric(0.3, 1.2, 204_800, 6, 8),
+  mimo: metric(0.4, 1.6, 256_000, 6, 8),
 };
 
 function familyMetric(model: ModelInfo): ModelMetrics | null {
@@ -263,6 +268,8 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
     case "minimax":
       if (id.includes("m3")) return caps([], true, true); // M3 adaptive thinking: on/off toggle
       return caps([], false); // M2.x: always-on interleaved thinking
+    case "mimo":
+      return caps(LMH, true); // MiMo: OpenAI-style reasoning_effort, off by default
     default:
       return caps([], false);
   }

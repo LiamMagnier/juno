@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax";
+export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo";
 
 interface ProviderDef {
   label: string;
@@ -94,6 +94,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://api.minimax.io/v1",
     kind: "openai",
     docsUrl: "https://platform.minimax.io/docs/api-reference/text-openai-api",
+  },
+  mimo: {
+    label: "MiMo · Xiaomi",
+    apiKeyEnv: "MIMO_API_KEY",
+    baseUrlEnv: "MIMO_BASE_URL",
+    defaultBaseUrl: "https://api.xiaomimimo.com/v1",
+    kind: "openai",
+    docsUrl: "https://mimo.mi.com/docs/en-US/quick-start/summary/first-api-call",
   },
 };
 

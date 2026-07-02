@@ -76,6 +76,10 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "MiniMax M3", match: /^minimax-m3$/i, minPlan: "PRO", vision: true },
     { label: "MiniMax Highspeed", match: /^minimax-m[\d.]+-highspeed$/i, minPlan: "FREE", vision: false },
   ],
+  mimo: [
+    { label: "MiMo V2.5 Pro", match: /^mimo-v2\.5-pro$/i, minPlan: "PRO", vision: true },
+    { label: "MiMo Flash", match: /^mimo-v[\d.]+-flash$/i, minPlan: "FREE", vision: false },
+  ],
 };
 
 export const stripPrefix = (id: string) => id.replace(/^models\//i, "");
