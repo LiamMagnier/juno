@@ -1,7 +1,7 @@
 {
   "version": "1.5",
-  "build": 6,
+  "build": 7,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "New app icon that adapts to your Mac & iPhone theme \u2014 light, dark, tinted, and Liquid Glass Clear \u2014 plus the refreshed Juno logo across the app and site.",
+  "notes": "Refined app icon (warm glass) and fixed the website favicon.",
   "minimumSystemVersion": "26.0"
 }
