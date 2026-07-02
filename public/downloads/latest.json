@@ -1,0 +1,7 @@
+{
+  "version": "1.0",
+  "build": 1,
+  "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
+  "notes": "You're on the first published build. Future updates will install from here automatically.",
+  "minimumSystemVersion": "26.0"
+}
