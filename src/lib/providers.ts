@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo";
+export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo";
 
 interface ProviderDef {
   label: string;
@@ -38,6 +38,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
     kind: "openai",
     docsUrl: "https://aistudio.google.com/apikey",
+  },
+  meta: {
+    label: "Meta · Muse",
+    apiKeyEnv: "META_API_KEY",
+    baseUrlEnv: "META_BASE_URL",
+    defaultBaseUrl: "https://api.llama.com/v1",
+    kind: "openai",
+    docsUrl: "https://llama.developer.meta.com/",
   },
   zhipu: {
     label: "Zhipu · GLM",

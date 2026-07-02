@@ -155,6 +155,11 @@ const CURATED: ModelInfo[] = [
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
   def({ provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", family: "flash", status: "deprecated", minPlan: "FREE", vision: true, cost: 1, description: "2.5-generation Flash.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.5 Flash" }),
 
+  // —— Meta · Muse ——
+  def({ provider: "meta", id: "muse-max", name: "Muse Max", family: "muse-max", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Meta's frontier Muse — deepest reasoning and long-horizon agents." }),
+  def({ provider: "meta", id: "muse-spark", name: "Muse Spark", family: "muse", status: "current", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "The everyday Muse — fast, sharp, and a great-value flagship." }),
+  def({ provider: "meta", id: "muse-flash", name: "Muse Flash", family: "muse-flash", status: "current", minPlan: "FREE", vision: true, cost: 1, contextWindow: 512_000, description: "Instant, ultra-cheap Muse for high-volume tasks." }),
+
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
   def({ provider: "zhipu", id: "glm-5-turbo", name: "GLM-5 Turbo", family: "glm-turbo", status: "current", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Fast, low-latency tier of the GLM-5 generation." }),

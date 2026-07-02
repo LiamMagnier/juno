@@ -4,6 +4,7 @@ export const PROVIDER_ACCENTS: Record<Provider, string> = {
   anthropic: "#d97859",
   openai: "#111111",
   google: "#4285f4",
+  meta: "#0073ff",
   zhipu: "#2f66ff",
   moonshot: "#111827",
   deepseek: "#4f7cff",

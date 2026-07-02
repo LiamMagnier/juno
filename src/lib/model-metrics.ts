@@ -84,6 +84,11 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 6) },
     { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 8) },
   ],
+  meta: [
+    { hints: ["muse-max"], metric: metric(3, 12, 1_000_000, 4, 9) },
+    { hints: ["muse-flash"], metric: metric(0.2, 0.8, 512_000, 9, 6) },
+    { hints: ["muse"], metric: metric(0.8, 3, 1_000_000, 7, 8) },
+  ],
   zhipu: [
     { hints: ["glm-5.2"], metric: metric(0.8, 2.8, 1_000_000, 5, 9) },
     { hints: ["glm-5v"], metric: metric(0.6, 1.8, 128_000, 7, 7) },
@@ -150,6 +155,7 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   anthropic: metric(3, 15, 200_000, 6, 8),
   openai: metric(2.5, 15, 400_000, 6, 8),
   google: metric(0.5, 3, 1_048_576, 8, 7),
+  meta: metric(0.8, 3, 1_000_000, 6, 8),
   zhipu: metric(0.6, 2.2, 200_000, 6, 7),
   moonshot: metric(1, 4, 262_144, 5, 8),
   deepseek: metric(0.4, 1.4, 1_000_000, 6, 8),

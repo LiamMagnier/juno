@@ -14,6 +14,10 @@ const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
     light: "/provider-logos/light/google.png",
     dark: "/provider-logos/dark/google.png",
   },
+  meta: {
+    light: "/provider-logos/light/meta.png",
+    dark: "/provider-logos/dark/meta.png",
+  },
   zhipu: {
     light: "/provider-logos/light/zhipu.png",
     dark: "/provider-logos/dark/zhipu.png",

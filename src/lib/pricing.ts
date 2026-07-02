@@ -66,6 +66,10 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
     case "google":
       if (pm.includes("pro")) return { input: 1.25, output: 10 };
       return { input: 0.3, output: 2.5 }; // flash-class
+    case "meta":
+      if (pm.includes("max")) return { input: 3, output: 12 };
+      if (pm.includes("flash")) return { input: 0.2, output: 0.8 };
+      return { input: 0.8, output: 3 }; // muse-spark
     case "deepseek":
       if (pm.includes("reason")) return { input: 0.55, output: 2.19 };
       return { input: 0.27, output: 1.1 };
