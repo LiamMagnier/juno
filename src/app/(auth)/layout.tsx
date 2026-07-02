@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AsciiWordmark } from "@/components/signature/dot-matrix";
+import { JunoMark } from "@/components/brand/logo";
 import { DotField } from "@/components/signature/dot-field";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -12,8 +13,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.12),transparent_70%)]"
       />
-      {/* Layered entrance: wordmark → card → fine print. */}
-      <Link href="/" className="mb-8 rounded-md motion-safe:animate-fade-in">
+      {/* Layered entrance: mark + wordmark → card → fine print. */}
+      <Link href="/" className="mb-8 flex flex-col items-center gap-3 rounded-md motion-safe:animate-fade-in">
+        <JunoMark className="h-12 w-12" />
         <AsciiWordmark />
       </Link>
       <div className="w-full max-w-sm motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
