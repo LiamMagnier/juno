@@ -107,14 +107,28 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
 
 export const PROVIDER_LIST = Object.keys(PROVIDERS) as Provider[];
 
+/**
+ * Read an env value defensively. `.env` parsers (dotenv/Next) strip surrounding
+ * quotes, but hosting dashboards like Vercel store the value verbatim — so a key
+ * pasted *with* its quotes works locally yet silently 401s in production on every
+ * request. Trim whitespace and one layer of surrounding quotes so both behave the
+ * same. Also strips stray CR/LF that sneak in from copy-paste.
+ */
+function readEnv(name?: string): string | undefined {
+  if (!name) return undefined;
+  const raw = process.env[name];
+  if (!raw) return undefined;
+  const cleaned = raw.trim().replace(/^['"]|['"]$/g, "").replace(/[\r\n]+/g, "").trim();
+  return cleaned || undefined;
+}
+
 export function providerApiKey(p: Provider): string | undefined {
-  return process.env[PROVIDERS[p].apiKeyEnv]?.trim() || undefined;
+  return readEnv(PROVIDERS[p].apiKeyEnv);
 }
 
 export function providerBaseUrl(p: Provider): string | undefined {
   const def = PROVIDERS[p];
-  if (!def.baseUrlEnv) return def.defaultBaseUrl;
-  return process.env[def.baseUrlEnv]?.trim() || def.defaultBaseUrl;
+  return readEnv(def.baseUrlEnv) ?? def.defaultBaseUrl;
 }
 
 export function isProviderConfigured(p: Provider): boolean {
