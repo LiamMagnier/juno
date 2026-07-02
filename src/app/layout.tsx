@@ -3,6 +3,7 @@ import { JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { getInitialPreferences } from "@/lib/preferences";
+import { auth } from "@/lib/auth";
 
 // Newsreader: an editorial serif used as the overall UI typeface (variable font
 // with optical sizing, so it reads cleanly from 11px labels to display headings).
@@ -27,7 +28,7 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { accent, theme } = await getInitialPreferences();
+  const [{ accent, theme }, session] = await Promise.all([getInitialPreferences(), auth()]);
 
   return (
     <html
@@ -37,7 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${serif.variable} ${mono.variable}`}
     >
       <body className="min-h-dvh antialiased">
-        <Providers defaultTheme={theme}>{children}</Providers>
+        <Providers defaultTheme={theme} session={session}>{children}</Providers>
       </body>
     </html>
   );
