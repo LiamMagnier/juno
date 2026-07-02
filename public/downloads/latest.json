@@ -1,7 +1,7 @@
 {
-  "version": "1.4",
-  "build": 5,
+  "version": "1.5",
+  "build": 6,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Folderless chat: type and send without opening a folder. Model picker now shows a 'Computer use' badge on models that support it.",
+  "notes": "New app icon that adapts to your Mac & iPhone theme \u2014 light, dark, tinted, and Liquid Glass Clear \u2014 plus the refreshed Juno logo across the app and site.",
   "minimumSystemVersion": "26.0"
 }
