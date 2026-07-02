@@ -549,6 +549,9 @@ export function Composer({
   }, [onCancelClarification]);
 
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
+  // How many connected tools are currently switched on — shown as a hint on the
+  // collapsed "Connectors" submenu row so the count is visible without opening it.
+  const activeConnectorCount = connectors.filter((c) => connectorsEnabled.includes(c.id)).length;
 
   return (
     <div
@@ -938,31 +941,40 @@ export function Composer({
                 {onToggleConnector && !privateMode && modality === "chat" && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
-                      <Plug className="h-3.5 w-3.5" />
-                      Connectors
-                    </DropdownMenuLabel>
-                    {connectors.length === 0 ? (
-                      <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                    {/* Connectors collapse into a hover submenu so the + menu stays
+                        compact no matter how many tools are linked. */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
                         <Plug className="text-muted-foreground" />
-                        <span className="flex-1">Connect GitHub or Figma</span>
-                        <span className="text-caption text-muted-foreground/60">set up</span>
-                      </DropdownMenuItem>
-                    ) : (
-                      connectors.map((c) => (
-                        <DropdownMenuItem
-                          key={c.id}
-                          onSelect={(e) => {
-                            e.preventDefault();
-                            onToggleConnector(c.id);
-                          }}
-                        >
-                          <Plug className="text-muted-foreground" />
-                          <span className="flex-1">{c.label}</span>
-                          <Switch checked={connectorsEnabled.includes(c.id)} className="pointer-events-none" />
-                        </DropdownMenuItem>
-                      ))
-                    )}
+                        <span className="flex-1">Connectors</span>
+                        {activeConnectorCount > 0 && (
+                          <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                        )}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-56">
+                        {connectors.length === 0 ? (
+                          <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                            <Plug className="text-muted-foreground" />
+                            <span className="flex-1">Connect GitHub or Figma</span>
+                            <span className="text-caption text-muted-foreground/60">set up</span>
+                          </DropdownMenuItem>
+                        ) : (
+                          connectors.map((c) => (
+                            <DropdownMenuItem
+                              key={c.id}
+                              onSelect={(e) => {
+                                e.preventDefault();
+                                onToggleConnector(c.id);
+                              }}
+                            >
+                              <Plug className="text-muted-foreground" />
+                              <span className="flex-1">{c.label}</span>
+                              <Switch checked={connectorsEnabled.includes(c.id)} className="pointer-events-none" />
+                            </DropdownMenuItem>
+                          ))
+                        )}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   </>
                 )}
               </DropdownMenuContent>
