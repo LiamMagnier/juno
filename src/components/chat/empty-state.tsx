@@ -168,7 +168,13 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
     [firstName, memoryHints, recentTopic, settings.memoryEnabled]
   );
 
-  const prompts = React.useMemo(() => (active ? buildPrompts(active, context) : []), [active, context]);
+  // Keep the last category's prompts rendered while the grid sweeps closed, so
+  // deselecting animates out instead of unmounting in place.
+  const lastActiveRef = React.useRef<StarterCategory | null>(null);
+  if (active) lastActiveRef.current = active;
+  const displayed = active ?? lastActiveRef.current;
+
+  const prompts = React.useMemo(() => (displayed ? buildPrompts(displayed, context) : []), [displayed, context]);
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-3 px-3 sm:px-0">
@@ -185,7 +191,7 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
               aria-expanded={selected}
               style={{ animationDelay: `${180 + i * 45}ms` }}
               className={cn(
-                "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 font-sans text-sm font-medium shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:shadow-float motion-safe:animate-fade-in sm:h-11 sm:px-4 sm:text-base",
+                "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 font-sans text-sm font-medium shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in sm:h-11 sm:px-4 sm:text-base",
                 selected ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/70 bg-card/70 text-foreground/80 hover:bg-accent"
               )}
             >
@@ -196,21 +202,29 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
         })}
       </div>
 
-      {active && (
-        <div className="grid w-full gap-2 sm:grid-cols-3">
-          {prompts.map((prompt, i) => (
-            <button
-              key={prompt}
-              type="button"
-              onClick={() => onPick(prompt)}
-              style={{ animationDelay: `${80 + i * 45}ms` }}
-              className="min-h-20 rounded-xl border border-border/70 bg-card/70 px-3.5 py-3 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float motion-safe:animate-rise-in"
-            >
-              <span className="line-clamp-3">{prompt}</span>
-            </button>
-          ))}
+      <div
+        className={cn(
+          "grid w-full transition-[grid-template-rows] duration-base ease-out-soft",
+          active ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        {/* pt/pb keep the hover lift + shadow from clipping on the overflow-hidden wrapper */}
+        <div className="min-h-0 overflow-hidden" inert={!active}>
+          <div className="grid w-full gap-2 pb-1 pt-1 sm:grid-cols-3">
+            {prompts.map((prompt, i) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => onPick(prompt)}
+                style={{ animationDelay: `${80 + i * 45}ms` }}
+                className="min-h-20 rounded-xl border border-border/70 bg-card/70 px-3.5 py-3 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in"
+              >
+                <span className="line-clamp-3">{prompt}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

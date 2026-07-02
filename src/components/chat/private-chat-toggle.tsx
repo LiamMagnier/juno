@@ -43,7 +43,7 @@ export function PrivateChatToggle({
           onPointerMove={onPointerMove}
           onPointerLeave={onPointerLeave}
           className={cn(
-            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
+            "group inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 disabled:pointer-events-none disabled:opacity-50 coarse:h-11 coarse:w-11",
             active && "text-primary"
           )}
         >

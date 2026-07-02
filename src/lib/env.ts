@@ -47,6 +47,11 @@ export const env = {
       scope: process.env.FIGMA_OAUTH_SCOPE,
       mcpUrl: process.env.FIGMA_MCP_URL, // Figma remote MCP endpoint (no default)
     },
+    notion: {
+      // Hosted Notion MCP uses OAuth 2.1 + PKCE + Dynamic Client Registration, so
+      // there is no Notion client id/secret to configure — only the MCP endpoint.
+      mcpUrl: process.env.NOTION_MCP_URL ?? "https://mcp.notion.com/mcp",
+    },
   },
 
   // Storage (S3-compatible — required only for uploads)

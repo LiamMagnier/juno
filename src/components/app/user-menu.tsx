@@ -21,10 +21,13 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
 
+  // Photo avatars are circles (matching the Avatar primitive app-wide); the
+  // DotIdenticon fallback keeps its signature squircle, which a circular crop
+  // would clip.
   const avatar = user.image ? (
-    <Image src={user.image} alt="" width={32} height={32} className="h-full w-full rounded-md object-cover" />
+    <Image src={user.image} alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full object-cover" />
   ) : (
-    <DotIdenticon seed={user.id} className="h-8 w-8" />
+    <DotIdenticon seed={user.id} className="h-8 w-8 shrink-0" />
   );
 
   return (
@@ -32,15 +35,15 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
       <DropdownMenuTrigger asChild>
         {compact ? (
           <button
-            className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-[10px] transition-colors hover:bg-sidebar-accent"
+            className="pressable flex h-9 w-9 items-center justify-center rounded-md hover:bg-sidebar-accent coarse:h-11 coarse:w-11"
             aria-label="Account menu"
             title={user.name ?? user.email ?? "Account"}
           >
-            <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-md">{avatar}</span>
+            {avatar}
           </button>
         ) : (
-          <button className="flex w-full items-center gap-2 rounded-[16px] p-2 text-left transition-colors hover:bg-sidebar-accent">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-md">{avatar}</span>
+          <button className="pressable flex w-full items-center gap-2.5 rounded-md p-2 text-left hover:bg-sidebar-accent">
+            {avatar}
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium">{user.name ?? user.email}</span>
               <span className="block truncate text-xs text-muted-foreground">{plan.name} plan</span>
@@ -48,24 +51,28 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" side="top" className="w-60 font-[system-ui,sans-serif] p-1">
-        <div className="px-3 py-3 border-b border-border/40">
+      <DropdownMenuContent
+        align="end"
+        side="top"
+        className="w-60 origin-popper p-1 data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
+      >
+        <div className="border-b border-border/40 px-3 py-3">
           <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-semibold text-foreground leading-none">
+            <span className="truncate text-sm font-semibold leading-none text-foreground">
               {user.name ?? user.email?.split("@")[0]}
             </span>
-            <span className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary uppercase tracking-wide">
+            <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
               {plan.name}
             </span>
           </div>
-          <span className="block mt-1.5 truncate text-xs text-muted-foreground font-normal leading-none">
+          <span className="mt-1.5 block truncate text-xs leading-none text-muted-foreground">
             {user.email}
           </span>
         </div>
-        <div className="mx-1.5 my-1.5 rounded-lg bg-muted/40 p-2.5">
-          <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+        <div className="mx-1.5 my-1.5 rounded-md bg-muted/40 p-2.5">
+          <div className="flex items-center justify-between gap-2 font-mono text-label uppercase text-muted-foreground">
             <span>Messages</span>
-            <span className="font-semibold text-foreground">
+            <span className="truncate text-foreground">
               {quota.limit == null ? "Unlimited" : `${quota.used} / ${quota.limit}`}
             </span>
           </div>
@@ -74,7 +81,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               <DotFillBar value={quota.used} max={quota.limit} dots={18} />
             </div>
           ) : (
-            <p className="mt-1.5 text-[10px] text-muted-foreground/75 font-normal normal-case">
+            <p className="mt-1.5 text-caption text-muted-foreground/75">
               Enjoy unlimited messages on this plan.
             </p>
           )}

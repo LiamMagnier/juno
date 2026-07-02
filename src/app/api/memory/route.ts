@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     prisma.memoryEntry.findMany({
       where: { userId: user.id, ...(q ? { content: { contains: q, mode: "insensitive" } } : {}) },
       orderBy: { createdAt: "desc" },
-      select: { id: true, content: true, source: true, createdAt: true },
+      select: { id: true, content: true, source: true, kind: true, sourceRef: true, createdAt: true },
     }),
     getMemorySummary(user.id),
   ]);
@@ -23,6 +23,34 @@ export async function GET(req: Request) {
       ? { content: summary.content, updatedAt: summary.updatedAt.toISOString(), entryCount: summary.entryCount }
       : null,
   });
+}
+
+// Reset memory: remove every saved fact and the consolidated summary, and mark
+// all conversations as processed — "permanently erased" must mean the backfill
+// won't quietly re-learn everything from old chats.
+export async function DELETE() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.memoryEntry.deleteMany({ where: { userId: user.id } }),
+    prisma.memorySummary.deleteMany({ where: { userId: user.id } }),
+    prisma.conversationMemory.updateMany({
+      where: { userId: user.id },
+      data: { processedAt: now, factCount: 0, digest: null },
+    }),
+  ]);
+  const uncovered = await prisma.conversation.findMany({
+    where: { userId: user.id, memory: null },
+    select: { id: true },
+  });
+  if (uncovered.length) {
+    await prisma.conversationMemory.createMany({
+      data: uncovered.map((c) => ({ userId: user.id, conversationId: c.id, processedAt: now })),
+    });
+  }
+  return NextResponse.json({ ok: true });
 }
 
 const schema = z.object({ content: z.string().trim().min(1).max(500) });

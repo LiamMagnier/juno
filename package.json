@@ -12,7 +12,11 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
+    "validate:models": "tsx scripts/validate-models.ts",
+    "sync:models": "tsx scripts/sync-models.ts",
+    "sync:models:write": "tsx scripts/sync-models.ts --write --prune"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"
@@ -39,6 +43,7 @@
     "bcryptjs": "^3.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "framer-motion": "^12.42.2",
     "highlight.js": "^11.11.1",
     "lucide-react": "^1.22.0",
     "next": "^15.5.0",
@@ -67,6 +72,7 @@
     "postcss": "^8.4.0",
     "prisma": "^6.0.0",
     "tailwindcss": "^3.4.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0"
   },
   "engines": {

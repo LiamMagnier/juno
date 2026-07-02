@@ -7,11 +7,16 @@ import { toast } from "sonner";
 import {
   ArrowLeft,
   Check,
+  FileCode,
   FileText,
+  Image as ImageIcon,
+  Info,
   Loader2,
   Pencil,
   Plus,
+  Table,
   Trash2,
+  TriangleAlert,
   Star,
   MoreVertical,
   FolderClosed,
@@ -39,8 +44,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
-import { formatBytes, cn } from "@/lib/utils";
+import { formatBytes, formatTokens, cn } from "@/lib/utils";
 import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
@@ -66,6 +72,14 @@ export default function ProjectDetailPage() {
   const fileRef = React.useRef<HTMLInputElement>(null);
   const coverRef = React.useRef<HTMLInputElement>(null);
 
+  // Workspace tab state
+  const [tab, setTab] = React.useState("overview");
+  const [savingInstructions, setSavingInstructions] = React.useState(false);
+  // Attachment ids uploaded this session — drive the cosmetic extraction progress bar.
+  const [freshIds, setFreshIds] = React.useState<Set<string>>(new Set());
+  const [dragging, setDragging] = React.useState(false);
+  const dragDepth = React.useRef(0);
+
   // Mocks / client-side project star
   const [isStarred, setIsStarred] = React.useState(false);
   // User memories state
@@ -83,6 +97,12 @@ export default function ProjectDetailPage() {
       setSelectedModel(settings.defaultModel);
     }
   }, [settings?.defaultModel]);
+
+  // Deep-link: /projects/{id}?tab=workspace
+  React.useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "workspace") setTab("workspace");
+  }, []);
 
   const coverFile = data?.files.find((f) => f.fileName === "__cover__");
   const coverUrl = coverFile?.url ?? null;
@@ -162,6 +182,27 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const saveInstructionsInline = async () => {
+    if (!data || instructions === data.project.instructions || savingInstructions) return;
+    setSavingInstructions(true);
+    try {
+      await patch({ instructions });
+      setData({ ...data, project: { ...data.project, instructions, updatedAt: new Date().toISOString() } });
+      toast.success("Project instructions saved.");
+    } finally {
+      setSavingInstructions(false);
+    }
+  };
+
+  const clearFresh = React.useCallback((fileId: string) => {
+    setFreshIds((cur) => {
+      if (!cur.has(fileId)) return cur;
+      const next = new Set(cur);
+      next.delete(fileId);
+      return next;
+    });
+  }, []);
+
   const saveName = () => {
     const name = nameDraft.trim();
     setEditingName(false);
@@ -190,6 +231,7 @@ export default function ProjectDetailPage() {
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error ?? "Upload failed.");
       setData((cur) => (cur ? { ...cur, files: [d.attachment, ...cur.files] } : cur));
+      if (d.attachment?.id) setFreshIds((cur) => new Set(cur).add(d.attachment.id));
       toast.success("File added to project.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not upload.");
@@ -238,6 +280,28 @@ export default function ProjectDetailPage() {
     } finally {
       setUploading(false);
     }
+  };
+
+  // Drag-and-drop upload over the workspace files card.
+  const onFilesDragEnter = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+    dragDepth.current += 1;
+    setDragging(true);
+  };
+  const onFilesDragOver = (e: React.DragEvent) => {
+    if (!e.dataTransfer.types.includes("Files")) return;
+    e.preventDefault();
+  };
+  const onFilesDragLeave = () => {
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragging(false);
+  };
+  const onFilesDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragging(false);
+    for (const f of Array.from(e.dataTransfer.files)) await uploadFile(f);
   };
 
   const deleteFile = async (fileId: string) => {
@@ -342,6 +406,13 @@ export default function ProjectDetailPage() {
     );
   }
 
+  const workspaceFiles = data.files.filter((f) => f.fileName !== "__cover__");
+  const instructionsDirty = instructions !== data.project.instructions;
+  const totalTokenEstimate = workspaceFiles.reduce(
+    (sum, f) => sum + (isTextExtractable(f.mimeType) ? Math.round(f.size / 4) : 0),
+    0
+  );
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
@@ -349,11 +420,8 @@ export default function ProjectDetailPage() {
           <ArrowLeft className="h-4 w-4" /> All projects
         </Button>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-          {/* Main workspace (Left Column) */}
-          <div className="min-w-0">
-            {/* Title / Action bar */}
-            <div className="mb-6 flex items-center justify-between gap-3">
+        {/* Title / Action bar */}
+        <div className="mb-6 flex items-center justify-between gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   {editingName ? (
@@ -374,7 +442,7 @@ export default function ProjectDetailPage() {
                   {!editingName && (
                     <button
                       onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                       aria-label="Rename project"
                       title="Rename project"
                     >
@@ -421,8 +489,19 @@ export default function ProjectDetailPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </div>
+        </div>
 
+        <Tabs value={tab} onValueChange={setTab}>
+          <TabsList className="mb-6 rounded-2xl bg-muted/70 p-1">
+            <TabsTrigger value="overview" className="rounded-xl px-4">Overview</TabsTrigger>
+            <TabsTrigger value="workspace" className="rounded-xl px-4">Workspace</TabsTrigger>
+          </TabsList>
+
+          {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
+          <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden">
+        <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+          {/* Main workspace (Left Column) */}
+          <div className="min-w-0">
             {/* Premium Composer */}
             <div className="mb-8">
               <Composer
@@ -447,9 +526,10 @@ export default function ProjectDetailPage() {
                 Chats in this project
               </CardEyebrow>
               {data.conversations.length === 0 ? (
-                <div className="rounded-xl border-2 border-dashed border-border/60 bg-muted/5 px-6 py-10 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    No chats yet. Ask a question in the composer above to start a conversation.
+                <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-6 py-10 text-center motion-safe:animate-rise-in">
+                  <p className="font-serif text-heading">No chats yet</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Ask a question in the composer above to start a conversation.
                   </p>
                 </div>
               ) : (
@@ -468,7 +548,7 @@ export default function ProjectDetailPage() {
                         </span>
                       </Link>
 
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 transition-opacity duration-fast">
                         {/* Star/Pin */}
                         <Button
                           variant="ghost"
@@ -528,12 +608,12 @@ export default function ProjectDetailPage() {
 
           {/* Unified Project Sidebar (Right Column) */}
           <div className="space-y-4">
-            <Card className="rounded-[24px] bg-card border shadow-soft overflow-hidden">
+            <Card className="bg-card border shadow-soft overflow-hidden">
               {/* Cover Image Banner */}
               {coverUrl ? (
                 <div className="relative h-32 w-full group/cover overflow-hidden bg-muted border-b">
                   <img src={coverUrl} className="h-full w-full object-cover" alt="Cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cover:opacity-100 focus-within:opacity-100 transition-opacity duration-base ease-out-soft flex items-center justify-center gap-2">
                     <Button
                       variant="secondary"
                       size="sm"
@@ -553,11 +633,11 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
               ) : (
-                <div 
+                <div
                   onClick={() => coverRef.current?.click()}
-                  className="group relative h-24 w-full bg-muted/20 border-b border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/30 transition-colors"
+                  className="group relative h-24 w-full bg-muted/20 border-b border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/30 transition-colors duration-fast ease-out-soft"
                 >
-                  <Plus className="h-5 w-5 text-muted-foreground/60 mb-1 group-hover:scale-110 transition-transform" />
+                  <Plus className="h-5 w-5 text-muted-foreground/60 mb-1 group-hover:scale-110 transition-transform duration-base ease-out-soft" />
                   <span className="text-[10px] text-muted-foreground/80 font-medium">Add project image</span>
                 </div>
               )}
@@ -585,7 +665,7 @@ export default function ProjectDetailPage() {
                       <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase font-mono tracking-wider">Only you</span>
                       <button
                         onClick={() => router.push("/memory")}
-                        className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                        className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                         title="Manage memories"
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -614,7 +694,7 @@ export default function ProjectDetailPage() {
                     <span className="font-serif text-sm font-semibold">Instructions</span>
                     <button
                       onClick={() => setInstructionsOpen(true)}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                       title="Edit instructions"
                     >
                       <Pencil className="h-3.5 w-3.5" />
@@ -638,28 +718,18 @@ export default function ProjectDetailPage() {
                     <button
                       onClick={() => fileRef.current?.click()}
                       disabled={uploading}
-                      className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                       title="Add file"
                     >
                       {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
                     </button>
-                    <input
-                      ref={fileRef}
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) uploadFile(f);
-                        e.target.value = "";
-                      }}
-                    />
                   </div>
                   {data.files.filter((f) => f.fileName !== "__cover__").length === 0 ? (
-                    <div 
-                      className="rounded-xl border-2 border-dashed border-border/60 bg-muted/10 p-5 text-center transition-colors hover:bg-muted/20 cursor-pointer" 
+                    <div
+                      className="rounded-2xl border border-dashed border-border/60 bg-muted/10 p-5 text-center transition-colors duration-fast ease-out-soft hover:bg-muted/20 cursor-pointer"
                       onClick={() => fileRef.current?.click()}
                     >
-                      <FileUp className="mx-auto h-6 w-6 text-muted-foreground/75 mb-2 animate-bounce" style={{ animationDuration: "2.5s" }} />
+                      <FileUp className="mx-auto h-6 w-6 text-muted-foreground/60 mb-2" />
                       <p className="text-xs text-muted-foreground leading-normal">
                         Add PDFs, documents, or other text to reference in this project.
                       </p>
@@ -667,7 +737,7 @@ export default function ProjectDetailPage() {
                   ) : (
                     <ul className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
                       {data.files.filter((f) => f.fileName !== "__cover__").map((f) => (
-                        <li key={f.id} className="group/file flex items-center justify-between gap-2 rounded-lg border bg-card p-2 hover:bg-accent transition-colors">
+                        <li key={f.id} className="group/file flex items-center justify-between gap-2 rounded-xl border bg-card p-2 hover:bg-accent transition-colors duration-fast ease-out-soft">
                           <a
                             href={f.url}
                             target="_blank"
@@ -684,7 +754,7 @@ export default function ProjectDetailPage() {
                             variant="ghost"
                             size="icon-sm"
                             onClick={() => deleteFile(f.id)}
-                            className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive opacity-0 group-hover/file:opacity-100 transition-opacity"
+                            className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive opacity-0 group-hover/file:opacity-100 focus-visible:opacity-100 coarse:opacity-100 transition-opacity duration-fast"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -697,7 +767,141 @@ export default function ProjectDetailPage() {
             </Card>
           </div>
         </div>
+          </TabsContent>
+
+          <TabsContent value="workspace" forceMount className="data-[state=inactive]:hidden">
+            <div className="grid items-start gap-6 lg:grid-cols-2">
+              {/* System instructions — inline editor */}
+              <Card className="p-6">
+                <CardEyebrow className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
+                  System instructions
+                </CardEyebrow>
+                <h2 className="mt-1.5 font-serif text-heading">How Juno behaves in this project</h2>
+
+                <Textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  placeholder="How should Juno behave? (role, tone, constraints…)"
+                  maxLength={20_000}
+                  className="mt-4 min-h-40 rounded-xl text-sm"
+                />
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3">
+                  <span
+                    className={cn(
+                      "font-mono text-caption",
+                      instructions.length > 18_000 ? "text-warning" : "text-muted-foreground"
+                    )}
+                  >
+                    {instructions.length.toLocaleString()} / 20,000
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-caption text-muted-foreground/80">
+                      Updated {timeAgo(data.project.updatedAt)}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={saveInstructionsInline}
+                      disabled={!instructionsDirty || savingInstructions}
+                      className="gap-1.5 rounded-xl"
+                    >
+                      {savingInstructions && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Save
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex items-start gap-2 rounded-xl bg-muted/40 p-3.5 text-caption text-muted-foreground leading-relaxed">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                  <p>
+                    These instructions are prepended to every chat in this project — Juno reads them
+                    before your first message, alongside the referenced files.
+                  </p>
+                </div>
+              </Card>
+
+              {/* Referenced files — upload, extraction status, token estimates */}
+              <Card
+                className={cn(
+                  "p-6 transition-all duration-base ease-out-soft",
+                  dragging && "border-primary/60 ring-2 ring-primary/20"
+                )}
+                onDragEnter={onFilesDragEnter}
+                onDragOver={onFilesDragOver}
+                onDragLeave={onFilesDragLeave}
+                onDrop={onFilesDrop}
+              >
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardEyebrow className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
+                      Referenced files
+                    </CardEyebrow>
+                    <p className="mt-1.5 font-mono text-caption text-muted-foreground">
+                      ~{formatTokens(totalTokenEstimate)} tokens · {workspaceFiles.length}{" "}
+                      {workspaceFiles.length === 1 ? "file" : "files"}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={uploading}
+                    className="shrink-0 gap-1.5 rounded-xl"
+                  >
+                    {uploading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <FileUp className="h-3.5 w-3.5" />
+                    )}
+                    Add file
+                  </Button>
+                </div>
+
+                {workspaceFiles.length === 0 ? (
+                  <div
+                    className="cursor-pointer rounded-lg border border-dashed border-border/60 bg-muted/10 p-10 text-center transition-colors duration-fast ease-out-soft hover:bg-muted/20 motion-safe:animate-rise-in"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <FileUp className="mx-auto h-6 w-6 text-muted-foreground/50" />
+                    <p className="mt-3 font-serif text-heading">No files yet</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Drop files here or click to browse — Juno references them in every chat.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {workspaceFiles.map((f, i) => (
+                      <WorkspaceFileRow
+                        key={f.id}
+                        file={f}
+                        index={i}
+                        fresh={freshIds.has(f.id)}
+                        onDelete={() => deleteFile(f.id)}
+                        onExtracted={clearFresh}
+                      />
+                    ))}
+                  </ul>
+                )}
+
+                <p className="mt-3 text-caption text-muted-foreground/70">
+                  Drag &amp; drop anywhere on this card to add files.
+                </p>
+              </Card>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
+
+      {/* Shared hidden file input — used by both tabs */}
+      <input
+        ref={fileRef}
+        type="file"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) uploadFile(f);
+          e.target.value = "";
+        }}
+      />
 
       {/* Delete Project Confirm Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
@@ -741,9 +945,139 @@ export default function ProjectDetailPage() {
   );
 }
 
+// Mirrors the upload route's extraction rules: text-likes are inlined as tokens,
+// PDFs are skipped (no text extraction), images are passed to the model as vision.
+const CODE_MIMES = new Set([
+  "application/json",
+  "application/javascript",
+  "application/typescript",
+  "application/xml",
+  "application/x-yaml",
+  "application/x-sh",
+]);
+const SHEET_MIMES = new Set([
+  "text/csv",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+function isTextExtractable(mime: string): boolean {
+  return mime.startsWith("text/") || CODE_MIMES.has(mime);
+}
+
+function fileIconFor(mime: string) {
+  if (mime.startsWith("image/")) return ImageIcon;
+  if (SHEET_MIMES.has(mime)) return Table;
+  if (CODE_MIMES.has(mime) || mime === "text/markdown" || mime.startsWith("text/x-")) return FileCode;
+  return FileText;
+}
+
+function WorkspaceFileRow({
+  file,
+  index,
+  fresh,
+  onDelete,
+  onExtracted,
+}: {
+  file: Detail["files"][number];
+  index: number;
+  fresh: boolean;
+  onDelete: () => void;
+  onExtracted: (id: string) => void;
+}) {
+  const [extracting, setExtracting] = React.useState(fresh);
+  const [barFull, setBarFull] = React.useState(false);
+
+  // Cosmetic extraction pass on fresh uploads: bar fills over ~1.8s, then flips to the status pill.
+  React.useEffect(() => {
+    if (!fresh) return;
+    const start = setTimeout(() => setBarFull(true), 50);
+    const done = setTimeout(() => {
+      setExtracting(false);
+      onExtracted(file.id);
+    }, 1900);
+    return () => {
+      clearTimeout(start);
+      clearTimeout(done);
+    };
+  }, [fresh, file.id, onExtracted]);
+
+  const isImage = file.mimeType.startsWith("image/");
+  const extractable = isTextExtractable(file.mimeType);
+  const Icon = fileIconFor(file.mimeType);
+
+  return (
+    <li
+      className="group flex items-center gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2.5 transition-colors duration-fast hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+      style={{ animationDelay: `${Math.min(index, 10) * 40}ms` }}
+    >
+      <Icon className={cn("h-4 w-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
+
+      <div className="min-w-0 flex-1">
+        <a
+          href={file.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary"
+        >
+          {file.fileName}
+        </a>
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-caption text-muted-foreground">{formatBytes(file.size)}</span>
+          {!extracting &&
+            (extractable ? (
+              <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+                ~{formatTokens(Math.round(file.size / 4))} tokens
+              </span>
+            ) : isImage ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-source/30 bg-background/60 px-2 py-0.5 text-[10px] font-medium text-source">
+                <ImageIcon className="h-3 w-3" /> Visual
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-background/60 px-2 py-0.5 text-[10px] font-medium text-warning">
+                <TriangleAlert className="h-3 w-3" /> No text extracted
+              </span>
+            ))}
+        </div>
+      </div>
+
+      {extracting ? (
+        <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-label="Extracting text">
+          <div
+            className="h-full rounded-full bg-primary transition-[width] duration-[1800ms] ease-out-soft"
+            style={{ width: barFull ? "100%" : "0%" }}
+          />
+        </div>
+      ) : extractable ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 px-2 py-0.5 text-caption font-medium text-success">
+          <span className="size-1.5 rounded-full bg-success" /> Extracted
+        </span>
+      ) : isImage ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 text-caption font-medium text-source">
+          <span className="size-1.5 rounded-full bg-source" /> Visual
+        </span>
+      ) : (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/30 px-2 py-0.5 text-caption font-medium text-warning">
+          <span className="size-1.5 rounded-full bg-warning" /> Skipped
+        </span>
+      )}
+
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        onClick={onDelete}
+        title="Remove file"
+        className="h-7 w-7 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-within:opacity-100 group-hover:opacity-100 coarse:h-11 coarse:w-11 coarse:opacity-100"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </Button>
+    </li>
+  );
+}
+
 function Centered({ title, body, onBack, retry }: { title: string; body: string; onBack: () => void; retry?: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center">
+    <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center motion-safe:animate-rise-in">
       <p className="font-serif text-heading">{title}</p>
       <p className="text-sm text-muted-foreground">{body}</p>
       <div className="flex gap-2">

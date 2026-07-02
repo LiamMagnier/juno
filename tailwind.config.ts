@@ -8,10 +8,15 @@ import plugin from "tailwindcss/plugin";
  *                         serif = human moments · sans = UI body · mono = labels/metadata
  * Motion ................ ease-{spring,out-soft,out-expo} · duration-{fast,base,slow}
  *                         (mirrored as --ease-* / --dur-* in globals.css)
+ * Overlays .............. animate-{pop-in,pop-out} (floating layers) · animate-{overlay-in,overlay-out}
+ *                         (backdrops) — pair with Radix data-[state=open/closed]
+ * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
  * Elevation ............. shadow-{soft,float,glass} — theme-aware via --shadow-* CSS vars
  *                         (names avoid the `card`/`accent`/… color keys to dodge collisions)
  * Radius ................ rounded-{sm,md,lg(=--radius=1rem),panel} (panel = floating layers)
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
+ * Thinking .............. animate-{dot-think,dot-tint,dot-breathe} (constellation) ·
+ *                         animate-{icon-breathe,pulse-ring-slow} + .text-shimmer / .scroll-fade-y (globals.css)
  * Keep raw hex out of components; drive everything from these tokens + the HSL vars.
  */
 
@@ -88,6 +93,11 @@ const config: Config = {
         soft: "var(--shadow-soft)",
         float: "var(--shadow-float)",
         glass: "var(--shadow-glass)",
+        // Depth kit: crisp shadow for buttons/chips, colored halo for the primary,
+        // inset well for recessed fields.
+        pop: "var(--shadow-pop)",
+        "glow-primary": "var(--glow-primary)",
+        well: "var(--well-inset)",
       },
       spacing: {
         // Dot/ASCII signature unit.
@@ -161,6 +171,29 @@ const config: Config = {
           "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
+        // Thinking constellation — three layered periods (2.1s / 3.4s / 5.6s) stay
+        // out of phase so the combined motion never reads as a visible loop.
+        "dot-think": {
+          "0%": { transform: "translateY(0) scale(1)", opacity: "0.35" },
+          "18%": { transform: "translateY(-3.5px) scale(1.15)", opacity: "1" },
+          "40%": { transform: "translateY(0.5px) scale(0.97)", opacity: "0.6" },
+          "60%, 100%": { transform: "translateY(0) scale(1)", opacity: "0.35" },
+        },
+        // Primary tint sweep — active only for the first ~30% of its cycle, so the
+        // hue shimmer reads as occasional rather than constant.
+        "dot-tint": {
+          "0%, 30%, 100%": { opacity: "0" },
+          "12%": { opacity: "0.85" },
+        },
+        // Slow amplitude modulation applied to a wrapper so it compounds with dot-think.
+        "dot-breathe": {
+          "0%, 100%": { transform: "scale(1)" },
+          "50%": { transform: "scale(0.85)" },
+        },
+        "icon-breathe": {
+          "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
+          "50%": { transform: "scale(1.1)", opacity: "1" },
+        },
         "rise-in": {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
@@ -172,6 +205,39 @@ const config: Config = {
         "title-out": {
           "0%": { opacity: "1", transform: "translateY(0) scale(1)" },
           "100%": { opacity: "0", transform: "translateY(-4px) scale(0.985)" },
+        },
+        // Overlay enter/exit pair — sized for Radix data-[state=open/closed].
+        "pop-in": {
+          from: { opacity: "0", transform: "translateY(4px) scale(0.96)" },
+          to: { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "pop-out": {
+          from: { opacity: "1", transform: "translateY(0) scale(1)" },
+          to: { opacity: "0", transform: "translateY(4px) scale(0.96)" },
+        },
+        "fade-out": {
+          from: { opacity: "1" },
+          to: { opacity: "0" },
+        },
+        // Generation placeholder — two long-period gradient orbs drifting out of
+        // phase (16s/22s) so the field never reads as a visible loop.
+        "gen-drift-a": {
+          "0%, 100%": { transform: "translate(-6%, -4%) scale(1)" },
+          "50%": { transform: "translate(8%, 6%) scale(1.12)" },
+        },
+        "gen-drift-b": {
+          "0%, 100%": { transform: "translate(6%, 5%) scale(1.08)" },
+          "50%": { transform: "translate(-8%, -6%) scale(1)" },
+        },
+        "gen-grid-pulse": {
+          "0%, 100%": { opacity: "0.35" },
+          "50%": { opacity: "0.75" },
+        },
+        // Indeterminate hairline: a 1/3-width bar; translateX(300%) of its own
+        // width crosses the full track, so the sweep exits cleanly on the right.
+        "gen-sweep": {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(300%)" },
         },
       },
       animation: {
@@ -185,16 +251,41 @@ const config: Config = {
         drift: "drift 18s ease-in-out infinite",
         "rise-in": "rise-in 0.32s cubic-bezier(0.32,0.72,0,1)",
         "dot-wave": "dot-wave 1.2s ease-in-out infinite",
+        // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
+        "dot-think": "dot-think 2.1s ease-in-out infinite",
+        "dot-tint": "dot-tint 3.4s ease-in-out infinite",
+        "dot-breathe": "dot-breathe 5.6s ease-in-out infinite",
+        "icon-breathe": "icon-breathe 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
+        "pulse-ring-slow": "pulse-ring 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
         "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
         "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",
+        // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
+        // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
+        "pop-in": "pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        "pop-out": "pop-out 120ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        // Dialog/sheet backdrops.
+        "overlay-in": "fade-in 220ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        "overlay-out": "fade-out 150ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        // Media-generation placeholder (generation-placeholder.tsx).
+        "gen-drift-a": "gen-drift-a 16s ease-in-out infinite",
+        "gen-drift-b": "gen-drift-b 22s ease-in-out infinite",
+        "gen-grid-pulse": "gen-grid-pulse 5.2s ease-in-out infinite",
+        "gen-sweep": "gen-sweep 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite",
       },
     },
   },
   plugins: [
     require("tailwindcss-animate"),
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
-    plugin(({ addVariant }) => {
+    plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");
+      // iOS notch/home-indicator breathing room (composer, sheets, full-bleed layouts).
+      addUtilities({
+        ".pt-safe": { paddingTop: "env(safe-area-inset-top, 0px)" },
+        ".pb-safe": { paddingBottom: "env(safe-area-inset-bottom, 0px)" },
+        ".pl-safe": { paddingLeft: "env(safe-area-inset-left, 0px)" },
+        ".pr-safe": { paddingRight: "env(safe-area-inset-right, 0px)" },
+      });
     }),
   ],
 };

@@ -7,6 +7,8 @@
  *   <juno:memory>The user prefers concise answers.</juno:memory>
  */
 
+import { findLearningBlocks, type ParsedLearningBlock } from "@/lib/learning-blocks";
+
 export type ArtifactType = "HTML" | "REACT" | "CODE" | "MARKDOWN" | "SVG" | "MERMAID";
 
 export interface ParsedArtifact {
@@ -20,6 +22,7 @@ export interface ParsedArtifact {
 const ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*?)<\/juno:artifact>/g;
 const OPEN_ARTIFACT_RE = /<juno:artifact\s+([^>]*?)>([\s\S]*)$/; // still streaming (no close yet)
 const MEMORY_RE = /<juno:memory>([\s\S]*?)<\/juno:memory>/g;
+const CLARIFICATION_WIZARD_RE = /:::clarification-wizard[\s\S]*?:::/gi;
 
 function parseAttrs(raw: string): Record<string, string> {
   const attrs: Record<string, string> = {};
@@ -117,6 +120,7 @@ export function parseMemories(text: string): string[] {
 export function cleanForDisplay(text: string): string {
   return text
     .replace(MEMORY_RE, "")
+    .replace(CLARIFICATION_WIZARD_RE, "")
     .replace(ARTIFACT_RE, (_full, attrsRaw) => {
       const attrs = parseAttrs(attrsRaw);
       return `\n\n:::artifact{identifier="${attrs.identifier ?? ""}"}\n\n`;
@@ -131,18 +135,38 @@ export function cleanForDisplay(text: string): string {
 
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "artifact"; identifier: string; streaming?: boolean };
+  | { type: "artifact"; identifier: string; streaming?: boolean }
+  | { type: "learning"; parsed: ParsedLearningBlock };
+
+function pushTextParts(parts: ContentPart[], text: string) {
+  if (!text.trim()) return;
+  const blocks = findLearningBlocks(text);
+  if (blocks.length === 0) {
+    parts.push({ type: "text", text });
+    return;
+  }
+
+  let lastIndex = 0;
+  for (const entry of blocks) {
+    const before = text.slice(lastIndex, entry.start);
+    if (before.trim()) parts.push({ type: "text", text: before });
+    parts.push({ type: "learning", parsed: entry });
+    lastIndex = entry.end;
+  }
+  const rest = text.slice(lastIndex);
+  if (rest.trim()) parts.push({ type: "text", text: rest });
+}
 
 /** Split a message into ordered text + artifact-reference parts for rendering. */
 export function splitMessageContent(raw: string): ContentPart[] {
-  const text = raw.replace(MEMORY_RE, "");
+  const text = raw.replace(MEMORY_RE, "").replace(CLARIFICATION_WIZARD_RE, "");
   const parts: ContentPart[] = [];
   let lastIndex = 0;
   let m: RegExpExecArray | null;
   ARTIFACT_RE.lastIndex = 0;
   while ((m = ARTIFACT_RE.exec(text))) {
     const before = text.slice(lastIndex, m.index);
-    if (before.trim()) parts.push({ type: "text", text: before });
+    pushTextParts(parts, before);
     const attrs = parseAttrs(m[1]);
     parts.push({ type: "artifact", identifier: artifactId(attrs, m[2]) });
     lastIndex = m.index + m[0].length;
@@ -152,17 +176,17 @@ export function splitMessageContent(raw: string): ContentPart[] {
   const open = OPEN_ARTIFACT_RE.exec(rest);
   if (open) {
     const before = rest.slice(0, open.index);
-    if (before.trim()) parts.push({ type: "text", text: before });
+    pushTextParts(parts, before);
     const attrs = parseAttrs(open[1]);
     parts.push({ type: "artifact", identifier: artifactId(attrs, open[2]), streaming: true });
   } else {
     const partialIdx = rest.indexOf("<juno:artifact");
     if (partialIdx !== -1 && !rest.slice(partialIdx).includes(">")) {
       const before = rest.slice(0, partialIdx);
-      if (before.trim()) parts.push({ type: "text", text: before });
+      pushTextParts(parts, before);
       parts.push({ type: "artifact", identifier: "", streaming: true });
     } else if (rest.trim()) {
-      parts.push({ type: "text", text: rest });
+      pushTextParts(parts, rest);
     }
   }
 
@@ -174,6 +198,12 @@ export function cleanForSpeech(text: string): string {
   return text
     .replace(MEMORY_RE, "")
     .replace(ARTIFACT_RE, " I've added that to the canvas. ")
+    .replace(CLARIFICATION_WIZARD_RE, "")
+    .replace(
+      /:::(?:step-lab|learning-card|process-timeline|comparison|quiz|deep-dive)[\s\S]*?(?::::|$)/gi,
+      " (interactive visual explanation shown on screen) "
+    )
+    .replace(/```(?:juno-visual|juno-ui|juno-block|visual|visual-block)[\s\S]*?```/gi, " (visual explanation shown on screen) ")
     .replace(/```[\s\S]*?```/g, " (code shown on screen) ")
     .replace(/`([^`]+)`/g, "$1")
     .replace(/[*_#>~|]/g, "")

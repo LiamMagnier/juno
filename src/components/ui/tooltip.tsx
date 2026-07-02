@@ -11,13 +11,15 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, sideOffset = 4, collisionPadding = 8, ...props }, ref) => (
   <TooltipPrimitive.Portal>
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
+      collisionPadding={collisionPadding}
       className={cn(
-        "z-50 overflow-hidden rounded-md bg-foreground px-2.5 py-1 text-xs text-background shadow-md data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0",
+        // instant-open (hopping between adjacent triggers) intentionally skips the entrance.
+        "z-50 max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-md bg-foreground px-2.5 py-1 text-xs text-background shadow-soft data-[state=delayed-open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

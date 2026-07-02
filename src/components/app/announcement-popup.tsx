@@ -131,9 +131,9 @@ export function AnnouncementPopup() {
     >
       <DialogContent
         hideClose
-        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto rounded-[28px] p-0 border border-border/85 bg-background shadow-glass lg:overflow-hidden"
+        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain rounded-panel p-0 border border-border/85 bg-background shadow-glass lg:overflow-hidden"
       >
-        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground backdrop-blur-sm transition-all duration-fast hover:bg-background hover:text-foreground hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground backdrop-blur-sm transition-all duration-fast ease-out-soft hover:bg-background hover:text-foreground hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11 coarse:w-11">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogClose>
@@ -146,7 +146,7 @@ export function AnnouncementPopup() {
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
                   {announcement.modelName && (
-                    <div className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-primary">{announcement.modelName}</div>
+                    <div className="mb-2 font-mono text-label uppercase text-primary">{announcement.modelName}</div>
                   )}
                   <DialogTitle className="font-serif text-2xl font-normal leading-tight sm:text-3xl text-foreground">{announcement.title}</DialogTitle>
                 </div>
@@ -162,7 +162,7 @@ export function AnnouncementPopup() {
                 <Button
                   variant="outline"
                   onClick={() => followHref(announcement.newsHref)}
-                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold gap-1.5 transition-all hover:bg-muted active:scale-98"
+                  className="h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold hover:bg-muted"
                 >
                   {announcement.newsLabel || "Read The News"}
                 </Button>
@@ -170,7 +170,7 @@ export function AnnouncementPopup() {
                 <Button
                   variant="ghost"
                   onClick={dismiss}
-                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold text-muted-foreground hover:text-foreground transition-all active:scale-98"
+                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold text-muted-foreground hover:text-foreground"
                 >
                   Not now
                 </Button>
@@ -178,10 +178,10 @@ export function AnnouncementPopup() {
               {announcement.ctaLabel && announcement.ctaHref && (
                 <Button
                   onClick={() => followHref(announcement.ctaHref)}
-                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold gap-1.5 shadow-soft transition-all hover:opacity-95 hover:translate-y-[-1px] active:translate-y-[0px] active:scale-98 group"
+                  className="group h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold shadow-soft hover:-translate-y-px active:translate-y-0"
                 >
                   {announcement.ctaLabel}
-                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />
                 </Button>
               )}
             </div>

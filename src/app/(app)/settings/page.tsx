@@ -214,7 +214,7 @@ export default function SettingsPage() {
           <Tile eyebrow="Usage this month" i={0} span>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-stretch mt-1">
               {/* Plan info (Left) */}
-              <div className="md:col-span-2 flex flex-col justify-between rounded-[12px] bg-accent/40 border border-border/60 p-4">
+              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-[18px] bg-accent/40 border border-border/50 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-serif text-heading font-semibold tracking-tight">
@@ -245,7 +245,7 @@ export default function SettingsPage() {
                     {plan.price > 0 ? `$${plan.price}/mo` : "Active tier"}
                   </span>
                   {quota.plan === "FREE" && features.billing && (
-                    <Button asChild size="sm" className="h-7 rounded-md px-3 text-xs">
+                    <Button asChild size="sm" className="h-7 px-3 text-xs">
                       <Link href="/upgrade">Upgrade</Link>
                     </Button>
                   )}
@@ -253,7 +253,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Usage metrics (Right) */}
-              <div className="md:col-span-3 flex flex-col justify-between rounded-[12px] border border-border/50 p-4 bg-card">
+              <div className="field-well md:col-span-3 flex flex-col justify-between rounded-[18px] border border-border/50 p-4 bg-card">
                 <div>
                   <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block mb-2">
                     Monthly Quota
@@ -334,8 +334,8 @@ export default function SettingsPage() {
                         aria-checked={selected}
                         onClick={() => setThemePref(t.value)}
                         className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-md border p-3 text-sm transition-all duration-fast hover:bg-accent",
-                          selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border"
+                          "flex flex-col items-center gap-1.5 rounded-xl border p-3 text-sm shadow-pop transition-all duration-fast ease-out-soft hover:-translate-y-0.5 hover:bg-accent hover:shadow-float",
+                          selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
                         )}
                       >
                         <t.icon className="h-4 w-4" />
@@ -439,7 +439,7 @@ export default function SettingsPage() {
                 onChange={(e) => setInstructions(e.target.value)}
                 onBlur={saveInstructions}
                 placeholder="E.g. I'm a product manager. Keep answers concise and use bullet points."
-                className="min-h-[110px] pb-8 rounded-md"
+                className="min-h-[110px] pb-8"
                 maxLength={4000}
               />
               <span className="absolute bottom-2.5 right-3 font-mono text-[10px] text-muted-foreground/50 select-none">

@@ -13,7 +13,7 @@ export default async function SignUpPage() {
   return (
     <div className="space-y-6">
       <div className="space-y-1.5 text-center">
-        <h1 className="font-serif text-3xl font-medium tracking-tight">Create your account</h1>
+        <h1 className="text-balance font-serif text-3xl font-medium tracking-tight">Create your account</h1>
         <p className="text-sm text-muted-foreground">Start chatting with Juno in seconds.</p>
       </div>
       <Suspense fallback={null}>

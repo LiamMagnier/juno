@@ -4,13 +4,32 @@ import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
 import { resolveModel } from "@/lib/models";
-import type { ClientArtifact, ClientAttachment, ClientMessage, ClientQuota, GenerationStatus, ReasoningEffort, TitleSource } from "@/types/chat";
+import {
+  isPreflightClarificationResult,
+  type PendingPreflightClarification,
+  type PreflightClarificationAnswer,
+  type PreflightClarificationContext,
+} from "@/lib/preflight-clarification";
+import type {
+  ClientArtifact,
+  ClientAttachment,
+  ClientMessage,
+  ClientQuota,
+  GenerateEditPayload,
+  GenerationStatus,
+  ReasoningEffort,
+  TitleSource,
+} from "@/types/chat";
 
 export type ChatMessage = ClientMessage & {
   streaming?: boolean;
   pending?: boolean;
   error?: boolean;
 };
+
+export type SendResult = { accepted: boolean; clarificationPending?: boolean };
+
+export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
 
 let tempCounter = 0;
 const tempId = () => `temp-${Date.now()}-${tempCounter++}`;
@@ -42,6 +61,7 @@ export function useChat(opts: UseChatOptions) {
   const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
   const [artifacts, setArtifacts] = React.useState<ClientArtifact[]>(opts.initialArtifacts);
   const [status, setStatus] = React.useState<GenerationStatus>("idle");
+  const [pendingClarification, setPendingClarification] = React.useState<PendingPreflightClarification | null>(null);
   const convoIdRef = React.useRef<string | null>(opts.conversationId);
   const abortRef = React.useRef<AbortController | null>(null);
   const generationIdRef = React.useRef<string | null>(null);
@@ -55,6 +75,7 @@ export function useChat(opts: UseChatOptions) {
     setMessages(opts.initialMessages);
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
+    setPendingClarification(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
@@ -155,6 +176,17 @@ export function useChat(opts: UseChatOptions) {
               );
               break;
             }
+            case "progress": {
+              // Live /api/generate stage; modality was stamped when the generation started.
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantTempId
+                    ? { ...m, progress: { modality: m.progress?.modality ?? "image", stage: chunk.stage, pct: chunk.pct } }
+                    : m
+                )
+              );
+              break;
+            }
             case "done": {
               if (stopFallbackRef.current != null) {
                 window.clearTimeout(stopFallbackRef.current);
@@ -188,6 +220,7 @@ export function useChat(opts: UseChatOptions) {
                         ...m,
                         streaming: false,
                         error: true,
+                        progress: null,
                         finishReason: chunk.finishReason ?? "error",
                         ...(chunk.preservePartial && (m.content || m.reasoning)
                           ? { errorMessage: chunk.message }
@@ -209,7 +242,7 @@ export function useChat(opts: UseChatOptions) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantTempId
-                ? { ...m, streaming: false, finishReason: stopped ? "user_stopped" : m.finishReason }
+                ? { ...m, streaming: false, progress: null, finishReason: stopped ? "user_stopped" : m.finishReason }
                 : m
             )
           );
@@ -219,7 +252,7 @@ export function useChat(opts: UseChatOptions) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantTempId
-                ? { ...m, streaming: false, error: true, finishReason: "error", errorMessage: message, content: m.content || message }
+                ? { ...m, streaming: false, error: true, progress: null, finishReason: "error", errorMessage: message, content: m.content || message }
                 : m
             )
           );
@@ -240,12 +273,16 @@ export function useChat(opts: UseChatOptions) {
     [mergeArtifacts, opts]
   );
 
-  const send = React.useCallback(
-    async (text: string, attachments: ClientAttachment[] = []) => {
-      if (status !== "idle" && status !== "error") return;
-      const trimmed = text.trim();
-      if (!trimmed && attachments.length === 0) return;
-
+  const startGeneration = React.useCallback(
+    (input: {
+      text: string;
+      attachments?: ClientAttachment[];
+      preflightClarification?: PreflightClarificationContext;
+    }): SendResult => {
+      const trimmed = input.text.trim();
+      const attachments = input.attachments ?? [];
+      // Image/video models run through the generation endpoint, not the chat stream.
+      const modality = resolveModel(opts.model)?.modality ?? "chat";
       const userMsg: ChatMessage = {
         id: tempId(),
         role: "USER",
@@ -263,16 +300,16 @@ export function useChat(opts: UseChatOptions) {
         attachments: [],
         activity: [],
         streaming: true,
+        // Media generations show their placeholder before the first SSE frame lands.
+        progress: modality === "chat" || opts.privateMode ? null : { modality, stage: "queued" },
       };
       setMessages((prev) => [...prev, userMsg, assistantMsg]);
 
-      // Image/video models run through the generation endpoint, not the chat stream.
-      const modality = resolveModel(opts.model)?.modality ?? "chat";
       if (opts.privateMode && modality !== "chat") {
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantTempId
-              ? { ...m, streaming: false, error: true, content: "Private chat only supports text chat right now because generated media is stored." }
+              ? { ...m, streaming: false, error: true, progress: null, content: "Private chat only supports text chat right now because generated media is stored." }
               : m.pending && m.role === "USER"
                 ? { ...m, pending: false }
                 : m
@@ -280,18 +317,18 @@ export function useChat(opts: UseChatOptions) {
         );
         toast.error("Private chat only supports text chat right now.");
         setStatus("idle");
-        return;
+        return { accepted: true };
       }
       if (modality !== "chat") {
-        await runGeneration(
+        void runGeneration(
           { conversationId: convoIdRef.current ?? undefined, prompt: trimmed, model: opts.model },
           assistantTempId,
           "/api/generate"
         );
-        return;
+        return { accepted: true };
       }
 
-      await runGeneration(
+      void runGeneration(
         {
           conversationId: opts.privateMode ? undefined : convoIdRef.current ?? undefined,
           // Only relevant when creating a brand-new conversation inside a project.
@@ -304,6 +341,7 @@ export function useChat(opts: UseChatOptions) {
           webSearch: opts.webSearch,
           reasoningEffort: opts.reasoningEffort,
           connectors: opts.connectors,
+          preflightClarification: input.preflightClarification,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
             ? [...messages, userMsg]
@@ -313,9 +351,9 @@ export function useChat(opts: UseChatOptions) {
         },
         assistantTempId
       );
+      return { accepted: true };
     },
     [
-      status,
       runGeneration,
       opts.model,
       opts.voiceMode,
@@ -328,6 +366,124 @@ export function useChat(opts: UseChatOptions) {
       messages,
     ]
   );
+
+  const send = React.useCallback(
+    async (text: string, attachments: ClientAttachment[] = []): Promise<SendResult> => {
+      if ((status !== "idle" && status !== "error") || pendingClarification) return { accepted: false };
+      const trimmed = text.trim();
+      if (!trimmed && attachments.length === 0) return { accepted: false };
+
+      const modality = resolveModel(opts.model)?.modality ?? "chat";
+      if (modality !== "chat" || !trimmed) {
+        return startGeneration({ text: trimmed, attachments });
+      }
+
+      setStatus("checking");
+      try {
+        const res = await fetch("/api/chat/clarify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            conversationId: opts.privateMode ? null : convoIdRef.current,
+            message: trimmed,
+            hasAttachments: attachments.length > 0,
+            privateMode: opts.privateMode,
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && isPreflightClarificationResult(data) && data.needsClarification) {
+          setPendingClarification({
+            id: crypto.randomUUID(),
+            originalUserMessage: trimmed,
+            attachments,
+            result: data,
+          });
+          setStatus("idle");
+          return { accepted: false, clarificationPending: true };
+        }
+      } catch {
+        // If the preflight check fails, keep the product moving and answer.
+      }
+
+      return startGeneration({ text: trimmed, attachments });
+    },
+    [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
+  );
+
+  // Region-based image edit — same /api/generate transport (quota, meta, progress,
+  // done/error handling all come from runGeneration). The edit prompt becomes the
+  // new user message; the result arrives like any other generation.
+  const sendImageEdit = React.useCallback(
+    (input: ImageEditInput): SendResult => {
+      if ((status !== "idle" && status !== "error") || pendingClarification) return { accepted: false };
+      const trimmed = input.prompt.trim();
+      if (!trimmed) return { accepted: false };
+      if (opts.privateMode) {
+        toast.error("Image editing isn't available in private chat.");
+        return { accepted: false };
+      }
+      const userMsg: ChatMessage = {
+        id: tempId(),
+        role: "USER",
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+        attachments: [],
+        pending: true,
+      };
+      const assistantTempId = tempId();
+      const assistantMsg: ChatMessage = {
+        id: assistantTempId,
+        role: "ASSISTANT",
+        content: "",
+        createdAt: new Date().toISOString(),
+        attachments: [],
+        activity: [],
+        streaming: true,
+        progress: { modality: "image", stage: "queued" },
+      };
+      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+      void runGeneration(
+        { conversationId: convoIdRef.current ?? undefined, prompt: trimmed, model: input.model, edit: input.edit },
+        assistantTempId,
+        "/api/generate"
+      );
+      return { accepted: true };
+    },
+    [status, pendingClarification, runGeneration, opts.privateMode]
+  );
+
+  const resolvePendingClarification = React.useCallback(
+    async (answers: PreflightClarificationAnswer[], skipped = false): Promise<SendResult> => {
+      if ((status !== "idle" && status !== "error") || !pendingClarification) return { accepted: false };
+      const pending = pendingClarification;
+      setPendingClarification(null);
+      const context: PreflightClarificationContext = {
+        originalUserMessage: pending.originalUserMessage,
+        answers: skipped
+          ? [
+              {
+                questionId: "skipped",
+                question: "Pre-answer clarification",
+                source: "skip",
+                value: "Skipped clarification",
+              },
+            ]
+          : answers,
+        skipped,
+      };
+      return startGeneration({
+        text: pending.originalUserMessage,
+        attachments: pending.attachments,
+        preflightClarification: context,
+      });
+    },
+    [pendingClarification, startGeneration, status]
+  );
+
+  const cancelPendingClarification = React.useCallback(() => {
+    setPendingClarification(null);
+    setStatus("idle");
+  }, []);
 
   const regenerate = React.useCallback(async () => {
     if (status !== "idle" && status !== "error") return;
@@ -447,6 +603,7 @@ export function useChat(opts: UseChatOptions) {
     setMessages([]);
     setArtifacts([]);
     setStatus("idle");
+    setPendingClarification(null);
   }, []);
 
   const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
@@ -466,8 +623,12 @@ export function useChat(opts: UseChatOptions) {
     messages,
     artifacts,
     status,
-    isBusy: status === "submitting" || status === "thinking" || status === "writing" || status === "stopping",
+    pendingClarification,
+    isBusy: status === "checking" || status === "submitting" || status === "thinking" || status === "writing" || status === "stopping",
     send,
+    sendImageEdit,
+    resolvePendingClarification,
+    cancelPendingClarification,
     continueResponse,
     regenerate,
     editAndResend,
@@ -475,5 +636,6 @@ export function useChat(opts: UseChatOptions) {
     reset,
     setFeedback,
     setArtifacts,
+    setMessages,
   };
 }

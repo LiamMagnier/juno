@@ -133,7 +133,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               onClick={() => setTab(t.key)}
               aria-pressed={tab === t.key}
               className={cn(
-                "rounded-full px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-all duration-fast",
+                "pressable rounded-full px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] coarse:py-2.5",
                 tab === t.key ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               )}
             >
@@ -174,7 +174,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                           onClick={() => toggle(i.id)}
                           aria-pressed={isSel}
                           className={cn(
-                            "group relative aspect-square overflow-hidden rounded-lg border bg-muted shadow-soft transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:shadow-float",
+                            "group relative aspect-square overflow-hidden rounded-lg border bg-muted shadow-soft transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98]",
                             isSel && "ring-2 ring-primary"
                           )}
                         >
@@ -210,7 +210,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                           onClick={() => toggle(f.id)}
                           aria-pressed={isSel}
                           className={cn(
-                            "group flex items-center gap-3 rounded-lg border bg-card p-2.5 text-left shadow-soft transition-shadow duration-base hover:shadow-float",
+                            "pressable group flex items-center gap-3 rounded-lg border bg-card p-2.5 text-left shadow-soft hover:border-primary/35 hover:shadow-float",
                             isSel && "ring-2 ring-primary"
                           )}
                         >

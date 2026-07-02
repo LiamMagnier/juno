@@ -46,11 +46,21 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
 import { useApp } from "@/components/app/app-provider";
 import { dateGroup, cn } from "@/lib/utils";
 import type { ClientConversation } from "@/types/chat";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
+
+type SidebarProject = {
+  id: string;
+  name: string;
+  updatedAt: string;
+  conversationCount: number;
+  fileCount?: number;
+  coverUrl?: string | null;
+};
 
 export function AppSidebar({
   collapsed,
@@ -77,10 +87,14 @@ export function AppSidebar({
   // Date grouping (Today/Yesterday/…) depends on the local clock, so defer the
   // list to after mount to keep SSR and the first client render in agreement.
   const [mounted, setMounted] = React.useState(false);
-  const [projects, setProjects] = React.useState<{ id: string; name: string }[]>([]);
+  const [projects, setProjects] = React.useState<SidebarProject[]>([]);
   const [starredProjectIds, setStarredProjectIds] = React.useState<string[]>([]);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
+  const [projectsCollapsed, setProjectsCollapsed] = React.useState(false);
+  const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
+  const [renameDraft, setRenameDraft] = React.useState("");
+  const [renamingProject, setRenamingProject] = React.useState(false);
 
   const loadProjects = React.useCallback(async () => {
     try {
@@ -114,6 +128,8 @@ export function AppSidebar({
       if (starred) setStarredCollapsed(JSON.parse(starred));
       const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
       if (recents) setRecentsCollapsed(JSON.parse(recents));
+      const projectsPref = localStorage.getItem("juno:sidebar:projects:collapsed");
+      if (projectsPref) setProjectsCollapsed(JSON.parse(projectsPref));
     } catch {}
 
     const handleSync = () => {
@@ -143,6 +159,82 @@ export function AppSidebar({
     try {
       localStorage.setItem("juno:sidebar:recents:collapsed", JSON.stringify(next));
     } catch {}
+  };
+
+  const toggleProjectsCollapsed = () => {
+    const next = !projectsCollapsed;
+    setProjectsCollapsed(next);
+    try {
+      localStorage.setItem("juno:sidebar:projects:collapsed", JSON.stringify(next));
+    } catch {}
+  };
+
+  // Starred projects first, then by recency; the sidebar shows at most 6.
+  const sidebarProjects = React.useMemo(() => {
+    const byUpdated = [...projects].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    );
+    return [
+      ...byUpdated.filter((p) => starredProjectIds.includes(p.id)),
+      ...byUpdated.filter((p) => !starredProjectIds.includes(p.id)),
+    ].slice(0, 6);
+  }, [projects, starredProjectIds]);
+
+  const toggleProjectStar = (id: string) => {
+    try {
+      const raw = JSON.parse(localStorage.getItem("starredProjects") || "[]");
+      const starred: string[] = Array.isArray(raw) ? raw : [];
+      const isStarred = starred.includes(id);
+      const nextStarred = isStarred ? starred.filter((pId) => pId !== id) : [...starred, id];
+      localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
+      toast.success(isStarred ? "Project unstarred." : "Project starred!");
+      window.dispatchEvent(new CustomEvent("starred:sync"));
+    } catch {}
+  };
+
+  const renameProject = async () => {
+    if (!renameTarget || !renameDraft.trim()) return;
+    setRenamingProject(true);
+    try {
+      const r = await fetch(`/api/projects/${renameTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: renameDraft.trim() }),
+      });
+      if (!r.ok) throw new Error();
+      toast.success("Project renamed.");
+      await loadProjects();
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+      setRenameTarget(null);
+    } catch {
+      toast.error("Could not rename project.");
+    } finally {
+      setRenamingProject(false);
+    }
+  };
+
+  const deleteProject = (project: SidebarProject) => {
+    setConfirm({
+      title: "Delete this project?",
+      description:
+        "Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.",
+      confirmLabel: "Delete project",
+      onConfirm: async () => {
+        const r = await fetch(`/api/projects/${project.id}`, { method: "DELETE" });
+        if (!r.ok) {
+          toast.error("Could not delete project.");
+          return;
+        }
+        toast.success("Project deleted.");
+        try {
+          const raw = JSON.parse(localStorage.getItem("starredProjects") || "[]");
+          const starred: string[] = Array.isArray(raw) ? raw : [];
+          localStorage.setItem("starredProjects", JSON.stringify(starred.filter((pId) => pId !== project.id)));
+        } catch {}
+        window.dispatchEvent(new CustomEvent("projects:sync"));
+        if (pathname === `/projects/${project.id}`) router.push("/projects");
+      },
+    });
   };
 
   const filtered = React.useMemo(() => {
@@ -187,10 +279,12 @@ export function AppSidebar({
     });
   };
 
-  // Collapsed icon rail (desktop only).
+  // Collapsed icon rail (desktop only). Fixed width + keyed fade-in so the
+  // content doesn't reflow while the shell animates the aside's width, and the
+  // layout swap reads as a cross-fade instead of a pop.
   if (collapsed) {
     return (
-      <div className="flex h-full flex-col items-center bg-sidebar py-3 text-sidebar-foreground">
+      <div key="rail" className="flex h-full w-[64px] flex-col items-center bg-sidebar py-3 text-sidebar-foreground motion-safe:animate-fade-in">
         <button
           onClick={onToggleCollapse}
           title="Expand sidebar"
@@ -221,7 +315,7 @@ export function AppSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+    <div key="expanded" className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground motion-safe:animate-fade-in md:w-[280px]">
       <div className="flex items-center justify-between px-3 pb-7 pt-3">
         <Link href="/chat" onClick={() => setSidebarOpen(false)} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <span className="font-serif text-2xl font-normal tracking-normal text-foreground pl-1">
@@ -306,51 +400,83 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {(() => {
-              const starredProjects = projects.filter((p) => starredProjectIds.includes(p.id));
-              const hasStarred = starredProjects.length > 0 || pinned.length > 0;
-              if (!hasStarred) return null;
-              return (
-                <Section
-                  label="Starred"
-                  count={starredProjects.length + pinned.length}
-                  collapsible
-                  isCollapsed={starredCollapsed}
-                  onToggleCollapse={toggleStarredCollapsed}
-                >
-                  {/* Starred Projects */}
-                  {starredProjects.map((p) => (
-                    <Link
-                      key={p.id}
-                      href={`/projects/${p.id}`}
-                      onClick={() => setSidebarOpen(false)}
-                      className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[14px] font-medium transition-all duration-fast hover:bg-sidebar-accent hover:translate-x-0.5 text-sidebar-foreground hover:text-foreground"
-                      title={p.name}
-                    >
-                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
-                        <Box className="h-[18px] w-[18px]" />
-                      </span>
-                      <span className="truncate">{p.name}</span>
-                    </Link>
-                  ))}
-                  {/* Starred/Pinned Chats */}
-                  {pinned.map((c) => (
-                    <ConversationRow
-                      key={c.id}
-                      conversation={c}
-                      active={c.id === activeConversationId}
-                      renaming={renamingId === c.id}
-                      setRenaming={setRenamingId}
-                      projects={projects}
-                      onUpdate={updateConversation}
-                      onRemove={removeConversation}
-                      onNavigate={() => setSidebarOpen(false)}
-                      onRequestConfirm={setConfirm}
-                    />
-                  ))}
-                </Section>
-              );
-            })()}
+            {projects.length > 0 && (
+              <Section
+                label="Projects"
+                count={projects.length}
+                collapsible
+                isCollapsed={projectsCollapsed}
+                onToggleCollapse={toggleProjectsCollapsed}
+                action={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-6 w-6 text-muted-foreground/70 hover:text-foreground"
+                    onClick={() => {
+                      router.push("/projects");
+                      setSidebarOpen(false);
+                    }}
+                    aria-label="New project"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                }
+              >
+                {sidebarProjects.map((p) => (
+                  <ProjectRow
+                    key={p.id}
+                    project={p}
+                    active={pathname === `/projects/${p.id}`}
+                    starred={starredProjectIds.includes(p.id)}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onNewChat={() => {
+                      router.push(`/chat?project=${p.id}`);
+                      setSidebarOpen(false);
+                    }}
+                    onToggleStar={() => toggleProjectStar(p.id)}
+                    onRename={() => {
+                      setRenameDraft(p.name);
+                      setRenameTarget(p);
+                    }}
+                    onDelete={() => deleteProject(p)}
+                  />
+                ))}
+                {projects.length > 6 && (
+                  <Link
+                    href="/projects"
+                    onClick={() => setSidebarOpen(false)}
+                    className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[12px] font-medium text-muted-foreground/70 transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5 hover:text-foreground"
+                  >
+                    <span className="h-[22px] w-[22px] shrink-0" />
+                    <span className="truncate">View all {projects.length}</span>
+                  </Link>
+                )}
+              </Section>
+            )}
+            {pinned.length > 0 && (
+              <Section
+                label="Starred"
+                count={pinned.length}
+                collapsible
+                isCollapsed={starredCollapsed}
+                onToggleCollapse={toggleStarredCollapsed}
+              >
+                {pinned.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    active={c.id === activeConversationId}
+                    renaming={renamingId === c.id}
+                    setRenaming={setRenamingId}
+                    projects={projects}
+                    onUpdate={updateConversation}
+                    onRemove={removeConversation}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onRequestConfirm={setConfirm}
+                  />
+                ))}
+              </Section>
+            )}
             {filtered.filter((c) => !c.pinned).length > 0 && (
               <Section
                 label="Recent"
@@ -359,9 +485,9 @@ export function AppSidebar({
                 isCollapsed={recentsCollapsed}
                 onToggleCollapse={toggleRecentsCollapsed}
               >
-                {groups.map(([groupLabel, items]) => (
-                  <div key={groupLabel} className="space-y-0.5">
-                    <div className="flex items-center px-2 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/50">
+                {groups.map(([groupLabel, items], index) => (
+                  <div key={groupLabel} className={cn("space-y-0.5", index > 0 ? "mt-5" : "mt-3")}>
+                    <div className="flex items-center px-2 py-1 font-mono text-label uppercase text-muted-foreground/50">
                       {groupLabel}
                     </div>
                     {items.map((c) => (
@@ -415,6 +541,37 @@ export function AppSidebar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Project rename dialog */}
+      <Dialog open={renameTarget !== null} onOpenChange={(o) => !o && setRenameTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-serif">Rename project</DialogTitle>
+            <DialogDescription>Change the name of this project.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="sidebar-rename-project">Project name</Label>
+            <Input
+              id="sidebar-rename-project"
+              value={renameDraft}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              placeholder="New project name"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") renameProject();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={renameProject} disabled={renamingProject || !renameDraft.trim()}>
+              {renamingProject ? "Renaming…" : "Rename project"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -433,7 +590,7 @@ function RailIcon({
   children: React.ReactNode;
 }) {
   const cls = cn(
-    "flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast hover:scale-105 active:scale-95",
+    "flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
     active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
   );
   if (href) {
@@ -450,6 +607,12 @@ function RailIcon({
   );
 }
 
+/** Accent bar on the active row — scales/fades per row, so moving the active
+ *  item reads as the old bar retracting while the new one grows in. */
+function ActiveIndicator({ active }: { active?: boolean }) {
+  return null;
+}
+
 function NavRow({
   href,
   onClick,
@@ -464,13 +627,14 @@ function NavRow({
   active?: boolean;
 }) {
   const cls = cn(
-    "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[15px] font-medium transition-all duration-fast hover:bg-sidebar-accent hover:translate-x-0.5",
+    "group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[15px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
   const inner = (
     <>
+      <ActiveIndicator active={active} />
       <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
@@ -497,6 +661,7 @@ function Section({
   collapsible,
   isCollapsed,
   onToggleCollapse,
+  action,
 }: {
   label: string;
   count?: number;
@@ -505,35 +670,59 @@ function Section({
   collapsible?: boolean;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  action?: React.ReactNode;
 }) {
-  const headerContent = (
-    <div
-      className={cn(
-        "flex items-center gap-2.5 px-2 py-1.5 text-left select-none rounded-md transition-colors duration-fast",
-        collapsible && "cursor-pointer hover:bg-sidebar-accent/50 text-foreground"
-      )}
-      onClick={collapsible ? onToggleCollapse : undefined}
-    >
+  const headerInner = (
+    <>
       <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80">
         {collapsible ? (
-          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast", !isCollapsed && "rotate-90")} />
+          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", !isCollapsed && "rotate-90")} />
         ) : Icon ? (
           <Icon className="h-3.5 w-3.5 text-muted-foreground/75" />
         ) : null}
       </span>
-      <span className="flex-1 font-mono text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/80">
+      <span className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground/70">
         {label}
       </span>
-      {count != null && !isCollapsed && (
-        <span className="font-mono text-[10px] text-muted-foreground/50 pr-1">{count}</span>
-      )}
-    </div>
+      {count != null && <span className="pr-1 font-mono text-[10px] text-muted-foreground/50">{count}</span>}
+    </>
   );
 
   return (
     <div className="mb-3">
-      {headerContent}
-      {!isCollapsed && <div className="space-y-0.5">{children}</div>}
+      <div className="flex items-center">
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={onToggleCollapse}
+            aria-expanded={!isCollapsed}
+            className="pressable flex min-w-0 flex-1 select-none items-center gap-2.5 rounded-md px-2 py-1.5 text-left hover:bg-sidebar-accent/50"
+          >
+            {headerInner}
+          </button>
+        ) : (
+          <div className="flex min-w-0 flex-1 select-none items-center gap-2.5 px-2 py-1.5">{headerInner}</div>
+        )}
+        {action != null && <span className="flex shrink-0 items-center pr-1">{action}</span>}
+      </div>
+      {/* Grid-rows sweep so 10+ rows don't appear/vanish in one frame; visibility
+          rides the same transition, which also drops hidden rows from tab order. */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft",
+          isCollapsed ? "invisible grid-rows-[0fr]" : "visible grid-rows-[1fr]"
+        )}
+      >
+        <div
+          className={cn(
+            // -mx/px bleed keeps the rows' hover nudge from clipping at the fold edge.
+            "-mx-2 min-h-0 overflow-hidden px-2 transition-opacity duration-base ease-out-soft",
+            isCollapsed && "opacity-0"
+          )}
+        >
+          <div className="space-y-0.5">{children}</div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -552,7 +741,7 @@ function FolderChip({
   return (
     <span
       className={cn(
-        "group/chip inline-flex items-center rounded-full border text-xs transition-colors duration-fast",
+        "group/chip pressable inline-flex items-center rounded-full border text-xs",
         active ? "border-primary/40 bg-primary/10 text-primary" : "hover:bg-sidebar-accent"
       )}
     >
@@ -566,7 +755,7 @@ function FolderChip({
             onDelete();
           }}
           aria-label="Delete folder"
-          className="mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/chip:opacity-100 coarse:opacity-100"
+          className="mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-destructive focus-visible:opacity-100 group-hover/chip:opacity-100 coarse:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>
@@ -662,10 +851,11 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast hover:translate-x-0.5",
+        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
+      <ActiveIndicator active={active} />
       <Link
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
@@ -686,13 +876,13 @@ function ConversationRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="rounded-sm p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+            className="pressable rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label="Conversation options"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
           <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
             <Star className={cn("h-4 w-4", conversation.pinned ? "fill-primary text-primary" : "")} />
             <span>{conversation.pinned ? "Unstar" : "Star"}</span>
@@ -710,7 +900,7 @@ function ConversationRow({
             <DropdownMenuSubTrigger>
               <Box className="h-4 w-4" /> Add to project
             </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56">
+            <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
               <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
                 {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
               </DropdownMenuItem>
@@ -729,6 +919,90 @@ function ConversationRow({
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={remove}
+            className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+          >
+            <Trash2 className="h-4 w-4" /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function ProjectRow({
+  project,
+  active,
+  starred,
+  onNavigate,
+  onNewChat,
+  onToggleStar,
+  onRename,
+  onDelete,
+}: {
+  project: SidebarProject;
+  active: boolean;
+  starred: boolean;
+  onNavigate: () => void;
+  onNewChat: () => void;
+  onToggleStar: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
+        active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
+      )}
+    >
+      <ActiveIndicator active={active} />
+      <Link
+        href={`/projects/${project.id}`}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
+          active && "font-semibold text-foreground"
+        )}
+        title={project.name}
+      >
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
+          {project.coverUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={project.coverUrl} alt="" className="h-[22px] w-[22px] rounded-[7px] object-cover" />
+          ) : (
+            <Box className="h-[18px] w-[18px]" />
+          )}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{project.name}</span>
+        {starred && <Star className="h-3 w-3 shrink-0 fill-primary text-primary" />}
+        <span className="shrink-0 pl-1 font-mono text-[10px] text-muted-foreground">
+          {project.conversationCount}
+        </span>
+      </Link>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            className="pressable rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            aria-label="Project options"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+          <DropdownMenuItem onSelect={onNewChat}>
+            <Plus className="h-4 w-4" /> New chat in project
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onToggleStar}>
+            <Star className={cn("h-4 w-4", starred && "fill-primary text-primary")} />
+            <span>{starred ? "Unstar" : "Star"}</span>
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={onRename}>
+            <Pencil className="h-4 w-4" /> Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onSelect={onDelete}
             className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
           >
             <Trash2 className="h-4 w-4" /> Delete

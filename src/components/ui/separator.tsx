@@ -8,7 +8,15 @@ const Separator = React.forwardRef<
   <div
     ref={ref}
     role="separator"
-    className={cn("shrink-0 bg-border", orientation === "horizontal" ? "h-px w-full" : "h-full w-px", className)}
+    aria-orientation={orientation}
+    className={cn(
+      "shrink-0 border-0",
+      // Hairline dividers fade at the ends — a softer, more crafted rule than a flat bar.
+      orientation === "horizontal"
+        ? "h-px w-full bg-gradient-to-r from-transparent via-border to-transparent"
+        : "h-full w-px bg-gradient-to-b from-transparent via-border to-transparent",
+      className
+    )}
     {...props}
   />
 ));

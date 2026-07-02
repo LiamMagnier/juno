@@ -2,7 +2,7 @@ import "server-only";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { prisma } from "@/lib/prisma";
-import { getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
+import { DEFAULT_TOKEN_TTL_MS, getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type { Connection } from "@prisma/client";
 
@@ -20,20 +20,31 @@ export interface ActiveConnector {
   token: string;
 }
 
-// Refresh ~1 min before expiry so a token doesn't die mid-request.
-const EXPIRY_SKEW_MS = 60_000;
+// Refresh a few minutes before expiry so MCP tokens don't die mid-request.
+const EXPIRY_SKEW_MS = 5 * 60_000;
 
 /** Refresh an expiring token, persist the new one, and return it (null on failure). */
 async function refreshConnection(def: ConnectorDef, row: Connection): Promise<string | null> {
-  if (!def.refreshUrl || !row.refreshToken) return null;
+  if (!row.refreshToken) return null;
+  // oauth_app connectors need a static refresh endpoint; mcp_oauth refreshes via
+  // its discovered token endpoint + the client we registered at link time.
+  if (def.kind !== "mcp_oauth" && !def.refreshUrl) return null;
   let refreshToken: string;
   try {
     refreshToken = decryptSecret(row.refreshToken);
   } catch {
     return null;
   }
+  let oauthClientSecret: string | null = null;
+  if (row.oauthClientSecret) {
+    try {
+      oauthClientSecret = decryptSecret(row.oauthClientSecret);
+    } catch {
+      return null;
+    }
+  }
   try {
-    const t = await refreshTokens(def, refreshToken);
+    const t = await refreshTokens(def, refreshToken, { clientId: row.oauthClientId, clientSecret: oauthClientSecret });
     await prisma.connection.update({
       where: { id: row.id },
       data: {
@@ -41,7 +52,10 @@ async function refreshConnection(def: ConnectorDef, row: Connection): Promise<st
         // Providers may or may not rotate the refresh token — keep the old one if not.
         refreshToken: t.refreshToken ? encryptSecret(t.refreshToken) : row.refreshToken,
         scope: t.scope ?? row.scope,
-        expiresAt: t.expiresInSec ? new Date(Date.now() + t.expiresInSec * 1000) : null,
+        // We just refreshed a refreshable token, so it IS expiring — never write
+        // null (that would disable all future proactive refreshes). Fall back to
+        // a default TTL when the provider omits expires_in.
+        expiresAt: new Date(Date.now() + (t.expiresInSec ? t.expiresInSec * 1000 : DEFAULT_TOKEN_TTL_MS)),
       },
     });
     return t.accessToken;

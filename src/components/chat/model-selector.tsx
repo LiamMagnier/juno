@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, Star, Video } from "lucide-react";
+import { Brain, Check, ChevronDown, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, Star, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -15,6 +15,7 @@ import {
   contextScore,
   expensivenessScore,
   formatContext,
+  formatPrice,
   getModelMetrics,
   reasoningOptions,
   type ReasoningEffort,
@@ -43,12 +44,15 @@ function metricScore(model: ModelInfo, key: MetricKey, effort: ReasoningEffort) 
 function MetricBars({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
     <div>
-      <div className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</div>
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+        <span className="font-mono text-[10px] tabular-nums text-muted-foreground/70">{value}/10</span>
+      </div>
       <div className="flex gap-1">
         {Array.from({ length: 10 }).map((_, i) => (
           <span
             key={i}
-            className="h-4 w-2 rounded-full bg-muted"
+            className="h-4 w-2 rounded-full bg-muted transition-colors duration-base ease-out-soft"
             style={i < value ? { backgroundColor: accent } : undefined}
             aria-hidden
           />
@@ -65,6 +69,27 @@ function CapabilityChip({ icon: Icon, label }: { icon: typeof Brain; label: stri
       {label}
     </span>
   );
+}
+
+// Tiny row-sized variant of CapabilityChip — must not blow up card height.
+function RowChip({ icon: Icon, label, tint, warn, title }: { icon: typeof Brain; label: string; tint?: boolean; warn?: boolean; title?: string }) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1 rounded-full border bg-background/60 px-1.5 py-px text-[9px] font-medium leading-4",
+        warn ? "border-warning/50 text-warning" : tint ? "border-source/40 text-source" : "border-border/70 text-muted-foreground"
+      )}
+    >
+      <Icon className="h-2.5 w-2.5 shrink-0" />
+      {label}
+    </span>
+  );
+}
+
+// Derived capability: quick models get a "Fast" chip (same bar data as the panel).
+function isFastModel(m: ModelInfo) {
+  return getModelMetrics(m).speed >= 8;
 }
 
 function ModelDetailPanel({
@@ -98,6 +123,7 @@ function ModelDetailPanel({
   const thinking = model.reasoning && !!effectiveEffort;
   // Only the thinking modes this model actually supports (real per-model data).
   const options = reasoningOptions(model);
+  const free = metrics.inputUsdPerMTok === 0 && metrics.outputUsdPerMTok === 0;
 
   const bars: { label: string; key: MetricKey }[] = [
     { label: "Intelligence", key: "intelligence" },
@@ -108,79 +134,114 @@ function ModelDetailPanel({
 
   return (
     <div className="flex w-full shrink-0 snap-start flex-col overflow-y-auto border-l bg-card/85 shadow-soft backdrop-blur-xl md:w-60">
-      <div className="space-y-4 p-5">
-        <div>
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="text-lg font-semibold leading-tight tracking-tight">{model.name}</h3>
-            <ProviderLogo provider={model.provider} className="mt-0.5 h-6 w-6 shrink-0 rounded-[28%]" />
+      {/* Keyed per model: hovering the list cross-fades the spec sheet in place (fixed width, no layout jump). */}
+      <div key={model.id} className="flex min-h-full flex-col animate-fade-in-up [animation-fill-mode:backwards]">
+        <div className="space-y-4 p-5">
+          <div>
+            <div className="flex items-start justify-between gap-2">
+              <h3 className="text-lg font-semibold leading-tight tracking-tight">{model.name}</h3>
+              <ProviderLogo provider={model.provider} className="mt-0.5 h-6 w-6 shrink-0 rounded-[28%]" />
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+              <span>{PROVIDERS[model.provider].label.split(" · ")[0]}</span>
+              <span aria-hidden>·</span>
+              <span className="font-mono">{formatContext(metrics.contextTokens)} context</span>
+              {model.status === "legacy" && (
+                <span className="rounded-full border border-border/70 px-1.5 py-px font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/80">
+                  Legacy
+                </span>
+              )}
+            </div>
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>{PROVIDERS[model.provider].label.split(" · ")[0]}</span>
-            <span aria-hidden>·</span>
-            <span className="font-mono">{formatContext(metrics.contextTokens)} context</span>
+
+          {model.status === "deprecated" && (
+            <div className="flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11px] font-medium leading-snug text-warning">
+              <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" />
+              <span>{model.deprecationNote ?? "Retiring — deprecated by the provider."}</span>
+            </div>
+          )}
+
+          <p className="text-sm leading-6 text-muted-foreground">
+            {model.description ?? "A capable model in your configured providers."}
+          </p>
+
+          {(model.vision || model.reasoning || model.webSearch || isFastModel(model)) && (
+            <div className="flex flex-wrap gap-1.5">
+              {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
+              {model.reasoning && <CapabilityChip icon={Brain} label="Reasoning" />}
+              {model.webSearch && <CapabilityChip icon={Globe} label="Web search" />}
+              {isFastModel(model) && <CapabilityChip icon={Zap} label="Fast" />}
+            </div>
+          )}
+
+          <div className="space-y-2.5">
+            {bars.map((b) => (
+              <MetricBars key={b.key} label={b.label} value={metricScore(model, b.key, effectiveEffort)} accent={accent} />
+            ))}
+          </div>
+
+          {/* Pricing — tracks the thinking preview like the bars (reasoning burns output tokens). */}
+          <div className="border-t border-dashed border-border/60 pt-3">
+            <div className="mb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Pricing</div>
+            {free ? (
+              <p className="text-sm font-semibold">Free</p>
+            ) : (
+              <p className="flex flex-wrap items-baseline gap-x-1 text-sm tabular-nums">
+                <span className="font-semibold">{formatPrice(metrics.inputUsdPerMTok)}</span>
+                <span className="text-[11px] text-muted-foreground">in</span>
+                <span className="text-muted-foreground/50" aria-hidden>
+                  ·
+                </span>
+                <span className="font-semibold">{formatPrice(metrics.outputUsdPerMTok)}</span>
+                <span className="text-[11px] text-muted-foreground">out</span>
+                <span className="text-[11px] text-muted-foreground/70">/ MTok</span>
+              </p>
+            )}
           </div>
         </div>
 
-        <p className="line-clamp-2 text-sm leading-6 text-muted-foreground">
-          {model.description ?? "A capable model in your configured providers."}
-        </p>
-
-        {(model.vision || model.reasoning || model.webSearch) && (
-          <div className="flex flex-wrap gap-1.5">
-            {model.vision && <CapabilityChip icon={Eye} label="Vision" />}
-            {model.reasoning && <CapabilityChip icon={Brain} label="Reasoning" />}
-            {model.webSearch && <CapabilityChip icon={Globe} label="Web search" />}
+        {/* Thinking mode — drives the metrics above. Hover to preview, click to set. */}
+        <div className="mt-auto border-t p-5 pt-4">
+          <div className="flex items-center justify-between">
+            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Thinking</span>
+            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">
+              {model.reasoning && options.length === 0 ? "Always on" : thinking ? `${effectiveEffort} effort` : "Instant"}
+            </span>
           </div>
-        )}
-
-        <div className="space-y-2.5">
-          {bars.map((b) => (
-            <MetricBars key={b.key} label={b.label} value={metricScore(model, b.key, effectiveEffort)} accent={accent} />
-          ))}
+          {options.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {options.map((o) => {
+                const active = effectiveEffort === o.value;
+                return (
+                  <button
+                    key={o.label}
+                    type="button"
+                    onMouseEnter={() => setPreview({ effort: o.value })}
+                    onFocus={() => setPreview({ effort: o.value })}
+                    onMouseLeave={() => setPreview(null)}
+                    onBlur={() => setPreview(null)}
+                    onClick={() => onCommit?.(o.value)}
+                    className={cn(
+                      "flex-1 basis-16 rounded-lg px-1 py-1.5 text-[11px] font-medium transition-all duration-fast ease-out-soft active:scale-[0.97]",
+                      active
+                        ? "bg-primary/15 text-primary ring-1 ring-primary/40"
+                        : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    )}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            {options.length > 0
+              ? "Pick a level to switch to this model with that thinking effort."
+              : model.reasoning
+                ? "This model always reasons — no effort control."
+                : "This model replies instantly."}
+          </p>
         </div>
-      </div>
-
-      {/* Thinking mode — drives the metrics above. Hover to preview, click to set. */}
-      <div className="mt-auto border-t p-5 pt-4">
-        <div className="flex items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Thinking</span>
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">
-            {model.reasoning && options.length === 0 ? "Always on" : thinking ? `${effectiveEffort} effort` : "Instant"}
-          </span>
-        </div>
-        {options.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {options.map((o) => {
-              const active = effectiveEffort === o.value;
-              return (
-                <button
-                  key={o.label}
-                  type="button"
-                  onMouseEnter={() => setPreview({ effort: o.value })}
-                  onFocus={() => setPreview({ effort: o.value })}
-                  onMouseLeave={() => setPreview(null)}
-                  onBlur={() => setPreview(null)}
-                  onClick={() => onCommit?.(o.value)}
-                  className={cn(
-                    "flex-1 basis-16 rounded-lg px-1 py-1.5 text-[11px] font-medium transition-colors",
-                    active
-                      ? "bg-primary/15 text-primary ring-1 ring-primary/40"
-                      : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  {o.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-          {options.length > 0
-            ? "Pick a level to switch to this model with that thinking effort."
-            : model.reasoning
-              ? "This model always reasons — no effort control."
-              : "This model replies instantly."}
-        </p>
       </div>
     </div>
   );
@@ -254,7 +315,15 @@ export function ModelSelector({
 
   const visible: ModelInfo[] = models
     .filter((m) => (filter === "favorites" ? favSet.has(m.id) : providerFilter ? m.provider === providerFilter : true))
-    .filter((m) => !q || m.name.toLowerCase().includes(q) || (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q));
+    .filter(
+      (m) =>
+        !q ||
+        m.name.toLowerCase().includes(q) ||
+        m.providerModel.toLowerCase().includes(q) ||
+        (m.family ?? "").toLowerCase().includes(q) ||
+        m.modality.includes(q) ||
+        (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
+    );
   const hoveredModel = React.useMemo(
     () => visible.find((m) => m.id === hoveredId) ?? visible.find((m) => m.id === value) ?? current ?? visible[0] ?? null,
     [current, hoveredId, value, visible]
@@ -288,10 +357,10 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-xl border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
+          "group relative flex flex-col justify-between rounded-xl border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards] active:scale-[0.99]",
           active
             ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
-            : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft"
+            : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none"
         )}
       >
         <button
@@ -316,13 +385,17 @@ export function ModelSelector({
           )}
           
           {/* Bottom attributes */}
-          <div className="flex items-center justify-between w-full mt-auto pt-1 border-t border-dashed border-border/40">
-            <div className="flex items-center gap-1.5">
-              {m.modality === "image" && <ImageIcon className="h-3.5 w-3.5 shrink-0 text-source" aria-label="Image generation" />}
-              {m.modality === "video" && <Video className="h-3.5 w-3.5 shrink-0 text-source" aria-label="Video generation" />}
-              {m.vision && <Eye className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" aria-label="Accepts images" />}
-              {m.reasoning && <Brain className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" aria-label="Reasoning" />}
-              {m.webSearch && <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground/75" aria-label="Web search" />}
+          <div className="flex items-center justify-between gap-2 w-full mt-auto pt-1 border-t border-dashed border-border/40">
+            <div className="flex min-w-0 flex-wrap items-center gap-1">
+              {m.status === "deprecated" && (
+                <RowChip icon={TriangleAlert} label="Retiring" warn title={m.deprecationNote ?? "Deprecated by the provider"} />
+              )}
+              {m.modality === "image" && <RowChip icon={ImageIcon} label="Image" tint />}
+              {m.modality === "video" && <RowChip icon={Video} label="Video" tint />}
+              {m.reasoning && <RowChip icon={Brain} label="Reasoning" />}
+              {m.vision && <RowChip icon={Eye} label="Vision" />}
+              {m.webSearch && <RowChip icon={Globe} label="Search" />}
+              {isFastModel(m) && <RowChip icon={Zap} label="Fast" />}
               <span className="font-mono text-[9px] uppercase font-semibold text-muted-foreground/60 tracking-wider">
                 {"$".repeat(m.cost)}
               </span>
@@ -346,7 +419,7 @@ export function ModelSelector({
           }}
           aria-label={fav ? "Remove from favorites" : "Add to favorites"}
           aria-pressed={fav}
-          className="absolute top-2.5 right-2.5 rounded-md p-1.5 opacity-45 hover:opacity-100 group-hover:opacity-100 transition-opacity"
+          className="absolute top-2.5 right-2.5 rounded-md p-1.5 opacity-45 hover:opacity-100 group-hover:opacity-100 transition-all duration-fast ease-out-soft active:scale-90"
         >
           <Star className={cn("h-4 w-4 transition-colors", fav ? "fill-primary text-primary opacity-100" : "text-muted-foreground/70")} />
         </button>
@@ -359,11 +432,11 @@ export function ModelSelector({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="group inline-flex min-w-0 max-w-[10rem] items-center gap-1.5 rounded-md px-2 py-1 text-[13px] font-medium text-foreground/80 transition-all hover:bg-accent hover:text-foreground active:scale-95 sm:max-w-[14rem]"
+          className="group inline-flex h-8 min-w-0 max-w-[12rem] items-center gap-1.5 rounded-[10px] px-2 text-[13px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground sm:max-w-[16rem] coarse:h-11"
         >
-          {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded transition-transform group-hover:scale-110" />}
+          {current && <ProviderLogo provider={current.provider} className="h-4 w-4 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110" />}
           <span className="truncate font-mono">{current?.name ?? "Select model"}</span>
-          <ChevronDown className="h-3.5 w-3.5 transition-transform group-data-[state=open]:rotate-180" />
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
         </button>
       </PopoverTrigger>
       <PopoverContent
@@ -381,7 +454,7 @@ export function ModelSelector({
               setOpen(false);
               router.push("/upgrade");
             }}
-            className="flex w-full shrink-0 items-center justify-between border-b bg-primary/5 px-4 py-2.5 text-left transition-colors hover:bg-primary/10"
+            className="flex w-full shrink-0 items-center justify-between border-b bg-primary/5 px-4 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-primary/10"
           >
             <span className="flex items-center gap-2 text-sm font-medium">
               <Sparkles className="h-4 w-4 text-primary" /> Unlock every model
@@ -432,15 +505,37 @@ export function ModelSelector({
                 MODALITY_GROUPS.map((g) => {
                   const items = visible.filter((m) => (m.modality ?? "chat") === g.key);
                   if (items.length === 0) return null;
+
+                  const standardItems = items.filter((m) => !m.legacy);
+                  const legacyItems = items.filter((m) => m.legacy);
+
                   return (
                     <div key={g.key} className="mb-4">
                       <div className="flex items-center gap-1.5 px-2 pb-2 pt-1">
                         <g.icon className="h-3.5 w-3.5 text-muted-foreground/75" />
                         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">{g.label}</span>
                       </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
-                        {items.map((m, i) => renderRow(m, i))}
-                      </div>
+
+                      {standardItems.length > 0 && (
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
+                          {standardItems.map((m, i) => renderRow(m, i))}
+                        </div>
+                      )}
+
+                      {legacyItems.length > 0 && (
+                        <div className="mt-2.5">
+                          {/* Auto-expand while searching so legacy matches are visible. */}
+                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-xl border border-border/40 bg-muted/10 overflow-hidden">
+                            <summary className="cursor-pointer flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 transition-colors duration-fast ease-out-soft">
+                              <span>Legacy Models ({legacyItems.length})</span>
+                              <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 group-open/legacy:rotate-180" />
+                            </summary>
+                            <div className="p-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1 border-t border-dashed border-border/45 bg-background/45">
+                              {legacyItems.map((m, i) => renderRow(m, i + standardItems.length))}
+                            </div>
+                          </details>
+                        </div>
+                      )}
                     </div>
                   );
                 })

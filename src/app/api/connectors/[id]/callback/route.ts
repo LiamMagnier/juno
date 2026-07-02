@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getConnector, isConnectorConfigured, exchangeCodeForTokens } from "@/lib/connectors";
-import { encryptSecret, verifyState } from "@/lib/crypto";
+import { getConnector, isConnectorConfigured, exchangeCodeForTokens, DEFAULT_TOKEN_TTL_MS, type ConnectorOAuthSession } from "@/lib/connectors";
+import { decryptSecret, encryptSecret, verifyState } from "@/lib/crypto";
 
 export const runtime = "nodejs";
 
@@ -49,16 +49,40 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return back(req, "bad_state", id);
   }
 
+  // mcp_oauth flows stashed their PKCE verifier + registered client here.
+  let session: ConnectorOAuthSession | undefined;
+  const sessionCookie = jar.get(`oauth_session_${def.id}`)?.value;
+  jar.delete(`oauth_session_${def.id}`);
+  if (sessionCookie) {
+    try {
+      session = JSON.parse(decryptSecret(sessionCookie)) as ConnectorOAuthSession;
+    } catch {
+      return back(req, "bad_state", id);
+    }
+  }
+
   let tokens;
   try {
-    tokens = await exchangeCodeForTokens(def, code);
+    tokens = await exchangeCodeForTokens(def, code, session);
   } catch (err) {
     console.error("[connectors] token exchange failed", def.id, err instanceof Error ? err.message : err);
     return back(req, "exchange_failed", id);
   }
 
   const accountLabel = await def.fetchAccountLabel(tokens.accessToken).catch(() => null);
-  const expiresAt = tokens.expiresInSec ? new Date(Date.now() + tokens.expiresInSec * 1000) : null;
+  // A refreshable token (one that came with a refresh token) must carry a future
+  // expiry so proactive refresh stays armed; fall back to a default TTL when the
+  // provider omits expires_in. Non-refreshable tokens (e.g. GitHub) stay null so
+  // they're never treated as expiring.
+  const expiresAt = tokens.expiresInSec
+    ? new Date(Date.now() + tokens.expiresInSec * 1000)
+    : tokens.refreshToken
+      ? new Date(Date.now() + DEFAULT_TOKEN_TTL_MS)
+      : null;
+  // Persist the dynamically-registered client so mcp_oauth tokens can be
+  // refreshed later (the same client that obtained them must refresh them).
+  const oauthClientId = session?.clientId ?? null;
+  const oauthClientSecret = session?.clientSecret ? encryptSecret(session.clientSecret) : null;
 
   await prisma.connection.upsert({
     where: { userId_provider: { userId: user.id, provider: def.id } },
@@ -67,6 +91,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       provider: def.id,
       accessToken: encryptSecret(tokens.accessToken),
       refreshToken: tokens.refreshToken ? encryptSecret(tokens.refreshToken) : null,
+      oauthClientId,
+      oauthClientSecret,
       scope: tokens.scope ?? def.scope,
       accountLabel,
       expiresAt,
@@ -74,6 +100,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     update: {
       accessToken: encryptSecret(tokens.accessToken),
       refreshToken: tokens.refreshToken ? encryptSecret(tokens.refreshToken) : null,
+      oauthClientId,
+      oauthClientSecret,
       scope: tokens.scope ?? def.scope,
       accountLabel,
       expiresAt,

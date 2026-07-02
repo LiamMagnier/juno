@@ -12,7 +12,8 @@ const TabsList = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
-    className={cn("inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground", className)}
+    // 14px outer radius − 4px padding = concentric with the 10px triggers; recessed track.
+    className={cn("inline-flex h-9 items-center justify-center rounded-[14px] bg-muted/70 p-1 text-muted-foreground field-well", className)}
     {...props}
   />
 ));
@@ -25,7 +26,7 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm [&_svg]:size-4",
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-[10px] px-3 py-1 text-sm font-medium ring-offset-background transition-all duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] [&_svg]:size-4",
       className
     )}
     {...props}
@@ -39,7 +40,10 @@ const TabsContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <TabsPrimitive.Content
     ref={ref}
-    className={cn("ring-offset-background focus-visible:outline-none", className)}
+    className={cn(
+      "ring-offset-background data-[state=active]:animate-fade-in focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      className
+    )}
     {...props}
   />
 ));

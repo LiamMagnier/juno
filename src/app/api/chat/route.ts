@@ -13,9 +13,15 @@ import { buildSystemPrompt } from "@/lib/anthropic";
 import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
-import { getMemoryProfile, saveAutoMemories, autoExtractMemories, maybeConsolidate } from "@/lib/memory";
+import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate } from "@/lib/memory";
 import { persistArtifacts } from "@/lib/artifacts-store";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
+import {
+  formatClarificationModelMessage,
+  formatClarificationVisibleMessage,
+  markClarificationWizardSubmitted,
+} from "@/lib/clarification-wizard";
+import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd } from "@/lib/utils";
@@ -35,10 +41,41 @@ const HISTORY_LIMIT = 24;
 const WEB_SEARCH_NUDGE =
   "Web search is ENABLED for this message. You have a live web search tool that returns current, real-world results with citations — use it to answer with up-to-date information and cite your sources. Do NOT claim you lack internet access, real-time data, or the ability to browse; you can search right now.";
 
+const SELECTION_ANCHOR_NUDGE =
+  'Selection anchors: when a user message contains a [Selection from artifact "…"] block, treat the quoted text or element as a precise anchor into that artifact. For a modify request, change ONLY that region, keep the rest of the artifact byte-identical where possible, and re-emit the COMPLETE artifact under the same identifier. For a question about the selection, answer directly and do not re-emit the artifact unless asked.';
+
+const clarificationAnswerValueSchema = z.union([z.string().max(1000), z.array(z.string().max(500)).max(12), z.boolean()]);
+const clarificationAnswerSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  question: z.string().trim().max(500).optional(),
+  value: clarificationAnswerValueSchema.optional(),
+  skipped: z.boolean().optional(),
+});
+const clarificationSchema = z.object({
+  messageId: z.string().cuid(),
+  blockId: z.string().trim().min(3).max(120),
+  originalUserMessage: z.string().max(50_000),
+  answers: z.array(clarificationAnswerSchema).max(10),
+  skippedQuestions: z.array(z.string().trim().max(500)).max(10),
+});
+const preflightClarificationAnswerSchema = z.object({
+  questionId: z.string().trim().min(1).max(80),
+  question: z.string().trim().max(500).optional(),
+  source: z.enum(["option", "else", "skip"]),
+  value: clarificationAnswerValueSchema.optional(),
+});
+const preflightClarificationSchema = z.object({
+  originalUserMessage: z.string().max(50_000),
+  answers: z.array(preflightClarificationAnswerSchema).max(10),
+  skipped: z.boolean().optional(),
+});
+
 const bodySchema = z.object({
   conversationId: z.string().cuid().optional(),
   projectId: z.string().cuid().optional(),
   message: z.string().max(50_000).optional(),
+  clarification: clarificationSchema.optional(),
+  preflightClarification: preflightClarificationSchema.optional(),
   attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
   model: z.string().optional(),
   regenerate: z.boolean().optional(),
@@ -149,7 +186,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const input = parsed.data;
 
-  if (!input.regenerate && !input.message?.trim() && (input.attachmentIds?.length ?? 0) === 0) {
+  if (!input.regenerate && !input.message?.trim() && !input.clarification && (input.attachmentIds?.length ?? 0) === 0) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
 
@@ -191,6 +228,35 @@ export async function POST(req: Request) {
       .filter((m) => m.content.trim())
       .slice(-HISTORY_LIMIT)
       .map((m) => ({ role: m.role, content: m.content.trim(), attachments: [] }));
+    if (input.clarification) {
+      let lastUserIndex = -1;
+      for (let i = privateHistory.length - 1; i >= 0; i--) {
+        if (privateHistory[i].role === "USER") {
+          lastUserIndex = i;
+          break;
+        }
+      }
+      if (lastUserIndex >= 0) {
+        privateHistory[lastUserIndex] = {
+          ...privateHistory[lastUserIndex],
+          content: formatClarificationModelMessage(input.clarification),
+        };
+      }
+    } else if (input.preflightClarification) {
+      let lastUserIndex = -1;
+      for (let i = privateHistory.length - 1; i >= 0; i--) {
+        if (privateHistory[i].role === "USER") {
+          lastUserIndex = i;
+          break;
+        }
+      }
+      if (lastUserIndex >= 0) {
+        privateHistory[lastUserIndex] = {
+          ...privateHistory[lastUserIndex],
+          content: formatPreflightClarificationModelMessage(input.preflightClarification),
+        };
+      }
+    }
 
     const consumed = await consumeMessage(user.id, plan);
     if (!consumed.allowed) {
@@ -468,6 +534,10 @@ export async function POST(req: Request) {
 
   let userMessageId: string | null = null;
   let staleAssistantId: string | null = null;
+  let clarificationModelContent: string | null = null;
+  let clarificationVisibleContent: string | null = null;
+  let clarificationAssistantRollback: { id: string; content: string } | null = null;
+  let preflightClarificationModelContent: string | null = null;
 
   if (input.regenerate) {
     // Identify the trailing assistant message to replace — but DON'T delete it yet.
@@ -479,11 +549,50 @@ export async function POST(req: Request) {
     });
     if (last?.role === "ASSISTANT") staleAssistantId = last.id;
   } else {
+    if (input.clarification) {
+      const assistantMessage = await prisma.message.findFirst({
+        where: { id: input.clarification.messageId, conversationId: conversation.id, role: "ASSISTANT" },
+        select: { id: true, content: true, createdAt: true },
+      });
+      if (!assistantMessage) {
+        return NextResponse.json({ error: "Clarification card was not found." }, { status: 404 });
+      }
+
+      const previousUser = await prisma.message.findFirst({
+        where: { conversationId: conversation.id, role: "USER", createdAt: { lt: assistantMessage.createdAt } },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
+      });
+      const originalUserMessage = previousUser?.content.trim() || input.clarification.originalUserMessage.trim();
+      const clarificationPayload = {
+        ...input.clarification,
+        originalUserMessage,
+      };
+      const submittedContent = markClarificationWizardSubmitted(
+        assistantMessage.content,
+        input.clarification.blockId,
+        input.clarification.answers
+      );
+      if (!submittedContent) {
+        return NextResponse.json({ error: "Clarification card is no longer available." }, { status: 409 });
+      }
+      await prisma.message.update({
+        where: { id: assistantMessage.id },
+        data: { content: submittedContent },
+      });
+      clarificationAssistantRollback = { id: assistantMessage.id, content: assistantMessage.content };
+      clarificationVisibleContent = formatClarificationVisibleMessage(clarificationPayload);
+      clarificationModelContent = formatClarificationModelMessage(clarificationPayload);
+    }
+
     // Append the user's message and link any pre-uploaded attachments.
     const created = await prisma.message.create({
-      data: { conversationId: conversation.id, role: "USER", content: input.message?.trim() ?? "" },
+      data: { conversationId: conversation.id, role: "USER", content: clarificationVisibleContent ?? input.message?.trim() ?? "" },
     });
     userMessageId = created.id;
+    if (input.preflightClarification) {
+      preflightClarificationModelContent = formatPreflightClarificationModelMessage(input.preflightClarification);
+    }
 
     if (input.attachmentIds && input.attachmentIds.length > 0) {
       await prisma.attachment.updateMany({
@@ -497,6 +606,11 @@ export async function POST(req: Request) {
   const consumed = await consumeMessage(user.id, plan);
   if (!consumed.allowed) {
     if (userMessageId) await prisma.message.delete({ where: { id: userMessageId } }).catch(() => {});
+    if (clarificationAssistantRollback) {
+      await prisma.message
+        .update({ where: { id: clarificationAssistantRollback.id }, data: { content: clarificationAssistantRollback.content } })
+        .catch(() => {});
+    }
     return NextResponse.json(
       { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
       { status: 402 }
@@ -511,6 +625,11 @@ export async function POST(req: Request) {
     take: HISTORY_LIMIT,
   });
   const history = recent.reverse().filter((m) => m.id !== staleAssistantId);
+  const hiddenUserContent = clarificationModelContent ?? preflightClarificationModelContent;
+  const modelHistory =
+    hiddenUserContent && userMessageId
+      ? history.map((message) => (message.id === userMessageId ? { ...message, content: hiddenUserContent } : message))
+      : history;
 
   const memoryEnabled = settings?.memoryEnabled ?? true;
   // Prefer the consolidated summary (deduped, sectioned); fall back to the raw
@@ -542,6 +661,7 @@ export async function POST(req: Request) {
   const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   let webSources: ClientSource[] = [];
 
+  const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
   const baseSystem = buildSystemPrompt({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
@@ -549,11 +669,13 @@ export async function POST(req: Request) {
     memories: memoryProfile.recent,
     memorySummary: memoryProfile.summary ?? undefined,
     memoryEnabled,
-    canvas: !input.voiceMode && (input.canvasEnabled ?? true),
+    canvas: canvasOn,
     voiceMode: input.voiceMode,
     projectContext,
   });
-  const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
+  const system = [baseSystem, useWebSearch ? WEB_SEARCH_NUDGE : null, canvasOn ? SELECTION_ANCHOR_NUDGE : null]
+    .filter(Boolean)
+    .join("\n\n");
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
@@ -609,8 +731,8 @@ export async function POST(req: Request) {
 
       send({ type: "meta", conversationId, userMessageId, title: convoTitle, titleSource: convoTitleSource, generationId });
 
-      const attachmentCount = history.reduce((sum, msg) => sum + msg.attachments.length, 0);
-      const contextDetails = [plural(history.length, "message")];
+      const attachmentCount = modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0);
+      const contextDetails = [plural(modelHistory.length, "message")];
       if (attachmentCount) contextDetails.push(plural(attachmentCount, "attachment"));
       if (memoryEnabled && memoryProfile.recent.length)
         contextDetails.push(plural(memoryProfile.recent.length, "memory", "memories"));
@@ -658,7 +780,7 @@ export async function POST(req: Request) {
         for await (const ev of streamChat({
           model: modelInfo,
           system,
-          history,
+          history: modelHistory,
           maxTokens: PLANS[plan].maxOutputTokens,
           // Not tied to req.signal: route changes can drop the browser stream
           // without killing generation; the explicit cancel endpoint aborts this.
@@ -733,7 +855,7 @@ export async function POST(req: Request) {
         const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
         let memoryUpdated = false;
         if (memoryEnabled) {
-          const created = await saveAutoMemories(user.id, parseMemories(full));
+          const created = await saveAutoMemories(user.id, parseMemories(full), conversationId);
           memoryUpdated = created > 0;
         }
 
@@ -886,15 +1008,10 @@ export async function POST(req: Request) {
     await genPromise?.catch(() => {});
     if (!assistantFull) return;
 
-    // Proactive memory extraction — deduped/consolidated with the same cheap model.
+    // Incremental extraction: distill this conversation's unprocessed user
+    // messages into memory facts (advances its high-water mark).
     if (memoryEnabled) {
-      await autoExtractMemories({
-        userId: user.id,
-        model: cheapModel,
-        history,
-        assistantText: assistantFull,
-        existing: [memoryProfile.summary ?? "", ...memoryProfile.recent].filter(Boolean),
-      }).catch(() => {});
+      await extractConversationMemory({ userId: user.id, conversationId: conversation.id }).catch(() => {});
       // Periodically re-summarize so the memory stays tidy and deduped.
       await maybeConsolidate(user.id, cheapModel).catch(() => {});
     }

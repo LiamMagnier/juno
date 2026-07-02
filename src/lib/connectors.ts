@@ -1,14 +1,30 @@
 import "server-only";
 import { env } from "@/lib/env";
+import {
+  buildMcpAuthorizeUrl,
+  createPkce,
+  discoverEndpoints,
+  exchangeMcpCode,
+  refreshMcpToken,
+  registerClient,
+} from "@/lib/mcp-oauth";
 
 /*
- * Registry of external tool connectors the user can link via OAuth. A connector
- * becomes "available" (a Connect button appears) only when its OAuth client id +
- * secret are configured. Once linked, the stored token is exposed to the model
- * as a remote MCP server (see Phase 2 chat wiring).
+ * Registry of external tool connectors the user can link. Two shapes exist:
+ *
+ *  - "oauth_app"  — a classic OAuth 2.0 app you register once with the provider
+ *    (GitHub, Figma). Its Connect button appears only when a client id + secret
+ *    are configured in the environment.
+ *  - "mcp_oauth"  — a hosted remote MCP server that self-registers via OAuth 2.1
+ *    + PKCE + Dynamic Client Registration (Notion). Nothing to pre-register:
+ *    it's "available" as soon as its MCP URL is known. See lib/mcp-oauth.ts.
+ *
+ * Once linked, the stored access token is handed to the model as a remote MCP
+ * server (see lib/mcp.ts) so it can call the provider's tools as the user.
  */
 
-export type ConnectorId = "github" | "figma";
+export type ConnectorId = "github" | "figma" | "notion";
+export type ConnectorKind = "oauth_app" | "mcp_oauth";
 
 export interface ConnectorTokens {
   accessToken: string;
@@ -17,28 +33,54 @@ export interface ConnectorTokens {
   expiresInSec?: number;
 }
 
+/**
+ * Fallback access-token lifetime for a refreshable connector whose provider
+ * omits `expires_in` (RFC 6749 allows this, especially on the refresh grant).
+ * Without a concrete expiry we still want proactive refresh armed, so we assume
+ * a short life rather than treating the token as non-expiring (~Notion's 1h).
+ */
+export const DEFAULT_TOKEN_TTL_MS = 60 * 60_000;
+
 export interface ConnectorDef {
   id: ConnectorId;
+  kind: ConnectorKind;
   label: string;
   description: string;
-  /** Marketing-y one-liner about what the model can do once connected. */
+  /** One-liner about what the model can do once connected. */
   capability: string;
+  /** Provider OAuth endpoints (unused for mcp_oauth — discovered at run time). */
   authorizeUrl: string;
   tokenUrl: string;
   /** OAuth2 refresh endpoint, when the provider issues expiring tokens (Figma). */
   refreshUrl?: string;
   scope: string;
-  /** How client credentials are sent on token/refresh calls. Figma requires
-   *  HTTP Basic auth; GitHub accepts them in the form body. */
+  /** How client credentials are sent on token/refresh calls. Figma requires HTTP
+   *  Basic auth; GitHub accepts them in the form body. */
   authStyle: "body" | "basic";
+  /** Registered OAuth app credentials plus the remote MCP endpoint to expose. */
   cfg: { clientId?: string; clientSecret?: string; scope?: string; mcpUrl?: string };
-  /** Best-effort human label (account handle) fetched after linking. */
+  /** Best-effort account handle fetched right after linking (for display only). */
   fetchAccountLabel(accessToken: string): Promise<string | null>;
+}
+
+/**
+ * Transient per-flow secrets for an mcp_oauth handshake, carried from the
+ * connect redirect to the callback in a short-lived, encrypted cookie. The
+ * dynamically-registered client is also persisted on the Connection so tokens
+ * can be refreshed after the flow ends.
+ */
+export interface ConnectorOAuthSession {
+  codeVerifier: string;
+  clientId: string;
+  clientSecret?: string;
+  tokenEndpoint: string;
+  resource: string;
 }
 
 const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
   github: {
     id: "github",
+    kind: "oauth_app",
     label: "GitHub",
     description: "Read your repositories, issues, and pull requests.",
     capability: "Let the model browse your code, issues, and PRs.",
@@ -62,6 +104,7 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
   },
   figma: {
     id: "figma",
+    kind: "oauth_app",
     label: "Figma",
     description: "Read your design files, frames, and components.",
     capability: "Let the model read your Figma designs and components.",
@@ -84,6 +127,24 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
       }
     },
   },
+  notion: {
+    id: "notion",
+    kind: "mcp_oauth",
+    label: "Notion",
+    description: "Search, read, and update pages, docs, and databases.",
+    capability: "Let the model work with your Notion pages, tasks, and databases through the Notion MCP server.",
+    // Endpoints are discovered from the MCP server at run time — no fixed URLs.
+    authorizeUrl: "",
+    tokenUrl: "",
+    scope: "",
+    authStyle: "body",
+    cfg: env.connectors.notion,
+    async fetchAccountLabel() {
+      // Notion MCP tokens are scoped to the MCP server, not the public REST
+      // /users/me endpoint, so there's no reliable handle to show here.
+      return null;
+    },
+  },
 };
 
 export function getConnector(id: string): ConnectorDef | undefined {
@@ -94,8 +155,13 @@ export function listConnectors(): ConnectorDef[] {
   return Object.values(CONNECTORS);
 }
 
-/** A connector is configured when its OAuth app credentials are present. */
+/**
+ * A connector is "configured" (a Connect button appears) when it can start a
+ * flow: an oauth_app needs its client credentials; an mcp_oauth connector only
+ * needs to know its MCP URL — it registers itself on the fly.
+ */
 export function isConnectorConfigured(def: ConnectorDef): boolean {
+  if (def.kind === "mcp_oauth") return Boolean(def.cfg.mcpUrl);
   return Boolean(def.cfg.clientId && def.cfg.clientSecret);
 }
 
@@ -103,19 +169,65 @@ export function connectorRedirectUri(id: ConnectorId): string {
   return `${env.appUrl.replace(/\/$/, "")}/api/connectors/${id}/callback`;
 }
 
-/** Build the provider's authorize URL for the OAuth redirect. */
-export function buildAuthorizeUrl(def: ConnectorDef, state: string): string {
+/**
+ * Build the provider's authorize URL for the OAuth redirect. For mcp_oauth this
+ * also discovers + registers a client and returns the per-flow session secrets
+ * the callback needs to complete the exchange.
+ */
+export async function buildAuthorizeUrl(
+  def: ConnectorDef,
+  state: string
+): Promise<{ url: string; session?: ConnectorOAuthSession }> {
+  if (def.kind === "mcp_oauth") {
+    if (!def.cfg.mcpUrl) throw new Error(`${def.label} is missing an MCP URL`);
+    const redirectUri = connectorRedirectUri(def.id);
+    const endpoints = await discoverEndpoints(def.cfg.mcpUrl);
+    const client = await registerClient(endpoints, { clientName: "Juno", clientUri: env.appUrl, redirectUri });
+    const pkce = createPkce();
+    const url = buildMcpAuthorizeUrl({ endpoints, client, redirectUri, state, codeChallenge: pkce.challenge });
+    return {
+      url,
+      session: {
+        codeVerifier: pkce.verifier,
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
+        tokenEndpoint: endpoints.tokenEndpoint,
+        resource: endpoints.resource,
+      },
+    };
+  }
+
   const u = new URL(def.authorizeUrl);
   u.searchParams.set("client_id", def.cfg.clientId!);
   u.searchParams.set("redirect_uri", connectorRedirectUri(def.id));
   u.searchParams.set("scope", def.scope);
   u.searchParams.set("state", state);
   u.searchParams.set("response_type", "code");
-  return u.toString();
+  return { url: u.toString() };
 }
 
-/** Build the OAuth token-request headers, putting client creds where the provider
- *  wants them (Basic auth header for Figma, form body for GitHub). */
+type TokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  scope?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+};
+
+/** Normalize a provider's token response, throwing a useful error when it fails. */
+function toTokens(data: TokenResponse): ConnectorTokens {
+  if (!data.access_token) throw new Error(data.error_description || data.error || "No access token returned");
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token, // may be absent on refresh — caller keeps the old one
+    scope: data.scope,
+    expiresInSec: data.expires_in,
+  };
+}
+
+/** Build token-request headers, putting client creds where the provider wants
+ *  them (Basic auth header for Figma, form body for GitHub). */
 function tokenRequestHeaders(def: ConnectorDef, body: URLSearchParams): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" };
   if (def.authStyle === "basic") {
@@ -127,65 +239,61 @@ function tokenRequestHeaders(def: ConnectorDef, body: URLSearchParams): Record<s
   return headers;
 }
 
-/** Exchange an authorization code for tokens (generic OAuth2 auth-code flow). */
-export async function exchangeCodeForTokens(def: ConnectorDef, code: string): Promise<ConnectorTokens> {
+/** Exchange an authorization code for tokens. mcp_oauth uses the per-flow
+ *  session; oauth_app uses the standard auth-code exchange. */
+export async function exchangeCodeForTokens(
+  def: ConnectorDef,
+  code: string,
+  session?: ConnectorOAuthSession
+): Promise<ConnectorTokens> {
+  if (def.kind === "mcp_oauth") {
+    if (!session?.codeVerifier || !session.clientId || !session.tokenEndpoint) throw new Error("Missing MCP OAuth session");
+    return exchangeMcpCode({
+      tokenEndpoint: session.tokenEndpoint,
+      client: { clientId: session.clientId, clientSecret: session.clientSecret },
+      code,
+      codeVerifier: session.codeVerifier,
+      redirectUri: connectorRedirectUri(def.id),
+      resource: session.resource,
+    });
+  }
+
   const body = new URLSearchParams({
     code,
     redirect_uri: connectorRedirectUri(def.id),
     grant_type: "authorization_code",
   });
-  const res = await fetch(def.tokenUrl, {
-    method: "POST",
-    headers: tokenRequestHeaders(def, body),
-    body,
-  });
+  const res = await fetch(def.tokenUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
     throw new Error(`Token exchange failed (${res.status})${detail ? `: ${detail.slice(0, 300)}` : ""}`);
   }
-  const data = (await res.json()) as {
-    access_token?: string;
-    refresh_token?: string;
-    scope?: string;
-    expires_in?: number;
-    error?: string;
-    error_description?: string;
-  };
-  if (!data.access_token) throw new Error(data.error_description || data.error || "No access token returned");
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token,
-    scope: data.scope,
-    expiresInSec: data.expires_in,
-  };
+  return toTokens((await res.json()) as TokenResponse);
 }
 
-/** Exchange a refresh token for a fresh access token (providers with expiring tokens). */
-export async function refreshTokens(def: ConnectorDef, refreshToken: string): Promise<ConnectorTokens> {
+/** Exchange a refresh token for a fresh access token. mcp_oauth re-discovers its
+ *  token endpoint and refreshes with the client stored at link time; oauth_app
+ *  uses its static refresh endpoint. */
+export async function refreshTokens(
+  def: ConnectorDef,
+  refreshToken: string,
+  oauthClient?: { clientId?: string | null; clientSecret?: string | null }
+): Promise<ConnectorTokens> {
+  if (def.kind === "mcp_oauth") {
+    if (!def.cfg.mcpUrl) throw new Error(`${def.label} is missing an MCP URL`);
+    if (!oauthClient?.clientId) throw new Error(`${def.label} is missing its registered OAuth client`);
+    const endpoints = await discoverEndpoints(def.cfg.mcpUrl);
+    return refreshMcpToken({
+      tokenEndpoint: endpoints.tokenEndpoint,
+      client: { clientId: oauthClient.clientId, clientSecret: oauthClient.clientSecret ?? undefined },
+      refreshToken,
+      resource: endpoints.resource,
+    });
+  }
+
   if (!def.refreshUrl) throw new Error(`${def.label} does not support token refresh`);
-  const body = new URLSearchParams({
-    refresh_token: refreshToken,
-    grant_type: "refresh_token",
-  });
-  const res = await fetch(def.refreshUrl, {
-    method: "POST",
-    headers: tokenRequestHeaders(def, body),
-    body,
-  });
+  const body = new URLSearchParams({ refresh_token: refreshToken, grant_type: "refresh_token" });
+  const res = await fetch(def.refreshUrl, { method: "POST", headers: tokenRequestHeaders(def, body), body });
   if (!res.ok) throw new Error(`Token refresh failed (${res.status})`);
-  const data = (await res.json()) as {
-    access_token?: string;
-    refresh_token?: string;
-    scope?: string;
-    expires_in?: number;
-    error?: string;
-    error_description?: string;
-  };
-  if (!data.access_token) throw new Error(data.error_description || data.error || "No access token returned");
-  return {
-    accessToken: data.access_token,
-    refreshToken: data.refresh_token, // may be absent — caller keeps the old one
-    scope: data.scope,
-    expiresInSec: data.expires_in,
-  };
+  return toTokens((await res.json()) as TokenResponse);
 }

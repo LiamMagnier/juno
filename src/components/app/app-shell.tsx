@@ -32,6 +32,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   React.useEffect(() => {
+    const collapseSidebar = () => {
+      setCollapsed(true);
+      try {
+        localStorage.setItem(COLLAPSE_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    };
+
+    window.addEventListener("juno:collapse-sidebar", collapseSidebar);
+    return () => window.removeEventListener("juno:collapse-sidebar", collapseSidebar);
+  }, []);
+
+  React.useEffect(() => {
     for (const href of PREFETCH_ROUTES) {
       router.prefetch(href);
     }
@@ -55,9 +69,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <DotField />
       </div>
 
+      {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
+          the content instead of reflowing it mid-animation. */}
       <aside
         className={cn(
-          "hidden shrink-0 border-r border-sidebar-border transition-[width] duration-base ease-out-soft md:block",
+          "hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] duration-base ease-out-soft md:block",
           collapsed ? "w-[64px]" : "w-[280px]"
         )}
       >

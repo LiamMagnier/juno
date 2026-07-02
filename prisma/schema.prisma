@@ -25,23 +25,24 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts        Account[]
-  sessions        Session[]
-  settings        Settings?
-  subscription    Subscription?
-  folders         Folder[]
-  conversations   Conversation[]
-  memories        MemoryEntry[]
-  memorySummary   MemorySummary?
-  attachments     Attachment[]
-  usage           Usage[]
-  featureRequests FeatureRequest[]
-  votes           FeatureVote[]
-  featureComments FeatureComment[]
-  projects        Project[]
-  authoredAnnouncements Announcement[] @relation("AnnouncementAuthor")
+  accounts               Account[]
+  sessions               Session[]
+  settings               Settings?
+  subscription           Subscription?
+  folders                Folder[]
+  conversations          Conversation[]
+  memories               MemoryEntry[]
+  memorySummary          MemorySummary?
+  conversationMemories   ConversationMemory[]
+  attachments            Attachment[]
+  usage                  Usage[]
+  featureRequests        FeatureRequest[]
+  votes                  FeatureVote[]
+  featureComments        FeatureComment[]
+  projects               Project[]
+  authoredAnnouncements  Announcement[]          @relation("AnnouncementAuthor")
   announcementDismissals AnnouncementDismissal[]
-  connections     Connection[]
+  connections            Connection[]
 }
 
 // ----------------------------------------------------------------------------
@@ -50,16 +51,18 @@ model User {
 // ----------------------------------------------------------------------------
 
 model Connection {
-  id           String    @id @default(cuid())
-  userId       String
-  provider     String // connector id: "github" | "figma"
-  accessToken  String    @db.Text // encrypted (AES-256-GCM)
-  refreshToken String?   @db.Text // encrypted
-  scope        String?
-  accountLabel String? // human label: GitHub login / Figma handle
-  expiresAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                String    @id @default(cuid())
+  userId            String
+  provider          String // connector id: "github" | "figma" | "notion"
+  accessToken       String    @db.Text // encrypted (AES-256-GCM)
+  refreshToken      String?   @db.Text // encrypted
+  oauthClientId     String? // mcp_oauth: the dynamically-registered client (RFC 7591)
+  oauthClientSecret String?   @db.Text // encrypted; only if the MCP server issues a confidential client
+  scope             String?
+  accountLabel      String? // human label: GitHub login / Figma handle
+  expiresAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -152,12 +155,13 @@ model Conversation {
   updatedAt     DateTime @updatedAt
   lastMessageAt DateTime @default(now())
 
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folder      Folder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  project     Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder      Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  project     Project?            @relation(fields: [projectId], references: [id], onDelete: SetNull)
   messages    Message[]
   attachments Attachment[]
   artifacts   Artifact[]
+  memory      ConversationMemory?
 
   @@index([userId, lastMessageAt])
   @@index([userId, pinned])
@@ -181,18 +185,18 @@ model Project {
 }
 
 model Message {
-  id             String    @id @default(cuid())
-  conversationId String
-  role           Role
-  content        String    @db.Text
-  reasoning      String?   @db.Text // visible chain-of-thought when a thinking model is used
-  model          String?
-  feedback       Feedback? // thumbs up/down on assistant messages
-  promptTokens   Int?
+  id               String    @id @default(cuid())
+  conversationId   String
+  role             Role
+  content          String    @db.Text
+  reasoning        String?   @db.Text // visible chain-of-thought when a thinking model is used
+  model            String?
+  feedback         Feedback? // thumbs up/down on assistant messages
+  promptTokens     Int?
   completionTokens Int?
-  sources        Json? // web-search citations: [{ title, url, snippet }]
-  activity       Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
-  createdAt      DateTime  @default(now())
+  sources          Json? // web-search citations: [{ title, url, snippet }]
+  activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
+  createdAt        DateTime  @default(now())
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   attachments  Attachment[]
@@ -216,7 +220,7 @@ model Attachment {
   height         Int?
   createdAt      DateTime       @default(now())
 
-  projectId      String?
+  projectId String?
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -238,12 +242,38 @@ model MemoryEntry {
   userId    String
   content   String       @db.Text
   source    MemorySource @default(AUTO)
+  // FACT = remembered content · SUPPRESSION = "never remember this" (highest-
+  // priority layer: filters candidate ingestion AND the consolidated summary).
+  kind      MemoryKind   @default(FACT)
+  // Where this came from: a conversationId, "manual", or "edit".
+  sourceRef String?
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  @@index([userId, kind])
+}
+
+// Per-conversation extraction state: messages up to `processedAt` have been
+// distilled into MemoryEntry facts. Lets every chat contribute exactly once,
+// supports incremental updates after new messages, and makes old-chat
+// backfill resumable.
+model ConversationMemory {
+  id             String   @id @default(cuid())
+  userId         String
+  conversationId String   @unique
+  processedAt    DateTime // high-water mark: messages createdAt <= this are extracted
+  digest         String?  @db.Text // one-line memory digest of the chat
+  factCount      Int      @default(0) // facts extracted from this chat so far
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 // A periodically-regenerated, deduped summary of the user's memories (markdown,
@@ -300,17 +330,17 @@ model ArtifactVersion {
 // ----------------------------------------------------------------------------
 
 model Subscription {
-  id                   String     @id @default(cuid())
-  userId               String     @unique
-  plan                 Plan       @default(FREE)
-  status               SubStatus  @default(ACTIVE)
-  stripeCustomerId     String?    @unique
-  stripeSubscriptionId String?    @unique
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  plan                 Plan      @default(FREE)
+  status               SubStatus @default(ACTIVE)
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
   stripePriceId        String?
   currentPeriodEnd     DateTime?
-  cancelAtPeriodEnd    Boolean    @default(false)
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  cancelAtPeriodEnd    Boolean   @default(false)
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
@@ -360,7 +390,7 @@ model Announcement {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  createdBy  User @relation("AnnouncementAuthor", fields: [createdById], references: [id], onDelete: Cascade)
+  createdBy  User                    @relation("AnnouncementAuthor", fields: [createdById], references: [id], onDelete: Cascade)
   dismissals AnnouncementDismissal[]
 
   @@index([published, startsAt])
@@ -399,6 +429,11 @@ enum Theme {
 enum MemorySource {
   AUTO
   MANUAL
+}
+
+enum MemoryKind {
+  FACT
+  SUPPRESSION
 }
 
 enum AttachmentKind {

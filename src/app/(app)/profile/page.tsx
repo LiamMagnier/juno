@@ -116,8 +116,8 @@ function UsageCard({
   logo: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-4 rounded-[24px] border bg-card/80 p-4 shadow-soft">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background shadow-soft">{logo}</div>
+    <div className="surface-raised flex items-center gap-4 rounded-[24px] border border-border/70 p-4">
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background shadow-pop">{logo}</div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-base font-semibold">{title}</p>
         <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
@@ -315,7 +315,7 @@ export default function ProfilePage() {
                     const allowed = planRank(quota.plan) >= planRank(info.minPlan);
                     const color = allowed ? providerAccent(info.provider) : "hsl(var(--muted-foreground) / 0.35)";
                     return (
-                      <div key={info.id} className="rounded-[20px] border bg-background/70 p-3">
+                      <div key={info.id} className="field-well rounded-[20px] border border-border/60 bg-background/70 p-3">
                         <div className="mb-2 flex items-center gap-2.5">
                           <ProviderLogo provider={info.provider} className="h-5 w-5" />
                           <div className="min-w-0 flex-1">

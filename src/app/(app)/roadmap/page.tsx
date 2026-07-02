@@ -145,7 +145,7 @@ export default function RoadmapPage() {
 
         {/* Recently shipped strip */}
         {shipped.length > 0 && (
-          <div className="mt-6 rounded-xl border border-success/30 bg-success/5 p-4">
+          <div className="mt-6 rounded-[20px] border border-success/30 bg-success/5 p-4">
             <p className="mb-2 flex items-center gap-2 font-mono text-label uppercase text-success">
               <PartyPopper className="h-3.5 w-3.5" /> Recently shipped
             </p>
@@ -169,15 +169,15 @@ export default function RoadmapPage() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search requests" className="pl-9" />
           </div>
-          <div className="flex items-center gap-1 rounded-lg border bg-card p-0.5">
+          <div className="field-well flex items-center gap-1 rounded-[14px] border border-border/60 bg-muted/50 p-0.5">
             {SORTS.map((s) => (
               <button
                 key={s.key}
                 onClick={() => setSort(s.key)}
                 aria-pressed={sort === s.key}
                 className={cn(
-                  "rounded-md px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors duration-fast",
-                  sort === s.key ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground"
+                  "rounded-[10px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-all duration-fast",
+                  sort === s.key ? "bg-card text-primary [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]" : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {s.label}
@@ -209,7 +209,7 @@ export default function RoadmapPage() {
             {[...Array(4)].map((_, c) => (
               <div key={c} className="space-y-3">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className="skeleton h-28 rounded-lg" style={{ animationDelay: `${(c * 3 + i) * 50}ms` }} />
+                  <div key={i} className="skeleton h-28 rounded-[16px]" style={{ animationDelay: `${(c * 3 + i) * 50}ms` }} />
                 ))}
               </div>
             ))}
@@ -240,7 +240,7 @@ export default function RoadmapPage() {
                     </div>
                     <div className="space-y-3">
                       {items.length === 0 ? (
-                        <p className="rounded-lg border border-dashed border-border/70 px-3 py-6 text-center text-caption text-muted-foreground">
+                        <p className="field-well rounded-[16px] border border-dashed border-border/50 px-3 py-6 text-center text-caption text-muted-foreground">
                           Nothing here yet.
                         </p>
                       ) : (

@@ -4,22 +4,31 @@ import * as React from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageItem } from "@/components/chat/message-item";
 import { cn } from "@/lib/utils";
-import type { ChatMessage } from "@/hooks/use-chat";
-import type { ClientArtifact } from "@/types/chat";
+import type { ChatMessage, ImageEditInput } from "@/hooks/use-chat";
+import type { ClientArtifact, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
   messages: ChatMessage[];
   busy: boolean;
+  status?: GenerationStatus;
   artifacts: ClientArtifact[];
-  onOpenArtifact: (identifier: string) => void;
+  onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
   onRegenerate: () => void;
   onContinue: () => void;
   onEdit: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  onFork?: (id: string) => void;
   onSpeak?: (id: string, text: string) => void;
   speakingId?: string | null;
   privateMode?: boolean;
+  onImageEdit?: (input: ImageEditInput) => void;
+  currentModelId?: string;
 }
+
+const SCROLL_FADE_STYLE: React.CSSProperties = {
+  maskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
+  WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
+};
 
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
@@ -66,7 +75,7 @@ export function MessageList(props: MessageListProps) {
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto">
+      <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto" style={SCROLL_FADE_STYLE}>
         <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
           {messages.map((m, i) => (
             <MessageItem
@@ -74,6 +83,7 @@ export function MessageList(props: MessageListProps) {
               message={m}
               isLast={i === messages.length - 1}
               busy={props.busy}
+              status={i === messages.length - 1 ? props.status : undefined}
               animateIn={i >= animateFrom}
               artifactsByIdentifier={artifactsByIdentifier}
               onOpenArtifact={props.onOpenArtifact}
@@ -81,9 +91,12 @@ export function MessageList(props: MessageListProps) {
               onContinue={props.onContinue}
               onEdit={props.onEdit}
               onFeedback={props.onFeedback}
+              onFork={props.onFork}
               onSpeak={props.onSpeak}
               speaking={props.speakingId === m.id}
               privateMode={props.privateMode}
+              onImageEdit={props.onImageEdit}
+              currentModelId={props.currentModelId}
             />
           ))}
           <div ref={bottomRef} />
@@ -95,7 +108,7 @@ export function MessageList(props: MessageListProps) {
         onClick={jumpToLatest}
         aria-label="Scroll to latest"
         className={cn(
-          "absolute bottom-4 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border bg-card/80 text-muted-foreground shadow-float backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground",
+          "absolute bottom-4 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border bg-card/80 text-muted-foreground shadow-float backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 coarse:h-11 coarse:w-11",
           atBottom
             ? "pointer-events-none translate-y-2 opacity-0"
             : "opacity-100 motion-safe:animate-rise-in hover:-translate-y-0.5"

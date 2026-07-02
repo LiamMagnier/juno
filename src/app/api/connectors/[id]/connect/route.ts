@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { randomBytes } from "crypto";
 import { getCurrentUser } from "@/lib/session";
 import { getConnector, isConnectorConfigured, buildAuthorizeUrl } from "@/lib/connectors";
-import { signState } from "@/lib/crypto";
+import { encryptSecret, signState } from "@/lib/crypto";
 
 export const runtime = "nodejs";
 
@@ -32,5 +32,26 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     maxAge: 600,
   });
 
-  return NextResponse.redirect(buildAuthorizeUrl(def, state));
+  let flow;
+  try {
+    flow = await buildAuthorizeUrl(def, state);
+  } catch (err) {
+    console.error("[connectors] failed to build authorize URL", def.id, err instanceof Error ? err.message : err);
+    return NextResponse.redirect(new URL("/connections?error=not_configured", req.url));
+  }
+
+  // mcp_oauth flows return per-request secrets (PKCE verifier + the client we
+  // just registered). Stash them in a short-lived, encrypted cookie so the
+  // callback can finish the exchange — they never reach the browser in the clear.
+  if (flow.session) {
+    jar.set(`oauth_session_${def.id}`, encryptSecret(JSON.stringify(flow.session)), {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 600,
+    });
+  }
+
+  return NextResponse.redirect(flow.url);
 }

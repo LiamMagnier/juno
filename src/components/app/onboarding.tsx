@@ -80,14 +80,14 @@ function ModelField({
           {current && <ProviderLogo provider={current.provider} className="h-4 w-4 rounded" />}
           <span className="truncate font-mono text-[13px]">{current?.name ?? "Select a model"}</span>
         </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-fast ease-out-soft", open && "rotate-180")} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           {/* opens upward — the field sits low in the card, which clips overflow */}
-          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border bg-popover/95 shadow-glass backdrop-blur-md">
+          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-2xl border bg-popover/95 shadow-glass backdrop-blur-md motion-safe:animate-pop-in">
             <div className="relative border-b p-2">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -115,7 +115,7 @@ function ModelField({
                           onPick(m.id);
                           setOpen(false);
                         }}
-                        className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-accent"
+                        className="pressable flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left hover:bg-accent"
                       >
                         <ProviderLogo provider={m.provider} className="h-4 w-4 rounded" />
                         <span className="min-w-0 flex-1 truncate font-mono text-[12px]">{m.name}</span>
@@ -289,7 +289,7 @@ export function Onboarding() {
 
         {/* header: step label + dot pager */}
         <div className="relative flex items-center justify-between px-7 pt-6">
-          <span className="font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+          <span className="font-mono text-label uppercase text-muted-foreground">
             {STEP_LABELS[step]}
           </span>
           <div className="flex items-center gap-1.5">
@@ -323,7 +323,7 @@ export function Onboarding() {
               A thoughtful AI for chat, code, and everything between.
             </p>
             {models.length > 1 && (
-              <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground/80">
+              <p className="mt-3 font-mono text-label uppercase text-muted-foreground/80">
                 {models.length} models · {labCount} {labCount === 1 ? "lab" : "labs"} · one place
               </p>
             )}
@@ -353,7 +353,7 @@ export function Onboarding() {
             <button
               type="button"
               onClick={finish}
-              className="mt-2 text-caption text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              className="mt-2 text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Skip for now
             </button>
@@ -379,7 +379,7 @@ export function Onboarding() {
                       aria-label={a.id}
                       aria-pressed={settings.accent === a.id}
                       className={cn(
-                        "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-fast hover:scale-110 coarse:h-11 coarse:w-11",
+                        "flex h-9 w-9 items-center justify-center rounded-full ring-offset-2 ring-offset-card transition-transform duration-fast ease-out-soft hover:scale-110 active:scale-95 coarse:h-11 coarse:w-11",
                         settings.accent === a.id && "ring-2 ring-foreground"
                       )}
                       style={{ backgroundColor: a.color }}
@@ -400,7 +400,7 @@ export function Onboarding() {
                       onClick={() => setTheme(t.id)}
                       aria-pressed={activeTheme === t.id}
                       className={cn(
-                        "flex flex-col items-center gap-1.5 rounded-2xl border px-2 py-3 transition-colors duration-fast",
+                        "pressable flex flex-col items-center gap-1.5 rounded-2xl border px-2 py-3",
                         activeTheme === t.id
                           ? "border-primary/50 bg-primary/10 text-primary"
                           : "text-muted-foreground hover:bg-accent"
@@ -426,7 +426,7 @@ export function Onboarding() {
             <button
               type="button"
               onClick={() => setStep(0)}
-              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Back
             </button>
@@ -523,7 +523,7 @@ export function Onboarding() {
             <button
               type="button"
               onClick={() => setStep(1)}
-              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Back
             </button>
@@ -557,7 +557,7 @@ export function Onboarding() {
                     type="button"
                     onClick={copyPrompt}
                     aria-label="Copy prompt"
-                    className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg border bg-card text-muted-foreground transition-colors hover:text-foreground"
+                    className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg border bg-card text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
                   >
                     {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
@@ -611,7 +611,7 @@ export function Onboarding() {
             <button
               type="button"
               onClick={() => setStep(2)}
-              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+              className="mt-2 w-full text-caption text-muted-foreground underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-foreground hover:underline"
             >
               Back
             </button>

@@ -165,7 +165,7 @@ export default function ProjectsPage() {
           <div className="flex items-center gap-2">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs text-muted-foreground rounded-md">
+                <Button variant="outline" size="sm" className="h-9 gap-1.5 text-xs text-muted-foreground">
                   <SlidersHorizontal className="h-3.5 w-3.5" />
                   Sort by: <span className="font-semibold text-foreground">{sortBy === "updated" ? "Last updated" : sortBy === "name" ? "Name" : "Conversations"}</span>
                 </Button>
@@ -183,9 +183,10 @@ export default function ProjectsPage() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button 
-              onClick={() => { setName(""); setOpen(true); }} 
-              className="h-9 gap-1.5 text-xs bg-black hover:bg-black/90 text-white dark:bg-white dark:text-black dark:hover:bg-white/90 rounded-md"
+            <Button
+              onClick={() => { setName(""); setOpen(true); }}
+              size="sm"
+              className="h-9 gap-1.5 text-xs"
             >
               <Plus className="h-4 w-4" /> New project
             </Button>
@@ -199,7 +200,7 @@ export default function ProjectsPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search projects…"
-            className="h-10 pl-9 rounded-md w-full"
+            className="h-10 w-full pl-9"
           />
         </div>
 
@@ -211,7 +212,21 @@ export default function ProjectsPage() {
         ) : loading ? (
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {[...Array(6)].map((_, i) => (
-              <div key={i} className="skeleton h-40 rounded-[28px]" style={{ animationDelay: `${i * 50}ms` }} />
+              <div
+                key={i}
+                className="surface-raised flex h-40 flex-col justify-between rounded-[28px] border border-border/70 p-5"
+                style={{ animationDelay: `${i * 50}ms` }}
+              >
+                <div className="space-y-2.5">
+                  <div className="skeleton h-4 w-1/2 rounded-full" style={{ animationDelay: `${i * 50}ms` }} />
+                  <div className="skeleton h-3 w-4/5 rounded-full" style={{ animationDelay: `${i * 50 + 40}ms` }} />
+                  <div className="skeleton h-3 w-3/5 rounded-full" style={{ animationDelay: `${i * 50 + 80}ms` }} />
+                </div>
+                <div className="flex items-center justify-between border-t border-border/40 pt-3">
+                  <div className="skeleton h-2.5 w-20 rounded-full" style={{ animationDelay: `${i * 50 + 120}ms` }} />
+                  <div className="skeleton h-2.5 w-10 rounded-full" style={{ animationDelay: `${i * 50 + 160}ms` }} />
+                </div>
+              </div>
             ))}
           </div>
         ) : empty ? (
@@ -237,7 +252,7 @@ export default function ProjectsPage() {
                 variant="interactive"
                 style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
                 className={cn(
-                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between border bg-card shadow-soft rounded-[28px] hover:-translate-y-1 hover:shadow-md transition-all duration-base cursor-pointer",
+                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-[28px] hover:-translate-y-1 hover:border-primary/40 hover:shadow-float transition-all duration-base cursor-pointer",
                   p.coverUrl ? "h-[260px]" : "h-[160px]"
                 )}
                 onClick={(e) => {

@@ -22,7 +22,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 30 3% 12%;
 
-    --primary: 15 63% 60%;
+    --primary: 15 54% 51%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 50 23% 95%;
@@ -45,7 +45,7 @@
 
     --border: 43 23% 88%;
     --input: 43 23% 85%;
-    --ring: 15 63% 60%;
+    --ring: 15 54% 51%;
 
     --sidebar: 50 23% 95%;
     --sidebar-foreground: 40 4% 30%;
@@ -71,6 +71,15 @@
     --shadow-soft: 0 1px 2px hsl(30 10% 20% / 0.05), 0 4px 12px -4px hsl(30 10% 20% / 0.08);
     --shadow-float: 0 4px 14px -4px hsl(30 10% 16% / 0.12), 0 14px 36px -10px hsl(30 10% 16% / 0.14), inset 0 1px 0 hsl(0 0% 100% / 0.65);
     --shadow-glass: 0 8px 32px -10px hsl(30 12% 12% / 0.18), inset 0 1px 0 hsl(0 0% 100% / 0.55);
+
+    /* Depth kit (Awwwards-lean): a top sheen for raised surfaces, a crisp pop shadow
+       for small interactive elements, a colored halo for the primary, and an inset
+       "well" for recessed inputs. Tuned separately for light/dark below. */
+    --sheen: 0 0% 100% / 0.55;
+    --hairline: 30 12% 18% / 0.06;
+    --shadow-pop: 0 1px 1px hsl(30 12% 18% / 0.05), 0 2px 4px -1px hsl(30 12% 18% / 0.09), 0 8px 18px -8px hsl(30 12% 18% / 0.12);
+    --glow-primary: 0 1px 2px hsl(var(--primary) / 0.32), 0 5px 14px -5px hsl(var(--primary) / 0.42), 0 14px 30px -14px hsl(var(--primary) / 0.34);
+    --well-inset: inset 0 1px 2px hsl(30 12% 18% / 0.07);
   }
 
   .dark {
@@ -83,8 +92,8 @@
     --popover: 40 3% 19%;
     --popover-foreground: 45 24% 93%;
 
-    --primary: 17 66% 62%;
-    --primary-foreground: 40 6% 10%;
+    --primary: 15 54% 51%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 45 5% 16%;
     --secondary-foreground: 45 22% 90%;
@@ -106,7 +115,7 @@
 
     --border: 36 5% 21%;
     --input: 36 5% 24%;
-    --ring: 17 66% 62%;
+    --ring: 15 54% 51%;
 
     --sidebar: 40 6% 10%;
     --sidebar-foreground: 37 7% 70%;
@@ -118,11 +127,19 @@
     --shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.3), 0 4px 12px -4px hsl(0 0% 0% / 0.4);
     --shadow-float: 0 4px 16px -4px hsl(0 0% 0% / 0.45), 0 16px 40px -12px hsl(0 0% 0% / 0.5), inset 0 1px 0 hsl(45 24% 93% / 0.06);
     --shadow-glass: 0 8px 32px -10px hsl(0 0% 0% / 0.55), inset 0 1px 0 hsl(45 24% 93% / 0.07);
+
+    /* Depth kit (dark) — a fainter warm top sheen reads as real lift, not an inverted
+       light shadow; shadows deepen; the primary halo carries the accent hue. */
+    --sheen: 45 40% 96% / 0.06;
+    --hairline: 45 24% 93% / 0.08;
+    --shadow-pop: 0 1px 2px hsl(0 0% 0% / 0.4), 0 3px 8px -2px hsl(0 0% 0% / 0.5), 0 10px 22px -10px hsl(0 0% 0% / 0.5);
+    --glow-primary: 0 1px 3px hsl(var(--primary) / 0.4), 0 6px 18px -6px hsl(var(--primary) / 0.5), 0 18px 36px -16px hsl(var(--primary) / 0.42);
+    --well-inset: inset 0 1px 2px hsl(0 0% 0% / 0.38);
   }
 
   /* ---- Accent overrides (coral is the default; drive --primary + --ring) ---- */
-  :root[data-accent="coral"]  { --primary: 15 63% 60%;  --ring: 15 63% 60%;  --primary-foreground: 0 0% 100%; }
-  .dark[data-accent="coral"]  { --primary: 17 66% 62%;  --ring: 17 66% 62%;  --primary-foreground: 40 6% 10%; }
+  :root[data-accent="coral"]  { --primary: 15 54% 51%;  --ring: 15 54% 51%;  --primary-foreground: 0 0% 100%; }
+  .dark[data-accent="coral"]  { --primary: 15 54% 51%;  --ring: 15 54% 51%;  --primary-foreground: 0 0% 100%; }
 
   :root[data-accent="teal"]   { --primary: 180 63% 33%; --ring: 180 63% 33%; --primary-foreground: 0 0% 100%; }
   .dark[data-accent="teal"]   { --primary: 187 58% 49%; --ring: 187 58% 49%; --primary-foreground: 40 6% 10%; }
@@ -138,6 +155,14 @@
 
   * {
     border-color: hsl(var(--border));
+    /* Kill the grey WebKit tap flash — press feedback comes from .pressable instead. */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Themed text selection — primary tinted, readable in both themes and any accent. */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.25);
+    color: hsl(var(--foreground));
   }
 
   body {
@@ -161,7 +186,12 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   /* Focus visibility for keyboard users */
@@ -186,6 +216,73 @@
 }
 
 @layer components {
+  /* Tactile press feedback for buttons/chips/cards — not large surfaces. Covers the
+     common transition properties itself, so drop `transition-colors` when adding it
+     (a later transition-* utility would override this shorthand and un-animate the press). */
+  .pressable {
+    transition-property: transform, color, background-color, border-color, opacity, box-shadow;
+    transition-duration: var(--dur-fast);
+    transition-timing-function: var(--ease-out-soft);
+  }
+  .pressable:active {
+    transform: scale(0.97);
+  }
+
+  /* ---- Depth kit (Awwwards-lean) --------------------------------------------
+     Small, composable primitives so every surface shares one lighting model:
+     a light source above the element (top sheen + inner top-hairline) and a
+     warm ambient shadow below. Layered as background-IMAGE so they sit over a
+     component's own bg-* fill without replacing it. */
+
+  /* Raised panels/cards — faint top sheen + hairline edge for a lit, lifted read. */
+  .surface-raised {
+    background-image:
+      linear-gradient(180deg, hsl(var(--sheen)), transparent 44%),
+      linear-gradient(0deg, hsl(var(--card)), hsl(var(--card)));
+    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-soft);
+  }
+
+  /* Glossy fill for the primary action — a specular top highlight over the accent
+     fill. Pair with `.halo-primary` for the colored ambient glow. */
+  .btn-glossy {
+    background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.17), hsl(0 0% 100% / 0) 52%);
+  }
+  .halo-primary {
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), var(--glow-primary);
+  }
+
+  /* Recessed field — a subtle inset so inputs read as wells you type into. */
+  .field-well {
+    box-shadow: var(--well-inset);
+  }
+
+  /* Floating glass layers (menus/popovers/selects) — a crisp top-edge highlight over
+     the frosted glass shadow, so they catch light at the rim. */
+  .glass-raised {
+    box-shadow: inset 0 1px 0 hsl(var(--sheen)), var(--shadow-glass);
+  }
+
+  /* Diagonal sheen sweep on hover — the signature "premium" catch of light.
+     Element must be relative + overflow-clip; the band lives in ::after. */
+  .sheen-sweep { position: relative; overflow: hidden; }
+  .sheen-sweep::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 30%, hsl(0 0% 100% / 0.22) 48%, transparent 66%);
+    transform: translateX(-130%);
+    pointer-events: none;
+  }
+  /* Transition lives on the hover state only, so the band animates across on hover-in
+     and snaps back off-canvas on hover-out (a clean one-way sweep, no reverse flash). */
+  .sheen-sweep:hover::after {
+    transform: translateX(130%);
+    transition: transform 620ms var(--ease-out-expo);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sheen-sweep::after { display: none; }
+  }
+
   /* Markdown prose used in chat messages */
   .prose-juno {
     line-height: 1.65;
@@ -229,24 +326,92 @@
   .prose-juno table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
   .prose-juno th, .prose-juno td { border: 1px solid hsl(var(--border)); padding: 0.45em 0.7em; text-align: left; }
   .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
+
+  /* Inline educational visuals own their internal layout; keep prose defaults
+     from adding heading margins, list markers, or table spacing inside them. */
+  .prose-juno .juno-visual p,
+  .prose-juno .juno-visual h3,
+  .prose-juno .juno-visual h4,
+  .prose-juno .juno-step-lab p,
+  .prose-juno .juno-step-lab h3,
+  .prose-juno .juno-step-lab h4,
+  .prose-juno .juno-step-lab h5 {
+    margin: 0;
+  }
+  .prose-juno .juno-visual ol,
+  .prose-juno .juno-visual ul,
+  .prose-juno .juno-visual details,
+  .prose-juno .juno-step-lab ol,
+  .prose-juno .juno-step-lab ul,
+  .prose-juno .juno-step-lab details {
+    margin: 0;
+  }
+  .prose-juno .juno-visual ol,
+  .prose-juno .juno-visual ul,
+  .prose-juno .juno-step-lab ol,
+  .prose-juno .juno-step-lab ul {
+    padding-left: 0;
+    list-style: none;
+  }
+  .prose-juno .juno-visual li,
+  .prose-juno .juno-step-lab li {
+    margin: 0;
+  }
+  .prose-juno .juno-visual table,
+  .prose-juno .juno-step-lab table {
+    margin: 0;
+  }
 }
 
 @layer utilities {
-  /* Loading skeleton shimmer */
+  /* Loading skeleton shimmer — a warm base with a faint primary-tinted sweep, so
+     loading states feel branded rather than like empty grey boxes. */
   .skeleton {
     position: relative;
     overflow: hidden;
-    background: hsl(var(--muted));
+    background: hsl(var(--muted) / 0.7);
+    box-shadow: inset 0 0 0 1px hsl(var(--hairline));
   }
   .skeleton::after {
     content: "";
     position: absolute;
     inset: 0;
     transform: translateX(-100%);
-    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.06), transparent);
-    animation: shimmer 1.5s infinite;
+    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / 0.05) 40%, hsl(var(--primary) / 0.08) 50%, hsl(var(--foreground) / 0.05) 60%, transparent);
+    animation: shimmer 1.6s var(--ease-out-soft) infinite;
   }
   .text-balance { text-wrap: balance; }
+  /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content
+     (dropdown/popover/tooltip/select). */
+  .origin-popper { transform-origin: var(--radix-popper-transform-origin); }
+
+  /* Mono-eyebrow shimmer — a narrow primary band sweeps across currentColor text.
+     The band parks off-canvas between sweeps and at the static (reduced-motion)
+     position, so idle text reads as plain currentColor. */
+  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
+    .text-shimmer {
+      background-image: linear-gradient(100deg, currentColor 40%, hsl(var(--primary)) 50%, currentColor 60%);
+      background-size: 250% 100%;
+      background-repeat: no-repeat;
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: eyebrow-shimmer 2.8s ease-in-out infinite;
+    }
+  }
+
+  /* Soft top/bottom fade so scrollable text dissolves at the frame edges
+     (alpha-only mask — black/transparent are not theme colors). */
+  .scroll-fade-y {
+    -webkit-mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
+  }
+}
+
+@keyframes eyebrow-shimmer {
+  0% { background-position: 100% 0; }
+  /* Sweep for 60% of the cycle, then rest with the band just off the right edge. */
+  60%, 100% { background-position: 0% 0; }
 }
 
 /* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ---- */

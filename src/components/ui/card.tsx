@@ -2,18 +2,23 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
-const cardVariants = cva("rounded-lg border bg-card text-card-foreground transition-all duration-base ease-out-soft", {
-  variants: {
-    variant: {
-      default: "shadow-soft",
-      elevated: "shadow-float",
-      flat: "border-border/70 shadow-none",
-      interactive:
-        "shadow-soft hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-float focus-within:border-primary/40",
+const cardVariants = cva(
+  // Scoped transition (not transition-all) so panel resizes/layout changes don't animate.
+  "rounded-lg border border-border/70 bg-card text-card-foreground transition-[transform,border-color,background-color,box-shadow] duration-base ease-out-soft",
+  {
+    variants: {
+      variant: {
+        // surface-raised adds the top sheen + inner highlight + soft ambient shadow.
+        default: "surface-raised",
+        elevated: "surface-raised shadow-float",
+        flat: "shadow-none",
+        interactive:
+          "surface-raised hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-float hover:[box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--glow-primary)] focus-within:border-primary/45 active:translate-y-0",
+      },
     },
-  },
-  defaultVariants: { variant: "default" },
-});
+    defaultVariants: { variant: "default" },
+  }
+);
 
 export interface CardProps
   extends React.HTMLAttributes<HTMLDivElement>,
@@ -39,7 +44,8 @@ CardTitle.displayName = "CardTitle";
 /** Mono uppercase eyebrow for card sections — the Juno label voice. */
 const CardEyebrow = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
   ({ className, ...props }, ref) => (
-    <p ref={ref} className={cn("font-mono text-label uppercase text-muted-foreground", className)} {...props} />
+    // text-label metrics spelled out — twMerge misreads `text-label` as a color and drops it next to text-muted-foreground.
+    <p ref={ref} className={cn("font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground", className)} {...props} />
   )
 );
 CardEyebrow.displayName = "CardEyebrow";

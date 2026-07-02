@@ -12,11 +12,14 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         aria-hidden
         className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(55%_45%_at_50%_0%,hsl(var(--primary)/0.12),transparent_70%)]"
       />
-      <Link href="/" className="mb-8">
+      {/* Layered entrance: wordmark → card → fine print. */}
+      <Link href="/" className="mb-8 rounded-md motion-safe:animate-fade-in">
         <AsciiWordmark />
       </Link>
-      <div className="w-full max-w-sm">{children}</div>
-      <p className="mt-8 max-w-sm text-center text-xs text-muted-foreground">
+      <div className="w-full max-w-sm motion-safe:animate-rise-in [animation-delay:60ms] [animation-fill-mode:backwards]">
+        {children}
+      </div>
+      <p className="mt-8 max-w-sm text-center text-caption text-muted-foreground motion-safe:animate-fade-in [animation-delay:180ms] [animation-fill-mode:backwards]">
         By continuing you agree to use Juno responsibly. Your conversations are private to your account.
       </p>
     </div>

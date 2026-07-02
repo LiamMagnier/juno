@@ -49,6 +49,7 @@ export function CommandPalette() {
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
   const listRef = React.useRef<HTMLDivElement>(null);
+  const highlightRef = React.useRef<HTMLDivElement>(null);
   // True when `active` last changed via the keyboard, so we only auto-scroll then
   // (not while the mouse is hovering rows).
   const keyboardNav = React.useRef(false);
@@ -128,6 +129,22 @@ export function CommandPalette() {
     setActive((a) => Math.min(a, Math.max(0, items.length - 1)));
   }, [items.length]);
 
+  // Sliding selection highlight — one bar that glides between rows instead of
+  // each row toggling its own background.
+  React.useLayoutEffect(() => {
+    const list = listRef.current;
+    const hl = highlightRef.current;
+    if (!list || !hl) return;
+    const el = list.querySelector<HTMLElement>(`[data-index="${active}"]`);
+    if (!el) {
+      hl.style.opacity = "0";
+      return;
+    }
+    hl.style.opacity = "1";
+    hl.style.transform = `translateY(${el.offsetTop}px)`;
+    hl.style.height = `${el.offsetHeight}px`;
+  }, [active, items]);
+
   // Keep the highlighted row in view when navigating with the arrow keys.
   React.useEffect(() => {
     if (!keyboardNav.current) return;
@@ -158,7 +175,9 @@ export function CommandPalette() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
           hideClose
-          className="top-[12vh] max-w-xl translate-y-0 gap-0 overflow-hidden p-0 shadow-glass"
+          // svh + inset-x centering (no transform) so the pop-in/out keyframes own
+          // `transform`, and the palette stays reachable above the mobile keyboard.
+          className="left-0 right-0 top-[10svh] mx-auto w-[calc(100%-2rem)] max-w-xl origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 shadow-glass data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             (e.currentTarget as HTMLElement).querySelector("input")?.focus();
@@ -181,7 +200,15 @@ export function CommandPalette() {
             />
           </div>
 
-          <div ref={listRef} className="max-h-[52vh] overflow-y-auto p-2">
+          <div
+            ref={listRef}
+            className="relative max-h-[min(52svh,calc(100dvh-9rem))] overflow-y-auto overscroll-contain p-2"
+          >
+            <div
+              ref={highlightRef}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2 right-2 top-0 rounded-md bg-accent opacity-0 transition-[transform,height,opacity] duration-fast ease-out-soft"
+            />
             {items.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
                 No matches for “{query}”.
@@ -193,7 +220,7 @@ export function CommandPalette() {
                 return (
                   <React.Fragment key={c.id}>
                     {showHeader && (
-                      <div className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/80">
+                      <div className="px-3 pb-1 pt-3 font-mono text-label uppercase text-muted-foreground/60">
                         {c.group}
                       </div>
                     )}
@@ -204,11 +231,16 @@ export function CommandPalette() {
                       onClick={() => c.run()}
                       aria-selected={active === i}
                       className={cn(
-                        "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors duration-fast",
-                        active === i ? "bg-accent text-foreground" : "text-foreground/80"
+                        "relative flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        active === i ? "text-foreground" : "text-foreground/80"
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0 transition-colors duration-fast ease-out-soft",
+                          active === i ? "text-foreground" : "text-muted-foreground"
+                        )}
+                      />
                       <span className="flex-1 truncate">{c.label}</span>
                       {c.hint && <span className="font-mono text-[10px] text-muted-foreground">{c.hint}</span>}
                     </button>

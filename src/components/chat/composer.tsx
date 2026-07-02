@@ -10,6 +10,7 @@ import {
   Box,
   Brain,
   Check,
+  ChevronDown,
   FileText,
   FileUp,
   Globe,
@@ -20,7 +21,9 @@ import {
   Plug,
   Plus,
   Square,
+  SquareDashedMousePointer,
   SquarePen,
+  TextQuote,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -39,6 +42,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
 import { PROVIDERS } from "@/lib/providers";
@@ -46,20 +50,28 @@ import { PLANS } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { formatBytes, cn } from "@/lib/utils";
+import { serializeQuote, quoteLocationLabel, type ComposerQuote } from "@/lib/quote-context";
 import type { ModelId } from "@/lib/models";
+import type { PendingPreflightClarification, PreflightClarificationAnswer } from "@/lib/preflight-clarification";
+import type { SendResult } from "@/hooks/use-chat";
 import type { ClientAttachment, GenerationStatus, ReasoningEffort } from "@/types/chat";
 
 interface ComposerProps {
   conversationId: string | null;
   model: ModelId;
   onModelChange: (m: ModelId) => void;
-  onSend: (text: string, attachments: ClientAttachment[]) => void;
+  onSend: (text: string, attachments: ClientAttachment[]) => Promise<SendResult> | SendResult | void;
   isBusy: boolean;
   status: GenerationStatus;
   onStop: () => void;
+  pendingClarification?: PendingPreflightClarification | null;
+  onSubmitClarification?: (answers: PreflightClarificationAnswer[]) => Promise<SendResult> | SendResult | void;
+  onSkipClarification?: () => Promise<SendResult> | SendResult | void;
+  onCancelClarification?: () => void;
   onOpenVoiceMode?: () => void;
   quotaReached?: boolean;
   canvasEnabled: boolean;
@@ -70,6 +82,9 @@ interface ComposerProps {
   onReasoningChange: (e: ReasoningEffort | null) => void;
   connectorsEnabled?: string[];
   onToggleConnector?: (id: string) => void;
+  /** Quoted artifact selection ("select → modify/ask") attached to the next message. */
+  quote?: ComposerQuote | null;
+  onClearQuote?: () => void;
   placeholder?: string;
   privateMode?: boolean;
   hideDisclaimer?: boolean;
@@ -77,6 +92,7 @@ interface ComposerProps {
   // yet) this is the project the next message will be created in.
   selectedProjectId?: string | null;
   onPickProject?: (projectId: string | null) => void;
+  onDictatingChange?: (dictating: boolean) => void;
 }
 
 // Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").
@@ -93,6 +109,10 @@ export function Composer({
   isBusy,
   status,
   onStop,
+  pendingClarification,
+  onSubmitClarification,
+  onSkipClarification,
+  onCancelClarification,
   onOpenVoiceMode,
   quotaReached,
   canvasEnabled,
@@ -103,11 +123,14 @@ export function Composer({
   onReasoningChange,
   connectorsEnabled = [],
   onToggleConnector,
+  quote = null,
+  onClearQuote,
   placeholder: customPlaceholder,
   privateMode = false,
   hideDisclaimer = false,
   selectedProjectId = null,
   onPickProject,
+  onDictatingChange,
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
   const resolved = resolveModel(model);
@@ -131,10 +154,15 @@ export function Composer({
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
   const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
-  const placeholder = customPlaceholder ?? (
-    modality === "image" ? "Describe an image to generate…" : modality === "video" ? "Describe a video to generate…" : "Message Juno…"
-  );
+  const placeholder = quote
+    ? quote.mode === "modify"
+      ? "Describe the change…"
+      : "Ask about this selection…"
+    : customPlaceholder ?? (
+        modality === "image" ? "Describe an image to generate…" : modality === "video" ? "Describe a video to generate…" : "Message Juno…"
+      );
   const [text, setText] = React.useState("");
+  const [clarificationAnswers, setClarificationAnswers] = React.useState<PreflightClarificationAnswer[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
@@ -147,20 +175,61 @@ export function Composer({
   const sendAttachments = privateMode ? [] : readyAttachments;
   const uploading = privateMode ? false : isUploading;
 
-  const speech = useSpeechRecognition({
-    onFinal: (t) => setText((prev) => (prev ? `${prev} ${t}` : t)),
-  });
+  // Chip exit: play pop-out (120ms) before the upload actually leaves state.
+  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
+  const removeUpload = React.useCallback(
+    (localId: string) => {
+      setRemovingIds((prev) => (prev.includes(localId) ? prev : [...prev, localId]));
+      window.setTimeout(() => {
+        setRemovingIds((prev) => prev.filter((id) => id !== localId));
+        remove(localId);
+      }, 120);
+    },
+    [remove]
+  );
+
+  const { supported: speechSupported } = useSpeechRecognition();
+  const [dictating, setDictatingInner] = React.useState(false);
+  const setDictating = React.useCallback(
+    (d: boolean | ((prev: boolean) => boolean)) => {
+      setDictatingInner((prev) => {
+        const next = typeof d === "function" ? d(prev) : d;
+        onDictatingChange?.(next);
+        return next;
+      });
+    },
+    [onDictatingChange]
+  );
+
+  // Quote chip exit: play pop-out (120ms) before the quote leaves state.
+  const [quoteRemoving, setQuoteRemoving] = React.useState(false);
+  const dismissQuote = React.useCallback(() => {
+    if (!onClearQuote) return;
+    setQuoteRemoving(true);
+    window.setTimeout(() => {
+      setQuoteRemoving(false);
+      onClearQuote();
+    }, 120);
+  }, [onClearQuote]);
+
+  // A fresh selection lands the user straight in the textarea, ready to type.
+  React.useEffect(() => {
+    if (!quote) return;
+    setQuoteRemoving(false);
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [quote]);
 
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
-  }, []);
+    const maxHeight = pendingClarification ? 60 : 200;
+    el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+  }, [pendingClarification]);
 
   React.useEffect(() => {
     autoresize();
-  }, [text, autoresize]);
+  }, [text, pendingClarification, autoresize]);
 
   React.useEffect(() => {
     if (privateMode) {
@@ -169,16 +238,18 @@ export function Composer({
     }
   }, [clear, privateMode]);
 
-  const canSend = (text.trim().length > 0 || sendAttachments.length > 0) && !isBusy && !uploading && !quotaReached;
+  React.useEffect(() => {
+    setClarificationAnswers([]);
+  }, [pendingClarification]);
+
+  const clarificationOpen = !!pendingClarification;
+  const controlsLocked = isBusy || uploading || !!quotaReached;
+  const canSend = (text.trim().length > 0 || sendAttachments.length > 0 || clarificationAnswers.length > 0) && !controlsLocked;
+  // With nothing to send and voice available, the primary button becomes the
+  // voice-conversation launcher; the moment there's sendable content it morphs
+  // back into Send.
+  const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
   const longText = text.trim().length > 1500 || text.split("\n").length > 30;
-  const activeLabel =
-    status === "stopping"
-      ? "Stopping..."
-      : status === "writing"
-        ? "Writing..."
-        : status === "thinking" || status === "submitting"
-          ? "Thinking..."
-          : null;
 
   const attachAsFile = () => {
     const content = text;
@@ -189,14 +260,73 @@ export function Composer({
     requestAnimationFrame(autoresize);
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!canSend) return;
-    onSend(text.trim(), sendAttachments);
+    if (clarificationOpen && pendingClarification) {
+      // Compile final answers
+      let finalAnswers = [...clarificationAnswers];
+      const trimmedText = text.trim();
+      if (trimmedText) {
+        const activeQuestion = pendingClarification.result.questions[0]; // Active question
+        const existingIndex = finalAnswers.findIndex((a) => a.questionId === activeQuestion.id);
+        const customAnswer: PreflightClarificationAnswer = {
+          questionId: activeQuestion.id,
+          question: activeQuestion.question,
+          source: "else",
+          value: trimmedText,
+        };
+        if (existingIndex !== -1) {
+          finalAnswers[existingIndex] = customAnswer;
+        } else {
+          finalAnswers.push(customAnswer);
+        }
+      }
+      const success = await submitClarification(finalAnswers);
+      if (success) {
+        setClarificationAnswers([]);
+      }
+      return;
+    }
+    // A quoted selection wraps the user text in a structured block the model
+    // can anchor on (artifact identifier + selection + mode instruction).
+    const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
+    const result = await onSend(outgoing, sendAttachments);
+    if (result && result.accepted === false) return;
     setText("");
     clear();
-    if (speech.listening) speech.stop();
+    onClearQuote?.();
     requestAnimationFrame(autoresize);
   };
+
+  // Dictate Mode hand-off: Stop lands the transcript in the textarea for
+  // editing; Send merges + submits through the exact same path as typing.
+  const closeDictation = React.useCallback(
+    (transcript: string, sendNow: boolean) => {
+      setDictating(false);
+      const merged = [text.trim(), transcript.trim()].filter(Boolean).join(" ");
+      if (!sendNow || !merged || controlsLocked) {
+        setText(merged);
+        requestAnimationFrame(() => {
+          autoresize();
+          textareaRef.current?.focus();
+        });
+        return;
+      }
+      const outgoing = quote ? serializeQuote(quote, merged) : merged;
+      void (async () => {
+        const result = await onSend(outgoing, sendAttachments);
+        if (result && result.accepted === false) {
+          setText(merged); // keep the words — nothing gets lost on a refusal
+          return;
+        }
+        setText("");
+        clear();
+        onClearQuote?.();
+        requestAnimationFrame(autoresize);
+      })();
+    },
+    [text, controlsLocked, quote, onSend, sendAttachments, clear, onClearQuote, autoresize]
+  );
 
   // ——— Slash commands (type "/" then a command, e.g. "/model", "/projects") ———
   const router = useRouter();
@@ -209,6 +339,12 @@ export function Composer({
         label: "/search",
         hint: webSearchEnabled ? "Turn web search off" : "Turn web search on",
         run: () => onToggleWebSearch?.(!webSearchEnabled),
+      },
+      {
+        id: "learn-demo",
+        label: "/learn-demo",
+        hint: "Preview the visual learning blocks",
+        run: () => window.dispatchEvent(new CustomEvent("juno:learning-demo")),
       },
       { id: "projects", label: "/projects", hint: "Open your projects", run: () => router.push("/projects") },
       { id: "library", label: "/library", hint: "Open your library", run: () => router.push("/library") },
@@ -248,7 +384,7 @@ export function Composer({
 
   const [slashIndex, setSlashIndex] = React.useState(0);
   const [slashDismissed, setSlashDismissed] = React.useState(false);
-  const slashOpen = !!slash && !slashDismissed && slash.items.length > 0;
+  const slashOpen = !controlsLocked && !!slash && !slashDismissed && slash.items.length > 0;
 
   React.useEffect(() => setSlashIndex(0), [text]);
   React.useEffect(() => {
@@ -308,9 +444,14 @@ export function Composer({
         return;
       }
     }
+    if (e.key === "Escape" && quote && !quoteRemoving) {
+      e.preventDefault();
+      dismissQuote();
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      submit();
+      void submit();
     }
   };
 
@@ -378,6 +519,35 @@ export function Composer({
     setPlusOpen(false);
   };
 
+  const clearComposerDraft = React.useCallback(() => {
+    setText("");
+    clear();
+    setDictating(false);
+    requestAnimationFrame(autoresize);
+  }, [autoresize, clear]);
+
+  const submitClarification = React.useCallback(
+    async (answers: PreflightClarificationAnswer[]) => {
+      if (!onSubmitClarification) return false;
+      const result = await onSubmitClarification(answers);
+      if (!result || result.accepted !== false) clearComposerDraft();
+      return !result || result.accepted !== false;
+    },
+    [clearComposerDraft, onSubmitClarification]
+  );
+
+  const skipClarification = React.useCallback(async () => {
+    if (!onSkipClarification) return false;
+    const result = await onSkipClarification();
+    if (!result || result.accepted !== false) clearComposerDraft();
+    return !result || result.accepted !== false;
+  }, [clearComposerDraft, onSkipClarification]);
+
+  const cancelClarification = React.useCallback(() => {
+    onCancelClarification?.();
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  }, [onCancelClarification]);
+
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
 
   return (
@@ -393,19 +563,21 @@ export function Composer({
         </div>
       )}
 
-      {selectedProject && !privateMode && (
+      {/* Existing chats get the persistent scope bar at the top of the chat
+          instead; the chip only announces where a brand-new chat will land. */}
+      {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-2.5 py-1 text-caption text-muted-foreground shadow-soft">
             <Box className="h-3 w-3 text-primary" />
             <span>
-              {conversationId ? "In " : "New chat in "}
+              {"New chat in "}
               <span className="font-medium text-foreground">{selectedProject.name}</span>
             </span>
             <button
               type="button"
               onClick={() => pickProject(null)}
               aria-label="Remove from project"
-              className="ml-0.5 rounded-full p-0.5 text-muted-foreground/70 transition-colors hover:text-foreground"
+              className="pressable ml-0.5 rounded-full p-0.5 text-muted-foreground/70 hover:text-foreground coarse:p-1.5"
             >
               <X className="h-3 w-3" />
             </button>
@@ -413,57 +585,154 @@ export function Composer({
         </div>
       )}
 
-      <div
-        onDragOver={(e) => {
-          if (!features.storage || privateMode) return;
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          if (features.storage && !privateMode && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
-        }}
-        className={cn(
-          "relative rounded-[20px] border bg-card/90 shadow-soft backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft",
-          privateMode ? "border-dashed border-black/25 dark:border-white/30" : "border-border/70",
-          dragging && "border-primary/60 ring-2 ring-primary/30"
+      <div className={cn("relative w-full flex items-center justify-center transition-all duration-300", dictating ? "min-h-[170px] pt-20 pb-2" : "min-h-[76px]")}>
+        {dictating && (
+          <div className="w-full flex justify-center py-1 relative z-30">
+            <ComposerDictation
+              onCancel={() => setDictating(false)}
+              onStop={(t) => closeDictation(t, false)}
+              onSend={(t) => closeDictation(t, true)}
+            />
+          </div>
         )}
-      >
+
+        <div
+          onDragOver={(e) => {
+            if (!features.storage || privateMode) return;
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragging(false);
+            if (features.storage && !privateMode && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+          }}
+          className={cn(
+            "rounded-panel border bg-card/90 shadow-float backdrop-blur flex flex-col w-full origin-center relative transition-all duration-300 ease-out-soft",
+            dictating
+              ? "max-h-0 py-0 border-transparent bg-transparent shadow-none opacity-0 scale-95 pointer-events-none overflow-hidden absolute inset-x-0 top-1/2 -translate-y-1/2"
+              : "max-h-[600px] opacity-100 scale-100",
+            clarificationOpen ? "p-4 gap-4" : "",
+            privateMode
+              ? "border-dashed border-foreground/25"
+              : "border-border/70 focus-within:border-primary/30 focus-within:shadow-glass",
+            dragging && "border-primary/60 ring-2 ring-primary/30"
+          )}
+        >
         {dragging && !privateMode && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[20px] border-2 border-dashed border-primary/50 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border-2 border-dashed border-primary/50 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
             <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
           </div>
         )}
 
-        {!privateMode && uploads.length > 0 && (
-          <div className="flex flex-wrap gap-2 p-3 pb-0">
-            {uploads.map((u) => (
-              <div key={u.localId} className="group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft motion-safe:animate-rise-in">
-                {u.attachment?.kind === "IMAGE" ? (
-                  <Image src={u.attachment.url} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded object-cover" />
-                ) : (
-                  <FileText className="h-5 w-5 text-muted-foreground" />
-                )}
-                <div className="max-w-[140px]">
-                  <p className="truncate font-medium">{u.fileName}</p>
-                  <p className="text-muted-foreground">
-                    {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
-                  </p>
-                </div>
-                {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-                <button
-                  type="button"
-                  onClick={() => remove(u.localId)}
-                  className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:opacity-100"
-                  aria-label="Remove attachment"
-                >
-                  <X className="h-3 w-3" />
-                </button>
+        {pendingClarification && (
+          <ComposerClarificationPopover
+            pending={pendingClarification}
+            disabled={isBusy && status !== "checking"}
+            onSubmit={submitClarification}
+            onSkip={skipClarification}
+            onClose={cancelClarification}
+            variant="inline"
+            onAnswersChange={setClarificationAnswers}
+          />
+        )}
+
+        <div
+          className={cn(
+            "flex flex-col w-full relative transition-[opacity,transform] duration-base ease-out-soft",
+            clarificationOpen
+              ? "rounded-xl border border-border bg-background/50 p-4 shadow-inner"
+              : ""
+          )}
+        >
+
+        {!privateMode && (
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-base ease-out-soft",
+              uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-wrap gap-2 p-3 pb-0">
+                {uploads.map((u) => (
+                  <div
+                    key={u.localId}
+                    className={cn(
+                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                      removingIds.includes(u.localId) ? "pointer-events-none motion-safe:animate-pop-out" : "motion-safe:animate-rise-in"
+                    )}
+                  >
+                    {u.attachment?.kind === "IMAGE" ? (
+                      <Image src={u.attachment.url} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded object-cover" />
+                    ) : (
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <div className="max-w-[140px]">
+                      <p className="truncate font-medium">{u.fileName}</p>
+                      <p className="text-muted-foreground">
+                        {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
+                      </p>
+                    </div>
+                    {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    <button
+                      type="button"
+                      onClick={() => removeUpload(u.localId)}
+                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                      aria-label="Remove attachment"
+                    >
+                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          </div>
+        )}
+
+        {quote && (
+          <div
+            className={cn(
+              "mx-3 mt-3 flex items-start gap-2.5 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 shadow-soft",
+              quoteRemoving ? "pointer-events-none motion-safe:animate-pop-out" : "motion-safe:animate-rise-in"
+            )}
+          >
+            <span
+              aria-hidden
+              className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] border border-primary/25 bg-primary/10 text-primary"
+            >
+              {quote.kind === "element" ? (
+                <SquareDashedMousePointer className="h-3.5 w-3.5" />
+              ) : (
+                <TextQuote className="h-3.5 w-3.5" />
+              )}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="shrink-0 font-mono text-label uppercase text-primary">
+                  {quote.mode === "modify" ? "Modify" : "Ask"}
+                </span>
+                <span className="min-w-0 truncate text-sm font-medium">{quote.title}</span>
+                {quoteLocationLabel(quote) && (
+                  <span className="min-w-0 truncate font-mono text-caption text-muted-foreground">
+                    {quoteLocationLabel(quote)}
+                  </span>
+                )}
+              </div>
+              <p className="mt-0.5 line-clamp-2 break-all font-mono text-caption leading-relaxed text-muted-foreground">
+                {quote.text.replace(/\s+/g, " ").trim().slice(0, 220)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={dismissQuote}
+              aria-label="Remove quoted selection"
+              className="pressable -mr-1 mt-0.5 shrink-0 rounded-full p-1 text-muted-foreground/70 transition-colors duration-fast hover:bg-accent hover:text-foreground coarse:p-2"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
 
@@ -479,8 +748,8 @@ export function Composer({
         )}
 
         {slashOpen && slash && (
-          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 overflow-hidden rounded-xl border bg-popover/95 shadow-float backdrop-blur">
-            <div className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 overflow-hidden rounded-xl border bg-popover/95 shadow-float backdrop-blur duration-fast ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
+            <div className="px-3 pb-1 pt-2 font-mono text-label uppercase text-muted-foreground">
               {slash.kind === "model" ? "Switch model" : "Commands"}
             </div>
             <div className="max-h-64 overflow-y-auto p-1">
@@ -492,13 +761,13 @@ export function Composer({
                       onMouseEnter={() => setSlashIndex(i)}
                       onClick={() => applySlash(m)}
                       className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left",
+                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast",
                         i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
                       )}
                     >
                       <ProviderLogo provider={m.provider} className="h-5 w-5" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
+                      <span className="shrink-0 text-caption text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
                       {m.id === model && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
                     </button>
                   ))
@@ -509,7 +778,7 @@ export function Composer({
                       onMouseEnter={() => setSlashIndex(i)}
                       onClick={() => applySlash(c)}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left",
+                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast",
                         i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
                       )}
                     >
@@ -523,21 +792,32 @@ export function Composer({
 
         <textarea
           ref={textareaRef}
-          value={speech.listening && speech.interim ? `${text} ${speech.interim}`.trim() : text}
+          value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
+          disabled={isBusy || status === "checking"}
           rows={1}
           placeholder={placeholder}
-          className="max-h-[200px] min-h-[86px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none placeholder:text-muted-foreground sm:px-4"
+          className={cn(
+            "w-full resize-none bg-transparent px-3.5 py-3.5 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4",
+            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[86px] text-body-lg"
+          )}
         />
 
-        <div className="flex flex-wrap items-center gap-1 px-2 pb-2">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
           {/* Left: + menu and model selector */}
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-1 basis-[13rem] flex-wrap items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
               <DropdownMenuTrigger asChild>
-                <Button type="button" variant="ghost" size="icon-sm" aria-label="Add" className={cn("rounded-[20px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Add"
+                  disabled={controlsLocked}
+                  className={cn("rounded-[20px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
+                >
                   <Plus className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -603,7 +883,7 @@ export function Composer({
                               {active ? (
                                 <Check className="!size-3.5 text-primary" />
                               ) : (
-                                <span className="font-mono text-[10px] text-muted-foreground/60">{p.conversationCount}</span>
+                                <span className="font-mono text-caption text-muted-foreground/60">{p.conversationCount}</span>
                               )}
                             </DropdownMenuItem>
                           );
@@ -614,7 +894,7 @@ export function Composer({
                 )}
 
                 <DropdownMenuSeparator />
-                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.15em]">
+                <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
                   <Blocks className="h-3.5 w-3.5" />
                   Plugins
                 </DropdownMenuLabel>
@@ -658,7 +938,7 @@ export function Composer({
                 {onToggleConnector && !privateMode && modality === "chat" && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.15em]">
+                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
                       <Plug className="h-3.5 w-3.5" />
                       Connectors
                     </DropdownMenuLabel>
@@ -688,92 +968,124 @@ export function Composer({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
+            <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
 
-            {effortOptions.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className={cn("h-7 gap-1.5 px-2 font-mono text-[13px]", reasoningEffort ? "text-primary" : "text-muted-foreground")}
-                  >
-                    <Brain className="h-3.5 w-3.5" />
-                    {(effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0]).label}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="w-48">
-                  {effortOptions.map((e) => (
-                    <DropdownMenuItem key={e.label} onSelect={() => onReasoningChange(e.value)}>
-                      <Brain className="h-3.5 w-3.5 text-muted-foreground" />
-                      <span className="flex-1">{e.label}</span>
-                      {reasoningEffort === e.value && <Check className="h-4 w-4 text-primary" />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            <div
+              className={cn("min-w-0 shrink", controlsLocked && "pointer-events-none opacity-60")}
+              aria-disabled={controlsLocked}
+            >
+              <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
+            </div>
+
+            {effortOptions.length > 0 && (() => {
+              const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
+              return (
+                <>
+                  {/* Thinking effort as a plain label instead of an icon. */}
+                  <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
+                  <Tooltip>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={controlsLocked}
+                            aria-label={`Thinking effort: ${currentEffort.label}`}
+                            className="group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight text-foreground/80 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-accent data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                          >
+                            {currentEffort.label}
+                            <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+                          </Button>
+                        </TooltipTrigger>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-44">
+                        {effortOptions.map((e) => (
+                          <DropdownMenuItem key={e.label} onSelect={() => onReasoningChange(e.value)}>
+                            <span className="flex-1">{e.label}</span>
+                            {reasoningEffort === e.value && <Check className="h-4 w-4 text-primary" />}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <TooltipContent>Thinking effort</TooltipContent>
+                  </Tooltip>
+                </>
+              );
+            })()}
 
           </div>
 
-          {/* Right: voice mode, dictation mic, send */}
+          {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {activeLabel && (
-              <span role="status" className="mr-1 hidden items-center gap-1.5 font-mono text-[11px] uppercase text-muted-foreground sm:inline-flex">
-                <span className="size-1.5 rounded-full bg-primary motion-safe:animate-pulse" aria-hidden="true" />
-                {activeLabel}
-              </span>
-            )}
-
-            {onOpenVoiceMode && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button type="button" variant="ghost" size="icon-sm" onClick={onOpenVoiceMode} aria-label="Voice mode" className="coarse:h-11 coarse:w-11">
-                    <AudioLines className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Voice conversation</TooltipContent>
-              </Tooltip>
-            )}
-
-            {speech.supported && (
+            {speechSupported && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     type="button"
                     variant="ghost"
                     size="icon-sm"
-                    onClick={() => (speech.listening ? speech.stop() : speech.start())}
-                    aria-label={speech.listening ? "Stop dictation" : "Dictate"}
-                    aria-pressed={speech.listening}
-                    className={cn("coarse:h-11 coarse:w-11", speech.listening && "text-primary")}
+                    onClick={() => setDictating(true)}
+                    disabled={controlsLocked || dictating}
+                    aria-label="Dictate"
+                    aria-pressed={dictating}
+                    className="coarse:h-11 coarse:w-11"
                   >
-                    <Mic className={cn("h-4 w-4", speech.listening && "animate-pulse")} />
+                    <Mic className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>{speech.listening ? "Stop dictation" : "Dictate"}</TooltipContent>
+                <TooltipContent>Dictate</TooltipContent>
               </Tooltip>
             )}
 
-            {/* Send ⇄ Stop morph in place (one button, icon crossfades). */}
-            <Button
-              type="button"
-              size="icon"
-              onClick={isBusy ? onStop : submit}
-              disabled={isBusy ? status === "stopping" : !canSend}
-              aria-label={isBusy ? (status === "stopping" ? "Stopping generation" : "Stop generating") : "Send message"}
-              className={cn(
-                "coarse:h-11 coarse:w-11",
-                isBusy ? "w-12 rounded-[14px] shadow-soft ring-2 ring-primary/20" : "rounded-full"
-              )}
-            >
-              {isBusy ? (
-                <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
-              ) : (
-                <ArrowUp key="send" className="h-4 w-4 motion-safe:animate-fade-in" />
-              )}
-            </Button>
+            {speechSupported && (
+              <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+            )}
+
+            {/* Primary action morphs in place: Voice (empty) → Send (has text) → Stop (busy). */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={
+                    isBusy && status !== "checking"
+                      ? onStop
+                      : showVoiceButton
+                        ? onOpenVoiceMode
+                        : () => void submit()
+                  }
+                  disabled={isBusy ? status === "stopping" || status === "checking" : showVoiceButton ? false : !canSend}
+                  aria-label={
+                    isBusy && status !== "checking"
+                      ? status === "stopping"
+                        ? "Stopping generation"
+                        : "Stop generating"
+                      : showVoiceButton
+                        ? "Start voice conversation"
+                        : "Send message"
+                  }
+                  className={cn(
+                    // rounded-lg (24px) clamps to a perfect circle at these sizes but, unlike
+                    // rounded-full, keeps the radius morph to rounded-md animatable.
+                    "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    isBusy && status !== "checking" ? "w-12 rounded-md shadow-soft ring-2 ring-primary/20" : "rounded-lg"
+                  )}
+                >
+                  {status === "checking" ? (
+                    <Loader2 key="checking" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
+                  ) : isBusy ? (
+                    <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                  ) : showVoiceButton ? (
+                    <AudioLines key="voice" className="h-4 w-4 motion-safe:animate-fade-in" />
+                  ) : (
+                    <ArrowUp key="send" className="h-4 w-4 motion-safe:animate-fade-in" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showVoiceButton && !isBusy ? "Voice conversation" : "Send"}</TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
@@ -792,6 +1104,8 @@ export function Composer({
         {!privateMode && features.storage && (
           <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={addAttachments} existingCount={uploads.length} />
         )}
+        </div>
+      </div>
       </div>
       {!hideDisclaimer && (
         <p className="mt-2 text-center text-caption text-muted-foreground">

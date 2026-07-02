@@ -8,10 +8,22 @@ export type OrbStatus = "idle" | "listening" | "thinking" | "speaking" | "error"
 const AMP: Record<OrbStatus, number> = { idle: 0.18, listening: 0.6, thinking: 0.42, speaking: 1, error: 0.1 };
 
 /** A sphere of dots whose density/brightness pulse with the conversation state. */
-export function VoiceOrb({ status, className }: { status: OrbStatus; className?: string }) {
+export function VoiceOrb({
+  status,
+  levelRef,
+  className,
+}: {
+  status: OrbStatus;
+  /** Live mic level 0..1 — read inside the rAF loop while listening. */
+  levelRef?: React.MutableRefObject<number>;
+  className?: string;
+}) {
   const ref = React.useRef<HTMLCanvasElement>(null);
   const statusRef = React.useRef(status);
   statusRef.current = status;
+  // Ref-of-ref so the empty-dep effect below always sees the current prop.
+  const levelRefRef = React.useRef(levelRef);
+  levelRefRef.current = levelRef;
 
   React.useEffect(() => {
     const canvas = ref.current;
@@ -43,7 +55,11 @@ export function VoiceOrb({ status, className }: { status: OrbStatus; className?:
     let amp = AMP[statusRef.current];
 
     const frame = (t: number) => {
-      const target = AMP[statusRef.current];
+      let target = AMP[statusRef.current];
+      if (statusRef.current === "listening") {
+        const lvl = Math.max(0, Math.min(1, levelRefRef.current?.current ?? 0));
+        target = Math.min(1, AMP.listening * (0.55 + 0.9 * lvl));
+      }
       amp += (target - amp) * 0.06;
       const primary = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
       const cx = size / 2;

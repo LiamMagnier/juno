@@ -14,74 +14,129 @@ export interface ModelMetrics {
 
 const MTOK = 1_000_000;
 
+// Estimates informed by the provider's positioning + cost tier ("provider");
+// use `official` only for figures stated verbatim in docs/models.md.
 function metric(
   inputUsdPerMTok: number,
   outputUsdPerMTok: number,
   contextTokens: number,
   speed: number,
-  intelligence: number
+  intelligence: number,
+  source: ModelMetrics["source"] = "provider"
 ): ModelMetrics {
-  return { inputUsdPerMTok, outputUsdPerMTok, contextTokens, speed, intelligence, source: "official" };
+  return { inputUsdPerMTok, outputUsdPerMTok, contextTokens, speed, intelligence, source };
 }
+
+const official = (i: number, o: number, ctx: number, speed: number, intelligence: number): ModelMetrics =>
+  metric(i, o, ctx, speed, intelligence, "official");
 
 interface FamilyRule {
   hints: string[]; // ALL must be substrings of the lowercased providerModel id
   metric: ModelMetrics;
 }
 
-// Per-provider family rules, MOST SPECIFIC FIRST. Real current pricing (USD per
-// 1M tokens) + context windows; speed/intelligence are 1–10 normalized across
-// ALL providers (10 = SOTA frontier intelligence / fastest tiny model). Sourced
-// from a per-provider pricing sweep, adversarially sanity-checked.
+// Per-provider family rules, MOST SPECIFIC FIRST — covers every family in the
+// curated registry (synced with docs/models.md, audit 2026-07-01). Pricing is
+// USD per 1M tokens; contextTokens is a FALLBACK for discovered models (the
+// registry's per-model contextWindow wins in getModelMetrics). speed and
+// intelligence are 1–10 normalized across ALL providers (10 = frontier-pro
+// intelligence / fastest nano-class model), monotonic within each provider.
 const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
   anthropic: [
-    { hints: ["opus"], metric: metric(5, 25, 1_000_000, 3, 10) },
-    { hints: ["sonnet"], metric: metric(3, 15, 1_000_000, 5, 9) },
+    { hints: ["fable"], metric: metric(8, 40, 1_000_000, 3, 10) },
+    { hints: ["mythos"], metric: metric(8, 40, 1_000_000, 3, 10) },
+    { hints: ["opus"], metric: metric(5, 25, 1_000_000, 3, 9) },
+    { hints: ["sonnet-5"], metric: official(2, 10, 1_000_000, 6, 9) }, // intro pricing through Aug 31 2026
+    { hints: ["sonnet"], metric: metric(3, 15, 1_000_000, 6, 8) },
     { hints: ["haiku"], metric: metric(1, 5, 200_000, 9, 7) },
   ],
   openai: [
-    { hints: ["4o-mini"], metric: metric(0.15, 0.6, 128_000, 10, 4) },
-    { hints: ["4o"], metric: metric(2.5, 10, 128_000, 8, 6) },
-    { hints: ["o3"], metric: metric(2, 8, 200_000, 4, 9) },
-    { hints: ["o4"], metric: metric(2, 8, 200_000, 4, 9) },
-    { hints: ["o1"], metric: metric(2, 8, 200_000, 4, 9) },
-    { hints: ["nano"], metric: metric(0.2, 1.25, 400_000, 10, 6) },
-    { hints: ["mini"], metric: metric(0.75, 4.5, 400_000, 9, 8) },
-    { hints: ["gpt-4.1"], metric: metric(2, 8, 1_000_000, 7, 8) },
-    { hints: ["gpt-5"], metric: metric(2.5, 15, 1_000_000, 6, 9) },
+    { hints: ["gpt-5.5-pro"], metric: metric(15, 120, 1_050_000, 2, 10) },
+    { hints: ["gpt-5.5"], metric: official(5, 30, 1_050_000, 5, 9) },
+    { hints: ["gpt-5.4-pro"], metric: metric(12, 90, 400_000, 2, 9) },
+    { hints: ["gpt-5.4-mini"], metric: metric(0.5, 2.5, 400_000, 9, 7) },
+    { hints: ["gpt-5.4-nano"], metric: metric(0.1, 0.5, 400_000, 10, 5) },
+    { hints: ["gpt-5.4"], metric: metric(1.25, 10, 1_050_000, 7, 8) },
+    { hints: ["gpt-5-pro"], metric: metric(15, 120, 400_000, 2, 9) },
+    { hints: ["gpt-5-mini"], metric: metric(0.25, 2, 400_000, 9, 6) },
+    { hints: ["gpt-5-nano"], metric: metric(0.05, 0.4, 400_000, 10, 4) },
+    { hints: ["o4-mini"], metric: metric(1.1, 4.4, 200_000, 6, 7) },
+    { hints: ["o3-mini"], metric: metric(1.1, 4.4, 200_000, 6, 6) },
+    { hints: ["o3"], metric: metric(2, 8, 200_000, 3, 8) },
+    { hints: ["o1"], metric: metric(15, 60, 200_000, 2, 7) },
+    { hints: ["4o-mini"], metric: metric(0.15, 0.6, 128_000, 9, 4) },
+    { hints: ["4o"], metric: metric(2.5, 10, 128_000, 7, 6) },
+    { hints: ["gpt-4.1"], metric: metric(2, 8, 1_000_000, 7, 7) },
+    { hints: ["gpt-4-turbo"], metric: metric(10, 30, 128_000, 4, 5) },
+    { hints: ["gpt-3.5"], metric: metric(0.5, 1.5, 16_385, 8, 2) },
+    { hints: ["nano"], metric: metric(0.1, 0.5, 400_000, 10, 5) },
+    { hints: ["mini"], metric: metric(0.5, 2.5, 400_000, 9, 7) },
+    { hints: ["gpt-5"], metric: metric(1.25, 10, 400_000, 5, 8) },
   ],
   google: [
+    { hints: ["3.5-flash"], metric: metric(0.5, 3, 1_048_576, 8, 9) },
+    { hints: ["3.1-flash-lite"], metric: metric(0.1, 0.4, 1_048_576, 10, 6) },
+    { hints: ["3.1-pro"], metric: metric(2, 12, 1_048_576, 4, 9) },
+    { hints: ["3-flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 7) },
+    { hints: ["2.5-pro"], metric: metric(1.25, 10, 1_048_576, 4, 8) },
+    { hints: ["2.5-flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 6) },
     { hints: ["flash-lite"], metric: metric(0.1, 0.4, 1_048_576, 10, 5) },
-    { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 7) },
-    { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 9) },
+    { hints: ["flash"], metric: metric(0.3, 2.5, 1_048_576, 9, 6) },
+    { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 8) },
   ],
   zhipu: [
-    { hints: ["air"], metric: metric(0.2, 1.1, 128_000, 6, 7) },
+    { hints: ["glm-5.2"], metric: metric(0.8, 2.8, 1_000_000, 5, 9) },
+    { hints: ["glm-5v"], metric: metric(0.6, 1.8, 128_000, 7, 7) },
+    { hints: ["glm-5-turbo"], metric: metric(0.35, 1.4, 200_000, 8, 7) },
+    { hints: ["glm-5.1"], metric: metric(0.6, 2.2, 200_000, 5, 8) },
+    { hints: ["glm-4.7-flash"], metric: metric(0, 0, 200_000, 9, 6) }, // free tier
+    { hints: ["glm-4.7"], metric: metric(0.3, 1.2, 200_000, 6, 7) },
+    { hints: ["glm-4.6v"], metric: metric(0.3, 1.2, 128_000, 6, 6) },
+    { hints: ["glm-4.6"], metric: metric(0.25, 1, 128_000, 6, 6) },
+    { hints: ["air"], metric: metric(0.2, 1.1, 128_000, 7, 6) },
     { hints: ["flash"], metric: metric(0, 0, 128_000, 10, 5) },
-    { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 8) },
+    { hints: ["glm-5"], metric: metric(0.6, 2.2, 200_000, 5, 8) },
+    { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 7) },
   ],
   moonshot: [
-    { hints: ["k2.6"], metric: metric(0.95, 4, 262_144, 4, 9) },
-    { hints: ["k2.5"], metric: metric(0.6, 3, 262_144, 4, 8) },
-    { hints: ["kimi"], metric: metric(0.6, 2.5, 262_144, 5, 8) },
+    { hints: ["highspeed"], metric: metric(2.4, 10, 262_144, 8, 9) }, // premium ~180 tok/s serving
+    { hints: ["k2.7"], metric: metric(1.2, 5, 262_144, 4, 9) },
+    { hints: ["k2.6"], metric: metric(1, 4, 262_144, 4, 9) },
+    { hints: ["k2.5"], metric: metric(0.6, 2.5, 262_144, 5, 8) },
+    { hints: ["moonshot-v1"], metric: metric(1, 3, 131_072, 6, 5) },
+    { hints: ["kimi"], metric: metric(1, 4, 262_144, 5, 8) },
   ],
   deepseek: [
-    { hints: ["reason"], metric: metric(0.55, 2.19, 64_000, 3, 9) },
-    { hints: ["deepseek"], metric: metric(0.27, 1.1, 64_000, 5, 7) },
+    { hints: ["v4-pro"], metric: metric(1.2, 4.2, 1_000_000, 4, 9) },
+    { hints: ["v4-flash"], metric: metric(0.4, 1.4, 1_000_000, 8, 8) }, // ~a third of V4 Pro
+    { hints: ["v4"], metric: metric(0.4, 1.4, 1_000_000, 8, 8) },
+    { hints: ["reason"], metric: metric(0.4, 1.4, 1_000_000, 5, 8) }, // alias → V4 Flash
+    { hints: ["deepseek"], metric: metric(0.4, 1.4, 1_000_000, 7, 7) }, // alias → V4 Flash
   ],
   mistral: [
     { hints: ["magistral"], metric: metric(2, 5, 131_072, 3, 8) },
-    { hints: ["large"], metric: metric(0.5, 1.5, 262_144, 5, 7) },
-    { hints: ["small"], metric: metric(0.15, 0.6, 131_072, 9, 6) },
+    { hints: ["devstral"], metric: metric(0.4, 2, 262_144, 6, 7) },
+    { hints: ["codestral"], metric: metric(0.3, 0.9, 262_144, 9, 6) },
+    { hints: ["ministral"], metric: metric(0.15, 0.15, 131_072, 9, 4) },
+    { hints: ["medium"], metric: metric(0.5, 2.2, 262_144, 5, 8) },
+    { hints: ["large"], metric: metric(0.3, 0.9, 262_144, 5, 7) }, // open-weight, priced low
+    { hints: ["small"], metric: metric(0.1, 0.3, 262_144, 8, 6) },
   ],
   xai: [
-    { hints: ["fast"], metric: metric(0.2, 0.5, 2_000_000, 8, 8) },
-    { hints: ["grok"], metric: metric(1.25, 2.5, 1_000_000, 6, 9) },
+    { hints: ["multi-agent"], metric: metric(3, 15, 1_000_000, 2, 9) },
+    { hints: ["grok-build"], metric: metric(0.5, 2, 256_000, 8, 8) },
+    { hints: ["grok-4.3"], metric: metric(2, 10, 1_000_000, 5, 9) },
+    { hints: ["4.20", "non-reasoning"], metric: metric(1.5, 8, 1_000_000, 7, 7) },
+    { hints: ["4.20"], metric: metric(1.5, 8, 1_000_000, 5, 8) },
+    { hints: ["fast"], metric: metric(0.2, 0.5, 2_000_000, 9, 7) },
+    { hints: ["grok"], metric: metric(2, 10, 1_000_000, 5, 8) },
   ],
   minimax: [
-    { hints: ["m3"], metric: metric(0.6, 2.4, 1_000_000, 5, 9) },
-    { hints: ["highspeed"], metric: metric(0.6, 2.4, 204_800, 8, 8) },
-    { hints: ["m2"], metric: metric(0.3, 1.2, 204_800, 5, 8) },
+    { hints: ["m3"], metric: metric(0.5, 2.2, 1_000_000, 5, 9) },
+    { hints: ["highspeed"], metric: metric(0.6, 2.4, 204_800, 9, 8) }, // low-latency serving premium
+    { hints: ["m2.7"], metric: metric(0.3, 1.2, 204_800, 5, 8) },
+    { hints: ["m2.5"], metric: metric(0.2, 0.8, 204_800, 5, 7) },
+    { hints: ["m2"], metric: metric(0.3, 1.2, 204_800, 5, 7) },
   ],
 };
 
@@ -90,12 +145,12 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
 const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   anthropic: metric(3, 15, 200_000, 6, 8),
   openai: metric(2.5, 15, 400_000, 6, 8),
-  google: metric(0.3, 2.5, 1_048_576, 9, 7),
-  zhipu: metric(0.6, 2.2, 128_000, 6, 7),
-  moonshot: metric(0.6, 2.5, 262_144, 5, 8),
-  deepseek: metric(0.27, 1.1, 64_000, 5, 7),
-  mistral: metric(0.5, 1.5, 131_072, 6, 7),
-  xai: metric(1.25, 2.5, 1_000_000, 6, 9),
+  google: metric(0.5, 3, 1_048_576, 8, 7),
+  zhipu: metric(0.6, 2.2, 200_000, 6, 7),
+  moonshot: metric(1, 4, 262_144, 5, 8),
+  deepseek: metric(0.4, 1.4, 1_000_000, 6, 8),
+  mistral: metric(0.5, 2.2, 262_144, 6, 7),
+  xai: metric(2, 10, 1_000_000, 5, 8),
   minimax: metric(0.3, 1.2, 204_800, 6, 8),
 };
 
@@ -112,15 +167,20 @@ function familyMetric(model: ModelInfo): ModelMetrics | null {
 
 export function getModelMetrics(model: ModelInfo): ModelMetrics {
   const known = familyMetric(model);
-  if (known) return known;
-  const base = {
+  const base: ModelMetrics = known ?? {
     inputUsdPerMTok: model.cost === 3 ? 2 : model.cost === 2 ? 0.5 : 0.1,
     outputUsdPerMTok: model.cost === 3 ? 10 : model.cost === 2 ? 2 : 0.4,
     contextTokens: model.cost === 3 ? 256_000 : 128_000,
     speed: model.cost === 1 ? 9 : model.cost === 2 ? 7 : 5,
     intelligence: model.cost === 3 ? 8 : model.cost === 2 ? 7 : 5,
+    source: "estimated",
   };
-  return { ...base, source: "estimated" };
+  // The registry's verified per-model context window always wins; the family
+  // rule's contextTokens is only a fallback for discovered models.
+  if (model.contextWindow && model.contextWindow !== base.contextTokens) {
+    return { ...base, contextTokens: model.contextWindow };
+  }
+  return base;
 }
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {
@@ -176,7 +236,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("opus-4-5") || id.includes("haiku")) return caps(LMH, true); // no "max"
       return caps(LMHX, true); // opus 4.6/4.7/4.8, sonnet 4.6/5
     case "openai":
-      if (id.includes("gpt-5-pro")) return caps([], false); // fixed effort, no control
+      if (/gpt-5(\.\d)?-pro/.test(id)) return caps([], false); // pro tier (5-pro/5.4-pro/5.5-pro): fixed effort, no control
       if (id.includes("gpt-5.5") || id.includes("gpt-5.2")) return caps(LMHX, true);
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
       if (id.includes("gpt-5")) return caps(LMH, true); // gpt-5, gpt-5.1 (no "max")
@@ -185,8 +245,9 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("pro")) return caps(LMH, false); // Gemini Pro always thinks, no "max"
       return caps(LMH, true); // flash / flash-lite — no "max"
     case "xai":
+      if (id.includes("grok-4.3")) return caps(LMH, true); // effort none/low/medium/high
       if (id.includes("grok-3-mini")) return caps(["low", "high"], false); // only low + high
-      return caps([], false); // grok-4: reasons, no control
+      return caps([], false); // grok-4 / grok-build: reasons, no control
     case "deepseek":
       if (id.includes("v4")) return caps(["high", "max"], true);
       return caps([], false); // deepseek-reasoner: always on, no control
@@ -194,9 +255,14 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (/glm-?5/.test(id)) return caps(["high", "max"], true);
       return caps([], true, true); // glm-4.5/4.6: on/off toggle
     case "mistral":
-      return caps([], false); // magistral: always on, no control
+      if (id.includes("magistral")) return caps([], false); // always on, no control
+      if (id.includes("medium")) return caps(LMH, true); // Medium 3.5: reasoning effort, off by default
+      return caps([], false); // small 4 hybrid: reasons, no exposed control
     case "moonshot":
       return caps([], false); // kimi thinking: always on, no control
+    case "minimax":
+      if (id.includes("m3")) return caps([], true, true); // M3 adaptive thinking: on/off toggle
+      return caps([], false); // M2.x: always-on interleaved thinking
     default:
       return caps([], false);
   }

@@ -4,7 +4,7 @@ export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
 export type AttachmentKind = "IMAGE" | "FILE";
 export type ReasoningEffort = "low" | "medium" | "high" | "max";
-export type GenerationStatus = "idle" | "submitting" | "thinking" | "writing" | "stopping" | "error";
+export type GenerationStatus = "idle" | "checking" | "submitting" | "thinking" | "writing" | "stopping" | "error";
 export type TitleSource = "default" | "ai" | "manual";
 export type ChatFinishReason =
   | "stop"
@@ -41,6 +41,8 @@ export interface ClientMessage {
   activity?: ClientActivityEvent[];
   finishReason?: ChatFinishReason | null;
   errorMessage?: string | null;
+  /** Client-transient: live /api/generate progress (set by use-chat while a generation runs; never persisted). */
+  progress?: { modality: "image" | "video"; stage: string; pct?: number } | null;
   /** Total prompt (input) tokens for this generation, cache included. */
   promptTokens?: number | null;
   /** Output (completion) tokens generated. */
@@ -105,6 +107,19 @@ export interface ClientQuota {
   remaining: number | null;
 }
 
+/** Stage of an /api/generate run (image paths use generating→uploading; video adds queued/polling/downloading). */
+export type GenerationProgressStage = "queued" | "generating" | "polling" | "downloading" | "uploading";
+
+/** Region-based image edit request for /api/generate. `region` is in normalized 0..1
+ * image coordinates. `maskDataUrl` is a client-rendered PNG data URL at the source
+ * image's natural size — transparent pixels mark the area TO EDIT, opaque black
+ * elsewhere (the OpenAI images.edit convention). */
+export interface GenerateEditPayload {
+  attachmentId: string;
+  region?: { x: number; y: number; w: number; h: number };
+  maskDataUrl?: string;
+}
+
 // ---- Streaming protocol (server -> client over SSE) ----
 export type StreamChunk =
   | { type: "meta"; conversationId: string; userMessageId: string | null; title: string; titleSource?: TitleSource; generationId?: string }
@@ -113,6 +128,7 @@ export type StreamChunk =
   | { type: "sources"; sources: ClientSource[] }
   | { type: "reasoning"; text: string }
   | { type: "delta"; text: string }
+  | { type: "progress"; stage: GenerationProgressStage; pct?: number; note?: string }
   | {
       type: "done";
       message: ClientMessage;
