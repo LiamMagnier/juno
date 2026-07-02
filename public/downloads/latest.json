@@ -1,7 +1,7 @@
 {
-  "version": "1.3",
-  "build": 4,
+  "version": "1.4",
+  "build": 5,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Code mode now works on your Juno account (no API key needed), and you can start a chat without opening a folder.",
+  "notes": "Folderless chat: type and send without opening a folder. Model picker now shows a 'Computer use' badge on models that support it.",
   "minimumSystemVersion": "26.0"
 }
