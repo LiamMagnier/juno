@@ -409,7 +409,7 @@ export function MessageItem({
                       type={artifact?.type ?? "CODE"}
                       language={artifact?.language}
                       content={artifact?.content}
-                      onOpen={part.identifier && artifact ? () => onOpenArtifact(part.identifier, { fullscreen: true }) : undefined}
+                      onOpen={part.identifier && artifact ? () => onOpenArtifact(part.identifier, { fullscreen: false }) : undefined}
                     />
                   );
                 })()

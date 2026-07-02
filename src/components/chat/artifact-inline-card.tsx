@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  ArrowUpRight,
   Code2,
   Eye,
   FileCode2,
@@ -10,12 +9,12 @@ import {
   GitBranch,
   Globe,
   Image as ImageIcon,
+  PanelRightOpen,
   Terminal,
 } from "lucide-react";
 import { Markdown } from "@/components/chat/markdown";
 import { SandboxFrame, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import { cn } from "@/lib/utils";
@@ -242,20 +241,24 @@ export function ArtifactInlineCard({
               </TabsTrigger>
             </TabsList>
           </Tabs>
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="sm"
             onClick={onOpen}
             disabled={!onOpen}
-            className="h-10 rounded-[14px] px-3 text-[13px]"
+            aria-label="Open in canvas"
+            className={cn(
+              "group/open inline-flex h-10 items-center gap-1.5 rounded-[14px] border border-border/70 bg-card px-3.5 text-[13px] font-medium text-foreground/85 shadow-soft",
+              "transition-all duration-base ease-out-soft hover:-translate-y-px hover:border-primary/40 hover:text-foreground hover:shadow-[0_4px_14px_-6px_hsl(var(--primary)/0.5)]",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              "disabled:pointer-events-none disabled:opacity-40"
+            )}
           >
-            Expand
-            <ArrowUpRight
-              className="size-3.5 transition-transform duration-base ease-out-soft group-hover/art:translate-x-0.5 group-hover/art:-translate-y-0.5"
+            <PanelRightOpen
+              className="size-4 text-muted-foreground transition-colors duration-base ease-out-soft group-hover/open:text-primary"
               aria-hidden
             />
-          </Button>
+            Open
+          </button>
         </div>
       </header>
 
