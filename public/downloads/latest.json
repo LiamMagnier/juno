@@ -1,7 +1,7 @@
 {
-  "version": "1.2",
-  "build": 3,
+  "version": "1.3",
+  "build": 4,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Computer Use: the permission panel now updates the moment you grant access \u2014 fixed a hang where a denied Screen Recording check froze the state at 'not granted'.",
+  "notes": "Code mode now works on your Juno account (no API key needed), and you can start a chat without opening a folder.",
   "minimumSystemVersion": "26.0"
 }
