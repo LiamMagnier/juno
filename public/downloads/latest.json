@@ -1,7 +1,7 @@
 {
-  "version": "1.1",
-  "build": 2,
+  "version": "1.2",
+  "build": 3,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "New Projects/Chats layout in the Code sidebar, in-app automatic updates, and reliable ⌘Q / Computer Use consent fixes.",
+  "notes": "Computer Use: the permission panel now updates the moment you grant access \u2014 fixed a hang where a denied Screen Recording check froze the state at 'not granted'.",
   "minimumSystemVersion": "26.0"
 }
