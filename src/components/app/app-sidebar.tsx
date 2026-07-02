@@ -967,18 +967,9 @@ function ProjectRow({
         title={project.name}
       >
         <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
-          {project.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={project.coverUrl} alt="" className="h-[22px] w-[22px] rounded-[7px] object-cover" />
-          ) : (
-            <Box className="h-[18px] w-[18px]" />
-          )}
+          <Box className="h-[18px] w-[18px]" />
         </span>
         <span className="min-w-0 flex-1 truncate">{project.name}</span>
-        {starred && <Star className="h-3 w-3 shrink-0 fill-primary text-primary" />}
-        <span className="shrink-0 pl-1 font-mono text-[10px] text-muted-foreground">
-          {project.conversationCount}
-        </span>
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
