@@ -379,6 +379,12 @@ export function useChat(opts: UseChatOptions) {
       }
 
       setStatus("checking");
+      // The preflight clarification check must never block sending: if it hangs
+      // or errors, we time out and fall through to actually answering. Without
+      // this abort the composer could sit in "Checking…" forever on a stalled
+      // request (e.g. a slow/unreachable server), locking the user out of chat.
+      const clarifyController = new AbortController();
+      const clarifyTimeout = setTimeout(() => clarifyController.abort(), 6000);
       try {
         const res = await fetch("/api/chat/clarify", {
           method: "POST",
@@ -389,6 +395,7 @@ export function useChat(opts: UseChatOptions) {
             hasAttachments: attachments.length > 0,
             privateMode: opts.privateMode,
           }),
+          signal: clarifyController.signal,
         });
         const data = await res.json().catch(() => null);
         if (res.ok && isPreflightClarificationResult(data) && data.needsClarification) {
@@ -402,7 +409,9 @@ export function useChat(opts: UseChatOptions) {
           return { accepted: false, clarificationPending: true };
         }
       } catch {
-        // If the preflight check fails, keep the product moving and answer.
+        // If the preflight check fails or times out, keep the product moving and answer.
+      } finally {
+        clearTimeout(clarifyTimeout);
       }
 
       return startGeneration({ text: trimmed, attachments });

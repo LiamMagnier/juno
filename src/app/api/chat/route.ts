@@ -171,7 +171,7 @@ function appendFinishWarning(
   });
 }
 
-export async function POST(req: Request) {
+async function handleChat(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -1018,4 +1018,19 @@ export async function POST(req: Request) {
   });
 
   return new Response(stream, { headers: SSE_HEADERS });
+}
+
+export async function POST(req: Request) {
+  // Everything before the SSE stream starts (auth, quota, DB writes for the
+  // conversation/message, system-prompt build) runs here. If any of it throws —
+  // e.g. a production database missing a migration/column — we must return a
+  // JSON { error } so the client shows the real reason instead of an opaque 500
+  // rendered as a generic "Something went wrong.".
+  try {
+    return await handleChat(req);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unexpected server error.";
+    console.error("[chat] request failed before streaming", { message: detail, stack: err instanceof Error ? err.stack : undefined });
+    return NextResponse.json({ error: `Couldn't start the chat: ${detail}` }, { status: 500 });
+  }
 }
