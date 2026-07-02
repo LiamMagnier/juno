@@ -1,7 +1,7 @@
 {
-  "version": "1.5",
-  "build": 7,
+  "version": "1.6",
+  "build": 8,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Refined app icon (warm glass) and fixed the website favicon.",
+  "notes": "Redesigned iPhone navigation \u2014 swipe-from-left sidebar, Liquid Glass tab bar, and a Liquid Glass model picker.",
   "minimumSystemVersion": "26.0"
 }
