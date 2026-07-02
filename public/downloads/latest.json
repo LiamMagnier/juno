@@ -1,7 +1,7 @@
 {
-  "version": "1.6",
-  "build": 8,
+  "version": "1.7",
+  "build": 9,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Redesigned iPhone navigation \u2014 swipe-from-left sidebar, Liquid Glass tab bar, and a Liquid Glass model picker.",
+  "notes": "New provider: Meta \u00b7 Muse \u2014 Muse Max, Muse Spark, and Muse Flash.",
   "minimumSystemVersion": "26.0"
 }
