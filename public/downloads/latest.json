@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
-  "build": 1,
+  "version": "1.1",
+  "build": 2,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "You're on the first published build. Future updates will install from here automatically.",
+  "notes": "New Projects/Chats layout in the Code sidebar, in-app automatic updates, and reliable ⌘Q / Computer Use consent fixes.",
   "minimumSystemVersion": "26.0"
 }
