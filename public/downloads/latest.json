@@ -1,7 +1,7 @@
 {
-  "version": "1.7",
-  "build": 9,
+  "version": "1.8",
+  "build": 10,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "New provider: Meta \u00b7 Muse \u2014 Muse Max, Muse Spark, and Muse Flash.",
+  "notes": "Reworked iPhone sidebar (swipe from anywhere) + provider-first model picker + production motion polish. Meta \u00b7 Muse marked coming-soon.",
   "minimumSystemVersion": "26.0"
 }
