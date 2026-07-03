@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, Star, TriangleAlert, Video, Zap } from "lucide-react";
+import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, Star, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -330,6 +330,7 @@ export function ModelSelector({
   );
 
   const select = (m: ModelInfo) => {
+    if (m.comingSoon) return; // not callable yet — no live API
     if (planRank(plan) < planRank(effectiveMinPlan(m.minPlan))) {
       setOpen(false);
       router.push("/upgrade");
@@ -347,7 +348,8 @@ export function ModelSelector({
   ];
 
   const renderRow = (m: ModelInfo, i: number) => {
-    const locked = planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
+    const soon = !!m.comingSoon;
+    const locked = !soon && planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
     const fav = favSet.has(m.id);
     const active = value === m.id;
     return (
@@ -357,10 +359,12 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-xl border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards] active:scale-[0.99]",
-          active
-            ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
-            : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none"
+          "group relative flex flex-col justify-between rounded-xl border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
+          soon
+            ? "border-border/60 bg-card/40 opacity-60"
+            : "active:scale-[0.99] " + (active
+              ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+              : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none")
         )}
       >
         <button
@@ -400,7 +404,11 @@ export function ModelSelector({
                 {"$".repeat(m.cost)}
               </span>
             </div>
-            {locked ? (
+            {soon ? (
+              <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-amber-500">
+                <Clock className="h-3 w-3" /> Soon
+              </span>
+            ) : locked ? (
               <span className="flex shrink-0 items-center gap-1 text-[10px] font-semibold text-primary">
                 <Lock className="h-3 w-3" /> {PLANS[effectiveMinPlan(m.minPlan)].name}
               </span>

@@ -39,6 +39,8 @@ export interface ModelInfo {
   contextWindow?: number;
   /** Kept in sync with status for existing consumers (true when not current). */
   legacy?: boolean;
+  /** In the catalog but not yet callable (no live API) — shown disabled. */
+  comingSoon?: boolean;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -87,6 +89,7 @@ interface ModelDef {
   cost?: CostTier; // default: guessed from the id
   contextWindow?: number;
   deprecationNote?: string;
+  comingSoon?: boolean;
 }
 
 function def(d: ModelDef): ModelInfo {
@@ -108,6 +111,7 @@ function def(d: ModelDef): ModelInfo {
     deprecationNote: d.deprecationNote,
     contextWindow: d.contextWindow,
     legacy: d.status !== "current",
+    comingSoon: d.comingSoon,
   };
 }
 
@@ -155,10 +159,10 @@ const CURATED: ModelInfo[] = [
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
   def({ provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", family: "flash", status: "deprecated", minPlan: "FREE", vision: true, cost: 1, description: "2.5-generation Flash.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.5 Flash" }),
 
-  // —— Meta · Muse ——
-  def({ provider: "meta", id: "muse-max", name: "Muse Max", family: "muse-max", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Meta's frontier Muse — deepest reasoning and long-horizon agents." }),
-  def({ provider: "meta", id: "muse-spark", name: "Muse Spark", family: "muse", status: "current", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "The everyday Muse — fast, sharp, and a great-value flagship." }),
-  def({ provider: "meta", id: "muse-flash", name: "Muse Flash", family: "muse-flash", status: "current", minPlan: "FREE", vision: true, cost: 1, contextWindow: 512_000, description: "Instant, ultra-cheap Muse for high-volume tasks." }),
+  // —— Meta · Muse (catalogued, API not live yet) ——
+  def({ provider: "meta", id: "muse-max", name: "Muse Max", family: "muse-max", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, comingSoon: true, description: "Meta's frontier Muse — deepest reasoning and long-horizon agents." }),
+  def({ provider: "meta", id: "muse-spark", name: "Muse Spark", family: "muse", status: "current", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, comingSoon: true, description: "The everyday Muse — fast, sharp, and a great-value flagship." }),
+  def({ provider: "meta", id: "muse-flash", name: "Muse Flash", family: "muse-flash", status: "current", minPlan: "FREE", vision: true, cost: 1, contextWindow: 512_000, comingSoon: true, description: "Instant, ultra-cheap Muse for high-volume tasks." }),
 
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
