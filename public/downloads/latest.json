@@ -1,7 +1,7 @@
 {
   "version": "1.9",
-  "build": 12,
+  "build": 13,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Drawer fix: removed the dark overlay (the gesture can no longer get stuck half-open) and you can swipe left from anywhere to close.",
+  "notes": "Fixed the gray overlay on the sidebar (worst in light mode) \u2014 it was a mis-placed dim layer, now gone.",
   "minimumSystemVersion": "26.0"
 }
