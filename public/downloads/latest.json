@@ -1,7 +1,7 @@
 {
-  "version": "1.8",
-  "build": 10,
+  "version": "1.9",
+  "build": 11,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Reworked iPhone sidebar (swipe from anywhere) + provider-first model picker + production motion polish. Meta \u00b7 Muse marked coming-soon.",
+  "notes": "Drawer polish: no more dark overlay, and swipe left from anywhere to close. Profile picture now stays in sync across devices.",
   "minimumSystemVersion": "26.0"
 }
