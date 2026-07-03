@@ -51,8 +51,25 @@ export const authConfig: NextAuthConfig = {
       if (user?.id) token.uid = user.id;
       return token;
     },
-    session({ session, token }) {
-      if (token.uid && session.user) session.user.id = token.uid as string;
+    async session({ session, token }) {
+      if (token.uid && session.user) {
+        session.user.id = token.uid as string;
+        // JWTs embed name/image at sign-in, so a later avatar (or name) change
+        // wouldn't appear until the next sign-in. Refresh both from the DB on
+        // each session read so every device stays current without re-login.
+        try {
+          const u = await prisma.user.findUnique({
+            where: { id: token.uid as string },
+            select: { image: true, name: true },
+          });
+          if (u) {
+            session.user.image = u.image ?? null;
+            if (u.name) session.user.name = u.name;
+          }
+        } catch {
+          // Keep the token's values on a transient DB hiccup.
+        }
+      }
       return session;
     },
   },
