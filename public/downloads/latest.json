@@ -1,7 +1,7 @@
 {
   "version": "1.9",
-  "build": 11,
+  "build": 12,
   "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Drawer polish: no more dark overlay, and swipe left from anywhere to close. Profile picture now stays in sync across devices.",
+  "notes": "Drawer fix: removed the dark overlay (the gesture can no longer get stuck half-open) and you can swipe left from anywhere to close.",
   "minimumSystemVersion": "26.0"
 }
