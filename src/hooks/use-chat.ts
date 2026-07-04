@@ -34,6 +34,11 @@ export type ImageEditInput = { prompt: string; model: string; edit: GenerateEdit
 let tempCounter = 0;
 const tempId = () => `temp-${Date.now()}-${tempCounter++}`;
 
+// Poll a dropped stream for as long as the server's own generation window
+// (chat route maxDuration = 800s) plus a persistence margin — the answer can
+// legitimately land at any point inside it. Keep in sync with the route.
+const RECOVERY_WINDOW_MS = 800_000 + 60_000;
+
 interface UseChatOptions {
   conversationId: string | null;
   initialMessages: ClientMessage[];
@@ -68,10 +73,24 @@ export function useChat(opts: UseChatOptions) {
   const assistantIdRef = React.useRef<string | null>(null);
   const stopRequestedRef = React.useRef(false);
   const stopFallbackRef = React.useRef<number | null>(null);
+  // Increments on every generation; an in-flight background recovery from a
+  // dropped stream aborts itself when the user has already moved on.
+  const generationSeqRef = React.useRef(0);
+  // Live snapshot of the message list, for the recovery poll's id matching.
+  const messagesRef = React.useRef<ChatMessage[]>(opts.initialMessages);
+  React.useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  // Server message ids removed from local state (regenerate pops the stale
+  // assistant answer, but the server keeps that row until the new one lands) —
+  // drop recovery must treat them as already seen, never as the fresh answer.
+  const locallyRemovedIdsRef = React.useRef<Set<string>>(new Set());
 
   // Reset when switching conversation.
   React.useEffect(() => {
     convoIdRef.current = opts.conversationId;
+    generationSeqRef.current++; // cancel any in-flight drop recovery
+    locallyRemovedIdsRef.current = new Set();
     setMessages(opts.initialMessages);
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
@@ -91,6 +110,95 @@ export function useChat(opts: UseChatOptions) {
     []
   );
 
+  /**
+   * The server deliberately detaches generation from the request: when the SSE
+   * connection drops (flaky network, proxy timeout, long thinking with no
+   * bytes), the answer is still generated and persisted. So instead of showing
+   * an instant error, poll the conversation until the persisted assistant
+   * message appears and swap it in — only giving up after the server's own
+   * generation window has passed.
+   */
+  const recoverDroppedStream = React.useCallback(
+    async (assistantTempId: string, userMessageId: string | null, seq: number) => {
+      const convoId = convoIdRef.current;
+      if (!convoId) return;
+      // The recovered answer is whichever ASSISTANT message we have never seen —
+      // matching by id (not timestamps) is immune to client/server clock skew.
+      // Locally-removed ids count as seen: on regenerate the stale answer still
+      // exists server-side until the new one replaces it.
+      const knownIds = new Set([...messagesRef.current.map((m) => m.id), ...locallyRemovedIdsRef.current]);
+      // Terminal stamps must write content too: an empty bubble renders its
+      // content in the error box, so a content-less error shows an empty box.
+      const stampTerminalError = (errorText: string) =>
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  streaming: false,
+                  error: true,
+                  progress: null,
+                  finishReason: "network_error" as const,
+                  errorMessage: errorText,
+                  content: m.content || errorText,
+                }
+              : m
+          )
+        );
+
+      const deadline = Date.now() + RECOVERY_WINDOW_MS;
+      let attempt = 0;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, attempt < 8 ? 5000 : 15000));
+        attempt++;
+        if (generationSeqRef.current !== seq) {
+          // The user moved on (new send, switch, reset) — close out the bubble
+          // instead of leaving it promising an answer that will never arrive.
+          stampTerminalError("Recovery stopped because a newer message took over. Reload if the original answer is missing.");
+          return;
+        }
+        try {
+          const res = await fetch(`/api/conversations/${convoId}`);
+          if (!res.ok) continue;
+          const payload = (await res.json()) as { messages?: ClientMessage[]; artifacts?: ClientArtifact[] };
+          const msgs = payload.messages ?? [];
+          const afterIdx = userMessageId ? msgs.findIndex((m) => m.id === userMessageId) : -1;
+          const recovered = msgs.find(
+            (m, i) =>
+              m.role === "ASSISTANT" &&
+              !knownIds.has(m.id) &&
+              (afterIdx < 0 || i > afterIdx) &&
+              // Media generations persist with empty content + an attachment.
+              (m.content || m.reasoning || (m.attachments?.length ?? 0) > 0)
+          );
+          if (!recovered) continue;
+          if (generationSeqRef.current !== seq) return;
+          let replaced = false;
+          setMessages((prev) =>
+            prev.map((m) => {
+              if (m.id !== assistantTempId) return m;
+              replaced = true;
+              return { ...recovered, streaming: false };
+            })
+          );
+          if (replaced) {
+            if (Array.isArray(payload.artifacts)) mergeArtifacts(payload.artifacts);
+            // Fire the same completion side effects as a normal done chunk so
+            // new-chat URL handoff, sidebar refresh, and auto-title still run.
+            opts.onDone?.(recovered, { finishReason: recovered.finishReason ?? undefined });
+            toast.success("Reconnected — Juno's answer came through.");
+          }
+          return;
+        } catch {
+          // transient poll failure — keep waiting
+        }
+      }
+      if (generationSeqRef.current !== seq) return;
+      stampTerminalError("The connection dropped and the response never finished. Use Continue or regenerate.");
+    },
+    [mergeArtifacts, opts]
+  );
+
   const runGeneration = React.useCallback(
     async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
       const controller = new AbortController();
@@ -100,6 +208,31 @@ export function useChat(opts: UseChatOptions) {
       assistantIdRef.current = assistantTempId;
       stopRequestedRef.current = false;
       setStatus("submitting");
+      const seq = ++generationSeqRef.current;
+      let sawTerminal = false;
+      let metaUserMessageId: string | null = null;
+      let metaArrived = false;
+
+      // Mark the bubble as awaiting background recovery and start polling for
+      // the answer the server is (very likely) still writing. No finishReason
+      // yet — that would surface a "Continue" button on a bubble that is still
+      // promising the original answer; terminal states set it later.
+      const beginDropRecovery = () => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  streaming: false,
+                  progress: null,
+                  errorMessage: "Connection interrupted — Juno keeps working in the background. The answer will appear here when it's ready.",
+                }
+              : m
+          )
+        );
+        toast.info("Connection dropped — Juno keeps working. Recovering the answer…");
+        void recoverDroppedStream(assistantTempId, metaUserMessageId, seq);
+      };
 
       try {
         const res = await fetch(path, {
@@ -117,6 +250,8 @@ export function useChat(opts: UseChatOptions) {
         await readChatStream(res.body, (chunk) => {
           switch (chunk.type) {
             case "meta": {
+              metaArrived = true;
+              metaUserMessageId = chunk.userMessageId ?? null;
               const isNew = convoIdRef.current === null;
               if (!opts.privateMode) convoIdRef.current = chunk.conversationId;
               if (chunk.userMessageId) {
@@ -188,6 +323,7 @@ export function useChat(opts: UseChatOptions) {
               break;
             }
             case "done": {
+              sawTerminal = true;
               if (stopFallbackRef.current != null) {
                 window.clearTimeout(stopFallbackRef.current);
                 stopFallbackRef.current = null;
@@ -212,6 +348,7 @@ export function useChat(opts: UseChatOptions) {
               break;
             }
             case "error": {
+              sawTerminal = true;
               setStatus("error");
               setMessages((prev) =>
                 prev.map((m) =>
@@ -235,6 +372,34 @@ export function useChat(opts: UseChatOptions) {
             }
           }
         });
+
+        // Stream ended without a done/error frame — the platform killed the
+        // function or a proxy dropped the SSE mid-generation. Don't leave the
+        // bubble spinning forever: recover the persisted answer if possible.
+        if (!sawTerminal && !controller.signal.aborted) {
+          if (metaArrived && !opts.privateMode && convoIdRef.current) {
+            beginDropRecovery();
+          } else {
+            setStatus("error");
+            const dropMessage = "The connection dropped before the response finished. Please try again.";
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantTempId
+                  ? {
+                      ...m,
+                      streaming: false,
+                      error: true,
+                      progress: null,
+                      finishReason: "network_error",
+                      errorMessage: dropMessage,
+                      content: m.content || dropMessage,
+                    }
+                  : m
+              )
+            );
+            toast.error("The connection dropped before the response finished.");
+          }
+        }
       } catch (err) {
         if (controller.signal.aborted) {
           // Keep whatever streamed; just unmark streaming.
@@ -246,6 +411,10 @@ export function useChat(opts: UseChatOptions) {
                 : m
             )
           );
+        } else if (metaArrived && !opts.privateMode && convoIdRef.current) {
+          // The request died mid-stream but generation already started server-
+          // side — it survives client disconnects, so recover instead of erroring.
+          beginDropRecovery();
         } else {
           const message = err instanceof Error ? err.message : "Something went wrong.";
           setStatus("error");
@@ -270,7 +439,7 @@ export function useChat(opts: UseChatOptions) {
         stopRequestedRef.current = false;
       }
     },
-    [mergeArtifacts, opts]
+    [mergeArtifacts, opts, recoverDroppedStream]
   );
 
   const startGeneration = React.useCallback(
@@ -498,10 +667,15 @@ export function useChat(opts: UseChatOptions) {
     if (status !== "idle" && status !== "error") return;
     if (!convoIdRef.current) return;
     // Drop the trailing assistant message locally and add a fresh placeholder.
+    // Remember the dropped ids: the server keeps the stale row until the new
+    // answer succeeds, so drop recovery must not mistake it for a fresh answer.
     const assistantTempId = tempId();
     setMessages((prev) => {
       const copy = [...prev];
-      while (copy.length && copy[copy.length - 1].role === "ASSISTANT") copy.pop();
+      while (copy.length && copy[copy.length - 1].role === "ASSISTANT") {
+        locallyRemovedIdsRef.current.add(copy[copy.length - 1].id);
+        copy.pop();
+      }
       return [
         ...copy,
         { id: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
@@ -601,6 +775,8 @@ export function useChat(opts: UseChatOptions) {
   // Reset to a fresh "new chat" without remounting (used after the shallow-URL flow).
   const reset = React.useCallback(() => {
     abortRef.current?.abort();
+    generationSeqRef.current++; // cancel any in-flight drop recovery
+    locallyRemovedIdsRef.current = new Set();
     if (stopFallbackRef.current != null) {
       window.clearTimeout(stopFallbackRef.current);
       stopFallbackRef.current = null;

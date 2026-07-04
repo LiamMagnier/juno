@@ -14,6 +14,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
+    "test:clarify": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-clarify.ts",
     "validate:models": "tsx scripts/validate-models.ts",
     "sync:models": "tsx scripts/sync-models.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune"

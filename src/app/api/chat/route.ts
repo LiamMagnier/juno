@@ -9,11 +9,11 @@ import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
-import { buildSystemPrompt } from "@/lib/anthropic";
+import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
-import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate } from "@/lib/memory";
+import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
 import { persistArtifacts } from "@/lib/artifacts-store";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import {
@@ -34,7 +34,10 @@ import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, 
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// The hard wall on generation + thinking time. Vercel caps this by plan:
+// Hobby allows up to 300, Pro up to 800 — if a deploy fails with a maxDuration
+// error, drop this back to 300 (that's the platform ceiling, not ours).
+export const maxDuration = 800;
 
 const HISTORY_LIMIT = 24;
 
@@ -321,6 +324,9 @@ async function handleChat(req: Request) {
         };
 
         send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
+        // Heartbeat: models with hidden reasoning can stream nothing for
+        // minutes; periodic pings keep proxies from dropping the idle SSE.
+        const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
         sendActivity({
           kind: "context",
           title: "Reading private context",
@@ -370,6 +376,10 @@ async function handleChat(req: Request) {
             reasoningEffort,
             webSearch: useWebSearch,
             connectors: activeConnectors,
+            dynamicContext: buildDynamicContext(),
+            // Private chats have no stable conversation id; group the cache by
+            // user (their system prompt is the shared prefix).
+            cacheKey: `private-${user.id}`,
           })) {
             if (ev.type === "text") {
               if (!writingStarted) {
@@ -447,6 +457,8 @@ async function handleChat(req: Request) {
             finishReason,
             promptTokens: promptTokens ?? null,
             completionTokens: completionTokens ?? null,
+            cacheReadTokens: cacheReadTokens ?? null,
+            cacheWriteTokens: cacheWriteTokens ?? null,
           });
         } catch (err) {
           const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
@@ -500,6 +512,7 @@ async function handleChat(req: Request) {
             send({ type: "error", message, quota, finishReason: reason });
           }
         } finally {
+          clearInterval(heartbeat);
           unregisterGeneration();
           try {
             controller.close();
@@ -688,10 +701,10 @@ async function handleChat(req: Request) {
     conversationId,
   });
   let assistantFull = ""; // captured for background memory extraction
+  // Background memory work runs on the same speed-ranked utility models the
+  // rest of the app uses, not on whichever FREE model happens to be listed first.
   const cheapModel =
-    MODEL_LIST.find((m) => isProviderConfigured(m.provider) && m.minPlan === "FREE") ??
-    MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ??
-    modelInfo;
+    utilityModelCandidates()[0] ?? MODEL_LIST.find((m) => isProviderConfigured(m.provider)) ?? modelInfo;
 
   // Generation + persistence is detached from the request lifecycle: we do not
   // pass req.signal to the model, so navigating away can drop the browser stream
@@ -730,6 +743,9 @@ async function handleChat(req: Request) {
       };
 
       send({ type: "meta", conversationId, userMessageId, title: convoTitle, titleSource: convoTitleSource, generationId });
+      // Heartbeat: models with hidden reasoning can stream nothing for minutes;
+      // periodic pings keep proxies from dropping the idle SSE connection.
+      const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
 
       const attachmentCount = modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0);
       const contextDetails = [plural(modelHistory.length, "message")];
@@ -788,6 +804,9 @@ async function handleChat(req: Request) {
           reasoningEffort,
           webSearch: useWebSearch,
           connectors: activeConnectors,
+          dynamicContext: buildDynamicContext(),
+          // One conversation = one stable prompt prefix (system + history).
+          cacheKey: conversationId,
         })) {
           if (ev.type === "text") {
             if (!writingStarted) {
@@ -902,6 +921,9 @@ async function handleChat(req: Request) {
           finishReason,
           promptTokens: promptTokens ?? null,
           completionTokens: completionTokens ?? null,
+          // Prompt-cache instrumentation (read = hit, write = Anthropic-only creation).
+          cacheReadTokens: cacheReadTokens ?? null,
+          cacheWriteTokens: cacheWriteTokens ?? null,
         });
       } catch (err) {
         const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
@@ -983,6 +1005,7 @@ async function handleChat(req: Request) {
           send({ type: "error", message, quota, finishReason: reason });
         }
       } finally {
+        clearInterval(heartbeat);
         unregisterGeneration();
         try {
           controller.close();

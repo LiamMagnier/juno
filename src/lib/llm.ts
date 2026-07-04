@@ -45,8 +45,14 @@ export async function* streamChat(opts: {
   webSearch?: boolean;
   /** Linked tool connectors (GitHub/Figma…) to expose to the model. */
   connectors?: ActiveConnector[];
+  /** Per-request dynamic context (date, etc.) appended AFTER each provider's
+   *  stable cached prefix — never into the system prompt itself. */
+  dynamicContext?: string;
+  /** Stable id grouping requests that share a prompt prefix (conversation id).
+   *  Used as OpenAI's prompt_cache_key to raise automatic cache hit rates. */
+  cacheKey?: string;
 }): AsyncGenerator<LlmEvent> {
-  const { model, system, history, signal, reasoningEffort, webSearch } = opts;
+  const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey } = opts;
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
   // completion budget — a plan-sized cap can be eaten entirely by thinking,
   // truncating the answer ("length" with little or no visible text). Add an
@@ -63,14 +69,14 @@ export async function* streamChat(opts: {
 
   // Native web search uses each provider's own tool/grounding (no third party).
   if (webSearch && model.provider === "google") {
-    yield* streamGeminiSearch(model, system, history, maxTokens, signal);
+    yield* streamGeminiSearch(model, system, history, maxTokens, signal, dynamicContext);
     return;
   }
   if (model.provider === "anthropic") {
     // Claude reaches MCP servers itself via the native connector.
     yield* streamAnthropic(
       model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-      active.length ? anthropicMcpServers(active) : undefined
+      active.length ? anthropicMcpServers(active) : undefined, dynamicContext
     );
     return;
   }
@@ -84,7 +90,7 @@ export async function* streamChat(opts: {
     }
   }
   try {
-    yield* streamOpenAICompat(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset);
+    yield* streamOpenAICompat(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey);
   } finally {
     if (toolset) await toolset.close();
   }

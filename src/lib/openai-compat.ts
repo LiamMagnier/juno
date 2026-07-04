@@ -95,9 +95,25 @@ export async function* streamOpenAICompat(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  toolset?: McpToolset
+  toolset?: McpToolset,
+  dynamicContext?: string,
+  cacheKey?: string
 ): AsyncGenerator<LlmEvent> {
   const messages = await toOpenAIMessages(system, history, model.vision);
+  // Per-request dynamic context (the date) is injected AFTER the frozen
+  // conversation history — providers cache the longest stable prefix, so
+  // nothing that changes per request may sit before the history. It lands as
+  // a system message just before the newest user turn.
+  if (dynamicContext) {
+    let lastUser = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    messages.splice(lastUser, 0, { role: "system", content: dynamicContext });
+  }
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
   const isMiniMax = model.provider === "minimax";
   // Qwen (DashScope) drives thinking with enable_thinking/thinking_budget, not
@@ -147,6 +163,14 @@ export async function* streamOpenAICompat(
   } else {
     params.max_tokens = maxTokens;
   }
+  // Prompt-cache routing hints. OpenAI: automatic caching on >1024-token
+  // stable prefixes; prompt_cache_key routes same-prefix requests (one
+  // conversation) to the same cache shard. Mistral: caching is OPT-IN and
+  // only happens when prompt_cache_key is set. Other providers may reject
+  // unknown params, so this stays gated. (xAI takes a header instead, below.)
+  if ((model.provider === "openai" || model.provider === "mistral") && cacheKey) {
+    params.prompt_cache_key = cacheKey;
+  }
   // xAI Grok "Live Search" — a request-body extension that returns citations.
   if (webSearch && model.provider === "xai") {
     params.search_parameters = { mode: "auto", return_citations: true };
@@ -178,7 +202,10 @@ export async function* streamOpenAICompat(
     const isFinalRound = round === maxRounds - 1;
     params.messages = messages;
     if (hasTools) (params as Record<string, unknown>).tool_choice = isFinalRound ? "none" : "auto";
-    const stream = await c.chat.completions.create(params, { signal });
+    // xAI routes same-conversation requests to the same cache via this header
+    // (its chat.completions API has no prompt_cache_key).
+    const requestHeaders = model.provider === "xai" && cacheKey ? { "x-grok-conv-id": cacheKey } : undefined;
+    const stream = await c.chat.completions.create(params, { signal, headers: requestHeaders });
 
     let assistantText = "";
     let finishReason: string | undefined;
@@ -229,7 +256,14 @@ export async function* streamOpenAICompat(
         roundSawUsage = true;
         roundInput = chunk.usage.prompt_tokens ?? roundInput;
         roundOutput = chunk.usage.completion_tokens ?? roundOutput;
-        roundCached = (chunk.usage as { prompt_tokens_details?: { cached_tokens?: number } }).prompt_tokens_details?.cached_tokens ?? roundCached;
+        // Standard field first; DeepSeek reports its disk cache as
+        // prompt_cache_hit_tokens, Moonshot/Kimi as a top-level cached_tokens.
+        const u = chunk.usage as {
+          prompt_tokens_details?: { cached_tokens?: number };
+          prompt_cache_hit_tokens?: number;
+          cached_tokens?: number;
+        };
+        roundCached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens ?? roundCached;
       }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
@@ -277,5 +311,8 @@ export async function* streamOpenAICompat(
     provider: model.provider,
     model: model.providerModel,
     finishReason: finalRaw ?? "stop",
+    // Cache hit-rate instrumentation: cachedTokens/promptTokens per response.
+    promptTokens: sawUsage ? cumInput : null,
+    cachedTokens: sawUsage ? cumCached : null,
   });
 }

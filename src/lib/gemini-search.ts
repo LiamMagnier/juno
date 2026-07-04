@@ -42,12 +42,26 @@ export async function* streamGeminiSearch(
   system: string,
   history: MessageForModel[],
   maxTokens: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  dynamicContext?: string
 ): AsyncGenerator<LlmEvent> {
   const key = providerApiKey("google");
   if (!key) throw new Error("Google API key is not configured.");
 
   const contents = await toGeminiContents(history, model.vision);
+  // Per-request dynamic context (the date) goes AFTER the frozen history so
+  // Gemini's implicit prefix caching keeps matching system + past turns.
+  // Two consecutive user turns are valid Gemini content.
+  if (dynamicContext) {
+    let lastUser = contents.length;
+    for (let i = contents.length - 1; i >= 0; i--) {
+      if (contents[i].role === "user") {
+        lastUser = i;
+        break;
+      }
+    }
+    contents.splice(lastUser, 0, { role: "user", parts: [{ text: dynamicContext }] });
+  }
   // The native endpoint needs a "models/<id>" path; discovery may give either form.
   const path = model.providerModel.startsWith("models/") ? model.providerModel : `models/${model.providerModel}`;
   const url = `https://generativelanguage.googleapis.com/v1beta/${path}:streamGenerateContent?alt=sse`;
@@ -75,6 +89,7 @@ export async function* streamGeminiSearch(
   const sources = new Map<string, ClientSource>();
   let usageIn: number | undefined;
   let usageOut: number | undefined;
+  let usageCached: number | undefined;
   let finishReason: string | undefined;
 
   const handle = (json: string) => {
@@ -84,7 +99,7 @@ export async function* streamGeminiSearch(
         finishReason?: string;
         groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] };
       }[];
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; cachedContentTokenCount?: number };
     };
     try {
       data = JSON.parse(json);
@@ -110,6 +125,7 @@ export async function* streamGeminiSearch(
     if (data.usageMetadata) {
       usageIn = data.usageMetadata.promptTokenCount;
       usageOut = data.usageMetadata.candidatesTokenCount;
+      usageCached = data.usageMetadata.cachedContentTokenCount;
     }
     return events;
   };
@@ -129,6 +145,10 @@ export async function* streamGeminiSearch(
   }
 
   if (sources.size) yield { type: "sources", sources: [...sources.values()] };
-  if (usageIn != null || usageOut != null) yield { type: "usage", input: usageIn, output: usageOut };
+  if (usageIn != null || usageOut != null) {
+    yield { type: "usage", input: usageIn, output: usageOut, cacheRead: usageCached };
+    // Cache hit-rate instrumentation (Gemini implicit caching).
+    console.info("[llm:gemini-search] usage", { model: model.providerModel, promptTokens: usageIn ?? null, cachedTokens: usageCached ?? null });
+  }
   if (!finishReason) yield { type: "finish", reason: "stop" };
 }

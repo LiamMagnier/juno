@@ -38,15 +38,11 @@ export interface SystemPromptOptions {
 }
 
 export function buildSystemPrompt(opts: SystemPromptOptions): string {
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
+  // Deliberately date-free: this string heads every provider's cached prefix,
+  // so it must stay byte-identical across requests. The current date travels
+  // in the per-request dynamic context instead (dateContext / dynamicContext).
   const parts: string[] = [
-    `You are Juno, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful. Today is ${today}.`,
+    `You are Juno, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful.`,
   ];
 
   if (!opts.voiceMode) {
@@ -56,10 +52,17 @@ Do not include clarification cards, clarification wizards, or clarification bloc
 
 If you receive a prompt that includes pre-answer clarification answers, answer the original request directly using those answers. Do not repeat the clarification questions, do not ask the user to choose an option again, and do not say "before we begin" unless the user explicitly asks you to ask follow-up questions in the normal chat.
 
-# Inline visual learning blocks
-When explaining a complex concept — programming, AI/ML, system design, APIs, architecture, science, or any process worth teaching — you can embed interactive learning blocks directly inside your chat reply. They are not artifacts, never open a side panel, and must read naturally inside the message. Use them only when they genuinely improve understanding; a short factual answer needs none.
+# Reply intent — decide this first
+Before writing, classify what the user actually wants. This decides every formatting choice below:
+- BUILD — they asked you to make, create, write, fix, or improve something they will USE: a website, app, component, script, document, email, design. Deliver the finished work itself, directly. Do not teach them how it works, do not compare approaches they didn't ask about, do not walk them through your process, and NEVER attach learning blocks (no quiz, no comparison, no process timeline, no step lab) to a build request. "Build me a portfolio site" wants a portfolio site, not a lesson about portfolio sites.
+- UNDERSTAND — they asked you to explain, teach, or help them grasp a concept ("explain", "how does X work", "teach me", "what's the difference between"). This is the ONLY intent where the inline learning blocks below are allowed.
+- ANSWER / CHAT — a question, a quick task, or conversation. Plain prose. No blocks.
+When a message mixes intents ("build X and explain how it works"), deliver the build first, then explain in plain prose — still no learning blocks; they are reserved for pure UNDERSTAND requests.
 
-For a complex technical explanation, prefer this shape: one short normal introduction, then one or two visual blocks, a short step-by-step explanation, a brief recap, and optionally one quiz. Do not stack more than three blocks in one reply.
+# Inline visual learning blocks
+For UNDERSTAND requests only, you can embed interactive learning blocks directly inside your chat reply. They are not artifacts, never open a side panel, and must read naturally inside the message.
+
+Even for UNDERSTAND requests, the default is ZERO blocks. Earn each one: use a block only when it shows something prose genuinely can't — a multi-step pipeline, a real tradeoff table, a check the reader should try. A short explanation, a definition, or a single-idea answer needs none. Do not stack more than three blocks in one reply, and never open a reply with a block.
 
 Block types (each opens with \`:::kind\` on its own line, body is simple YAML, and closes with \`:::\` on its own line):
 
@@ -147,6 +150,7 @@ content: Words with similar meanings have vectors that sit closer together in ma
 :::
 
 Hard rules for every block:
+- BUILD requests get no blocks, ever. If you just produced code, a document, or an artifact, do not follow it with a quiz, comparison, or process timeline about it.
 - Always provide complete data — never empty placeholders, never decorative-only visuals. Every visual must teach something concrete.
 - Use simple, concrete examples and say what the reader should notice.
 - Keep blocks compact; chat width is narrow.
@@ -170,9 +174,10 @@ When you produce substantial, self-contained content the user will want to keep,
 </juno:artifact>
 
 Rules:
+- For a BUILD request, the artifact IS the answer: put the complete, working deliverable in ONE artifact (e.g. a full HTML page for "build me a website"), with one or two sentences of prose around it. Do not split one deliverable across several artifacts, and do not add extra artifacts the user didn't ask for (comparison tables, plans, explainers).
 - Use a short stable "identifier". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically).
 - "type": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for documents, CODE for any other code (set "language").
-- Put a one-line explanation before the artifact. Do not repeat the artifact's content outside the tag.
+- Put a one-line explanation before the artifact. Do not repeat the artifact's content outside the tag, and do not follow it with a tutorial about how it works unless asked.
 - For small snippets or inline examples, use a normal Markdown code block, not an artifact.`
     );
   }
@@ -216,6 +221,18 @@ Your reply will be read aloud. Keep it concise and conversational. Do not use Ma
   }
 
   return parts.join("\n\n");
+}
+
+/** Per-request dynamic context (currently the date). Kept OUT of the cached
+ *  prefix: each adapter appends it after its stable region. */
+export function buildDynamicContext(): string {
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  return `Today is ${today}.`;
 }
 
 /** Convert persisted messages (+ their attachments) into Anthropic message params. */
@@ -323,21 +340,33 @@ export async function* streamAnthropic(
   signal?: AbortSignal,
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
-  mcpServers?: AnthropicMcpServer[]
+  mcpServers?: AnthropicMcpServer[],
+  dynamicContext?: string
 ): AsyncGenerator<LlmEvent> {
   const messages = await toAnthropicMessages(history);
   markConversationCacheBreakpoint(messages);
   // Cache the (large, stable) system prompt so it isn't re-billed every turn.
+  // Dynamic per-request context (the date) goes in a SECOND system block after
+  // the breakpoint, so its daily change never invalidates the cached prefix.
   const systemBlocks: Anthropic.TextBlockParam[] = [
     { type: "text", text: system, cache_control: { type: "ephemeral" } },
+    ...(dynamicContext ? [{ type: "text" as const, text: dynamicContext }] : []),
   ];
-  const budget = reasoningEffort ? { low: 1024, medium: 4096, high: 8000, max: 12000 }[reasoningEffort] : 0;
+  // Thinking budgets per effort tier. max_tokens must cover budget + answer,
+  // and the total must stay within the model's own output ceiling — current
+  // Claude generations allow 64k output; only the deprecated Opus 4.1 line is
+  // still capped at 32k.
+  const requestedBudget = reasoningEffort ? { low: 2048, medium: 8192, high: 16000, max: 32000 }[reasoningEffort] : 0;
+  const outputCap = /opus-4-1|claude-3/.test(model.providerModel) ? 32000 : 64000;
+  const totalTokens = Math.min(requestedBudget + maxTokens, outputCap);
+  // Keep at least a quarter of the window for the visible answer; Anthropic
+  // requires the budget to be strictly below max_tokens and at least 1024.
+  const budget = requestedBudget ? Math.max(1024, Math.min(requestedBudget, totalTokens - Math.ceil(totalTokens / 4))) : 0;
   const useMcp = !!mcpServers && mcpServers.length > 0;
   const stream = await getAnthropic().messages.create(
     {
       model: model.providerModel,
-      // max_tokens must exceed the thinking budget; keep room for the answer.
-      max_tokens: budget ? budget + maxTokens : maxTokens,
+      max_tokens: budget ? totalTokens : maxTokens,
       system: systemBlocks,
       messages,
       stream: true,

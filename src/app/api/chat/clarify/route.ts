@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
-import { maybeRequestClarification, noPreflightClarification } from "@/lib/preflight-clarification";
+import { noPreflightClarification, quickPreflightSkip } from "@/lib/preflight-clarification";
+import { triagePreflightClarification, type TriageContextMessage } from "@/lib/preflight-triage";
 
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 const bodySchema = z.object({
   message: z.string().max(50_000),
@@ -27,11 +30,36 @@ export async function POST(req: Request) {
 
   const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json(noPreflightClarification("Invalid clarification check request."), { status: 200 });
+  const input = parsed.data;
 
-  const result = maybeRequestClarification({
-    message: parsed.data.message,
-    hasAttachments: parsed.data.hasAttachments,
-  });
+  // Deterministic fast path: obvious "just answer" cases never pay AI latency.
+  const skip = quickPreflightSkip({ message: input.message, hasAttachments: input.hasAttachments });
+  if (skip) return NextResponse.json(noPreflightClarification(skip));
 
-  return NextResponse.json(result);
+  // This whole check is best-effort: any failure past this point must fail
+  // OPEN (no clarification, 200) — a broken triage must never block sending.
+  try {
+    // Recent conversation context lets the triage model recognize follow-ups
+    // ("now make the header sticky") instead of re-interrogating the user.
+    // Private chats send no conversationId, so nothing is read for them.
+    let recentMessages: TriageContextMessage[] = [];
+    if (input.conversationId && !input.privateMode) {
+      const rows = await prisma.message.findMany({
+        where: { conversationId: input.conversationId, conversation: { userId: user.id } },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        select: { role: true, content: true },
+      });
+      recentMessages = rows
+        .reverse()
+        .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
+        .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content }));
+    }
+
+    const result = await triagePreflightClarification({ message: input.message, recentMessages });
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error("[chat/clarify] check failed, answering directly:", err instanceof Error ? err.message : err);
+    return NextResponse.json(noPreflightClarification("Clarification check failed — answering directly."));
+  }
 }

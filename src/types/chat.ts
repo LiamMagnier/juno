@@ -140,7 +140,10 @@ export type StreamChunk =
       projectId?: string | null;
       projectName?: string | null;
     }
-  | { type: "error"; message: string; quota?: ClientQuota; finishReason?: ChatFinishReason; preservePartial?: boolean };
+  | { type: "error"; message: string; quota?: ClientQuota; finishReason?: ChatFinishReason; preservePartial?: boolean }
+  // Heartbeat: keeps bytes flowing through proxies while a model thinks
+  // silently (hidden reasoning) — the client simply ignores it.
+  | { type: "ping" };
 
 export interface ChatRequestBody {
   conversationId?: string;

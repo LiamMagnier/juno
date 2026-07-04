@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
+import { getModelMetrics } from "@/lib/model-metrics";
 
 /*
  * Incremental memory architecture
@@ -27,21 +28,25 @@ import { isProviderConfigured } from "@/lib/providers";
 
 /**
  * Configured models eligible for background memory work — up to two FREE
- * models per provider, ordered provider-diverse first (every provider's best,
- * then the second-string models). Free-tier quotas and overloads are often
- * per-MODEL, so a second model from the same provider is a real fallback.
+ * models per provider, fastest first within each provider, ordered
+ * provider-diverse (every provider's best, then the second-string models).
+ * Utility prompts are small and structured, so speed and cost beat raw
+ * intelligence here. Free-tier quotas and overloads are often per-MODEL, so a
+ * second model from the same provider is a real fallback.
  */
 export function utilityModelCandidates(): ModelInfo[] {
   const byProvider = new Map<string, ModelInfo[]>();
   for (const m of MODEL_LIST) {
-    if (m.minPlan !== "FREE" || !isProviderConfigured(m.provider)) continue;
+    if (m.minPlan !== "FREE" || m.modality !== "chat" || m.comingSoon || !isProviderConfigured(m.provider)) continue;
     const arr = byProvider.get(m.provider) ?? [];
-    if (arr.length < 2) {
-      arr.push(m);
-      byProvider.set(m.provider, arr);
-    }
+    arr.push(m);
+    byProvider.set(m.provider, arr);
   }
-  const tiers = [...byProvider.values()];
+  const tiers = [...byProvider.values()].map((arr) =>
+    arr
+      .sort((a, b) => getModelMetrics(b).speed - getModelMetrics(a).speed || a.cost - b.cost)
+      .slice(0, 2)
+  );
   return [...tiers.map((a) => a[0]), ...tiers.flatMap((a) => a.slice(1))].slice(0, 10);
 }
 
