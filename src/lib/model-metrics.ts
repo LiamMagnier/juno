@@ -147,6 +147,20 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["flash"], metric: metric(0.2, 0.8, 256_000, 9, 8) },
     { hints: ["pro"], metric: metric(0.4, 1.6, 256_000, 5, 9) },
   ],
+  qwen: [
+    { hints: ["qwen3-max"], metric: metric(1.2, 6, 262_144, 4, 9) },
+    { hints: ["qwen3-coder"], metric: metric(1, 5, 1_000_000, 6, 8) },
+    { hints: ["qwen3-vl"], metric: metric(0.8, 3.2, 262_144, 6, 8) },
+    { hints: ["qwen-vl"], metric: metric(0.8, 3.2, 32_768, 6, 6) },
+    { hints: ["qwen3-235"], metric: metric(0.7, 2.8, 262_144, 5, 8) },
+    { hints: ["qwen3-30"], metric: metric(0.2, 0.8, 262_144, 8, 7) },
+    { hints: ["qwq"], metric: metric(0.8, 2.4, 131_072, 4, 7) },
+    { hints: ["plus"], metric: metric(0.4, 1.2, 1_000_000, 6, 8) },
+    { hints: ["flash"], metric: metric(0.05, 0.4, 1_000_000, 9, 6) },
+    { hints: ["turbo"], metric: metric(0.05, 0.2, 1_000_000, 9, 5) },
+    { hints: ["max"], metric: metric(1.2, 6, 32_768, 4, 8) },
+    { hints: ["qwen"], metric: metric(0.4, 1.2, 262_144, 6, 7) },
+  ],
 };
 
 // Sensible per-provider default so an unrecognized model still gets real-ish
@@ -163,6 +177,7 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   xai: metric(2, 10, 1_000_000, 5, 8),
   minimax: metric(0.3, 1.2, 204_800, 6, 8),
   mimo: metric(0.4, 1.6, 256_000, 6, 8),
+  qwen: metric(0.4, 1.2, 262_144, 6, 8),
 };
 
 function familyMetric(model: ModelInfo): ModelMetrics | null {
@@ -276,6 +291,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps([], false); // M2.x: always-on interleaved thinking
     case "mimo":
       return caps(LMH, true); // MiMo: OpenAI-style reasoning_effort, off by default
+    case "qwen":
+      if (id.includes("qwq")) return caps([], false); // QwQ always reasons, no control
+      if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
+      return caps(LMHX, true); // Qwen3 hybrid: instant + budget-mapped depth tiers
     default:
       return caps([], false);
   }

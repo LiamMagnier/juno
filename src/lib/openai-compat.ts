@@ -100,6 +100,9 @@ export async function* streamOpenAICompat(
   const messages = await toOpenAIMessages(system, history, model.vision);
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
   const isMiniMax = model.provider === "minimax";
+  // Qwen (DashScope) drives thinking with enable_thinking/thinking_budget, not
+  // OpenAI's reasoning_effort — sending both would be redundant or rejected.
+  const isQwenThinking = model.provider === "qwen" && model.reasoning;
   // The route already clamped the effort to what this model supports; relay it.
   // For GLM (on/off thinking) an effort means enabled, its absence means off.
   const effectiveReasoningEffort = reasoningEffort;
@@ -114,7 +117,15 @@ export async function* streamOpenAICompat(
     // if a specific endpoint ever rejects it.)
     stream_options: { include_usage: true },
   };
-  if (effectiveReasoningEffort) (params as Record<string, unknown>)["reasoning_effort"] = effectiveReasoningEffort;
+  if (effectiveReasoningEffort && !isQwenThinking) (params as Record<string, unknown>)["reasoning_effort"] = effectiveReasoningEffort;
+  if (isQwenThinking) {
+    // Instant (no effort) turns Qwen thinking off; any effort turns it on and
+    // maps to a token budget for the thinking phase (extra_body passthrough).
+    params.enable_thinking = !!effectiveReasoningEffort;
+    if (effectiveReasoningEffort) {
+      params.thinking_budget = { low: 2048, medium: 8192, high: 24000, max: 38000 }[effectiveReasoningEffort];
+    }
+  }
   if (isZhipuThinking) {
     // Instant (no effort) turns GLM thinking off; any effort turns it on.
     params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
@@ -126,9 +137,13 @@ export async function* streamOpenAICompat(
     }
   }
   if (model.provider === "openai") {
+    const om = model.providerModel.toLowerCase();
+    // Legacy models reject completion caps above their own ceiling with a 400:
+    // the gpt-4o line tops out at 16384, gpt-4-turbo / gpt-3.5 at 4096.
+    const legacyCap = /gpt-4o/.test(om) ? 16384 : /gpt-4-turbo|gpt-3\.5/.test(om) ? 4096 : Infinity;
     // GPT-5 reasoning models count hidden reasoning toward max_completion_tokens,
     // so a tight cap can yield empty/truncated output — give it headroom.
-    params.max_completion_tokens = Math.max(maxTokens, 16000);
+    params.max_completion_tokens = Math.min(Math.max(maxTokens, 16000), legacyCap);
   } else {
     params.max_tokens = maxTokens;
   }

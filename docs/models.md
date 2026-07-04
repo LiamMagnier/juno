@@ -94,6 +94,15 @@ Sources: mimo.mi.com docs (quick-start / pricing) · litellm xiaomi_mimo provide
 
 ---
 
+## Alibaba Qwen (DashScope / Model Studio) — added 2026-07-04
+Sources: help.aliyun.com Model Studio model list · dashscope OpenAI-compatible guide · qwen model cards.
+- Endpoint: OpenAI-compatible mode. International (default) `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`; Beijing/China `https://dashscope.aliyuncs.com/compatible-mode/v1` (set `QWEN_BASE_URL`). Key env: **`DASHSCOPE_API_KEY`** (`sk-…`).
+- Thinking is provider-specific: Qwen uses `enable_thinking` (bool) + `thinking_budget` (int) in the request body, **not** OpenAI's `reasoning_effort`. `openai-compat.ts` maps Juno's effort tiers to a thinking budget and omits `reasoning_effort` for this provider. Instant = `enable_thinking:false`.
+- Current: `qwen3-max` (flagship), `qwen-plus` (balanced hybrid, 1M ctx), `qwen-flash` (cheap, 1M ctx), `qwen3-vl-plus` (vision), `qwen3-coder-plus` (agentic coding, non-thinking), `qwen3-235b-a22b` + `qwen3-30b-a3b` (open-weight MoE).
+- Legacy: `qwen-max` (2.5 line), `qwen-turbo` (→ Qwen Flash), `qwen-vl-max`, `qwq-plus` (QwQ reasoner, superseded by Qwen3 thinking).
+- Discovery: DashScope exposes `GET /models`, so `npm run sync:models:write` surfaces every other Qwen id the account can call with guessed metadata. Families in `model-discovery-core.ts` label coder/vl/max/plus/flash/turbo/qwq.
+- Uncertain: exact per-model context windows and prices vary by account/region — figures here are provider estimates; re-verify against the Model Studio console pricing.
+
 ## Maintenance checklist
 
 **Automated sync** — `src/lib/models.generated.ts` is a machine-written, committed

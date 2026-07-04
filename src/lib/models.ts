@@ -51,7 +51,7 @@ const FREE_RE = /(flash|mini|nano|lite|haiku|air|small|8b|14b|free|highspeed|v4-
 const EXPENSIVE_RE = /(opus|fable|mythos|gpt-5\.\d-pro|^o\d|-o\d|large|grok-4|reasoner|ultra|max\b|405b|magistral-medium|v4-pro)/i;
 const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
-  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
+  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|qwen3-(max|235|30|vl)|qwen-(plus|flash)|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
 
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
@@ -214,6 +214,19 @@ const CURATED: ModelInfo[] = [
   // —— MiMo (Xiaomi MiMo AI Labs) ——
   def({ provider: "mimo", id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", family: "mimo", status: "current", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Xiaomi MiMo's reasoning, coding and agentic flagship." }),
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
+
+  // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
+  def({ provider: "qwen", id: "qwen3-max", name: "Qwen3 Max", family: "qwen-max", status: "current", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 262_144, description: "Alibaba's flagship — frontier reasoning, coding and agentic tasks." }),
+  def({ provider: "qwen", id: "qwen-plus", name: "Qwen Plus", family: "qwen-plus", status: "current", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced hybrid-thinking model — strong quality at low cost, 1M context." }),
+  def({ provider: "qwen", id: "qwen-flash", name: "Qwen Flash", family: "qwen-flash", status: "current", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen — high-volume tasks with 1M context." }),
+  def({ provider: "qwen", id: "qwen3-vl-plus", name: "Qwen3-VL Plus", family: "qwen-vl", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Vision-language flagship — image and video understanding with thinking." }),
+  def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "current", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Agentic coding flagship — repo-scale, tool-calling code generation." }),
+  def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "current", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 262_144, description: "Open-weight MoE flagship (235B total / 22B active) with toggleable thinking." }),
+  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "current", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 262_144, description: "Efficient open-weight MoE (30B total / 3B active) — fast and cheap." }),
+  def({ provider: "qwen", id: "qwen-max", name: "Qwen Max", family: "qwen-max", status: "legacy", minPlan: "PRO", cost: 3, contextWindow: 32_768, description: "Previous-generation Qwen-Max (2.5 line)." }),
+  def({ provider: "qwen", id: "qwen-turbo", name: "Qwen Turbo", family: "qwen-flash", status: "legacy", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Older ultra-cheap tier, superseded by Qwen Flash." }),
+  def({ provider: "qwen", id: "qwen-vl-max", name: "Qwen-VL Max", family: "qwen-vl", status: "legacy", minPlan: "PRO", vision: true, cost: 2, contextWindow: 32_768, description: "Previous-generation vision-language model." }),
+  def({ provider: "qwen", id: "qwq-plus", name: "QwQ Plus", family: "qwq", status: "legacy", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 131_072, description: "Dedicated QwQ reasoning model, superseded by Qwen3 thinking." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs

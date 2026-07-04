@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo";
+export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen";
 
 interface ProviderDef {
   label: string;
@@ -110,6 +110,17 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://api.xiaomimimo.com/v1",
     kind: "openai",
     docsUrl: "https://mimo.mi.com/docs/en-US/quick-start/summary/first-api-call",
+  },
+  qwen: {
+    label: "Alibaba · Qwen",
+    apiKeyEnv: "DASHSCOPE_API_KEY",
+    baseUrlEnv: "QWEN_BASE_URL",
+    // Alibaba Cloud Model Studio (DashScope), OpenAI-compatible mode. Use the
+    // international endpoint by default; set QWEN_BASE_URL to the Beijing host
+    // (…dashscope.aliyuncs.com…) for a China-region account.
+    defaultBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    kind: "openai",
+    docsUrl: "https://bailian.console.alibabacloud.com/?apiKey=1#/api-key",
   },
 };
 

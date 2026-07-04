@@ -80,6 +80,15 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "MiMo V2.5 Pro", match: /^mimo-v2\.5-pro$/i, minPlan: "PRO", vision: true },
     { label: "MiMo Flash", match: /^mimo-v[\d.]+-flash$/i, minPlan: "FREE", vision: false },
   ],
+  qwen: [
+    { label: "Qwen Coder", match: /qwen[\d.]*-coder/i, minPlan: "PRO", vision: false },
+    { label: "Qwen VL", match: /qwen[\d.]*-vl/i, minPlan: "PRO", vision: true },
+    { label: "Qwen Max", match: /qwen[\d.]*-max/i, minPlan: "PRO", vision: false },
+    { label: "Qwen Plus", match: /qwen[\d.]*-plus/i, minPlan: "PRO", vision: false },
+    { label: "Qwen Flash", match: /qwen[\d.]*-flash/i, minPlan: "FREE", vision: false },
+    { label: "Qwen Turbo", match: /qwen[\d.]*-turbo/i, minPlan: "FREE", vision: false },
+    { label: "QwQ", match: /^qwq/i, minPlan: "PRO", vision: false },
+  ],
 };
 
 export const stripPrefix = (id: string) => id.replace(/^models\//i, "");

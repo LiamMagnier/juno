@@ -3,6 +3,7 @@ import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
 import { streamGeminiSearch } from "@/lib/gemini-search";
 import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
+import { reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -14,7 +15,9 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
 // limit. Anthropic is kept lower because its thinking budget is added on top.
 const PROVIDER_MAX_OUTPUT: Record<string, number> = {
   anthropic: 20000,
-  openai: 16000,
+  // GPT-5.x supports far larger outputs, and hidden reasoning counts toward
+  // this budget — too tight a cap starves the visible answer on high effort.
+  openai: 32000,
   google: 32000,
   zhipu: 131072,
   moonshot: 16384,
@@ -24,6 +27,7 @@ const PROVIDER_MAX_OUTPUT: Record<string, number> = {
   seedance: 8192,
   minimax: 131072,
   mimo: 16384,
+  qwen: 32768,
 };
 
 /** Clamp a requested output-token cap to what the provider's models actually allow. */
@@ -43,7 +47,18 @@ export async function* streamChat(opts: {
   connectors?: ActiveConnector[];
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch } = opts;
-  const maxTokens = clampMaxTokens(model.provider, opts.maxTokens);
+  // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
+  // completion budget — a plan-sized cap can be eaten entirely by thinking,
+  // truncating the answer ("length" with little or no visible text). Add an
+  // effort-scaled allowance ON TOP of the plan cap (mirroring the Anthropic
+  // path, where the thinking budget is added separately). Models that always
+  // reason with no effort control (o-series-style, kimi-code, magistral…) reach
+  // the route with a null effort but still burn thinking tokens — give them the
+  // "high" allowance. Each provider's own ceiling still applies.
+  const alwaysReasons = model.reasoning && !reasoningCaps(model).canDisable;
+  const thinkingTier = model.provider === "anthropic" ? null : (reasoningEffort ?? (alwaysReasons ? "high" : null));
+  const thinkingAllowance = thinkingTier ? { low: 4096, medium: 8192, high: 16384, max: 32768 }[thinkingTier] : 0;
+  const maxTokens = clampMaxTokens(model.provider, opts.maxTokens + thinkingAllowance);
   const active = opts.connectors ?? [];
 
   // Native web search uses each provider's own tool/grounding (no third party).
