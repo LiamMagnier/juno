@@ -10,6 +10,7 @@ export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "m
 interface ProviderDef {
   label: string;
   apiKeyEnv: string;
+  apiKeyEnvAliases?: string[];
   baseUrlEnv?: string; // optional override (regional endpoints, proxies, Azure…)
   defaultBaseUrl?: string; // undefined => native Anthropic SDK
   kind: "anthropic" | "openai";
@@ -40,10 +41,11 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     docsUrl: "https://aistudio.google.com/apikey",
   },
   meta: {
-    label: "Meta · Muse",
-    apiKeyEnv: "META_API_KEY",
+    label: "Meta · Llama",
+    apiKeyEnv: "LLAMA_API_KEY",
+    apiKeyEnvAliases: ["META_API_KEY"],
     baseUrlEnv: "META_BASE_URL",
-    defaultBaseUrl: "https://api.llama.com/v1",
+    defaultBaseUrl: "https://api.llama.com/compat/v1",
     kind: "openai",
     docsUrl: "https://llama.developer.meta.com/",
   },
@@ -142,7 +144,8 @@ function readEnv(name?: string): string | undefined {
 }
 
 export function providerApiKey(p: Provider): string | undefined {
-  return readEnv(PROVIDERS[p].apiKeyEnv);
+  const def = PROVIDERS[p];
+  return readEnv(def.apiKeyEnv) ?? def.apiKeyEnvAliases?.map(readEnv).find(Boolean);
 }
 
 export function providerBaseUrl(p: Provider): string | undefined {
