@@ -1,0 +1,36 @@
+# Render Blueprint for the Juno voice relay — FREE tier.
+# Deploy: render.com → New → Blueprint → connect this repo → it reads this file.
+# Set the secret env vars (AUTH_SECRET + provider keys) in the dashboard.
+#
+# Free plan caveat: the service sleeps after ~15 min of inactivity, so the
+# first voice call after a pause takes ~30-60s to wake up. Fine for personal
+# use/testing; upgrade to the $7/mo Starter plan for always-on.
+services:
+  - type: web
+    name: juno-voice-relay
+    runtime: docker
+    repo: https://github.com/LiamMagnier/juno
+    branch: main
+    dockerfilePath: relay/Dockerfile
+    dockerContext: relay
+    region: frankfurt
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # Lets you test end-to-end with the mock voice, no provider keys needed.
+      - key: RELAY_ENABLE_MOCK
+        value: "1"
+      # MUST equal the AUTH_SECRET in your Vercel project.
+      - key: AUTH_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: DASHSCOPE_API_KEY
+        sync: false
+      - key: MINIMAX_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://juno-zeta-navy.vercel.app
