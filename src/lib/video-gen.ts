@@ -280,7 +280,7 @@ const seedanceAdapter: VideoAdapter = {
     if (!ok) throw new Error(`Polling ${model.name} failed (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
     const state = (data.status ?? "").toLowerCase();
     if (state === "failed" || state === "expired" || state === "cancelled" || state === "canceled") {
-      throw new Error(`${model.name} failed: ${data.error?.message ?? state || "generation error"}`);
+      throw new Error(`${model.name} failed: ${data.error?.message ?? (state || "generation error")}`);
     }
     if (state !== "succeeded") return { status: "running", note: state || undefined };
     const url = data.content?.video_url;
