@@ -35,9 +35,9 @@ import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
 // The hard wall on generation + thinking time. Vercel caps this by plan:
-// Hobby allows up to 300, Pro up to 800 — if a deploy fails with a maxDuration
-// error, drop this back to 300 (that's the platform ceiling, not ours).
-export const maxDuration = 800;
+// Hobby allows up to 300, Pro up to 800. Set to the Hobby ceiling; raise to 800
+// after upgrading to Pro (and bump RECOVERY_WINDOW_MS in use-chat.ts to match).
+export const maxDuration = 300;
 
 const HISTORY_LIMIT = 24;
 
