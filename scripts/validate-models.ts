@@ -35,7 +35,7 @@ for (const m of all) {
   if (!m.status || !["current", "legacy", "deprecated"].includes(m.status)) errors.push(`${m.id}: missing/invalid status "${m.status}"`);
   if (!m.family) errors.push(`${m.id}: missing family`);
   if (![1, 2, 3].includes(m.cost)) errors.push(`${m.id}: invalid cost tier ${m.cost}`);
-  if (/[A-Z ]/.test(m.providerModel) && m.provider !== "minimax") {
+  if (/[A-Z ]/.test(m.providerModel) && m.provider !== "minimax" && m.provider !== "meta") {
     warnings.push(`${m.id}: providerModel has uppercase/spaces — double-check exact API casing`);
   }
 }

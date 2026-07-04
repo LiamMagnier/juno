@@ -5,8 +5,10 @@ The curated registry lives in `src/lib/models.ts` (chat in `CURATED`, image/vide
 invariants (unique ids, one *current* per family/modality, defaults, migrations).
 
 **Last full audit: 2026-07-01** — every provider verified against its official model
-docs, deprecation/lifecycle pages, pricing pages, and changelogs. Model availability
-changes often; re-audit quarterly or when a provider announces a retirement wave.
+docs, deprecation/lifecycle pages, pricing pages, and changelogs. **Targeted refresh:
+2026-07-04** for OpenAI, Meta/Llama, Z.AI, Mistral and Qwen after updating the selector.
+Model availability changes often; re-audit quarterly or when a provider announces a
+retirement wave.
 
 Status meanings: `current` = latest active generation of its family · `legacy` =
 still callable, superseded · `deprecated` = provider-announced retirement date
@@ -22,26 +24,34 @@ Sources: platform.claude.com/docs models overview · model-deprecations · prici
 - Retired: entire Claude 3.x line (3 Opus/Sonnet/Haiku, 3.5 Sonnet ×2, 3.5 Haiku).
 - Note: "retirement not sooner than" dates on legacy 4.x models are tentative.
 
-## OpenAI — checked 2026-07-01
+## OpenAI — checked 2026-07-04
 Sources: developers.openai.com/api/docs models · models/all index · deprecations · pricing.
-- Current: `gpt-5.5` ($5/$30, 1.05M ctx, effort none→xhigh), `gpt-5.5-pro`, `gpt-5.4` (affordable frontier tier — OpenAI's own labeling), `gpt-5.4-mini`, `gpt-5.4-nano`. Image: `gpt-image-2`.
+- Current selectable: `gpt-5.5` ($5/$30, 1.05M ctx, effort none→xhigh), `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.3-codex`. Legacy selectable: `gpt-5.2`, `gpt-5.1`, `gpt-5.2-codex`; deprecated/older Codex variants warn in the picker.
+- Responses-only / long-running Pro variants (`gpt-5.5-pro`, `gpt-5.4-pro`, `gpt-5.2-pro`, `gpt-5.1-codex`) are catalogued but disabled (`comingSoon`) until Juno has a Responses API adapter. The chat route also rejects `comingSoon` ids so a spoofed request cannot route them through Chat Completions.
+- Image: `gpt-image-2` current, `gpt-image-1.5` legacy, `gpt-image-1` deprecated.
 - **`gpt-5.5-thinking` and `gpt-5.5-mini` are NOT API ids** (ChatGPT product names); they migrate to `gpt-5.5` / `gpt-5.4-mini`.
 - Deprecated wave (shutdowns): o3-deep-research & o4-mini-deep-research 2026-07-23; o3-mini, gpt-4-turbo, gpt-4o snapshots, gpt-3.5-turbo, gpt-image-1 2026-10-23; o3, gpt-5/-mini/-pro snapshots 2026-12-11.
 - Retired: o1-preview (2025-07-28), o1-mini (2025-10-27), **DALL·E 2 & 3 (2026-05-12)** — dall-e-3 had been wrongly listed as the current image model.
-- Uncertain: gpt-5.4-nano ctx/maxOut unverified; GPT-5.6 is preview-only with no API id; sora-2 deprecated with unclear successor (not registered).
+- Uncertain: GPT-5.6 is preview-only with no API id; Sora 2 is deprecated with unclear successor and no video adapter in Juno (not registered).
 
 ## Google — checked 2026-07-01
 Sources: ai.google.dev/gemini-api/docs models · deprecations · image-generation · video · pricing · changelog.
 - Chat current: `gemini-3.5-flash` (GA May 2026 flagship), `gemini-3.1-pro-preview` (no GA id yet), `gemini-3.1-flash-lite`.
 - Image current — **the Nano Banana family, not Imagen** (the app previously had this backwards): `gemini-3-pro-image` (Nano Banana Pro), `gemini-3.1-flash-image` (Nano Banana 2), `gemini-3.1-flash-lite-image` (Nano Banana 2 Lite). "nano-banana-*" were never chat ids.
 - Image deprecated: `gemini-2.5-flash-image` (2026-10-02), `imagen-4.0-generate-001` (2026-08-17 — the whole Imagen line is sunsetting). Imagen 3 retired 2025-11-10; `imagen-3.0-fast-002` never existed.
-- Video current: `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, `gemini-omni-flash-preview` (conversational video editing, public preview Jun 30 2026). **Veo 2.0/3.0 shut down 2026-06-30.**
+- Video current: `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, `gemini-omni-flash-preview` (conversational video editing, public preview Jun 30 2026). Juno currently wires Veo only, so Gemini Omni is kept out of `/api/models` until an adapter exists. **Veo 2.0/3.0 shut down 2026-06-30.**
 - Deprecated chat: gemini-2.5-pro/flash retire 2026-10-16.
 
-## Zhipu / Z.AI — checked 2026-07-01
+## Meta / Llama — checked 2026-07-04
+Sources: llama.developer.meta.com docs models · OpenAI compatibility · image understanding · rate limits.
+- Provider: OpenAI-compatible endpoint `https://api.llama.com/compat/v1`; key env is `LLAMA_API_KEY`. `META_API_KEY` is accepted as a backward-compatible local alias only.
+- Current: `Llama-4-Maverick-17B-128E-Instruct-FP8` and `Llama-4-Scout-17B-16E-Instruct-FP8`, both multimodal. Legacy: `Llama-3.3-70B-Instruct`.
+- Removed: `muse-max`, `muse-spark`, `muse-flash` were placeholders/wrong names and migrate to Llama 4 replacements.
+
+## Zhipu / Z.AI — checked 2026-07-04
 Sources: docs.z.ai model guides + pricing · docs.bigmodel.cn model overview.
-- Current: `glm-5.2` (flagship, 1M ctx), `glm-5-turbo`, `glm-5v-turbo` (vision), `glm-4.7-flash` (free tier). Image: `glm-image` (docs call it the "new flagship" — statuses were swapped with CogView-4 in the app). Video: `cogvideox-3`.
-- Legacy: glm-5.1, glm-5, glm-4.7, glm-4.6, glm-4.6v, glm-4.5-flash, cogview-4.
+- Current: `glm-5.2` (flagship, 1M ctx), `glm-5-turbo`, `glm-5v-turbo` (vision), `glm-4.7-flash`, `glm-4.7-flashx`, plus the documented `glm-4.6v-flashx` / `glm-4.6v-flash` vision fast tiers. Image: `glm-image`. Video: `cogvideox-3`.
+- Legacy: glm-5.1, glm-5, glm-4.7, glm-4.6, glm-4.6v, glm-4.5v, glm-4.5-x, glm-4.5-air, glm-4.5-airx, glm-4-32b-0414-128k, glm-4.5-flash, cogview-4.
 - Retired: `glm-4-plus` (absent from all current listings; no formal notice).
 - Zhipu publishes no deprecation dates; legacy status is inferred from supersession.
 
@@ -59,9 +69,9 @@ Sources: api-docs.deepseek.com pricing · updates · list-models · V4 release n
 - Retired: `deepseek-coder` (merged into chat with V2.5 back in Sept 2024).
 - Uncertain: V4 vision appears app-only, not API — vision=false.
 
-## Mistral — checked 2026-07-01
+## Mistral — checked 2026-07-04
 Sources: docs.mistral.ai models overview + model cards + changelog · mistral.ai/pricing/api.
-- Current: `mistral-medium-latest` → **Medium 3.5** (frontier, reasoning effort — was wrongly "legacy" in the app), `mistral-large-latest` → **Large 3** (open-weight, cheap), `mistral-small-latest` → **Small 4** (also wrongly legacy), `codestral-latest` (25.08), `ministral-14b-latest` (8b/3b also exist, unregistered).
+- Current: `mistral-medium-latest` → **Medium 3.5** (frontier, reasoning effort — was wrongly "legacy" in the app), `mistral-large-latest` → **Large 3** (open-weight, cheap), `mistral-small-latest` → **Small 4** (also wrongly legacy), `codestral-latest` (25.08), `ministral-14b-latest`, `ministral-8b-latest`, `ministral-3b-latest`.
 - Deprecated: magistral-medium-2509 retires **2026-07-31** (reasoning folded into Medium 3.5), devstral-2512 (May 2026).
 - Retired: mistral-large-2411 & the entire Pixtral line (2026-05-31).
 - `-latest` aliases remain the official primary names.
@@ -69,6 +79,7 @@ Sources: docs.mistral.ai models overview + model cards + changelog · mistral.ai
 ## xAI / Grok — checked 2026-07-01
 Sources: docs.x.ai models + model cards · may-15-retirement migration page · release notes.
 - Current: `grok-4.3` (recommended flagship; effort none/low/medium/high), `grok-build-0.1` (agentic coding), `grok-4.20-multi-agent-0309` (beta deep research). Image: `grok-imagine-image-quality` (recommended) + `grok-imagine-image` (budget). Video: `grok-imagine-video`, `grok-imagine-video-1.5` (preview, I2V-only).
+- Juno wires Grok image generation, but not Grok Imagine video jobs yet. xAI video models are filtered from `/api/models` until a video adapter exists.
 - Legacy: grok-4.20-0309-reasoning / -non-reasoning.
 - Retired (2026-05-15 wave): grok-4-0709 (+ alias grok-4 — now silently redirects to 4.3), grok-4/4.1-fast ×4, grok-code-fast-1, grok-3, grok-imagine-image-pro. Feb 28 2026: grok-3-mini, grok-2-image-1212, grok-2-vision-1212.
 - **`grok-3-image` never existed** — it was a fabricated id in the app.
@@ -76,6 +87,7 @@ Sources: docs.x.ai models + model cards · may-15-retirement migration page · r
 ## ByteDance Seedance (BytePlus ModelArk) — checked 2026-07-01
 Sources: docs.byteplus.com ModelArk model list · video tutorial · pricing · deprecations · model cards.
 - Current: `dreamina-seedance-2-0-260128` (flagship, audio, 4K), `dreamina-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-mini-260615`. Note the **dreamina- prefix** on the 2.0 line (BytePlus international; mainland Volcengine uses doubao-).
+- Juno does not yet have a Seedance async video adapter, so these models are catalogued but filtered from `/api/models` until support is wired.
 - Legacy: `seedance-1-5-pro-251215` (first audio+video model), `seedance-1-0-pro-250528` (the app's old "current" — still callable, two generations back), seedance-1-0-pro-fast-251015 (unregistered).
 - Retired: Seedance 1.0 Lite t2v/i2v (deactivated 2026-05-13).
 - Uncertain: 2.0 per-video pricing table parsed from client-side JSON; re-verify in console.
@@ -94,13 +106,14 @@ Sources: mimo.mi.com docs (quick-start / pricing) · litellm xiaomi_mimo provide
 
 ---
 
-## Alibaba Qwen (DashScope / Model Studio) — added 2026-07-04
+## Alibaba Qwen (DashScope / Model Studio) — checked 2026-07-04
 Sources: help.aliyun.com Model Studio model list · dashscope OpenAI-compatible guide · qwen model cards.
 - Endpoint: OpenAI-compatible mode. International (default) `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`; Beijing/China `https://dashscope.aliyuncs.com/compatible-mode/v1` (set `QWEN_BASE_URL`). Key env: **`DASHSCOPE_API_KEY`** (`sk-…`).
 - Thinking is provider-specific: Qwen uses `enable_thinking` (bool) + `thinking_budget` (int) in the request body, **not** OpenAI's `reasoning_effort`. `openai-compat.ts` maps Juno's effort tiers to a thinking budget and omits `reasoning_effort` for this provider. Instant = `enable_thinking:false`.
-- Current: `qwen3-max` (flagship), `qwen-plus` (balanced hybrid, 1M ctx), `qwen-flash` (cheap, 1M ctx), `qwen3-vl-plus` (vision), `qwen3-coder-plus` (agentic coding, non-thinking), `qwen3-235b-a22b` + `qwen3-30b-a3b` (open-weight MoE).
-- Legacy: `qwen-max` (2.5 line), `qwen-turbo` (→ Qwen Flash), `qwen-vl-max`, `qwq-plus` (QwQ reasoner, superseded by Qwen3 thinking).
-- Discovery: DashScope exposes `GET /models`, so `npm run sync:models:write` surfaces every other Qwen id the account can call with guessed metadata. Families in `model-discovery-core.ts` label coder/vl/max/plus/flash/turbo/qwq.
+- Current: `qwen3.7-max` (flagship), `qwen3.7-plus` (balanced multimodal hybrid, 1M ctx), `qwen3.6-flash` (cheap multimodal, 1M ctx), and `qwen-long`.
+- Legacy: `qwen3.6-plus`, `qwen3.5-plus`, `qwen3.5-flash`, `qwen3-vl-plus`, `qwen3-vl-flash`, `qwen-max`, `qwen-turbo`, `qwen-vl-max`, `qwq-plus`.
+- Deprecated / near retirement: `qwen3-coder-plus`, `qwen3-235b-a22b`, `qwen3-30b-a3b` retire **2026-07-08** in the hosted Model Studio listings. Old selector ids `qwen3-max`, `qwen-plus`, and `qwen-flash` migrate to the current versioned ids.
+- Discovery: DashScope exposes `GET /models`, so `npm run sync:models:write` surfaces every other Qwen id the account can call with guessed metadata. Families in `model-discovery-core.ts` label max/plus/flash/long/coder/vl/turbo/qwq.
 - Uncertain: exact per-model context windows and prices vary by account/region — figures here are provider estimates; re-verify against the Model Studio console pricing.
 
 ## Maintenance checklist

@@ -57,6 +57,16 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
+      if (pm.includes("gpt-5.5-pro") || pm.includes("gpt-5.4-pro")) return { input: 30, output: 180 };
+      if (pm.includes("gpt-5.5")) return { input: 5, output: 30 };
+      if (pm.includes("gpt-5.4-nano")) return { input: 0.2, output: 1.25 };
+      if (pm.includes("gpt-5.4-mini")) return { input: 0.75, output: 4.5 };
+      if (pm.includes("gpt-5.4")) return { input: 2.5, output: 15 };
+      if (pm.includes("gpt-5.3-codex")) return { input: 1.25, output: 10 };
+      if (pm.includes("gpt-5.2-pro")) return { input: 21, output: 168 };
+      if (pm.includes("gpt-5.2")) return { input: 1.75, output: 14 };
+      if (pm.includes("gpt-5.1-codex-mini")) return { input: 0.25, output: 2 };
+      if (pm.includes("gpt-5.1")) return { input: 1.25, output: 10 };
       if (pm.includes("nano")) return { input: 0.1, output: 0.4 };
       if (pm.includes("mini")) return { input: 0.25, output: 2 };
       if (pm.includes("gpt-5")) return { input: 1.25, output: 10 };
@@ -67,9 +77,9 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("pro")) return { input: 1.25, output: 10 };
       return { input: 0.3, output: 2.5 }; // flash-class
     case "meta":
-      if (pm.includes("max")) return { input: 3, output: 12 };
-      if (pm.includes("flash")) return { input: 0.2, output: 0.8 };
-      return { input: 0.8, output: 3 }; // muse-spark
+      if (pm.includes("maverick")) return { input: 0.9, output: 0.9 };
+      if (pm.includes("scout")) return { input: 0.4, output: 0.4 };
+      return { input: 0.4, output: 0.4 };
     case "deepseek":
       if (pm.includes("reason")) return { input: 0.55, output: 2.19 };
       return { input: 0.27, output: 1.1 };
@@ -83,6 +93,10 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.2, output: 0.6 };
     case "xai":
       return { input: 3, output: 15 };
+    case "qwen":
+      if (pm.includes("qwen3.7-max")) return { input: 1.25, output: 3.75 };
+      if (pm.includes("flash")) return { input: 0.19, output: 1.13 };
+      return { input: 0.4, output: 1.2 };
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };
