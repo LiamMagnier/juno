@@ -21,7 +21,7 @@ services:
       # Lets you test end-to-end with the mock voice, no provider keys needed.
       - key: RELAY_ENABLE_MOCK
         value: "1"
-      # MUST equal the AUTH_SECRET in your Vercel project.
+      # MUST equal the AUTH_SECRET used by the main app (the VM / your host).
       - key: AUTH_SECRET
         sync: false
       - key: OPENAI_API_KEY
@@ -33,4 +33,4 @@ services:
       - key: MINIMAX_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
-        value: https://juno-zeta-navy.vercel.app
+        value: https://chat.liams.dev
