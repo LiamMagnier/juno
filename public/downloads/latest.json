@@ -1,7 +1,7 @@
 {
-  "version": "1.9",
-  "build": 13,
-  "url": "https://juno-zeta-navy.vercel.app/downloads/Juno.dmg",
-  "notes": "Fixed the gray overlay on the sidebar (worst in light mode) \u2014 it was a mis-placed dim layer, now gone.",
+  "version": "2.0",
+  "build": 14,
+  "url": "https://chat.liams.dev/downloads/Juno.dmg",
+  "notes": "Now connects to the new self-hosted server (chat.liams.dev) instead of Vercel. Removed the demo-mode onboarding link; use the web sign-in button to connect.",
   "minimumSystemVersion": "26.0"
 }
