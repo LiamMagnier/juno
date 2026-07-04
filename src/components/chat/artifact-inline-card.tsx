@@ -173,8 +173,15 @@ export function ArtifactInlineCard({
     setRunStatus("idle");
     setRunNonce(0);
     setConsoleEntries([]);
-    setView(inlinePreview ? "preview" : "code");
-  }, [content, type, language, inlinePreview]);
+  }, [type, language, streaming]);
+
+  React.useEffect(() => {
+    if (streaming) {
+      setView("code");
+    } else {
+      setView(inlinePreview ? "preview" : "code");
+    }
+  }, [streaming, inlinePreview]);
 
   const showPreview = inlinePreview && view === "preview";
   const showConsole = hasConsole && view === "console";
@@ -262,19 +269,7 @@ export function ArtifactInlineCard({
         </div>
       </header>
 
-      {streaming ? (
-        <div className="grid min-h-[260px] place-items-center bg-[linear-gradient(135deg,hsl(var(--primary)/0.08),transparent_45%),hsl(var(--background)/0.42)] p-5">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <span className="flex size-12 items-center justify-center rounded-[14px] border border-primary/25 bg-primary/10 text-primary shadow-soft">
-              <ThinkingDots className="text-primary" />
-            </span>
-            <div>
-              <p className="font-serif text-heading">Writing artifact</p>
-              <p className="text-sm text-muted-foreground">The preview will appear here when the source is ready.</p>
-            </div>
-          </div>
-        </div>
-      ) : hasContent ? (
+      {hasContent ? (
         showPreview ? (
           <div className="bg-[hsl(var(--muted)/0.3)] p-2.5 sm:p-3">
             {/* Live preview framed as a window so the white canvas reads intentional. */}
@@ -309,6 +304,18 @@ export function ArtifactInlineCard({
             <SourcePreview content={resolvedContent} language={sourceLanguage} />
           </div>
         )
+      ) : streaming ? (
+        <div className="grid min-h-[260px] place-items-center bg-[linear-gradient(135deg,hsl(var(--primary)/0.08),transparent_45%),hsl(var(--background)/0.42)] p-5">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <span className="flex size-12 items-center justify-center rounded-[14px] border border-primary/25 bg-primary/10 text-primary shadow-soft">
+              <ThinkingDots className="text-primary" />
+            </span>
+            <div>
+              <p className="font-serif text-heading">Writing artifact</p>
+              <p className="text-sm text-muted-foreground">Preparing source code...</p>
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="grid min-h-[180px] place-items-center bg-background/35 p-5 text-center">
           <div className="max-w-sm">

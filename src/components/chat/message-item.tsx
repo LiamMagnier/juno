@@ -405,10 +405,10 @@ export function MessageItem({
                     <ArtifactInlineCard
                       key={i}
                       streaming={part.streaming && message.streaming}
-                      title={artifact?.title ?? "Artifact"}
-                      type={artifact?.type ?? "CODE"}
-                      language={artifact?.language}
-                      content={artifact?.content}
+                      title={artifact?.title ?? part.title ?? "Artifact"}
+                      type={artifact?.type ?? part.artifactType ?? "CODE"}
+                      language={artifact?.language ?? part.language}
+                      content={artifact?.content ?? part.content}
                       onOpen={part.identifier && artifact ? () => onOpenArtifact(part.identifier, { fullscreen: false }) : undefined}
                     />
                   );

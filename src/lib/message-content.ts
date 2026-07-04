@@ -135,7 +135,15 @@ export function cleanForDisplay(text: string): string {
 
 export type ContentPart =
   | { type: "text"; text: string }
-  | { type: "artifact"; identifier: string; streaming?: boolean }
+  | {
+      type: "artifact";
+      identifier: string;
+      streaming?: boolean;
+      title?: string;
+      artifactType?: ArtifactType;
+      language?: string;
+      content?: string;
+    }
   | { type: "learning"; parsed: ParsedLearningBlock };
 
 function pushTextParts(parts: ContentPart[], text: string) {
@@ -178,7 +186,15 @@ export function splitMessageContent(raw: string): ContentPart[] {
     const before = rest.slice(0, open.index);
     pushTextParts(parts, before);
     const attrs = parseAttrs(open[1]);
-    parts.push({ type: "artifact", identifier: artifactId(attrs, open[2]), streaming: true });
+    parts.push({
+      type: "artifact",
+      identifier: artifactId(attrs, open[2]),
+      streaming: true,
+      title: attrs.title || "Untitled artifact",
+      artifactType: normalizeType(attrs.type),
+      language: attrs.language || undefined,
+      content: open[2],
+    });
   } else {
     const partialIdx = rest.indexOf("<juno:artifact");
     if (partialIdx !== -1 && !rest.slice(partialIdx).includes(">")) {
