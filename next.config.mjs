@@ -12,6 +12,17 @@ const nextConfig = {
       { protocol: "https", hostname: "**" },
     ],
   },
+  async rewrites() {
+    if (process.env.RENDER_BACKEND_URL) {
+      return [
+        {
+          source: "/api/:path*",
+          destination: `${process.env.RENDER_BACKEND_URL}/api/:path*`,
+        },
+      ];
+    }
+    return [];
+  },
 };
 
 export default nextConfig;
