@@ -1,0 +1,28 @@
+# Fly.io config for the Juno voice relay.
+# Deploy from THIS directory: `cd relay && fly deploy`.
+# Region cdg = Paris (EU data residency). Rename `app` if the name is taken.
+app = "juno-voice-relay"
+primary_region = "cdg"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8787
+  force_https = true
+  # Scale to zero when idle to save money; an incoming connection wakes it
+  # (~1-2s cold start on the first call). A live call keeps it running.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/healthz"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
