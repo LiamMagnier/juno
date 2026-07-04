@@ -51,12 +51,13 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["haiku"], metric: metric(1, 5, 200_000, 9, 7) },
   ],
   openai: [
-    { hints: ["gpt-5.5-pro"], metric: metric(15, 120, 1_050_000, 2, 10) },
+    { hints: ["gpt-5.5-pro"], metric: official(30, 180, 1_050_000, 2, 10) },
     { hints: ["gpt-5.5"], metric: official(5, 30, 1_050_000, 5, 9) },
-    { hints: ["gpt-5.4-pro"], metric: metric(12, 90, 400_000, 2, 9) },
-    { hints: ["gpt-5.4-mini"], metric: metric(0.5, 2.5, 400_000, 9, 7) },
-    { hints: ["gpt-5.4-nano"], metric: metric(0.1, 0.5, 400_000, 10, 5) },
-    { hints: ["gpt-5.4"], metric: metric(1.25, 10, 1_050_000, 7, 8) },
+    { hints: ["gpt-5.4-pro"], metric: official(30, 180, 400_000, 2, 9) },
+    { hints: ["gpt-5.4-mini"], metric: official(0.75, 4.5, 400_000, 9, 7) },
+    { hints: ["gpt-5.4-nano"], metric: official(0.2, 1.25, 400_000, 10, 5) },
+    { hints: ["gpt-5.4"], metric: official(2.5, 15, 1_050_000, 7, 8) },
+    { hints: ["gpt-5.3-codex"], metric: metric(1.25, 10, 400_000, 4, 9) },
     { hints: ["gpt-5-pro"], metric: metric(15, 120, 400_000, 2, 9) },
     { hints: ["gpt-5-mini"], metric: metric(0.25, 2, 400_000, 9, 6) },
     { hints: ["gpt-5-nano"], metric: metric(0.05, 0.4, 400_000, 10, 4) },
@@ -85,9 +86,10 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: metric(1.25, 10, 1_048_576, 5, 8) },
   ],
   meta: [
-    { hints: ["muse-max"], metric: metric(3, 12, 1_000_000, 4, 9) },
-    { hints: ["muse-flash"], metric: metric(0.2, 0.8, 512_000, 9, 6) },
-    { hints: ["muse"], metric: metric(0.8, 3, 1_000_000, 7, 8) },
+    { hints: ["maverick"], metric: metric(0.9, 0.9, 1_000_000, 6, 8) },
+    { hints: ["scout"], metric: metric(0.4, 0.4, 10_000_000, 8, 7) },
+    { hints: ["llama-3.3"], metric: metric(0.2, 0.2, 128_000, 8, 6) },
+    { hints: ["llama"], metric: metric(0.4, 0.4, 1_000_000, 7, 7) },
   ],
   zhipu: [
     { hints: ["glm-5.2"], metric: metric(0.8, 2.8, 1_000_000, 5, 9) },
@@ -148,6 +150,13 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: metric(0.4, 1.6, 256_000, 5, 9) },
   ],
   qwen: [
+    { hints: ["qwen3.7-max"], metric: metric(1.25, 3.75, 1_000_000, 4, 9) },
+    { hints: ["qwen3.7-plus"], metric: metric(0.4, 1.2, 1_000_000, 6, 8) },
+    { hints: ["qwen3.6-plus"], metric: metric(0.4, 1.2, 1_000_000, 7, 8) },
+    { hints: ["qwen3.6-flash"], metric: metric(0.19, 1.13, 1_000_000, 9, 6) },
+    { hints: ["qwen3.5-plus"], metric: metric(0.4, 1.2, 1_000_000, 7, 7) },
+    { hints: ["qwen3.5-flash"], metric: metric(0.19, 1.13, 1_000_000, 9, 5) },
+    { hints: ["qwen-long"], metric: metric(0.4, 1.2, 10_000_000, 5, 6) },
     { hints: ["qwen3-max"], metric: metric(1.2, 6, 262_144, 4, 9) },
     { hints: ["qwen3-coder"], metric: metric(1, 5, 1_000_000, 6, 8) },
     { hints: ["qwen3-vl"], metric: metric(0.8, 3.2, 262_144, 6, 8) },
@@ -169,7 +178,7 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   anthropic: metric(3, 15, 200_000, 6, 8),
   openai: metric(2.5, 15, 400_000, 6, 8),
   google: metric(0.5, 3, 1_048_576, 8, 7),
-  meta: metric(0.8, 3, 1_000_000, 6, 8),
+  meta: metric(0.4, 0.4, 1_000_000, 7, 7),
   zhipu: metric(0.6, 2.2, 200_000, 6, 7),
   moonshot: metric(1, 4, 262_144, 5, 8),
   deepseek: metric(0.4, 1.4, 1_000_000, 6, 8),
@@ -263,7 +272,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps(LMHX, true); // opus 4.6/4.7/4.8, sonnet 4.6/5
     case "openai":
       if (/gpt-5(\.\d)?-pro/.test(id)) return caps([], false); // pro tier (5-pro/5.4-pro/5.5-pro): fixed effort, no control
-      if (id.includes("gpt-5.5") || id.includes("gpt-5.2")) return caps(LMHX, true);
+      if (id.includes("gpt-5.5") || id.includes("gpt-5.3-codex") || id.includes("gpt-5.2")) return caps(LMHX, true);
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
       if (id.includes("gpt-5")) return caps(LMH, true); // gpt-5, gpt-5.1 (no "max")
       return caps(LMH, true);

@@ -206,9 +206,9 @@ async function handleChat(req: Request) {
         : DEFAULT_MODEL;
 
   let modelInfo: ModelInfo | undefined = getModel(requestedId);
-  if (!modelInfo || !isProviderConfigured(modelInfo.provider) || !canUseModel(plan, modelInfo.id)) {
+  if (!modelInfo || modelInfo.comingSoon || !isProviderConfigured(modelInfo.provider) || !canUseModel(plan, modelInfo.id)) {
     // Fallback must stay plan-aware: only pick a configured model the plan allows.
-    modelInfo = MODEL_LIST.find((m) => isProviderConfigured(m.provider) && canUseModel(plan, m.id));
+    modelInfo = MODEL_LIST.find((m) => !m.comingSoon && isProviderConfigured(m.provider) && canUseModel(plan, m.id));
   }
   if (!modelInfo) {
     const msg =

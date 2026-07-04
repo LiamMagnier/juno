@@ -63,7 +63,7 @@ export async function POST(req: Request) {
   const { prompt, model: modelId, edit } = parsed.data;
 
   const model = resolveModel(modelId);
-  if (!model || model.modality === "chat") {
+  if (!model || model.comingSoon || model.modality === "chat") {
     return NextResponse.json({ error: "That model can't generate media." }, { status: 400 });
   }
   if (!isProviderConfigured(model.provider)) {

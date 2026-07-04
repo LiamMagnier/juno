@@ -51,7 +51,7 @@ const FREE_RE = /(flash|mini|nano|lite|haiku|air|small|8b|14b|free|highspeed|v4-
 const EXPENSIVE_RE = /(opus|fable|mythos|gpt-5\.\d-pro|^o\d|-o\d|large|grok-4|reasoner|ultra|max\b|405b|magistral-medium|v4-pro)/i;
 const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
-  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|qwen3-(max|235|30|vl)|qwen-(plus|flash)|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
+  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|qwen3(\.[5-9]|-(max|235|30|vl))|qwen-(plus|flash)|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
 
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
@@ -136,11 +136,12 @@ const CURATED: ModelInfo[] = [
 
   // —— OpenAI ——
   def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "current", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's flagship — complex reasoning, agents, and long context." }),
-  def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Pro-tier reasoning for the hardest problems — quality over latency." }),
+  def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, comingSoon: true, description: "Responses-only Pro model — disabled until Juno adds a Responses API adapter." }),
   def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "current", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Affordable frontier tier for coding and professional work." }),
   def({ provider: "openai", id: "gpt-5.4-mini", name: "GPT-5.4 Mini", family: "gpt-mini", status: "current", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "OpenAI's strongest mini — fast, cheap coding and subagents." }),
   def({ provider: "openai", id: "gpt-5.4-nano", name: "GPT-5.4 Nano", family: "gpt-nano", status: "current", minPlan: "FREE", vision: true, cost: 1, description: "Cheapest, lowest-latency tier for high-volume simple tasks." }),
-  def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", minPlan: "PRO", vision: true, cost: 3, description: "Previous pro-tier reasoning model — use GPT-5.5 Pro." }),
+  def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, description: "Codex-tuned model for long-running coding, refactors, and agent loops." }),
+  def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", minPlan: "PRO", vision: true, cost: 3, comingSoon: true, description: "Previous Responses-only Pro model — disabled until Juno adds a Responses API adapter." }),
   def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini" }),
   def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
@@ -159,21 +160,29 @@ const CURATED: ModelInfo[] = [
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
   def({ provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", family: "flash", status: "deprecated", minPlan: "FREE", vision: true, cost: 1, description: "2.5-generation Flash.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.5 Flash" }),
 
-  // —— Meta · Muse (catalogued, API not live yet) ——
-  def({ provider: "meta", id: "muse-max", name: "Muse Max", family: "muse-max", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 1_000_000, comingSoon: true, description: "Meta's frontier Muse — deepest reasoning and long-horizon agents." }),
-  def({ provider: "meta", id: "muse-spark", name: "Muse Spark", family: "muse", status: "current", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, comingSoon: true, description: "The everyday Muse — fast, sharp, and a great-value flagship." }),
-  def({ provider: "meta", id: "muse-flash", name: "Muse Flash", family: "muse-flash", status: "current", minPlan: "FREE", vision: true, cost: 1, contextWindow: 512_000, comingSoon: true, description: "Instant, ultra-cheap Muse for high-volume tasks." }),
+  // —— Meta · Llama ——
+  def({ provider: "meta", id: "Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick", family: "llama-maverick", status: "current", minPlan: "PRO", vision: true, reasoning: false, cost: 3, contextWindow: 1_000_000, description: "Meta's Llama 4 multimodal flagship for complex chat, coding and agent tasks." }),
+  def({ provider: "meta", id: "Llama-4-Scout-17B-16E-Instruct-FP8", name: "Llama 4 Scout", family: "llama-scout", status: "current", minPlan: "FREE", vision: true, reasoning: false, cost: 2, contextWindow: 10_000_000, description: "Long-context Llama 4 model for multimodal retrieval and high-volume reasoning." }),
+  def({ provider: "meta", id: "Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", family: "llama-3.3", status: "legacy", minPlan: "FREE", reasoning: false, cost: 1, contextWindow: 128_000, description: "Previous-generation Llama text model, still useful for inexpensive chat." }),
 
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
   def({ provider: "zhipu", id: "glm-5-turbo", name: "GLM-5 Turbo", family: "glm-turbo", status: "current", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Fast, low-latency tier of the GLM-5 generation." }),
   def({ provider: "zhipu", id: "glm-5v-turbo", name: "GLM-5V Turbo", family: "glm-v", status: "current", minPlan: "PRO", vision: true, cost: 2, description: "Latest GLM vision-language model — image understanding." }),
   def({ provider: "zhipu", id: "glm-4.7-flash", name: "GLM-4.7 Flash", family: "glm-flash", status: "current", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Current free-tier GLM — capable and completely free." }),
+  def({ provider: "zhipu", id: "glm-4.7-flashx", name: "GLM-4.7 FlashX", family: "glm-flashx", status: "current", minPlan: "FREE", cost: 1, contextWindow: 200_000, description: "Low-latency GLM FlashX variant for high-throughput chat." }),
   def({ provider: "zhipu", id: "glm-5.1", name: "GLM-5.1", family: "glm", status: "legacy", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "Previous GLM flagship." }),
   def({ provider: "zhipu", id: "glm-5", name: "GLM-5", family: "glm", status: "legacy", minPlan: "PRO", cost: 2, contextWindow: 200_000, description: "First 5-series GLM." }),
   def({ provider: "zhipu", id: "glm-4.7", name: "GLM-4.7", family: "glm", status: "legacy", minPlan: "PRO", cost: 1, contextWindow: 200_000, description: "Cheaper previous-generation workhorse." }),
   def({ provider: "zhipu", id: "glm-4.6", name: "GLM-4.6", family: "glm", status: "legacy", minPlan: "PRO", cost: 1, description: "Older 4.x generation." }),
   def({ provider: "zhipu", id: "glm-4.6v", name: "GLM-4.6V", family: "glm-v", status: "legacy", minPlan: "FREE", vision: true, cost: 1, description: "Previous-generation vision model." }),
+  def({ provider: "zhipu", id: "glm-4.6v-flashx", name: "GLM-4.6V FlashX", family: "glm-v-flashx", status: "current", minPlan: "FREE", vision: true, cost: 1, description: "Fast GLM vision-language model for image understanding." }),
+  def({ provider: "zhipu", id: "glm-4.6v-flash", name: "GLM-4.6V Flash", family: "glm-v-flash", status: "current", minPlan: "FREE", vision: true, cost: 1, description: "Cheaper GLM vision-language model for image understanding." }),
+  def({ provider: "zhipu", id: "glm-4.5v", name: "GLM-4.5V", family: "glm-v", status: "legacy", minPlan: "FREE", vision: true, cost: 1, description: "Older GLM vision-language model." }),
+  def({ provider: "zhipu", id: "glm-4.5-x", name: "GLM-4.5-X", family: "glm-x", status: "legacy", minPlan: "PRO", cost: 2, description: "Older high-capability GLM-4.5 variant." }),
+  def({ provider: "zhipu", id: "glm-4.5-air", name: "GLM-4.5 Air", family: "glm-air", status: "legacy", minPlan: "FREE", cost: 1, description: "Older efficient GLM-4.5 Air variant." }),
+  def({ provider: "zhipu", id: "glm-4.5-airx", name: "GLM-4.5 AirX", family: "glm-airx", status: "legacy", minPlan: "FREE", cost: 1, description: "Older low-latency GLM-4.5 AirX variant." }),
+  def({ provider: "zhipu", id: "glm-4-32b-0414-128k", name: "GLM-4 32B 128K", family: "glm-4-32b", status: "legacy", minPlan: "FREE", cost: 1, contextWindow: 128_000, description: "Older open GLM-4 32B long-context model." }),
   def({ provider: "zhipu", id: "glm-4.5-flash", name: "GLM-4.5 Flash", family: "glm-flash", status: "legacy", minPlan: "FREE", cost: 1, contextWindow: 128_000, description: "Older free-tier model." }),
 
   // —— Moonshot / Kimi ——
@@ -195,6 +204,8 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "mistral-small-latest", name: "Mistral Small 4", family: "small", status: "current", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Cost-efficient hybrid — instruct, reasoning, and vision in one." }),
   def({ provider: "mistral", id: "codestral-latest", name: "Codestral", family: "codestral", status: "current", minPlan: "PRO", cost: 1, contextWindow: 262_144, description: "Low-latency code completion and fill-in-the-middle." }),
   def({ provider: "mistral", id: "ministral-14b-latest", name: "Ministral 3 14B", family: "ministral", status: "current", minPlan: "FREE", cost: 1, description: "Small dense model — strong cost/performance for high volume." }),
+  def({ provider: "mistral", id: "ministral-8b-latest", name: "Ministral 3 8B", family: "ministral-8b", status: "current", minPlan: "FREE", cost: 1, description: "Compact Ministral 3 tier for inexpensive high-volume tasks." }),
+  def({ provider: "mistral", id: "ministral-3b-latest", name: "Ministral 3 3B", family: "ministral-3b", status: "current", minPlan: "FREE", cost: 1, description: "Smallest Ministral 3 tier for lowest-latency simple tasks." }),
   def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5" }),
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
@@ -216,13 +227,18 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
-  def({ provider: "qwen", id: "qwen3-max", name: "Qwen3 Max", family: "qwen-max", status: "current", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 262_144, description: "Alibaba's flagship — frontier reasoning, coding and agentic tasks." }),
-  def({ provider: "qwen", id: "qwen-plus", name: "Qwen Plus", family: "qwen-plus", status: "current", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced hybrid-thinking model — strong quality at low cost, 1M context." }),
-  def({ provider: "qwen", id: "qwen-flash", name: "Qwen Flash", family: "qwen-flash", status: "current", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen — high-volume tasks with 1M context." }),
-  def({ provider: "qwen", id: "qwen3-vl-plus", name: "Qwen3-VL Plus", family: "qwen-vl", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Vision-language flagship — image and video understanding with thinking." }),
-  def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "current", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Agentic coding flagship — repo-scale, tool-calling code generation." }),
-  def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "current", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 262_144, description: "Open-weight MoE flagship (235B total / 22B active) with toggleable thinking." }),
-  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "current", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 262_144, description: "Efficient open-weight MoE (30B total / 3B active) — fast and cheap." }),
+  def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "current", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Alibaba's current flagship — frontier reasoning, coding and agentic tasks." }),
+  def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
+  def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
+  def({ provider: "qwen", id: "qwen3.6-plus", name: "Qwen3.6 Plus", family: "qwen-plus", status: "legacy", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous Plus generation, superseded by Qwen3.7 Plus." }),
+  def({ provider: "qwen", id: "qwen3.5-plus", name: "Qwen3.5 Plus", family: "qwen-plus", status: "legacy", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Older Plus generation." }),
+  def({ provider: "qwen", id: "qwen3.5-flash", name: "Qwen3.5 Flash", family: "qwen-flash", status: "legacy", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Older Flash generation." }),
+  def({ provider: "qwen", id: "qwen-long", name: "Qwen Long", family: "qwen-long", status: "current", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 10_000_000, description: "Long-context Qwen model for retrieval-heavy document and code tasks." }),
+  def({ provider: "qwen", id: "qwen3-vl-plus", name: "Qwen3-VL Plus", family: "qwen-vl", status: "legacy", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Previous vision-language flagship, superseded by Qwen3.7 Plus." }),
+  def({ provider: "qwen", id: "qwen3-vl-flash", name: "Qwen3-VL Flash", family: "qwen-vl-flash", status: "legacy", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Previous fast vision-language model, superseded by Qwen3.6 Flash." }),
+  def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "deprecated", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Agentic coding model superseded by Qwen3.7 Plus.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus" }),
+  def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "deprecated", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 262_144, description: "Open-weight MoE flagship (235B total / 22B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus" }),
+  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "deprecated", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 262_144, description: "Efficient open-weight MoE (30B total / 3B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.6 Flash" }),
   def({ provider: "qwen", id: "qwen-max", name: "Qwen Max", family: "qwen-max", status: "legacy", minPlan: "PRO", cost: 3, contextWindow: 32_768, description: "Previous-generation Qwen-Max (2.5 line)." }),
   def({ provider: "qwen", id: "qwen-turbo", name: "Qwen Turbo", family: "qwen-flash", status: "legacy", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Older ultra-cheap tier, superseded by Qwen Flash." }),
   def({ provider: "qwen", id: "qwen-vl-max", name: "Qwen-VL Max", family: "qwen-vl", status: "legacy", minPlan: "PRO", vision: true, cost: 2, contextWindow: 32_768, description: "Previous-generation vision-language model." }),
@@ -234,6 +250,7 @@ const CURATED: ModelInfo[] = [
 const GENERATIVE: ModelInfo[] = [
   // —— Image ——
   def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "current", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
+  def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "legacy", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model." }),
   def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026 — use GPT Image 2" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation — complex composition, text rendering, 4K." }),
   def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "current", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation — 4K, references, Search grounding." }),
@@ -345,6 +362,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
+  // Meta — old placeholder names; the public API is Llama.
+  "meta:muse-max": "meta:Llama-4-Maverick-17B-128E-Instruct-FP8",
+  "meta:muse-spark": "meta:Llama-4-Scout-17B-16E-Instruct-FP8",
+  "meta:muse-flash": "meta:Llama-4-Scout-17B-16E-Instruct-FP8",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
@@ -358,6 +379,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-3": "xai:grok-4.3",
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
+  // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
+  "qwen:qwen3-max": "qwen:qwen3.7-max",
+  "qwen:qwen-plus": "qwen:qwen3.7-plus",
+  "qwen:qwen-flash": "qwen:qwen3.6-flash",
 };
 
 /** Map a stored/legacy model id to its living replacement (identity if fine). */
