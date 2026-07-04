@@ -4,11 +4,15 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { getConnector, isConnectorConfigured, exchangeCodeForTokens, DEFAULT_TOKEN_TTL_MS, type ConnectorOAuthSession } from "@/lib/connectors";
 import { decryptSecret, encryptSecret, verifyState } from "@/lib/crypto";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 
-function back(req: Request, status: "connected" | string, provider: string) {
-  const url = new URL("/connections", req.url);
+// Build post-callback redirects from the configured public app URL, NOT req.url:
+// behind a reverse proxy (nginx) req.url is the internal http://localhost:3000
+// address, which would bounce the browser to a dead local port.
+function back(status: "connected" | string, provider: string) {
+  const url = new URL("/connections", env.appUrl);
   if (status === "connected") url.searchParams.set("connected", provider);
   else url.searchParams.set("error", status);
   return NextResponse.redirect(url);
@@ -19,10 +23,10 @@ function back(req: Request, status: "connected" | string, provider: string) {
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const def = getConnector(id);
-  if (!def || !isConnectorConfigured(def)) return back(req, "not_configured", id);
+  if (!def || !isConnectorConfigured(def)) return back("not_configured", id);
 
   const user = await getCurrentUser();
-  if (!user) return NextResponse.redirect(new URL("/sign-in", req.url));
+  if (!user) return NextResponse.redirect(new URL("/sign-in", env.appUrl));
 
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
@@ -30,23 +34,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const providerError = url.searchParams.get("error");
   if (providerError || !code || !state) {
     if (providerError) console.error("[connectors] provider returned error", def.id, providerError, url.searchParams.get("error_description"));
-    return back(req, "denied", id);
+    return back("denied", id);
   }
 
   // Validate the signed state and match it to this user + connector + nonce cookie.
   const decoded = verifyState(state);
-  if (!decoded) return back(req, "bad_state", id);
+  if (!decoded) return back("bad_state", id);
   let parsed: { u?: string; c?: string; n?: string };
   try {
     parsed = JSON.parse(decoded);
   } catch {
-    return back(req, "bad_state", id);
+    return back("bad_state", id);
   }
   const jar = await cookies();
   const nonceCookie = jar.get(`oauth_nonce_${def.id}`)?.value;
   jar.delete(`oauth_nonce_${def.id}`);
   if (parsed.u !== user.id || parsed.c !== def.id || !parsed.n || parsed.n !== nonceCookie) {
-    return back(req, "bad_state", id);
+    return back("bad_state", id);
   }
 
   // mcp_oauth flows stashed their PKCE verifier + registered client here.
@@ -57,7 +61,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     try {
       session = JSON.parse(decryptSecret(sessionCookie)) as ConnectorOAuthSession;
     } catch {
-      return back(req, "bad_state", id);
+      return back("bad_state", id);
     }
   }
 
@@ -66,7 +70,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     tokens = await exchangeCodeForTokens(def, code, session);
   } catch (err) {
     console.error("[connectors] token exchange failed", def.id, err instanceof Error ? err.message : err);
-    return back(req, "exchange_failed", id);
+    return back("exchange_failed", id);
   }
 
   const accountLabel = await def.fetchAccountLabel(tokens.accessToken).catch(() => null);
@@ -108,5 +112,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     },
   });
 
-  return back(req, "connected", def.id);
+  return back("connected", def.id);
 }

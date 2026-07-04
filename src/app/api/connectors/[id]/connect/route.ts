@@ -4,19 +4,23 @@ import { randomBytes } from "crypto";
 import { getCurrentUser } from "@/lib/session";
 import { getConnector, isConnectorConfigured, buildAuthorizeUrl } from "@/lib/connectors";
 import { encryptSecret, signState } from "@/lib/crypto";
+import { env } from "@/lib/env";
 
 export const runtime = "nodejs";
 
+// Redirects use the configured public app URL, not req.url — behind nginx the
+// latter is the internal http://localhost:3000 address.
+
 // Kick off the OAuth flow: set a signed, single-use state cookie and redirect
 // the user to the provider's consent screen.
-export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
-  if (!user) return NextResponse.redirect(new URL("/sign-in", req.url));
+  if (!user) return NextResponse.redirect(new URL("/sign-in", env.appUrl));
 
   const { id } = await params;
   const def = getConnector(id);
-  if (!def) return NextResponse.redirect(new URL("/connections?error=unknown", req.url));
-  if (!isConnectorConfigured(def)) return NextResponse.redirect(new URL("/connections?error=not_configured", req.url));
+  if (!def) return NextResponse.redirect(new URL("/connections?error=unknown", env.appUrl));
+  if (!isConnectorConfigured(def)) return NextResponse.redirect(new URL("/connections?error=not_configured", env.appUrl));
 
   const nonce = randomBytes(16).toString("hex");
   // State binds the flow to this user + connector + nonce, signed so the
@@ -37,7 +41,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     flow = await buildAuthorizeUrl(def, state);
   } catch (err) {
     console.error("[connectors] failed to build authorize URL", def.id, err instanceof Error ? err.message : err);
-    return NextResponse.redirect(new URL("/connections?error=not_configured", req.url));
+    return NextResponse.redirect(new URL("/connections?error=not_configured", env.appUrl));
   }
 
   // mcp_oauth flows return per-request secrets (PKCE verifier + the client we
