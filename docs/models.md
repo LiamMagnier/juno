@@ -87,8 +87,8 @@ Sources: docs.x.ai models + model cards · may-15-retirement migration page · r
 ## ByteDance Seedance (BytePlus ModelArk) — checked 2026-07-01
 Sources: docs.byteplus.com ModelArk model list · video tutorial · pricing · deprecations · model cards.
 - Current: `dreamina-seedance-2-0-260128` (flagship, audio, 4K), `dreamina-seedance-2-0-fast-260128`, `dreamina-seedance-2-0-mini-260615`. Note the **dreamina- prefix** on the 2.0 line (BytePlus international; mainland Volcengine uses doubao-).
-- Juno does not yet have a Seedance async video adapter, so these models are catalogued but filtered from `/api/models` until support is wired.
-- Legacy: `seedance-1-5-pro-251215` (first audio+video model), `seedance-1-0-pro-250528` (the app's old "current" — still callable, two generations back), seedance-1-0-pro-fast-251015 (unregistered).
+- Seedance async video adapter is now wired (`seedanceAdapter` in `lib/video-gen.ts`: POST `/contents/generations/tasks` → poll `/contents/generations/tasks/{id}`, video at `content.video_url`), so these models now surface in `/api/models`. NOTE: base URL must be an Ark-compatible endpoint (official `https://ark.ap-southeast.bytepluses.com/api/v3` or `https://ark.cn-beijing.volces.com/api/v3`); a third-party proxy may use a different path.
+- Legacy: `seedance-1-5-pro-251215` (first audio+video model), `seedance-1-0-pro-250528` (the app's old "current" — still callable, two generations back), `seedance-1-0-pro-fast-251015` (now registered).
 - Retired: Seedance 1.0 Lite t2v/i2v (deactivated 2026-05-13).
 - Uncertain: 2.0 per-video pricing table parsed from client-side JSON; re-verify in console.
 

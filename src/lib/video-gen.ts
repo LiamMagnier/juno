@@ -238,12 +238,64 @@ const zhipuAdapter: VideoAdapter = {
   },
 };
 
-// xAI Grok Imagine, Seedance, and Gemini Omni have no documented job pattern
-// wired yet — they are registered as unsupported (honest error, no fakes).
+// ---- ByteDance Seedance (BytePlus / Volcengine Ark) ----
+// Async video: POST /contents/generations/tasks → poll GET /contents/generations/tasks/{id}.
+// The task id is `id`; the finished MP4 URL is at `content.video_url` once status is
+// "succeeded". Ark URLs expire after ~24h, but generateVideo downloads immediately.
+
+interface ArkVideoTask {
+  id?: string;
+  status?: string; // queued | running | succeeded | failed | expired | cancelled
+  content?: { video_url?: string };
+  error?: { message?: string; code?: string };
+}
+
+function seedanceAuth(): { base: string; headers: Record<string, string> } {
+  const key = providerApiKey("seedance");
+  if (!key) throw new Error("Seedance (ByteDance Ark) API key is not configured.");
+  const base = (providerBaseUrl("seedance") ?? "https://ark.ap-southeast.bytepluses.com/api/v3").replace(/\/$/, "");
+  return { base, headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" } };
+}
+
+const seedanceAdapter: VideoAdapter = {
+  async start(model, prompt) {
+    const { base, headers } = seedanceAuth();
+    const { ok, status, data, text } = await fetchJson<ArkVideoTask>(`${base}/contents/generations/tasks`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model: model.providerModel, content: [{ type: "text", text: prompt }] }),
+    });
+    if (!ok || !data.id) {
+      throw new Error(`${model.name} rejected the request (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
+    }
+    return data.id;
+  },
+
+  async poll(model, id) {
+    const { base, headers } = seedanceAuth();
+    const { ok, status, data, text } = await fetchJson<ArkVideoTask>(
+      `${base}/contents/generations/tasks/${encodeURIComponent(id)}`,
+      { headers }
+    );
+    if (!ok) throw new Error(`Polling ${model.name} failed (${status}). ${(data.error?.message ?? text).slice(0, 160)}`);
+    const state = (data.status ?? "").toLowerCase();
+    if (state === "failed" || state === "expired" || state === "cancelled" || state === "canceled") {
+      throw new Error(`${model.name} failed: ${data.error?.message ?? state || "generation error"}`);
+    }
+    if (state !== "succeeded") return { status: "running", note: state || undefined };
+    const url = data.content?.video_url;
+    if (!url) throw new Error(`${model.name} returned no video — try rephrasing your prompt.`);
+    return { status: "done", url, mimeType: "video/mp4" };
+  },
+};
+
+// xAI Grok Imagine and Gemini Omni have no documented job pattern wired yet —
+// they are registered as unsupported (honest error, no fakes).
 function adapterFor(model: ModelInfo): VideoAdapter | null {
   if (model.provider === "google" && model.providerModel.startsWith("veo-")) return googleVeoAdapter;
   if (model.provider === "minimax") return minimaxAdapter;
   if (model.provider === "zhipu") return zhipuAdapter;
+  if (model.provider === "seedance") return seedanceAdapter;
   return null;
 }
 
