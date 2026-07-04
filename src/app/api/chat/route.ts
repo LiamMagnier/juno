@@ -34,10 +34,13 @@ import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, 
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
-// The hard wall on generation + thinking time. Vercel caps this by plan:
-// Hobby allows up to 300, Pro up to 800. Set to the Hobby ceiling; raise to 800
-// after upgrading to Pro (and bump RECOVERY_WINDOW_MS in use-chat.ts to match).
-export const maxDuration = 300;
+// Self-hosted (a plain `next start` Node process on the VM) has NO per-request
+// function timeout — the generation runs until the model finishes thinking.
+// `maxDuration` is a Vercel-only directive that `next start` ignores, so we no
+// longer set it: that is what removes the old 300s wall. The only remaining
+// ceiling is nginx's proxy_read_timeout (3600s in deploy/nginx.conf.template),
+// which the 15s SSE heartbeat below keeps resetting so it effectively never
+// fires. Keep RECOVERY_WINDOW_MS in use-chat.ts in sync with that nginx value.
 
 const HISTORY_LIMIT = 24;
 

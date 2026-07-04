@@ -34,11 +34,11 @@ export type ImageEditInput = { prompt: string; model: string; edit: GenerateEdit
 let tempCounter = 0;
 const tempId = () => `temp-${Date.now()}-${tempCounter++}`;
 
-// Poll a dropped stream for as long as the server's own generation window
-// (chat route maxDuration) plus a persistence margin — the answer can
-// legitimately land at any point inside it. Keep in sync with the route
-// (300s on Hobby, 800s on Pro).
-const RECOVERY_WINDOW_MS = 300_000 + 60_000;
+// Poll a dropped stream for as long as a generation can legitimately run. Self-
+// hosted on the VM there is no function timeout; the practical ceiling is nginx's
+// proxy_read_timeout (3600s in deploy/nginx.conf.template). Keep this in sync with
+// that value, plus a persistence margin for the final DB write.
+const RECOVERY_WINDOW_MS = 3_600_000 + 60_000;
 
 interface UseChatOptions {
   conversationId: string | null;

@@ -36,10 +36,15 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         
-        # Streaming settings for LLM reasoning responses (Server-Sent Events)
+        # Streaming settings for LLM reasoning responses (Server-Sent Events).
+        # proxy_read_timeout is the ceiling between reads from the app; on a
+        # self-hosted box THIS replaces Vercel's 300s maxDuration wall. The chat
+        # route sends a ping every 15s (see route.ts heartbeat), which resets this
+        # timer, so the connection survives long silent "thinking" gaps regardless.
+        # 3600s (1h) is a generous safety margin for max-effort reasoning runs.
         proxy_buffering off;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
         chunked_transfer_encoding on;
     }
 }
