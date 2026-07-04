@@ -15,6 +15,7 @@ import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { VoiceMode } from "@/components/voice/voice-mode";
+import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
@@ -1006,17 +1007,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         </div>
       )}
 
-      {voiceOpen && (
-        <VoiceMode
-          model={model}
-          conversationId={conversationId}
-          voiceId={settings.voiceId}
-          onClose={() => setVoiceOpen(false)}
-          onExchange={() => {
-            /* voice mode persists its own turns via the chat API */
-          }}
-        />
-      )}
+      {voiceOpen &&
+        // With a voice relay deployed, the voice button opens the realtime
+        // speech-to-speech experience; otherwise the legacy STT->chat->TTS mode.
+        (process.env.NEXT_PUBLIC_VOICE_RELAY_URL ? (
+          <RealtimeVoice onClose={() => setVoiceOpen(false)} />
+        ) : (
+          <VoiceMode
+            model={model}
+            conversationId={conversationId}
+            voiceId={settings.voiceId}
+            onClose={() => setVoiceOpen(false)}
+            onExchange={() => {
+              /* voice mode persists its own turns via the chat API */
+            }}
+          />
+        ))}
     </div>
   );
 }

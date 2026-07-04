@@ -34,3 +34,7 @@ yarn-error.log*
 # Neon CLI local state
 .neon
 .env*
+
+# voice relay service
+relay/node_modules
+relay/dist
