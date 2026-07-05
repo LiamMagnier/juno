@@ -1,7 +1,7 @@
 {
-  "version": "2.0.2",
-  "build": 16,
+  "version": "2.1",
+  "build": 17,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Updates now install themselves: Juno re-checks every few hours and when you return to the app, and the update panel opens automatically when a new build lands. Includes GPT-5.5 Pro / 5.4 Pro support (Responses API) from 2.0.1.",
+  "notes": "Code mode rebuilt from zero: new Codex-style workbench powered by the Juno agent engine \u2014 real permission ladder (Plan / Ask / Auto-edit / Full), approvals, per-turn checkpoints with undo, live diffs, multi-provider models (GLM-5.2, Claude, GPT). Classic cockpit still available via the junoClassicCode setting.",
   "minimumSystemVersion": "26.0"
 }
