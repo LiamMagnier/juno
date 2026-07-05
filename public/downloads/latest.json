@@ -1,7 +1,7 @@
 {
-  "version": "2.0",
-  "build": 14,
+  "version": "2.0.1",
+  "build": 15,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Now connects to the new self-hosted server (chat.liams.dev) instead of Vercel. Removed the demo-mode onboarding link; use the web sign-in button to connect.",
+  "notes": "GPT-5.5 Pro and GPT-5.4 Pro now work \u2014 new OpenAI Responses API support (BYOK and account mode).",
   "minimumSystemVersion": "26.0"
 }
