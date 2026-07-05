@@ -1,7 +1,7 @@
 {
-  "version": "2.2",
-  "build": 18,
+  "version": "2.3",
+  "build": 19,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Juno Code, connected to your account: sidebar rebuilt to the Codex layout (projects with their sessions nested, chats, account footer); every model from the website now available in Code and running on your account's server keys (no per-model API keys); and all Code usage now counts toward your plan just like web chat.",
+  "notes": "Juno Code: right-click any chat to rename it, reveal its folder in Finder, or delete it (with confirmation).",
   "minimumSystemVersion": "26.0"
 }
