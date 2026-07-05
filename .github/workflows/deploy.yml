@@ -52,12 +52,19 @@ jobs:
           VM_USER: ${{ secrets.VM_USER }}
           VM_HOST: ${{ secrets.VM_HOST }}
         run: |
+          # NOTE: --delete removes files on the VM absent from this checkout, so
+          # every persistent runtime path MUST be excluded or it gets wiped on
+          # each deploy. `.uploads` holds locally-stored user avatars/attachments
+          # and `.env` holds the server secrets — losing either breaks prod.
           rsync -az --delete \
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude 'relay/node_modules' \
             --exclude '.next/cache' \
             --exclude 'logs' \
+            --exclude '.uploads' \
+            --exclude '.env' \
+            --exclude '.env.*' \
             -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new" \
             ./ "$VM_USER@$VM_HOST:~/juno/"
 
