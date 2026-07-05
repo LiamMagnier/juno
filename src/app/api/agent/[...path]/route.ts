@@ -9,10 +9,13 @@ export const maxDuration = 300;
 const ANTHROPIC_BASE = "https://api.anthropic.com";
 
 // Only the chat/messages endpoints may be proxied — never arbitrary provider paths.
-const ALLOWED: Record<"anthropic" | "openai", string> = {
-  anthropic: "v1/messages",
-  openai: "chat/completions",
-};
+// "responses" is OpenAI-proper only: the pro/Codex Responses-only models live
+// there, and no other openai-kind lab serves that endpoint.
+function isAllowedPath(kind: "anthropic" | "openai", provider: Provider, forwardPath: string): boolean {
+  if (kind === "anthropic") return forwardPath === "v1/messages";
+  if (forwardPath === "chat/completions") return true;
+  return provider === "openai" && forwardPath === "responses";
+}
 
 /**
  * Transparent, authenticated provider proxy for the native app's Code agent.
@@ -39,7 +42,7 @@ export async function POST(
 
   const def = PROVIDERS[provider];
   const forwardPath = rest.join("/");
-  if (forwardPath !== ALLOWED[def.kind]) {
+  if (!isAllowedPath(def.kind, provider, forwardPath)) {
     return NextResponse.json({ error: "Endpoint not allowed." }, { status: 403 });
   }
 

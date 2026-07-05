@@ -43,6 +43,9 @@ export interface ModelInfo {
   legacy?: boolean;
   /** In the catalog but not yet callable (no live API) — shown disabled. */
   comingSoon?: boolean;
+  /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
+   *  Responses-only Codex snapshots aren't served on /chat/completions). */
+  api?: "chat" | "responses";
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -93,6 +96,7 @@ interface ModelDef {
   contextWindow?: number;
   deprecationNote?: string;
   comingSoon?: boolean;
+  api?: "chat" | "responses";
 }
 
 function def(d: ModelDef): ModelInfo {
@@ -116,6 +120,7 @@ function def(d: ModelDef): ModelInfo {
     contextWindow: d.contextWindow,
     legacy: d.status !== "current",
     comingSoon: d.comingSoon,
+    api: d.api,
   };
 }
 
@@ -140,17 +145,17 @@ const CURATED: ModelInfo[] = [
 
   // —— OpenAI ——
   def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's flagship — complex reasoning, agents, and long context." }),
-  def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, comingSoon: true, description: "Responses-only Pro model — disabled until Juno adds a Responses API adapter." }),
+  def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, api: "responses", description: "OpenAI's most thorough reasoner — slow, expensive, extremely capable (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Affordable frontier tier for coding and professional work." }),
   def({ provider: "openai", id: "gpt-5.4-mini", name: "GPT-5.4 Mini", family: "gpt-mini", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "OpenAI's strongest mini — fast, cheap coding and subagents." }),
   def({ provider: "openai", id: "gpt-5.4-nano", name: "GPT-5.4 Nano", family: "gpt-nano", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, description: "Cheapest, lowest-latency tier for high-volume simple tasks." }),
   def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, description: "Codex-tuned model for long-running coding, refactors, and agent loops." }),
-  def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 3, comingSoon: true, description: "Previous Responses-only Pro model — disabled until Juno adds a Responses API adapter." }),
+  def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 3, api: "responses", description: "Previous Pro reasoning model (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.2", name: "GPT-5.2", family: "gpt", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous frontier GPT model with configurable reasoning." }),
-  def({ provider: "openai", id: "gpt-5.2-pro", name: "GPT-5.2 Pro", family: "gpt-pro", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 3, contextWindow: 400_000, comingSoon: true, description: "Previous Responses-only Pro model — disabled until Juno adds a Responses API adapter." }),
+  def({ provider: "openai", id: "gpt-5.2-pro", name: "GPT-5.2 Pro", family: "gpt-pro", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 3, contextWindow: 400_000, api: "responses", description: "Older Pro reasoning model (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.2-codex", name: "GPT-5.2 Codex", family: "gpt-codex", status: "deprecated", released: "2026-01", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, description: "Older Codex-tuned model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
   def({ provider: "openai", id: "gpt-5.1", name: "GPT-5.1", family: "gpt", status: "legacy", released: "2025-11", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous coding and agentic GPT model with configurable reasoning." }),
-  def({ provider: "openai", id: "gpt-5.1-codex", name: "GPT-5.1 Codex", family: "gpt-codex", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, comingSoon: true, description: "Responses-only Codex model — disabled until Juno adds a Responses API adapter.", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
+  def({ provider: "openai", id: "gpt-5.1-codex", name: "GPT-5.1 Codex", family: "gpt-codex", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, api: "responses", description: "Older Codex model (Responses API).", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
   def({ provider: "openai", id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", family: "gpt-codex-mini", status: "deprecated", released: "2025-11", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 400_000, description: "Older small Codex model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
   def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini" }),

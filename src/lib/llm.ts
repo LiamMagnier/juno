@@ -1,6 +1,7 @@
 import "server-only";
 import { streamAnthropic } from "@/lib/anthropic";
 import { streamOpenAICompat } from "@/lib/openai-compat";
+import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { streamGeminiSearch } from "@/lib/gemini-search";
 import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
 import { reasoningCaps } from "@/lib/model-metrics";
@@ -90,7 +91,12 @@ export async function* streamChat(opts: {
     }
   }
   try {
-    yield* streamOpenAICompat(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey);
+    // gpt-*-pro and Responses-only Codex snapshots aren't served on
+    // /chat/completions — they take the Responses API adapter instead.
+    const streamFn = model.provider === "openai" && model.api === "responses"
+      ? streamOpenAIResponses
+      : streamOpenAICompat;
+    yield* streamFn(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey);
   } finally {
     if (toolset) await toolset.close();
   }
