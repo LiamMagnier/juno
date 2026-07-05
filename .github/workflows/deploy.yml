@@ -1,0 +1,89 @@
+name: Deploy to VM
+
+# Builds on GitHub's runners (fast, lots of RAM) and ships only the build to the
+# VM over SSH, so the low-RAM VM never has to run `next build` itself.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # manual "Run workflow" button
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Write production .env (single source of truth = PROD_ENV secret)
+        env:
+          PROD_ENV: ${{ secrets.PROD_ENV }}
+        run: printf '%s\n' "$PROD_ENV" > .env
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: npm run build
+
+      - name: Build voice relay
+        run: |
+          npm ci --prefix relay
+          npm run build --prefix relay
+
+      - name: Configure SSH
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      - name: Ship build to the VM
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          rsync -az --delete \
+            --exclude '.git' \
+            --exclude 'node_modules' \
+            --exclude 'relay/node_modules' \
+            --exclude '.next/cache' \
+            --exclude 'logs' \
+            -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new" \
+            ./ "$VM_USER@$VM_HOST:~/juno/"
+
+      - name: Post-deploy on the VM (install-if-changed, migrate, reload)
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+            "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
+          set -e
+          cd ~/juno
+          # Reinstall app deps only when the lockfile actually changed (rare).
+          LOCK_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
+          if [ "$LOCK_HASH" != "$(cat ~/.juno-lock.sha 2>/dev/null || true)" ]; then
+            echo "Dependencies changed — running npm ci…"
+            npm ci
+            echo "$LOCK_HASH" > ~/.juno-lock.sha
+          else
+            echo "Dependencies unchanged — skipping npm ci."
+          fi
+          # Relay runtime deps (small/fast) + prisma client + schema + reload.
+          npm ci --omit=dev --prefix relay
+          npx prisma generate
+          npx prisma db push --skip-generate
+          pm2 startOrReload deploy/ecosystem.config.js --update-env
+          pm2 save
+          echo "Deploy complete."
+          REMOTE
