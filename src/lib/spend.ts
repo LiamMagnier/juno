@@ -148,15 +148,104 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
   }
 }
 
-/** Total spend for the current calendar month (UTC), in micro-USD. */
-export async function monthlySpendMicroUsd(userId: string): Promise<number> {
-  const now = new Date();
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+// Usage windows for the settings gauge (DISPLAY ONLY — the billing-period gate
+// in checkBudget is the sole hard limit; windows never block on their own).
+// Each window's budget is its exact TIME-PROPORTIONAL share of the period, so
+// the windows TILE the period budget perfectly: the weekly budgets and the
+// session budgets each sum to exactly the €15 cap across a month (a window at
+// 100% = on pace to spend precisely the period budget). This is the only split
+// that stays honest to the €15 ceiling — dividing by a whole 4 weeks (a month
+// is really 4.29 weeks) would over-allocate. Session/week grids are anchored to
+// the subscription so they reset on the subscriber's own schedule.
+const SESSION_MS = 5 * 60 * 60 * 1000; // 5-hour "current session" window
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000; // weekly window
+const MONTH_MS = 30 * 24 * 60 * 60 * 1000; // reference month (checkBudget fallback)
+
+/** Sum of a user's spend since a given instant, in micro-USD. */
+async function spendSinceMicroUsd(userId: string, since: Date): Promise<number> {
   const agg = await prisma.apiSpend.aggregate({
-    where: { userId, createdAt: { gte: monthStart } },
+    where: { userId, createdAt: { gte: since } },
     _sum: { costMicroUsd: true },
   });
   return agg._sum.costMicroUsd ?? 0;
+}
+
+/**
+ * Add `n` calendar months to a date, clamping the day so month lengths don't
+ * overflow (Mar 31 −1mo → Feb 28/29). Time-of-day is preserved (UTC math).
+ */
+function addMonths(date: Date, n: number): Date {
+  const d = new Date(date);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + n);
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
+  return d;
+}
+
+export interface BillingPeriod {
+  /** Start of the current billing period; spend is counted from here. */
+  startMs: number;
+  /** End of the current billing period — when the usage budget renews. */
+  endMs: number;
+  /** When the user first subscribed; anchors the rolling session/week grids. */
+  anchorMs: number;
+}
+
+/** Whole-month difference (UTC year/month) — a starting estimate for the period. */
+function monthsBetween(a: Date, b: Date): number {
+  return (b.getUTCFullYear() - a.getUTCFullYear()) * 12 + (b.getUTCMonth() - a.getUTCMonth());
+}
+
+/**
+ * The current monthly period on `boundary`'s day/time schedule that contains
+ * `now`: [end − 1 month, end) with `end` the first boundary strictly after now.
+ * Rolls to the right cell in O(1) whether `boundary` is in the future (a live
+ * Stripe period end), the past (a stale one from a delayed webhook), or years
+ * ago (a subscription anniversary) — the ±month guards run at most a couple of
+ * times, so a stale boundary can never count spend against an expired window.
+ */
+function currentPeriod(boundary: Date, now: Date): { start: Date; end: Date } {
+  let k = monthsBetween(boundary, now);
+  let end = addMonths(boundary, k);
+  let guard = 0;
+  while (end <= now && guard++ < 24) end = addMonths(boundary, ++k);
+  while (addMonths(boundary, k - 1) > now && guard++ < 24) end = addMonths(boundary, --k);
+  return { start: addMonths(boundary, k - 1), end };
+}
+
+/**
+ * Compute the current billing period from a subscription row (pure). Budgets
+ * reset on the subscriber's schedule, not the calendar 1st: boundaries follow
+ * the real Stripe period end when present, else the subscription anniversary.
+ * A past/stale currentPeriodEnd is rolled forward to the live cell.
+ * null = OWNER / unlimited (no budget to track).
+ */
+export function billingPeriodFor(
+  plan: Plan,
+  sub: { createdAt: Date; currentPeriodEnd: Date | null } | null,
+  now = new Date()
+): BillingPeriod | null {
+  if (budgetForPlan(plan) == null) return null; // OWNER / unlimited
+  const anchor = sub?.createdAt ?? now;
+  const boundary = sub?.currentPeriodEnd ?? anchor;
+  const { start, end } = currentPeriod(boundary, now);
+  return { startMs: start.getTime(), endMs: end.getTime(), anchorMs: anchor.getTime() };
+}
+
+/** Fetch the subscription and derive the current billing period. */
+export async function resolveBillingPeriod(
+  userId: string,
+  plan: Plan,
+  now = new Date()
+): Promise<BillingPeriod | null> {
+  if (budgetForPlan(plan) == null) return null;
+  const sub = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { createdAt: true, currentPeriodEnd: true },
+  });
+  return billingPeriodFor(plan, sub, now);
 }
 
 export interface BudgetStatus {
@@ -164,37 +253,104 @@ export interface BudgetStatus {
   spentMicroUsd: number;
   budgetMicroUsd: number | null;
   remainingMicroUsd: number | null;
+  /** Epoch ms when the budget renews (billing period end); null = unlimited. */
+  resetsAtMs: number | null;
 }
 
 /**
  * Pre-stream budget gate. OWNER is always allowed without touching the
- * database. FREE has a 0 budget and is always blocked — consistent with its
- * 0-monthly-messages policy. Paid plans are allowed while spend < budget.
+ * database. FREE has a 0 budget and is always blocked. Paid plans are allowed
+ * while spend within the current BILLING PERIOD is under budget. Pass a
+ * pre-resolved `period` to avoid a second subscription lookup.
  */
-export async function checkBudget(userId: string, plan: Plan): Promise<BudgetStatus> {
+export async function checkBudget(
+  userId: string,
+  plan: Plan,
+  period?: BillingPeriod | null
+): Promise<BudgetStatus> {
   const budgetMicroUsd = budgetForPlan(plan);
   if (budgetMicroUsd == null) {
-    return { allowed: true, spentMicroUsd: 0, budgetMicroUsd: null, remainingMicroUsd: null };
+    return { allowed: true, spentMicroUsd: 0, budgetMicroUsd: null, remainingMicroUsd: null, resetsAtMs: null };
   }
-  const spentMicroUsd = await monthlySpendMicroUsd(userId);
+  const p = period ?? (await resolveBillingPeriod(userId, plan));
+  const since = p ? new Date(p.startMs) : new Date(Date.now() - MONTH_MS);
+  const spentMicroUsd = await spendSinceMicroUsd(userId, since);
   return {
     allowed: spentMicroUsd < budgetMicroUsd,
     spentMicroUsd,
     budgetMicroUsd,
     remainingMicroUsd: Math.max(0, budgetMicroUsd - spentMicroUsd),
+    resetsAtMs: p?.endMs ?? null,
   };
 }
 
-/** "August 1" — the first day of next month (UTC), when budgets reset. */
+export interface UsageWindow {
+  spentMicroUsd: number;
+  /** This window's proportional slice of the period budget; null = unlimited. */
+  budgetMicroUsd: number | null;
+  /** spend ÷ budget (0..∞; 1 = on pace for the full period budget). */
+  pct: number;
+  /** Epoch ms when this window's grid cell rolls over. */
+  resetsAtMs: number;
+}
+
+export interface UsageWindows {
+  session: UsageWindow;
+  weekly: UsageWindow;
+}
+
+/**
+ * Rolling 5-hour and weekly usage windows, anchored to the subscription so they
+ * reset on the subscriber's schedule. Pass the pre-resolved billing `period`;
+ * null → OWNER/unlimited (no metering).
+ */
+export async function getUsageWindows(
+  userId: string,
+  plan: Plan,
+  period: BillingPeriod | null,
+  now = new Date()
+): Promise<UsageWindows> {
+  const monthBudget = budgetForPlan(plan);
+  const nowMs = now.getTime();
+  if (monthBudget == null || period == null) {
+    const w: UsageWindow = { spentMicroUsd: 0, budgetMicroUsd: null, pct: 0, resetsAtMs: nowMs };
+    return { session: w, weekly: w };
+  }
+  // Time-proportional budgets: each window gets its exact fraction of the
+  // period budget, so weekly (× ~4.29/mo) and session (× 144/mo) each sum to €15.
+  const periodMs = Math.max(period.endMs - period.startMs, MONTH_MS);
+  const elapsed = Math.max(0, nowMs - period.anchorMs);
+  const sessionStart = period.anchorMs + Math.floor(elapsed / SESSION_MS) * SESSION_MS;
+  const weekStart = period.anchorMs + Math.floor(elapsed / WEEK_MS) * WEEK_MS;
+  const [sessionSpent, weekSpent] = await Promise.all([
+    spendSinceMicroUsd(userId, new Date(sessionStart)),
+    spendSinceMicroUsd(userId, new Date(weekStart)),
+  ]);
+  const mk = (spent: number, budget: number, resetsAtMs: number): UsageWindow => ({
+    spentMicroUsd: spent,
+    budgetMicroUsd: budget,
+    pct: budget > 0 ? spent / budget : 0,
+    resetsAtMs,
+  });
+  return {
+    session: mk(sessionSpent, Math.round(monthBudget * (SESSION_MS / periodMs)), sessionStart + SESSION_MS),
+    weekly: mk(weekSpent, Math.round(monthBudget * (WEEK_MS / periodMs)), weekStart + WEEK_MS),
+  };
+}
+
+/** "August 1" — the first day of next month (UTC); fallback reset label. */
 export function nextResetLabel(now = new Date()): string {
   const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
   return reset.toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
 }
 
 /** Friendly sentence for the 402 budget_exceeded response. */
-export function budgetExceededMessage(plan: Plan): string {
+export function budgetExceededMessage(plan: Plan, resetsAtMs?: number | null): string {
   if (plan === "FREE") {
     return "The Free plan doesn't include a model budget. Upgrade to Pro to start chatting.";
   }
-  return `You've used up your monthly API budget — it resets on ${nextResetLabel()}. Upgrade your plan for a bigger monthly budget.`;
+  const when = resetsAtMs
+    ? new Date(resetsAtMs).toLocaleDateString("en-US", { month: "long", day: "numeric" })
+    : nextResetLabel();
+  return `You've used up your plan's usage budget — it renews on ${when}. Upgrade your plan for a bigger budget.`;
 }

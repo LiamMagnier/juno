@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOut } from "next-auth/react";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette } from "lucide-react";
+import { ArrowLeft, Brain, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -27,10 +27,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { DotFillBar } from "@/components/signature/dot-matrix";
 import { useApp } from "@/components/app/app-provider";
 import { resolveModel } from "@/lib/models";
-import { averageRequestCostMicroUsd } from "@/lib/model-metrics";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS } from "@/lib/accents";
@@ -104,6 +102,58 @@ function CustomPickerButton({
           <Plus className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.3)]" />
         )}
       </button>
+    </div>
+  );
+}
+
+/** "4 hr 47 min" / "12 min" / "2 days" — time until a rolling window frees up. */
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "now";
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h >= 24) {
+    const d = Math.round(h / 24);
+    return `${d} day${d > 1 ? "s" : ""}`;
+  }
+  if (h > 0) return `${h} hr ${m} min`;
+  return `${m} min`;
+}
+
+/** "Fri 6:59 PM" — the moment a rolling window next frees up, in local time. */
+function formatResetMoment(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+}
+
+/** "May 3, 2026" — an absolute date for billing renewals. */
+function formatDate(ms: number): string {
+  return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+/** Claude-style usage row: label + reset subtitle, a bar, and "N% used". */
+function UsageMeter({ label, subtitle, pct }: { label: string; subtitle: string; pct: number }) {
+  const shown = Math.min(100, Math.round(pct * 100));
+  const hot = pct >= 0.9;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className="text-caption text-muted-foreground">{subtitle}</div>
+      </div>
+      <div className="flex min-w-[160px] flex-1 items-center gap-3">
+        <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+          <div
+            className={cn(
+              "absolute inset-y-0 left-0 rounded-full transition-all duration-base",
+              hot ? "bg-warning" : "bg-primary"
+            )}
+            style={{ width: `${Math.min(100, pct * 100)}%` }}
+          />
+        </div>
+        <span className="w-16 shrink-0 text-right font-mono text-caption tabular-nums text-muted-foreground">
+          {shown}% used
+        </span>
+      </div>
     </div>
   );
 }
@@ -192,36 +242,25 @@ export default function SettingsPage() {
   ];
 
   const plan = PLANS[quota.plan];
-  const limit = quota.limit;
-  const used = quota.used;
-  const remaining = quota.remaining;
-  const low = limit != null && remaining != null && remaining <= Math.max(1, Math.round(limit * 0.1));
+  const windows = spend.windows;
+  const unlimited = spend.budgetMicroUsd == null;
 
-  // API budget gauge: "requests left" assumes an average request of 800 prompt
-  // + 500 completion tokens on the user's default model (recomputed live when
-  // the default model changes).
-  const budgetModel = React.useMemo(() => resolveModel(settings.defaultModel), [settings.defaultModel]);
-  const budget = React.useMemo(() => {
-    if (spend.budgetMicroUsd == null) return null;
-    const remainingMicro = Math.max(0, spend.budgetMicroUsd - spend.spentMicroUsd);
-    const avgMicro = budgetModel ? averageRequestCostMicroUsd(budgetModel) : 0;
-    const toEur = (micro: number) => (micro / 1_000_000) * spend.eurPerUsd;
-    const budgetEur = toEur(spend.budgetMicroUsd);
-    return {
-      spentLabel: toEur(spend.spentMicroUsd).toFixed(2),
-      budgetLabel: Number.isInteger(budgetEur) ? String(budgetEur) : budgetEur.toFixed(2),
-      requestsLeft: avgMicro > 0 ? Math.floor(remainingMicro / avgMicro) : null,
-      low: spend.budgetMicroUsd > 0 && remainingMicro <= spend.budgetMicroUsd * 0.1,
-    };
-  }, [spend, budgetModel]);
-  const budgetResetLabel = React.useMemo(() => {
-    const now = new Date();
-    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      timeZone: "UTC",
-    });
+  // Live clock so the rolling-window countdowns tick without a reload. Kept null
+  // until mount so SSR and the first client render agree (no now/timezone drift).
+  const [nowMs, setNowMs] = React.useState<number | null>(null);
+  React.useEffect(() => {
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(id);
   }, []);
+
+  const sessionSubtitle =
+    nowMs == null ? "5-hour window" : `Resets in ${formatCountdown(windows.session.resetsAtMs - nowMs)}`;
+  const weeklySubtitle =
+    nowMs == null ? "7-day window" : `Resets ${formatResetMoment(windows.weekly.resetsAtMs)}`;
+
+  const renewsAtMs = spend.billing.renewsAtMs;
+  const cancelAtPeriodEnd = spend.billing.cancelAtPeriodEnd;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -238,7 +277,7 @@ export default function SettingsPage() {
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Usage dashboard */}
-          <Tile eyebrow="Usage this month" i={0} span>
+          <Tile eyebrow="Usage" i={0} span>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-stretch mt-1">
               {/* Plan info (Left) */}
               <div className="field-well md:col-span-2 flex flex-col justify-between rounded-[18px] bg-accent/40 border border-border/50 p-4">
@@ -279,79 +318,9 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Usage metrics (Right) */}
-              <div className="field-well md:col-span-3 flex flex-col justify-between rounded-[18px] border border-border/50 p-4 bg-card">
-                <div>
-                  <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block mb-2">
-                    Monthly Quota
-                  </span>
-                  
-                  {/* Stats Row */}
-                  <div className="grid grid-cols-3 gap-3 my-3">
-                    <div className="text-left">
-                      <span className="block text-caption text-muted-foreground uppercase tracking-wider font-mono">Used</span>
-                      <span className="text-lg font-serif font-bold text-foreground mt-0.5 block">{used.toLocaleString()}</span>
-                    </div>
-                    <div className="text-left">
-                      <span className="block text-caption text-muted-foreground uppercase tracking-wider font-mono">Limit</span>
-                      <span className="text-lg font-serif font-bold text-foreground mt-0.5 block">
-                        {limit != null ? limit.toLocaleString() : "No cap"}
-                      </span>
-                    </div>
-                    <div className="text-left">
-                      <span className="block text-caption text-muted-foreground uppercase tracking-wider font-mono">Remaining</span>
-                      <span className="text-lg font-serif font-bold text-foreground mt-0.5 block">
-                        {remaining != null ? remaining.toLocaleString() : "∞"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Progress bar / animated dots */}
-                <div className="mt-3">
-                  {limit != null ? (
-                    <div>
-                      <div className="relative w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
-                          className="absolute top-0 left-0 h-full rounded-full bg-gradient-to-r from-primary/80 to-primary transition-all duration-base"
-                          style={{ width: `${Math.min(100, (used / limit) * 100)}%` }}
-                        />
-                      </div>
-                      <p className={cn("mt-2 text-[11px] leading-relaxed", low ? "text-warning" : "text-muted-foreground")}>
-                        {remaining != null ? `${remaining.toLocaleString()} messages left — resets at the start of next month.` : null}
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      {/* Pulsing dot matrix */}
-                      <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
-                        {Array.from({ length: 32 }).map((_, i) => (
-                          <span
-                            key={i}
-                            className="h-[5px] w-[5px] rounded-full bg-primary/75 animate-pulse"
-                            style={{
-                              animationDelay: `${i * 65}ms`,
-                              animationDuration: "1.6s",
-                            }}
-                          />
-                        ))}
-                      </div>
-                      <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                        Your plan includes every model, with a monthly usage limit based on tokens.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* API budget gauge — paid plans get spend/budget; owner is unlimited. */}
-            {quota.plan !== "FREE" && (
-              <div className="field-well mt-4 rounded-[18px] border border-border/50 bg-card p-4">
-                <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block mb-2">
-                  API budget
-                </span>
-                {budget == null ? (
+              {/* Usage windows (Right) — rolling session + weekly, percentages only */}
+              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-[18px] border border-border/50 p-4 bg-card">
+                {unlimited ? (
                   <div>
                     <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
                       {Array.from({ length: 32 }).map((_, i) => (
@@ -363,29 +332,38 @@ export default function SettingsPage() {
                       ))}
                     </div>
                     <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                      Unlimited — owner accounts have no monthly API budget.
+                      No usage limits on this plan.
                     </p>
                   </div>
-                ) : (
-                  <div>
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="font-mono text-xs text-foreground">
-                        €{budget.spentLabel} used of €{budget.budgetLabel}
-                      </span>
-                      <span className="font-mono text-caption uppercase tracking-wider text-muted-foreground">
-                        Resets {budgetResetLabel}
-                      </span>
-                    </div>
-                    <DotFillBar value={spend.spentMicroUsd} max={spend.budgetMicroUsd ?? 0} dots={32} className="mt-2.5" />
-                    <p className={cn("mt-2 text-[11px] leading-relaxed", budget.low ? "text-warning" : "text-muted-foreground")}>
-                      {budget.requestsLeft != null && budgetModel
-                        ? `≈ ${budget.requestsLeft.toLocaleString()} requests left with ${budgetModel.name} (avg. 800 in / 500 out tokens).`
-                        : "Model usage this month across chat, images, and video."}
+                ) : quota.plan === "FREE" ? (
+                  <div className="flex flex-col items-start gap-3">
+                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                      Free is a browse-only tier. Upgrade to Pro to start using models.
                     </p>
+                    {features.billing && (
+                      <Button asChild size="sm" className="h-7 px-3 text-xs">
+                        <Link href="/upgrade">Upgrade</Link>
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
+                    <div className="border-t border-border/40" />
+                    <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block">
+                      Weekly limits
+                    </span>
+                    <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
+                    {renewsAtMs != null && (
+                      <p className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
+                        <CalendarClock className="h-3.5 w-3.5 opacity-70" />
+                        {cancelAtPeriodEnd ? "Access ends" : "Budget renews"} {formatDate(renewsAtMs)}
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
           </Tile>
 
           {/* Appearance */}
@@ -541,6 +519,12 @@ export default function SettingsPage() {
                 <span className="text-muted-foreground">Current plan</span>
                 <span className="font-medium">{plan.name}</span>
               </div>
+              {renewsAtMs != null && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{cancelAtPeriodEnd ? "Access ends" : "Renews"}</span>
+                  <span className="font-medium">{formatDate(renewsAtMs)}</span>
+                </div>
+              )}
               {features.billing && quota.plan !== "FREE" && (
                 <Button variant="outline" size="sm" onClick={openPortal} disabled={portalLoading} className="w-full">
                   {portalLoading ? "Opening…" : "Manage subscription"}

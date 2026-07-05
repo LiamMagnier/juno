@@ -79,7 +79,7 @@ export async function POST(req: Request) {
 
   const budget = await checkBudget(user.id, plan);
   if (!budget.allowed) {
-    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan) }, { status: 402 });
+    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
   }
 
   if (model.modality === "video" && !isVideoGenSupported(model)) {

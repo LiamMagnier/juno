@@ -28,7 +28,7 @@ export async function GET() {
     if (!limit.success) return NextResponse.json({ error: "Slow down." }, { status: 429 });
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
-      return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan) }, { status: 402 });
+      return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
     }
   }
 

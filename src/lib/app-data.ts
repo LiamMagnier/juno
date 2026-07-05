@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
 import { getQuota } from "@/lib/usage";
-import { checkBudget, eurPerUsd } from "@/lib/spend";
+import { checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
 import { configuredProviders } from "@/lib/providers";
 import { providerSupportsWebSearch } from "@/lib/models";
@@ -26,7 +26,15 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     prisma.user.findUnique({ where: { id: user.id }, select: { name: true, image: true } }),
   ]);
 
-  const budget = await checkBudget(user.id, quota.plan);
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: user.id },
+    select: { createdAt: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
+  });
+  const period = billingPeriodFor(quota.plan, subscription);
+  const [budget, windows] = await Promise.all([
+    checkBudget(user.id, quota.plan, period),
+    getUsageWindows(user.id, quota.plan, period),
+  ]);
 
   const clientSettings: ClientSettings = {
     theme: (settings?.theme.toLowerCase() as ClientSettings["theme"]) ?? "system",
@@ -43,7 +51,19 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     user: { id: user.id, name: account?.name ?? user.name ?? null, email: user.email ?? null, image: account?.image ?? user.image ?? null },
     settings: clientSettings,
     quota,
-    spend: { spentMicroUsd: budget.spentMicroUsd, budgetMicroUsd: budget.budgetMicroUsd, eurPerUsd: eurPerUsd() },
+    spend: {
+      spentMicroUsd: budget.spentMicroUsd,
+      budgetMicroUsd: budget.budgetMicroUsd,
+      eurPerUsd: eurPerUsd(),
+      windows: {
+        session: { pct: windows.session.pct, resetsAtMs: windows.session.resetsAtMs },
+        weekly: { pct: windows.weekly.pct, resetsAtMs: windows.weekly.resetsAtMs },
+      },
+      billing: {
+        renewsAtMs: budget.resetsAtMs,
+        cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+      },
+    },
     conversations,
     folders,
     features: {
