@@ -83,6 +83,7 @@ jobs:
           npm ci --omit=dev --prefix relay
           npx prisma generate
           npx prisma db push --skip-generate
+          mkdir -p logs
           pm2 startOrReload deploy/ecosystem.config.js --update-env
           pm2 save
           echo "Deploy complete."
