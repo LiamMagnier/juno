@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { AdminNav } from "@/components/admin/admin-nav";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import type { ClientAnnouncement } from "@/lib/announcements";
@@ -411,10 +412,13 @@ export function AnnouncementsAdmin() {
             <h1 className="font-serif text-display font-medium tracking-tight">Announcements</h1>
             <p className="mt-1 text-sm text-muted-foreground">Publish model-release popups and product messages.</p>
           </div>
-          <Button variant="outline" onClick={reset} className="gap-1.5">
-            <Plus className="h-4 w-4" />
-            New draft
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <AdminNav current="announcements" />
+            <Button variant="outline" onClick={reset} className="gap-1.5">
+              <Plus className="h-4 w-4" />
+              New draft
+            </Button>
+          </div>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">

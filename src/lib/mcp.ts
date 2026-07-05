@@ -3,6 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_TOKEN_TTL_MS, getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
+import { mintConnectorToken } from "@/lib/connector-token";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import type { Connection } from "@prisma/client";
 
@@ -46,7 +47,7 @@ async function refreshConnection(def: ConnectorDef, row: Connection): Promise<st
   try {
     const t = await refreshTokens(def, refreshToken, { clientId: row.oauthClientId, clientSecret: oauthClientSecret });
     await prisma.connection.update({
-      where: { id: row.id },
+      where: { id: row.id, userId: row.userId },
       data: {
         accessToken: encryptSecret(t.accessToken),
         // Providers may or may not rotate the refresh token — keep the old one if not.
@@ -73,6 +74,13 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   for (const row of rows) {
     const def = getConnector(row.provider);
     if (!def || !isConnectorConfigured(def) || !def.cfg.mcpUrl) continue;
+
+    // Credentials connectors point at our own MCP route: hand out a short-lived
+    // signed token instead of the stored credential (which never leaves the server).
+    if (def.kind === "credentials") {
+      out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, token: mintConnectorToken(userId, def.id) });
+      continue;
+    }
 
     let token: string | null = null;
     const nearExpiry = !!row.expiresAt && row.expiresAt.getTime() < Date.now() + EXPIRY_SKEW_MS;

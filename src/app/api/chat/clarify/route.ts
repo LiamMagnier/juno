@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { decryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
 import { isOwnerEmail } from "@/lib/owner";
 import { noPreflightClarification, quickPreflightSkip } from "@/lib/preflight-clarification";
 import { triagePreflightClarification, type TriageContextMessage } from "@/lib/preflight-triage";
+import { getUserPlan } from "@/lib/usage";
+import { checkBudget } from "@/lib/spend";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -25,6 +28,14 @@ export async function POST(req: Request) {
     const limit = await rateLimit({ key: `chat-clarify:${user.id}`, limit: 60, windowSec: 60 });
     if (!limit.success) {
       return NextResponse.json(noPreflightClarification("Clarification checks are rate limited."), { status: 200 });
+    }
+    // The triage LLM is a real API cost; a budget-blocked user shouldn't spend
+    // on it. Fail OPEN (no clarification) so this never blocks the UI — the send
+    // itself is gated by the chat route's 402.
+    const plan = await getUserPlan(user.id);
+    const budget = await checkBudget(user.id, plan);
+    if (!budget.allowed) {
+      return NextResponse.json(noPreflightClarification("Budget exhausted — skipping clarification."), { status: 200 });
     }
   }
 
@@ -53,7 +64,7 @@ export async function POST(req: Request) {
       recentMessages = rows
         .reverse()
         .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
-        .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content }));
+        .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: decryptMessageText(m.content) }));
     }
 
     const result = await triagePreflightClarification({ message: input.message, recentMessages });

@@ -22,6 +22,13 @@ model User {
   image          String?
   hashedPassword String? // null for OAuth-only users
 
+  // Moderation: a set bannedAt means the account is suspended (sign-in blocked,
+  // active sessions killed). strikes accumulates soft violations toward auto-ban.
+  bannedAt   DateTime?
+  banReason  String?
+  bannedBy   String? // admin email, or "system" for automatic bans
+  strikes    Int      @default(0)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -43,6 +50,10 @@ model User {
   authoredAnnouncements  Announcement[]          @relation("AnnouncementAuthor")
   announcementDismissals AnnouncementDismissal[]
   connections            Connection[]
+  codeDevices            CodeDevice[]
+  codeTasks              CodeTask[]
+  apiSpend               ApiSpend[]
+  moderationFlags        ModerationFlag[]
 }
 
 // ----------------------------------------------------------------------------
@@ -450,10 +461,56 @@ enum ArtifactType {
   MERMAID
 }
 
+// ----------------------------------------------------------------------------
+// Per-request API cost ledger. One row per billable model call; monthly sums
+// drive the plan budget gauge. Never decremented when content is deleted.
+// ----------------------------------------------------------------------------
+
+model ApiSpend {
+  id               String   @id @default(cuid())
+  userId           String
+  model            String
+  kind             String   @default("chat") // chat | image | video | voice
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  costMicroUsd     Int // request cost in micro-USD (1e-6 $) — integer math only
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Moderation flags — one row per detected CGU/policy violation (automatic AI
+// moderation or a manual admin note). Soft violations add a strike; severe ones
+// ban immediately. Kept for the admin audit trail and appeals.
+// ----------------------------------------------------------------------------
+
+model ModerationFlag {
+  id             String    @id @default(cuid())
+  userId         String
+  source         String    @default("auto") // auto | manual
+  severity       String    @default("low")  // low | medium | high | critical
+  category       String    @default("other")
+  detail         String    @db.Text
+  messagePreview String?   @db.Text // redacted/truncated snippet that triggered it
+  action         String    @default("flagged") // flagged | strike | banned
+  reviewedAt     DateTime?
+  reviewedBy     String?
+  createdAt      DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([reviewedAt])
+}
+
 enum Plan {
   FREE
   PRO
   MAX
+  MAX20
   OWNER
 }
 
@@ -551,4 +608,57 @@ enum FeatureCategory {
   UI
   INTEGRATIONS
   OTHER
+}
+
+// ----------------------------------------------------------------------------
+// Remote code task queue (Mac hosts run coding tasks queued from other clients)
+// ----------------------------------------------------------------------------
+
+model CodeDevice {
+  id         String   @id @default(cuid())
+  userId     String
+  name       String
+  platform   String   @default("macos")
+  workspaces Json     @default("[]")
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks CodeTask[]
+
+  @@unique([userId, name])
+}
+
+model CodeTask {
+  id            String   @id @default(cuid())
+  userId        String
+  deviceId      String
+  workspacePath String
+  workspaceName String   @default("")
+  title         String
+  prompt        String   @db.Text
+  status        String   @default("queued")
+  lastSeq       Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device CodeDevice      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  events CodeTaskEvent[]
+
+  @@index([userId, createdAt])
+  @@index([deviceId, status])
+}
+
+model CodeTaskEvent {
+  id        String   @id @default(cuid())
+  taskId    String
+  seq       Int
+  kind      String
+  payload   Json
+  createdAt DateTime @default(now())
+
+  task CodeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, seq])
 }

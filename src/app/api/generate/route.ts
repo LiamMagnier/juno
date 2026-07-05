@@ -6,10 +6,12 @@ import { rateLimit } from "@/lib/rate-limit";
 import { resolveModel, imageEditSupport } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
+import { checkBudget, recordSpend, budgetExceededMessage } from "@/lib/spend";
 import { planRank } from "@/lib/plans";
 import { generateImage, editImage } from "@/lib/image-gen";
 import { generateVideo, isVideoGenSupported, videoGenUnsupportedMessage } from "@/lib/video-gen";
 import { buildObjectKey, putObject, getObjectBytes } from "@/lib/storage";
+import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import type { StreamChunk } from "@/types/chat";
@@ -73,6 +75,11 @@ export async function POST(req: Request) {
   const plan = await getUserPlan(user.id);
   if (planRank(plan) < planRank(model.minPlan)) {
     return NextResponse.json({ error: `${model.name} requires the ${model.minPlan} plan.` }, { status: 402 });
+  }
+
+  const budget = await checkBudget(user.id, plan);
+  if (!budget.allowed) {
+    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan) }, { status: 402 });
   }
 
   if (model.modality === "video" && !isVideoGenSupported(model)) {
@@ -147,7 +154,7 @@ export async function POST(req: Request) {
         }
 
         const userMsg = await prisma.message.create({
-          data: { conversationId: conversationId!, role: "USER", content: prompt },
+          data: { conversationId: conversationId!, role: "USER", content: encryptMessageText(prompt) },
           select: { id: true },
         });
 
@@ -198,6 +205,14 @@ export async function POST(req: Request) {
           fileName = edit ? `${model.name} — edit.${ext}` : `${model.name} — ${title || "image"}.${ext}`;
         }
 
+        // The provider call is done and cost real money — ledger the flat
+        // per-request media cost even if the upload/persist below fails.
+        await recordSpend({
+          userId: user.id,
+          model: model.id,
+          kind: model.modality === "video" ? "video" : "image",
+        });
+
         send({ type: "progress", stage: "uploading" });
         const key = buildObjectKey(user.id, `juno-${model.providerModel}.${ext}`);
         await putObject(key, bytes, mimeType);
@@ -207,7 +222,7 @@ export async function POST(req: Request) {
             conversationId: conversationId!,
             role: "ASSISTANT",
             model: model.id,
-            content: "",
+            content: encryptMessageText(""),
             attachments: {
               create: {
                 userId: user.id,
@@ -223,7 +238,7 @@ export async function POST(req: Request) {
           include: { attachments: true },
         });
 
-        await prisma.conversation.update({ where: { id: conversationId! }, data: { lastMessageAt: new Date() } });
+        await prisma.conversation.update({ where: { id: conversationId!, userId: user.id }, data: { lastMessageAt: new Date() } });
 
         const message = await serializeMessage(assistant);
         send({ type: "done", message, artifacts: [], memoryUpdated: false, quota: quotaRes.quota });

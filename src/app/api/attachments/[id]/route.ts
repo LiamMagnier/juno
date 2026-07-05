@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ error: "Invalid name." }, { status: 400 });
 
   const fileName = sanitizeFileName(parsed.data.fileName);
-  const updated = await prisma.attachment.update({ where: { id: attachment.id }, data: { fileName } });
+  const updated = await prisma.attachment.update({ where: { id: attachment.id, userId: user.id }, data: { fileName } });
   return NextResponse.json({ ok: true, fileName: updated.fileName });
 }
 
@@ -44,7 +44,7 @@ export async function DELETE(
   // still references the same stored object. Library "attach" clones share a
   // storageKey, so deleting one clone must not pull the file out from under
   // the original (or its siblings).
-  await prisma.attachment.delete({ where: { id: attachment.id } });
+  await prisma.attachment.delete({ where: { id: attachment.id, userId: user.id } });
 
   const stillReferenced = await prisma.attachment.count({ where: { storageKey: attachment.storageKey } });
   if (stillReferenced === 0) {

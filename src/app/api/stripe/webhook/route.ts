@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 import type { SubStatus } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { getStripe, planFromPriceId } from "@/lib/stripe";
 
@@ -25,7 +25,9 @@ function mapStatus(s: Stripe.Subscription.Status): SubStatus {
 
 async function syncSubscription(sub: Stripe.Subscription) {
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
-  const record = await prisma.subscription.findFirst({ where: { stripeCustomerId: customerId } });
+  // Signature-verified Stripe event; the lookup is keyed by customer id, not
+  // by a signed-in user, so it legitimately uses the unguarded client.
+  const record = await prismaUnguarded.subscription.findFirst({ where: { stripeCustomerId: customerId } });
   if (!record) return;
 
   const item = sub.items.data[0];
@@ -36,7 +38,7 @@ async function syncSubscription(sub: Stripe.Subscription) {
     (item as unknown as { current_period_end?: number })?.current_period_end ??
     (sub as unknown as { current_period_end?: number }).current_period_end;
 
-  await prisma.subscription.update({
+  await prismaUnguarded.subscription.update({
     where: { id: record.id },
     data: {
       plan: sub.status === "canceled" ? "FREE" : plan,

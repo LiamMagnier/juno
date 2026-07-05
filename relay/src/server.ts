@@ -19,8 +19,14 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
   .map((s) => s.trim())
   .filter(Boolean);
 
+if (!process.env.AUTH_SECRET) {
+  console.warn("[relay] AUTH_SECRET is not set — every client connection will be rejected with 401.");
+}
+
 const server = createServer((req, res) => {
-  if (req.url === "/healthz") {
+  const pathname = new URL(req.url ?? "/", "http://relay").pathname;
+  // Accept /healthz behind path-preserving proxies too (e.g. /voice-relay/healthz).
+  if (pathname === "/healthz" || pathname.endsWith("/healthz")) {
     const providers = Object.fromEntries(Object.values(PROVIDERS).map((p) => [p.id, p.available()]));
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ ok: true, providers }));
@@ -40,7 +46,12 @@ server.on("upgrade", (req, socket, head) => {
     socket.destroy();
     return;
   }
-  const auth = verifyRelayToken(url.searchParams.get("token"));
+  let auth: { userId: string } | null = null;
+  try {
+    auth = verifyRelayToken(url.searchParams.get("token"));
+  } catch (err) {
+    console.error("[relay] token verification failed", err instanceof Error ? err.message : err);
+  }
   if (!auth) {
     socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
     socket.destroy();

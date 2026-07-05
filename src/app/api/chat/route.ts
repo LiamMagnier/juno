@@ -23,6 +23,8 @@ import {
 } from "@/lib/clarification-wizard";
 import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
+import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
+import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
@@ -30,6 +32,8 @@ import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
 import { clampReasoningEffort } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
+import { quickScreen, moderateUserMessage } from "@/lib/moderation-ai";
+import { recordFlag } from "@/lib/moderation";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -196,6 +200,32 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
 
+  // Plaintext of the incoming message (before it is encrypted for storage). Used
+  // for automatic moderation. Owners are never moderated.
+  const moderationText = input.regenerate ? "" : input.message?.trim() ?? "";
+  const moderate = !isOwnerEmail(user.email) && moderationText.length > 0;
+
+  // Synchronous pre-filter for the worst, unambiguous content: catch and ban it
+  // BEFORE generating any reply. Subtler cases are handled fire-and-forget after
+  // the response so moderation never adds latency.
+  if (moderate) {
+    const urgent = quickScreen(moderationText);
+    if (urgent && (urgent.severity === "high" || urgent.severity === "critical")) {
+      await recordFlag({
+        userId: user.id,
+        severity: urgent.severity,
+        category: urgent.category,
+        detail: urgent.detail,
+        source: "auto",
+        messagePreview: moderationText.slice(0, 240),
+      });
+      return NextResponse.json(
+        { error: "policy_violation", message: "This request violates our Acceptable Use policy." },
+        { status: 403 }
+      );
+    }
+  }
+
   const plan = await getUserPlan(user.id);
 
   // Resolve the model: requested → user default → app default, then ensure the
@@ -229,6 +259,11 @@ async function handleChat(req: Request) {
 
   if (input.privateMode) {
     if (input.regenerate) return NextResponse.json({ error: "Regenerate is not available in private chat." }, { status: 400 });
+
+    const budget = await checkBudget(user.id, plan);
+    if (!budget.allowed) {
+      return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan) }, { status: 402 });
+    }
 
     const privateHistory: MessageForModel[] = (input.privateHistory ?? [])
       .filter((m) => m.content.trim())
@@ -313,6 +348,7 @@ async function handleChat(req: Request) {
         let cacheWriteTokens: number | undefined;
         let writingStarted = false;
         let finishReason: ChatFinishReason = "stop";
+        let spendRecorded = false;
         const webSources: ClientSource[] = [];
 
         const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
@@ -369,6 +405,25 @@ async function handleChat(req: Request) {
           });
         }
 
+        // Hard mid-stream budget ceiling: the instant the running cost of THIS
+        // generation would push the user past their remaining plan budget, abort
+        // the provider stream so they cannot be billed a cent beyond it.
+        const budgetRates = modelRatesMicroUsdPerToken(modelId);
+        const budgetCeilingMicro = budget.remainingMicroUsd;
+        const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
+        let budgetHalted = false;
+        const enforceStreamBudget = () => {
+          if (budgetCeilingMicro == null || budgetHalted) return;
+          const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
+          const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
+          const projected = inTok * budgetRates.input + outTok * budgetRates.output;
+          if (projected >= budgetCeilingMicro) {
+            budgetHalted = true;
+            sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+            generationController.abort();
+          }
+        };
+
         try {
           for await (const ev of streamChat({
             model: modelInfo,
@@ -391,11 +446,13 @@ async function handleChat(req: Request) {
               }
               full += ev.text;
               send({ type: "delta", text: ev.text });
+              enforceStreamBudget();
             } else if (ev.type === "tool") {
               if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
             } else if (ev.type === "reasoning") {
               reasoning += ev.text;
               send({ type: "reasoning", text: ev.text });
+              enforceStreamBudget();
             } else if (ev.type === "sources") {
               for (const source of ev.sources) {
                 if (!source.url || sourceUrls.has(source.url)) continue;
@@ -414,6 +471,7 @@ async function handleChat(req: Request) {
               if (ev.output != null) completionTokens = ev.output;
               if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
               if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+              enforceStreamBudget();
             } else if (ev.type === "finish") {
               finishReason = ev.reason;
             }
@@ -453,6 +511,17 @@ async function handleChat(req: Request) {
             quota: consumed.quota,
             finishReason,
           });
+          await recordSpend({
+            userId: user.id,
+            model: modelId,
+            kind: "chat",
+            promptTokens: usage.totalInput || undefined,
+            completionTokens: usage.output || undefined,
+            costUsd: usage.cost || undefined,
+            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
+            completionChars: full.length + reasoning.length,
+          });
+          spendRecorded = true;
           console.info("[chat] private generation complete", {
             generationId,
             provider: modelInfo.provider,
@@ -464,7 +533,13 @@ async function handleChat(req: Request) {
             cacheWriteTokens: cacheWriteTokens ?? null,
           });
         } catch (err) {
-          const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
+          // A budget-triggered abort saves the partial answer + bills it, exactly
+          // like a user-initiated stop; the "usage limit" warning was already sent.
+          const reason = budgetHalted
+            ? "user_stopped"
+            : wasGenerationStopped(generationId)
+              ? "user_stopped"
+              : classifyErrorFinishReason(err);
           console.error("[chat] private generation error", {
             generationId,
             provider: modelInfo.provider,
@@ -498,6 +573,19 @@ async function handleChat(req: Request) {
               quota: consumed.quota,
               finishReason: reason,
             });
+            if (!spendRecorded) {
+              await recordSpend({
+                userId: user.id,
+                model: modelId,
+                kind: "chat",
+                promptTokens: partialUsage.totalInput || undefined,
+                completionTokens: partialUsage.output || undefined,
+                costUsd: partialUsage.cost || undefined,
+                promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
+                completionChars: full.length + reasoning.length,
+              });
+              spendRecorded = true;
+            }
             console.info("[chat] private partial generation complete", {
               generationId,
               provider: modelInfo.provider,
@@ -526,7 +614,18 @@ async function handleChat(req: Request) {
       },
     });
 
+    // Fire-and-forget moderation of the private message (never stored, but the
+    // policy still applies). Runs after the response settles so it adds no latency.
+    if (moderate) {
+      after(() => moderateUserMessage({ userId: user.id, text: moderationText }));
+    }
+
     return new Response(stream, { headers: SSE_HEADERS });
+  }
+
+  const budget = await checkBudget(user.id, plan);
+  if (!budget.allowed) {
+    return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan) }, { status: 402 });
   }
 
   // Load or create the conversation (ownership enforced).
@@ -579,13 +678,15 @@ async function handleChat(req: Request) {
         orderBy: { createdAt: "desc" },
         select: { content: true },
       });
-      const originalUserMessage = previousUser?.content.trim() || input.clarification.originalUserMessage.trim();
+      const assistantContent = decryptMessageText(assistantMessage.content);
+      const originalUserMessage =
+        decryptMessageText(previousUser?.content ?? null)?.trim() || input.clarification.originalUserMessage.trim();
       const clarificationPayload = {
         ...input.clarification,
         originalUserMessage,
       };
       const submittedContent = markClarificationWizardSubmitted(
-        assistantMessage.content,
+        assistantContent,
         input.clarification.blockId,
         input.clarification.answers
       );
@@ -594,16 +695,20 @@ async function handleChat(req: Request) {
       }
       await prisma.message.update({
         where: { id: assistantMessage.id },
-        data: { content: submittedContent },
+        data: { content: encryptMessageText(submittedContent) },
       });
-      clarificationAssistantRollback = { id: assistantMessage.id, content: assistantMessage.content };
+      clarificationAssistantRollback = { id: assistantMessage.id, content: assistantContent };
       clarificationVisibleContent = formatClarificationVisibleMessage(clarificationPayload);
       clarificationModelContent = formatClarificationModelMessage(clarificationPayload);
     }
 
     // Append the user's message and link any pre-uploaded attachments.
     const created = await prisma.message.create({
-      data: { conversationId: conversation.id, role: "USER", content: clarificationVisibleContent ?? input.message?.trim() ?? "" },
+      data: {
+        conversationId: conversation.id,
+        role: "USER",
+        content: encryptMessageText(clarificationVisibleContent ?? input.message?.trim() ?? ""),
+      },
     });
     userMessageId = created.id;
     if (input.preflightClarification) {
@@ -624,7 +729,10 @@ async function handleChat(req: Request) {
     if (userMessageId) await prisma.message.delete({ where: { id: userMessageId } }).catch(() => {});
     if (clarificationAssistantRollback) {
       await prisma.message
-        .update({ where: { id: clarificationAssistantRollback.id }, data: { content: clarificationAssistantRollback.content } })
+        .update({
+          where: { id: clarificationAssistantRollback.id },
+          data: { content: encryptMessageText(clarificationAssistantRollback.content) },
+        })
         .catch(() => {});
     }
     return NextResponse.json(
@@ -640,7 +748,10 @@ async function handleChat(req: Request) {
     include: { attachments: true },
     take: HISTORY_LIMIT,
   });
-  const history = recent.reverse().filter((m) => m.id !== staleAssistantId);
+  const history = recent
+    .reverse()
+    .filter((m) => m.id !== staleAssistantId)
+    .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
   const hiddenUserContent = clarificationModelContent ?? preflightClarificationModelContent;
   const modelHistory =
     hiddenUserContent && userMessageId
@@ -733,6 +844,7 @@ async function handleChat(req: Request) {
       let cacheWriteTokens: number | undefined;
       let writingStarted = false;
       let finishReason: ChatFinishReason = "stop";
+      let spendRecorded = false;
 
       const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
         const entry: ClientActivityEvent = {
@@ -795,6 +907,25 @@ async function handleChat(req: Request) {
         });
       }
 
+      // Hard mid-stream budget ceiling (see the private path for rationale):
+      // abort the provider stream the instant this generation's running cost
+      // would take the user past their remaining plan budget.
+      const budgetRates = modelRatesMicroUsdPerToken(modelId);
+      const budgetCeilingMicro = budget.remainingMicroUsd;
+      const inputCharsForBudget = system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
+      let budgetHalted = false;
+      const enforceStreamBudget = () => {
+        if (budgetCeilingMicro == null || budgetHalted) return;
+        const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
+        const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
+        const projected = inTok * budgetRates.input + outTok * budgetRates.output;
+        if (projected >= budgetCeilingMicro) {
+          budgetHalted = true;
+          sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+          generationController.abort();
+        }
+      };
+
       try {
         for await (const ev of streamChat({
           model: modelInfo,
@@ -818,11 +949,13 @@ async function handleChat(req: Request) {
             }
             full += ev.text;
             send({ type: "delta", text: ev.text });
+            enforceStreamBudget();
           } else if (ev.type === "tool") {
             if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
           } else if (ev.type === "reasoning") {
             reasoning += ev.text;
             send({ type: "reasoning", text: ev.text });
+            enforceStreamBudget();
           } else if (ev.type === "sources") {
             for (const source of ev.sources) {
               if (!source.url || sourceUrls.has(source.url)) continue;
@@ -841,6 +974,7 @@ async function handleChat(req: Request) {
             if (ev.output != null) completionTokens = ev.output;
             if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
             if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+            enforceStreamBudget();
           } else if (ev.type === "finish") {
             finishReason = ev.reason;
           }
@@ -862,8 +996,8 @@ async function handleChat(req: Request) {
           data: {
             conversationId,
             role: "ASSISTANT",
-            content: full,
-            ...(reasoning ? { reasoning } : {}),
+            content: encryptMessageText(full),
+            ...(reasoning ? { reasoning: encryptMessageText(reasoning) } : {}),
             model: modelId,
             promptTokens: usage.totalInput || promptTokens || null,
             completionTokens: usage.output || completionTokens || null,
@@ -916,6 +1050,17 @@ async function handleChat(req: Request) {
           finishReason,
           projectId: conversation.projectId,
         });
+        await recordSpend({
+          userId: user.id,
+          model: modelId,
+          kind: "chat",
+          promptTokens: usage.totalInput || undefined,
+          completionTokens: usage.output || undefined,
+          costUsd: usage.cost || undefined,
+          promptChars: system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
+          completionChars: full.length + reasoning.length,
+        });
+        spendRecorded = true;
         console.info("[chat] generation complete", {
           generationId,
           conversationId,
@@ -929,7 +1074,11 @@ async function handleChat(req: Request) {
           cacheWriteTokens: cacheWriteTokens ?? null,
         });
       } catch (err) {
-        const reason = wasGenerationStopped(generationId) ? "user_stopped" : classifyErrorFinishReason(err);
+        const reason = budgetHalted
+          ? "user_stopped"
+          : wasGenerationStopped(generationId)
+            ? "user_stopped"
+            : classifyErrorFinishReason(err);
         console.error("[chat] generation error", {
           generationId,
           conversationId,
@@ -951,8 +1100,8 @@ async function handleChat(req: Request) {
               data: {
                 conversationId,
                 role: "ASSISTANT",
-                content: full,
-                ...(reasoning ? { reasoning } : {}),
+                content: encryptMessageText(full),
+                ...(reasoning ? { reasoning: encryptMessageText(reasoning) } : {}),
                 model: modelId,
                 promptTokens: partialUsage.totalInput || promptTokens || null,
                 completionTokens: partialUsage.output || completionTokens || null,
@@ -979,6 +1128,19 @@ async function handleChat(req: Request) {
               title: convoTitle,
               projectId: conversation.projectId,
             });
+            if (!spendRecorded) {
+              await recordSpend({
+                userId: user.id,
+                model: modelId,
+                kind: "chat",
+                promptTokens: partialUsage.totalInput || undefined,
+                completionTokens: partialUsage.output || undefined,
+                costUsd: partialUsage.cost || undefined,
+                promptChars: system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
+                completionChars: full.length + reasoning.length,
+              });
+              spendRecorded = true;
+            }
             console.info("[chat] partial generation persisted", {
               generationId,
               conversationId,
@@ -1031,6 +1193,13 @@ async function handleChat(req: Request) {
   // disconnects. Awaiting genPromise keeps the serverless function alive until the
   // answer is fully generated and saved, then extracts durable memories.
   after(async () => {
+    // Moderate the user's message independently of whether generation succeeded —
+    // a violation must be caught even if the model errored. Fire-and-forget so it
+    // never delays the reply.
+    if (moderate) {
+      await moderateUserMessage({ userId: user.id, text: moderationText }).catch(() => {});
+    }
+
     await genPromise?.catch(() => {});
     if (!assistantFull) return;
 

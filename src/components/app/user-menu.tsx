@@ -3,18 +3,16 @@
 import Link from "next/link";
 import Image from "next/image";
 import { signOut } from "next-auth/react";
-import { Brain, Command, Keyboard, LogOut, Map as MapIcon, Megaphone, Settings, Sparkles, User } from "lucide-react";
+import { Brain, Command, Keyboard, LogOut, Map as MapIcon, Settings, Shield, Sparkles, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { useApp } from "@/components/app/app-provider";
-import { PLANS } from "@/lib/plans";
+import { PLANS, planRank } from "@/lib/plans";
 import { DotIdenticon, DotFillBar } from "@/components/signature/dot-matrix";
 
 export function UserMenu({ compact = false }: { compact?: boolean }) {
@@ -51,76 +49,72 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </button>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="end"
-        side="top"
-        className="w-60 origin-popper p-1 data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
-      >
-        <div className="border-b border-border/40 px-3 py-3">
-          <div className="flex items-center justify-between gap-2">
-            <span className="truncate text-sm font-semibold leading-none text-foreground">
-              {user.name ?? user.email?.split("@")[0]}
-            </span>
-            <span className="inline-flex shrink-0 items-center rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-              {plan.name}
-            </span>
+      <DropdownMenuContent align="end" side="top" className="w-64">
+        <div className="flex items-center gap-2.5 px-2 pb-2.5 pt-2">
+          {avatar}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="truncate text-sm font-medium text-foreground">
+                {user.name ?? user.email?.split("@")[0]}
+              </span>
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium uppercase leading-none tracking-[0.14em] text-primary">
+                {plan.name}
+              </span>
+            </div>
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">{user.email}</span>
           </div>
-          <span className="mt-1.5 block truncate text-xs leading-none text-muted-foreground">
-            {user.email}
-          </span>
         </div>
-        <div className="mx-1.5 my-1.5 rounded-md bg-muted/40 p-2.5">
-          <div className="flex items-center justify-between gap-2 font-mono text-label uppercase text-muted-foreground">
-            <span>Messages</span>
-            <span className="truncate text-foreground">
+        <div className="rounded-[10px] bg-muted/40 px-2 py-2">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Messages</span>
+            <span className="truncate font-mono text-[11px] tracking-wide text-foreground">
               {quota.limit == null ? "Unlimited" : `${quota.used} / ${quota.limit}`}
             </span>
           </div>
           {quota.limit != null ? (
-            <div className="mt-2">
-              <DotFillBar value={quota.used} max={quota.limit} dots={18} />
-            </div>
+            <DotFillBar value={quota.used} max={quota.limit} dots={18} className="mt-2" />
           ) : (
-            <p className="mt-1.5 text-caption text-muted-foreground/75">
-              Enjoy unlimited messages on this plan.
-            </p>
+            <>
+              <DotFillBar value={1} max={1} dots={18} className="mt-2 opacity-40" />
+              <p className="mt-1.5 text-caption text-muted-foreground/75">Unlimited messages on this plan.</p>
+            </>
           )}
         </div>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="h-9">
           <Link href="/profile" className="flex w-full items-center gap-2">
-            <User className="h-4 w-4" />
+            <User className="h-4 w-4 opacity-70" />
             <span>Profile</span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="h-9">
           <Link href="/settings" className="flex w-full items-center gap-2">
-            <Settings className="h-4 w-4" />
+            <Settings className="h-4 w-4 opacity-70" />
             <span>Settings</span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="h-9">
           <Link href="/memory" className="flex w-full items-center gap-2">
-            <Brain className="h-4 w-4" />
+            <Brain className="h-4 w-4 opacity-70" />
             <span>Memory</span>
           </Link>
         </DropdownMenuItem>
-        <DropdownMenuItem asChild>
+        <DropdownMenuItem asChild className="h-9">
           <Link href="/roadmap" className="flex w-full items-center gap-2">
-            <MapIcon className="h-4 w-4" />
+            <MapIcon className="h-4 w-4 opacity-70" />
             <span>Roadmap & requests</span>
           </Link>
         </DropdownMenuItem>
         {features.isOwner && (
-          <DropdownMenuItem asChild>
-            <Link href="/admin/announcements" className="flex w-full items-center gap-2">
-              <Megaphone className="h-4 w-4" />
-              <span>Announcements</span>
+          <DropdownMenuItem asChild className="h-9">
+            <Link href="/admin/users" className="flex w-full items-center gap-2">
+              <Shield className="h-4 w-4 opacity-70" />
+              <span>Admin</span>
             </Link>
           </DropdownMenuItem>
         )}
-        {features.billing && quota.plan !== "MAX" && (
-          <DropdownMenuItem asChild>
+        {features.billing && planRank(quota.plan) < planRank("MAX20") && (
+          <DropdownMenuItem asChild className="h-9">
             <Link href="/upgrade" className="flex w-full items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
               <span>Upgrade plan</span>
@@ -128,19 +122,25 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           </DropdownMenuItem>
         )}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}>
-          <Command className="h-4 w-4" />
+        <DropdownMenuItem
+          className="h-9"
+          onSelect={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
+        >
+          <Command className="h-4 w-4 opacity-70" />
           <span className="flex-1">Command palette</span>
-          <span className="font-mono text-[10px] text-muted-foreground">⌘K</span>
+          <span className="font-mono text-[11px] tracking-wide text-muted-foreground">⌘K</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => window.dispatchEvent(new CustomEvent("juno:shortcuts"))}>
-          <Keyboard className="h-4 w-4" />
+        <DropdownMenuItem className="h-9" onSelect={() => window.dispatchEvent(new CustomEvent("juno:shortcuts"))}>
+          <Keyboard className="h-4 w-4 opacity-70" />
           <span className="flex-1">Keyboard shortcuts</span>
-          <span className="font-mono text-[10px] text-muted-foreground">⌘/</span>
+          <span className="font-mono text-[11px] tracking-wide text-muted-foreground">⌘/</span>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/sign-in" })}>
-          <LogOut className="h-4 w-4" />
+        <DropdownMenuItem
+          className="h-9 text-destructive focus:text-destructive"
+          onSelect={() => signOut({ callbackUrl: "/sign-in" })}
+        >
+          <LogOut className="h-4 w-4 opacity-70" />
           <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

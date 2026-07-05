@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useTheme } from "next-themes";
-import type { AppBootstrap, AppUser, ClientFolder, ClientSettings } from "@/types/app";
+import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 
@@ -88,6 +88,7 @@ interface AppContextValue {
   settings: ClientSettings;
   features: AppBootstrap["features"];
   quota: ClientQuota;
+  spend: ClientSpend;
   conversations: ClientConversation[];
   folders: ClientFolder[];
   models: ModelInfo[];
@@ -224,6 +225,7 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
       settings,
       features: bootstrap.features,
       quota,
+      spend: bootstrap.spend,
       conversations,
       folders,
       models,
@@ -244,6 +246,7 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
     [
       activeConversationId,
       bootstrap.features,
+      bootstrap.spend,
       bootstrap.user,
       composerPrefs,
       setComposerPrefs,

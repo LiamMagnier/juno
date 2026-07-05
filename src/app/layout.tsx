@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { CookieConsent } from "@/components/app/cookie-consent";
 import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
 
@@ -11,11 +12,27 @@ import { auth } from "@/lib/auth";
 const serif = Newsreader({ subsets: ["latin"], variable: "--font-serif", display: "swap", style: ["normal", "italic"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
+const APP_DESCRIPTION = "Juno — a thoughtful AI assistant for chat, code, and creativity.";
+
 export const metadata: Metadata = {
   title: { default: "Juno", template: "%s · Juno" },
-  description: "Juno — a thoughtful AI assistant for chat, code, and creativity.",
+  description: APP_DESCRIPTION,
   applicationName: "Juno",
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"),
+  openGraph: {
+    siteName: "Juno",
+    type: "website",
+    locale: "en_US",
+    title: "Juno",
+    description: APP_DESCRIPTION,
+    images: [{ url: "/juno-mark.png", width: 512, height: 512, alt: "Juno" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "Juno",
+    description: APP_DESCRIPTION,
+    images: ["/juno-mark.png"],
+  },
 };
 
 export const viewport: Viewport = {
@@ -38,7 +55,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       className={`${serif.variable} ${mono.variable}`}
     >
       <body className="min-h-dvh antialiased">
-        <Providers defaultTheme={theme} session={session}>{children}</Providers>
+        <Providers defaultTheme={theme} session={session}>
+          {children}
+          <CookieConsent />
+        </Providers>
       </body>
     </html>
   );

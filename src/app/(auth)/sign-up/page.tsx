@@ -5,7 +5,10 @@ import { AuthForm } from "@/components/auth/auth-form";
 import { getCurrentUser } from "@/lib/session";
 import { isGoogleConfigured } from "@/lib/env";
 
-export const metadata: Metadata = { title: "Create account" };
+export const metadata: Metadata = {
+  title: "Create account",
+  description: "Create your Juno account and start chatting with the best AI models in seconds.",
+};
 
 export default async function SignUpPage() {
   if (await getCurrentUser()) redirect("/chat");

@@ -43,11 +43,47 @@ export function NotionMark({ className }: { className?: string }) {
   );
 }
 
+export function AppleCalendarMark({ className }: { className?: string }) {
+  // Simplified monochrome calendar: bound page with binding rings and a marked day.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="3" className="stroke-current" strokeWidth="1.5" />
+      <path d="M3.5 9.75h17" className="stroke-current" strokeWidth="1.5" />
+      <path d="M8 3v3.5M16 3v3.5" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8.25" cy="13.5" r="1.4" className="fill-current" />
+      <path d="M12.5 13.5h4M8.25 17h8.25" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function AppleMailMark({ className }: { className?: string }) {
+  // Simplified monochrome envelope with the fold drawn open.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={className}>
+      <rect x="3" y="5.5" width="18" height="13" rx="3" className="stroke-current" strokeWidth="1.5" />
+      <path d="m4.5 8 6.53 5.06a1.6 1.6 0 0 0 1.94 0L19.5 8" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="m4.6 17.4 5.2-4.55M19.4 17.4l-5.2-4.55" className="stroke-current" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function AppleMusicMark({ className }: { className?: string }) {
+  // Simplified monochrome beamed eighth notes, the MusicKit idiom.
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M19.5 3.2a1 1 0 0 0-.83-.2l-9 1.87A1.3 1.3 0 0 0 8.63 6.1v9.53a3.6 3.6 0 0 0-1.63-.38c-1.8 0-3.25 1.16-3.25 2.6s1.45 2.6 3.25 2.6 3.25-1.16 3.25-2.6V9.4l8.1-1.69v5.72a3.6 3.6 0 0 0-1.6-.37c-1.8 0-3.25 1.17-3.25 2.6 0 1.44 1.45 2.6 3.25 2.6s3.25-1.16 3.25-2.6V4a1 1 0 0 0-.5-.8Z" />
+    </svg>
+  );
+}
+
 /** Brand mark for a connector id; generic plug for unknown ids. */
 export function ConnectorMark({ id, className }: { id: string; className?: string }) {
   if (id === "github") return <GitHubMark className={className} />;
   if (id === "figma") return <FigmaMark className={className} />;
   if (id === "notion") return <NotionMark className={className} />;
+  if (id === "apple-calendar") return <AppleCalendarMark className={className} />;
+  if (id === "apple-mail") return <AppleMailMark className={className} />;
+  if (id === "apple-music") return <AppleMusicMark className={className} />;
   return <Plug className={className} aria-hidden="true" />;
 }
 

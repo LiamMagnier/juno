@@ -9,7 +9,18 @@ import {
   type VoiceProviderId,
   type VoiceServerMessage,
   PLAYBACK_SAMPLE_RATE,
+  VOICE_PROVIDERS,
 } from "@/lib/voice-relay-protocol";
+
+export type VoiceProviderAvailability = Partial<Record<VoiceProviderId, boolean>>;
+
+/** Tolerate mis-set env values: coerce http(s) to ws(s), default to wss, drop trailing slashes. */
+function normalizeRelayUrl(raw: string): string {
+  let url = raw.trim().replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(url)) url = url.replace(/^http/i, "ws");
+  if (!/^wss?:\/\//i.test(url)) url = `wss://${url}`;
+  return url;
+}
 
 export type RealtimeVoiceStatus = "idle" | "connecting" | "live" | "ended" | "error";
 
@@ -36,6 +47,7 @@ export interface RealtimeUsage {
 export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {}) {
   const [status, setStatus] = React.useState<RealtimeVoiceStatus>("idle");
   const [provider, setProvider] = React.useState<VoiceProviderId>(opts.defaultProvider ?? "openai");
+  const [availability, setAvailability] = React.useState<VoiceProviderAvailability | null>(null);
   const [capabilities, setCapabilities] = React.useState<ProviderCapabilities | null>(null);
   const [assistantSpeaking, setAssistantSpeaking] = React.useState(false);
   const [transcript, setTranscript] = React.useState<RealtimeTranscriptLine[]>([]);
@@ -240,6 +252,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           return;
         case "error":
           setError(msg.message);
+          setStatus((cur) => (cur === "connecting" ? "error" : cur));
           return;
         case "pong":
           return;
@@ -250,7 +263,6 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
   const start = React.useCallback(
     async (initialProvider?: VoiceProviderId) => {
-      const target = initialProvider ?? provider;
       setStatus("connecting");
       setError(null);
       setClosedReason(null);
@@ -258,14 +270,26 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       setUsage(null);
       try {
         const res = await fetch("/api/voice/relay-token");
-        const data = (await res.json().catch(() => ({}))) as { token?: string; url?: string; error?: string };
+        const data = (await res.json().catch(() => ({}))) as {
+          token?: string;
+          url?: string;
+          error?: string;
+          providers?: VoiceProviderAvailability;
+        };
         if (!res.ok || !data.token || !data.url) throw new Error(data.error || "Realtime voice is not available.");
+
+        const avail = data.providers && typeof data.providers === "object" ? data.providers : null;
+        if (avail) setAvailability(avail);
+        let target = initialProvider ?? provider;
+        if (avail && avail[target] === false) {
+          target = VOICE_PROVIDERS.find((p) => avail[p]) ?? target;
+        }
 
         playCtxRef.current = new AudioContext({ sampleRate: PLAYBACK_SAMPLE_RATE });
         await playCtxRef.current.resume();
         await startMic();
 
-        const ws = new WebSocket(`${data.url.replace(/\/$/, "")}/?token=${encodeURIComponent(data.token)}`);
+        const ws = new WebSocket(`${normalizeRelayUrl(data.url)}/?token=${encodeURIComponent(data.token)}`);
         ws.binaryType = "arraybuffer";
         wsRef.current = ws;
         ws.onopen = () => {
@@ -380,6 +404,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   return {
     status,
     provider,
+    availability,
     capabilities,
     transcript,
     usage,

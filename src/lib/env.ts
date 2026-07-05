@@ -52,6 +52,13 @@ export const env = {
       // there is no Notion client id/secret to configure — only the MCP endpoint.
       mcpUrl: process.env.NOTION_MCP_URL ?? "https://mcp.notion.com/mcp",
     },
+    appleMusic: {
+      // MusicKit developer credentials (Apple Developer → Certificates → Keys).
+      // The .p8 private key may be pasted with literal \n escapes in the env var.
+      teamId: process.env.APPLE_MUSIC_TEAM_ID,
+      keyId: process.env.APPLE_MUSIC_KEY_ID,
+      privateKey: process.env.APPLE_MUSIC_PRIVATE_KEY?.replace(/\\n/g, "\n"),
+    },
   },
 
   // Storage (S3-compatible — required only for uploads)
@@ -71,6 +78,7 @@ export const env = {
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     pricePro: process.env.STRIPE_PRICE_PRO,
     priceMax: process.env.STRIPE_PRICE_MAX,
+    priceMax20: process.env.STRIPE_PRICE_MAX20,
   },
 
   // Voice (optional — falls back to browser Web Speech API)

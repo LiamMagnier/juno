@@ -16,6 +16,7 @@ import type {
   ClientSource,
 } from "@/types/chat";
 import type { ArtifactType } from "@/lib/message-content";
+import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
@@ -84,8 +85,8 @@ export async function serializeMessage(msg: Message & { attachments: Attachment[
   return {
     id: msg.id,
     role: msg.role,
-    content: msg.content,
-    reasoning: msg.reasoning ?? undefined,
+    content: decryptMessageTextSafe(msg.content),
+    reasoning: msg.reasoning != null ? decryptMessageTextSafe(msg.reasoning) : undefined,
     model: msg.model,
     feedback: msg.feedback,
     createdAt: msg.createdAt.toISOString(),

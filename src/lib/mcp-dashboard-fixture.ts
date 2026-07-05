@@ -52,6 +52,24 @@ export const MOCK_TOOLS: Record<string, McpToolInfo[]> = {
     { name: "notion__query_database", description: "Query a database with filters and sorts.", paramCount: 4 },
     { name: "notion__create_comment", description: "Add a comment to a page or discussion.", paramCount: 2 },
   ],
+  "apple-calendar": [
+    { name: "apple-calendar__list_calendars", description: "List the user's iCloud calendars by name.", paramCount: 0 },
+    { name: "apple-calendar__list_events", description: "List events in a time range across calendars.", paramCount: 4 },
+    { name: "apple-calendar__create_event", description: "Create an event with title, times, location, and notes.", paramCount: 6 },
+    { name: "apple-calendar__delete_event", description: "Delete an event by UID from a named calendar.", paramCount: 2 },
+  ],
+  "apple-mail": [
+    { name: "apple-mail__list_mailboxes", description: "List iCloud Mail mailboxes and folders.", paramCount: 0 },
+    { name: "apple-mail__search_messages", description: "Search a mailbox by text, sender, or date.", paramCount: 5 },
+    { name: "apple-mail__read_message", description: "Read one message's headers and text body by UID.", paramCount: 2 },
+    { name: "apple-mail__unread_count", description: "Count unread messages in a mailbox.", paramCount: 1 },
+  ],
+  "apple-music": [
+    { name: "apple-music__search_catalog", description: "Search the catalog for songs, albums, artists, or playlists.", paramCount: 2 },
+    { name: "apple-music__list_playlists", description: "List the playlists in the user's library.", paramCount: 0 },
+    { name: "apple-music__recently_played", description: "List the user's recently played tracks.", paramCount: 0 },
+    { name: "apple-music__add_to_playlist", description: "Add catalog songs to a library playlist.", paramCount: 2 },
+  ],
 };
 
 const ago = (min: number, sec = 0) => new Date(Date.now() - min * 60_000 - sec * 1000).toISOString();

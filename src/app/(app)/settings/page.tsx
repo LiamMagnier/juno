@@ -30,6 +30,7 @@ import {
 import { DotFillBar } from "@/components/signature/dot-matrix";
 import { useApp } from "@/components/app/app-provider";
 import { resolveModel } from "@/lib/models";
+import { averageRequestCostMicroUsd } from "@/lib/model-metrics";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS } from "@/lib/accents";
@@ -109,7 +110,7 @@ function CustomPickerButton({
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, settings, setSettings, quota, features, models } = useApp();
+  const { user, settings, setSettings, quota, spend, features, models } = useApp();
   const { setTheme } = useTheme();
   const [instructions, setInstructions] = React.useState(settings.customInstructions);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
@@ -196,6 +197,32 @@ export default function SettingsPage() {
   const remaining = quota.remaining;
   const low = limit != null && remaining != null && remaining <= Math.max(1, Math.round(limit * 0.1));
 
+  // API budget gauge: "requests left" assumes an average request of 800 prompt
+  // + 500 completion tokens on the user's default model (recomputed live when
+  // the default model changes).
+  const budgetModel = React.useMemo(() => resolveModel(settings.defaultModel), [settings.defaultModel]);
+  const budget = React.useMemo(() => {
+    if (spend.budgetMicroUsd == null) return null;
+    const remainingMicro = Math.max(0, spend.budgetMicroUsd - spend.spentMicroUsd);
+    const avgMicro = budgetModel ? averageRequestCostMicroUsd(budgetModel) : 0;
+    const toEur = (micro: number) => (micro / 1_000_000) * spend.eurPerUsd;
+    const budgetEur = toEur(spend.budgetMicroUsd);
+    return {
+      spentLabel: toEur(spend.spentMicroUsd).toFixed(2),
+      budgetLabel: Number.isInteger(budgetEur) ? String(budgetEur) : budgetEur.toFixed(2),
+      requestsLeft: avgMicro > 0 ? Math.floor(remainingMicro / avgMicro) : null,
+      low: spend.budgetMicroUsd > 0 && remainingMicro <= spend.budgetMicroUsd * 0.1,
+    };
+  }, [spend, budgetModel]);
+  const budgetResetLabel = React.useMemo(() => {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  }, []);
+
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6">
@@ -242,7 +269,7 @@ export default function SettingsPage() {
                 
                 <div className="mt-4 flex items-center justify-between gap-2 pt-3 border-t border-border/40">
                   <span className="text-caption text-muted-foreground uppercase tracking-wider font-mono">
-                    {plan.price > 0 ? `$${plan.price}/mo` : "Active tier"}
+                    {plan.price > 0 ? `${plan.price} € HT/mo` : "Active tier"}
                   </span>
                   {quota.plan === "FREE" && features.billing && (
                     <Button asChild size="sm" className="h-7 px-3 text-xs">
@@ -317,6 +344,48 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            {/* API budget gauge — paid plans get spend/budget; owner is unlimited. */}
+            {quota.plan !== "FREE" && (
+              <div className="field-well mt-4 rounded-[18px] border border-border/50 bg-card p-4">
+                <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block mb-2">
+                  API budget
+                </span>
+                {budget == null ? (
+                  <div>
+                    <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
+                      {Array.from({ length: 32 }).map((_, i) => (
+                        <span
+                          key={i}
+                          className="h-[5px] w-[5px] rounded-full bg-primary/75 animate-pulse"
+                          style={{ animationDelay: `${i * 65}ms`, animationDuration: "1.6s" }}
+                        />
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                      Unlimited — owner accounts have no monthly API budget.
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <span className="font-mono text-xs text-foreground">
+                        €{budget.spentLabel} used of €{budget.budgetLabel}
+                      </span>
+                      <span className="font-mono text-caption uppercase tracking-wider text-muted-foreground">
+                        Resets {budgetResetLabel}
+                      </span>
+                    </div>
+                    <DotFillBar value={spend.spentMicroUsd} max={spend.budgetMicroUsd ?? 0} dots={32} className="mt-2.5" />
+                    <p className={cn("mt-2 text-[11px] leading-relaxed", budget.low ? "text-warning" : "text-muted-foreground")}>
+                      {budget.requestsLeft != null && budgetModel
+                        ? `≈ ${budget.requestsLeft.toLocaleString()} requests left with ${budgetModel.name} (avg. 800 in / 500 out tokens).`
+                        : "Model usage this month across chat, images, and video."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </Tile>
 
           {/* Appearance */}

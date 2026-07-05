@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
 
 const schema = z.object({ content: z.string().trim().min(1).max(50_000) });
@@ -21,7 +22,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
   await prisma.$transaction([
-    prisma.message.update({ where: { id }, data: { content: parsed.data.content } }),
+    prisma.message.update({ where: { id }, data: { content: encryptMessageText(parsed.data.content) } }),
     // Drop later messages (their artifacts cascade via the later messages' deletion is not automatic
     // for messageId=SetNull, so delete artifacts explicitly below).
     prisma.artifact.deleteMany({

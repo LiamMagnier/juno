@@ -6,7 +6,7 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForPlan } from "@/lib/stripe";
 
-const schema = z.object({ plan: z.enum(["PRO", "MAX"]) });
+const schema = z.object({ plan: z.enum(["PRO", "MAX", "MAX20"]) });
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();

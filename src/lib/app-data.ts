@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
 import { listConversations } from "@/lib/queries";
 import { getQuota } from "@/lib/usage";
+import { checkBudget, eurPerUsd } from "@/lib/spend";
 import { isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
 import { configuredProviders } from "@/lib/providers";
 import { providerSupportsWebSearch } from "@/lib/models";
@@ -25,6 +26,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     prisma.user.findUnique({ where: { id: user.id }, select: { name: true, image: true } }),
   ]);
 
+  const budget = await checkBudget(user.id, quota.plan);
+
   const clientSettings: ClientSettings = {
     theme: (settings?.theme.toLowerCase() as ClientSettings["theme"]) ?? "system",
     accent: settings?.accent ?? "coral",
@@ -40,6 +43,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     user: { id: user.id, name: account?.name ?? user.name ?? null, email: user.email ?? null, image: account?.image ?? user.image ?? null },
     settings: clientSettings,
     quota,
+    spend: { spentMicroUsd: budget.spentMicroUsd, budgetMicroUsd: budget.budgetMicroUsd, eurPerUsd: eurPerUsd() },
     conversations,
     folders,
     features: {

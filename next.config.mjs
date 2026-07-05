@@ -16,6 +16,24 @@ const nextConfig = {
       { protocol: "https", hostname: "**" },
     ],
   },
+  // Baseline security headers. A full Content-Security-Policy is future work:
+  // Next.js relies on inline scripts, so a real CSP needs per-request nonces.
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          // Voice mode needs the microphone; everything else stays off.
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=(), microphone=(self)" },
+          // Ignored over plain http (dev); enforced once served over https.
+          { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     if (process.env.RENDER_BACKEND_URL) {
       return [

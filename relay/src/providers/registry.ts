@@ -70,7 +70,7 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
     // connection, so surface the documented ceiling to the client.
     capabilities: { videoInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 15 * 60 },
     pricing: { audioInPerSec: 0.005 / 60, audioOutPerSec: 0.018 / 60 },
-    available: () => !!process.env.GOOGLE_API_KEY,
+    available: () => !!(process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY),
     create: () => new GeminiLiveSession(),
   },
   qwen: {

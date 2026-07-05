@@ -21,6 +21,7 @@ export async function GET() {
     const conn = byProvider.get(def.id);
     return {
       id: def.id,
+      kind: def.kind,
       label: def.label,
       description: def.description,
       capability: def.capability,

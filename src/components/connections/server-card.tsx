@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 export interface ConnectorStatus {
   id: string;
+  kind: string;
   label: string;
   description: string;
   capability: string;
@@ -156,7 +157,9 @@ export function ServerCard({
             <p className="mt-0.5 text-sm text-muted-foreground">{connector.description}</p>
             {state === "unavailable" && (
               <p className="mt-1.5 text-caption text-muted-foreground/70">
-                Needs an OAuth app configured on the server before it can be connected.
+                {connector.kind === "credentials"
+                  ? "Needs Apple developer keys configured on the server before it can be connected."
+                  : "Needs an OAuth app configured on the server before it can be connected."}
               </p>
             )}
           </div>
@@ -192,7 +195,11 @@ export function ServerCard({
               </span>
               <span className="flex items-center gap-1.5">
                 <ShieldCheck className="size-3.5 shrink-0 text-success" />
-                OAuth · token healthy
+                {connector.kind === "credentials"
+                  ? connector.id === "apple-music"
+                    ? "User token · encrypted at rest"
+                    : "App password · encrypted at rest"
+                  : "OAuth · token healthy"}
               </span>
             </div>
           </>

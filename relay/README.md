@@ -7,8 +7,12 @@ MiniMax composed ASR→LLM→TTS pipeline) and streams audio both ways. Provider
 API keys never leave this process.
 
 > **Not deployable on Vercel serverless** — it needs long-lived WebSockets.
-> Run it on Fly.io / Railway / Render / any container host, then set
-> `NEXT_PUBLIC_VOICE_RELAY_URL=wss://<host>` on the Vercel project.
+> In production it runs on the same GCP VM as the web app: `deploy/deploy.sh`
+> builds it and PM2 runs it as `juno-voice-relay` on :8787, with nginx
+> proxying `wss://chat.liams.dev/voice-relay` (see `deploy/`). The web build
+> needs `NEXT_PUBLIC_VOICE_RELAY_URL=wss://chat.liams.dev/voice-relay`
+> (BUILD-time inlined — requires a rebuild) and `VOICE_RELAY_URL` set to the
+> same value. Fly.io / Railway / Render (`render.yaml`) work as alternatives.
 
 ## Run
 
@@ -27,7 +31,8 @@ set `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`.
 |---|---|---|
 | `AUTH_SECRET` | yes | MUST equal the Juno backend's `AUTH_SECRET` (verifies the short-lived tokens minted by `/api/voice/relay-token`). |
 | `OPENAI_API_KEY` | per provider | enables `openai` |
-| `GOOGLE_API_KEY` | per provider | enables `gemini` |
+| `GEMINI_LIVE_API_KEY` | per provider | enables `gemini` — must be a CLASSIC AI Studio key (`AIza…`); the newer `AQ.…`-format keys are rejected by the Live API. Falls back to `GOOGLE_API_KEY`. |
+| `GOOGLE_API_KEY` | per provider | fallback for `gemini` when `GEMINI_LIVE_API_KEY` is unset (same `AIza…` requirement) |
 | `DASHSCOPE_API_KEY` | per provider | enables `qwen` (international/Singapore endpoint) |
 | `MINIMAX_API_KEY` | per provider | enables `minimax` (composed pipeline; TTS may also need a Group ID on some accounts) |
 | `ALLOWED_ORIGINS` | prod | comma-separated browser origins (native apps send no Origin and always pass) |

@@ -20,6 +20,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   const def = getConnector(id);
   if (!def) return NextResponse.redirect(new URL("/connections?error=unknown", env.appUrl));
+  // Credentials connectors don't have an OAuth flow — the dashboard collects
+  // their credential in a dialog and posts it to /credentials instead.
+  if (def.kind === "credentials") return NextResponse.redirect(new URL("/connections?error=use_credentials", env.appUrl));
   if (!isConnectorConfigured(def)) return NextResponse.redirect(new URL("/connections?error=not_configured", env.appUrl));
 
   const nonce = randomBytes(16).toString("hex");

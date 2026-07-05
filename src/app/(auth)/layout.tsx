@@ -24,6 +24,22 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <p className="mt-8 max-w-sm text-center text-caption text-muted-foreground motion-safe:animate-fade-in [animation-delay:180ms] [animation-fill-mode:backwards]">
         By continuing you agree to use Juno responsibly. Your conversations are private to your account.
       </p>
+      <nav
+        aria-label="Legal"
+        className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-caption text-muted-foreground/80 motion-safe:animate-fade-in [animation-delay:240ms] [animation-fill-mode:backwards]"
+      >
+        <Link href="/legal/confidentialite" className="rounded-sm transition-colors duration-fast ease-out-soft hover:text-foreground">
+          Confidentialité
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/legal/cgu" className="rounded-sm transition-colors duration-fast ease-out-soft hover:text-foreground">
+          CGU
+        </Link>
+        <span aria-hidden>·</span>
+        <Link href="/legal/mentions-legales" className="rounded-sm transition-colors duration-fast ease-out-soft hover:text-foreground">
+          Mentions légales
+        </Link>
+      </nav>
     </div>
   );
 }

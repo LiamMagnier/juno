@@ -12,14 +12,9 @@ export async function listConversations(
     where: {
       userId,
       ...(opts.folderId ? { folderId: opts.folderId } : {}),
-      ...(q
-        ? {
-            OR: [
-              { title: { contains: q, mode: "insensitive" } },
-              { messages: { some: { content: { contains: q, mode: "insensitive" } } } },
-            ],
-          }
-        : {}),
+      // Message bodies are encrypted at rest (see message-crypto.ts), so SQL
+      // `contains` can no longer see them — search matches titles only.
+      ...(q ? { title: { contains: q, mode: "insensitive" } } : {}),
     },
     orderBy: [{ pinned: "desc" }, { lastMessageAt: "desc" }],
     take: 200,

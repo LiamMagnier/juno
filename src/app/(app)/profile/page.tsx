@@ -3,15 +3,26 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { signOut } from "next-auth/react";
 import { toast } from "sonner";
-import { ArrowLeft, Camera, Loader2 } from "lucide-react";
+import { ArrowLeft, Camera, ChevronDown, Download, Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardEyebrow } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { useApp } from "@/components/app/app-provider";
-import { PLANS, planRank } from "@/lib/plans";
-import { resolveModel, type ModelInfo } from "@/lib/models";
+import { PLANS, effectiveMinPlan, planRank } from "@/lib/plans";
+import { MODELS_BY_PROVIDER, resolveModel, type ModelInfo } from "@/lib/models";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { providerAccent } from "@/lib/provider-colors";
 import { cn } from "@/lib/utils";
@@ -102,39 +113,249 @@ function shortProviderLabel(provider: Provider) {
   return PROVIDERS[provider].label.split(" · ")[0];
 }
 
-function UsageCard({
-  title,
-  subtitle,
-  color,
-  ratio,
-  logo,
-}: {
-  title: string;
-  subtitle: string;
-  color: string;
-  ratio: number;
-  logo: React.ReactNode;
-}) {
+function ProviderLogoWell({ provider }: { provider: Provider }) {
   return (
-    <div className="surface-raised flex items-center gap-4 rounded-[24px] border border-border/70 p-4">
-      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background shadow-pop">{logo}</div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-base font-semibold">{title}</p>
-        <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
-      </div>
-      <AvailabilityBars ratio={ratio} color={color} />
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-background shadow-pop">
+      <ProviderLogo provider={provider} className="h-8 w-8" />
     </div>
+  );
+}
+
+function ModelRow({ info, planLevel, count }: { info: ModelInfo; planLevel: number; count: number }) {
+  const lockPlan = effectiveMinPlan(info.minPlan);
+  const locked = planLevel < planRank(lockPlan);
+  return (
+    <li className="flex items-center gap-2.5 py-1.5">
+      <ProviderLogo provider={info.provider} className="h-5 w-5 shrink-0" />
+      <span className="min-w-0 truncate text-sm">{info.name}</span>
+      <span className="shrink-0 font-mono text-caption text-muted-foreground">{info.released ?? "—"}</span>
+      {info.status === "deprecated" && (
+        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-destructive">
+          Retiring
+        </span>
+      )}
+      {info.status === "legacy" && (
+        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          Legacy
+        </span>
+      )}
+      {locked && (
+        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <Lock className="h-2.5 w-2.5" /> {PLANS[lockPlan].name}
+        </span>
+      )}
+      {count > 0 && (
+        <span className="ml-auto shrink-0 pl-2 font-mono text-caption text-muted-foreground">{count.toLocaleString()} msgs</span>
+      )}
+    </li>
+  );
+}
+
+function ProviderRow({
+  provider,
+  configured,
+  usageCount,
+  modelsUsed,
+  share,
+  planLevel,
+  modelUsage,
+  open,
+  onToggle,
+}: {
+  provider: Provider;
+  configured: boolean;
+  usageCount: number;
+  modelsUsed: number;
+  share: number;
+  planLevel: number;
+  modelUsage: Map<string, number>;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  if (!configured) {
+    return (
+      <div className="flex items-center gap-4 rounded-[24px] border border-border/50 p-4 opacity-45">
+        <ProviderLogoWell provider={provider} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold">{shortProviderLabel(provider)}</p>
+          <p className="truncate text-sm text-muted-foreground">Not configured</p>
+        </div>
+      </div>
+    );
+  }
+  const models = MODELS_BY_PROVIDER.get(provider) ?? [];
+  return (
+    <div className="surface-raised overflow-hidden rounded-[24px] border border-border/70">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex w-full items-center gap-4 p-4 text-left transition-colors duration-fast ease-out-soft hover:bg-primary/5"
+      >
+        <ProviderLogoWell provider={provider} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-base font-semibold">{shortProviderLabel(provider)}</p>
+          <p className="truncate text-sm text-muted-foreground">
+            {usageCount.toLocaleString()} messages · {modelsUsed} models used
+          </p>
+        </div>
+        <AvailabilityBars ratio={share} color={providerAccent(provider)} />
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft",
+            open && "rotate-180"
+          )}
+        />
+      </button>
+      <div
+        aria-hidden={!open}
+        className={cn(
+          "grid transition-[grid-template-rows] duration-base ease-out-soft",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
+        )}
+      >
+        <div className="overflow-hidden">
+          <ul key={open ? "open" : "closed"} className={cn("space-y-0.5 px-4 pb-4 pt-1", open && "motion-safe:animate-rise-in")}>
+            {models.map((info) => (
+              <ModelRow key={info.id} info={info} planLevel={planLevel} count={modelUsage.get(info.id) ?? 0} />
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountCard({ email }: { email: string }) {
+  const [open, setOpen] = React.useState(false);
+  const [confirm, setConfirm] = React.useState("");
+  const [deleting, setDeleting] = React.useState(false);
+  const match = confirm.trim().toLowerCase() === email.toLowerCase() && email.length > 0;
+
+  const deleteAccount = async () => {
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/account/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmEmail: confirm.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not delete the account.");
+      }
+      await signOut({ callbackUrl: "/sign-in" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete the account.");
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Card className="p-5 rounded-[28px]">
+      <CardEyebrow className="mb-4">Account</CardEyebrow>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Export your data</p>
+          <p className="text-sm text-muted-foreground">
+            Profile, settings, conversations, memories, projects, and file metadata.
+          </p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <Button variant="outline" size="sm" asChild>
+            <a href="/api/account/export" download>
+              <Download className="h-3.5 w-3.5" /> JSON
+            </a>
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <a href="/api/account/export?format=csv" download>
+              <Download className="h-3.5 w-3.5" /> CSV
+            </a>
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Delete account permanently</p>
+          <p className="text-sm text-muted-foreground">
+            Chats, memories, files, and your subscription — everything, immediately.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" className="shrink-0" onClick={() => setOpen(true)}>
+          Delete account…
+        </Button>
+      </div>
+
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (deleting) return;
+          setOpen(next);
+          if (!next) setConfirm("");
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-serif">Delete this account?</DialogTitle>
+            <DialogDescription>
+              This deletes your account and everything in it — conversations, memories, uploaded
+              files, and your subscription. It takes effect immediately, and nothing can be
+              recovered afterwards. If you want a copy, export your data first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="delete-confirm-email" className="text-muted-foreground">
+              Type <span className="font-mono text-foreground">{email}</span> to confirm
+            </Label>
+            <Input
+              id="delete-confirm-email"
+              type="email"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder={email}
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              disabled={deleting}
+            />
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setOpen(false);
+                setConfirm("");
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" disabled={!match || deleting} onClick={deleteAccount}>
+              {deleting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+                </>
+              ) : (
+                "Delete permanently"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, quota, models } = useApp();
+  const { user, quota, features } = useApp();
   const plan = PLANS[quota.plan];
   const [stats, setStats] = React.useState<Stats | null>(null);
   const [error, setError] = React.useState(false);
   const [avatar, setAvatar] = React.useState<string | null>(user.image ?? null);
   const [uploading, setUploading] = React.useState(false);
+  const [openProvider, setOpenProvider] = React.useState<Provider | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -167,34 +388,40 @@ export default function ProfilePage() {
     }
   };
 
-  const usageRatio = quota.limit == null ? 1 : Math.max(0, Math.min(1, (quota.remaining ?? 0) / quota.limit));
-  const usageSubtitle =
-    quota.limit == null
-      ? `${plan.name} plan · unlimited`
-      : `${plan.name} plan · ${(quota.remaining ?? 0).toLocaleString()} of ${quota.limit.toLocaleString()} messages left`;
+  const modelUsage = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of stats?.models ?? []) {
+      const key = resolveModel(item.model)?.id ?? item.model;
+      map.set(key, (map.get(key) ?? 0) + item.count);
+    }
+    return map;
+  }, [stats?.models]);
 
-  const modelUsage = React.useMemo(() => new Map((stats?.models ?? []).map((m) => [m.model, m])), [stats?.models]);
   const providerUsage = React.useMemo(() => {
-    const map = new Map<Provider, { count: number; tokens: number }>();
+    const map = new Map<Provider, { count: number; models: Set<string> }>();
     for (const item of stats?.models ?? []) {
       const info = resolveModel(item.model);
       if (!info) continue;
-      const current = map.get(info.provider) ?? { count: 0, tokens: 0 };
+      const current = map.get(info.provider) ?? { count: 0, models: new Set<string>() };
       current.count += item.count;
-      current.tokens += item.tokens;
+      current.models.add(info.id);
       map.set(info.provider, current);
     }
     return map;
   }, [stats?.models]);
 
-  const sortedModels = React.useMemo<ModelInfo[]>(() => {
-    return [...models].sort((a, b) => {
-      const au = modelUsage.get(a.id)?.count ?? 0;
-      const bu = modelUsage.get(b.id)?.count ?? 0;
-      if (bu !== au) return bu - au;
-      return a.name.localeCompare(b.name);
-    });
-  }, [modelUsage, models]);
+  const totalUsed = React.useMemo(() => {
+    let total = 0;
+    for (const usage of providerUsage.values()) total += usage.count;
+    return total;
+  }, [providerUsage]);
+
+  const orderedProviders = React.useMemo(() => {
+    const configured = new Set(features.providers);
+    return [...PROVIDER_LIST].sort((a, b) => Number(configured.has(b)) - Number(configured.has(a)));
+  }, [features.providers]);
+
+  const planLevel = planRank(quota.plan);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -281,24 +508,27 @@ export default function ProfilePage() {
               <div className="mb-4 flex items-end justify-between gap-3">
                 <div>
                   <CardEyebrow>Provider availability</CardEyebrow>
-                  <p className="mt-1 text-sm text-muted-foreground">Remaining usage follows your current plan quota.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">How your messages split across configured labs.</p>
                 </div>
                 <p className="shrink-0 font-mono text-caption uppercase text-muted-foreground">
-                  {quota.limit == null ? "Unlimited" : `${quota.used} used`}
+                  {features.providers.length} of {PROVIDER_LIST.length} configured
                 </p>
               </div>
               <div className="grid gap-3">
-                {PROVIDER_LIST.map((provider) => {
+                {orderedProviders.map((provider) => {
                   const usage = providerUsage.get(provider);
-                  const color = providerAccent(provider);
                   return (
-                    <UsageCard
+                    <ProviderRow
                       key={provider}
-                      title={shortProviderLabel(provider)}
-                      subtitle={`${usageSubtitle}${usage?.count ? ` · ${usage.count.toLocaleString()} used here` : ""}`}
-                      color={color}
-                      ratio={usageRatio}
-                      logo={<ProviderLogo provider={provider} className="h-8 w-8" />}
+                      provider={provider}
+                      configured={features.providers.includes(provider)}
+                      usageCount={usage?.count ?? 0}
+                      modelsUsed={usage?.models.size ?? 0}
+                      share={totalUsed > 0 ? (usage?.count ?? 0) / totalUsed : 0}
+                      planLevel={planLevel}
+                      modelUsage={modelUsage}
+                      open={openProvider === provider}
+                      onToggle={() => setOpenProvider((prev) => (prev === provider ? null : provider))}
                     />
                   );
                 })}
@@ -306,33 +536,6 @@ export default function ProfilePage() {
             </Card>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Model availability */}
-              <Card className="p-5 rounded-[28px]">
-                <CardEyebrow className="mb-3">Model availability</CardEyebrow>
-                <div className="max-h-[28rem] space-y-3 overflow-y-auto pr-1">
-                  {sortedModels.map((info) => {
-                    const usage = modelUsage.get(info.id);
-                    const allowed = planRank(quota.plan) >= planRank(info.minPlan);
-                    const color = allowed ? providerAccent(info.provider) : "hsl(var(--muted-foreground) / 0.35)";
-                    return (
-                      <div key={info.id} className="field-well rounded-[20px] border border-border/60 bg-background/70 p-3">
-                        <div className="mb-2 flex items-center gap-2.5">
-                          <ProviderLogo provider={info.provider} className="h-5 w-5" />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{info.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {allowed ? usageSubtitle : `Requires ${PLANS[info.minPlan].name}`}
-                              {usage?.count ? ` · ${usage.count.toLocaleString()} used` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        <AvailabilityBars ratio={allowed ? usageRatio : 0} color={color} dots={20} />
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
-
               {/* Most-used models */}
               <Card className="p-5 rounded-[28px]">
                 <CardEyebrow className="mb-3">Most-used models</CardEyebrow>
@@ -375,6 +578,10 @@ export default function ProfilePage() {
             </div>
           </div>
         )}
+
+        <div className="mt-4">
+          <AccountCard email={user.email ?? ""} />
+        </div>
       </div>
     </div>
   );

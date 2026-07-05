@@ -212,7 +212,7 @@ async function attemptTriage(model: ModelInfo, system: string, userMsg: string, 
     clearTimeout(timer);
   }
   const parsed = sanitizeTriageOutput(out);
-  if (!parsed) console.error(`[clarify-triage] ${model.id} unusable output:`, out.slice(0, 300));
+  if (!parsed) console.error(`[clarify-triage] ${model.id} unusable output (${out.length} chars)`);
   return parsed;
 }
 

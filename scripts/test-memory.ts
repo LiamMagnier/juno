@@ -101,7 +101,7 @@ async function main() {
     }
     check("backfill drains to zero pending", remaining === 0, `remaining=${remaining}`);
 
-    const oldState = await prisma.conversationMemory.findUnique({ where: { conversationId: oldChat.id } });
+    const oldState = await prisma.conversationMemory.findFirst({ where: { conversationId: oldChat.id, userId: user.id } });
     const lastOldMsg = await prisma.message.findFirst({
       where: { conversationId: oldChat.id },
       orderBy: { createdAt: "desc" },
@@ -124,13 +124,13 @@ async function main() {
     await prisma.message.create({
       data: { conversationId: oldChat.id, role: "USER", content: "By the way, token:INCREMENT matters to me." },
     });
-    await prisma.conversation.update({ where: { id: oldChat.id }, data: { lastMessageAt: new Date() } });
+    await prisma.conversation.update({ where: { id: oldChat.id, userId: user.id }, data: { lastMessageAt: new Date() } });
 
     const inc = await extractConversationMemory({ userId: user.id, conversationId: oldChat.id, llm: fakeExtractor });
     check("exactly one extraction call for one new message", extractCalls - callsBefore === 1);
     check("incremental run reports done", inc.done && inc.chunksProcessed === 1);
     check("the new fact landed", await factExists(user.id, "token:INCREMENT"));
-    const incState = await prisma.conversationMemory.findUnique({ where: { conversationId: oldChat.id } });
+    const incState = await prisma.conversationMemory.findFirst({ where: { conversationId: oldChat.id, userId: user.id } });
     check("high-water mark advanced", !!incState && !!oldState && incState.processedAt > oldState.processedAt);
 
     // ------------------------------------------------------------------
@@ -143,7 +143,7 @@ async function main() {
     check("target fact exists before forgetting", !!target);
     if (target) {
       await prisma.$transaction([
-        prisma.memoryEntry.delete({ where: { id: target.id } }),
+        prisma.memoryEntry.delete({ where: { id: target.id, userId: user.id } }),
         prisma.memoryEntry.create({
           data: { userId: user.id, content: target.content, source: "MANUAL", kind: "SUPPRESSION", sourceRef: "edit" },
         }),
@@ -152,7 +152,7 @@ async function main() {
     check("fact is gone after forget", !(await factExists(user.id, "token:OLD1.")));
 
     // Force a full re-extraction of the old chat that contained it.
-    await prisma.conversationMemory.delete({ where: { conversationId: oldChat.id } });
+    await prisma.conversationMemory.delete({ where: { conversationId: oldChat.id, userId: user.id } });
     let rem = (await pendingBackfill(user.id)).length;
     for (let i = 0; i < 50 && rem > 0; i++) {
       rem = (await backfillMemories({ userId: user.id, llm: fakeExtractor })).remaining;
@@ -181,7 +181,7 @@ async function main() {
     await prisma.message.create({
       data: { conversationId: midChat.id, role: "USER", content: "Anyway, about token:OLD1 again — still relevant?" },
     });
-    await prisma.conversation.update({ where: { id: midChat.id }, data: { lastMessageAt: new Date() } });
+    await prisma.conversation.update({ where: { id: midChat.id, userId: user.id }, data: { lastMessageAt: new Date() } });
     await extractConversationMemory({ userId: user.id, conversationId: midChat.id, llm: fakeExtractor });
     check(
       "suppression blocks the same content coming from a different chat",

@@ -24,10 +24,20 @@ export interface ClientSettings {
   favoriteModels: string[];
 }
 
+/** Monthly API budget status for the settings gauge (micro-USD integers). */
+export interface ClientSpend {
+  spentMicroUsd: number;
+  /** null = unlimited (owner). */
+  budgetMicroUsd: number | null;
+  /** EUR per USD of model spend (display conversion; defaults to 1). */
+  eurPerUsd: number;
+}
+
 export interface AppBootstrap {
   user: AppUser;
   settings: ClientSettings;
   quota: ClientQuota;
+  spend: ClientSpend;
   conversations: ClientConversation[];
   folders: ClientFolder[];
   features: {

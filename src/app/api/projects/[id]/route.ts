@@ -60,7 +60,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     ...parsed.data,
     ...(parsed.data.name != null ? { nameSource: "manual" } : {}),
   };
-  await prisma.project.update({ where: { id }, data });
+  await prisma.project.update({ where: { id, userId: user.id }, data });
   return NextResponse.json({ ok: true });
 }
 
@@ -73,6 +73,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Conversations are kept (projectId set null); project files cascade-delete.
-  await prisma.project.delete({ where: { id } });
+  await prisma.project.delete({ where: { id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }

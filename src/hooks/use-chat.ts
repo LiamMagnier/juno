@@ -245,7 +245,9 @@ export function useChat(opts: UseChatOptions) {
 
         if (!res.ok || !res.body) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Something went wrong.");
+          // Machine-readable errors (e.g. 402 budget_exceeded) carry the
+          // human sentence in `message`; plain errors keep it in `error`.
+          throw new Error(data.message ?? data.error ?? "Something went wrong.");
         }
 
         await readChatStream(res.body, (chunk) => {

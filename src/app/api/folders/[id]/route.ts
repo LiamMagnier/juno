@@ -16,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const folder = await prisma.folder.update({ where: { id }, data: { name: parsed.data.name } });
+  const folder = await prisma.folder.update({ where: { id, userId: user.id }, data: { name: parsed.data.name } });
   return NextResponse.json({ folder: { id: folder.id, name: folder.name } });
 }
 
@@ -29,6 +29,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Conversations keep existing; their folderId is set null by the FK onDelete: SetNull.
-  await prisma.folder.delete({ where: { id } });
+  await prisma.folder.delete({ where: { id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }

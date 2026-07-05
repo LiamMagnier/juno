@@ -69,6 +69,22 @@ export function AnnouncementPopup() {
   const [open, setOpen] = React.useState(false);
   const dismissedRef = React.useRef<string | null>(null);
 
+  const [onboardingDone, setOnboardingDone] = React.useState(true);
+
+  // Don't compete with the first-run onboarding overlay for clicks.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    setOnboardingDone(!window.__junoOnboardingActive);
+    const start = () => setOnboardingDone(false);
+    const end = () => setOnboardingDone(true);
+    window.addEventListener("juno:onboarding-start", start);
+    window.addEventListener("juno:onboarding-end", end);
+    return () => {
+      window.removeEventListener("juno:onboarding-start", start);
+      window.removeEventListener("juno:onboarding-end", end);
+    };
+  }, []);
+
   React.useEffect(() => {
     if (pathname?.startsWith("/admin")) return;
     const controller = new AbortController();
@@ -85,13 +101,19 @@ export function AnnouncementPopup() {
           } catch (e) {}
 
           setAnnouncement(data.announcement);
-          setOpen(true);
         }
       })
       .catch(() => {});
 
     return () => controller.abort();
   }, [pathname]);
+
+  // Open only once onboarding has stood down (or was never showing).
+  React.useEffect(() => {
+    if (announcement && onboardingDone && dismissedRef.current !== announcement.id) {
+      setOpen(true);
+    }
+  }, [announcement, onboardingDone]);
 
   const dismiss = React.useCallback(async () => {
     if (!announcement || dismissedRef.current === announcement.id) return;

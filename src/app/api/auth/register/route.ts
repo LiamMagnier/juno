@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   const ip = await getClientIp();
   // Per-IP limit plus a global cap so X-Forwarded-For spoofing can't fan out signups.
   const [perIp, global] = await Promise.all([
-    rateLimit({ key: `register:${ip}`, limit: 10, windowSec: 3600 }),
+    rateLimit({ key: `register:${ip}`, limit: 5, windowSec: 3600 }),
     rateLimit({ key: "register:global", limit: 200, windowSec: 3600 }),
   ]);
   if (!perIp.success || !global.success) {

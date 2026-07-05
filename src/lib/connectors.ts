@@ -10,21 +10,26 @@ import {
 } from "@/lib/mcp-oauth";
 
 /*
- * Registry of external tool connectors the user can link. Two shapes exist:
+ * Registry of external tool connectors the user can link. Three shapes exist:
  *
- *  - "oauth_app"  — a classic OAuth 2.0 app you register once with the provider
+ *  - "oauth_app"    — a classic OAuth 2.0 app you register once with the provider
  *    (GitHub, Figma). Its Connect button appears only when a client id + secret
  *    are configured in the environment.
- *  - "mcp_oauth"  — a hosted remote MCP server that self-registers via OAuth 2.1
+ *  - "mcp_oauth"    — a hosted remote MCP server that self-registers via OAuth 2.1
  *    + PKCE + Dynamic Client Registration (Notion). Nothing to pre-register:
  *    it's "available" as soon as its MCP URL is known. See lib/mcp-oauth.ts.
+ *  - "credentials"  — no OAuth at all (Apple Calendar/Mail/Music). The user hands
+ *    us a credential (an app-specific password or a MusicKit user token) which is
+ *    stored encrypted; tools are served by our own MCP route (app/api/mcp/[connector])
+ *    and the model authenticates to it with a short-lived signed token
+ *    (lib/connector-token.ts) — the raw credential never leaves the server.
  *
  * Once linked, the stored access token is handed to the model as a remote MCP
  * server (see lib/mcp.ts) so it can call the provider's tools as the user.
  */
 
-export type ConnectorId = "github" | "figma" | "notion";
-export type ConnectorKind = "oauth_app" | "mcp_oauth";
+export type ConnectorId = "github" | "figma" | "notion" | "apple-calendar" | "apple-mail" | "apple-music";
+export type ConnectorKind = "oauth_app" | "mcp_oauth" | "credentials";
 
 export interface ConnectorTokens {
   accessToken: string;
@@ -145,6 +150,53 @@ const CONNECTORS: Record<ConnectorId, ConnectorDef> = {
       return null;
     },
   },
+  "apple-calendar": {
+    id: "apple-calendar",
+    kind: "credentials",
+    label: "Apple Calendar",
+    description: "Read and manage events on your iCloud calendars.",
+    capability: "Let the model check your schedule and add events to your iCloud calendars.",
+    // No OAuth — the user provides an app-specific password; tools are served
+    // by our own MCP route.
+    authorizeUrl: "",
+    tokenUrl: "",
+    scope: "",
+    authStyle: "body",
+    cfg: { mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/apple-calendar` },
+    async fetchAccountLabel() {
+      return null;
+    },
+  },
+  "apple-mail": {
+    id: "apple-mail",
+    kind: "credentials",
+    label: "Apple Mail",
+    description: "Search and read mail in your iCloud mailboxes.",
+    capability: "Let the model find messages, read them, and check unread counts in iCloud Mail.",
+    authorizeUrl: "",
+    tokenUrl: "",
+    scope: "",
+    authStyle: "body",
+    cfg: { mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/apple-mail` },
+    async fetchAccountLabel() {
+      return null;
+    },
+  },
+  "apple-music": {
+    id: "apple-music",
+    kind: "credentials",
+    label: "Apple Music",
+    description: "Search the catalog and work with your playlists.",
+    capability: "Let the model search Apple Music, browse your playlists, and add songs to them.",
+    authorizeUrl: "",
+    tokenUrl: "",
+    scope: "",
+    authStyle: "body",
+    cfg: { mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/apple-music` },
+    async fetchAccountLabel() {
+      return null;
+    },
+  },
 };
 
 export function getConnector(id: string): ConnectorDef | undefined {
@@ -158,9 +210,18 @@ export function listConnectors(): ConnectorDef[] {
 /**
  * A connector is "configured" (a Connect button appears) when it can start a
  * flow: an oauth_app needs its client credentials; an mcp_oauth connector only
- * needs to know its MCP URL — it registers itself on the fly.
+ * needs to know its MCP URL — it registers itself on the fly. Credentials
+ * connectors have nothing to pre-register, except Apple Music, which needs
+ * MusicKit developer keys to mint tokens.
  */
 export function isConnectorConfigured(def: ConnectorDef): boolean {
+  if (def.kind === "credentials") {
+    if (def.id === "apple-music") {
+      const m = env.connectors.appleMusic;
+      return Boolean(m.teamId && m.keyId && m.privateKey);
+    }
+    return true;
+  }
   if (def.kind === "mcp_oauth") return Boolean(def.cfg.mcpUrl);
   return Boolean(def.cfg.clientId && def.cfg.clientSecret);
 }
@@ -178,6 +239,7 @@ export async function buildAuthorizeUrl(
   def: ConnectorDef,
   state: string
 ): Promise<{ url: string; session?: ConnectorOAuthSession }> {
+  if (def.kind === "credentials") throw new Error(`${def.label} links with credentials, not OAuth`);
   if (def.kind === "mcp_oauth") {
     if (!def.cfg.mcpUrl) throw new Error(`${def.label} is missing an MCP URL`);
     const redirectUri = connectorRedirectUri(def.id);
@@ -246,6 +308,7 @@ export async function exchangeCodeForTokens(
   code: string,
   session?: ConnectorOAuthSession
 ): Promise<ConnectorTokens> {
+  if (def.kind === "credentials") throw new Error(`${def.label} links with credentials, not OAuth`);
   if (def.kind === "mcp_oauth") {
     if (!session?.codeVerifier || !session.clientId || !session.tokenEndpoint) throw new Error("Missing MCP OAuth session");
     return exchangeMcpCode({
@@ -279,6 +342,7 @@ export async function refreshTokens(
   refreshToken: string,
   oauthClient?: { clientId?: string | null; clientSecret?: string | null }
 ): Promise<ConnectorTokens> {
+  if (def.kind === "credentials") throw new Error(`${def.label} does not use OAuth tokens`);
   if (def.kind === "mcp_oauth") {
     if (!def.cfg.mcpUrl) throw new Error(`${def.label} is missing an MCP URL`);
     if (!oauthClient?.clientId) throw new Error(`${def.label} is missing its registered OAuth client`);

@@ -33,6 +33,11 @@ npx prisma generate
 echo -e "${YELLOW}🏗️ Building application...${NC}"
 npm run build
 
+# Build the voice relay (standalone ws service on :8787, proxied at /voice-relay)
+echo -e "${YELLOW}🎙️ Building voice relay...${NC}"
+npm ci --prefix relay
+npm run build --prefix relay
+
 # Restart/Reload PM2 process
 echo -e "${YELLOW}🔄 Reloading PM2 process...${NC}"
 if pm2 describe juno-backend > /dev/null 2>&1; then
@@ -42,5 +47,10 @@ else
     pm2 start npm --name "juno-backend" -- start
     echo -e "${GREEN}✅ PM2 process 'juno-backend' started successfully!${NC}"
 fi
+
+# Start/Reload the voice relay via the ecosystem file (re-reads relay env from .env)
+echo -e "${YELLOW}🔄 Reloading voice relay...${NC}"
+pm2 startOrReload deploy/ecosystem.config.js --only juno-voice-relay --update-env
+echo -e "${GREEN}✅ PM2 process 'juno-voice-relay' active!${NC}"
 
 echo -e "${GREEN}🎉 Juno Backend successfully deployed and active!${NC}"

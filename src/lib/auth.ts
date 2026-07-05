@@ -4,26 +4,50 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env, isGoogleConfigured } from "@/lib/env";
+import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
 
 const credentialsSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8).max(200),
 });
 
+// Brute-force limits on the credentials sign-in: per-account (lowercased email)
+// plus a wider per-IP net so one attacker can't spray many accounts. Every
+// failure path returns `null` — next-auth then yields the same generic
+// CredentialsSignin error whether the account exists, the password is wrong,
+// or the caller is throttled, so nothing leaks about account existence.
+const SIGNIN_WINDOW_SEC = 15 * 60;
+const SIGNIN_MAX_PER_EMAIL = 10;
+const SIGNIN_MAX_PER_IP = 30;
+
 const providers: NextAuthConfig["providers"] = [
   Credentials({
     name: "Email",
     credentials: { email: {}, password: {} },
-    authorize: async (raw) => {
+    authorize: async (raw, request) => {
       const parsed = credentialsSchema.safeParse(raw);
       if (!parsed.success) return null;
       const email = parsed.data.email.toLowerCase();
+
+      const ip = request?.headers ? ipFromHeaders(new Headers(request.headers)) : "unknown";
+      const checks = [rateLimit({ key: `signin:email:${email}`, limit: SIGNIN_MAX_PER_EMAIL, windowSec: SIGNIN_WINDOW_SEC })];
+      // Skip the IP bucket when no proxy header exists (plain local dev) —
+      // otherwise every client would share one "unknown" bucket.
+      if (ip !== "unknown") {
+        checks.push(rateLimit({ key: `signin:ip:${ip}`, limit: SIGNIN_MAX_PER_IP, windowSec: SIGNIN_WINDOW_SEC }));
+      }
+      const results = await Promise.all(checks);
+      if (results.some((r) => !r.success)) return null;
+
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user?.hashedPassword) return null;
       const ok = await bcrypt.compare(parsed.data.password, user.hashedPassword);
       if (!ok) return null;
+      // Suspended accounts cannot sign in. Returning null gives the same generic
+      // failure as a bad password (no account-status oracle).
+      if (user.bannedAt) return null;
       return { id: user.id, email: user.email, name: user.name, image: user.image };
     },
   }),
@@ -41,7 +65,9 @@ if (isGoogleConfigured()) {
 }
 
 export const authConfig: NextAuthConfig = {
-  adapter: PrismaAdapter(prisma),
+  // The adapter queries auth models by its own unique keys (email,
+  // provider+providerAccountId), so it gets the raw client.
+  adapter: PrismaAdapter(prismaUnguarded),
   session: { strategy: "jwt" },
   pages: { signIn: "/sign-in" },
   trustHost: true,

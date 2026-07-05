@@ -49,7 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     ...parsed.data,
     ...(parsed.data.title != null ? { titleSource: "manual" } : {}),
   };
-  const updated = await prisma.conversation.update({ where: { id }, data });
+  const updated = await prisma.conversation.update({ where: { id, userId: user.id }, data });
   return NextResponse.json({ conversation: serializeConversation(updated) });
 }
 
@@ -61,6 +61,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const existing = await prisma.conversation.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.conversation.delete({ where: { id } });
+  await prisma.conversation.delete({ where: { id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }

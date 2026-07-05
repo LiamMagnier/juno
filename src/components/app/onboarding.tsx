@@ -158,6 +158,16 @@ export function Onboarding() {
     }
   }, [conversations.length]);
 
+  // Let other first-run overlays (e.g. the announcement popup) stand down while
+  // onboarding owns the screen, so nothing steals the "Next" button's clicks.
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (show) {
+      window.__junoOnboardingActive = true;
+      window.dispatchEvent(new CustomEvent("juno:onboarding-start"));
+    }
+  }, [show]);
+
   const finish = React.useCallback(() => {
     try {
       localStorage.setItem(KEY, "1");
@@ -165,6 +175,10 @@ export function Onboarding() {
       /* ignore */
     }
     setShow(false);
+    if (typeof window !== "undefined") {
+      window.__junoOnboardingActive = false;
+      window.dispatchEvent(new CustomEvent("juno:onboarding-end"));
+    }
   }, []);
 
   React.useEffect(() => {

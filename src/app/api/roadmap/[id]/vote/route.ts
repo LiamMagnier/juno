@@ -16,7 +16,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   });
 
   if (existing) {
-    await prisma.featureVote.delete({ where: { id: existing.id } });
+    await prisma.featureVote.delete({ where: { id: existing.id, userId: user.id } });
   } else {
     await prisma.featureVote.create({ data: { requestId: id, userId: user.id } });
   }

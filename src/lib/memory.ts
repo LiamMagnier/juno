@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { decryptMessageText } from "@/lib/message-crypto";
 import { streamChat } from "@/lib/llm";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
@@ -109,7 +110,7 @@ export async function runUtilityPrompt<T>(opts: {
       clearTimeout(timer);
     }
     const parsed = opts.parse(out);
-    if (parsed === null) console.error(`[${opts.label}] ${model.id} unusable output:`, out.slice(0, 300));
+    if (parsed === null) console.error(`[${opts.label}] ${model.id} unusable output (${out.length} chars)`);
     return { result: parsed, transient: false };
   };
 
@@ -244,11 +245,14 @@ export async function extractConversationMemory(opts: {
   if (!convo) return { created: 0, chunksProcessed: 0, done: true };
 
   const since = convo.memory?.processedAt;
-  const messages = await prisma.message.findMany({
-    where: { conversationId: convo.id, role: "USER", ...(since ? { createdAt: { gt: since } } : {}) },
-    orderBy: { createdAt: "asc" },
-    select: { content: true, createdAt: true },
-  });
+  // Message bodies are encrypted at rest — decrypt at the read boundary.
+  const messages = (
+    await prisma.message.findMany({
+      where: { conversationId: convo.id, role: "USER", ...(since ? { createdAt: { gt: since } } : {}) },
+      orderBy: { createdAt: "asc" },
+      select: { content: true, createdAt: true },
+    })
+  ).map((m) => ({ ...m, content: decryptMessageText(m.content) }));
 
   // Chunk digests MERGE into the stored one (newest kept when over budget) —
   // a multi-chunk conversation must not end up described by its last chunk only.

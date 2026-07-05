@@ -16,7 +16,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  await prisma.memoryEntry.update({ where: { id }, data: { content: parsed.data.content } });
+  await prisma.memoryEntry.update({ where: { id, userId: user.id }, data: { content: parsed.data.content } });
   return NextResponse.json({ ok: true });
 }
 
@@ -28,6 +28,6 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   const existing = await prisma.memoryEntry.findFirst({ where: { id, userId: user.id } });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  await prisma.memoryEntry.delete({ where: { id } });
+  await prisma.memoryEntry.delete({ where: { id, userId: user.id } });
   return NextResponse.json({ ok: true });
 }

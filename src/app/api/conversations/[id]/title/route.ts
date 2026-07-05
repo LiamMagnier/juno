@@ -8,6 +8,7 @@ import { canUseModel } from "@/lib/plans";
 import { MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
+import { decryptMessageText } from "@/lib/message-crypto";
 import { generateChatTitleFromMessages, fallbackChatTitle, generateProjectName, type TitleContextMessage } from "@/lib/titles";
 import { canAutoRenameChatTitle, canAutoRenameProjectName, coerceTitleSource } from "@/lib/title-ownership";
 
@@ -72,7 +73,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const dbMessages = cleanContextMessages(
     storedMessages
       .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
-      .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content }))
+      .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: decryptMessageText(m.content) }))
   );
   const clientMessages = cleanContextMessages(parsed.data.messages);
   const contextMessages = clientMessages.some((m) => m.role === "USER") ? clientMessages : dbMessages;

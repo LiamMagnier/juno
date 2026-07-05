@@ -101,7 +101,7 @@ export interface ClientConversation {
 }
 
 export interface ClientQuota {
-  plan: "FREE" | "PRO" | "MAX" | "OWNER";
+  plan: "FREE" | "PRO" | "MAX" | "MAX20" | "OWNER";
   used: number;
   limit: number | null;
   remaining: number | null;

@@ -18,15 +18,31 @@ on-device speech recognition supplies the user transcript for it.
 
 ## Deploying
 
-1. Deploy `relay/` (Dockerfile included) to any long-lived-connection host
-   (Fly.io/Railway/Render — NOT Vercel serverless). Set `AUTH_SECRET` to the
-   same value as the Vercel project, plus the provider keys you want enabled
-   and `ALLOWED_ORIGINS=https://juno-zeta-navy.vercel.app`.
-2. Set `NEXT_PUBLIC_VOICE_RELAY_URL=wss://<relay-host>` on Vercel and redeploy.
-   The web voice button then opens realtime voice (legacy voice mode remains
-   the fallback when unset).
-3. iOS: set the production case of `BackendConfiguration.voiceRelayURL` in
-   JunoApp (currently nil = feature hidden).
+The relay ships WITH the web app on the GCP VM — `deploy/deploy.sh` builds
+`relay/` (`npm ci` + `npm run build`) and runs it under PM2 as
+`juno-voice-relay` on :8787 (`deploy/ecosystem.config.js` feeds it
+`AUTH_SECRET`, provider keys and `RELAY_*` vars parsed from the repo `.env`,
+plus `ALLOWED_ORIGINS=https://chat.liams.dev,http://localhost:3000`). Nginx
+proxies `wss://chat.liams.dev/voice-relay` to it with WebSocket upgrade
+headers and a 2h read timeout (`deploy/nginx.conf.template`); check it with
+`curl https://chat.liams.dev/voice-relay/healthz`.
+
+The production web build needs BOTH of these in the VM's `.env`:
+
+1. `NEXT_PUBLIC_VOICE_RELAY_URL=wss://chat.liams.dev/voice-relay` — inlined at
+   BUILD time into the client bundle (gates the voice button), so changing it
+   requires `npm run build` / a redeploy, not just a PM2 restart.
+2. `VOICE_RELAY_URL=wss://chat.liams.dev/voice-relay` — runtime fallback read
+   by `/api/voice/relay-token`, which also polls the relay's `/healthz` to
+   report per-provider availability to the client.
+
+Gemini Live needs a CLASSIC AI Studio key (`AIza…`, mint at
+aistudio.google.com/apikey) in `GEMINI_LIVE_API_KEY` — the newer `AQ.…`-format
+keys are rejected by the Live API.
+
+iOS: set the production case of `BackendConfiguration.voiceRelayURL` in
+JunoApp (currently nil = feature hidden). Render deployment (`render.yaml`)
+remains available as an alternative host.
 
 Local dev: `cd relay && RELAY_ENABLE_MOCK=1 npm run dev`, set
 `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787` in `.env.local`. The `mock`

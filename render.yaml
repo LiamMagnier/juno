@@ -33,4 +33,4 @@ services:
       - key: MINIMAX_API_KEY
         sync: false
       - key: ALLOWED_ORIGINS
-        value: https://chat.liams.dev
+        value: https://chat.liams.dev,http://localhost:3000

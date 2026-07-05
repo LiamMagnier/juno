@@ -4,13 +4,18 @@ Juno lets a user link external tools. Once linked, the stored access token is
 handed to the model as a **remote MCP server**, so the model can call that
 provider's tools with the user's own permissions.
 
-Connectors come in two shapes:
+Connectors come in three shapes:
 
-| Connector | Kind        | Pre-registration        | Refreshes | MCP endpoint                         |
-| --------- | ----------- | ----------------------- | --------- | ------------------------------------ |
-| GitHub    | `oauth_app` | OAuth app (id + secret) | no        | `https://api.githubcopilot.com/mcp/` |
-| Figma     | `oauth_app` | OAuth app (id + secret) | yes       | set via `FIGMA_MCP_URL`              |
-| Notion    | `mcp_oauth` | **none** (self-registers) | yes (1h) | `https://mcp.notion.com/mcp`         |
+| Connector      | Kind          | Pre-registration          | Refreshes  | MCP endpoint                         |
+| -------------- | ------------- | ------------------------- | ---------- | ------------------------------------ |
+| GitHub         | `oauth_app`   | OAuth app (id + secret)   | no         | `https://api.githubcopilot.com/mcp/` |
+| Figma          | `oauth_app`   | OAuth app (id + secret)   | yes        | set via `FIGMA_MCP_URL`              |
+| Notion         | `mcp_oauth`   | **none** (self-registers) | yes (1h)   | `https://mcp.notion.com/mcp`         |
+| Apple Calendar | `credentials` | **none**                  | n/a        | `<app>/api/mcp/apple-calendar`       |
+| Apple Mail     | `credentials` | **none**                  | n/a        | `<app>/api/mcp/apple-mail`           |
+| Apple Music    | `credentials` | MusicKit key (.p8)        | ~150 days¹ | `<app>/api/mcp/apple-music`          |
+
+¹ Music-User-Tokens aren't refreshable; the user re-authorizes when it lapses.
 
 - **`oauth_app`** — a classic OAuth 2.0 app you register once with the provider.
   Its **Connect** button appears only when its `*_OAUTH_CLIENT_ID` and
@@ -18,6 +23,12 @@ Connectors come in two shapes:
 - **`mcp_oauth`** — a hosted remote MCP server that self-registers via OAuth 2.1
   + PKCE + Dynamic Client Registration. There is **nothing to pre-register**; it's
   available as soon as its MCP URL is known.
+- **`credentials`** — no OAuth at all. The user hands us a credential (an iCloud
+  app-specific password, or a MusicKit user token) in an in-app dialog. It's
+  stored AES-256-GCM-encrypted on the `Connection` row, and the provider's tools
+  are served by **our own MCP route** (`/api/mcp/[connector]`). The model
+  authenticates to that route with a short-lived HMAC-signed token
+  (`src/lib/connector-token.ts`) — the raw credential never leaves the server.
 
 ## How it works
 
@@ -72,6 +83,44 @@ automatically using the client it registered at connect time (persisted on the
 4. Set `FIGMA_OAUTH_CLIENT_ID`, `FIGMA_OAUTH_CLIENT_SECRET`, and, to expose
    Figma tools to the model, `FIGMA_MCP_URL` (Figma's remote MCP endpoint).
 
+## Apple Calendar & Apple Mail setup (app-specific passwords)
+
+Nothing to configure on the server — both connectors are always available. The
+user links them with an **app-specific password** (Apple requires one for
+third-party access to iCloud CalDAV/IMAP; the account must have two-factor
+authentication enabled):
+
+1. Open [account.apple.com](https://account.apple.com) and sign in.
+2. **Sign-In & Security → App-Specific Passwords → Generate** one named "Juno"
+   (format `xxxx-xxxx-xxxx-xxxx`).
+3. In Juno → **Connections → Apple Calendar / Apple Mail → Connect**, enter the
+   Apple ID email and the app-specific password.
+
+Juno validates the credentials live before saving (a CalDAV principal lookup
+against `caldav.icloud.com`, or an IMAP login to `imap.mail.me.com:993`) and
+rejects the main Apple ID password with a hint to generate an app password.
+Revoking the password at account.apple.com kills access instantly.
+
+- **Apple Calendar tools:** `list_calendars`, `list_events`, `create_event`,
+  `delete_event` (CalDAV; recurring events are flagged, not expanded).
+- **Apple Mail tools:** `list_mailboxes`, `search_messages`, `read_message`,
+  `unread_count` (IMAP, read-only, capped at 25 results).
+
+## Apple Music setup (MusicKit)
+
+Needs an Apple Developer account for the developer token that MusicKit requires:
+
+1. Apple Developer → **Certificates, Identifiers & Profiles → Keys → +**, enable
+   **Media Services (MusicKit)**, and download the `.p8` private key.
+2. Set `APPLE_MUSIC_TEAM_ID` (Membership page), `APPLE_MUSIC_KEY_ID` (the key's
+   id), and `APPLE_MUSIC_PRIVATE_KEY` (the `.p8` contents — literal `\n` escapes
+   are fine for single-line env vars).
+3. In Juno → **Connections → Apple Music → Connect**, the dialog loads MusicKit
+   JS, runs Apple's sign-in popup, and stores the resulting **Music-User-Token**
+   (encrypted, ~150-day expiry; the user re-authorizes after that).
+
+Tools: `search_catalog`, `list_playlists`, `recently_played`, `add_to_playlist`.
+
 ## Environment variables
 
 ```txt
@@ -91,7 +140,19 @@ FIGMA_OAUTH_CLIENT_ID=
 FIGMA_OAUTH_CLIENT_SECRET=
 FIGMA_OAUTH_SCOPE=file_content:read
 FIGMA_MCP_URL=
+
+# Apple Calendar / Apple Mail — nothing to configure (app-specific passwords).
+
+# Apple Music (optional — the connector shows Unavailable until all three are set)
+APPLE_MUSIC_TEAM_ID=
+APPLE_MUSIC_KEY_ID=
+APPLE_MUSIC_PRIVATE_KEY=   # .p8 contents; \n escapes allowed
 ```
+
+Note for the Apple connectors: `NEXT_PUBLIC_APP_URL` must be the **public** URL
+of the deployment — Anthropic's MCP infrastructure dials
+`/api/mcp/apple-*` from outside, so a localhost URL only works for
+non-Anthropic providers (which call the route through the local tool loop).
 
 Set the same variables in the Vercel project (Settings → Environment
 Variables), then redeploy. The `Connection` table needs the `oauthClientId` /

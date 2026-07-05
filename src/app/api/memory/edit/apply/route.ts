@@ -71,11 +71,11 @@ export async function POST(req: Request) {
         inverse.push({ op: "remove", id: created.id, before: op.content });
       } else if (op.op === "update") {
         const before = byId.get(op.id)!.content;
-        await tx.memoryEntry.update({ where: { id: op.id }, data: { content: op.content } });
+        await tx.memoryEntry.update({ where: { id: op.id, userId: user.id }, data: { content: op.content } });
         inverse.push({ op: "update", id: op.id, before: op.content, content: before });
       } else {
         const row = byId.get(op.id)!;
-        await tx.memoryEntry.delete({ where: { id: op.id } });
+        await tx.memoryEntry.delete({ where: { id: op.id, userId: user.id } });
         // Undoing the removal must restore the same KIND (a deleted suppression
         // comes back as a suppression, not as a fact).
         inverse.push({ op: "add", content: row.content, ...(row.kind === "SUPPRESSION" ? { suppress: true } : {}) });

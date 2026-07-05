@@ -37,10 +37,25 @@ export async function rateLimit(opts: {
   return { success: count <= limit, remaining: Math.max(0, limit - count), resetAt: expiresAt };
 }
 
-/** Best-effort client IP from proxy headers (Vercel sets x-forwarded-for). */
-export async function getClientIp(): Promise<string> {
-  const h = await headers();
+/**
+ * Best-effort client IP from a Headers object. The left-most X-Forwarded-For
+ * entry is client-supplied and spoofable, so we do NOT trust it: prefer
+ * X-Real-IP (nginx sets it to $remote_addr, the true peer), and otherwise take
+ * the RIGHT-most X-Forwarded-For entry (the hop the trusted proxy appended).
+ * Returns "unknown" when no proxy header is present (e.g. plain local dev).
+ */
+export function ipFromHeaders(h: Headers): string {
+  const real = h.get("x-real-ip");
+  if (real) return real.trim();
   const fwd = h.get("x-forwarded-for");
-  if (fwd) return fwd.split(",")[0].trim();
-  return h.get("x-real-ip") ?? "unknown";
+  if (fwd) {
+    const parts = fwd.split(",").map((p) => p.trim()).filter(Boolean);
+    if (parts.length) return parts[parts.length - 1];
+  }
+  return "unknown";
+}
+
+/** Best-effort client IP from the current request context. */
+export async function getClientIp(): Promise<string> {
+  return ipFromHeaders(await headers());
 }

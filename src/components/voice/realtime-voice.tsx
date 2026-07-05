@@ -103,12 +103,23 @@ export function RealtimeVoice({ onClose, defaultProvider }: { onClose: () => voi
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Voice provider</DropdownMenuLabel>
-              {VOICE_PROVIDERS.map((p) => (
-                <DropdownMenuItem key={p} onSelect={() => voice.switchProvider(p)} disabled={voice.status !== "live"}>
-                  {VOICE_PROVIDER_LABELS[p]}
-                  {p === voice.provider && <span className="ml-auto text-xs text-muted-foreground">Active</span>}
-                </DropdownMenuItem>
-              ))}
+              {VOICE_PROVIDERS.map((p) => {
+                const unavailable = voice.availability?.[p] === false;
+                return (
+                  <DropdownMenuItem
+                    key={p}
+                    onSelect={() => (voice.status === "live" ? voice.switchProvider(p) : void voice.start(p))}
+                    disabled={unavailable || (voice.status === "live" && p === voice.provider)}
+                  >
+                    {VOICE_PROVIDER_LABELS[p]}
+                    {p === voice.provider ? (
+                      <span className="ml-auto text-xs text-muted-foreground">Active</span>
+                    ) : unavailable ? (
+                      <span className="ml-auto text-xs text-muted-foreground/70">Unavailable</span>
+                    ) : null}
+                  </DropdownMenuItem>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -127,13 +138,13 @@ export function RealtimeVoice({ onClose, defaultProvider }: { onClose: () => voi
         <p className="text-sm text-muted-foreground" aria-live="polite">
           {statusLabel}
         </p>
-        {voice.status === "ended" && (
+        {(voice.status === "ended" || voice.status === "error") && (
           <button
             type="button"
             onClick={() => void voice.start()}
             className="pressable rounded-full border border-border/60 px-4 py-2 text-sm hover:bg-accent"
           >
-            Start again
+            {voice.status === "error" ? "Try again" : "Start again"}
           </button>
         )}
       </div>

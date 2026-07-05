@@ -358,6 +358,20 @@ export function clampReasoningEffort(model: ModelInfo, requested: ReasoningEffor
   return atOrBelow.length ? atOrBelow[atOrBelow.length - 1] : c.tiers[0];
 }
 
+// Documented assumption for the budget gauge's "requests left" estimate:
+// an average chat request costs 800 prompt + 500 completion tokens.
+export const AVG_REQUEST_PROMPT_TOKENS = 800;
+export const AVG_REQUEST_COMPLETION_TOKENS = 500;
+
+/** Micro-USD cost of an average request (800 in / 500 out) on this model.
+ *  µUSD = tokens × $/MTok — the two 10^6 factors cancel. */
+export function averageRequestCostMicroUsd(model: ModelInfo): number {
+  const m = getModelMetrics(model);
+  return Math.round(
+    AVG_REQUEST_PROMPT_TOKENS * m.inputUsdPerMTok + AVG_REQUEST_COMPLETION_TOKENS * m.outputUsdPerMTok
+  );
+}
+
 export function costScore(metrics: ModelMetrics): number {
   const blended = metrics.inputUsdPerMTok * 0.35 + metrics.outputUsdPerMTok * 0.65;
   return Math.max(1, Math.min(10, Math.round(11 - Math.log2(blended + 1) * 2.2)));

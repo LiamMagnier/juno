@@ -7,6 +7,7 @@ import { AlertCircle, ArrowLeft, Plug } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ServerCard, type ConnectorStatus, type ServerState } from "@/components/connections/server-card";
+import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ToolLogPanel } from "@/components/connections/tool-log-panel";
 import { MOCK_LOG, MOCK_TOOLS, type LogEntry } from "@/lib/mcp-dashboard-fixture";
 
@@ -15,6 +16,8 @@ const ERRORS: Record<string, string> = {
   denied: "Connection was cancelled.",
   bad_state: "Connection couldn’t be verified. Please try again.",
   exchange_failed: "The provider rejected the connection. Please try again.",
+  use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
+  invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
   unknown: "Unknown connector.",
 };
 
@@ -39,6 +42,7 @@ export default function ConnectionsPage() {
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
   const [error, setError] = React.useState(false);
   const [disconnectTarget, setDisconnectTarget] = React.useState<ConnectorStatus | null>(null);
+  const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
   const [enabled, setEnabled] = React.useState<Record<string, boolean>>({});
@@ -97,9 +101,25 @@ export default function ConnectionsPage() {
   }, []);
 
   const connect = (c: ConnectorStatus) => {
+    // Credentials connectors link in-app via a dialog — no OAuth redirect.
+    if (c.kind === "credentials") {
+      setCredentialsTarget(c);
+      return;
+    }
     setConnectingId(c.id);
     // Full navigation — the OAuth flow redirects off-app and back.
     window.location.href = `/api/connectors/${c.id}/connect`;
+  };
+
+  const credentialsConnected = (c: ConnectorStatus, accountLabel: string | null) => {
+    setCredentialsTarget(null);
+    setConnectors(
+      (prev) =>
+        prev?.map((x) =>
+          x.id === c.id ? { ...x, connected: true, accountLabel, connectedAt: new Date().toISOString() } : x
+        ) ?? prev
+    );
+    toast.success(`Connected ${c.label}.`);
   };
 
   const disconnect = async () => {
@@ -235,6 +255,12 @@ export default function ConnectionsPage() {
           Connected tools are available to the model when you enable them in a chat. Each provider shows the exact permissions during its consent flow.
         </p>
       </div>
+
+      <CredentialsDialog
+        connector={credentialsTarget}
+        onOpenChange={(open) => !open && setCredentialsTarget(null)}
+        onConnected={credentialsConnected}
+      />
 
       <Dialog open={!!disconnectTarget} onOpenChange={(open) => !open && setDisconnectTarget(null)}>
         <DialogContent className="max-w-sm">

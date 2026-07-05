@@ -20,16 +20,18 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     sessionUser.id
       ? await prisma.user.findUnique({
           where: { id: sessionUser.id },
-          select: { id: true, name: true, email: true, image: true },
+          select: { id: true, name: true, email: true, image: true, bannedAt: true },
         })
       : sessionUser.email
         ? await prisma.user.findUnique({
             where: { email: sessionUser.email },
-            select: { id: true, name: true, email: true, image: true },
+            select: { id: true, name: true, email: true, image: true, bannedAt: true },
           })
         : null;
 
-  if (!account) return null;
+  // A ban applied mid-session takes effect on the next request: treating a
+  // banned account as signed-out kills every active session immediately.
+  if (!account || account.bannedAt) return null;
   return {
     id: account.id,
     name: account.name,
@@ -43,4 +45,21 @@ export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
   return user;
+}
+
+/**
+ * Ban state for the CURRENT session, read independently of getCurrentUser
+ * (which reports a banned account as signed-out). Lets the app shell send a
+ * suspended user to a page that explains why, instead of a silent sign-in loop.
+ */
+export async function getSessionBan(): Promise<{ reason: string | null } | null> {
+  const session = await auth();
+  const sessionUser = (session?.user as SessionUser | undefined) ?? null;
+  if (!sessionUser?.id) return null;
+  const account = await prisma.user.findUnique({
+    where: { id: sessionUser.id },
+    select: { bannedAt: true, banReason: true },
+  });
+  if (!account?.bannedAt) return null;
+  return { reason: account.banReason };
 }

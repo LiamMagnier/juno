@@ -22,6 +22,27 @@ server {
     access_log /var/log/nginx/juno_backend_access.log;
     error_log /var/log/nginx/juno_backend_error.log;
 
+    # Voice relay WebSocket (standalone service on :8787). Clients connect to
+    # wss://YOUR_DOMAIN/voice-relay — the relay ignores the request path on
+    # upgrade and serves /healthz at any path suffix, so the URI passes
+    # through untouched (no proxy_pass URI part = no prefix rewriting).
+    location /voice-relay {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Voice sessions are long-lived (up to 120 min per provider caps);
+        # audio frames flow continuously, but keep a generous idle ceiling.
+        proxy_buffering off;
+        proxy_read_timeout 7200s;
+        proxy_send_timeout 7200s;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;

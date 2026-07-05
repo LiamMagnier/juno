@@ -16,7 +16,7 @@ export interface PlanConfig {
   canvas: boolean;
   webSearch: boolean;
   /** env key holding the Stripe price id; undefined for FREE. */
-  priceEnvKey?: "STRIPE_PRICE_PRO" | "STRIPE_PRICE_MAX";
+  priceEnvKey?: "STRIPE_PRICE_PRO" | "STRIPE_PRICE_MAX" | "STRIPE_PRICE_MAX20";
   features: string[];
 }
 
@@ -44,7 +44,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     name: "Pro",
     price: 20,
     tagline: "For everyday power use.",
-    monthlyMessages: 1500,
+    monthlyMessages: null,
     maxUploadMb: 20,
     maxOutputTokens: 16384,
     voice: true,
@@ -52,7 +52,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
     webSearch: true,
     priceEnvKey: "STRIPE_PRICE_PRO",
     features: [
-      "1,500 messages / month",
+      "Unlimited messages",
       "All models (Claude Opus, GPT-5.5, Gemini Pro, GLM, Kimi)",
       "Uploads up to 20 MB",
       "Voice mode & voice-to-chat",
@@ -62,7 +62,7 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
   MAX: {
     id: "MAX",
-    name: "Max",
+    name: "Max x5",
     price: 100,
     tagline: "For professionals who live in Juno.",
     monthlyMessages: null,
@@ -79,6 +79,27 @@ export const PLANS: Record<Plan, PlanConfig> = {
       "Voice mode & voice-to-chat",
       "Memory across conversations",
       "Highest priority access",
+    ],
+  },
+  MAX20: {
+    id: "MAX20",
+    name: "Max x20",
+    price: 200,
+    tagline: "For teams of one who never stop.",
+    monthlyMessages: null,
+    maxUploadMb: 50,
+    maxOutputTokens: 32768,
+    voice: true,
+    canvas: true,
+    webSearch: true,
+    priceEnvKey: "STRIPE_PRICE_MAX20",
+    features: [
+      "Unlimited messages",
+      "All models, highest priority",
+      "Highest usage ceiling for heavy days",
+      "Uploads up to 50 MB",
+      "Voice mode & voice-to-chat",
+      "Memory across conversations",
     ],
   },
   // Not purchasable — granted via OWNER_EMAILS. Not shown on the upgrade page.
@@ -104,10 +125,10 @@ export const PLANS: Record<Plan, PlanConfig> = {
   },
 };
 
-export const PLAN_LIST: PlanConfig[] = [PLANS.FREE, PLANS.PRO, PLANS.MAX];
+export const PLAN_LIST: PlanConfig[] = [PLANS.FREE, PLANS.PRO, PLANS.MAX, PLANS.MAX20];
 
 export function planRank(plan: Plan): number {
-  return { FREE: 0, PRO: 1, MAX: 2, OWNER: 3 }[plan];
+  return { FREE: 0, PRO: 1, MAX: 2, MAX20: 3, OWNER: 4 }[plan];
 }
 
 /**
