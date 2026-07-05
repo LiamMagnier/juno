@@ -1,7 +1,7 @@
 {
-  "version": "2.4",
-  "build": 20,
+  "version": "2.5",
+  "build": 21,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Juno Code now runs natively on your account: send works reliably, models stream through your Juno account (no API keys), file + computer tools run on your Mac, and Code chats are stored in your synced library. Your profile picture and name now refresh from the website automatically. New: right model selector, computer-use toggle.",
+  "notes": "Profile picture: set it right from the app (Settings \u2192 Account \u2192 Change photo) and it syncs to your Juno account and the website. Also fixes uploads getting wiped on server deploys.",
   "minimumSystemVersion": "26.0"
 }
