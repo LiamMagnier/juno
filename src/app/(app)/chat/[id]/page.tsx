@@ -16,6 +16,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
       initialArtifacts={thread.artifacts}
       initialModel={thread.conversation.model}
       projectId={thread.conversation.projectId ?? undefined}
+      initialConnectors={thread.conversation.activeConnectors}
     />
   );
 }

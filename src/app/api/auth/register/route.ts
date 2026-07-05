@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { ensureUserDefaults } from "@/lib/auth";
+import { hashPassword } from "@/lib/password";
 import { rateLimit, getClientIp } from "@/lib/rate-limit";
 
 const schema = z.object({
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "An account with this email already exists." }, { status: 409 });
   }
 
-  const hashedPassword = await bcrypt.hash(parsed.data.password, 12);
+  const hashedPassword = await hashPassword(parsed.data.password);
   const user = await prisma.user.create({
     data: { email, name: parsed.data.name ?? null, hashedPassword },
   });

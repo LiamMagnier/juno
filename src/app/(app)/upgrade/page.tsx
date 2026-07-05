@@ -106,7 +106,7 @@ export default function UpgradePage() {
           <span className="font-medium text-foreground">
             {currentPlan === "OWNER" ? "Owner" : planLabel(currentPlan)}
           </span>{" "}
-          plan. Every paid plan includes unlimited messages — upgrade any time, changes apply instantly.
+          plan. Every paid plan unlocks all models with a monthly limit based on tokens — upgrade any time, changes apply instantly.
         </p>
 
         {!features.billing && (

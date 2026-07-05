@@ -1,12 +1,37 @@
 import NextAuth, { type NextAuthConfig } from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
+import type { Adapter, AdapterAccount } from "next-auth/adapters";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
-import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env, isGoogleConfigured } from "@/lib/env";
+import { encryptAccountTokens, decryptAccountTokens } from "@/lib/crypto";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import { rateLimit, ipFromHeaders } from "@/lib/rate-limit";
+
+/**
+ * PrismaAdapter that encrypts OAuth tokens before they touch the `Account`
+ * table. Only `linkAccount` writes tokens (once, at first sign-in — JWT
+ * sessions never refresh them), so wrapping it is sufficient to keep
+ * access_token / refresh_token / id_token encrypted at rest.
+ */
+function EncryptedPrismaAdapter(client: typeof prismaUnguarded): Adapter {
+  const base = PrismaAdapter(client);
+  return {
+    ...base,
+    linkAccount: (account) => base.linkAccount!(encryptAccountTokens(account) as AdapterAccount),
+    // Symmetric read path (WebAuthn flows call getAccount): decrypt the tokens
+    // back before handing the account to callers, so nothing downstream ever
+    // sees ciphertext where it expects a usable OAuth token.
+    getAccount: base.getAccount
+      ? async (providerAccountId, provider) => {
+          const account = await base.getAccount!(providerAccountId, provider);
+          return account ? (decryptAccountTokens(account) as AdapterAccount) : account;
+        }
+      : undefined,
+  };
+}
 
 const credentialsSchema = z.object({
   email: z.string().email(),
@@ -43,11 +68,23 @@ const providers: NextAuthConfig["providers"] = [
 
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user?.hashedPassword) return null;
-      const ok = await bcrypt.compare(parsed.data.password, user.hashedPassword);
+      const { ok, needsUpgrade } = await verifyPassword(parsed.data.password, user.hashedPassword);
       if (!ok) return null;
       // Suspended accounts cannot sign in. Returning null gives the same generic
       // failure as a bad password (no account-status oracle).
       if (user.bannedAt) return null;
+      // Migrate a legacy (pre-72-byte-safe) hash to the current scheme now that
+      // we hold the plaintext. Best-effort: a failure here must not block login.
+      if (needsUpgrade) {
+        try {
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { hashedPassword: await hashPassword(parsed.data.password) },
+          });
+        } catch {
+          /* re-upgrades on the next sign-in */
+        }
+      }
       return { id: user.id, email: user.email, name: user.name, image: user.image };
     },
   }),
@@ -66,8 +103,9 @@ if (isGoogleConfigured()) {
 
 export const authConfig: NextAuthConfig = {
   // The adapter queries auth models by its own unique keys (email,
-  // provider+providerAccountId), so it gets the raw client.
-  adapter: PrismaAdapter(prismaUnguarded),
+  // provider+providerAccountId), so it gets the raw client. Wrapped so OAuth
+  // tokens are encrypted before they land in the Account table.
+  adapter: EncryptedPrismaAdapter(prismaUnguarded),
   session: { strategy: "jwt" },
   pages: { signIn: "/sign-in" },
   trustHost: true,

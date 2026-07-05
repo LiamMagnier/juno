@@ -24,6 +24,14 @@ export const env = {
     return required("AUTH_SECRET");
   },
 
+  // Secret-at-rest encryption key rotation (optional). Without these, every
+  // secret is sealed under a key derived from AUTH_SECRET (key id "auth"). To
+  // rotate — including to decouple from AUTH_SECRET so it can itself be rotated
+  // — supply explicit 32-byte keys and name the primary, then run
+  // `npm run crypto:rotate` to re-seal existing rows. See src/lib/crypto.ts.
+  tokenEncryptionKeys: process.env.TOKEN_ENCRYPTION_KEYS, // "id:material,id2:material" (hex or base64, 32 bytes each)
+  tokenEncryptionPrimary: process.env.TOKEN_ENCRYPTION_PRIMARY, // key id that seals new writes (default "auth")
+
   // App
   appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
 

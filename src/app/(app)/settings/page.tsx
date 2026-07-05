@@ -295,7 +295,7 @@ export default function SettingsPage() {
                     <div className="text-left">
                       <span className="block text-caption text-muted-foreground uppercase tracking-wider font-mono">Limit</span>
                       <span className="text-lg font-serif font-bold text-foreground mt-0.5 block">
-                        {limit != null ? limit.toLocaleString() : "Unlimited"}
+                        {limit != null ? limit.toLocaleString() : "No cap"}
                       </span>
                     </div>
                     <div className="text-left">
@@ -337,7 +337,7 @@ export default function SettingsPage() {
                         ))}
                       </div>
                       <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-                        Your account has unlimited message credits. Enjoy uninterrupted premium access.
+                        Your plan includes every model, with a monthly usage limit based on tokens.
                       </p>
                     </div>
                   )}

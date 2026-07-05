@@ -31,6 +31,7 @@ interface ChatViewProps {
   initialModel: string;
   projectId?: string;
   initialPrompt?: string;
+  initialConnectors?: string[];
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
@@ -78,7 +79,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialConnectors }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -129,7 +130,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [setComposerPrefs]
   );
   // Tool connectors (GitHub/Figma…) enabled for the next message.
-  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>([]);
+  // Seeded from the conversation's persisted set so connectors turned on earlier
+  // stay on across sends, remounts (the post-first-message /chat/[id] redirect),
+  // and reopening the chat later — no re-toggling per prompt.
+  const [enabledConnectors, setEnabledConnectors] = React.useState<string[]>(initialConnectors ?? []);
   const toggleConnector = React.useCallback(
     (id: string) => setEnabledConnectors((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
     []
@@ -177,6 +181,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           pinned: false,
           folderId: null,
           projectId: activeProjectId ?? null,
+          activeConnectors: enabledConnectors,
           lastMessageAt: new Date().toISOString(),
           createdAt: new Date().toISOString(),
         };

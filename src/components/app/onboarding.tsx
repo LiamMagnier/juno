@@ -464,9 +464,13 @@ export function Onboarding() {
                 const isCurrent = plan.id === currentPlan;
                 const popular = plan.id === "PRO";
                 const msgs =
-                  plan.monthlyMessages === null
-                    ? "Unlimited messages"
-                    : `${plan.monthlyMessages.toLocaleString()} messages / mo`;
+                  plan.id === "FREE"
+                    ? "Browse & explore"
+                    : plan.id === "MAX"
+                      ? "All models · 5× Pro's tokens"
+                      : plan.id === "MAX20"
+                        ? "All models · highest token limit"
+                        : "All models · token-based limit";
                 return (
                   <div
                     key={plan.id}

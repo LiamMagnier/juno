@@ -635,6 +635,11 @@ async function handleChat(req: Request) {
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
+  // Connector toggles the user has on for this chat. Persisted on the
+  // conversation so they stay active for every later prompt (and after the chat
+  // remounts/reopens) without re-toggling. `undefined` means the client didn't
+  // send the field, so we leave whatever was stored untouched.
+  const connectorSelection = input.connectors === undefined ? undefined : [...new Set(input.connectors)];
   if (!conversation) {
     // If starting a chat inside a project, attach it (ownership-checked).
     let projectId: string | null = null;
@@ -643,7 +648,23 @@ async function handleChat(req: Request) {
       projectId = proj?.id ?? null;
     }
     conversation = await prisma.conversation.create({
-      data: { userId: user.id, model: modelId, title: truncate(input.message ?? "New chat", 48), titleSource: "default", projectId },
+      data: {
+        userId: user.id,
+        model: modelId,
+        title: truncate(input.message ?? "New chat", 48),
+        titleSource: "default",
+        projectId,
+        activeConnectors: connectorSelection ?? [],
+      },
+    });
+  } else if (
+    connectorSelection !== undefined &&
+    (conversation.activeConnectors.length !== connectorSelection.length ||
+      !conversation.activeConnectors.every((c) => connectorSelection.includes(c)))
+  ) {
+    conversation = await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: { activeConnectors: connectorSelection },
     });
   }
 

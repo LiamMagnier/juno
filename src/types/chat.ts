@@ -96,6 +96,7 @@ export interface ClientConversation {
   pinned: boolean;
   folderId: string | null;
   projectId: string | null;
+  activeConnectors: string[];
   lastMessageAt: string;
   createdAt: string;
 }

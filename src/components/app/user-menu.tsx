@@ -68,7 +68,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Messages</span>
             <span className="truncate font-mono text-[11px] tracking-wide text-foreground">
-              {quota.limit == null ? "Unlimited" : `${quota.used} / ${quota.limit}`}
+              {quota.limit == null ? "No cap" : `${quota.used} / ${quota.limit}`}
             </span>
           </div>
           {quota.limit != null ? (
@@ -76,7 +76,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
           ) : (
             <>
               <DotFillBar value={1} max={1} dots={18} className="mt-2 opacity-40" />
-              <p className="mt-1.5 text-caption text-muted-foreground/75">Unlimited messages on this plan.</p>
+              <p className="mt-1.5 text-caption text-muted-foreground/75">All models, with a monthly token limit.</p>
             </>
           )}
         </div>
