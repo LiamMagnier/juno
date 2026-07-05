@@ -115,6 +115,9 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Qwen Turbo", match: /qwen[\d.]*-turbo/i, minPlan: "FREE", vision: false },
     { label: "QwQ", match: /^qwq/i, minPlan: "PRO", vision: false },
   ],
+  longcat: [
+    { label: "LongCat 2.0", match: /^longcat-2/i, minPlan: "PRO", vision: false },
+  ],
 };
 
 export const stripPrefix = (id: string) => id.replace(/^models\//i, "");

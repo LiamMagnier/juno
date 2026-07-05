@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen";
+export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat";
 
 interface ProviderDef {
   label: string;
@@ -123,6 +123,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
     kind: "openai",
     docsUrl: "https://bailian.console.alibabacloud.com/?apiKey=1#/api-key",
+  },
+  longcat: {
+    label: "Meituan · LongCat",
+    apiKeyEnv: "LONGCAT_API_KEY",
+    baseUrlEnv: "LONGCAT_BASE_URL",
+    defaultBaseUrl: "https://api.longcat.chat/openai",
+    kind: "openai",
+    docsUrl: "https://longcat.chat/platform/api_keys",
   },
 };
 

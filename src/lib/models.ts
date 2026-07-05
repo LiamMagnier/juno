@@ -258,6 +258,9 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen-turbo", name: "Qwen Turbo", family: "qwen-flash", status: "legacy", released: "2024-09", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Older ultra-cheap tier, superseded by Qwen Flash." }),
   def({ provider: "qwen", id: "qwen-vl-max", name: "Qwen-VL Max", family: "qwen-vl", status: "legacy", released: "2024-01", minPlan: "PRO", vision: true, cost: 2, contextWindow: 32_768, description: "Previous-generation vision-language model." }),
   def({ provider: "qwen", id: "qwq-plus", name: "QwQ Plus", family: "qwq", status: "legacy", released: "2025-03", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 131_072, description: "Dedicated QwQ reasoning model, superseded by Qwen3 thinking." }),
+
+  // —— Meituan · LongCat ——
+  def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs

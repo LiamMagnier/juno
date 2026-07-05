@@ -97,6 +97,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("qwen3.7-max")) return { input: 1.25, output: 3.75 };
       if (pm.includes("flash")) return { input: 0.19, output: 1.13 };
       return { input: 0.4, output: 1.2 };
+    case "longcat":
+      return { input: 0.4, output: 2 };
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };

@@ -193,6 +193,7 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   minimax: metric(0.3, 1.2, 204_800, 6, 8),
   mimo: metric(0.4, 1.6, 256_000, 6, 8),
   qwen: metric(0.4, 1.2, 262_144, 6, 8),
+  longcat: metric(0.4, 2, 1_000_000, 6, 8),
 };
 
 function familyMetric(model: ModelInfo): ModelMetrics | null {
