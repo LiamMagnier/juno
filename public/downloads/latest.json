@@ -1,7 +1,7 @@
 {
-  "version": "2.0.1",
-  "build": 15,
+  "version": "2.0.2",
+  "build": 16,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "GPT-5.5 Pro and GPT-5.4 Pro now work \u2014 new OpenAI Responses API support (BYOK and account mode).",
+  "notes": "Updates now install themselves: Juno re-checks every few hours and when you return to the app, and the update panel opens automatically when a new build lands. Includes GPT-5.5 Pro / 5.4 Pro support (Responses API) from 2.0.1.",
   "minimumSystemVersion": "26.0"
 }
