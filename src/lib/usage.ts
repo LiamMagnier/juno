@@ -43,30 +43,36 @@ export async function consumeMessage(
   const period = currentPeriod();
   const limit = PLANS[plan].monthlyMessages;
 
-  const current = await prisma.usage.upsert({
+  // Ensure the period row exists without incrementing.
+  await prisma.usage.upsert({
     where: { userId_period: { userId, period } },
     create: { userId, period, messageCount: 0 },
     update: {},
   });
 
-  if (limit != null && current.messageCount >= limit) {
-    return { allowed: false, quota: { plan, used: current.messageCount, limit, remaining: 0 } };
+  if (limit == null) {
+    // Unlimited plan: increment for accounting, never block.
+    const updated = await prisma.usage.update({
+      where: { userId_period: { userId, period } },
+      data: { messageCount: { increment: 1 } },
+    });
+    return { allowed: true, quota: { plan, used: updated.messageCount, limit: null, remaining: null } };
   }
 
-  const updated = await prisma.usage.update({
-    where: { userId_period: { userId, period } },
+  // Single atomic conditional increment: the `messageCount < limit` guard and
+  // the increment are one SQL UPDATE, so two concurrent turns can't both slip
+  // past the cap (closes the check-then-increment TOCTOU race).
+  const res = await prisma.usage.updateMany({
+    where: { userId, period, messageCount: { lt: limit } },
     data: { messageCount: { increment: 1 } },
   });
+  const row = await prisma.usage.findUnique({ where: { userId_period: { userId, period } } });
+  const used = row?.messageCount ?? limit;
 
-  return {
-    allowed: true,
-    quota: {
-      plan,
-      used: updated.messageCount,
-      limit,
-      remaining: limit == null ? null : Math.max(0, limit - updated.messageCount),
-    },
-  };
+  if (res.count === 0) {
+    return { allowed: false, quota: { plan, used, limit, remaining: 0 } };
+  }
+  return { allowed: true, quota: { plan, used, limit, remaining: Math.max(0, limit - used) } };
 }
 
 /** Add token counts to the current period's aggregate (best-effort accounting). */

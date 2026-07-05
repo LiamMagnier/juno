@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { getUserPlan, consumeMessage, recordTokens } from "@/lib/usage";
+import { getUserPlan, consumeMessage, recordTokens, refundMessage } from "@/lib/usage";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,10 @@ export const runtime = "nodejs";
  *
  *   { phase: "record", promptTokens, completionTokens, model }
  *     → adds the turn's real token counts to the period aggregate.
+ *
+ *   { phase: "refund" }
+ *     → gives back a reserved message when a turn produced no billable work
+ *       (provider error / abort before output), mirroring the web chat route.
  *
  * A more specific route than /api/agent/[...path], so it wins over the proxy
  * catch-all. Auth is the shared session cookie the app already sends.
@@ -49,6 +53,11 @@ export async function POST(req: NextRequest) {
   if (body.phase === "record") {
     await recordTokens(user.id, body.promptTokens ?? 0, body.completionTokens ?? 0);
     return NextResponse.json({ ok: true });
+  }
+
+  if (body.phase === "refund") {
+    const quota = await refundMessage(user.id, plan);
+    return NextResponse.json({ ok: true, quota });
   }
 
   return NextResponse.json({ error: "Unknown phase." }, { status: 400 });
