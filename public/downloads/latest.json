@@ -1,7 +1,7 @@
 {
-  "version": "2.1",
-  "build": 17,
+  "version": "2.2",
+  "build": 18,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Code mode rebuilt from zero: new Codex-style workbench powered by the Juno agent engine \u2014 real permission ladder (Plan / Ask / Auto-edit / Full), approvals, per-turn checkpoints with undo, live diffs, multi-provider models (GLM-5.2, Claude, GPT). Classic cockpit still available via the junoClassicCode setting.",
+  "notes": "Juno Code, connected to your account: sidebar rebuilt to the Codex layout (projects with their sessions nested, chats, account footer); every model from the website now available in Code and running on your account's server keys (no per-model API keys); and all Code usage now counts toward your plan just like web chat.",
   "minimumSystemVersion": "26.0"
 }
