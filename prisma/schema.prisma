@@ -357,11 +357,15 @@ model Subscription {
 }
 
 // Monthly usage counter for quota enforcement. `period` is "YYYY-MM".
+// Token counters aggregate real usage across the web chat and Juno Code so a
+// single account view reflects everything drawn against the plan.
 model Usage {
-  id           String @id @default(cuid())
-  userId       String
-  period       String
-  messageCount Int    @default(0)
+  id               String @id @default(cuid())
+  userId           String
+  period           String
+  messageCount     Int    @default(0)
+  promptTokens     BigInt @default(0)
+  completionTokens BigInt @default(0)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

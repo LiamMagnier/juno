@@ -69,6 +69,32 @@ export async function consumeMessage(
   };
 }
 
+/** Add token counts to the current period's aggregate (best-effort accounting). */
+export async function recordTokens(
+  userId: string,
+  promptTokens: number,
+  completionTokens: number
+): Promise<void> {
+  const period = currentPeriod();
+  const prompt = Math.max(0, Math.round(promptTokens || 0));
+  const completion = Math.max(0, Math.round(completionTokens || 0));
+  if (prompt === 0 && completion === 0) return;
+  await prisma.usage.upsert({
+    where: { userId_period: { userId, period } },
+    create: {
+      userId,
+      period,
+      messageCount: 0,
+      promptTokens: BigInt(prompt),
+      completionTokens: BigInt(completion),
+    },
+    update: {
+      promptTokens: { increment: BigInt(prompt) },
+      completionTokens: { increment: BigInt(completion) },
+    },
+  });
+}
+
 /** Refund one consumed message (used when generation fails), floored at 0. */
 export async function refundMessage(userId: string, plan: Plan): Promise<QuotaStatus> {
   const period = currentPeriod();
