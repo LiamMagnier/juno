@@ -67,11 +67,13 @@ jobs:
             --exclude '.env.*' \
             -e "ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new" \
             ./ "$VM_USER@$VM_HOST:~/juno/"
-          # `.env` is excluded above to preserve VM-only secrets, but that also
-          # froze shared keys — a key rotated in PROD_ENV never reached the VM.
-          # Ship the shared keys individually so the VM's runtime .env tracks
-          # them without clobbering its VM-only values (see merge step below).
-          grep -E '^(GOOGLE_API_KEY)=' .env > .env.shared || true
+          # `.env` itself is excluded from the rsync above so the VM keeps any
+          # values that live ONLY on it. But PROD_ENV is the source of truth, so
+          # ship EVERY key it defines and upsert them into the VM's runtime .env
+          # (see merge step below): changed/rotated/new keys propagate, while
+          # VM-only keys (absent from PROD_ENV) are preserved. Match real
+          # assignment lines only — skip comments and blank lines.
+          grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env > .env.shared || true
           scp -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
             .env.shared "$VM_USER@$VM_HOST:~/juno/.env.shared"
 
@@ -98,9 +100,10 @@ jobs:
           npx prisma generate
           npx prisma db push --skip-generate
           mkdir -p logs
-          # Upsert the shared keys shipped alongside the build into the runtime
-          # .env (replace-or-add per key), preserving every VM-only value, so a
-          # rotated PROD_ENV key takes effect on reload. .env.bak is the rollback.
+          # Upsert every PROD_ENV key shipped alongside the build into the
+          # runtime .env (replace-or-add per key), preserving any VM-only value
+          # not present in PROD_ENV, so changed/new keys take effect on reload.
+          # .env.bak is the pre-merge rollback.
           if [ -s .env.shared ]; then
             cp .env .env.bak
             while IFS= read -r line; do
@@ -111,7 +114,7 @@ jobs:
               printf '%s\n' "$line" >> .env
             done < .env.shared
             rm -f .env.shared
-            echo "Synced shared secrets into runtime .env."
+            echo "Synced PROD_ENV keys into runtime .env (VM-only keys preserved)."
           fi
           pm2 startOrReload deploy/ecosystem.config.js --update-env
           pm2 save
