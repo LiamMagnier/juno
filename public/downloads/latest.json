@@ -1,7 +1,7 @@
 {
-  "version": "2.3",
-  "build": 19,
+  "version": "2.4",
+  "build": 20,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Juno Code: right-click any chat to rename it, reveal its folder in Finder, or delete it (with confirmation).",
+  "notes": "Juno Code now runs natively on your account: send works reliably, models stream through your Juno account (no API keys), file + computer tools run on your Mac, and Code chats are stored in your synced library. Your profile picture and name now refresh from the website automatically. New: right model selector, computer-use toggle.",
   "minimumSystemVersion": "26.0"
 }
