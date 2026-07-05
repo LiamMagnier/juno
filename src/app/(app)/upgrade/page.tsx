@@ -115,7 +115,7 @@ export default function UpgradePage() {
           </div>
         )}
 
-        <div className="mt-8 grid items-start gap-4 md:grid-cols-3">
+        <div className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
           {/* Free */}
           <PlanCard
             name={PLANS.FREE.name}
@@ -220,7 +220,7 @@ function PlanCard({
       className={cn(
         "relative flex flex-col rounded-[24px] border bg-card p-6 shadow-soft transition-all duration-base ease-out-soft motion-safe:animate-rise-in [animation-fill-mode:backwards]",
         popular
-          ? "border-primary/50 bg-primary/[0.04] shadow-float md:-translate-y-2"
+          ? "border-primary/50 bg-primary/[0.04] shadow-float"
           : "hover:-translate-y-0.5 hover:shadow-float"
       )}
     >
