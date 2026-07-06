@@ -249,10 +249,10 @@ export default function ProjectsPage() {
             {filteredItems.map((p, i) => (
               <Card
                 key={p.id}
-                variant="interactive"
+                variant="default"
                 style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
                 className={cn(
-                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-[28px] hover:-translate-y-1 hover:border-primary/40 hover:shadow-float transition-all duration-base cursor-pointer",
+                  "overflow-hidden p-0 motion-safe:animate-rise-in [animation-fill-mode:backwards] flex flex-col justify-between rounded-[28px] hover:-translate-y-1 hover:border-border hover:shadow-float transition-all duration-base cursor-pointer",
                   p.coverUrl ? "h-[260px]" : "h-[160px]"
                 )}
                 onClick={(e) => {

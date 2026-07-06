@@ -169,15 +169,11 @@ export function AppSidebar({
     } catch {}
   };
 
-  // Starred projects first, then by recency; the sidebar shows at most 6.
+  // Only starred projects appear in the sidebar, most-recently-updated first.
   const sidebarProjects = React.useMemo(() => {
-    const byUpdated = [...projects].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
-    return [
-      ...byUpdated.filter((p) => starredProjectIds.includes(p.id)),
-      ...byUpdated.filter((p) => !starredProjectIds.includes(p.id)),
-    ].slice(0, 6);
+    return [...projects]
+      .filter((p) => starredProjectIds.includes(p.id))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [projects, starredProjectIds]);
 
   const toggleProjectStar = (id: string) => {
@@ -400,10 +396,10 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {projects.length > 0 && (
+            {sidebarProjects.length > 0 && (
               <Section
                 label="Projects"
-                count={projects.length}
+                count={sidebarProjects.length}
                 collapsible
                 isCollapsed={projectsCollapsed}
                 onToggleCollapse={toggleProjectsCollapsed}
@@ -441,7 +437,7 @@ export function AppSidebar({
                     onDelete={() => deleteProject(p)}
                   />
                 ))}
-                {projects.length > 6 && (
+                {projects.length > sidebarProjects.length && (
                   <Link
                     href="/projects"
                     onClick={() => setSidebarOpen(false)}
