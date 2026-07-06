@@ -1,7 +1,7 @@
 {
-  "version": "2.5",
-  "build": 21,
+  "version": "2.6.0",
+  "build": 22,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Profile picture: set it right from the app (Settings \u2192 Account \u2192 Change photo) and it syncs to your Juno account and the website. Also fixes uploads getting wiped on server deploys.",
+  "notes": "Code mode: a cleaner session top bar with a live terminal you can type into and a working web preview (start/stop your dev server). You can now delete and collapse projects. Under the hood, versioning moves to semver.",
   "minimumSystemVersion": "26.0"
 }
