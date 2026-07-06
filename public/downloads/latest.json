@@ -1,7 +1,7 @@
 {
-  "version": "2.6.0",
-  "build": 22,
+  "version": "2.6.1",
+  "build": 23,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Code mode: a cleaner session top bar with a live terminal you can type into and a working web preview (start/stop your dev server). You can now delete and collapse projects. Under the hood, versioning moves to semver.",
+  "notes": "Model selector now matches the website: the same models (synced live, so new ones show up without an update), the same official provider logos, and \u2014 in Code \u2014 a Computer Use badge on compatible models.",
   "minimumSystemVersion": "26.0"
 }
