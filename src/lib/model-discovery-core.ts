@@ -33,6 +33,10 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Claude Haiku", match: /haiku/i, minPlan: "FREE", vision: true },
   ],
   openai: [
+    { label: "GPT-5.6 Sol", match: /^gpt-5\.6-sol/i, minPlan: "PRO", vision: true },
+    { label: "GPT-5.6 Terra", match: /^gpt-5\.6-terra/i, minPlan: "PRO", vision: true },
+    { label: "GPT-5.6 Luna", match: /^gpt-5\.6-luna/i, minPlan: "FREE", vision: true },
+    { label: "GPT-5.6 Sol", match: /^gpt-5\.6(?!-)/i, minPlan: "PRO", vision: true }, // bare alias → Sol
     { label: "GPT-5.5 Pro", match: /^gpt-5\.5-pro/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.5", match: /^gpt-5\.5(?!-)/i, minPlan: "PRO", vision: true },
     { label: "GPT-5.3 Codex", match: /^gpt-5\.3-codex/i, minPlan: "PRO", vision: true },
@@ -117,6 +121,10 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
   ],
   longcat: [
     { label: "LongCat 2.0", match: /^longcat-2/i, minPlan: "PRO", vision: false },
+  ],
+  hunyuan: [
+    { label: "Hunyuan HY3", match: /hunyuan-?hy3/i, minPlan: "PRO", vision: false },
+    { label: "Hunyuan", match: /hunyuan/i, minPlan: "PRO", vision: false },
   ],
 };
 

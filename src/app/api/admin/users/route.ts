@@ -68,7 +68,7 @@ export async function GET(req: Request) {
       select: { userId: true, messageCount: true },
     }),
     prisma.apiSpend.groupBy({
-      by: ["userId"],
+      by: ["userId", "source"],
       where: { userId: { in: ids }, createdAt: { gte: monthStart } },
       _sum: { costMicroUsd: true },
     }),
@@ -80,7 +80,16 @@ export async function GET(req: Request) {
   ]);
 
   const messagesByUser = new Map(usage.map((u) => [u.userId, u.messageCount]));
-  const spendByUser = new Map(spend.map((s) => [s.userId, s._sum.costMicroUsd ?? 0]));
+  // Per-user total + per-surface split (web vs native app) of this month's spend.
+  const spendByUser = new Map<string, { total: number; web: number; app: number }>();
+  for (const s of spend) {
+    const row = spendByUser.get(s.userId) ?? { total: 0, web: 0, app: 0 };
+    const amount = s._sum.costMicroUsd ?? 0;
+    row.total += amount;
+    if (s.source === "app") row.app += amount;
+    else row.web += amount;
+    spendByUser.set(s.userId, row);
+  }
   const flagsByUser = new Map(flags.map((f) => [f.userId, f._count._all]));
 
   return NextResponse.json({
@@ -93,7 +102,9 @@ export async function GET(req: Request) {
       plan: effectivePlan(u.email, u.subscription),
       subscriptionStatus: u.subscription?.status ?? null,
       messagesThisMonth: messagesByUser.get(u.id) ?? 0,
-      monthSpendMicroUsd: spendByUser.get(u.id) ?? 0,
+      monthSpendMicroUsd: spendByUser.get(u.id)?.total ?? 0,
+      monthSpendWebMicroUsd: spendByUser.get(u.id)?.web ?? 0,
+      monthSpendAppMicroUsd: spendByUser.get(u.id)?.app ?? 0,
       bannedAt: u.bannedAt?.toISOString() ?? null,
       banReason: u.banReason,
       strikes: u.strikes,

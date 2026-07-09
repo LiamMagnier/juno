@@ -134,6 +134,9 @@ DIRECT_URL="postgresql://..." # Your direct database connection string (used for
 AUTH_SECRET="your-auth-secret" # Must match Vercel AUTH_SECRET
 ANTHROPIC_API_KEY="sk-ant-..."
 NEXT_PUBLIC_APP_URL="https://yourdomain.com" # Replace with your custom domain
+AUTH_URL="https://yourdomain.com" # REQUIRED: public origin for Auth.js — without it,
+                                  # sign-out and OAuth redirects resolve to the internal
+                                  # http://localhost:3000 seen behind nginx
 
 # Dynamic cookie subdomain config (Needed ONLY if you choose Option 2: Subdomains)
 # For example, if app is app.domain.com and backend is api.domain.com, use:

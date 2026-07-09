@@ -185,7 +185,11 @@ function MediaDropzone({
           toast.error("Upload failed.");
         }
       } else {
-        let msg = "Upload failed.";
+        // nginx rejects oversized bodies with an HTML 413 page before the
+        // request ever reaches Next — surface that instead of a generic error.
+        let msg = xhr.status === 413
+          ? "File too large for the server (proxy body-size limit). Raise client_max_body_size in nginx."
+          : `Upload failed (HTTP ${xhr.status}).`;
         try {
           msg = JSON.parse(xhr.responseText).error ?? msg;
         } catch {

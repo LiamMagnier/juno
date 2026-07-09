@@ -56,7 +56,11 @@ import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { formatBytes, cn } from "@/lib/utils";
 import { serializeQuote, quoteLocationLabel, type ComposerQuote } from "@/lib/quote-context";
 import type { ModelId } from "@/lib/models";
-import type { PendingPreflightClarification, PreflightClarificationAnswer } from "@/lib/preflight-clarification";
+import type {
+  PendingPreflightClarification,
+  PreflightClarificationAnswer,
+  PreflightClarificationAnswerValue,
+} from "@/lib/preflight-clarification";
 import type { SendResult } from "@/hooks/use-chat";
 import type { ClientAttachment, GenerationStatus, ReasoningEffort } from "@/types/chat";
 
@@ -154,7 +158,9 @@ export function Composer({
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
   const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
-  const placeholder = quote
+  const placeholder = pendingClarification
+    ? "Or type your own answer…"
+    : quote
     ? quote.mode === "modify"
       ? "Describe the change…"
       : "Ask about this selection…"
@@ -162,6 +168,10 @@ export function Composer({
         modality === "image" ? "Describe an image to generate…" : modality === "video" ? "Describe a video to generate…" : "Message Juno…"
       );
   const [text, setText] = React.useState("");
+  // The user's raw draft as it was when a send got intercepted by a
+  // clarification — restored on cancel (originalUserMessage may be the
+  // serialized quote block, which must not go back into the textarea).
+  const interceptedDraftRef = React.useRef("");
   const [clarificationAnswers, setClarificationAnswers] = React.useState<PreflightClarificationAnswer[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
@@ -240,7 +250,14 @@ export function Composer({
 
   React.useEffect(() => {
     setClarificationAnswers([]);
-  }, [pendingClarification]);
+    // The intercepted draft is preserved in pendingClarification.originalUserMessage;
+    // leaving it in the textarea made submit() treat it as a custom answer that
+    // silently overwrote whichever option the user actually clicked.
+    if (pendingClarification) {
+      setText("");
+      requestAnimationFrame(autoresize);
+    }
+  }, [pendingClarification, autoresize]);
 
   const clarificationOpen = !!pendingClarification;
   const controlsLocked = isBusy || uploading || !!quotaReached;
@@ -263,25 +280,7 @@ export function Composer({
   const submit = async () => {
     if (!canSend) return;
     if (clarificationOpen && pendingClarification) {
-      // Compile final answers
-      let finalAnswers = [...clarificationAnswers];
-      const trimmedText = text.trim();
-      if (trimmedText) {
-        const activeQuestion = pendingClarification.result.questions[0]; // Active question
-        const existingIndex = finalAnswers.findIndex((a) => a.questionId === activeQuestion.id);
-        const customAnswer: PreflightClarificationAnswer = {
-          questionId: activeQuestion.id,
-          question: activeQuestion.question,
-          source: "else",
-          value: trimmedText,
-        };
-        if (existingIndex !== -1) {
-          finalAnswers[existingIndex] = customAnswer;
-        } else {
-          finalAnswers.push(customAnswer);
-        }
-      }
-      const success = await submitClarification(finalAnswers);
+      const success = await submitClarification(clarificationAnswers);
       if (success) {
         setClarificationAnswers([]);
       }
@@ -289,6 +288,10 @@ export function Composer({
     }
     // A quoted selection wraps the user text in a structured block the model
     // can anchor on (artifact identifier + selection + mode instruction).
+    // Keep the user's raw words: when a clarification intercepts this send,
+    // cancel must restore the pre-serialization draft (the quote chip is
+    // still attached, so restoring the serialized block would double-wrap).
+    interceptedDraftRef.current = text.trim();
     const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
     const result = await onSend(outgoing, sendAttachments);
     if (result && result.accepted === false) return;
@@ -312,6 +315,7 @@ export function Composer({
         });
         return;
       }
+      interceptedDraftRef.current = merged;
       const outgoing = quote ? serializeQuote(quote, merged) : merged;
       void (async () => {
         const result = await onSend(outgoing, sendAttachments);
@@ -529,11 +533,32 @@ export function Composer({
   const submitClarification = React.useCallback(
     async (answers: PreflightClarificationAnswer[]) => {
       if (!onSubmitClarification) return false;
-      const result = await onSubmitClarification(answers);
+      // Every answer value must respect the server's zod limits (string ≤ 1000,
+      // string[] ≤ 12 × 500) — an oversized "Other" answer would 400 the whole
+      // send and lose the user's input.
+      const clampValue = (v: PreflightClarificationAnswerValue): PreflightClarificationAnswerValue =>
+        typeof v === "string" ? v.slice(0, 1000) : Array.isArray(v) ? v.slice(0, 12).map((s) => s.slice(0, 500)) : v;
+      const finalAnswers = answers.map((a) => (a.value === undefined ? a : { ...a, value: clampValue(a.value) }));
+      // Text typed in the main textarea while the popover is open still counts,
+      // but as a custom answer for the first UNANSWERED question — it must
+      // never overwrite an option the user clicked or the popover's own
+      // "Other" input. Clamped to the server's 1000-char answer limit.
+      const trimmedText = text.trim().slice(0, 1000);
+      if (trimmedText && pendingClarification) {
+        const target = pendingClarification.result.questions.find(
+          (q) => !finalAnswers.some((a) => a.questionId === q.id)
+        );
+        finalAnswers.push(
+          target
+            ? { questionId: target.id, question: target.question, source: "else", value: trimmedText }
+            : { questionId: "additional_context", question: "Additional context", source: "else", value: trimmedText }
+        );
+      }
+      const result = await onSubmitClarification(finalAnswers);
       if (!result || result.accepted !== false) clearComposerDraft();
       return !result || result.accepted !== false;
     },
-    [clearComposerDraft, onSubmitClarification]
+    [clearComposerDraft, onSubmitClarification, pendingClarification, text]
   );
 
   const skipClarification = React.useCallback(async () => {
@@ -544,9 +569,12 @@ export function Composer({
   }, [clearComposerDraft, onSkipClarification]);
 
   const cancelClarification = React.useCallback(() => {
+    // Closing the popover restores the intercepted draft so nothing is lost —
+    // the RAW draft, not originalUserMessage, which may be a serialized quote.
+    if (pendingClarification) setText(interceptedDraftRef.current || pendingClarification.originalUserMessage);
     onCancelClarification?.();
     requestAnimationFrame(() => textareaRef.current?.focus());
-  }, [onCancelClarification]);
+  }, [onCancelClarification, pendingClarification]);
 
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
   // How many connected tools are currently switched on — shown as a hint on the

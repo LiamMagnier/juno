@@ -218,6 +218,38 @@ export function ComposerClarificationPopover({
             </div>
           )}
 
+          {active.allowElse && (
+            <label
+              className={cn(
+                "flex flex-col gap-1.5 rounded-[16px] border bg-muted/25 p-3 transition-colors duration-base",
+                currentAnswer?.source === "else" && "border-primary/55 bg-primary/10"
+              )}
+            >
+              <span className="font-mono text-label uppercase text-muted-foreground">{active.elseLabel}</span>
+              {customIsLong ? (
+                <Textarea
+                  value={customValue}
+                  onChange={(event) => setCustom(event.target.value)}
+                  onKeyDown={onCustomKeyDown}
+                  disabled={disabled}
+                  placeholder={active.elsePlaceholder}
+                  maxLength={1000}
+                  rows={3}
+                  className="min-h-20 resize-none bg-background/80 rounded-[10px]"
+                />
+              ) : (
+                <Input
+                  value={customValue}
+                  onChange={(event) => setCustom(event.target.value)}
+                  onKeyDown={onCustomKeyDown}
+                  disabled={disabled}
+                  placeholder={active.elsePlaceholder}
+                  maxLength={1000}
+                  className="bg-background/80 rounded-[10px]"
+                />
+              )}
+            </label>
+          )}
         </div>
 
         <div className="flex flex-col gap-2 p-3 pt-1 pb-2 sm:flex-row sm:items-center sm:justify-between">
@@ -245,6 +277,10 @@ export function ComposerClarificationPopover({
                 Previous
               </Button>
             )}
+            <Button type="button" size="sm" onClick={() => void continueOrSubmit()} disabled={disabled || !canContinue}>
+              {isFinal ? "Continue" : "Next"}
+              <ChevronRight data-icon="inline-end" />
+            </Button>
           </div>
         </div>
       </div>
@@ -335,6 +371,7 @@ export function ComposerClarificationPopover({
                 onKeyDown={onCustomKeyDown}
                 disabled={disabled}
                 placeholder={active.elsePlaceholder}
+                maxLength={1000}
                 rows={3}
                 className="min-h-20 resize-none bg-background/80 rounded-[10px]"
               />
@@ -345,6 +382,7 @@ export function ComposerClarificationPopover({
                 onKeyDown={onCustomKeyDown}
                 disabled={disabled}
                 placeholder={active.elsePlaceholder}
+                maxLength={1000}
                 className="bg-background/80 rounded-[10px]"
               />
             )}

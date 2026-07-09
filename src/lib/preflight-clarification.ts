@@ -114,6 +114,25 @@ function answerValueToText(value: PreflightClarificationAnswerValue | undefined)
   return clean(value);
 }
 
+/**
+ * Persisted, user-visible form of the message: the original request with the
+ * clarification answers appended. The transient model message below only
+ * lives for a single generation — persisting this version instead of the bare
+ * original means regenerate, edit-and-resend, follow-up turns, private-mode
+ * history, and page reloads all still carry the user's answers.
+ */
+export function formatPreflightClarificationVisibleMessage(payload: PreflightClarificationContext): string | null {
+  const original = payload.originalUserMessage.trim();
+  const answered = payload.answers.filter((answer) => answer.source !== "skip" && answerValueToText(answer.value));
+  if (!original || !answered.length) return null;
+  const lines = [original, "", "Clarifications:"];
+  for (const answer of answered) {
+    const label = answer.question ?? answer.questionId;
+    lines.push(`- ${label}: ${answerValueToText(answer.value)}`);
+  }
+  return lines.join("\n");
+}
+
 export function formatPreflightClarificationModelMessage(payload: PreflightClarificationContext): string {
   const original = payload.originalUserMessage.trim();
   const answered = payload.answers.filter((answer) => answer.source !== "skip" && answerValueToText(answer.value));

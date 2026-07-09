@@ -52,7 +52,7 @@ function MetricBars({ label, value, accent }: { label: string; value: number; ac
         {Array.from({ length: 10 }).map((_, i) => (
           <span
             key={i}
-            className="h-4 w-2 rounded-full bg-muted transition-colors duration-base ease-out-soft"
+            className="h-4 w-2 rounded-full bg-muted ring-1 ring-inset ring-foreground/10 transition-colors duration-base ease-out-soft"
             style={i < value ? { backgroundColor: accent } : undefined}
             aria-hidden
           />

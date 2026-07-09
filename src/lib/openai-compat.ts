@@ -34,7 +34,13 @@ async function toOpenAIMessages(
   vision: boolean
 ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
   const out: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: "system", content: system }];
-  const binaryFrom = Math.max(0, history.length - BINARY_ATTACHMENT_LOOKBACK);
+  // Anchored to LOOKBACK-sized blocks (not a per-turn slide) so image →
+  // placeholder rewrites only move the cacheable-prefix boundary once per
+  // block, keeping provider prompt caches warm between steps.
+  const binaryFrom = Math.max(
+    0,
+    Math.floor((history.length - BINARY_ATTACHMENT_LOOKBACK) / BINARY_ATTACHMENT_LOOKBACK) * BINARY_ATTACHMENT_LOOKBACK
+  );
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
@@ -168,6 +174,10 @@ export async function* streamOpenAICompat(
   // conversation) to the same cache shard. Mistral: caching is OPT-IN and
   // only happens when prompt_cache_key is set. Other providers may reject
   // unknown params, so this stays gated. (xAI takes a header instead, below.)
+  // Zhipu/DeepSeek/Moonshot cache IMPLICITLY — no request param exists; hits
+  // arrive in usage.prompt_tokens_details.cached_tokens (parsed below) and
+  // depend entirely on the prompt prefix staying byte-stable across turns
+  // (see HISTORY_STEP in the chat route and the block-anchored binaryFrom).
   if ((model.provider === "openai" || model.provider === "mistral") && cacheKey) {
     params.prompt_cache_key = cacheKey;
   }

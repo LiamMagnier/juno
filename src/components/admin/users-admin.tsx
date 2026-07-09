@@ -35,6 +35,8 @@ type AdminUser = {
   subscriptionStatus: SubStatus | null;
   messagesThisMonth: number;
   monthSpendMicroUsd: number;
+  monthSpendWebMicroUsd: number;
+  monthSpendAppMicroUsd: number;
   bannedAt: string | null;
   banReason: string | null;
   strikes: number;
@@ -338,6 +340,11 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                         <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">{u.messagesThisMonth}</td>
                         <td className="px-4 py-2.5 text-right font-mono text-xs tabular-nums">
                           {formatSpend(u.monthSpendMicroUsd)}
+                          {u.monthSpendAppMicroUsd > 0 && (
+                            <p className="mt-0.5 text-[10px] text-muted-foreground">
+                              web {formatSpend(u.monthSpendWebMicroUsd)} · app {formatSpend(u.monthSpendAppMicroUsd)}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-2.5 text-right">
                           <DropdownMenu>

@@ -477,7 +477,8 @@ model ApiSpend {
   id               String   @id @default(cuid())
   userId           String
   model            String
-  kind             String   @default("chat") // chat | image | video | voice
+  kind             String   @default("chat") // chat | image | video | voice | code
+  source           String   @default("web") // web | app — which surface produced the spend
   promptTokens     Int      @default(0)
   completionTokens Int      @default(0)
   costMicroUsd     Int // request cost in micro-USD (1e-6 $) — integer math only

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { signOut } from "next-auth/react";
+import { signOutToSignIn } from "@/lib/sign-out";
 import { Brain, Command, Keyboard, LogOut, Map as MapIcon, Settings, Shield, Sparkles, User } from "lucide-react";
 import {
   DropdownMenu,
@@ -138,7 +138,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="h-9 text-destructive focus:text-destructive"
-          onSelect={() => signOut({ callbackUrl: "/sign-in" })}
+          onSelect={() => void signOutToSignIn()}
         >
           <LogOut className="h-4 w-4 opacity-70" />
           <span>Sign out</span>

@@ -1,0 +1,68 @@
+# Nightly model discovery: asks every configured provider's live model API for
+# new chat models and commits the regenerated src/lib/models.generated.ts.
+# New models then appear in the picker automatically (models.ts derives
+# plan/vision/reasoning/cost via its guess helpers) — no hand-editing needed.
+#
+# Providers are synced only when their API key exists as a repo secret; the
+# sync script skips missing keys and NEVER prunes a provider whose fetch
+# failed, so a partial secret set is safe. Add whichever of these secrets you
+# want synced: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY,
+# LLAMA_API_KEY, ZHIPU_API_KEY, MOONSHOT_API_KEY, DEEPSEEK_API_KEY,
+# MISTRAL_API_KEY, XAI_API_KEY, SEEDANCE_API_KEY, MINIMAX_API_KEY,
+# MIMO_API_KEY, DASHSCOPE_API_KEY, LONGCAT_API_KEY, HUNYUAN_API_KEY.
+name: Sync models
+
+on:
+  schedule:
+    - cron: "17 4 * * *" # nightly, 04:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Discover new models
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          LLAMA_API_KEY: ${{ secrets.LLAMA_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          SEEDANCE_API_KEY: ${{ secrets.SEEDANCE_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MIMO_API_KEY: ${{ secrets.MIMO_API_KEY }}
+          DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
+          LONGCAT_API_KEY: ${{ secrets.LONGCAT_API_KEY }}
+          HUNYUAN_API_KEY: ${{ secrets.HUNYUAN_API_KEY }}
+        run: npm run sync:models:write
+
+      - name: Validate registry
+        run: npm run validate:models
+
+      - name: Commit & push if changed
+        run: |
+          if git diff --quiet -- src/lib/models.generated.ts; then
+            echo "No new models."
+            exit 0
+          fi
+          git config user.name "juno-model-sync[bot]"
+          git config user.email "noreply@chat.liams.dev"
+          git add src/lib/models.generated.ts
+          git commit -m "chore(models): auto-sync discovered models"
+          git push

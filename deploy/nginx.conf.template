@@ -22,6 +22,11 @@ server {
     access_log /var/log/nginx/juno_backend_access.log;
     error_log /var/log/nginx/juno_backend_error.log;
 
+    # Announcement media uploads (images/videos) go through /api/admin/
+    # announcements/upload with an app-level 100 MB cap — nginx's 1 MB default
+    # client_max_body_size would 413 them before Next.js ever runs.
+    client_max_body_size 120m;
+
     # Voice relay WebSocket (standalone service on :8787). Clients connect to
     # wss://YOUR_DOMAIN/voice-relay — the relay ignores the request path on
     # upgrade and serves /healthz at any path suffix, so the URI passes
@@ -56,7 +61,12 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
+        proxy_set_header X-Forwarded-Host $host;
+
+        # Large uploads stream straight to Next instead of buffering to
+        # nginx temp files first.
+        proxy_request_buffering off;
+
         # Streaming settings for LLM reasoning responses (Server-Sent Events).
         # proxy_read_timeout is the ceiling between reads from the app; on a
         # self-hosted box THIS replaces Vercel's 300s maxDuration wall. The chat

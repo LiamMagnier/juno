@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { signOut } from "next-auth/react";
+import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
 import { ArrowLeft, Camera, ChevronDown, Download, Loader2, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -101,7 +101,7 @@ function AvailabilityBars({ ratio, color, dots = 24 }: { ratio: number; color: s
       {Array.from({ length: dots }).map((_, i) => (
         <span
           key={i}
-          className="h-8 w-2 rounded-full bg-muted transition-colors"
+          className="h-8 w-2 rounded-full bg-muted ring-1 ring-inset ring-foreground/10 transition-colors"
           style={i < filled ? { backgroundColor: color } : undefined}
         />
       ))}
@@ -244,7 +244,7 @@ function AccountCard({ email }: { email: string }) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Could not delete the account.");
       }
-      await signOut({ callbackUrl: "/sign-in" });
+      await signOutToSignIn();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not delete the account.");
       setDeleting(false);
@@ -554,7 +554,7 @@ export default function ProfilePage() {
                               <span className="truncate text-sm">{info?.name ?? m.model}</span>
                               <span className="shrink-0 font-mono text-caption text-muted-foreground">{m.count}</span>
                             </div>
-                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+                            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
                               <div className="h-full rounded-full" style={{ width: `${(m.count / Math.max(1, stats.models[0]?.count ?? 1)) * 100}%`, backgroundColor: accent }} />
                             </div>
                           </div>

@@ -21,7 +21,10 @@ import {
   formatClarificationVisibleMessage,
   markClarificationWizardSubmitted,
 } from "@/lib/clarification-wizard";
-import { formatPreflightClarificationModelMessage } from "@/lib/preflight-clarification";
+import {
+  formatPreflightClarificationModelMessage,
+  formatPreflightClarificationVisibleMessage,
+} from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
@@ -47,6 +50,13 @@ export const runtime = "nodejs";
 // fires. Keep RECOVERY_WINDOW_MS in use-chat.ts in sync with that nginx value.
 
 const HISTORY_LIMIT = 24;
+// When a conversation outgrows HISTORY_LIMIT, drop the oldest messages in
+// blocks of this size instead of one per turn. A per-turn sliding window
+// changes the prompt prefix on every request, which defeats provider-side
+// implicit prompt caching (Zhipu/DeepSeek/Moonshot/OpenAI all cache on
+// stable prefixes) — chunked truncation keeps the prefix byte-identical for
+// HISTORY_STEP consecutive turns at the cost of a slightly larger window.
+const HISTORY_STEP = 8;
 
 const WEB_SEARCH_NUDGE =
   "Web search is ENABLED for this message. You have a live web search tool that returns current, real-world results with citations — use it to answer with up-to-date information and cite your sources. Do NOT claim you lack internet access, real-time data, or the ability to browse; you can search right now.";
@@ -96,6 +106,9 @@ const bodySchema = z.object({
   connectors: z.array(z.string()).max(5).optional(),
   generationId: z.string().trim().min(8).max(120).optional(),
   privateMode: z.boolean().optional(),
+  // Which surface sent the request — tags the spend ledger so admin can split
+  // website vs native-app spending. Defaults to "web".
+  client: z.enum(["web", "app"]).optional(),
   privateHistory: z
     .array(
       z.object({
@@ -515,6 +528,7 @@ async function handleChat(req: Request) {
             userId: user.id,
             model: modelId,
             kind: "chat",
+            source: input.client === "app" ? "app" : "web",
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
             costUsd: usage.cost || undefined,
@@ -578,6 +592,7 @@ async function handleChat(req: Request) {
                 userId: user.id,
                 model: modelId,
                 kind: "chat",
+                source: input.client === "app" ? "app" : "web",
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,
@@ -723,12 +738,18 @@ async function handleChat(req: Request) {
       clarificationModelContent = formatClarificationModelMessage(clarificationPayload);
     }
 
-    // Append the user's message and link any pre-uploaded attachments.
+    // Append the user's message and link any pre-uploaded attachments. When
+    // preflight clarification answers exist, persist them appended to the
+    // original message so they survive regenerate/reload/follow-up turns —
+    // the model-directed format below is transient (one generation only).
+    const preflightVisibleContent = input.preflightClarification
+      ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
+      : null;
     const created = await prisma.message.create({
       data: {
         conversationId: conversation.id,
         role: "USER",
-        content: encryptMessageText(clarificationVisibleContent ?? input.message?.trim() ?? ""),
+        content: encryptMessageText(clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? ""),
       },
     });
     userMessageId = created.id;
@@ -762,15 +783,21 @@ async function handleChat(req: Request) {
     );
   }
 
-  // Build context from the most recent messages, excluding the answer being regenerated.
+  // Build context from the most recent messages, excluding the answer being
+  // regenerated. The window start is anchored to HISTORY_STEP blocks (see
+  // HISTORY_STEP above) so the prompt prefix stays cache-stable across turns;
+  // the window holds between HISTORY_LIMIT and HISTORY_LIMIT+HISTORY_STEP-1
+  // messages.
+  const totalMessages = await prisma.message.count({ where: { conversationId: conversation.id } });
+  const windowStart =
+    totalMessages > HISTORY_LIMIT ? Math.floor((totalMessages - HISTORY_LIMIT) / HISTORY_STEP) * HISTORY_STEP : 0;
   const recent = await prisma.message.findMany({
     where: { conversationId: conversation.id },
-    orderBy: { createdAt: "desc" },
+    orderBy: { createdAt: "asc" },
     include: { attachments: true },
-    take: HISTORY_LIMIT,
+    skip: windowStart,
   });
   const history = recent
-    .reverse()
     .filter((m) => m.id !== staleAssistantId)
     .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
   const hiddenUserContent = clarificationModelContent ?? preflightClarificationModelContent;
@@ -1075,6 +1102,7 @@ async function handleChat(req: Request) {
           userId: user.id,
           model: modelId,
           kind: "chat",
+          source: input.client === "app" ? "app" : "web",
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
           costUsd: usage.cost || undefined,
@@ -1154,6 +1182,7 @@ async function handleChat(req: Request) {
                 userId: user.id,
                 model: modelId,
                 kind: "chat",
+                source: input.client === "app" ? "app" : "web",
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
 import { resolveModel } from "@/lib/models";
 import {
+  formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
   type PendingPreflightClarification,
   type PreflightClarificationAnswer,
@@ -455,10 +456,15 @@ export function useChat(opts: UseChatOptions) {
       const attachments = input.attachments ?? [];
       // Image/video models run through the generation endpoint, not the chat stream.
       const modality = resolveModel(opts.model)?.modality ?? "chat";
+      // Clarification answers are shown (and, in private mode, re-sent as
+      // history) as part of the user message — matches what the server persists.
+      const visibleContent = input.preflightClarification
+        ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
+        : null;
       const userMsg: ChatMessage = {
         id: tempId(),
         role: "USER",
-        content: trimmed,
+        content: visibleContent ?? trimmed,
         createdAt: new Date().toISOString(),
         attachments,
         pending: true,

@@ -144,9 +144,15 @@ const CURATED: ModelInfo[] = [
   def({ provider: "anthropic", id: "claude-opus-4-1", name: "Claude Opus 4.1", family: "opus", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 3, contextWindow: 200_000, description: "Deprecated by Anthropic.", deprecationNote: "Retires Aug 5, 2026 — use Claude Opus 4.8" }),
 
   // —— OpenAI ——
-  def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's flagship — complex reasoning, agents, and long context." }),
+  // GPT-5.6 family (GA 2026-07-09): three tiers named Sol / Terra / Luna, all
+  // 1.05M context, vision + reasoning, chat/completions. The bare "gpt-5.6"
+  // API alias routes to Sol (see RETIRED_MODELS mapping below).
+  def({ provider: "openai", id: "gpt-5.6-sol", name: "GPT-5.6 Sol", family: "gpt", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "OpenAI's flagship — Sol tier for complex professional work, 90%-discount prompt cache." }),
+  def({ provider: "openai", id: "gpt-5.6-terra", name: "GPT-5.6 Terra", family: "gpt-value", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Balanced GPT-5.6 tier — everyday work where cost matters." }),
+  def({ provider: "openai", id: "gpt-5.6-luna", name: "GPT-5.6 Luna", family: "gpt-luna", status: "current", released: "2026-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 1_050_000, description: "Fastest, most affordable GPT-5.6 — high-volume tasks with 1M context." }),
+  def({ provider: "openai", id: "gpt-5.5", name: "GPT-5.5", family: "gpt", status: "legacy", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, description: "Previous flagship generation." }),
   def({ provider: "openai", id: "gpt-5.5-pro", name: "GPT-5.5 Pro", family: "gpt-pro", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_050_000, api: "responses", description: "OpenAI's most thorough reasoner — slow, expensive, extremely capable (Responses API)." }),
-  def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Affordable frontier tier for coding and professional work." }),
+  def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Previous affordable frontier tier." }),
   def({ provider: "openai", id: "gpt-5.4-mini", name: "GPT-5.4 Mini", family: "gpt-mini", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "OpenAI's strongest mini — fast, cheap coding and subagents." }),
   def({ provider: "openai", id: "gpt-5.4-nano", name: "GPT-5.4 Nano", family: "gpt-nano", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, description: "Cheapest, lowest-latency tier for high-volume simple tasks." }),
   def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, description: "Codex-tuned model for long-running coding, refactors, and agent loops." }),
@@ -261,6 +267,9 @@ const CURATED: ModelInfo[] = [
 
   // —— Meituan · LongCat ——
   def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention." }),
+
+  // —— Tencent · Hunyuan ——
+  def({ provider: "hunyuan", id: "hunyuan-HY3", name: "Hunyuan HY3", family: "hunyuan", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 256_000, description: "Tencent Hunyuan's flagship reasoning model — deep thinking, coding, and agentic tasks." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs
@@ -368,9 +377,10 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "anthropic:claude-3-sonnet-20240229": "anthropic:claude-sonnet-5",
   "anthropic:claude-3-haiku-20240307": "anthropic:claude-haiku-4-5",
   // OpenAI — retired ids + ids that never existed in the API.
-  "openai:gpt-5.5-thinking": "openai:gpt-5.5", // ChatGPT product name, never an API id
+  "openai:gpt-5.6": "openai:gpt-5.6-sol", // bare API alias — routes to Sol
+  "openai:gpt-5.5-thinking": "openai:gpt-5.6-sol", // ChatGPT product name, never an API id
   "openai:gpt-5.5-mini": "openai:gpt-5.4-mini", // never existed; current mini is 5.4
-  "openai:o1-preview": "openai:gpt-5.5", // shut down 2025-07-28
+  "openai:o1-preview": "openai:gpt-5.6-sol", // shut down 2025-07-28
   "openai:o1-mini": "openai:gpt-5.4-mini", // shut down 2025-10-27
   "openai:dall-e-3": "openai:gpt-image-2", // shut down 2026-05-12
   "openai:dall-e-2": "openai:gpt-image-2", // shut down 2026-05-12

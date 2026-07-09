@@ -238,8 +238,13 @@ export function buildDynamicContext(): string {
 /** Convert persisted messages (+ their attachments) into Anthropic message params. */
 export async function toAnthropicMessages(messages: MessageForModel[]): Promise<Anthropic.MessageParam[]> {
   const result: Anthropic.MessageParam[] = [];
-  // Only the last few messages re-embed heavy binaries; older ones are summarized.
-  const binaryFrom = Math.max(0, messages.length - BINARY_ATTACHMENT_LOOKBACK);
+  // Only the last few messages re-embed heavy binaries; older ones are
+  // summarized. Block-anchored (see openai-compat.ts): aging images out
+  // one-per-turn would move the cache_control-stable prefix every request.
+  const binaryFrom = Math.max(
+    0,
+    Math.floor((messages.length - BINARY_ATTACHMENT_LOOKBACK) / BINARY_ATTACHMENT_LOOKBACK) * BINARY_ATTACHMENT_LOOKBACK
+  );
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];

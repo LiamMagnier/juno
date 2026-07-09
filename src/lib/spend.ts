@@ -13,12 +13,21 @@ import { getModelMetrics } from "@/lib/model-metrics";
  * how many EUR one USD of model spend costs (e.g. 0.92).
  */
 
-/** Monthly API budget per plan, in EUR. null = unlimited (OWNER). */
+/**
+ * Monthly API budget per plan, in EUR. null = unlimited (OWNER).
+ *
+ * Sized against NET revenue, not the sticker price: plans are sold HT and
+ * URSSAF cotisations (micro-entrepreneur, ~21%) come off the top, so a plan
+ * nets price × 0.79. Budgets are ~70% of that net so each plan keeps a real
+ * margin after cotisations (Pro 20€ → nets 15.80€ → 11€ budget ≈ 4.80€
+ * margin; Max 100€ → 79€ → 55€; Max x20 200€ → 158€ → 110€). The 5-hour and
+ * weekly windows derive from these proportionally.
+ */
 const BUDGET_EUR: Record<Plan, number | null> = {
   FREE: 0,
-  PRO: 15,
-  MAX: 75,
-  MAX20: 150,
+  PRO: 11,
+  MAX: 55,
+  MAX20: 110,
   OWNER: null,
 };
 
@@ -99,7 +108,9 @@ function estimateTokens(chars: number | undefined): number {
 export interface RecordSpendInput {
   userId: string;
   model: string;
-  kind: "chat" | "image" | "video" | "voice";
+  kind: "chat" | "image" | "video" | "voice" | "code";
+  /** Which surface produced the spend — "web" (site) or "app" (native app). */
+  source?: "web" | "app";
   promptTokens?: number;
   completionTokens?: number;
   /** Fallback when the provider reported no usage: tokens ≈ chars / 4. */
@@ -133,6 +144,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
         userId: input.userId,
         model: input.model,
         kind: input.kind,
+        source: input.source ?? "web",
         promptTokens,
         completionTokens,
         costMicroUsd,

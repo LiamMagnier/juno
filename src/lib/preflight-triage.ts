@@ -31,8 +31,8 @@ import {
 // stay within 4s or the user pays the full stall and gets nothing for it.
 const TOTAL_DEADLINE_MS = 4000;
 const FIRST_ATTEMPT_TIMEOUT_MS = 2600;
-// The composer's inline popover routes typed text to questions[0] and has no
-// per-question text inputs — exactly one question is what the UI can honor.
+// One question keeps the interruption cheap: the single highest-impact
+// unknown, answerable in one click (or one line via the "Other" input).
 const MAX_QUESTIONS = 1;
 const MAX_OPTIONS = 5;
 const MAX_CONTEXT_MESSAGES = 6;
@@ -52,19 +52,35 @@ export interface TriageContextMessage {
 }
 
 /**
- * Fastest configured models first — triage is interactive, so raw speed and
- * low cost dominate; a small model that answers in 700ms beats a smarter one
- * that answers in 3s. One model per provider so a fallback attempt actually
- * changes provider (quotas and overloads are usually provider-wide).
+ * Smartest of the fast configured models first. Triage is interactive so the
+ * model must be fast (speed >= 8), but the question author needs enough
+ * intelligence to honor the TRIAGE_SYSTEM quality bar — nano-class models
+ * (intelligence 5/10) routinely produce generic, off-topic questions, which
+ * is worse than asking nothing. Legacy/deprecated models are excluded. One
+ * model per provider so a fallback attempt actually changes provider (quotas
+ * and overloads are usually provider-wide).
  */
 export function triageModelCandidates(): ModelInfo[] {
+  const pool = MODEL_LIST.filter(
+    (m) =>
+      m.modality === "chat" &&
+      !m.comingSoon &&
+      !m.legacy &&
+      m.minPlan === "FREE" &&
+      isProviderConfigured(m.provider)
+  ).map((m) => ({ m, metrics: getModelMetrics(m) }));
+  // Prefer smart-and-fast; if no configured provider clears the intelligence
+  // bar, fall back to the old fast-only bar rather than disabling the feature.
+  let eligible = pool.filter(({ metrics }) => metrics.speed >= 8 && metrics.intelligence >= 7);
+  if (!eligible.length) eligible = pool.filter(({ metrics }) => metrics.speed >= 8 && metrics.intelligence >= 5);
   const seen = new Set<string>();
-  return MODEL_LIST.filter(
-    (m) => m.modality === "chat" && !m.comingSoon && m.minPlan === "FREE" && isProviderConfigured(m.provider)
-  )
-    .map((m) => ({ m, metrics: getModelMetrics(m) }))
-    .filter(({ metrics }) => metrics.speed >= 8 && metrics.intelligence >= 5)
-    .sort((a, b) => b.metrics.speed - a.metrics.speed || a.m.cost - b.m.cost)
+  return eligible
+    .sort(
+      (a, b) =>
+        b.metrics.intelligence - a.metrics.intelligence ||
+        b.metrics.speed - a.metrics.speed ||
+        a.m.cost - b.m.cost
+    )
     .filter(({ m }) => (seen.has(m.provider) ? false : (seen.add(m.provider), true)))
     .map(({ m }) => m)
     .slice(0, 3);
@@ -104,7 +120,7 @@ function buildTriageUserMessage(message: string, recentMessages: TriageContextMe
   if (context.length) {
     parts.push("Conversation so far (most recent last):");
     for (const m of context) {
-      parts.push(`${m.role === "USER" ? "User" : "Juno"}: ${m.content.replace(/\s+/g, " ").trim().slice(0, 500)}`);
+      parts.push(`${m.role === "USER" ? "User" : "Juno"}: ${m.content.replace(/\s+/g, " ").trim().slice(0, 800)}`);
     }
     parts.push("");
   }

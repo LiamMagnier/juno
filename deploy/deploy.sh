@@ -13,9 +13,44 @@ echo -e "${BLUE}🚀 Starting Juno Backend Deployment...${NC}"
 # Navigate to project root directory
 cd "$(dirname "$0")/.."
 
-# Fetch latest code
+# Fetch latest code. A previous deploy's on-VM model sync may have modified the
+# generated registry — discard it first so the pull never conflicts (the sync
+# below regenerates it from the live provider APIs anyway).
 echo -e "${YELLOW}📥 Fetching latest code from Git...${NC}"
+git checkout -- src/lib/models.generated.ts 2>/dev/null || true
 git pull origin main
+
+# --- One-time environment fixes (idempotent) --------------------------------
+# AUTH_URL must be the public origin: without it Auth.js derives redirect URLs
+# from the internal http://localhost:3000 seen behind nginx, so sign-out (and
+# OAuth callbacks) bounce users to localhost in production.
+if [ -f .env ] && ! grep -q "^AUTH_URL=" .env; then
+    # Strip any trailing inline comment BEFORE the quotes are removed, then the quotes.
+    APP_URL=$(grep "^NEXT_PUBLIC_APP_URL=" .env | head -1 | cut -d= -f2- | sed -E 's/[[:space:]]+#.*$//' | tr -d '"')
+    if [ -n "$APP_URL" ]; then
+        echo -e "${YELLOW}🔧 Adding AUTH_URL=$APP_URL to .env (fixes logout → localhost)...${NC}"
+        printf '\n# Public origin for Auth.js redirects (sign-out, OAuth callbacks)\nAUTH_URL="%s"\n' "$APP_URL" >> .env
+    else
+        echo -e "${RED}⚠️ AUTH_URL is missing from .env and NEXT_PUBLIC_APP_URL was not found — set AUTH_URL manually or logout will redirect to localhost.${NC}"
+    fi
+fi
+
+# nginx's default client_max_body_size is 1 MB, which 413-rejects announcement
+# image/video uploads before they ever reach Next.js. Patch the live site
+# config in place (never overwrite it — certbot manages parts of that file).
+NGINX_SITE="/etc/nginx/sites-available/juno"
+if [ -f "$NGINX_SITE" ] && ! sudo grep -q "client_max_body_size" "$NGINX_SITE"; then
+    echo -e "${YELLOW}🔧 Adding client_max_body_size 120m to nginx config (fixes news media uploads)...${NC}"
+    # Insert inside the TLS server block, right after its IPv4 listen line.
+    sudo sed -i '/^[[:space:]]*listen 443 ssl/a\    client_max_body_size 120m;' "$NGINX_SITE"
+    if sudo grep -q "client_max_body_size" "$NGINX_SITE" && sudo nginx -t; then
+        sudo systemctl reload nginx
+        echo -e "${GREEN}✅ nginx reloaded with 120m upload limit.${NC}"
+    else
+        echo -e "${RED}⚠️ Could not patch $NGINX_SITE automatically — add 'client_max_body_size 120m;' to the 443 server block manually.${NC}"
+    fi
+fi
+# -----------------------------------------------------------------------------
 
 # Install dependencies
 echo -e "${YELLOW}📦 Installing npm dependencies...${NC}"
@@ -28,6 +63,12 @@ npx prisma db push --skip-generate
 # Generate prisma client
 echo -e "${YELLOW}💎 Generating Prisma client...${NC}"
 npx prisma generate
+
+# Auto-discover new provider models (keys come from .env). Best-effort: a
+# provider API hiccup must never block a deploy — the build just ships with
+# the registry as pulled from git.
+echo -e "${YELLOW}🤖 Syncing model registry from provider APIs...${NC}"
+npm run sync:models:write || echo -e "${RED}⚠️ Model sync failed — deploying with the committed registry.${NC}"
 
 # Build Next.js
 echo -e "${YELLOW}🏗️ Building application...${NC}"

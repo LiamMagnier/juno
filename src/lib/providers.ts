@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat";
+export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat" | "hunyuan";
 
 interface ProviderDef {
   label: string;
@@ -131,6 +131,14 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://api.longcat.chat/openai",
     kind: "openai",
     docsUrl: "https://longcat.chat/platform/api_keys",
+  },
+  hunyuan: {
+    label: "Tencent · Hunyuan",
+    apiKeyEnv: "HUNYUAN_API_KEY",
+    baseUrlEnv: "HUNYUAN_BASE_URL",
+    defaultBaseUrl: "https://api.hunyuan.cloud/v1",
+    kind: "openai",
+    docsUrl: "https://cloud.tencent.com/document/product/1729/111008",
   },
 };
 

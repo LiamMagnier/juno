@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
-import { signOut } from "next-auth/react";
+import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
 import { ArrowLeft, Brain, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -205,7 +205,7 @@ export default function SettingsPage() {
     const res = await fetch("/api/account", { method: "DELETE" });
     if (res.ok) {
       toast.success("Account deleted.");
-      signOut({ callbackUrl: "/sign-in" });
+      void signOutToSignIn();
     } else {
       setDeleting(false);
       toast.error("Could not delete account.");

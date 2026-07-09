@@ -57,6 +57,9 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
+      if (pm.includes("gpt-5.6-terra")) return { input: 2.5, output: 15 };
+      if (pm.includes("gpt-5.6-luna")) return { input: 1, output: 6 };
+      if (pm.includes("gpt-5.6")) return { input: 5, output: 30 }; // sol + bare alias
       if (pm.includes("gpt-5.5-pro") || pm.includes("gpt-5.4-pro")) return { input: 30, output: 180 };
       if (pm.includes("gpt-5.5")) return { input: 5, output: 30 };
       if (pm.includes("gpt-5.4-nano")) return { input: 0.2, output: 1.25 };
@@ -85,6 +88,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.27, output: 1.1 };
     case "zhipu":
       if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
+      if (pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
+      if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
       return { input: 0.6, output: 2.2 };
     case "moonshot":
       return { input: 0.6, output: 2.5 };
@@ -112,6 +117,16 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
 export function tokenRate(model: ModelInfo): TokenRate {
   const { input, output } = baseRate(model);
   if (model.provider === "anthropic") {
+    return { input, output, cacheRead: input * 0.1, cacheWrite: input * 1.25 };
+  }
+  if (model.provider === "zhipu") {
+    // Z.ai bills GLM cached input at $0.26 vs $1.40 fresh (GLM-5.2) ≈ 0.186x;
+    // cache storage is currently free, so writes cost the plain input rate.
+    return { input, output, cacheRead: input * 0.186, cacheWrite: input };
+  }
+  if (model.provider === "openai" && model.providerModel.toLowerCase().includes("gpt-5.6")) {
+    // GPT-5.6 family: 90% cached-input discount ($0.50/$0.25/$0.10 vs
+    // $5/$2.50/$1); cache writes bill at 1.25x the uncached input rate.
     return { input, output, cacheRead: input * 0.1, cacheWrite: input * 1.25 };
   }
   // Others: cached input is typically a fraction of full; writes carry no premium.

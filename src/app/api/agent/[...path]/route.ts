@@ -1,6 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { rateLimit } from "@/lib/rate-limit";
+import { getUserPlan } from "@/lib/usage";
+import { checkBudget, budgetExceededMessage } from "@/lib/spend";
 
 // Streaming needs the Node runtime and a generous ceiling.
 export const runtime = "nodejs";
@@ -32,6 +35,25 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // This proxy carries real provider spend (Juno Code agent loops, voice and
+  // utility calls), so it obeys the same plan budget as /api/chat — otherwise
+  // app usage would be unlimited and invisible to plan limits. The generous
+  // burst limit accommodates multi-iteration agent turns.
+  const plan = await getUserPlan(user.id);
+  if (plan !== "OWNER") {
+    const rl = await rateLimit({ key: `agent:${user.id}`, limit: 120, windowSec: 60 });
+    if (!rl.success) {
+      return NextResponse.json({ error: "Rate limit exceeded. Try again shortly." }, { status: 429 });
+    }
+    const budget = await checkBudget(user.id, plan);
+    if (!budget.allowed) {
+      return NextResponse.json(
+        { error: budgetExceededMessage(plan, budget.resetsAtMs), code: "QUOTA_EXCEEDED" },
+        { status: 402 },
+      );
+    }
+  }
 
   const { path } = await ctx.params;
   const [providerRaw, ...rest] = path ?? [];

@@ -36,7 +36,12 @@ async function toResponsesInput(
   vision: boolean
 ): Promise<InputItem[]> {
   const out: InputItem[] = [];
-  const binaryFrom = Math.max(0, history.length - BINARY_ATTACHMENT_LOOKBACK);
+  // Block-anchored (see openai-compat.ts): keeps the cacheable prefix stable
+  // between steps instead of moving it every turn.
+  const binaryFrom = Math.max(
+    0,
+    Math.floor((history.length - BINARY_ATTACHMENT_LOOKBACK) / BINARY_ATTACHMENT_LOOKBACK) * BINARY_ATTACHMENT_LOOKBACK
+  );
 
   for (let i = 0; i < history.length; i++) {
     const msg = history[i];
