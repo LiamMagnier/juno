@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   Brain,
+  Columns2,
   Keyboard,
   Map as MapIcon,
   MessageSquare,
@@ -111,6 +112,7 @@ export function CommandPalette() {
     const base: Cmd[] = [
       { id: "new", group: "Actions", label: "New chat", hint: "⌘⇧O", icon: Plus, keywords: "start compose", run: () => go("/chat") },
       { id: "shortcuts", group: "Actions", label: "Keyboard shortcuts", hint: "⌘/", icon: Keyboard, keywords: "keys help", run: () => { setOpen(false); setShortcutsOpen(true); } },
+      { id: "compare", group: "Navigate", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "settings", group: "Navigate", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },
       { id: "memory", group: "Navigate", label: "Memory", icon: Brain, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Navigate", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },

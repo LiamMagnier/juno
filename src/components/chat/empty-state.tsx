@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { BookOpen, Compass, Hammer, PenLine } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { BookOpen, Columns2, Compass, Hammer, PenLine } from "lucide-react";
 import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
@@ -127,6 +128,7 @@ export function EmptyGreeting() {
 }
 
 export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) {
+  const router = useRouter();
   const { user, conversations, settings } = useApp();
   const [active, setActive] = React.useState<StarterCategory | null>(null);
   const [memoryHints, setMemoryHints] = React.useState<string[]>([]);
@@ -200,6 +202,17 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
             </button>
           );
         })}
+        {/* Quiet route to the side-by-side view — same chip anatomy, no toggle state. */}
+        <button
+          type="button"
+          onClick={() => router.push("/compare")}
+          aria-label="Compare models side by side"
+          style={{ animationDelay: `${180 + STARTERS.length * 45}ms` }}
+          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border/70 bg-card/70 px-3 font-sans text-sm font-medium text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:bg-accent hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in sm:h-11 sm:px-4 sm:text-base"
+        >
+          <Columns2 className="h-4 w-4 text-muted-foreground" />
+          Compare
+        </button>
       </div>
 
       <div
