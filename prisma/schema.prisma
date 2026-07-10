@@ -24,10 +24,10 @@ model User {
 
   // Moderation: a set bannedAt means the account is suspended (sign-in blocked,
   // active sessions killed). strikes accumulates soft violations toward auto-ban.
-  bannedAt   DateTime?
-  banReason  String?
-  bannedBy   String? // admin email, or "system" for automatic bans
-  strikes    Int      @default(0)
+  bannedAt  DateTime?
+  banReason String?
+  bannedBy  String? // admin email, or "system" for automatic bans
+  strikes   Int       @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -54,6 +54,8 @@ model User {
   codeTasks              CodeTask[]
   apiSpend               ApiSpend[]
   moderationFlags        ModerationFlag[]
+  shares                 Share[]
+  scheduledTasks         ScheduledTask[]
 }
 
 // ----------------------------------------------------------------------------
@@ -131,6 +133,9 @@ model Settings {
   memoryEnabled      Boolean  @default(true)
   voiceId            String? // preferred TTS voice id
   favoriteModels     String[] @default([]) // model ids the user starred
+  // Lifecycle email opt-ins — no-ops until RESEND_API_KEY is configured.
+  emailBudgetAlerts  Boolean  @default(true) // ~80% plan-budget warning
+  emailWeeklyDigest  Boolean  @default(false) // weekly usage recap
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -154,20 +159,23 @@ model Folder {
 }
 
 model Conversation {
-  id            String   @id @default(cuid())
-  userId        String
-  title         String   @default("New chat")
-  titleSource   String   @default("default")
-  model         String   @default("claude-opus-4-8")
-  pinned        Boolean  @default(false)
-  folderId      String?
-  projectId     String?
+  id               String   @id @default(cuid())
+  userId           String
+  title            String   @default("New chat")
+  titleSource      String   @default("default")
+  model            String   @default("claude-opus-4-8")
+  pinned           Boolean  @default(false)
+  folderId         String?
+  projectId        String?
+  // Branch-from-here: the conversation this one was forked from (plain pointer,
+  // not a relation — the source may be deleted independently).
+  forkedFromId     String?
   // Tool connectors (github/figma/notion…) the user turned on for this chat.
   // Persisted so they stay active for every later prompt without re-toggling.
   activeConnectors String[] @default([])
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  lastMessageAt DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastMessageAt    DateTime @default(now())
 
   user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   folder      Folder?             @relation(fields: [folderId], references: [id], onDelete: SetNull)
@@ -176,6 +184,7 @@ model Conversation {
   attachments Attachment[]
   artifacts   Artifact[]
   memory      ConversationMemory?
+  shares      Share[]
 
   @@index([userId, lastMessageAt])
   @@index([userId, pinned])
@@ -212,9 +221,10 @@ model Message {
   activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
   createdAt        DateTime  @default(now())
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   attachments  Attachment[]
   artifacts    Artifact[]
+  versions     MessageVersion[]
 
   @@index([conversationId, createdAt])
 }
@@ -322,6 +332,7 @@ model Artifact {
   conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   message      Message?          @relation(fields: [messageId], references: [id], onDelete: SetNull)
   versions     ArtifactVersion[]
+  shares       Share[]
 
   @@unique([conversationId, identifier])
   @@index([conversationId])
@@ -499,7 +510,7 @@ model ModerationFlag {
   id             String    @id @default(cuid())
   userId         String
   source         String    @default("auto") // auto | manual
-  severity       String    @default("low")  // low | medium | high | critical
+  severity       String    @default("low") // low | medium | high | critical
   category       String    @default("other")
   detail         String    @db.Text
   messagePreview String?   @db.Text // redacted/truncated snippet that triggered it
@@ -669,4 +680,115 @@ model CodeTaskEvent {
   task CodeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, seq])
+}
+
+// ----------------------------------------------------------------------------
+// Public share links — read-only snapshots of a chat or artifact, addressable
+// by an unguessable token. Snapshot semantics: the share page renders only
+// messages/versions created at or before snapshotAt, so a link never leaks
+// what the owner writes AFTER sharing. Revocation 404s the page immediately.
+// ----------------------------------------------------------------------------
+
+enum ShareKind {
+  CHAT
+  ARTIFACT
+}
+
+model Share {
+  id             String    @id @default(cuid())
+  token          String    @unique // long random URL slug (not the cuid)
+  userId         String
+  kind           ShareKind
+  conversationId String?
+  artifactId     String?
+  title          String    @default("") // denormalized for lists + OG cards
+  snapshotAt     DateTime  @default(now())
+  views          Int       @default(0)
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  artifact     Artifact?     @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([conversationId])
+  @@index([artifactId])
+}
+
+// ----------------------------------------------------------------------------
+// Scheduled tasks — a prompt Juno runs on a recurrence, results appended to a
+// dedicated conversation thread. Executed by the juno-scheduler pm2 worker
+// (scripts/scheduled-task-runner.ts); spend is metered like any chat request.
+// ----------------------------------------------------------------------------
+
+enum TaskCadence {
+  DAILY
+  WEEKDAYS
+  WEEKLY
+  MONTHLY
+}
+
+model ScheduledTask {
+  id             String      @id @default(cuid())
+  userId         String
+  name           String
+  prompt         String      @db.Text
+  model          String // canonical "provider:model" id
+  cadence        TaskCadence @default(DAILY)
+  hour           Int         @default(8) // local to timezone
+  minute         Int         @default(0)
+  weekday        Int? // 0 (Sun) – 6 (Sat), WEEKLY only
+  monthday       Int? // 1–28, MONTHLY only
+  timezone       String      @default("Europe/Paris")
+  webSearch      Boolean     @default(true)
+  enabled        Boolean     @default(true)
+  lastRunAt      DateTime?
+  nextRunAt      DateTime // recomputed by the runner after every run
+  conversationId String? // results thread, created lazily on first run
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs ScheduledTaskRun[]
+
+  @@index([enabled, nextRunAt])
+  @@index([userId, createdAt])
+}
+
+model ScheduledTaskRun {
+  id           String    @id @default(cuid())
+  taskId       String
+  status       String    @default("running") // running | done | error
+  messageId    String? // assistant message holding the result
+  error        String?
+  costMicroUsd Int       @default(0)
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+
+  task ScheduledTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, startedAt])
+}
+
+// ----------------------------------------------------------------------------
+// Message versions — prior contents of a message preserved across regenerate /
+// edit-and-resend, rendered as a carousel (never overwritten). content is
+// encrypted at rest exactly like Message.content (same message-crypto path).
+// ----------------------------------------------------------------------------
+
+model MessageVersion {
+  id               String   @id @default(cuid())
+  messageId        String
+  content          String   @db.Text
+  reasoning        String?  @db.Text
+  model            String?
+  promptTokens     Int?
+  completionTokens Int?
+  sources          Json?
+  createdAt        DateTime @default(now())
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, createdAt])
 }
