@@ -3,6 +3,7 @@ import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
+import { sendBudgetAlert } from "@/lib/email";
 
 /**
  * The single budget module: per-plan monthly API budgets, per-request cost
@@ -108,7 +109,7 @@ function estimateTokens(chars: number | undefined): number {
 export interface RecordSpendInput {
   userId: string;
   model: string;
-  kind: "chat" | "image" | "video" | "voice" | "code";
+  kind: "chat" | "image" | "video" | "voice" | "code" | "task";
   /** Which surface produced the spend — "web" (site) or "app" (native app). */
   source?: "web" | "app";
   promptTokens?: number;
@@ -287,6 +288,13 @@ export async function checkBudget(
   const p = period ?? (await resolveBillingPeriod(userId, plan));
   const since = p ? new Date(p.startMs) : new Date(Date.now() - MONTH_MS);
   const spentMicroUsd = await spendSinceMicroUsd(userId, since);
+  // Lifecycle email: past 80% of the period budget, fire-and-forget the
+  // budget-alert sender (it dedupes to ONE email per billing period and
+  // honors settings.emailBudgetAlerts). The threshold test reuses numbers
+  // already in scope, so requests far from the limit cost nothing extra.
+  if (budgetMicroUsd > 0 && spentMicroUsd >= budgetMicroUsd * 0.8) {
+    void sendBudgetAlert({ userId, spentMicroUsd, budgetMicroUsd, resetsAtMs: p?.endMs ?? null });
+  }
   return {
     allowed: spentMicroUsd < budgetMicroUsd,
     spentMicroUsd,

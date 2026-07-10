@@ -541,8 +541,47 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
+          {/* Email notifications */}
+          <Tile eyebrow="Email notifications" i={7} span>
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
+                <div>
+                  <p className="text-sm font-medium">Budget alerts</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Email me at 80% of my monthly budget.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.emailBudgetAlerts}
+                  onCheckedChange={(v) => save({ emailBudgetAlerts: v })}
+                  aria-label="Toggle budget alert emails"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">Weekly digest</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Usage recap every Monday.
+                  </p>
+                </div>
+                <Switch
+                  checked={settings.emailWeeklyDigest}
+                  onCheckedChange={(v) => save({ emailWeeklyDigest: v })}
+                  aria-label="Toggle weekly digest emails"
+                />
+              </div>
+
+              {!features.email && (
+                <p className="pt-3 border-t border-border/40 text-xs text-muted-foreground/70">
+                  Email delivery isn&apos;t configured yet — your preferences are saved and take effect once it is.
+                </p>
+              )}
+            </div>
+          </Tile>
+
           {/* Danger zone */}
-          <Tile eyebrow="Danger zone" i={7} span className="border-destructive/30">
+          <Tile eyebrow="Danger zone" i={8} span className="border-destructive/30">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>
