@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUpRight, Box, GitFork, GripVertical, X } from "lucide-react";
+import { ArrowUpRight, Box, GitFork, GripVertical, Share2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat } from "@/hooks/use-chat";
 import { useTts } from "@/hooks/use-tts";
@@ -14,6 +14,7 @@ import { EmptyGreeting, SuggestionPills } from "@/components/chat/empty-state";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
+import { ShareDialog } from "@/components/share/share-dialog";
 import { VoiceMode } from "@/components/voice/voice-mode";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
@@ -31,6 +32,8 @@ interface ChatViewProps {
   initialModel: string;
   projectId?: string;
   initialPrompt?: string;
+  /** Auto-send the initial prompt as a deep-research turn (?research=1). */
+  initialPromptResearch?: boolean;
   initialConnectors?: string[];
 }
 
@@ -79,7 +82,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialConnectors }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialConnectors }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -117,6 +120,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [memoryFlash, setMemoryFlash] = React.useState(false);
   const [memoryLeaving, setMemoryLeaving] = React.useState(false);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
+  const [shareOpen, setShareOpen] = React.useState(false);
   const [dictating, setDictating] = React.useState(false);
   // Sticky composer toggles live in AppProvider so they survive ChatView remounts
   // (e.g. the new-chat → /chat/[id] navigation after the first reply) and refreshes.
@@ -513,7 +517,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   React.useEffect(() => {
     if (initialPrompt && !autoSentRef.current) {
       autoSentRef.current = true;
-      chat.send(initialPrompt);
+      chat.send(initialPrompt, [], initialPromptResearch ? { deepResearch: true } : undefined);
       // Clear ?q= so a refresh doesn't resend.
       window.history.replaceState({}, "", "/chat");
     }
@@ -678,7 +682,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       conversationId={conversationId}
       model={model}
       onModelChange={setModel}
-      onSend={(text, attachments) => chat.send(text, attachments)}
+      onSend={(text, attachments, options) => chat.send(text, attachments, options)}
       isBusy={chat.isBusy}
       status={chat.status}
       onStop={chat.stop}
@@ -716,6 +720,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           privateMode ? "pointer-events-none scale-90 opacity-0" : "scale-100 opacity-100"
         )}
       >
+        {/* Share — saved, non-private chats with at least one message. */}
+        {!privateMode && currentConversationId && hasMessages && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Share chat"
+                onClick={() => setShareOpen(true)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 coarse:h-11 coarse:w-11"
+              >
+                <Share2 className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Share chat</TooltipContent>
+          </Tooltip>
+        )}
         {paramsIsChat && (
           <ModelParamsPanel
             model={resolvedModelInfo}
@@ -1008,8 +1028,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen((f) => !f)}
             onQuote={handleQuote}
+            shareable={!privateMode}
           />
         </div>
+      )}
+
+      {currentConversationId && (
+        <ShareDialog kind="CHAT" conversationId={currentConversationId} open={shareOpen} onOpenChange={setShareOpen} />
       )}
 
       {voiceOpen &&

@@ -28,6 +28,8 @@ import {
 import { serializeMessage } from "@/lib/serializers";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
+import { runDeepResearch } from "@/lib/deep-research";
+import { isWebSearchConfigured } from "@/lib/web-search";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
@@ -102,6 +104,9 @@ const bodySchema = z.object({
   voiceMode: z.boolean().optional(),
   canvasEnabled: z.boolean().optional(),
   webSearch: z.boolean().optional(),
+  // Deep research mode: plan → search → read → cited report (saved chats only;
+  // ignored in private mode, where the toggle is hidden client-side).
+  deepResearch: z.boolean().optional(),
   reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
   connectors: z.array(z.string()).max(5).optional(),
   generationId: z.string().trim().min(8).max(120).optional(),
@@ -830,10 +835,15 @@ async function handleChat(req: Request) {
     }
   }
 
+  // Deep research: Tavily plan → search → read before synthesis. It replaces
+  // native web search for this turn — the researched corpus IS the live web
+  // data — so the two are never both active. Voice turns stay conversational.
+  const researchRequested = !!input.deepResearch && !input.voiceMode;
+  const researchActive = researchRequested && PLANS[plan].webSearch && isWebSearchConfigured();
   // Native web search: the model searches via its own tool/grounding while it
   // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
   // collect the sources it returns from the stream below — no third-party search.
-  const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+  const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   let webSources: ClientSource[] = [];
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
@@ -905,6 +915,84 @@ async function handleChat(req: Request) {
         return entry;
       };
 
+      /**
+       * Persist the assistant's answer. A normal turn appends a new Message row.
+       * A regenerate PRESERVES the previous answer instead of destroying it: the
+       * old row's content is snapshotted into an immutable MessageVersion
+       * (ciphertext copied verbatim — the crypto is row-independent, see
+       * message-crypto.ts), its artifacts are dropped, and the Message row is
+       * then overwritten in place. The Message row is therefore always the
+       * CURRENT version; MessageVersion rows are append-only, read-only history
+       * rendered by the client's "‹ 2/3 ›" pager. Which version the user was
+       * VIEWING never changes the result: the prompt excludes the answer being
+       * regenerated entirely, so regeneration is deterministic in its inputs and
+       * versions simply accumulate oldest-first.
+       */
+      const persistAssistantTurn = async (data: {
+        content: string;
+        reasoning: string;
+        promptTokens: number | null;
+        completionTokens: number | null;
+      }) => {
+        const base = {
+          content: encryptMessageText(data.content),
+          model: modelId,
+          promptTokens: data.promptTokens,
+          completionTokens: data.completionTokens,
+          activity: activityLog as unknown as Prisma.InputJsonValue,
+        };
+        // Metadata for the pager rides along on the done chunk.
+        const include = {
+          attachments: true,
+          versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
+        };
+        if (staleAssistantId) {
+          const stale = await prisma.message.findUnique({ where: { id: staleAssistantId } });
+          if (stale) {
+            // Snapshot the answer being replaced BEFORE overwriting it — a
+            // regenerate must never lose what the user already had. Atomic with
+            // the overwrite so a crash can't leave a duplicate version behind.
+            const [, , updated] = await prisma.$transaction([
+              prisma.messageVersion.create({
+                data: {
+                  messageId: stale.id,
+                  content: stale.content, // already encrypted — copied verbatim
+                  reasoning: stale.reasoning,
+                  model: stale.model,
+                  promptTokens: stale.promptTokens,
+                  completionTokens: stale.completionTokens,
+                  ...(stale.sources !== null ? { sources: stale.sources as unknown as Prisma.InputJsonValue } : {}),
+                },
+              }),
+              prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
+              prisma.message.update({
+                where: { id: stale.id },
+                data: {
+                  ...base,
+                  reasoning: data.reasoning ? encryptMessageText(data.reasoning) : null,
+                  feedback: null, // a fresh answer starts with clean feedback
+                  sources: webSources.length ? (webSources as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+                  createdAt: new Date(), // the timestamp reflects the current version
+                },
+                include,
+              }),
+            ]);
+            return updated;
+          }
+          // The stale row vanished mid-generation (deleted elsewhere) — append instead.
+        }
+        return prisma.message.create({
+          data: {
+            conversationId,
+            role: "ASSISTANT",
+            ...base,
+            ...(data.reasoning ? { reasoning: encryptMessageText(data.reasoning) } : {}),
+            ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
+          },
+          include,
+        });
+      };
+
       send({ type: "meta", conversationId, userMessageId, title: convoTitle, titleSource: convoTitleSource, generationId });
       // Heartbeat: models with hidden reasoning can stream nothing for minutes;
       // periodic pings keep proxies from dropping the idle SSE connection.
@@ -947,11 +1035,57 @@ async function handleChat(req: Request) {
           title: "Preparing web search",
           detail: searchToolLabel(modelInfo.provider),
         });
-      } else if (input.webSearch) {
+      } else if (input.webSearch && !researchActive) {
         sendActivity({
           kind: "warning",
           title: "Web search was skipped",
           detail: "This plan or model cannot use native web search.",
+        });
+      }
+
+      // Deep research runs BEFORE synthesis: plan + search + read, streaming
+      // progress into the same activity timeline. The corpus rides in as a
+      // system-prompt section for THIS turn only (the next turn rebuilds the
+      // system prompt without it, restoring the cache-stable prefix). Any
+      // failure degrades to plain chat — never to a dead turn. Planning spend
+      // is recorded inside runDeepResearch; synthesis is billed below as usual.
+      let synthesisSystem = system;
+      let researchCostUsd = 0;
+      if (researchActive) {
+        const researchPrompt =
+          [...modelHistory].reverse().find((m) => m.role === "USER")?.content ?? input.message?.trim() ?? "";
+        const research = await runDeepResearch({
+          userId: user.id,
+          prompt: researchPrompt,
+          selectedModel: modelInfo,
+          client: input.client === "app" ? "app" : "web",
+          signal: generationController.signal,
+          sendActivity,
+        });
+        researchCostUsd = research.costUsd;
+        if (research.ok) {
+          synthesisSystem = `${system}\n\n${research.context}`;
+          // Sources are known up front (unlike native search, which streams
+          // them): publish the numbered list now so citations resolve as the
+          // report streams. Order must match the corpus numbering exactly.
+          for (const source of research.sources) {
+            if (!source.url || sourceUrls.has(source.url)) continue;
+            sourceUrls.add(source.url);
+            webSources.push(source);
+          }
+          if (webSources.length) send({ type: "sources", sources: webSources });
+        } else {
+          sendActivity({
+            kind: "warning",
+            title: "Web search unavailable",
+            detail: "Answering from model knowledge instead.",
+          });
+        }
+      } else if (researchRequested) {
+        sendActivity({
+          kind: "warning",
+          title: "Deep research was skipped",
+          detail: "Deep research isn't available on this plan right now.",
         });
       }
 
@@ -960,7 +1094,7 @@ async function handleChat(req: Request) {
       // would take the user past their remaining plan budget.
       const budgetRates = modelRatesMicroUsdPerToken(modelId);
       const budgetCeilingMicro = budget.remainingMicroUsd;
-      const inputCharsForBudget = system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
+      const inputCharsForBudget = synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
       let budgetHalted = false;
       const enforceStreamBudget = () => {
         if (budgetCeilingMicro == null || budgetHalted) return;
@@ -977,7 +1111,7 @@ async function handleChat(req: Request) {
       try {
         for await (const ev of streamChat({
           model: modelInfo,
-          system,
+          system: synthesisSystem,
           history: modelHistory,
           maxTokens: PLANS[plan].maxOutputTokens,
           // Not tied to req.signal: route changes can drop the browser stream
@@ -1031,28 +1165,15 @@ async function handleChat(req: Request) {
         // Reconcile token usage across providers and estimate the $ cost once.
         const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
 
-        // Generation succeeded — now it's safe to drop the answer being regenerated
-        // (and only the artifacts that message actually created).
-        if (staleAssistantId) {
-          await prisma.artifact.deleteMany({ where: { messageId: staleAssistantId } });
-          await prisma.message.delete({ where: { id: staleAssistantId } }).catch(() => {});
-        }
-
-        // Persist the assistant message. promptTokens stores the full prompt size
-        // (cache included) so the reloaded cost estimate lines up with the stream.
-        const assistant = await prisma.message.create({
-          data: {
-            conversationId,
-            role: "ASSISTANT",
-            content: encryptMessageText(full),
-            ...(reasoning ? { reasoning: encryptMessageText(reasoning) } : {}),
-            model: modelId,
-            promptTokens: usage.totalInput || promptTokens || null,
-            completionTokens: usage.output || completionTokens || null,
-            ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
-            activity: activityLog as unknown as Prisma.InputJsonValue,
-          },
-          include: { attachments: true },
+        // Persist the assistant message — generation succeeded, so it's safe to
+        // version-and-overwrite the answer being regenerated (see the helper).
+        // promptTokens stores the full prompt size (cache included) so the
+        // reloaded cost estimate lines up with the stream.
+        const assistant = await persistAssistantTurn({
+          content: full,
+          reasoning,
+          promptTokens: usage.totalInput || promptTokens || null,
+          completionTokens: usage.output || completionTokens || null,
         });
 
         // Artifacts + memory side effects.
@@ -1086,12 +1207,17 @@ async function handleChat(req: Request) {
         const assistantWithActivity = await prisma.message.update({
           where: { id: assistant.id },
           data: { activity: activityLog as unknown as Prisma.InputJsonValue },
-          include: { attachments: true },
+          include: {
+            attachments: true,
+            versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
+          },
         });
 
         send({
           type: "done",
-          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost || undefined },
+          // The visible cost covers the WHOLE research run: planning (billed
+          // inside runDeepResearch) + this synthesis. Zero for normal chat.
+          message: { ...(await serializeMessage(assistantWithActivity)), finishReason, costUsd: usage.cost + researchCostUsd || undefined },
           artifacts,
           memoryUpdated,
           quota: consumed.quota,
@@ -1106,7 +1232,7 @@ async function handleChat(req: Request) {
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
           costUsd: usage.cost || undefined,
-          promptChars: system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
+          promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
           completionChars: full.length + reasoning.length,
         });
         spendRecorded = true;
@@ -1141,35 +1267,28 @@ async function handleChat(req: Request) {
           try {
             appendFinishWarning(reason, sendActivity);
             const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
-            if (staleAssistantId) {
-              await prisma.artifact.deleteMany({ where: { messageId: staleAssistantId } });
-              await prisma.message.delete({ where: { id: staleAssistantId } }).catch(() => {});
-            }
-            const assistant = await prisma.message.create({
-              data: {
-                conversationId,
-                role: "ASSISTANT",
-                content: encryptMessageText(full),
-                ...(reasoning ? { reasoning: encryptMessageText(reasoning) } : {}),
-                model: modelId,
-                promptTokens: partialUsage.totalInput || promptTokens || null,
-                completionTokens: partialUsage.output || completionTokens || null,
-                ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
-                activity: activityLog as unknown as Prisma.InputJsonValue,
-              },
-              include: { attachments: true },
+            // Same version-preserving persistence as the success path — a
+            // partial answer still supersedes (never destroys) the previous one.
+            const assistant = await persistAssistantTurn({
+              content: full,
+              reasoning,
+              promptTokens: partialUsage.totalInput || promptTokens || null,
+              completionTokens: partialUsage.output || completionTokens || null,
             });
             const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
             await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), model: modelId } });
             const assistantWithActivity = await prisma.message.update({
               where: { id: assistant.id },
               data: { activity: activityLog as unknown as Prisma.InputJsonValue },
-              include: { attachments: true },
+              include: {
+                attachments: true,
+                versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
+              },
             });
             assistantFull = full;
             send({
               type: "done",
-              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost || undefined },
+              message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
               artifacts,
               memoryUpdated: false,
               quota: consumed.quota,
@@ -1186,7 +1305,7 @@ async function handleChat(req: Request) {
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,
-                promptChars: system.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
+                promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
                 completionChars: full.length + reasoning.length,
               });
               spendRecorded = true;
