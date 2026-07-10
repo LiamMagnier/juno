@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Box,
+  CalendarClock,
   Check,
   ChevronRight,
   Command,
@@ -298,6 +299,7 @@ export function AppSidebar({
           <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
           <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
           <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
+          <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
           <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
           <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))} label="Search (⌘K)">
             <Search className="h-[18px] w-[18px]" />
@@ -359,6 +361,7 @@ export function AppSidebar({
         <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
         <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
         <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
+        <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
       </nav>
 
       <div className="pt-2" />

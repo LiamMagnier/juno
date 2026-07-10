@@ -25,6 +25,7 @@ import {
   Play,
   RotateCcw,
   RotateCw,
+  Share2,
   Terminal,
   X,
 } from "lucide-react";
@@ -38,6 +39,7 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { Markdown } from "@/components/chat/markdown";
+import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
@@ -125,6 +127,7 @@ export function CanvasPanel({
   fullscreen,
   onToggleFullscreen,
   onQuote,
+  shareable,
 }: {
   artifact: ClientArtifact;
   onClose: () => void;
@@ -132,6 +135,8 @@ export function CanvasPanel({
   fullscreen: boolean;
   onToggleFullscreen: () => void;
   onQuote?: (quote: ComposerQuote) => void;
+  /** Show the Share action — off for incognito artifacts (nothing persisted to share). */
+  shareable?: boolean;
 }) {
   const rt = React.useMemo(() => runtimeFor(artifact.type, artifact.language), [artifact.type, artifact.language]);
   const isMarkdown = artifact.type === "MARKDOWN";
@@ -153,6 +158,7 @@ export function CanvasPanel({
   const [runNonce, setRunNonce] = React.useState(0);
   const [consoleEntries, setConsoleEntries] = React.useState<ConsoleEntry[]>([]);
   const [runStatus, setRunStatus] = React.useState<RunStatus>("idle");
+  const [shareOpen, setShareOpen] = React.useState(false);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const codeScrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -172,6 +178,7 @@ export function CanvasPanel({
     setConsoleEntries([]);
     setRunStatus("idle");
     setRunNonce(0);
+    setShareOpen(false);
   }, [artifact.id, artifact.currentVersion, artifact.type, hasPreview]);
 
   // Inspect mode only makes sense on the live preview.
@@ -591,6 +598,16 @@ export function CanvasPanel({
             </TooltipTrigger>
             <TooltipContent>Download</TooltipContent>
           </Tooltip>
+          {shareable && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon-sm" onClick={() => setShareOpen(true)} aria-label="Share" className={iconBtn}>
+                  <Share2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Share</TooltipContent>
+            </Tooltip>
+          )}
           {isLatest && !editing && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -821,6 +838,10 @@ export function CanvasPanel({
             )}
           </TabsContent>
         </Tabs>
+      )}
+
+      {shareable && (
+        <ShareDialog kind="ARTIFACT" artifactId={artifact.id} open={shareOpen} onOpenChange={setShareOpen} />
       )}
 
       {/* Floating Modify/Ask bar */}
