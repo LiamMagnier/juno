@@ -7,8 +7,35 @@ invariants (unique ids, one *current* per family/modality, defaults, migrations)
 **Last full audit: 2026-07-01** — every provider verified against its official model
 docs, deprecation/lifecycle pages, pricing pages, and changelogs. **Targeted refresh:
 2026-07-04** for OpenAI, Meta/Llama, Z.AI, Mistral and Qwen after updating the selector.
-Model availability changes often; re-audit quarterly or when a provider announces a
-retirement wave.
+**Benchmark + landscape refresh: 2026-07-10** — all metrics in `model-metrics.ts`
+re-grounded on Artificial Analysis (artificialanalysis.ai/leaderboards/models) and
+LMArena (lmarena.ai) standings; intelligence = clamp(round((AA II − 2) / 6), 1, 10),
+speed from AA median tok/s bands (see the FAMILY_RULES header). Landscape changes:
+Grok 4.5 added (EU-gated), Meta/Llama provider decommissioned (API shut down Jul 6),
+voice relay bumped to gpt-realtime-2.1, SpaceXAI rebrand, DeepSeek/Mistral/Qwen/
+Hunyuan/Kimi price corrections.
+Model availability changes often; the nightly sync + the model-watch report catch
+listable chat models, but image/video/voice launches and deprecation ANNOUNCEMENTS
+still need the watchlist below.
+
+## Watchlist (check on next refresh)
+- **Grok 4.5 EU access** (~mid-July 2026): when `grok-4.5` appears in the xAI /models
+  list for our key — remove `comingSoon`, move it to family `grok` (current), demote
+  grok-4.3 to legacy, repoint retired `xai:grok-*` migrations at 4.5.
+- **Gemini 3.5 Pro** — delayed to ~2026-07-17; expected ~$15/$60, 2M ctx.
+- **DeepSeek V4 official** (mid-July): graduates the previews + introduces 2x
+  peak-hour pricing (09:00–12:00 / 14:00–18:00 Beijing) — update pricing.ts note.
+- **Claude Sonnet 5 price flip 2026-09-01**: $2/$10 intro → $3/$15 sticker
+  (model-metrics.ts + pricing.ts both carry the intro rate today).
+- **Claude Opus 4.1 retires 2026-08-05**; **magistral-medium-2509 2026-07-31**;
+  **deepseek-chat/-reasoner aliases 2026-07-24**; **Qwen3 open-weight trio 2026-07-08**.
+- **ByteDance Seedream 5.0 Pro** (image, Jul 8) + **Seedance 2.5** (video, announced
+  Jun 23) — confirm ModelArk API ids/pricing before registering.
+- **OpenAI GPT-Live** — consumer-only full-duplex voice; API "coming soon". The
+  resellable voice models are `gpt-realtime-2.1` / `-mini` (relay already on 2.1).
+- **Mistral open-weight MoE** early access July; **MiniMax M3 Pro** Q3; **Moonshot K3** rumored.
+- **LongCat 2.0 / GPT-5.5 Pro benchmark coverage** — graded by positioning until AA
+  or LMArena list them.
 
 Status meanings: `current` = latest active generation of its family · `legacy` =
 still callable, superseded · `deprecated` = provider-announced retirement date
@@ -32,7 +59,8 @@ Sources: developers.openai.com/api/docs models · models/all index · deprecatio
 - **`gpt-5.5-thinking` and `gpt-5.5-mini` are NOT API ids** (ChatGPT product names); they migrate to `gpt-5.5` / `gpt-5.4-mini`.
 - Deprecated wave (shutdowns): o3-deep-research & o4-mini-deep-research 2026-07-23; o3-mini, gpt-4-turbo, gpt-4o snapshots, gpt-3.5-turbo, gpt-image-1 2026-10-23; o3, gpt-5/-mini/-pro snapshots 2026-12-11.
 - Retired: o1-preview (2025-07-28), o1-mini (2025-10-27), **DALL·E 2 & 3 (2026-05-12)** — dall-e-3 had been wrongly listed as the current image model.
-- Uncertain: GPT-5.6 is preview-only with no API id; Sora 2 is deprecated with unclear successor and no video adapter in Juno (not registered).
+- GPT-5.6 went GA 2026-07-09 as three tiers (`gpt-5.6-sol`/`-terra`/`-luna`, $5/$30 · $2.50/$15 · $1/$6, 1.05M ctx, cache writes 1.25x) — registered current. New Realtime voice models `gpt-realtime-2.1`/`-mini` (2026-07-06) power the voice relay (not chat models, so not in the registry). Consumer "GPT-Live" full-duplex voice has NO API yet.
+- Uncertain: Sora 2 is deprecated with unclear successor and no video adapter in Juno (not registered).
 
 ## Google — checked 2026-07-01
 Sources: ai.google.dev/gemini-api/docs models · deprecations · image-generation · video · pricing · changelog.
@@ -42,11 +70,17 @@ Sources: ai.google.dev/gemini-api/docs models · deprecations · image-generatio
 - Video current: `veo-3.1-generate-preview`, `veo-3.1-fast-generate-preview`, `gemini-omni-flash-preview` (conversational video editing, public preview Jun 30 2026). Juno currently wires Veo only, so Gemini Omni is kept out of `/api/models` until an adapter exists. **Veo 2.0/3.0 shut down 2026-06-30.**
 - Deprecated chat: gemini-2.5-pro/flash retire 2026-10-16.
 
-## Meta / Llama — checked 2026-07-04
-Sources: llama.developer.meta.com docs models · OpenAI compatibility · image understanding · rate limits.
-- Provider: OpenAI-compatible endpoint `https://api.llama.com/compat/v1`; key env is `LLAMA_API_KEY`. `META_API_KEY` is accepted as a backward-compatible local alias only.
-- Current: `Llama-4-Maverick-17B-128E-Instruct-FP8` and `Llama-4-Scout-17B-16E-Instruct-FP8`, both multimodal. Legacy: `Llama-3.3-70B-Instruct`.
-- Removed: `muse-max`, `muse-spark`, `muse-flash` were placeholders/wrong names and migrate to Llama 4 replacements.
+## Meta / Llama — DECOMMISSIONED, checked 2026-07-10
+Sources: llama.developer.meta.com deprecation page · about.fb.com Muse Image announcement · press.
+- **Meta shut down the entire Llama API on 2026-07-06** (requests return a sunset
+  response). Its successor Muse models (muse-spark chat, muse-image, muse-video) are
+  consumer-only — Meta is "still evaluating" a developer API. There is currently no
+  Meta developer surface at all.
+- All Llama entries removed from CURATED; every `meta:*` id (incl. old muse-*
+  placeholders) migrates to `anthropic:claude-sonnet-5` via RETIRED_MODELS.
+- Provider def + FAMILY rules kept so stragglers resolve and in case Meta ships a
+  Muse API later. If it does: Muse Spark ranks #6-7 on LMArena text (~1490, AA II
+  43.1), muse-image #3 on the image arena — worth re-adding immediately.
 
 ## Zhipu / Z.AI — checked 2026-07-04
 Sources: docs.z.ai model guides + pricing · docs.bigmodel.cn model overview.
@@ -76,9 +110,18 @@ Sources: docs.mistral.ai models overview + model cards + changelog · mistral.ai
 - Retired: mistral-large-2411 & the entire Pixtral line (2026-05-31).
 - `-latest` aliases remain the official primary names.
 
-## xAI / Grok — checked 2026-07-01
-Sources: docs.x.ai models + model cards · may-15-retirement migration page · release notes.
-- Current: `grok-4.3` (recommended flagship; effort none/low/medium/high), `grok-build-0.1` (agentic coding), `grok-4.20-multi-agent-0309` (beta deep research). Image: `grok-imagine-image-quality` (recommended) + `grok-imagine-image` (budget). Video: `grok-imagine-video`, `grok-imagine-video-1.5` (preview, I2V-only).
+## xAI (SpaceXAI) / Grok — checked 2026-07-10
+Sources: docs.x.ai models + model cards · x.ai/news/grok-4-5 · may-15-retirement migration page.
+- **Rebrand**: xAI completed its public rebrand to SpaceXAI on 2026-07-06/07
+  (SpaceX merger closed Feb 2026) — provider label updated; API domain unchanged.
+- **`grok-4.5` released 2026-07-08**: $2/$6 per MTok, 500K ctx, AA II 53.8 (#8) —
+  the cheapest frontier-class model. NOT yet callable from EU accounts (expected
+  mid-July); registered `comingSoon` in its own family until live (see watchlist).
+- Current: `grok-4.3` ($1.25/$2.50, 1M ctx — remains the selectable flagship until
+  4.5 lands here; effort none/low/medium/high), `grok-build-0.1` (agentic coding),
+  `grok-4.20-multi-agent-0309` (beta deep research). Image: `grok-imagine-image-quality`
+  ($0.05/img) + `grok-imagine-image` ($0.02/img). Video: `grok-imagine-video`
+  ($0.05/s), `grok-imagine-video-1.5` (GA 2026-06-16, $0.08/s, 720p + native audio).
 - Juno wires Grok image generation, but not Grok Imagine video jobs yet. xAI video models are filtered from `/api/models` until a video adapter exists.
 - Legacy: grok-4.20-0309-reasoning / -non-reasoning.
 - Retired (2026-05-15 wave): grok-4-0709 (+ alias grok-4 — now silently redirects to 4.3), grok-4/4.1-fast ×4, grok-code-fast-1, grok-3, grok-imagine-image-pro. Feb 28 2026: grok-3-mini, grok-2-image-1212, grok-2-vision-1212.

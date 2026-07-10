@@ -1,15 +1,25 @@
-# Nightly model discovery: asks every configured provider's live model API for
-# new chat models and commits the regenerated src/lib/models.generated.ts.
-# New models then appear in the picker automatically (models.ts derives
-# plan/vision/reasoning/cost via its guess helpers) — no hand-editing needed.
+# Nightly model watch — three layers, all automatic:
+#  1. sync:models:write   — asks every configured provider's live model API for
+#     new/vanished chat models and regenerates src/lib/models.generated.ts
+#     (new models appear in the picker automatically with guessed metadata).
+#  2. sync:benchmarks     — re-grounds intelligence/speed/price grades on
+#     Artificial Analysis (+ OpenRouter keyless fallback) into
+#     src/lib/benchmarks.generated.ts.
+#  3. radar:models        — diffs OpenRouter's full industry catalog against a
+#     committed seen-set, catching launches our own keys can't list
+#     (gen-only labs, regional gating, providers we don't resell yet).
+#
+# When anything changed, the run commits the regenerated files (which
+# auto-deploys via deploy.yml) AND opens a GitHub issue labeled `model-watch`
+# summarizing the changes — GitHub notifies by email, and the "Juno model
+# curator" scheduled Claude agent picks the issue up to hand-curate entries
+# (verified descriptions, status, docs/models.md) as a PR.
 #
 # Providers are synced only when their API key exists as a repo secret; the
 # sync script skips missing keys and NEVER prunes a provider whose fetch
-# failed, so a partial secret set is safe. Add whichever of these secrets you
-# want synced: ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_API_KEY,
-# LLAMA_API_KEY, ZHIPU_API_KEY, MOONSHOT_API_KEY, DEEPSEEK_API_KEY,
-# MISTRAL_API_KEY, XAI_API_KEY, SEEDANCE_API_KEY, MINIMAX_API_KEY,
-# MIMO_API_KEY, DASHSCOPE_API_KEY, LONGCAT_API_KEY, HUNYUAN_API_KEY.
+# failed, so a partial secret set is safe. Optional: AA_API_KEY (free key from
+# artificialanalysis.ai → benchmark-grounded grades; without it, grades stay
+# hand-tuned and only OpenRouter price data is refreshed).
 name: Sync models
 
 on:
@@ -19,6 +29,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   sync:
@@ -50,19 +61,71 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
           LONGCAT_API_KEY: ${{ secrets.LONGCAT_API_KEY }}
           HUNYUAN_API_KEY: ${{ secrets.HUNYUAN_API_KEY }}
-        run: npm run sync:models:write
+        # Capture output for the notification; the sync's own exit code only
+        # reflects fetch failures, which must not kill the rest of the watch.
+        run: npm run sync:models:write 2>&1 | tee /tmp/sync-report.txt || true
+
+      - name: Refresh benchmark grades
+        env:
+          AA_API_KEY: ${{ secrets.AA_API_KEY }}
+        run: npm run sync:benchmarks 2>&1 | tee /tmp/benchmarks-report.txt || true
+
+      - name: Industry radar (OpenRouter)
+        run: npm run radar:models -- --out /tmp/radar-report.md || true
 
       - name: Validate registry
         run: npm run validate:models
 
       - name: Commit & push if changed
+        id: commit
         run: |
-          if git diff --quiet -- src/lib/models.generated.ts; then
-            echo "No new models."
+          for f in src/lib/models.generated.ts src/lib/benchmarks.generated.ts scripts/model-radar-seen.json; do
+            [ -e "$f" ] && git add "$f"
+          done
+          if git diff --cached --quiet; then
+            echo "No registry changes."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name "juno-model-sync[bot]"
           git config user.email "noreply@chat.liams.dev"
-          git add src/lib/models.generated.ts
-          git commit -m "chore(models): auto-sync discovered models"
+          git commit -m "chore(models): nightly sync (discovery + benchmarks + radar)"
           git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Open a model-watch issue when something moved
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RADAR="$(cat /tmp/radar-report.md 2>/dev/null || true)"
+          # Only notify when there is something a human/curator should act on:
+          # discovered/unavailable models or new industry launches.
+          if ! grep -qE '^\s*[+~-] ' /tmp/sync-report.txt && [ -z "$RADAR" ]; then
+            echo "Only benchmark-number drift — skipping the issue."
+            exit 0
+          fi
+          {
+            echo "Nightly model watch found changes on $(date -u +%F). The regenerated files are already committed and deployed; curation TODOs below."
+            echo
+            echo "## Provider API diff (sync:models)"
+            echo '```'
+            cat /tmp/sync-report.txt
+            echo '```'
+            echo
+            if [ -n "$RADAR" ]; then
+              echo "$RADAR"
+              echo
+            fi
+            echo "## Curation checklist"
+            echo "- [ ] Add curated entries (real descriptions, released, context) for new models in src/lib/models.ts"
+            echo "- [ ] Check docs/models.md watchlist items (Grok 4.5 EU, Gemini 3.5 Pro, DeepSeek V4 official, Sonnet 5 price flip)"
+            echo "- [ ] Mirror changes into JunoApp's ModelCatalog.swift if needed"
+          } > /tmp/issue-body.md
+          gh issue create \
+            --title "Model watch: changes detected $(date -u +%F)" \
+            --body-file /tmp/issue-body.md \
+            --label model-watch || \
+          gh issue create \
+            --title "Model watch: changes detected $(date -u +%F)" \
+            --body-file /tmp/issue-body.md

@@ -9,7 +9,9 @@ import { requiredEnv } from "./types.js";
 const openaiDialect: RealtimeDialect = {
   provider: "openai",
   url: () => {
-    const model = process.env.RELAY_OPENAI_MODEL || "gpt-realtime-2";
+    // gpt-realtime-2.1 (2026-07-06): better recognition/noise handling and
+    // optional reasoning in speech-to-speech; same audio pricing as 2.
+    const model = process.env.RELAY_OPENAI_MODEL || "gpt-realtime-2.1";
     return `wss://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`;
   },
   headers: () => ({ Authorization: `Bearer ${requiredEnv("OPENAI_API_KEY")}` }),
@@ -59,7 +61,7 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   openai: {
     id: "openai",
     capabilities: { videoInput: false, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
-    // gpt-realtime-2: audio in $32/M @600 tok/min, out $64/M @1200 tok/min.
+    // gpt-realtime-2.1: audio in $32/M @600 tok/min, out $64/M @1200 tok/min.
     pricing: { audioInPerSec: 0.0192 / 60, audioOutPerSec: 0.0768 / 60 },
     available: () => !!process.env.OPENAI_API_KEY,
     create: () => new OpenAiShapedRealtimeSession(openaiDialect),
