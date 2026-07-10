@@ -94,4 +94,9 @@ echo -e "${YELLOW}🔄 Reloading voice relay...${NC}"
 pm2 startOrReload deploy/ecosystem.config.js --only juno-voice-relay --update-env
 echo -e "${GREEN}✅ PM2 process 'juno-voice-relay' active!${NC}"
 
+# Start/Reload the scheduled-task runner (executes users' scheduled prompts)
+echo -e "${YELLOW}🔄 Reloading task scheduler...${NC}"
+pm2 startOrReload deploy/ecosystem.config.js --only juno-scheduler --update-env
+echo -e "${GREEN}✅ PM2 process 'juno-scheduler' active!${NC}"
+
 echo -e "${GREEN}🎉 Juno Backend successfully deployed and active!${NC}"
