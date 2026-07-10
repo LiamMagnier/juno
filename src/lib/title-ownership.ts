@@ -17,6 +17,9 @@ function placeholderFromPrompt(prompt: string, max = 48): string {
 }
 
 export function coerceTitleSource(value: unknown): TitleSource {
+  // "imported" (history import) behaves like "manual": the title came from the
+  // source product and the auto-titler must never rename it.
+  if (value === "imported") return "manual";
   return value === "ai" || value === "manual" || value === "default" ? value : "default";
 }
 

@@ -19,7 +19,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { DotIdenticon } from "@/components/signature/dot-matrix";
+import { ImportHistoryCard } from "@/components/settings/import-history";
 import { ProviderLogo } from "@/components/brand/provider-logo";
+import { SharedLinksCard } from "@/components/share/shared-links-card";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, effectiveMinPlan, planRank } from "@/lib/plans";
 import { MODELS_BY_PROVIDER, resolveModel, type ModelInfo } from "@/lib/models";
@@ -579,7 +581,9 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <div className="mt-4">
+        <div className="mt-4 space-y-4">
+          <SharedLinksCard />
+          <ImportHistoryCard />
           <AccountCard email={user.email ?? ""} />
         </div>
       </div>
