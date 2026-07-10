@@ -16,6 +16,8 @@ const schema = z.object({
   memoryEnabled: z.boolean().optional(),
   voiceId: z.string().max(100).nullable().optional(),
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
+  emailBudgetAlerts: z.boolean().optional(),
+  emailWeeklyDigest: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -42,6 +44,8 @@ export async function PATCH(req: Request) {
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),
       ...(d.voiceId !== undefined ? { voiceId: d.voiceId } : {}),
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),
+      ...(d.emailBudgetAlerts !== undefined ? { emailBudgetAlerts: d.emailBudgetAlerts } : {}),
+      ...(d.emailWeeklyDigest !== undefined ? { emailWeeklyDigest: d.emailWeeklyDigest } : {}),
     },
   });
 
