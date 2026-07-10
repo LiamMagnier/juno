@@ -55,6 +55,22 @@ module.exports = {
       merge_logs: true,
     },
     {
+      // Scheduled-task worker: claims due ScheduledTasks every 60s and runs
+      // them (scripts/scheduled-task-runner.ts). Loads the repo .env itself.
+      name: "juno-scheduler",
+      script: "npm",
+      args: "run tasks:runner",
+      watch: false,
+      max_memory_restart: "400M",
+      env: {
+        NODE_ENV: "production",
+      },
+      error_file: "logs/scheduler-err.log",
+      out_file: "logs/scheduler-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
+    {
       name: "juno-voice-relay",
       cwd: path.join(__dirname, "..", "relay"),
       script: "npm",
