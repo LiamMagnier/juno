@@ -93,6 +93,7 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "Ministral 3B", match: /^ministral-3b/i, minPlan: "FREE", vision: false },
   ],
   xai: [
+    { label: "Grok 4.5", match: /^grok-4\.5/i, minPlan: "PRO", vision: true },
     { label: "Grok 4.3", match: /^grok-4\.3/i, minPlan: "PRO", vision: true },
     { label: "Grok Build", match: /^grok-build/i, minPlan: "PRO", vision: true },
     { label: "Grok Multi-Agent", match: /multi-agent/i, minPlan: "PRO", vision: true },

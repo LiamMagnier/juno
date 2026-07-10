@@ -48,12 +48,17 @@ export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
   return { totalInput: input, freshInput, cacheRead, cacheWrite, output };
 }
 
+// Verified against provider pricing pages + Artificial Analysis, 2026-07-10
+// (sources in docs/models.md). Keep in sync with model-metrics.ts FAMILY_RULES.
 function baseRate(model: ModelInfo): { input: number; output: number } {
   const pm = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
-      if (pm.includes("opus")) return { input: 15, output: 75 };
-      if (pm.includes("haiku")) return { input: 0.8, output: 4 };
+      if (pm.includes("fable") || pm.includes("mythos")) return { input: 10, output: 50 };
+      if (pm.includes("opus-4-1")) return { input: 15, output: 75 }; // pre-4.5 Opus pricing
+      if (pm.includes("opus")) return { input: 5, output: 25 };
+      if (pm.includes("haiku")) return { input: 1, output: 5 };
+      if (pm.includes("sonnet-5")) return { input: 2, output: 10 }; // intro pricing — $3/$15 from Sep 1 2026
       return { input: 3, output: 15 }; // sonnet-class
     case "openai":
       if (/^o\d/.test(pm) || pm.includes("-o1") || pm.includes("-o3")) return { input: 15, output: 60 };
@@ -65,11 +70,12 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("gpt-5.4-nano")) return { input: 0.2, output: 1.25 };
       if (pm.includes("gpt-5.4-mini")) return { input: 0.75, output: 4.5 };
       if (pm.includes("gpt-5.4")) return { input: 2.5, output: 15 };
-      if (pm.includes("gpt-5.3-codex")) return { input: 1.25, output: 10 };
+      if (pm.includes("gpt-5.3-codex")) return { input: 1.75, output: 14 };
       if (pm.includes("gpt-5.2-pro")) return { input: 21, output: 168 };
       if (pm.includes("gpt-5.2")) return { input: 1.75, output: 14 };
       if (pm.includes("gpt-5.1-codex-mini")) return { input: 0.25, output: 2 };
       if (pm.includes("gpt-5.1")) return { input: 1.25, output: 10 };
+      if (pm.includes("realtime")) return { input: 32, output: 64 }; // audio tokens, per 1M
       if (pm.includes("nano")) return { input: 0.1, output: 0.4 };
       if (pm.includes("mini")) return { input: 0.25, output: 2 };
       if (pm.includes("gpt-5")) return { input: 1.25, output: 10 };
@@ -77,33 +83,53 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("gpt-4o")) return { input: 2.5, output: 10 };
       return { input: 2.5, output: 10 };
     case "google":
-      if (pm.includes("pro")) return { input: 1.25, output: 10 };
-      return { input: 0.3, output: 2.5 }; // flash-class
-    case "meta":
-      if (pm.includes("maverick")) return { input: 0.9, output: 0.9 };
-      if (pm.includes("scout")) return { input: 0.4, output: 0.4 };
-      return { input: 0.4, output: 0.4 };
+      if (pm.includes("3.1-flash-lite")) return { input: 0.25, output: 1.5 };
+      if (pm.includes("3.5-flash")) return { input: 1.5, output: 9 };
+      if (pm.includes("pro")) return { input: 2, output: 12 };
+      return { input: 0.3, output: 2.5 }; // older flash-class
+    case "meta": // Llama API shut down 2026-07-06 — kept for straggler cost display
+      if (pm.includes("maverick")) return { input: 0.35, output: 0.85 };
+      if (pm.includes("scout")) return { input: 0.17, output: 0.66 };
+      return { input: 0.35, output: 0.85 };
     case "deepseek":
-      if (pm.includes("reason")) return { input: 0.55, output: 2.19 };
-      return { input: 0.27, output: 1.1 };
+      // NOTE mid-July 2026: V4 goes official with 2x peak-hour pricing
+      // (09:00-12:00 / 14:00-18:00 Beijing) — revisit when announced.
+      if (pm.includes("v4-pro")) return { input: 0.435, output: 0.87 };
+      return { input: 0.14, output: 0.28 }; // v4-flash + retiring aliases
     case "zhipu":
       if (pm.includes("flash") || pm.includes("air")) return { input: 0.1, output: 0.1 };
       if (pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 }; // docs.z.ai/guides/overview/pricing
       if (pm.includes("turbo")) return { input: 1.2, output: 4.0 };
       return { input: 0.6, output: 2.2 };
     case "moonshot":
+      if (pm.includes("k2.")) return { input: 0.95, output: 4 };
       return { input: 0.6, output: 2.5 };
     case "mistral":
-      if (pm.includes("large")) return { input: 2, output: 6 };
-      return { input: 0.2, output: 0.6 };
+      if (pm.includes("medium")) return { input: 1.5, output: 7.5 };
+      if (pm.includes("large")) return { input: 0.5, output: 1.5 };
+      if (pm.includes("small")) return { input: 0.15, output: 0.6 };
+      if (pm.includes("ministral")) return { input: 0.15, output: 0.15 };
+      if (pm.includes("codestral")) return { input: 0.3, output: 0.9 };
+      return { input: 0.5, output: 2.2 };
     case "xai":
-      return { input: 3, output: 15 };
+      if (pm.includes("grok-4.5")) return { input: 2, output: 6 };
+      if (pm.includes("grok-4.3")) return { input: 1.25, output: 2.5 };
+      if (pm.includes("grok-build")) return { input: 1, output: 2 };
+      return { input: 2, output: 6 };
+    case "minimax":
+      return { input: 0.3, output: 1.2 };
+    case "mimo":
+      if (pm.includes("pro")) return { input: 0.435, output: 0.87 };
+      return { input: 0.2, output: 0.8 };
     case "qwen":
-      if (pm.includes("qwen3.7-max")) return { input: 1.25, output: 3.75 };
+      if (pm.includes("qwen3.7-max")) return { input: 2.5, output: 7.5 };
+      if (pm.includes("qwen3.7-plus")) return { input: 0.4, output: 1.6 };
       if (pm.includes("flash")) return { input: 0.19, output: 1.13 };
       return { input: 0.4, output: 1.2 };
     case "longcat":
-      return { input: 0.4, output: 2 };
+      return { input: 0.75, output: 2.95 }; // standard rate (launch promo $0.30/$1.20)
+    case "hunyuan":
+      return { input: 0.123, output: 0.43 }; // ~¥1/¥4 via Tencent TokenHub
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };

@@ -17,6 +17,7 @@ import {
   formatContext,
   formatPrice,
   getModelMetrics,
+  hasLiveBenchmark,
   reasoningOptions,
   type ReasoningEffort,
 } from "@/lib/model-metrics";
@@ -178,6 +179,15 @@ function ModelDetailPanel({
             {bars.map((b) => (
               <MetricBars key={b.key} label={b.label} value={metricScore(model, b.key, effectiveEffort)} accent={accent} />
             ))}
+            {/* Attribution required by the Artificial Analysis API terms. */}
+            {hasLiveBenchmark(model) && (
+              <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground/60">
+                Scores by{" "}
+                <a href="https://artificialanalysis.ai" target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2 hover:text-muted-foreground">
+                  Artificial Analysis
+                </a>
+              </p>
+            )}
           </div>
 
           {/* Pricing — tracks the thinking preview like the bars (reasoning burns output tokens). */}

@@ -82,7 +82,8 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     docsUrl: "https://console.mistral.ai/api-keys",
   },
   xai: {
-    label: "xAI · Grok",
+    // xAI completed its public rebrand to SpaceXAI in July 2026 (SpaceX merger).
+    label: "SpaceXAI · Grok",
     apiKeyEnv: "XAI_API_KEY",
     baseUrlEnv: "XAI_BASE_URL",
     defaultBaseUrl: "https://api.x.ai/v1",

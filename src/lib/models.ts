@@ -175,16 +175,16 @@ const CURATED: ModelInfo[] = [
 
   // —— Google ——
   def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "current", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Google's GA flagship — frontier performance at Flash speed." }),
-  def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Highest Gemini intelligence — complex reasoning and hard coding (preview)." }),
+  def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
   def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by 3.5 Flash." }),
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
   def({ provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", family: "flash", status: "deprecated", released: "2025-04", minPlan: "FREE", vision: true, cost: 1, description: "2.5-generation Flash.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.5 Flash" }),
 
-  // —— Meta · Llama ——
-  def({ provider: "meta", id: "Llama-4-Maverick-17B-128E-Instruct-FP8", name: "Llama 4 Maverick", family: "llama-maverick", status: "current", released: "2025-04", minPlan: "PRO", vision: true, reasoning: false, cost: 3, contextWindow: 1_000_000, description: "Meta's Llama 4 multimodal flagship for complex chat, coding and agent tasks." }),
-  def({ provider: "meta", id: "Llama-4-Scout-17B-16E-Instruct-FP8", name: "Llama 4 Scout", family: "llama-scout", status: "current", released: "2025-04", minPlan: "FREE", vision: true, reasoning: false, cost: 2, contextWindow: 10_000_000, description: "Long-context Llama 4 model for multimodal retrieval and high-volume reasoning." }),
-  def({ provider: "meta", id: "Llama-3.3-70B-Instruct", name: "Llama 3.3 70B", family: "llama-3.3", status: "legacy", released: "2024-12", minPlan: "FREE", reasoning: false, cost: 1, contextWindow: 128_000, description: "Previous-generation Llama text model, still useful for inexpensive chat." }),
+  // —— Meta · Llama —— (provider decommissioned)
+  // Meta shut down the entire Llama API (llama.developer.meta.com) on
+  // 2026-07-06 with no successor developer surface — its new Muse models are
+  // consumer-only, no API. All Llama entries moved to RETIRED_MODELS below.
 
   // —— Zhipu / Z.AI ——
   def({ provider: "zhipu", id: "glm-5.2", name: "GLM-5.2", family: "glm", status: "current", released: "2026-05", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "Z.AI's flagship — frontier reasoning and 1M-token context." }),
@@ -221,7 +221,7 @@ const CURATED: ModelInfo[] = [
 
   // —— Mistral ——
   def({ provider: "mistral", id: "mistral-medium-latest", name: "Mistral Medium 3.5", family: "medium", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Mistral's frontier multimodal model — agentic work with reasoning effort." }),
-  def({ provider: "mistral", id: "mistral-large-latest", name: "Mistral Large 3", family: "large", status: "current", released: "2025-12", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Open-weight multimodal flagship at a very low price." }),
+  def({ provider: "mistral", id: "mistral-large-latest", name: "Mistral Large 3", family: "large", status: "current", released: "2025-12", minPlan: "PRO", vision: true, cost: 1, contextWindow: 262_144, description: "Open-weight multimodal model — very cheap, but benchmarks below Medium 3.5." }),
   def({ provider: "mistral", id: "mistral-small-latest", name: "Mistral Small 4", family: "small", status: "current", released: "2026-02", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Cost-efficient hybrid — instruct, reasoning, and vision in one." }),
   def({ provider: "mistral", id: "codestral-latest", name: "Codestral", family: "codestral", status: "current", released: "2025-08", minPlan: "PRO", cost: 1, contextWindow: 262_144, description: "Low-latency code completion and fill-in-the-middle." }),
   def({ provider: "mistral", id: "ministral-14b-latest", name: "Ministral 3 14B", family: "ministral", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, description: "Small dense model — strong cost/performance for high volume." }),
@@ -230,8 +230,14 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5" }),
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
-  // —— xAI / Grok ——
-  def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "current", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "xAI's recommended flagship — chat, coding, and agentic tool calling." }),
+  // —— xAI (SpaceXAI) / Grok ——
+  // grok-4.5 launched 2026-07-08 but is NOT yet callable from EU accounts
+  // (rollout expected mid-July 2026) — kept comingSoon in its own family so
+  // grok-4.3 stays the selectable flagship until the API serves 4.5 here.
+  // When it goes live: move to family "grok" (current), demote 4.3 to legacy,
+  // repoint the retired grok-* migrations at 4.5. See docs/models.md watchlist.
+  def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok-45", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, comingSoon: true, description: "SpaceXAI's smartest model — coding, agents and knowledge work (EU access mid-July)." }),
+  def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "current", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive flagship tier — chat, coding, and agentic tool calling." }),
   def({ provider: "xai", id: "grok-build-0.1", name: "Grok Build 0.1", family: "grok-build", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Fast agentic coding — successor to Grok Code Fast." }),
   def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent deep research (beta)." }),
   def({ provider: "xai", id: "grok-4.20-0309-reasoning", name: "Grok 4.20 (Reasoning)", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous flagship reasoning Grok." }),
@@ -248,7 +254,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
-  def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "current", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Alibaba's current flagship — frontier reasoning, coding and agentic tasks." }),
+  def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "current", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Alibaba's flagship — strong reasoning served extremely fast (~190 tok/s)." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
   def({ provider: "qwen", id: "qwen3.6-plus", name: "Qwen3.6 Plus", family: "qwen-plus", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous Plus generation, superseded by Qwen3.7 Plus." }),
@@ -269,7 +275,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention." }),
 
   // —— Tencent · Hunyuan ——
-  def({ provider: "hunyuan", id: "hunyuan-HY3", name: "Hunyuan HY3", family: "hunyuan", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 256_000, description: "Tencent Hunyuan's flagship reasoning model — deep thinking, coding, and agentic tasks." }),
+  def({ provider: "hunyuan", id: "hunyuan-HY3", name: "Hunyuan HY3", family: "hunyuan", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 256_000, description: "Tencent's open-weight flagship (Apache 2.0) — fast, capable, and very cheap." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs
@@ -295,7 +301,7 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "google", id: "veo-3.1-fast-generate-preview", name: "Veo 3.1 Fast", family: "veo-fast", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Veo tier." }),
   def({ provider: "google", id: "gemini-omni-flash-preview", name: "Gemini Omni Flash", family: "gemini-omni", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 2, description: "Conversational video generation and editing (preview)." }),
   def({ provider: "xai", id: "grok-imagine-video", name: "Grok Imagine Video", family: "imagine-video", status: "current", released: "2025-10", modality: "video", minPlan: "MAX", cost: 2, description: "Text-, image-, and video-to-video generation." }),
-  def({ provider: "xai", id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", family: "imagine-video-15", status: "current", released: "2026-02", modality: "video", minPlan: "MAX", cost: 3, description: "Higher-fidelity image-to-video (preview)." }),
+  def({ provider: "xai", id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", family: "imagine-video-15", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 3, description: "Higher-fidelity 720p video with native audio ($0.08/s), GA June 2026." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-260128", name: "Seedance 2.0", family: "seedance", status: "current", released: "2026-01", modality: "video", minPlan: "MAX", cost: 3, description: "ByteDance flagship — multimodal references, native audio, up to 4K." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-fast-260128", name: "Seedance 2.0 Fast", family: "seedance-fast", status: "current", released: "2026-01", modality: "video", minPlan: "MAX", cost: 2, description: "Faster, cheaper Seedance 2.0 tier." }),
   def({ provider: "seedance", id: "dreamina-seedance-2-0-mini-260615", name: "Seedance 2.0 Mini", family: "seedance-mini", status: "current", released: "2026-06", modality: "video", minPlan: "MAX", cost: 1, description: "Cheapest Seedance tier with draft modes." }),
@@ -391,10 +397,14 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
-  // Meta — old placeholder names; the public API is Llama.
-  "meta:muse-max": "meta:Llama-4-Maverick-17B-128E-Instruct-FP8",
-  "meta:muse-spark": "meta:Llama-4-Scout-17B-16E-Instruct-FP8",
-  "meta:muse-flash": "meta:Llama-4-Scout-17B-16E-Instruct-FP8",
+  // Meta — the Llama API shut down entirely on 2026-07-06 (Meta's Muse line is
+  // consumer-only, no API), so every Meta id migrates to the default model.
+  "meta:muse-max": "anthropic:claude-sonnet-5",
+  "meta:muse-spark": "anthropic:claude-sonnet-5",
+  "meta:muse-flash": "anthropic:claude-sonnet-5",
+  "meta:Llama-4-Maverick-17B-128E-Instruct-FP8": "anthropic:claude-sonnet-5",
+  "meta:Llama-4-Scout-17B-16E-Instruct-FP8": "anthropic:claude-sonnet-5",
+  "meta:Llama-3.3-70B-Instruct": "anthropic:claude-sonnet-5",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
