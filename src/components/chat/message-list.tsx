@@ -62,10 +62,34 @@ export function MessageList(props: MessageListProps) {
 
   // Keep pinned to the bottom while streaming new content (instant — smooth on
   // every token janks). Honors the user scrolling up via the stick heuristic.
-  const lastContent = messages[messages.length - 1]?.content;
+  // One exception (NN/g): once a streaming reply outgrows the viewport, hold the
+  // view at the reply's top so it can be read from the start instead of chasing
+  // the tail. The hold fires once per reply — re-sticking afterwards (scrolling
+  // back down, or "jump to latest") resumes a plain bottom-follow.
+  const last = messages[messages.length - 1];
+  const lastContent = last?.content;
+  const heldIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    if (stickRef.current) bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, lastContent]);
+    if (!stickRef.current) return;
+    const el = scrollRef.current;
+    // The bottom sentinel's previous sibling is the last message's root node.
+    const node = bottomRef.current?.previousElementSibling as HTMLElement | null;
+    if (el && node && last?.role === "ASSISTANT" && last.streaming && heldIdRef.current !== last.id) {
+      const bottom = el.scrollHeight - el.clientHeight;
+      // Reply top in scroll coordinates, offset to mirror the container's py-6.
+      const top = node.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 24;
+      if (top < bottom) {
+        // Bottom-following would push the reply's first line off-screen — hold
+        // here and release the stick so later tokens don't yank the view.
+        heldIdRef.current = last.id;
+        stickRef.current = false;
+        setAtBottom(false);
+        el.scrollTop = Math.max(top, 0);
+        return;
+      }
+    }
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages.length, lastContent, last]);
 
   const jumpToLatest = () => {
     stickRef.current = true;

@@ -23,6 +23,7 @@ import {
   Square,
   SquareDashedMousePointer,
   SquarePen,
+  Telescope,
   TextQuote,
   X,
 } from "lucide-react";
@@ -61,14 +62,14 @@ import type {
   PreflightClarificationAnswer,
   PreflightClarificationAnswerValue,
 } from "@/lib/preflight-clarification";
-import type { SendResult } from "@/hooks/use-chat";
+import type { SendOptions, SendResult } from "@/hooks/use-chat";
 import type { ClientAttachment, GenerationStatus, ReasoningEffort } from "@/types/chat";
 
 interface ComposerProps {
   conversationId: string | null;
   model: ModelId;
   onModelChange: (m: ModelId) => void;
-  onSend: (text: string, attachments: ClientAttachment[]) => Promise<SendResult> | SendResult | void;
+  onSend: (text: string, attachments: ClientAttachment[], options?: SendOptions) => Promise<SendResult> | SendResult | void;
   isBusy: boolean;
   status: GenerationStatus;
   onStop: () => void;
@@ -158,6 +159,16 @@ export function Composer({
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
   const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
+  // Deep research — per-send flag (resets after each send, unlike the sticky
+  // web-search pref). Hidden entirely when the server has no Tavily key or in
+  // private chat; visible-but-disabled on plans without web tooling (FREE).
+  const [research, setResearch] = React.useState(false);
+  const researchAvailable = features.deepResearch && !privateMode && modality === "chat";
+  const planAllowsResearch = PLANS[quota.plan].webSearch;
+  const sendOptions = React.useMemo<SendOptions | undefined>(
+    () => (research && researchAvailable && planAllowsResearch ? { deepResearch: true } : undefined),
+    [research, researchAvailable, planAllowsResearch]
+  );
   const placeholder = pendingClarification
     ? "Or type your own answer…"
     : quote
@@ -180,6 +191,7 @@ export function Composer({
   const [loadingProjects, setLoadingProjects] = React.useState(false);
   const [connectors, setConnectors] = React.useState<{ id: string; label: string; connected: boolean }[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const rootRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
   const sendAttachments = privateMode ? [] : readyAttachments;
@@ -228,6 +240,25 @@ export function Composer({
     setQuoteRemoving(false);
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, [quote]);
+
+  // Sending disables the textarea for the whole generation, which silently
+  // drops keyboard focus to <body>. Hand it back the moment the composer
+  // re-enables so Enter-to-send flows straight into typing the follow-up —
+  // but never steal focus from a field the user moved to mid-generation
+  // (only reclaim it from <body> or from within the composer itself).
+  const wasBusyRef = React.useRef(false);
+  React.useEffect(() => {
+    const busy = isBusy || status === "checking";
+    const wasBusy = wasBusyRef.current;
+    wasBusyRef.current = busy;
+    if (!wasBusy || busy || dictating || pendingClarification) return;
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el || el.disabled) return;
+      const active = document.activeElement;
+      if (!active || active === document.body || rootRef.current?.contains(active)) el.focus();
+    });
+  }, [isBusy, status, dictating, pendingClarification]);
 
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
@@ -293,9 +324,10 @@ export function Composer({
     // still attached, so restoring the serialized block would double-wrap).
     interceptedDraftRef.current = text.trim();
     const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
-    const result = await onSend(outgoing, sendAttachments);
+    const result = await onSend(outgoing, sendAttachments, sendOptions);
     if (result && result.accepted === false) return;
     setText("");
+    setResearch(false); // per-send: research never sticks to the next message
     clear();
     onClearQuote?.();
     requestAnimationFrame(autoresize);
@@ -318,18 +350,19 @@ export function Composer({
       interceptedDraftRef.current = merged;
       const outgoing = quote ? serializeQuote(quote, merged) : merged;
       void (async () => {
-        const result = await onSend(outgoing, sendAttachments);
+        const result = await onSend(outgoing, sendAttachments, sendOptions);
         if (result && result.accepted === false) {
           setText(merged); // keep the words — nothing gets lost on a refusal
           return;
         }
         setText("");
+        setResearch(false); // per-send: research never sticks to the next message
         clear();
         onClearQuote?.();
         requestAnimationFrame(autoresize);
       })();
     },
-    [text, controlsLocked, quote, onSend, sendAttachments, clear, onClearQuote, autoresize]
+    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize]
   );
 
   // ——— Slash commands (type "/" then a command, e.g. "/model", "/projects") ———
@@ -344,6 +377,16 @@ export function Composer({
         hint: webSearchEnabled ? "Turn web search off" : "Turn web search on",
         run: () => onToggleWebSearch?.(!webSearchEnabled),
       },
+      ...(researchAvailable && planAllowsResearch
+        ? [
+            {
+              id: "research",
+              label: "/research",
+              hint: research ? "Turn deep research off" : "Deep-research the next message",
+              run: () => setResearch((v) => !v),
+            },
+          ]
+        : []),
       {
         id: "learn-demo",
         label: "/learn-demo",
@@ -364,7 +407,7 @@ export function Composer({
         },
       },
     ],
-    [webSearchEnabled, onToggleWebSearch, onOpenVoiceMode, router]
+    [webSearchEnabled, onToggleWebSearch, researchAvailable, planAllowsResearch, research, onOpenVoiceMode, router]
   );
 
   const slash = React.useMemo((): SlashState => {
@@ -583,6 +626,7 @@ export function Composer({
 
   return (
     <div
+      ref={rootRef}
       className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4"
     >
       {quotaReached && (
@@ -1054,6 +1098,46 @@ export function Composer({
                 </>
               );
             })()}
+
+            {/* Deep research — per-send chip: one prompt becomes a planned,
+                searched, cited report. Hidden without a Tavily key (and in
+                private chat); disabled with the upgrade hint on Free. */}
+            {researchAvailable && (
+              <>
+                <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={controlsLocked}
+                      aria-disabled={controlsLocked || !planAllowsResearch}
+                      aria-pressed={research}
+                      aria-label={research ? "Turn off deep research" : "Turn on deep research for the next message"}
+                      onClick={() => planAllowsResearch && setResearch((v) => !v)}
+                      className={cn(
+                        "h-8 gap-1.5 rounded-[10px] px-2 font-mono text-[13px] tracking-tight focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-accent",
+                        research
+                          ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+                          : "text-foreground/80 hover:text-foreground",
+                        !planAllowsResearch && "opacity-50"
+                      )}
+                    >
+                      <Telescope className="h-3.5 w-3.5 shrink-0" />
+                      Research
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {!planAllowsResearch
+                      ? "Deep research needs a paid plan"
+                      : research
+                        ? "Deep research is on for this message"
+                        : "Deep research — a multi-step, cited report"}
+                  </TooltipContent>
+                </Tooltip>
+              </>
+            )}
 
           </div>
 
