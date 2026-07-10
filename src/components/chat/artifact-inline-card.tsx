@@ -31,27 +31,49 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   MERMAID: GitBranch,
 };
 
-function SourcePreview({ content, language, className }: { content: string; language: string; className?: string }) {
-  const { lines, truncated } = React.useMemo(() => {
+const PREVIEW_MAX_LINES = 160;
+
+function SourcePreview({ content, language, streaming, className }: { content: string; language: string; streaming?: boolean; className?: string }) {
+  const { lines, truncated, startLine } = React.useMemo(() => {
     const split = content.replace(/\n$/, "").split("\n");
-    return { lines: split.slice(0, 160), truncated: split.length > 160 };
-  }, [content]);
+    // While the model is writing, follow the TAIL so live typing never freezes
+    // at the cap; once done, preview the head with the open-canvas affordance.
+    if (streaming && split.length > PREVIEW_MAX_LINES) {
+      return { lines: split.slice(-PREVIEW_MAX_LINES), truncated: true, startLine: split.length - PREVIEW_MAX_LINES + 1 };
+    }
+    return { lines: split.slice(0, PREVIEW_MAX_LINES), truncated: split.length > PREVIEW_MAX_LINES, startLine: 1 };
+  }, [content, streaming]);
+
+  // Pin the scroll to the write cursor while streaming (the window itself
+  // slides, so holding a scroll position would show shifting lines anyway).
+  const listRef = React.useRef<HTMLOListElement>(null);
+  React.useEffect(() => {
+    if (!streaming) return;
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [streaming, content]);
 
   return (
     <div className={cn("relative h-full min-h-0 overflow-hidden bg-background/50", className)}>
-      <ol className="h-full overflow-auto px-0 py-3 font-mono text-[11px] leading-5">
+      <ol ref={listRef} className="h-full overflow-auto px-0 py-3 font-mono text-[11px] leading-5">
         <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3 pb-2 text-muted-foreground">
           <span />
           <span className="text-[11px] uppercase">{language || "source"}</span>
         </li>
+        {startLine > 1 && (
+          <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3 pb-1 text-muted-foreground/60">
+            <span />
+            <span className="text-[11px]">… {startLine - 1} earlier lines</span>
+          </li>
+        )}
         {lines.map((line, index) => (
-          <li key={index} className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3">
-            <span className="select-none text-right text-muted-foreground/45">{index + 1}</span>
+          <li key={startLine + index} className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3">
+            <span className="select-none text-right text-muted-foreground/45">{startLine + index}</span>
             <code className="min-w-0 overflow-hidden text-ellipsis whitespace-pre text-foreground/80">{line || " "}</code>
           </li>
         ))}
       </ol>
-      {truncated && (
+      {truncated && !streaming && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-gradient-to-t from-background/95 to-transparent pb-2">
           <span className="rounded-[9px] border border-border/60 bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-soft">Open the full canvas to continue</span>
         </div>
@@ -301,7 +323,7 @@ export function ArtifactInlineCard({
           </div>
         ) : (
           <div className="h-[min(44vh,380px)] min-h-[240px] overflow-hidden">
-            <SourcePreview content={resolvedContent} language={sourceLanguage} />
+            <SourcePreview content={resolvedContent} language={sourceLanguage} streaming={streaming} />
           </div>
         )
       ) : streaming ? (

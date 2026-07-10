@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { toast } from "sonner";
@@ -28,6 +28,71 @@ function textOf(node: React.ReactNode): string {
 
 function isVisualLang(lang: string): boolean {
   return ["juno-visual", "juno-ui", "juno-block", "visual", "visual-block"].includes(lang.toLowerCase());
+}
+
+type Fence = { char: string; length: number };
+
+/** CommonMark-ish fence tracking: fence state after seeing `line`. */
+function trackFence(fence: Fence | null, line: string): Fence | null {
+  const match = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+  if (!match) return fence;
+  const marker = match[1];
+  const rest = line.slice(match[0].length);
+  if (fence) {
+    const closes = marker[0] === fence.char && marker.length >= fence.length && rest.trim() === "";
+    return closes ? null : fence;
+  }
+  // A backtick fence's info string can't contain backticks (e.g. inline ```code```).
+  if (marker[0] === "`" && rest.includes("`")) return fence;
+  return { char: marker[0], length: marker.length };
+}
+
+/**
+ * Split raw markdown into stable top-level blocks — on blank lines, keeping
+ * fenced code intact and indented continuations (nested list content) attached —
+ * so streaming only re-parses the final, still-growing block.
+ */
+function splitIntoBlocks(markdown: string): string[] {
+  const lines = markdown.split("\n");
+  const blocks: string[] = [];
+  let current: string[] = [];
+  let fence: Fence | null = null;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const wasInFence = fence !== null;
+    fence = trackFence(fence, line);
+    if (!wasInFence && fence === null && line.trim() === "") {
+      if (current.length === 0) continue;
+      const next = lines.slice(i + 1).find((l) => l.trim() !== "");
+      // An indented follow-up line continues the current block (list/quote content).
+      if (next !== undefined && /^[ \t]/.test(next)) current.push(line);
+      else {
+        blocks.push(current.join("\n"));
+        current = [];
+      }
+      continue;
+    }
+    current.push(line);
+  }
+  if (current.length > 0) blocks.push(current.join("\n"));
+  return blocks;
+}
+
+/**
+ * Cheaply close dangling markdown in the still-growing final block so streaming
+ * text doesn't flash raw fences, backticks, or `**` markers.
+ */
+function closeDangling(block: string): string {
+  let fence: Fence | null = null;
+  for (const line of block.split("\n")) fence = trackFence(fence, line);
+  if (fence) return `${block}\n${fence.char.repeat(fence.length)}`;
+  let closed = block;
+  if ((closed.match(/(?<!\\)`/g) ?? []).length % 2 === 1) closed += "`";
+  // Count `**` outside code spans so `a ** b` in inline code doesn't miscount.
+  const inline = closed.replace(/(?<!\\)`[^`]*`/g, "");
+  if ((inline.match(/\*\*/g) ?? []).length % 2 === 1) closed += "**";
+  return closed;
 }
 
 function CodeBlock({ children, streaming }: { children: React.ReactNode; streaming?: boolean }) {
@@ -88,23 +153,40 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
   );
 }
 
+const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm];
+const REHYPE_PLUGINS: Options["rehypePlugins"] = [[rehypeHighlight, { detect: true, ignoreMissing: true }]];
+
+/** One parsed block. Memoized so streamed chunks only re-render the final block. */
+const MarkdownBlock = React.memo(function MarkdownBlock({ content, streaming }: { content: string; streaming?: boolean }) {
+  const components = React.useMemo<Components>(
+    () => ({
+      pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
+      a: ({ children, ...props }) => (
+        <a {...props} target="_blank" rel="noopener noreferrer">
+          {children}
+        </a>
+      ),
+    }),
+    [streaming],
+  );
+  return (
+    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
+      {content}
+    </ReactMarkdown>
+  );
+});
+
 export const Markdown = React.memo(function Markdown({ content, className, streaming }: { content: string; className?: string; streaming?: boolean }) {
+  const blocks = React.useMemo(() => splitIntoBlocks(content), [content]);
   return (
     <div className={cn("prose-juno", className)}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
-        components={{
-          pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
-          a: ({ children, ...props }) => (
-            <a {...props} target="_blank" rel="noopener noreferrer">
-              {children}
-            </a>
-          ),
-        }}
-      >
-        {content}
-      </ReactMarkdown>
+      {blocks.map((block, i) => (
+        <MarkdownBlock
+          key={i}
+          content={streaming && i === blocks.length - 1 ? closeDangling(block) : block}
+          streaming={streaming}
+        />
+      ))}
     </div>
   );
 });

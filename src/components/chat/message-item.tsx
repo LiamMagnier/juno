@@ -2,8 +2,9 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Copy, Download, FileText, GitFork, Globe, Pencil, RefreshCw, Sparkles, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Globe, Pencil, RefreshCw, Sparkles, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -15,9 +16,10 @@ import { GenerationPlaceholder } from "@/components/chat/generation-placeholder"
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent } from "@/lib/message-content";
+import { resolveModel } from "@/lib/models";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput } from "@/hooks/use-chat";
-import type { ClientArtifact, ClientAttachment, ClientSource, GenerationStatus } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, ClientSource, GenerationStatus } from "@/types/chat";
 
 /**
  * Premium "thinking → writing" indicator shown in the transcript while the
@@ -140,6 +142,40 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
   );
 }
 
+/**
+ * ChatGPT-style "‹ 2/3 ›" version pager, shown whenever a message has preserved
+ * prior versions (regenerate and edit-and-resend never overwrite history). It
+ * sits in the action-toolbar row but OUTSIDE the hover-revealed cluster so the
+ * existence of history stays discoverable at a glance.
+ */
+function VersionPager({
+  index,
+  total,
+  loading,
+  onStep,
+}: {
+  index: number;
+  total: number;
+  loading?: boolean;
+  onStep: (dir: -1 | 1) => void;
+}) {
+  const navClass =
+    "flex h-6 w-6 items-center justify-center rounded-md transition-colors duration-fast hover:text-foreground disabled:pointer-events-none disabled:opacity-35 coarse:h-9 coarse:w-9";
+  return (
+    <div className="mr-1 flex items-center font-mono text-caption text-muted-foreground/70">
+      <button type="button" onClick={() => onStep(-1)} disabled={loading || index === 0} aria-label="Previous version" className={navClass}>
+        <ChevronLeft className="h-3.5 w-3.5" />
+      </button>
+      <span className="min-w-[3ch] text-center tabular-nums" aria-live="polite">
+        {index + 1}/{total}
+      </span>
+      <button type="button" onClick={() => onStep(1)} disabled={loading || index === total - 1} aria-label="Next version" className={navClass}>
+        <ChevronRight className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function IconAction({ label, onClick, children, active }: { label: string; onClick: () => void; children: React.ReactNode; active?: boolean }) {
   return (
     <Tooltip>
@@ -202,6 +238,7 @@ export function MessageItem({
   onImageEdit,
   currentModelId,
 }: MessageItemProps) {
+  const router = useRouter();
   const [copied, setCopied] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(message.content);
@@ -213,8 +250,93 @@ export function MessageItem({
   // expand transition settles so extremely long messages are never clipped.
   const [heightCapped, setHeightCapped] = React.useState(true);
   const isUser = message.role === "USER";
-  const lineCount = message.content ? message.content.split("\n").length : 0;
-  const isLong = message.content.length > 700 || lineCount > 14;
+
+  // ---- Version carousel (regenerate / edit-and-resend history) ----
+  // `message.versions` holds the PRESERVED older contents (metadata only,
+  // oldest first); the message row itself is always the newest. The pager has
+  // versions.length + 1 pages with the live message as the last page. Older
+  // page contents are fetched lazily (decrypted server-side) on first step
+  // back. Paging is purely presentational — the server row is untouched, and
+  // regenerating always continues from the live thread whatever page is shown.
+  const versionCount = message.versions?.length ?? 0;
+  const totalVersions = versionCount + 1;
+  const [versionIndex, setVersionIndex] = React.useState(versionCount);
+  const [versionDetails, setVersionDetails] = React.useState<ClientMessageVersionDetail[] | null>(null);
+  const [versionsLoading, setVersionsLoading] = React.useState(false);
+  React.useEffect(() => {
+    // A regenerate/edit appended a version under the same message id — snap to
+    // the newest page and drop the stale cache so history refetches on demand.
+    setVersionIndex(versionCount);
+    setVersionDetails(null);
+  }, [versionCount]);
+
+  const stepVersion = async (dir: -1 | 1) => {
+    const next = Math.min(Math.max(versionIndex + dir, 0), versionCount);
+    if (next === versionIndex) return;
+    let details = versionDetails;
+    if (next < versionCount && !details) {
+      if (versionsLoading) return;
+      setVersionsLoading(true);
+      try {
+        const res = await fetch(`/api/messages/${message.id}/versions`);
+        if (!res.ok) throw new Error();
+        details = ((await res.json()) as { versions?: ClientMessageVersionDetail[] }).versions ?? [];
+        setVersionDetails(details);
+      } catch {
+        toast.error("Couldn't load that version.");
+        return;
+      } finally {
+        setVersionsLoading(false);
+      }
+    }
+    if (next < versionCount && !details?.[next]) return; // server/client count drifted — stay put
+    setVersionIndex(next);
+  };
+
+  // What the bubble displays: an older read-only version, or the live message.
+  const viewingOld = versionIndex < versionCount ? versionDetails?.[versionIndex] : undefined;
+  const view: ChatMessage = viewingOld
+    ? {
+        ...message,
+        content: viewingOld.content,
+        reasoning: viewingOld.reasoning ?? null,
+        model: viewingOld.model,
+        sources: viewingOld.sources,
+        promptTokens: viewingOld.promptTokens ?? null,
+        completionTokens: viewingOld.completionTokens ?? null,
+        costUsd: null,
+        // Activity timeline and finish state describe the CURRENT answer only.
+        activity: undefined,
+        finishReason: null,
+        errorMessage: null,
+      }
+    : message;
+
+  // Branch from here: server-side fork — copies the thread up to this message
+  // into a new saved conversation and navigates there. Self-contained (needs
+  // only the message row), so it requires no plumbing through chat-view.
+  const [branching, setBranching] = React.useState(false);
+  const branch = async () => {
+    if (branching || !message.conversationId) return;
+    setBranching(true);
+    try {
+      const res = await fetch(`/api/conversations/${message.conversationId}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ atMessageId: message.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { conversation?: { id: string }; error?: string };
+      if (!res.ok || !data.conversation) throw new Error(data.error ?? "Couldn't branch the conversation.");
+      toast.success("Branched into a new chat.");
+      router.push(`/chat/${data.conversation.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Couldn't branch the conversation.");
+      setBranching(false);
+    }
+  };
+
+  const lineCount = view.content ? view.content.split("\n").length : 0;
+  const isLong = view.content.length > 700 || lineCount > 14;
 
   const toggleExpanded = () => {
     if (!expanded) {
@@ -225,10 +347,10 @@ export function MessageItem({
     setHeightCapped(true);
     requestAnimationFrame(() => requestAnimationFrame(() => setExpanded(false)));
   };
-  const parts = React.useMemo(() => (isUser ? [] : splitMessageContent(message.content)), [isUser, message.content]);
+  const parts = React.useMemo(() => (isUser ? [] : splitMessageContent(view.content)), [isUser, view.content]);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(message.content).catch(() => {});
+    await navigator.clipboard.writeText(view.content).catch(() => {});
     setCopied(true);
     toast.success("Copied to clipboard");
     setTimeout(() => setCopied(false), 1500);
@@ -252,12 +374,12 @@ export function MessageItem({
                   setEditing(false);
                 }}
               >
-                Save &amp; submit
+                Save &amp; resend
               </Button>
             </div>
           </div>
         ) : (
-          message.content && (
+          view.content && (
             <div className="flex max-w-[85%] flex-col items-end">
               <div
                 onTransitionEnd={(e) => {
@@ -269,7 +391,7 @@ export function MessageItem({
                   isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
                 )}
               >
-                {message.content}
+                {view.content}
                 {isLong && (
                   <div
                     className={cn(
@@ -292,20 +414,27 @@ export function MessageItem({
           )
         )}
         {!editing && !message.pending && (
-          <div className="mt-1 flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
-            <IconAction label="Copy" onClick={copy}>
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </IconAction>
-            {!busy && !privateMode && (
-              <IconAction label="Edit" onClick={() => { setDraft(message.content); setEditing(true); }}>
-                <Pencil className="h-4 w-4" />
-              </IconAction>
+          <div className="mt-1 flex items-center">
+            {totalVersions > 1 && (
+              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
-            {onFork && !busy && !privateMode && (
-              <IconAction label="Fork from here" onClick={() => onFork(message.id)}>
-                <GitFork className="h-4 w-4" />
+            <div className="flex opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+              <IconAction label="Copy" onClick={copy}>
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </IconAction>
-            )}
+              {!busy && !privateMode && (
+                // Prefill from the DISPLAYED version, so paging back and editing
+                // is a one-step "resend an earlier wording".
+                <IconAction label="Edit" onClick={() => { setDraft(view.content); setEditing(true); }}>
+                  <Pencil className="h-4 w-4" />
+                </IconAction>
+              )}
+              {onFork && !busy && !privateMode && (
+                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
+                  <GitFork className="h-4 w-4" />
+                </IconAction>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -317,25 +446,31 @@ export function MessageItem({
   // Generated media: image attachments + video files (kind FILE, video/* mime).
   const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || a.mimeType.startsWith("video/"));
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
-  const canContinue = isLast && !busy && (message.finishReason === "length" || message.finishReason === "network_error");
+  // Finish state comes from `view`: paging back to an older version hides the
+  // current answer's continue/finish chrome (it doesn't describe that version).
+  const canContinue = isLast && !busy && (view.finishReason === "length" || view.finishReason === "network_error");
+  // Which model produced the DISPLAYED answer — matters after mid-thread model
+  // switches and when paging across regenerations made with different models.
+  const modelName = view.model ? resolveModel(view.model)?.name ?? view.model : null;
+  const hasUsage = view.promptTokens != null || view.completionTokens != null;
   const finishNote =
-    message.finishReason === "length"
+    view.finishReason === "length"
       ? "The model stopped at its token limit."
-      : message.finishReason === "network_error"
+      : view.finishReason === "network_error"
         ? "The stream was interrupted. The partial answer was preserved."
-        : message.finishReason === "user_stopped"
+        : view.finishReason === "user_stopped"
           ? "Stopped by user."
-          : message.finishReason === "tool_calls"
+          : view.finishReason === "tool_calls"
             ? "The model requested tools, but no tool flow is enabled for this request."
-            : message.finishReason === "sensitive"
+            : view.finishReason === "sensitive"
               ? "The provider stopped the response for safety reasons."
               : null;
 
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
       <div className="min-w-0 flex-1" aria-live="polite" aria-atomic="false">
-        <ActivityTimeline events={message.activity} reasoning={message.reasoning} streaming={message.streaming} />
-        {message.sources && message.sources.length > 0 && <SourcesList sources={message.sources} />}
+        <ActivityTimeline events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
+        {view.sources && view.sources.length > 0 && <SourcesList sources={view.sources} />}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor ? (
@@ -427,9 +562,9 @@ export function MessageItem({
                 aria-hidden="true"
               />
             )}
-            {(message.errorMessage || finishNote || canContinue) && (
+            {(view.errorMessage || finishNote || canContinue) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
-                <span className="min-w-0 flex-1">{message.errorMessage ?? finishNote}</span>
+                <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
                 {canContinue && (
                   <Button type="button" variant="outline" size="sm" onClick={onContinue} className="h-7 gap-1.5">
                     <RefreshCw className="h-3.5 w-3.5" /> Continue
@@ -440,55 +575,67 @@ export function MessageItem({
           </div>
         )}
 
-        {!message.streaming && !message.error && (message.promptTokens != null || message.completionTokens != null) && (
+        {!message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground/60">
-                {formatTokens((message.promptTokens ?? 0) + (message.completionTokens ?? 0))} tokens
-                {message.costUsd != null && message.costUsd > 0 ? ` · ~${formatUsd(message.costUsd)}` : ""}
+                {modelName}
+                {hasUsage ? `${modelName ? " · " : ""}${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens` : ""}
+                {view.costUsd != null && view.costUsd > 0 ? ` · ~${formatUsd(view.costUsd)}` : ""}
               </p>
             </TooltipTrigger>
             <TooltipContent>
-              {formatTokens(message.promptTokens ?? 0)} in · {formatTokens(message.completionTokens ?? 0)} out
-              {message.costUsd != null && message.costUsd > 0 ? ` · estimated ${formatUsd(message.costUsd)}` : ""}
+              {view.model}
+              {hasUsage ? `${view.model ? " · " : ""}${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out` : ""}
+              {view.costUsd != null && view.costUsd > 0 ? ` · estimated ${formatUsd(view.costUsd)}` : ""}
             </TooltipContent>
           </Tooltip>
         )}
 
         {!message.streaming && !message.error && (
-          <div className="mt-1.5 flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
-            <IconAction label="Copy" onClick={copy}>
-              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            </IconAction>
-            {isLast && !busy && !privateMode && (
-              <IconAction label="Regenerate" onClick={onRegenerate}>
-                <RefreshCw className="h-4 w-4" />
-              </IconAction>
+          <div className="mt-1.5 flex items-center">
+            {totalVersions > 1 && (
+              <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
-            {onFork && !busy && !privateMode && (
-              <IconAction label="Fork from here" onClick={() => onFork(message.id)}>
-                <GitFork className="h-4 w-4" />
+            <div className="flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
+              <IconAction label="Copy" onClick={copy}>
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </IconAction>
-            )}
-            {!privateMode && (
-              <>
-                <IconAction label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
-                  <ThumbsUp className="h-4 w-4" />
+              {isLast && !busy && !privateMode && (
+                <IconAction label="Regenerate" onClick={onRegenerate}>
+                  <RefreshCw className="h-4 w-4" />
                 </IconAction>
-                <IconAction label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
-                  <ThumbsDown className="h-4 w-4" />
+              )}
+              {message.conversationId && !busy && !privateMode && (
+                <IconAction label="Branch from here" onClick={branch}>
+                  <GitBranch className="h-4 w-4" />
                 </IconAction>
-              </>
-            )}
-            {onSpeak && (
-              <IconAction
-                label={speaking ? "Stop" : "Read aloud"}
-                onClick={() => onSpeak(message.id, message.content)}
-                active={speaking}
-              >
-                {speaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
-              </IconAction>
-            )}
+              )}
+              {onFork && !busy && !privateMode && (
+                <IconAction label="Fork privately" onClick={() => onFork(message.id)}>
+                  <GitFork className="h-4 w-4" />
+                </IconAction>
+              )}
+              {!privateMode && (
+                <>
+                  <IconAction label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
+                    <ThumbsUp className="h-4 w-4" />
+                  </IconAction>
+                  <IconAction label="Bad response" onClick={() => onFeedback(message.id, message.feedback === "DOWN" ? null : "DOWN")} active={message.feedback === "DOWN"}>
+                    <ThumbsDown className="h-4 w-4" />
+                  </IconAction>
+                </>
+              )}
+              {onSpeak && (
+                <IconAction
+                  label={speaking ? "Stop" : "Read aloud"}
+                  onClick={() => onSpeak(message.id, view.content)}
+                  active={speaking}
+                >
+                  {speaking ? <Square className="h-4 w-4 fill-current" /> : <Volume2 className="h-4 w-4" />}
+                </IconAction>
+              )}
+            </div>
           </div>
         )}
       </div>
