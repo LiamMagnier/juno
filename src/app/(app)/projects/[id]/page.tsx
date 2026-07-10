@@ -214,11 +214,12 @@ export default function ProjectDetailPage() {
     }
   };
 
-  const handleSend = (text: string) => {
+  const handleSend = (text: string, options?: { deepResearch?: boolean }) => {
     const q = text.trim();
     if (!q) return;
     const reasoning = reasoningEffort ? `&reasoning=${reasoningEffort}` : "";
-    router.push(`/chat?project=${id}&q=${encodeURIComponent(q)}${reasoning}`);
+    const research = options?.deepResearch ? "&research=1" : "";
+    router.push(`/chat?project=${id}&q=${encodeURIComponent(q)}${reasoning}${research}`);
   };
 
   const uploadFile = async (file: File) => {
@@ -508,7 +509,7 @@ export default function ProjectDetailPage() {
                 conversationId={null}
                 model={selectedModel as any}
                 onModelChange={(m) => setSelectedModel(m)}
-                onSend={(text) => handleSend(text)}
+                onSend={(text, _attachments, options) => handleSend(text, options)}
                 isBusy={false}
                 status="idle"
                 onStop={() => {}}

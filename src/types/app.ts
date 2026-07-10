@@ -22,6 +22,9 @@ export interface ClientSettings {
   memoryEnabled: boolean;
   voiceId: string | null;
   favoriteModels: string[];
+  /** Lifecycle email opt-ins — no-ops until email delivery is configured. */
+  emailBudgetAlerts: boolean;
+  emailWeeklyDigest: boolean;
 }
 
 /** One rolling usage window (5-hour session or weekly) for the settings gauge. */
@@ -62,6 +65,10 @@ export interface AppBootstrap {
     voiceServer: boolean;
     storage: boolean;
     webSearch: boolean;
+    /** Deep research is configured (TAVILY_API_KEY present) — gates the composer toggle. */
+    deepResearch: boolean;
+    /** Email delivery is configured (RESEND_API_KEY present). */
+    email: boolean;
     providers: Provider[];
     isOwner: boolean;
   };

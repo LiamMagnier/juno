@@ -5,8 +5,10 @@ import { listConversations } from "@/lib/queries";
 import { getQuota } from "@/lib/usage";
 import { checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
+import { isEmailEnabled } from "@/lib/email";
 import { configuredProviders } from "@/lib/providers";
 import { providerSupportsWebSearch } from "@/lib/models";
+import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
@@ -45,6 +47,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     memoryEnabled: settings?.memoryEnabled ?? true,
     voiceId: settings?.voiceId ?? null,
     favoriteModels: settings?.favoriteModels ?? [],
+    emailBudgetAlerts: settings?.emailBudgetAlerts ?? true,
+    emailWeeklyDigest: settings?.emailWeeklyDigest ?? false,
   };
 
   return {
@@ -71,6 +75,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
       voiceServer: isServerSttConfigured() || isServerTtsConfigured(),
       storage: isStorageAvailable(),
       webSearch: configuredProviders().some(providerSupportsWebSearch),
+      deepResearch: isWebSearchConfigured(),
+      email: isEmailEnabled(),
       providers: configuredProviders(),
       isOwner: isOwnerEmail(user.email),
     },

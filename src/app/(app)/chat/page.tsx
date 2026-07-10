@@ -3,9 +3,9 @@ import { ChatView } from "@/components/chat/chat-view";
 export default async function NewChatPage({
   searchParams,
 }: {
-  searchParams: Promise<{ project?: string; q?: string }>;
+  searchParams: Promise<{ project?: string; q?: string; research?: string }>;
 }) {
-  const { project, q } = await searchParams;
+  const { project, q, research } = await searchParams;
   return (
     <ChatView
       conversationId={null}
@@ -14,6 +14,7 @@ export default async function NewChatPage({
       initialModel=""
       projectId={project}
       initialPrompt={q}
+      initialPromptResearch={research === "1"}
     />
   );
 }
