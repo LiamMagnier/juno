@@ -12,7 +12,8 @@ import { auth } from "@/lib/auth";
 const serif = Newsreader({ subsets: ["latin"], variable: "--font-serif", display: "swap", style: ["normal", "italic"] });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono", display: "swap" });
 
-const APP_DESCRIPTION = "Juno — a thoughtful AI assistant for chat, code, and creativity.";
+const APP_DESCRIPTION =
+  "Every frontier AI model — Claude, GPT, Gemini and a dozen more labs — in one calm workspace, metered by what answers actually cost.";
 
 export const metadata: Metadata = {
   title: { default: "Juno", template: "%s · Juno" },
@@ -25,13 +26,14 @@ export const metadata: Metadata = {
     locale: "en_US",
     title: "Juno",
     description: APP_DESCRIPTION,
-    images: [{ url: "/juno-mark.png", width: 512, height: 512, alt: "Juno" }],
+    // Static 1200×630 card generated from the design tokens (see public/og.png).
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "Juno — every frontier AI model, one honest subscription" }],
   },
   twitter: {
-    card: "summary",
+    card: "summary_large_image",
     title: "Juno",
     description: APP_DESCRIPTION,
-    images: ["/juno-mark.png"],
+    images: ["/og.png"],
   },
 };
 
