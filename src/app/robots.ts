@@ -25,6 +25,10 @@ export default function robots(): MetadataRoute.Robots {
           "/artifacts",
           "/admin",
           "/upgrade",
+          // NOTE: /share is deliberately NOT robots-blocked — share pages carry
+          // per-page noindex,nofollow, and crawlers can only honor that if
+          // they're allowed to fetch the page (robots-blocked URLs can still
+          // surface in results as URL-only entries).
         ],
       },
     ],
