@@ -5,6 +5,7 @@ import type {
   ArtifactVersion,
   Conversation,
   Message,
+  MessageVersion,
 } from "@prisma/client";
 import { getViewUrl } from "@/lib/storage";
 import type {
@@ -74,7 +75,12 @@ export async function serializeAttachment(att: Attachment): Promise<ClientAttach
   };
 }
 
-export async function serializeMessage(msg: Message & { attachments: Attachment[] }): Promise<ClientMessage> {
+/** The lightweight `versions` relation slice serializeMessage understands (see the pager in message-item). */
+type MessageVersionMeta = Pick<MessageVersion, "id" | "model" | "createdAt">;
+
+export async function serializeMessage(
+  msg: Message & { attachments: Attachment[]; versions?: MessageVersionMeta[] }
+): Promise<ClientMessage> {
   // Estimated cost from the persisted token counts. Reload lacks the cache split,
   // so this is an upper-bound estimate; the live stream sends an exact value.
   const model = msg.model ? resolveModel(msg.model) : null;
@@ -96,6 +102,12 @@ export async function serializeMessage(msg: Message & { attachments: Attachment[
     promptTokens: msg.promptTokens,
     completionTokens: msg.completionTokens,
     costUsd,
+    conversationId: msg.conversationId,
+    // Prior contents preserved across regenerate/edit-and-resend (oldest first).
+    // Metadata only — the client pages content in via GET /api/messages/[id]/versions.
+    versions: msg.versions?.length
+      ? msg.versions.map((v) => ({ id: v.id, model: v.model, createdAt: v.createdAt.toISOString() }))
+      : undefined,
   };
 }
 

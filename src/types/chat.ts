@@ -36,6 +36,10 @@ export interface ClientMessage {
   model?: string | null;
   feedback?: FeedbackValue;
   createdAt: string;
+  /** Conversation this message belongs to — lets per-message actions (branch-from-here) work without extra prop plumbing. Absent on temp/private messages. */
+  conversationId?: string;
+  /** Prior contents preserved across regenerate / edit-and-resend, oldest first. The message itself is always the NEWEST version; these are read-only history for the "‹ 2/3 ›" pager. */
+  versions?: ClientMessageVersion[];
   attachments: ClientAttachment[];
   sources?: ClientSource[];
   activity?: ClientActivityEvent[];
@@ -55,6 +59,22 @@ export interface ClientSource {
   title: string;
   url: string;
   snippet: string;
+}
+
+/** Metadata for one preserved prior version of a message (regenerate / edit-and-resend history). */
+export interface ClientMessageVersion {
+  id: string;
+  model?: string | null;
+  createdAt: string;
+}
+
+/** Full version payload from GET /api/messages/[id]/versions — decrypted server-side, fetched lazily when the user pages back. */
+export interface ClientMessageVersionDetail extends ClientMessageVersion {
+  content: string;
+  reasoning?: string | null;
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  sources?: ClientSource[];
 }
 
 export type ActivityKind = "context" | "model" | "reasoning" | "search" | "visit" | "write" | "usage" | "done" | "warning" | "tool";
@@ -155,6 +175,8 @@ export interface ChatRequestBody {
   regenerate?: boolean;
   voiceMode?: boolean;
   webSearch?: boolean;
+  /** Deep research mode: plan → search → read → cited report (per-send flag). */
+  deepResearch?: boolean;
   reasoningEffort?: ReasoningEffort;
   generationId?: string;
 }
