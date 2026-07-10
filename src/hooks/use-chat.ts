@@ -15,6 +15,7 @@ import type {
   ClientArtifact,
   ClientAttachment,
   ClientMessage,
+  ClientMessageVersion,
   ClientQuota,
   GenerateEditPayload,
   GenerationStatus,
@@ -29,6 +30,9 @@ export type ChatMessage = ClientMessage & {
 };
 
 export type SendResult = { accepted: boolean; clarificationPending?: boolean };
+
+/** Per-send flags carried alongside the message (not sticky composer prefs). */
+export type SendOptions = { deepResearch?: boolean };
 
 export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
 
@@ -83,16 +87,19 @@ export function useChat(opts: UseChatOptions) {
   React.useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-  // Server message ids removed from local state (regenerate pops the stale
-  // assistant answer, but the server keeps that row until the new one lands) —
-  // drop recovery must treat them as already seen, never as the fresh answer.
-  const locallyRemovedIdsRef = React.useRef<Set<string>>(new Set());
+  // Server message ids removed from local state, mapped to the createdAt we
+  // last saw. Regenerate pops the stale assistant answer locally, but the
+  // server keeps that row and OVERWRITES it in place (bumping createdAt) once
+  // the new answer lands — so drop recovery must treat a removed id as already
+  // seen UNLESS its createdAt changed, which is exactly how a regenerate that
+  // survived a dropped stream is recognized.
+  const locallyRemovedRef = React.useRef<Map<string, string>>(new Map());
 
   // Reset when switching conversation.
   React.useEffect(() => {
     convoIdRef.current = opts.conversationId;
     generationSeqRef.current++; // cancel any in-flight drop recovery
-    locallyRemovedIdsRef.current = new Set();
+    locallyRemovedRef.current = new Map();
     setMessages(opts.initialMessages);
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
@@ -124,11 +131,12 @@ export function useChat(opts: UseChatOptions) {
     async (assistantTempId: string, userMessageId: string | null, seq: number) => {
       const convoId = convoIdRef.current;
       if (!convoId) return;
-      // The recovered answer is whichever ASSISTANT message we have never seen —
-      // matching by id (not timestamps) is immune to client/server clock skew.
-      // Locally-removed ids count as seen: on regenerate the stale answer still
-      // exists server-side until the new one replaces it.
-      const knownIds = new Set([...messagesRef.current.map((m) => m.id), ...locallyRemovedIdsRef.current]);
+      // The recovered answer is whichever ASSISTANT message we have never seen.
+      // Locally-removed ids count as seen while their createdAt is unchanged:
+      // on regenerate the stale answer still exists server-side, and only gets
+      // overwritten in place (createdAt bumped) once the new answer lands.
+      const knownIds = new Set(messagesRef.current.map((m) => m.id));
+      const removedAt = new Map(locallyRemovedRef.current);
       // Terminal stamps must write content too: an empty bubble renders its
       // content in the error box, so a content-less error shows an empty box.
       const stampTerminalError = (errorText: string) =>
@@ -168,13 +176,14 @@ export function useChat(opts: UseChatOptions) {
           const recovered = msgs.find(
             (m, i) =>
               m.role === "ASSISTANT" &&
-              !knownIds.has(m.id) &&
+              (removedAt.has(m.id) ? removedAt.get(m.id) !== m.createdAt : !knownIds.has(m.id)) &&
               (afterIdx < 0 || i > afterIdx) &&
               // Media generations persist with empty content + an attachment.
               (m.content || m.reasoning || (m.attachments?.length ?? 0) > 0)
           );
           if (!recovered) continue;
           if (generationSeqRef.current !== seq) return;
+          locallyRemovedRef.current.delete(recovered.id);
           let replaced = false;
           setMessages((prev) =>
             prev.map((m) => {
@@ -328,6 +337,9 @@ export function useChat(opts: UseChatOptions) {
             }
             case "done": {
               sawTerminal = true;
+              // A regenerated answer arrives under its original id (the server
+              // overwrites the row in place) — it is no longer "removed".
+              locallyRemovedRef.current.delete(chunk.message.id);
               if (stopFallbackRef.current != null) {
                 window.clearTimeout(stopFallbackRef.current);
                 stopFallbackRef.current = null;
@@ -451,6 +463,7 @@ export function useChat(opts: UseChatOptions) {
       text: string;
       attachments?: ClientAttachment[];
       preflightClarification?: PreflightClarificationContext;
+      deepResearch?: boolean;
     }): SendResult => {
       const trimmed = input.text.trim();
       const attachments = input.attachments ?? [];
@@ -517,6 +530,9 @@ export function useChat(opts: UseChatOptions) {
           voiceMode: opts.voiceMode,
           canvasEnabled: opts.privateMode ? false : opts.canvasEnabled,
           webSearch: opts.webSearch,
+          // Per-send, never sticky — and never in private mode (research
+          // persists sources/activity, which private chats don't do).
+          deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
           reasoningEffort: opts.reasoningEffort,
           connectors: opts.connectors,
           preflightClarification: input.preflightClarification,
@@ -546,7 +562,7 @@ export function useChat(opts: UseChatOptions) {
   );
 
   const send = React.useCallback(
-    async (text: string, attachments: ClientAttachment[] = []): Promise<SendResult> => {
+    async (text: string, attachments: ClientAttachment[] = [], options?: SendOptions): Promise<SendResult> => {
       if ((status !== "idle" && status !== "error") || pendingClarification) return { accepted: false };
       const trimmed = text.trim();
       if (!trimmed && attachments.length === 0) return { accepted: false };
@@ -554,6 +570,13 @@ export function useChat(opts: UseChatOptions) {
       const modality = resolveModel(opts.model)?.modality ?? "chat";
       if (modality !== "chat" || !trimmed) {
         return startGeneration({ text: trimmed, attachments });
+      }
+
+      // Deep research goes straight to generation: the researcher plans its own
+      // sub-questions server-side, so the preflight clarification round-trip
+      // would only add latency (and the flag wouldn't survive its detour).
+      if (options?.deepResearch && !opts.privateMode) {
+        return startGeneration({ text: trimmed, attachments, deepResearch: true });
       }
 
       setStatus("checking");
@@ -676,13 +699,16 @@ export function useChat(opts: UseChatOptions) {
     if (status !== "idle" && status !== "error") return;
     if (!convoIdRef.current) return;
     // Drop the trailing assistant message locally and add a fresh placeholder.
-    // Remember the dropped ids: the server keeps the stale row until the new
-    // answer succeeds, so drop recovery must not mistake it for a fresh answer.
+    // Remember the dropped ids (with the createdAt we saw): the server keeps
+    // the stale row — preserving its content as a MessageVersion and updating
+    // it in place — so drop recovery must not mistake the untouched row for a
+    // fresh answer, yet must recognize it once its createdAt is bumped.
     const assistantTempId = tempId();
     setMessages((prev) => {
       const copy = [...prev];
       while (copy.length && copy[copy.length - 1].role === "ASSISTANT") {
-        locallyRemovedIdsRef.current.add(copy[copy.length - 1].id);
+        const dropped = copy[copy.length - 1];
+        locallyRemovedRef.current.set(dropped.id, dropped.createdAt);
         copy.pop();
       }
       return [
@@ -717,12 +743,19 @@ export function useChat(opts: UseChatOptions) {
         toast.error(data.error ?? "Could not edit the message.");
         return;
       }
+      // The server snapshotted the pre-edit wording as a MessageVersion; append
+      // its metadata locally so the "‹ 2/3 ›" pager grows without a refetch.
+      const data = (await res.json().catch(() => ({}))) as { version?: ClientMessageVersion };
       // Truncate locally to the edited message, update its content.
       const assistantTempId = tempId();
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.id === messageId);
         if (idx === -1) return prev;
-        const kept = prev.slice(0, idx + 1).map((m) => (m.id === messageId ? { ...m, content: newContent } : m));
+        const kept = prev.slice(0, idx + 1).map((m) =>
+          m.id === messageId
+            ? { ...m, content: newContent, versions: data.version ? [...(m.versions ?? []), data.version] : m.versions }
+            : m
+        );
         return [
           ...kept,
           { id: assistantTempId, role: "ASSISTANT", content: "", createdAt: new Date().toISOString(), attachments: [], activity: [], streaming: true },
@@ -785,7 +818,7 @@ export function useChat(opts: UseChatOptions) {
   const reset = React.useCallback(() => {
     abortRef.current?.abort();
     generationSeqRef.current++; // cancel any in-flight drop recovery
-    locallyRemovedIdsRef.current = new Set();
+    locallyRemovedRef.current = new Map();
     if (stopFallbackRef.current != null) {
       window.clearTimeout(stopFallbackRef.current);
       stopFallbackRef.current = null;

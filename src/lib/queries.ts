@@ -41,7 +41,12 @@ export async function getConversationThread(
     prisma.message.findMany({
       where: { conversationId },
       orderBy: { createdAt: "asc" },
-      include: { attachments: true },
+      include: {
+        attachments: true,
+        // Version metadata only (the pager's "‹ 2/3 ›") — contents stay
+        // server-side until GET /api/messages/[id]/versions pages them in.
+        versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
+      },
     }),
     prisma.artifact.findMany({
       where: { conversationId },
