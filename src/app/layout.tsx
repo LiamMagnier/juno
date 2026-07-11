@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
+import "katex/dist/katex.min.css";
 import { Providers } from "@/components/providers";
 import { CookieConsent } from "@/components/app/cookie-consent";
 import { getInitialPreferences } from "@/lib/preferences";

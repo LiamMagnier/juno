@@ -3,7 +3,9 @@
 import * as React from "react";
 import ReactMarkdown, { type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
 import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
@@ -45,6 +47,39 @@ function trackFence(fence: Fence | null, line: string): Fence | null {
   // A backtick fence's info string can't contain backticks (e.g. inline ```code```).
   if (marker[0] === "`" && rest.includes("`")) return fence;
   return { char: marker[0], length: marker.length };
+}
+
+/**
+ * Normalize the `\(…\)` / `\[…\]` LaTeX delimiters many models emit into the
+ * `$…$` / `$$…$$` form remark-math understands — leaving fenced code blocks and
+ * inline code spans untouched so literal backslash-brackets in code survive.
+ */
+function normalizeMathDelimiters(markdown: string): string {
+  if (!markdown.includes("\\(") && !markdown.includes("\\[")) return markdown;
+  let fence: Fence | null = null;
+  return markdown
+    .split("\n")
+    .map((line) => {
+      const wasInFence = fence !== null;
+      fence = trackFence(fence, line);
+      // Leave fence markers and any line inside a fenced block verbatim.
+      if (wasInFence || fence !== null) return line;
+      // Transform only the segments outside inline code spans. In a JS replacement
+      // string `$$` is a literal `$`, so `$$$$` emits `$$` and `$$` emits `$`.
+      return line
+        .split(/(`[^`]*`)/g)
+        .map((seg) =>
+          seg.startsWith("`")
+            ? seg
+            : seg
+                .replace(/\\\[/g, "$$$$")
+                .replace(/\\\]/g, "$$$$")
+                .replace(/\\\(/g, "$$")
+                .replace(/\\\)/g, "$$"),
+        )
+        .join("");
+    })
+    .join("\n");
 }
 
 /**
@@ -92,6 +127,11 @@ function closeDangling(block: string): string {
   // Count `**` outside code spans so `a ** b` in inline code doesn't miscount.
   const inline = closed.replace(/(?<!\\)`[^`]*`/g, "");
   if ((inline.match(/\*\*/g) ?? []).length % 2 === 1) closed += "**";
+  // Close a dangling math delimiter (display `$$` before inline `$`) so KaTeX
+  // source doesn't flash raw while the expression is still streaming in.
+  const math = inline.replace(/\\\$/g, "");
+  if ((math.match(/\$\$/g) ?? []).length % 2 === 1) closed += "$$";
+  else if ((math.replace(/\$\$/g, "").match(/\$/g) ?? []).length % 2 === 1) closed += "$";
   return closed;
 }
 
@@ -153,8 +193,13 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
   );
 }
 
-const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm];
-const REHYPE_PLUGINS: Options["rehypePlugins"] = [[rehypeHighlight, { detect: true, ignoreMissing: true }]];
+const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm, remarkMath];
+const REHYPE_PLUGINS: Options["rehypePlugins"] = [
+  [rehypeHighlight, { detect: true, ignoreMissing: true }],
+  // `throwOnError: false` keeps a malformed/incomplete expression (common mid-stream)
+  // as red source text instead of crashing the whole render.
+  [rehypeKatex, { throwOnError: false, output: "htmlAndMathml" }],
+];
 
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
 const MarkdownBlock = React.memo(function MarkdownBlock({ content, streaming }: { content: string; streaming?: boolean }) {
@@ -177,7 +222,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({ content, streaming }: 
 });
 
 export const Markdown = React.memo(function Markdown({ content, className, streaming }: { content: string; className?: string; streaming?: boolean }) {
-  const blocks = React.useMemo(() => splitIntoBlocks(content), [content]);
+  const blocks = React.useMemo(() => splitIntoBlocks(normalizeMathDelimiters(content)), [content]);
   return (
     <div className={cn("prose-juno", className)}>
       {blocks.map((block, i) => (
