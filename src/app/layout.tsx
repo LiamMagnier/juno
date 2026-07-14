@@ -6,6 +6,8 @@ import { Providers } from "@/components/providers";
 import { CookieConsent } from "@/components/app/cookie-consent";
 import { getInitialPreferences } from "@/lib/preferences";
 import { auth } from "@/lib/auth";
+import { directionOf } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
 
 // Newsreader: an editorial serif used as the overall UI typeface (variable font
 // with optical sizing, so it reads cleanly from 11px labels to display headings).
@@ -48,17 +50,18 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const [{ accent, theme }, session] = await Promise.all([getInitialPreferences(), auth()]);
+  const [{ accent, theme }, session, locale] = await Promise.all([getInitialPreferences(), auth(), getRequestLocale()]);
 
   return (
     <html
-      lang="en"
+      lang={locale}
+      dir={directionOf(locale)}
       data-accent={accent}
       suppressHydrationWarning
       className={`${serif.variable} ${mono.variable}`}
     >
       <body className="min-h-dvh antialiased">
-        <Providers defaultTheme={theme} session={session}>
+        <Providers defaultTheme={theme} session={session} locale={locale}>
           {children}
           <CookieConsent />
         </Providers>

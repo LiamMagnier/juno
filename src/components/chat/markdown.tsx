@@ -224,7 +224,7 @@ const MarkdownBlock = React.memo(function MarkdownBlock({ content, streaming }: 
 export const Markdown = React.memo(function Markdown({ content, className, streaming }: { content: string; className?: string; streaming?: boolean }) {
   const blocks = React.useMemo(() => splitIntoBlocks(normalizeMathDelimiters(content)), [content]);
   return (
-    <div className={cn("prose-juno", className)}>
+    <div className={cn("prose-juno", className)} data-no-auto-translate>
       {blocks.map((block, i) => (
         <MarkdownBlock
           key={i}

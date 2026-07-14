@@ -125,8 +125,15 @@ export const authConfig: NextAuthConfig = {
     : undefined,
   providers,
   callbacks: {
-    jwt({ token, user }) {
-      if (user?.id) token.uid = user.id;
+    async jwt({ token, user }) {
+      if (user?.id) {
+        token.uid = user.id;
+        const account = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { sessionVersion: true },
+        });
+        token.sessionVersion = account?.sessionVersion ?? 0;
+      }
       return token;
     },
     async session({ session, token }) {
@@ -138,9 +145,19 @@ export const authConfig: NextAuthConfig = {
         try {
           const u = await prisma.user.findUnique({
             where: { id: token.uid as string },
-            select: { image: true, name: true },
+            select: { image: true, name: true, sessionVersion: true },
           });
           if (u) {
+            const issuedVersion = typeof token.sessionVersion === "number" ? token.sessionVersion : 0;
+            if (u.sessionVersion !== issuedVersion) {
+              // Returning an identity-free session makes server guards treat
+              // this old JWT as signed out; the next sign-in replaces it.
+              session.user.id = "";
+              session.user.email = "";
+              session.user.name = null;
+              session.user.image = null;
+              return session;
+            }
             session.user.image = u.image ?? null;
             if (u.name) session.user.name = u.name;
           }

@@ -6,15 +6,18 @@ import { SessionProvider } from "next-auth/react";
 import { ThemeProvider } from "next-themes";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { AutoTranslate } from "@/components/i18n/auto-translate";
 
 export function Providers({
   children,
   defaultTheme = "system",
   session = null,
+  locale = "en",
 }: {
   children: React.ReactNode;
   defaultTheme?: string;
   session?: Session | null;
+  locale?: string;
 }) {
   return (
     // Hydrate with the server-resolved session so the client doesn't fetch
@@ -24,6 +27,7 @@ export function Providers({
       <ThemeProvider attribute="class" defaultTheme={defaultTheme} enableSystem disableTransitionOnChange>
         <TooltipProvider delayDuration={200}>
           {children}
+          <AutoTranslate locale={locale} />
           <Toaster position="top-center" richColors closeButton />
         </TooltipProvider>
       </ThemeProvider>

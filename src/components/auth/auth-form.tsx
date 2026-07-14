@@ -109,7 +109,14 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="password">Password</Label>
+            {mode === "signin" && (
+              <Link href="/forgot-password" className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline">
+                Forgot your password?
+              </Link>
+            )}
+          </div>
           <Input
             id="password"
             type="password"
