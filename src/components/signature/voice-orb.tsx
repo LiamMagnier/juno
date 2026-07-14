@@ -6,17 +6,21 @@ import { cn } from "@/lib/utils";
 export type OrbStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
 
 const FLOOR: Record<OrbStatus, number> = {
-  idle: 0.03,
-  listening: 0.12,
-  thinking: 0.2,
-  speaking: 0.3,
-  error: 0.02,
+  idle: 0,
+  listening: 0.05,
+  thinking: 0.16,
+  speaking: 0.1,
+  error: 0,
 };
 
+const BAR_PROFILE = [0.48, 0.78, 1, 0.72, 0.42] as const;
+const VOICE_FIELD =
+  "radial-gradient(circle at 30% 24%, hsl(190 88% 70%) 0%, hsl(222 78% 58%) 48%, hsl(263 62% 46%) 100%)";
+
 /**
- * A small liquid voice mark driven by one CSS variable. Audio analysis only
- * updates the wrapper transform/glow; the mesh itself is pure CSS and remains
- * cheap enough to sit beside a scrolling transcript.
+ * A restrained audio mark: one matte circle and a five-bar waveform. The bars
+ * follow the live amplitude without React re-renders, keeping the animation
+ * responsive while the transcript scrolls behind it.
  */
 export function VoiceOrb({
   status,
@@ -36,20 +40,33 @@ export function VoiceOrb({
   React.useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let frame = 0;
     let smooth = FLOOR[statusRef.current];
 
-    const render = () => {
+    const render = (time: number) => {
+      const currentStatus = statusRef.current;
       const audio = Math.max(0, Math.min(1, liveLevelRef.current?.current ?? 0));
-      const target = Math.max(FLOOR[statusRef.current], audio);
-      smooth += (target - smooth) * 0.18;
-      root.style.setProperty("--voice-breathe", String(0.965 + smooth * 0.1));
-      root.style.setProperty("--voice-halo", String(0.16 + smooth * 0.32));
-      if (!reducedMotion) frame = requestAnimationFrame(render);
+      const target = Math.max(FLOOR[currentStatus], audio);
+      smooth += (target - smooth) * 0.2;
+
+      BAR_PROFILE.forEach((profile, index) => {
+        const thinkingWave =
+          currentStatus === "thinking" && !reducedMotion
+            ? (Math.sin(time / 190 + index * 0.9) + 1) * 0.9
+            : 0;
+        const height = Math.min(15, 4 + profile * 4 + smooth * 7 * profile + thinkingWave);
+        root.style.setProperty(`--voice-bar-${index}`, `${height.toFixed(2)}px`);
+      });
+      root.style.setProperty("--voice-ring-scale", String(1 + smooth * 0.07));
+      root.style.setProperty("--voice-ring-opacity", String(0.2 + smooth * 0.32));
+      root.style.setProperty("--voice-orb-scale", String(0.985 + smooth * 0.035));
+
+      frame = requestAnimationFrame(render);
     };
 
-    render();
+    frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
   }, []);
 
@@ -58,31 +75,39 @@ export function VoiceOrb({
       ref={rootRef}
       aria-hidden="true"
       data-status={status}
-      className={cn(
-        "relative block aspect-square rounded-full isolate",
-        status === "error" ? "[--voice-a:var(--destructive)] [--voice-b:0_74%_48%]" : "[--voice-a:var(--primary)] [--voice-b:191_88%_54%]",
-        className
-      )}
+      className={cn("relative block aspect-square shrink-0 isolate", className)}
     >
       <span
-        className="absolute inset-[4%] -z-10 rounded-full bg-[hsl(var(--voice-a)/var(--voice-halo,0.2))] blur-[8px]"
-        style={{ transform: "scale(var(--voice-breathe,1))" }}
+        className={cn(
+          "absolute inset-px -z-10 rounded-full border transition-colors duration-base",
+          status === "error" ? "border-destructive" : "border-[hsl(222_78%_62%)]"
+        )}
+        style={{
+          opacity: "var(--voice-ring-opacity, .14)",
+          transform: "scale(var(--voice-ring-scale, 1))",
+        }}
       />
       <span
         className={cn(
-          "absolute inset-[8%] overflow-hidden rounded-full border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.48),inset_0_-7px_14px_rgba(0,0,0,0.12),0_4px_14px_hsl(var(--voice-a)/0.22)]",
-          status === "thinking" && "motion-safe:animate-[spin_3.4s_linear_infinite]"
+          "absolute inset-[2px] flex items-center justify-center rounded-full border border-white/15 text-white shadow-[0_2px_9px_hsl(226_65%_44%/0.24)] transition-[filter,opacity] duration-base",
+          status === "idle" && "opacity-70 saturate-[.35]",
+          status === "error" && "border-destructive bg-destructive text-destructive-foreground shadow-none"
         )}
         style={{
-          transform: "scale(var(--voice-breathe,1))",
-          background:
-            "radial-gradient(circle at 31% 24%, rgba(255,255,255,.96) 0 5%, rgba(255,255,255,.28) 17%, transparent 34%), radial-gradient(circle at 72% 72%, hsl(var(--voice-b) / .96) 0 10%, transparent 56%), radial-gradient(circle at 72% 22%, hsl(var(--voice-a) / .86), transparent 48%), linear-gradient(145deg, hsl(var(--voice-a) / .98), hsl(var(--voice-b) / .72))",
+          background: status === "error" ? undefined : VOICE_FIELD,
+          transform: "scale(var(--voice-orb-scale, 1))",
         }}
       >
-        <span className="absolute -left-[16%] top-[34%] h-[48%] w-[92%] rotate-[-18deg] rounded-full bg-white/20 blur-[5px] motion-safe:animate-[pulse_2.4s_ease-in-out_infinite]" />
-        <span className="absolute -bottom-[28%] right-[-12%] size-[76%] rounded-full bg-black/10 blur-[7px]" />
+        <span className="flex h-4 items-center gap-[1.5px]">
+          {BAR_PROFILE.map((_, index) => (
+            <span
+              key={index}
+              className="block w-[1.5px] rounded-full bg-current transition-[height] duration-fast ease-out"
+              style={{ height: `var(--voice-bar-${index}, 6px)` }}
+            />
+          ))}
+        </span>
       </span>
-      <span className="absolute inset-[20%] rounded-full border border-white/10" />
     </span>
   );
 }
