@@ -78,6 +78,17 @@ Copy `.env.example` to `.env` and fill these in. **Required** variables must be 
 2. Authorized redirect URI: `http://localhost:3000/api/auth/callback/google` (and your prod URL).
 3. Paste the client ID/secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
+### Email — required for password recovery
+
+The **Forgot your password?** flow sends a one-hour, single-use link through Resend. Without these variables the recovery page shows that email recovery is unavailable instead of pretending a message was sent.
+
+| Variable | Notes |
+|----------|-------|
+| `RESEND_API_KEY` | Create an API key in Resend. |
+| `EMAIL_FROM` | Sender on a domain you verified in Resend, for example `Juno <hello@your-domain.com>`. |
+
+Set `NEXT_PUBLIC_APP_URL` to the exact public origin so reset links point back to the deployed site. The token is kept in the URL fragment, is stored only as a SHA-256 digest, expires after one hour, and invalidates older signed-in sessions when used.
+
 ### Optional — Storage (file & image uploads), S3-compatible
 
 Works with AWS S3, Cloudflare R2, Supabase Storage (S3), or MinIO.
@@ -174,6 +185,12 @@ Plan gating (message quota, model access, upload size, voice) is enforced **serv
 - [ ] (If Stripe configured) `/upgrade` → Checkout with `4242…` card → webhook flips your plan; `/settings` → **Manage subscription** opens the portal.
 - [ ] (If voice configured/supported) the mic dictates into the composer and voice mode holds a spoken conversation.
 
+### Automatic interface language
+
+Juno resolves the browser/computer language from `Accept-Language` on the server and falls back to `navigator.languages` in stripped-header webviews. Standard ISO 639-1 web languages are accepted, including regional and script variants such as `pt-BR` and `zh-Hant`; right-to-left direction is set automatically.
+
+Static interface copy is extracted at build time with `npm run i18n:extract`. For non-English locales, only opaque catalog IDs are sent to `/api/i18n/translations`; the server translates the corresponding fixed UI copy with the configured Anthropic model. Conversations, account data, typed text, and other user content are never sent for interface translation. Results are cached in the browser, at the CDN, and in the warm server process. If translation is unavailable, the original English remains usable.
+
 ---
 
 ## Project structure
@@ -218,6 +235,8 @@ npm run dev        # start dev server
 npm run build      # prisma generate + next build
 npm run start      # run the production build
 npm run lint       # eslint
+npm run test:auth  # password-reset token + locale helper checks
+npm run i18n:extract # regenerate the static UI translation catalog
 npm run db:studio  # Prisma Studio
 npm run db:migrate # prisma migrate dev
 npm run db:deploy  # prisma migrate deploy (production)

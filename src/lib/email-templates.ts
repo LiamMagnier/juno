@@ -105,6 +105,34 @@ function para(html: string): string {
   return `<p style="margin:0 0 12px;font-family:${SANS};font-size:14px;line-height:1.6;color:${INK};">${html}</p>`;
 }
 
+/** One-hour, single-use credential recovery email. */
+export function passwordReset(resetUrl: string): EmailTemplate {
+  const subject = "Reset your Juno password";
+  const bodyHtml =
+    para("We received a request to reset the password for your Juno account.") +
+    para("This link expires in one hour and can only be used once. If you did not request it, you can safely ignore this email.");
+
+  return {
+    subject,
+    html: layout({
+      eyebrow: "Account recovery",
+      heading: subject,
+      bodyHtml,
+      cta: { label: "Choose a new password", href: resetUrl },
+    }),
+    text: textLayout(
+      [
+        subject,
+        "",
+        "We received a request to reset the password for your Juno account.",
+        "This link expires in one hour and can only be used once.",
+        "If you did not request it, you can safely ignore this email.",
+      ],
+      { label: "Choose a new password", href: resetUrl }
+    ),
+  };
+}
+
 /**
  * Budget threshold warning — sent once per billing period when spend crosses
  * ~80% of the plan budget.

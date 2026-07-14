@@ -382,6 +382,7 @@ export function MessageItem({
           view.content && (
             <div className="flex max-w-[85%] flex-col items-end">
               <div
+                data-no-auto-translate
                 onTransitionEnd={(e) => {
                   if (e.target === e.currentTarget && e.propertyName === "max-height" && expanded) setHeightCapped(false);
                 }}

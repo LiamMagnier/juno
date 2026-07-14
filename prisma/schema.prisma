@@ -21,6 +21,9 @@ model User {
   emailVerified  DateTime?
   image          String?
   hashedPassword String? // null for OAuth-only users
+  // Incremented after a password reset. JWTs carry the version they were
+  // issued with, so every older session becomes invalid immediately.
+  sessionVersion Int       @default(0)
 
   // Moderation: a set bannedAt means the account is suspended (sign-in blocked,
   // active sessions killed). strikes accumulates soft violations toward auto-ban.
