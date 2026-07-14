@@ -56,9 +56,10 @@ fi
 echo -e "${YELLOW}📦 Installing npm dependencies...${NC}"
 npm ci
 
-# Run database migrations / pushes
-echo -e "${YELLOW}🗄️ Preparing database schema...${NC}"
-npx prisma db push --skip-generate
+# Apply committed production migrations. Using `db push` here would change the
+# schema without recording the migration, making later deploys fail or drift.
+echo -e "${YELLOW}🗄️ Applying database migrations...${NC}"
+npx prisma migrate deploy
 
 # Generate prisma client
 echo -e "${YELLOW}💎 Generating Prisma client...${NC}"

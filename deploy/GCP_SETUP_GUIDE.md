@@ -80,7 +80,7 @@ From here, follow **`VM_SETUP_GUIDE.md`** exactly:
 - **Step 4** — Install Node.js 20, Git, PM2
 - **Step 6** — `git clone` your repo, create `.env` (copy every var from your Vercel project:
   `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `NEXTAUTH_URL`/`AUTH_URL`, all provider keys,
-  S3 keys), then `npm ci` → `npx prisma db push --skip-generate` → `npx prisma generate` →
+  S3 keys), then `npm ci` → `npx prisma migrate deploy` → `npx prisma generate` →
   `npm run build`. (The build is slow on e2-micro — a few minutes — but the swap keeps it alive.)
 - **Step 7** — nginx + Certbot for HTTPS. Copy `deploy/nginx.conf.template`, set your domain,
   run `certbot --nginx`. **You need a domain** pointing an **A record** at your static IP.

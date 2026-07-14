@@ -20,6 +20,9 @@ export interface RealtimeDialect {
   headers(): Record<string, string>;
   /** Sample rate the provider expects for input audio. */
   inputRate: number;
+  /** Assistant history uses output_text in OpenAI's GA schema, while Qwen's
+   * OpenAI-compatible beta dialect still expects the legacy text item. */
+  assistantHistoryContentType: "output_text" | "text";
   sessionUpdate(seed: VoiceSessionSeed): Record<string, unknown>;
   supportsVideo: boolean;
 }
@@ -68,7 +71,12 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
         item: {
           type: "message",
           role: turn.role,
-          content: [{ type: turn.role === "user" ? "input_text" : "text", text: turn.text }],
+          content: [
+            {
+              type: turn.role === "user" ? "input_text" : this.dialect.assistantHistoryContentType,
+              text: turn.text,
+            },
+          ],
         },
       });
     }
@@ -90,6 +98,19 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
 
   sendVideoFrame(jpeg: Buffer): void {
     if (!this.dialect.supportsVideo) return;
+    if (this.provider === "openai") {
+      // OpenAI Realtime accepts image input as a normal user conversation item.
+      // A following text/audio turn asks the model to respond to the image.
+      this.send({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_image", image_url: `data:image/jpeg;base64,${jpeg.toString("base64")}`, detail: "auto" }],
+        },
+      });
+      return;
+    }
     // Qwen's realtime dialect accepts appended video frames alongside audio.
     this.send({ type: "input_image_buffer.append", image: jpeg.toString("base64") });
   }

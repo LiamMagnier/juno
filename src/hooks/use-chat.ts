@@ -27,6 +27,8 @@ export type ChatMessage = ClientMessage & {
   streaming?: boolean;
   pending?: boolean;
   error?: boolean;
+  /** A live realtime-voice turn rendered in the normal transcript. */
+  voice?: boolean;
 };
 
 export type SendResult = { accepted: boolean; clarificationPending?: boolean };

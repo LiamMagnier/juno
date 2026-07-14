@@ -250,6 +250,7 @@ export function MessageItem({
   // expand transition settles so extremely long messages are never clipped.
   const [heightCapped, setHeightCapped] = React.useState(true);
   const isUser = message.role === "USER";
+  const isVoice = message.voice === true;
 
   // ---- Version carousel (regenerate / edit-and-resend history) ----
   // `message.versions` holds the PRESERVED older contents (metadata only,
@@ -414,7 +415,7 @@ export function MessageItem({
             </div>
           )
         )}
-        {!editing && !message.pending && (
+        {!editing && !message.pending && !isVoice && (
           <div className="mt-1 flex items-center">
             {totalVersions > 1 && (
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
@@ -469,7 +470,7 @@ export function MessageItem({
 
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
-      <div className="min-w-0 flex-1" aria-live="polite" aria-atomic="false">
+      <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
         <ActivityTimeline events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
         {view.sources && view.sources.length > 0 && <SourcesList sources={view.sources} />}
         {message.progress && !message.error ? (
@@ -576,7 +577,7 @@ export function MessageItem({
           </div>
         )}
 
-        {!message.streaming && !message.error && (modelName || hasUsage) && (
+        {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>
             <TooltipTrigger asChild>
               <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground/60">
@@ -593,7 +594,7 @@ export function MessageItem({
           </Tooltip>
         )}
 
-        {!message.streaming && !message.error && (
+        {!isVoice && !message.streaming && !message.error && (
           <div className="mt-1.5 flex items-center">
             {totalVersions > 1 && (
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />

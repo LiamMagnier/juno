@@ -106,6 +106,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Adds:"
   },
   {
+    "id": "019a8c133048711a",
+    "source": "· realtime"
+  },
+  {
+    "id": "01bed311e7d0c963",
+    "source": "All apps"
+  },
+  {
     "id": "01c803fa78e51762",
     "source": "Auto-play"
   },
@@ -128,6 +136,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "021a734de7748f42",
     "source": "(latest)"
+  },
+  {
+    "id": "022c14191cf3acea",
+    "source": "Voice conversation controls"
   },
   {
     "id": "0234e267787b67ef",
@@ -224,6 +236,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "04e37968cdefec06",
     "source": "Extracting text"
+  },
+  {
+    "id": "04f8996da763b7a9",
+    "source": "user"
   },
   {
     "id": "053946f7f1f2b597",
@@ -330,6 +346,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous-generation vision-language model."
   },
   {
+    "id": "077861ab858808e4",
+    "source": "The app directory could not be loaded. Check the server key and try again."
+  },
+  {
     "id": "07a2d579c3f0d325",
     "source": "Starred"
   },
@@ -432,6 +452,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0bc271e53ebad835",
     "source": "No chats yet — start one to see your mix."
+  },
+  {
+    "id": "0be12e034c0f9d1d",
+    "source": "Built into Juno"
   },
   {
     "id": "0c0feecd6934cf96",
@@ -578,10 +602,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": compteurs de messages et de budget, modèle utilisé, journaux techniques (horodatage, erreurs) nécessaires au fonctionnement, à la facturation et à la sécurité du Service."
   },
   {
-    "id": "1119cc0a307fc817",
-    "source": "Open the full canvas to continue"
-  },
-  {
     "id": "115f84349f569f60",
     "source": "This chat will be saved to the project."
   },
@@ -596,6 +616,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "11fa5fea8a1819e6",
     "source": "Deep research isn't available on this plan right now."
+  },
+  {
+    "id": "11ff6a5083a7150d",
+    "source": "Voice is still connecting. Try again in a moment."
   },
   {
     "id": "120db99bfb50fc33",
@@ -614,16 +638,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Terms of Use"
   },
   {
+    "id": "12a7bd86e0a43032",
+    "source": "connected"
+  },
+  {
     "id": "12e3ac0ddf410f08",
     "source": "plan_locked"
   },
   {
     "id": "13171917da828fe5",
     "source": "Ministral 3B"
-  },
-  {
-    "id": "13439b0858a24765",
-    "source": "Session limit reached"
   },
   {
     "id": "1356a57a7a4b2869",
@@ -678,6 +702,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen 3.6 Plus"
   },
   {
+    "id": "158d361f7fee7c27",
+    "source": "Voice unavailable"
+  },
+  {
     "id": "158d4adc5c8966dc",
     "source": "How should Juno behave? (role, tone, constraints…)"
   },
@@ -716,6 +744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "16ab9562b08c2d29",
     "source": "Append \""
+  },
+  {
+    "id": "16b355cd61ed2da2",
+    "source": "Invalid image."
   },
   {
     "id": "172eac21b886bc76",
@@ -822,6 +854,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t load your projects."
   },
   {
+    "id": "1bcbbc15e7aadc7c",
+    "source": "Microphone off"
+  },
+  {
     "id": "1bce0d1726b63294",
     "source": "Start chatting with Juno in seconds."
   },
@@ -876,6 +912,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1d446005add35afa",
     "source": "Select model"
+  },
+  {
+    "id": "1d4820ce6c1e1469",
+    "source": "Load more apps"
   },
   {
     "id": "1d730670d74964a6",
@@ -1050,10 +1090,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "1. Éditeur du service"
   },
   {
-    "id": "2346f214ad56b180",
-    "source": "Muted"
-  },
-  {
     "id": "2374113faeb59024",
     "source": "List the user's iCloud calendars by name."
   },
@@ -1088,6 +1124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "24f5bba781bbeeb7",
     "source": "transmis aux API des laboratoires d'IA correspondant aux modèles que vous sélectionnez"
+  },
+  {
+    "id": "2504690ef97d4c04",
+    "source": "Juno will no longer be able to use this app in chats. You can reconnect it later."
   },
   {
     "id": "25070cd932a7309a",
@@ -1384,6 +1424,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2e099fab5c2dc8e4",
     "source": "Memory updated"
+  },
+  {
+    "id": "2e27ba9fbf063b4a",
+    "source": "Upload images"
   },
   {
     "id": "2e3ac056d4901875",
@@ -1818,6 +1862,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Files and images you send in chat collect here."
   },
   {
+    "id": "3ab9436fa5b9e7d6",
+    "source": "Add an image from library"
+  },
+  {
     "id": "3ac0e5e96b18df7d",
     "source": "Code mode & native apps"
   },
@@ -1836,6 +1884,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3b1f417912812699",
     "source": "Vos données sont traitées par l'éditeur et, pour son compte, par des sous-traitants :"
+  },
+  {
+    "id": "3b2b0474602600a2",
+    "source": "Invalid voice transcript"
   },
   {
     "id": "3b7ea51793e9d906",
@@ -2154,6 +2206,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Text-to-speech failed."
   },
   {
+    "id": "45073faf9711c351",
+    "source": "Voice mode accepts up to 4 images in one turn."
+  },
+  {
     "id": "4521eba120ffc685",
     "source": "Your artifacts"
   },
@@ -2194,8 +2250,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Enter it again"
   },
   {
+    "id": "46aa78b634d8979f",
+    "source": "Too many connection changes. Try again later."
+  },
+  {
     "id": "4709d2374813f908",
     "source": "Efficient open-weight MoE (30B total / 3B active), superseded in hosted Model Studio."
+  },
+  {
+    "id": "4714afd499869d29",
+    "source": "Search Gmail, Slack, Linear…"
   },
   {
     "id": "4720ad5a054dc22d",
@@ -2216,6 +2280,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "47556a676668bfe2",
     "source": "Conformément au RGPD, vous disposez des droits suivants :"
+  },
+  {
+    "id": "475c798c02e76b83",
+    "source": "No apps are available right now."
   },
   {
     "id": "475ff0af83d713d2",
@@ -2286,6 +2354,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search"
   },
   {
+    "id": "49c4605816cfbf30",
+    "source": "Listening"
+  },
+  {
     "id": "49f7feb1dae129fe",
     "source": "Faster, cheaper Seedance 2.0 tier."
   },
@@ -2346,6 +2418,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "revoked"
   },
   {
+    "id": "4c0cf76dd350b84d",
+    "source": "Please look at the image context I just shared and respond naturally."
+  },
+  {
     "id": "4c15583ff6e2f485",
     "source": "GPT-5.6 Sol"
   },
@@ -2388,6 +2464,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4da37bcef49bf8a9",
     "source": "Search a mailbox by text, sender, or date."
+  },
+  {
+    "id": "4dca8fba90eff714",
+    "source": "Use your judgment"
   },
   {
     "id": "4dda9489c142ee68",
@@ -2436,6 +2516,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "502396898f8e8c4f",
     "source": "Previous OpenAI image generation and editing model."
+  },
+  {
+    "id": "504bae9c67587d1d",
+    "source": "Voice mode accepts images from your library only."
   },
   {
     "id": "50a4122943273ad2",
@@ -2512,6 +2596,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "52a8737366b2b6bd",
     "source": "No conversations yet."
+  },
+  {
+    "id": "536862c6324d4d00",
+    "source": "Available to connect"
   },
   {
     "id": "53a3b5574a402c03",
@@ -2674,6 +2762,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Billing not configured."
   },
   {
+    "id": "5968668fb79bd6bf",
+    "source": "Connect the apps you use"
+  },
+  {
     "id": "5975cf1bba432391",
     "source": "preview"
   },
@@ -2710,16 +2802,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Manage"
   },
   {
+    "id": "5a271ba7ed246e2b",
+    "source": "Share screen"
+  },
+  {
     "id": "5a4918e0201c877c",
     "source": "Restoring…"
   },
   {
-    "id": "5a6c2c919425d25d",
-    "source": "earlier lines"
-  },
-  {
     "id": "5a72bb168cce8f98",
     "source": "text-sm text-muted-foreground"
+  },
+  {
+    "id": "5a8daacbacae769d",
+    "source": "Could not load the Composio catalog"
   },
   {
     "id": "5a9fa1a2e1946c80",
@@ -2778,10 +2874,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "fallback"
   },
   {
-    "id": "5c8bb948f2b4f68c",
-    "source": "Nothing to connect"
-  },
-  {
     "id": "5ce44dd77dae789f",
     "source": "Uploading…"
   },
@@ -2818,6 +2910,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No provider"
   },
   {
+    "id": "5dfb834c832e5810",
+    "source": "Search connected apps"
+  },
+  {
     "id": "5e1a0ebc939d884a",
     "source": "Trending"
   },
@@ -2842,6 +2938,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Severity"
   },
   {
+    "id": "5ea44c3961f16643",
+    "source": "lines"
+  },
+  {
     "id": "5ebb769533222780",
     "source": "Stop and edit"
   },
@@ -2856,6 +2956,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5f5c5baf8fbc063d",
     "source": "Request a feature"
+  },
+  {
+    "id": "5f7a6aa1d283381f",
+    "source": "The app directory is not active yet"
   },
   {
     "id": "5fec248d4c1ee6ec",
@@ -2956,6 +3060,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "62a2fed3d6e08c44",
     "source": "pending"
+  },
+  {
+    "id": "62d6c2330036f64b",
+    "source": "denied"
   },
   {
     "id": "62daa93abbe81f32",
@@ -3106,6 +3214,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "[Nom et prénom du directeur de la publication]"
   },
   {
+    "id": "6775884f6d777637",
+    "source": "Finishing connection…"
+  },
+  {
     "id": "6783024b30f9f495",
     "source": "Create one to keep a topic’s chats, instructions, and files together."
   },
@@ -3134,6 +3246,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "It may have been removed or merged."
   },
   {
+    "id": "68bff1849c0b1cc2",
+    "source": "Ready without sign-in"
+  },
+  {
     "id": "68ffd9951dde4dc7",
     "source": "Fastest, cheapest image generation for rapid ideation."
   },
@@ -3144,6 +3260,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "690dbe9dc0993c42",
     "source": "Recent"
+  },
+  {
+    "id": "69156e76ff4dc23c",
+    "source": "No connected apps yet."
   },
   {
     "id": "69264590114c60f0",
@@ -3222,6 +3342,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Full plan details"
   },
   {
+    "id": "6b2b0456e836503a",
+    "source": "Dedicated connections with their own Juno setup and permission flow."
+  },
+  {
     "id": "6b31438021374365",
     "source": "Clarification card was not found."
   },
@@ -3244,6 +3368,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6ba2ede6c6019b64",
     "source": "No matching files."
+  },
+  {
+    "id": "6bd8d9ee79d486f9",
+    "source": "rate_limited"
   },
   {
     "id": "6c46b7d305a7a3e0",
@@ -3390,6 +3518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous-generation Sonnet, superseded by Sonnet 5."
   },
   {
+    "id": "6f2a13583fbb80d0",
+    "source": "Voice model"
+  },
+  {
     "id": "6f38236b0918c7b0",
     "source": "Message cannot be empty."
   },
@@ -3450,6 +3582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "7. Usage acceptable"
   },
   {
+    "id": "70d1e426eabff0a3",
+    "source": "Wait for the current voice turn to finish sending."
+  },
+  {
     "id": "711ecd084c41097d",
     "source": "Range start, ISO 8601. Defaults to now."
   },
@@ -3478,6 +3614,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not delete the task."
   },
   {
+    "id": "71ded17d44ad1683",
+    "source": "Saving voice transcript…"
+  },
+  {
     "id": "71fe31ccd37c3268",
     "source": "Back to sign in"
   },
@@ -3500,6 +3640,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "72c8fd6941967179",
     "source": "Ranked Candidates"
+  },
+  {
+    "id": "72d1ed20b733ecd6",
+    "source": "Too many catalog requests. Try again shortly."
   },
   {
     "id": "72d7cafaddff30ab",
@@ -3564,6 +3708,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "754db3f6dc2907e0",
     "source": "Make Juno yours"
+  },
+  {
+    "id": "7550821503a79223",
+    "source": "The voice transcript could not be saved."
   },
   {
     "id": "758e8416eb8a3588",
@@ -3640,10 +3788,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "777b64245d3e04ae",
     "source": "Calendar name; omit to search every calendar."
-  },
-  {
-    "id": "77cf34a9710cdf1c",
-    "source": "No connectors are registered on this server yet."
   },
   {
     "id": "77e96ecc10b9e0e8",
@@ -3786,8 +3930,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "générer ou diffuser des contenus manifestement illicites (haine, harcèlement, exploitation de mineurs, désinformation malveillante) ;"
   },
   {
+    "id": "7ce78f4f954945d9",
+    "source": "End voice mode before opening an artifact on this screen, so the microphone controls stay visible."
+  },
+  {
     "id": "7cf3b4901a045e87",
     "source": "Tune the look and pick a default — change anything later in settings."
+  },
+  {
+    "id": "7d483b027c9427f2",
+    "source": "Connected and ready"
   },
   {
     "id": "7d64a870e0f7614b",
@@ -3886,6 +4038,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "checking"
   },
   {
+    "id": "7f9de1d3a2e7f486",
+    "source": "Turn microphone on"
+  },
+  {
     "id": "7fa6f415fc0fcef7",
     "source": "importing"
   },
@@ -3954,6 +4110,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "An Apple ID and app-specific password are required."
   },
   {
+    "id": "811b8b955556caa0",
+    "source": "Voice options"
+  },
+  {
     "id": "8127d9e0e004357f",
     "source": "Invalid request body."
   },
@@ -3984,6 +4144,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8254c166d44d2967",
     "source": "Diagram renders when complete…"
+  },
+  {
+    "id": "8264cc5ca4383673",
+    "source": "Unknown app"
   },
   {
     "id": "8281b9f426fd6572",
@@ -4438,6 +4602,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Instructions"
   },
   {
+    "id": "934bcc6a0bc6a22e",
+    "source": "Every app connects separately. Juno only receives access to the apps you choose."
+  },
+  {
     "id": "9372c470eeadd5ec",
     "source": "model"
   },
@@ -4492,6 +4660,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "94a6bced95a8b033",
     "source": "File is too large (max 100 MB)."
+  },
+  {
+    "id": "94b7350b5a0079cc",
+    "source": "App connections have not been enabled on this Juno workspace yet."
   },
   {
     "id": "94d192b3a326be1f",
@@ -4552,10 +4724,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "961a6062ba1ba2d8",
     "source": "Stripe"
-  },
-  {
-    "id": "962e64b761961fe0",
-    "source": "Start again"
   },
   {
     "id": "96879611650f80a8",
@@ -4674,10 +4842,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Opus generation."
   },
   {
-    "id": "990b88a910903f47",
-    "source": "Connect GitHub or Figma"
-  },
-  {
     "id": "992276f72e41846e",
     "source": "It may have been deleted."
   },
@@ -4740,6 +4904,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b16cee727b6c137",
     "source": "chat only"
+  },
+  {
+    "id": "9b20aa6c11f0576b",
+    "source": "Choose apps for this chat"
   },
   {
     "id": "9b34e9a73e278708",
@@ -4934,6 +5102,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Not now"
   },
   {
+    "id": "a10a36fa109818be",
+    "source": "Search apps"
+  },
+  {
     "id": "a1352cf77ead1804",
     "source": "Ban lifted; strikes reset."
   },
@@ -4996,6 +5168,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a36a163114e380d9",
     "source": "You're generating a lot — give it a minute."
+  },
+  {
+    "id": "a39a7ffad4a3013f",
+    "source": "assistant"
   },
   {
     "id": "a3c3370cc7323c71",
@@ -5136,6 +5312,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7596aa3beb103b5",
     "source": "Invalid input."
+  },
+  {
+    "id": "a75e01c3f211a52a",
+    "source": "Search connected apps…"
   },
   {
     "id": "a76af460bf1b954f",
@@ -5454,6 +5634,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your memory changed since this edit was drafted. Delete it and ask again."
   },
   {
+    "id": "b114f6a0eb4271b1",
+    "source": "Voice mode accepts image attachments only."
+  },
+  {
     "id": "b134b14f1ccfff6f",
     "source": "Weekly digest"
   },
@@ -5468,6 +5652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b1ed18d341ca874e",
     "source": "Mailbox path the message lives in."
+  },
+  {
+    "id": "b23a6a8439c0dde5",
+    "source": "unknown"
   },
   {
     "id": "b2439bcb8dee14b6",
@@ -5614,6 +5802,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Private chat is on. Nothing is saved."
   },
   {
+    "id": "b7c837181f944687",
+    "source": "Restart voice"
+  },
+  {
     "id": "b7c9adfd0f1858d6",
     "source": "Search and read mail in your iCloud mailboxes."
   },
@@ -5702,6 +5894,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "application/json"
   },
   {
+    "id": "bae383e1796c6b64",
+    "source": "Turn microphone off"
+  },
+  {
     "id": "baeefbad50a33e7c",
     "source": "Accent color"
   },
@@ -5716,6 +5912,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bb1e4533587c84be",
     "source": "Create a new link"
+  },
+  {
+    "id": "bb299bbe76350c54",
+    "source": "Image unavailable."
   },
   {
     "id": "bb42f8cd525dba08",
@@ -5802,6 +6002,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Max x20"
   },
   {
+    "id": "bf6c07f870758424",
+    "source": "Connect an app"
+  },
+  {
     "id": "bf712d9d280a1d8f",
     "source": "/library"
   },
@@ -5844,6 +6048,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c1c224b03cd9bc7b",
     "source": "Admin"
+  },
+  {
+    "id": "c1d9ef078cdb6575",
+    "source": "Too many voice sessions. Try again later."
   },
   {
     "id": "c1f88e9d6c4145cf",
@@ -6010,6 +6218,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "). La création d'un compte ou la souscription d'un abonnement emporte acceptation pleine et entière des présentes."
   },
   {
+    "id": "c76cf6c5d7b65f26",
+    "source": "No connected apps match “"
+  },
+  {
     "id": "c78b3ec88d6a586e",
     "source": "App password · encrypted at rest"
   },
@@ -6110,12 +6322,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every conversation in that export already exists here."
   },
   {
+    "id": "ca4060581b0eef00",
+    "source": "App is not connected"
+  },
+  {
     "id": "ca4e75ac8b5aa2d7",
     "source": "Project not found."
   },
   {
     "id": "cab57e8b35f6d96e",
     "source": "Your plan doesn't include this model."
+  },
+  {
+    "id": "cadfaac7241e3651",
+    "source": "Manage connections"
   },
   {
     "id": "cae662172fd450bb",
@@ -6210,6 +6430,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Juno team"
   },
   {
+    "id": "cd7a7120bad25bb8",
+    "source": "Loading connected apps…"
+  },
+  {
     "id": "cda28699a510f244",
     "source": "You've reached your monthly usage limit. Upgrade your plan to keep using Juno Code."
   },
@@ -6224,6 +6448,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cdc16913833adbe1",
     "source": "Plug your own tools in over the Model Context Protocol — drives, docs, dashboards, whatever speaks it."
+  },
+  {
+    "id": "cde62cdf22a36bf9",
+    "source": "Couldn’t load more apps."
   },
   {
     "id": "ce1879b2985b7638",
@@ -6396,6 +6624,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d2a04523bfc9b926",
     "source": "Target id is required"
+  },
+  {
+    "id": "d2a272548a19fc43",
+    "source": "Could not save the voice transcript."
+  },
+  {
+    "id": "d2c823cf6649d9cf",
+    "source": "this app"
   },
   {
     "id": "d2d934ca8cc5642c",
@@ -6662,6 +6898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· id"
   },
   {
+    "id": "db91d1287668a746",
+    "source": "Juno is speaking"
+  },
+  {
     "id": "db9eb91a53030b6c",
     "source": "La présente politique décrit comment Juno (le « Service »), accessible à l'adresse"
   },
@@ -6782,6 +7022,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search the catalog and work with your playlists."
   },
   {
+    "id": "de97042844bf60d9",
+    "source": "Discard unsaved voice transcript"
+  },
+  {
     "id": "df0fbf9c008fb166",
     "source": "Add to project"
   },
@@ -6820,6 +7064,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e06171a1c467f2d4",
     "source": "Artifact"
+  },
+  {
+    "id": "e075e5e7f56d3081",
+    "source": "Direct connections"
   },
   {
     "id": "e083bd83e9d3e97e",
@@ -6880,6 +7128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e159b06187d369a0",
     "source": "Paused"
+  },
+  {
+    "id": "e16d2aece4b14e4f",
+    "source": "Image not found."
   },
   {
     "id": "e1c40b1ba86d6f31",
@@ -6984,6 +7236,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e4d839490c585ba2",
     "source": "Older Sonnet, 200K context."
+  },
+  {
+    "id": "e4e77efdc37460b2",
+    "source": "Voice mode can receive images, but not document attachments yet."
   },
   {
     "id": "e52ed96d1120a9d3",
@@ -7178,6 +7434,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open"
   },
   {
+    "id": "ed31db69d49d227e",
+    "source": "Voice transcript isn’t saved yet"
+  },
+  {
     "id": "edb2e96b17249502",
     "source": "Edit undone — it’s back to pending."
   },
@@ -7236,10 +7496,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eec62a79cce4e433",
     "source": "Deep research — a multi-step, cited report"
-  },
-  {
-    "id": "ef06ac386b3c0291",
-    "source": "Voice provider"
   },
   {
     "id": "ef3b56293fdf1b8f",
@@ -7330,6 +7586,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No project"
   },
   {
+    "id": "f350f64921e4012d",
+    "source": "Stop sharing screen"
+  },
+  {
     "id": "f376a336db370e13",
     "source": "Files and images you send in chat will collect here."
   },
@@ -7418,6 +7678,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Finished response"
   },
   {
+    "id": "f6a7425a3c28fa29",
+    "source": "App directory"
+  },
+  {
     "id": "f6c1472e9afbf083",
     "source": "Correct."
   },
@@ -7436,6 +7700,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f73cf2143127e953",
     "source": "Mark reviewed"
+  },
+  {
+    "id": "f73d0d08fb18d4e3",
+    "source": "bad_state"
   },
   {
     "id": "f7828fec9b959260",
@@ -7558,6 +7826,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Google · Gemini"
   },
   {
+    "id": "f9a8412d502250f2",
+    "source": "Voice transcript not saved yet. Retry or discard it below."
+  },
+  {
     "id": "f9becf6a7e7ffd3d",
     "source": "Describe a video to generate…"
   },
@@ -7602,10 +7874,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create project"
   },
   {
-    "id": "fa7aa7d5f7225576",
-    "source": "session-limit"
-  },
-  {
     "id": "fa8d84566676ee2e",
     "source": "Cover"
   },
@@ -7648,6 +7916,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fbdfd981851d1dc3",
     "source": "Sign in with Apple to let Juno work with your Apple Music library. Apple hands back a music user token — Juno stores it encrypted and never sees your password."
+  },
+  {
+    "id": "fbf2843fb8beb400",
+    "source": "Composio is not configured"
   },
   {
     "id": "fc05a011156b5890",
@@ -7696,6 +7968,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fddb7f9c69fed4ad",
     "source": "Export my data"
+  },
+  {
+    "id": "fde6973405067b65",
+    "source": "Quick question"
   },
   {
     "id": "fe02680f247961a1",

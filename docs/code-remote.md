@@ -55,4 +55,4 @@ Task shape: `{id, deviceId, workspacePath, workspaceName, title, prompt, status,
 
 ## Database
 
-Three Prisma models: `CodeDevice`, `CodeTask`, `CodeTaskEvent` (append-only, `@@unique([taskId, seq])`). The production tables appear on the next deploy — `deploy.sh` runs `prisma db push`. For local dev, run `npm run db:push` once against your dev database.
+Three Prisma models: `CodeDevice`, `CodeTask`, `CodeTaskEvent` (append-only, `@@unique([taskId, seq])`). The production tables appear on the next deploy — `deploy.sh` runs committed Prisma migrations. For local dev, run `npm run db:push` once against your dev database.

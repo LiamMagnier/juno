@@ -4,7 +4,9 @@ Juno lets a user link external tools. Once linked, the stored access token is
 handed to the model as a **remote MCP server**, so the model can call that
 provider's tools with the user's own permissions.
 
-Connectors come in three shapes:
+Direct connectors come in three shapes. In addition, Composio powers Juno's
+dynamic app directory: Gmail, Slack, Linear, and every other toolkit appear as
+individual connections. Composio itself is never shown as a connector.
 
 | Connector      | Kind          | Pre-registration          | Refreshes  | MCP endpoint                         |
 | -------------- | ------------- | ------------------------- | ---------- | ------------------------------------ |
@@ -29,6 +31,19 @@ Connectors come in three shapes:
   are served by **our own MCP route** (`/api/mcp/[connector]`). The model
   authenticates to that route with a short-lived HMAC-signed token
   (`src/lib/connector-token.ts`) — the raw credential never leaves the server.
+## Composio setup (recommended)
+
+1. Create a project at [Composio](https://dashboard.composio.dev) and copy its API key.
+2. Set `COMPOSIO_API_KEY` in Juno's environment and restart the backend.
+3. Open **Connections**. The app directory now lists Composio toolkits directly.
+4. Click **Connect** on Gmail, Slack, Linear, or any other app you want. Each app
+   gets its own consent flow, status, disconnect action, and chat toggle.
+
+Composio credentials never pass through Juno or the model. Juno stores an
+encrypted, app-scoped session reference under `composio:<toolkit-slug>` and
+proxies MCP requests server-side so Composio's API headers never reach the
+browser or model provider. The catalog is loaded from Composio rather than
+being hard-coded in the client.
 
 ## How it works
 
@@ -44,6 +59,12 @@ Connectors come in three shapes:
    for tokens, and stores them encrypted (AES-256-GCM) as a `Connection` row.
 5. `src/lib/mcp.ts` — at generation time, resolves linked connectors into live
    MCP endpoints (refreshing expiring tokens) and exposes their tools to the model.
+6. `src/app/api/connectors/composio/[slug]` — manages one Composio toolkit at a
+   time. A hidden directory session handles search/auth; app-scoped execution
+   sessions prevent one enabled app from exposing another.
+7. `src/app/api/mcp/composio/[slug]` — a short-lived bearer-authenticated MCP
+   proxy that injects Composio's server-only session header. This also makes
+   individual Composio apps usable by Claude's native remote-MCP path.
 
 ## Notion setup (MCP)
 
@@ -126,6 +147,9 @@ Tools: `search_catalog`, `list_playlists`, `recently_played`, `add_to_playlist`.
 ```txt
 # Required — OAuth callbacks (and Notion) resolve against this host
 NEXT_PUBLIC_APP_URL=https://<your-app>
+
+# Recommended — managed catalog and per-user app connections
+COMPOSIO_API_KEY=
 
 # Notion (MCP) — no id/secret needed. Only override the endpoint if you must.
 # NOTION_MCP_URL=https://mcp.notion.com/mcp

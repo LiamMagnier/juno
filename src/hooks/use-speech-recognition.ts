@@ -30,7 +30,7 @@ function getRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 }
 
 export function useSpeechRecognition(
-  opts: { onFinal?: (text: string) => void; onEnd?: () => void; lang?: string; continuous?: boolean } = {}
+  opts: { onFinal?: (text: string) => void; onEnd?: () => void; onError?: (error: string) => void; lang?: string; continuous?: boolean } = {}
 ) {
   const [listening, setListening] = React.useState(false);
   const [interim, setInterim] = React.useState("");
@@ -45,6 +45,8 @@ export function useSpeechRecognition(
   onFinalRef.current = opts.onFinal;
   const onEndRef = React.useRef(opts.onEnd);
   onEndRef.current = opts.onEnd;
+  const onErrorRef = React.useRef(opts.onError);
+  onErrorRef.current = opts.onError;
   const continuous = opts.continuous ?? true;
 
   const stop = React.useCallback(() => {
@@ -71,7 +73,10 @@ export function useSpeechRecognition(
       }
       setInterim(interimText);
     };
-    recognition.onerror = () => setListening(false);
+    recognition.onerror = (event) => {
+      setListening(false);
+      onErrorRef.current?.(event.error);
+    };
     recognition.onend = () => {
       setListening(false);
       setInterim("");

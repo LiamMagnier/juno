@@ -19,6 +19,9 @@ export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "mock";
 export interface ProviderCapabilities {
   /** Accepts JPEG video/screen frames (video.frame messages). */
   videoInput: boolean;
+  /** Accepts a continuing low-frame-rate screen stream without bloating the
+   * provider's conversational item history. */
+  screenInput?: boolean;
   /** True speech-to-speech (sends/receives audio natively). MiniMax is a
    *  composed ASR->LLM->TTS pipeline and is false. */
   trueS2S: boolean;
@@ -30,12 +33,24 @@ export interface ProviderCapabilities {
   maxSessionSec: number;
 }
 
+/** A finalized existing-chat turn supplied when voice mode starts. The relay
+ * validates and bounds this untrusted client history before giving it to a
+ * provider. */
+export interface VoiceHistoryEntry {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export const VOICE_HISTORY_MAX_TURNS = 20;
+export const VOICE_HISTORY_MAX_TURN_CHARS = 2_000;
+export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
+
 // ---- client -> relay ----
 export type ClientMessage =
-  | { type: "session.start"; provider: VoiceProviderId }
+  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
   | { type: "session.switch"; provider: VoiceProviderId }
   /** Final user utterance from on-device speech recognition (MiniMax mode). */
-  | { type: "input.text"; text: string }
+  | { type: "input.text"; text: string; turnId?: string; displayText?: string }
   /** Explicit barge-in: stop the model speaking now. */
   | { type: "control.interrupt" }
   /** One JPEG screen/camera frame, base64 (no data: prefix). Send <= 1 fps. */
@@ -45,7 +60,7 @@ export type ClientMessage =
 // ---- relay -> client ----
 export type ServerMessage =
   | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
-  | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean }
+  | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant"; phase: "start" | "end" }
   /** Model output was cancelled (user barge-in). Client must flush its
    *  audio playback queue immediately. */

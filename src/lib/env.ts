@@ -42,6 +42,11 @@ export const env = {
   // External tool connectors (OAuth apps you register once). A connector's
   // "Connect" button is shown only when its client id + secret are present.
   connectors: {
+    composio: {
+      // One managed integration layer for the full Composio toolkit catalog.
+      // Per-user OAuth credentials are stored and refreshed by Composio.
+      apiKey: process.env.COMPOSIO_API_KEY,
+    },
     github: {
       clientId: process.env.GITHUB_OAUTH_CLIENT_ID,
       clientSecret: process.env.GITHUB_OAUTH_CLIENT_SECRET,
@@ -120,6 +125,10 @@ export function isStripeConfigured(): boolean {
 
 export function isGoogleConfigured(): boolean {
   return Boolean(env.googleClientId && env.googleClientSecret);
+}
+
+export function isComposioConfigured(): boolean {
+  return Boolean(env.connectors.composio.apiKey);
 }
 
 export function isServerSttConfigured(): boolean {
