@@ -20,6 +20,7 @@ import {
   Mic,
   Plug,
   Plus,
+  Search,
   Square,
   SquareDashedMousePointer,
   SquarePen,
@@ -27,6 +28,7 @@ import {
   TextQuote,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -92,6 +94,11 @@ interface ComposerProps {
   onClearQuote?: () => void;
   placeholder?: string;
   privateMode?: boolean;
+  /** Realtime voice is live: keep this surface focused on text + images only. */
+  voiceActive?: boolean;
+  /** Temporarily block edits/submission without turning the primary action into
+   * the normal chat Stop button (voice image conversion/transcript saving). */
+  sendLocked?: boolean;
   hideDisclaimer?: boolean;
   // The project this chat is filed under. For a brand-new chat (no conversation
   // yet) this is the project the next message will be created in.
@@ -104,6 +111,9 @@ interface ComposerProps {
 type SlashCommand = { id: string; label: string; hint: string; run?: () => void };
 type SlashItem = ModelInfo | SlashCommand;
 type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; items: SlashCommand[] } | null;
+
+const MAX_CHAT_CONNECTORS = 5;
+const MAX_VOICE_IMAGES = 4;
 
 
 export function Composer({
@@ -132,6 +142,8 @@ export function Composer({
   onClearQuote,
   placeholder: customPlaceholder,
   privateMode = false,
+  voiceActive = false,
+  sendLocked = false,
   hideDisclaimer = false,
   selectedProjectId = null,
   onPickProject,
@@ -163,7 +175,7 @@ export function Composer({
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   // private chat; visible-but-disabled on plans without web tooling (FREE).
   const [research, setResearch] = React.useState(false);
-  const researchAvailable = features.deepResearch && !privateMode && modality === "chat";
+  const researchAvailable = features.deepResearch && !privateMode && !voiceActive && modality === "chat";
   const planAllowsResearch = PLANS[quota.plan].webSearch;
   const sendOptions = React.useMemo<SendOptions | undefined>(
     () => (research && researchAvailable && planAllowsResearch ? { deepResearch: true } : undefined),
@@ -190,12 +202,52 @@ export function Composer({
   const [projects, setProjects] = React.useState<{ id: string; name: string; conversationCount: number }[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(false);
   const [connectors, setConnectors] = React.useState<{ id: string; label: string; connected: boolean }[]>([]);
+  const [connectorsLoading, setConnectorsLoading] = React.useState(false);
+  const [connectorQuery, setConnectorQuery] = React.useState("");
+  const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
+  enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
   const sendAttachments = privateMode ? [] : readyAttachments;
   const uploading = privateMode ? false : isUploading;
+
+  const addComposerFiles = React.useCallback(
+    (files: FileList | File[]) => {
+      const list = Array.from(files);
+      const matching = voiceActive ? list.filter((file) => file.type.startsWith("image/")) : list;
+      if (voiceActive && matching.length !== list.length) toast.error("Voice mode accepts image attachments only.");
+      const remaining = voiceActive ? Math.max(0, MAX_VOICE_IMAGES - uploads.length) : matching.length;
+      const allowed = matching.slice(0, remaining);
+      if (voiceActive && matching.length > remaining) {
+        toast.error(`Voice mode accepts up to ${MAX_VOICE_IMAGES} images in one turn.`);
+      }
+      if (allowed.length > 0) addFiles(allowed);
+    },
+    [addFiles, uploads.length, voiceActive]
+  );
+  const addComposerAttachments = React.useCallback(
+    (attachments: ClientAttachment[]) => {
+      const matching = voiceActive ? attachments.filter((attachment) => attachment.kind === "IMAGE") : attachments;
+      if (voiceActive && matching.length !== attachments.length) toast.error("Voice mode accepts images from your library only.");
+      const remaining = voiceActive ? Math.max(0, MAX_VOICE_IMAGES - uploads.length) : matching.length;
+      const allowed = matching.slice(0, remaining);
+      if (voiceActive && matching.length > remaining) {
+        toast.error(`Voice mode accepts up to ${MAX_VOICE_IMAGES} images in one turn.`);
+      }
+      if (allowed.length > 0) addAttachments(allowed);
+    },
+    [addAttachments, uploads.length, voiceActive]
+  );
+
+  // Enforce the request contract even for an older conversation that already
+  // persisted too many IDs; ordinary user selection is guarded in the menu.
+  React.useEffect(() => {
+    if (!onToggleConnector) return;
+    const excess = Array.from(new Set(connectorsEnabled)).slice(MAX_CHAT_CONNECTORS);
+    excess.forEach((id) => onToggleConnector(id));
+  }, [connectorsEnabled, onToggleConnector]);
 
   // Chip exit: play pop-out (120ms) before the upload actually leaves state.
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
@@ -291,19 +343,19 @@ export function Composer({
   }, [pendingClarification, autoresize]);
 
   const clarificationOpen = !!pendingClarification;
-  const controlsLocked = isBusy || uploading || !!quotaReached;
+  const controlsLocked = isBusy || sendLocked || uploading || !!quotaReached;
   const canSend = (text.trim().length > 0 || sendAttachments.length > 0 || clarificationAnswers.length > 0) && !controlsLocked;
   // With nothing to send and voice available, the primary button becomes the
   // voice-conversation launcher; the moment there's sendable content it morphs
   // back into Send.
   const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
-  const longText = text.trim().length > 1500 || text.split("\n").length > 30;
+  const longText = !voiceActive && (text.trim().length > 1500 || text.split("\n").length > 30);
 
   const attachAsFile = () => {
     const content = text;
     if (!content.trim()) return;
     const file = new File([content], "prompt.txt", { type: "text/plain" });
-    addFiles([file]);
+    addComposerFiles([file]);
     setText("");
     requestAnimationFrame(autoresize);
   };
@@ -411,6 +463,7 @@ export function Composer({
   );
 
   const slash = React.useMemo((): SlashState => {
+    if (voiceActive) return null;
     if (!text.startsWith("/")) return null;
     const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
     if (modelMatch) {
@@ -427,7 +480,7 @@ export function Composer({
       return items.length ? { kind: "command", items } : null;
     }
     return null;
-  }, [text, models, commands]);
+  }, [text, models, commands, voiceActive]);
 
   const [slashIndex, setSlashIndex] = React.useState(0);
   const [slashDismissed, setSlashDismissed] = React.useState(false);
@@ -506,7 +559,7 @@ export function Composer({
     const files = Array.from(e.clipboardData.files);
     if (files.length && features.storage && !privateMode) {
       e.preventDefault();
-      addFiles(files);
+      addComposerFiles(files);
     }
   };
 
@@ -544,22 +597,68 @@ export function Composer({
   }, []);
 
   React.useEffect(() => {
-    if (plusOpen && !privateMode) loadProjects();
-  }, [plusOpen, privateMode, loadProjects]);
+    if (plusOpen && !privateMode && !voiceActive) loadProjects();
+  }, [plusOpen, privateMode, voiceActive, loadProjects]);
 
-  // Load the user's connected tools when the menu opens so they can be toggled.
+  const refreshConnectors = React.useCallback(
+    async (signal?: AbortSignal) => {
+      if (privateMode || !onToggleConnector) return;
+      setConnectorsLoading(true);
+      try {
+        const response = await fetch("/api/connectors", { signal });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          connectors?: { id: string; label: string; connected: boolean }[];
+        };
+        if (signal?.aborted) return;
+        const connected = (data.connectors ?? []).filter((connector) => connector.connected);
+        setConnectors(connected);
+
+        // Conversations remember their connector IDs. Reconcile that memory with
+        // the live account list so a disconnected app cannot silently consume one
+        // of the five request slots. Older conversations that somehow stored more
+        // than five are brought back to the supported limit as well.
+        const availableIds = new Set(connected.map((connector) => connector.id));
+        const enabledIds = Array.from(new Set(enabledConnectorIdsRef.current));
+        const removals = enabledIds.filter((id, index) => !availableIds.has(id) || index >= MAX_CHAT_CONNECTORS);
+        if (removals.length > 0) {
+          const removeSet = new Set(removals);
+          enabledConnectorIdsRef.current = enabledIds.filter((id) => !removeSet.has(id));
+          removals.forEach((id) => onToggleConnector(id));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          // Keep the last known list on transient failures; a failed refresh must
+          // never make an otherwise valid connector look disconnected.
+        }
+      } finally {
+        if (!signal?.aborted) setConnectorsLoading(false);
+      }
+    },
+    [onToggleConnector, privateMode]
+  );
+
+  // Reconcile on mount, when returning from the connections page, and again
+  // when the + menu opens in case an app changed in another tab.
   React.useEffect(() => {
-    if (plusOpen && !privateMode && onToggleConnector) {
-      fetch("/api/connectors")
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => setConnectors(((d?.connectors ?? []) as { id: string; label: string; connected: boolean }[]).filter((c) => c.connected)))
-        .catch(() => {});
-    }
-  }, [plusOpen, privateMode, onToggleConnector]);
+    if (privateMode || !onToggleConnector) return;
+    const controller = new AbortController();
+    void refreshConnectors(controller.signal);
+    const handleConnectionsChanged = () => void refreshConnectors(controller.signal);
+    window.addEventListener("juno:connections-changed", handleConnectionsChanged);
+    return () => {
+      controller.abort();
+      window.removeEventListener("juno:connections-changed", handleConnectionsChanged);
+    };
+  }, [onToggleConnector, privateMode, refreshConnectors]);
 
   React.useEffect(() => {
-    if (selectedProjectId && projects.length === 0 && !privateMode) loadProjects();
-  }, [selectedProjectId, projects.length, privateMode, loadProjects]);
+    if (plusOpen && !privateMode && onToggleConnector) void refreshConnectors();
+  }, [onToggleConnector, plusOpen, privateMode, refreshConnectors]);
+
+  React.useEffect(() => {
+    if (selectedProjectId && projects.length === 0 && !privateMode && !voiceActive) loadProjects();
+  }, [selectedProjectId, projects.length, privateMode, voiceActive, loadProjects]);
 
   const pickProject = (projectId: string | null) => {
     onPickProject?.(projectId);
@@ -623,6 +722,12 @@ export function Composer({
   // How many connected tools are currently switched on — shown as a hint on the
   // collapsed "Connectors" submenu row so the count is visible without opening it.
   const activeConnectorCount = connectors.filter((c) => connectorsEnabled.includes(c.id)).length;
+  const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
+  const visibleConnectors = connectorSearch
+    ? connectors.filter((connector) =>
+        `${connector.label} ${connector.id}`.toLocaleLowerCase().includes(connectorSearch)
+      )
+    : connectors;
 
   return (
     <div
@@ -681,7 +786,7 @@ export function Composer({
           onDrop={(e) => {
             e.preventDefault();
             setDragging(false);
-            if (features.storage && !privateMode && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+            if (features.storage && !privateMode && e.dataTransfer.files.length) addComposerFiles(e.dataTransfer.files);
           }}
           className={cn(
             "rounded-panel border bg-card/90 shadow-float backdrop-blur flex flex-col w-full origin-center relative transition-all duration-300 ease-out-soft",
@@ -871,12 +976,16 @@ export function Composer({
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
-          disabled={isBusy || status === "checking"}
+          disabled={isBusy || sendLocked || status === "checking"}
           rows={1}
           placeholder={placeholder}
           className={cn(
             "w-full resize-none bg-transparent px-3.5 py-3.5 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4",
-            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[86px] text-body-lg"
+            clarificationOpen
+              ? "max-h-[60px] min-h-[48px] text-sm"
+              : voiceActive
+                ? "max-h-[160px] min-h-[64px] text-base"
+                : "max-h-[200px] min-h-[86px] text-body-lg"
           )}
         />
 
@@ -902,7 +1011,7 @@ export function Composer({
                   onSelect={() => fileInputRef.current?.click()}
                 >
                   <FileUp className="text-muted-foreground" />
-                  <span className="flex-1">Upload files</span>
+                  <span className="flex-1">{voiceActive ? "Upload images" : "Upload files"}</span>
                   {(privateMode || !features.storage) && (
                     <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
                   )}
@@ -912,11 +1021,12 @@ export function Composer({
                   onSelect={() => setLibraryOpen(true)}
                 >
                   <Library className="text-muted-foreground" />
-                  <span className="flex-1">Add from library</span>
+                  <span className="flex-1">{voiceActive ? "Add an image from library" : "Add from library"}</span>
                   {(privateMode || !features.storage) && (
                     <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
                   )}
                 </DropdownMenuItem>
+                {!voiceActive && <>
                 <DropdownMenuItem disabled={privateMode} onSelect={() => startCanvas()}>
                   <SquarePen className="text-muted-foreground" />
                   <span className="flex-1">Create a canvas</span>
@@ -1015,7 +1125,7 @@ export function Composer({
                     <DropdownMenuSeparator />
                     {/* Connectors collapse into a hover submenu so the + menu stays
                         compact no matter how many tools are linked. */}
-                    <DropdownMenuSub>
+                    <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
                       <DropdownMenuSubTrigger>
                         <Plug className="text-muted-foreground" />
                         <span className="flex-1">Connectors</span>
@@ -1023,35 +1133,82 @@ export function Composer({
                           <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
                         )}
                       </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-56">
-                        {connectors.length === 0 ? (
-                          <DropdownMenuItem onSelect={() => router.push("/connections")}>
-                            <Plug className="text-muted-foreground" />
-                            <span className="flex-1">Connect GitHub or Figma</span>
-                            <span className="text-caption text-muted-foreground/60">set up</span>
-                          </DropdownMenuItem>
-                        ) : (
-                          connectors.map((c) => (
-                            <DropdownMenuItem
-                              key={c.id}
-                              onSelect={(e) => {
-                                e.preventDefault();
-                                onToggleConnector(c.id);
-                              }}
-                            >
+                      <DropdownMenuSubContent className="w-72 p-0">
+                        <div className="border-b border-border/60 p-2">
+                          <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
+                            <span>Choose apps for this chat</span>
+                            <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
+                          </div>
+                          <label className="relative block">
+                            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                              value={connectorQuery}
+                              onChange={(event) => setConnectorQuery(event.target.value)}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              placeholder="Search connected apps…"
+                              aria-label="Search connected apps"
+                              className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                            />
+                          </label>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                          {connectorsLoading && connectors.length === 0 ? (
+                            <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
+                              Loading connected apps…
+                            </div>
+                          ) : connectors.length === 0 ? (
+                            <DropdownMenuItem onSelect={() => router.push("/connections")}>
                               <Plug className="text-muted-foreground" />
-                              <span className="flex-1">{c.label}</span>
-                              <Switch checked={connectorsEnabled.includes(c.id)} className="pointer-events-none" />
+                              <span className="flex-1">Connect an app</span>
+                              <span className="text-caption text-muted-foreground/60">set up</span>
                             </DropdownMenuItem>
-                          ))
+                          ) : visibleConnectors.length === 0 ? (
+                            <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                              No connected apps match “{connectorQuery.trim()}”.
+                            </div>
+                          ) : (
+                            visibleConnectors.map((connector) => {
+                              const selected = connectorsEnabled.includes(connector.id);
+                              return (
+                                <DropdownMenuItem
+                                  key={connector.id}
+                                  onSelect={(event) => {
+                                    event.preventDefault();
+                                    if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
+                                      toast.error(
+                                        `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
+                                      );
+                                      return;
+                                    }
+                                    onToggleConnector(connector.id);
+                                  }}
+                                  className="min-h-10"
+                                >
+                                  <Plug className="text-muted-foreground" />
+                                  <span className="min-w-0 flex-1 truncate">{connector.label}</span>
+                                  <Switch checked={selected} className="pointer-events-none" />
+                                </DropdownMenuItem>
+                              );
+                            })
+                          )}
+                        </div>
+                        {connectors.length > 0 && (
+                          <div className="border-t border-border/60 p-1.5">
+                            <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
+                              <Plug />
+                              Manage connections
+                            </DropdownMenuItem>
+                          </div>
                         )}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                   </>
                 )}
+                </>}
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {!voiceActive && <>
             <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
 
             <div
@@ -1138,12 +1295,13 @@ export function Composer({
                 </Tooltip>
               </>
             )}
+            </>}
 
           </div>
 
           {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}
           <div className="ml-auto flex shrink-0 items-center gap-1">
-            {speechSupported && (
+            {speechSupported && !voiceActive && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -1163,7 +1321,7 @@ export function Composer({
               </Tooltip>
             )}
 
-            {speechSupported && (
+            {speechSupported && !voiceActive && (
               <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
             )}
 
@@ -1217,16 +1375,16 @@ export function Composer({
           ref={fileInputRef}
           type="file"
           multiple
-          accept={ACCEPT_ATTRIBUTE}
+          accept={voiceActive ? "image/*" : ACCEPT_ATTRIBUTE}
           className="hidden"
           onChange={(e) => {
-            if (!privateMode && e.target.files?.length) addFiles(e.target.files);
+            if (!privateMode && e.target.files?.length) addComposerFiles(e.target.files);
             e.target.value = "";
           }}
         />
 
         {!privateMode && features.storage && (
-          <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={addAttachments} existingCount={uploads.length} />
+          <LibraryPicker open={libraryOpen} onOpenChange={setLibraryOpen} onAttach={addComposerAttachments} existingCount={uploads.length} />
         )}
         </div>
       </div>

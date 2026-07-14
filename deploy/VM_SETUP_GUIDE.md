@@ -150,7 +150,7 @@ Next, build the project:
 npm ci
 
 # 4. Synchronize Database schema (Prisma)
-npx prisma db push --skip-generate
+npx prisma migrate deploy
 
 # 5. Generate client & Build Next.js
 npx prisma generate

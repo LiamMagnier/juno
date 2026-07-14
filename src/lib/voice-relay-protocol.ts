@@ -8,22 +8,33 @@ export type VoiceProviderId = "openai" | "gemini" | "qwen" | "minimax" | "mock";
 
 export interface ProviderCapabilities {
   videoInput: boolean;
+  screenInput?: boolean;
   trueS2S: boolean;
   needsClientTranscript: boolean;
   maxSessionSec: number;
 }
 
+/** Finalized existing-chat context sent once when voice mode starts. */
+export interface VoiceHistoryEntry {
+  role: "user" | "assistant";
+  text: string;
+}
+
+export const VOICE_HISTORY_MAX_TURNS = 20;
+export const VOICE_HISTORY_MAX_TURN_CHARS = 2_000;
+export const VOICE_HISTORY_MAX_TOTAL_CHARS = 12_000;
+
 export type VoiceClientMessage =
-  | { type: "session.start"; provider: VoiceProviderId }
+  | { type: "session.start"; provider: VoiceProviderId; history?: VoiceHistoryEntry[] }
   | { type: "session.switch"; provider: VoiceProviderId }
-  | { type: "input.text"; text: string }
+  | { type: "input.text"; text: string; turnId?: string; displayText?: string }
   | { type: "control.interrupt" }
   | { type: "video.frame"; jpegBase64: string }
   | { type: "ping" };
 
 export type VoiceServerMessage =
   | { type: "session.ready"; provider: VoiceProviderId; capabilities: ProviderCapabilities }
-  | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean }
+  | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant"; phase: "start" | "end" }
   | { type: "interrupted" }
   | { type: "usage"; provider: VoiceProviderId; audioInSec: number; audioOutSec: number; estCostUsd: number }

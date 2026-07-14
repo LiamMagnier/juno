@@ -3,18 +3,21 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft, Plug } from "lucide-react";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ServerCard, type ConnectorStatus, type ServerState } from "@/components/connections/server-card";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ToolLogPanel } from "@/components/connections/tool-log-panel";
+import { ComposioCatalog } from "@/components/connections/composio-catalog";
 import { MOCK_LOG, MOCK_TOOLS, type LogEntry } from "@/lib/mcp-dashboard-fixture";
 
 const ERRORS: Record<string, string> = {
   not_configured: "That connector isn’t set up on this server yet.",
   denied: "Connection was cancelled.",
   bad_state: "Connection couldn’t be verified. Please try again.",
+  connection_busy: "That app already has a connection change in progress. Please wait a moment and try again.",
+  rate_limited: "Too many connection attempts. Please wait a moment and try again.",
   exchange_failed: "The provider rejected the connection. Please try again.",
   use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
   invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
@@ -22,6 +25,25 @@ const ERRORS: Record<string, string> = {
 };
 
 const ENABLED_KEY = "juno:mcp:enabled";
+
+const CONNECTOR_BRAND_LABELS: Record<string, string> = {
+  github: "GitHub",
+  gmail: "Gmail",
+  googlecalendar: "Google Calendar",
+  google_calendar: "Google Calendar",
+  microsoftteams: "Microsoft Teams",
+  microsoft_teams: "Microsoft Teams",
+};
+
+function connectorResultLabel(value: string): string {
+  const normalized = value.trim().toLowerCase();
+  if (CONNECTOR_BRAND_LABELS[normalized]) return CONNECTOR_BRAND_LABELS[normalized];
+  return normalized
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
 
 function Stat({ value, label }: { value: number | null; label: string }) {
   return (
@@ -40,6 +62,7 @@ function Stat({ value, label }: { value: number | null; label: string }) {
 export default function ConnectionsPage() {
   const router = useRouter();
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
+  const [composioConfigured, setComposioConfigured] = React.useState(false);
   const [error, setError] = React.useState(false);
   const [disconnectTarget, setDisconnectTarget] = React.useState<ConnectorStatus | null>(null);
   const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
@@ -53,7 +76,9 @@ export default function ConnectionsPage() {
     try {
       const r = await fetch("/api/connectors");
       if (!r.ok) throw new Error();
-      setConnectors((await r.json()).connectors ?? []);
+      const data = (await r.json()) as { connectors?: ConnectorStatus[]; composioConfigured?: boolean };
+      setConnectors(data.connectors ?? []);
+      setComposioConfigured(data.composioConfigured === true);
     } catch {
       setError(true);
       setConnectors([]);
@@ -61,6 +86,10 @@ export default function ConnectionsPage() {
   }, []);
   React.useEffect(() => {
     load();
+  }, [load]);
+  React.useEffect(() => {
+    window.addEventListener("juno:connections-changed", load);
+    return () => window.removeEventListener("juno:connections-changed", load);
   }, [load]);
 
   // Surface OAuth round-trip results (from the callback redirect), then clean the URL.
@@ -70,7 +99,8 @@ export default function ConnectionsPage() {
     const err = params.get("error");
     let settle: ReturnType<typeof setTimeout> | undefined;
     if (connected) {
-      toast.success(`Connected ${connected[0].toUpperCase()}${connected.slice(1)}.`);
+      const label = connectorResultLabel(connected);
+      toast.success(`${label} is connected and ready to use.`);
       // Brief "Connecting" hold so the pill visibly settles into Active.
       setConnectingId(connected);
       settle = setTimeout(() => setConnectingId(null), 1400);
@@ -148,6 +178,7 @@ export default function ConnectionsPage() {
 
   const loading = connectors === null;
   const connectedList = connectors?.filter((c) => c.connected) ?? [];
+  const directConnectors = connectors?.filter((c) => c.kind !== "composio_app") ?? [];
   const serversActive = loading ? null : connectedList.length;
   const toolsAvailable = loading
     ? null
@@ -222,33 +253,38 @@ export default function ConnectionsPage() {
               </div>
             ))}
           </div>
-        ) : connectors!.length === 0 ? (
-          <div className="mt-6 rounded-lg border border-dashed border-border/60 bg-muted/10 p-10 text-center motion-safe:animate-rise-in">
-            <Plug className="mx-auto size-6 text-muted-foreground/50" />
-            <p className="mt-3 font-serif text-heading">Nothing to connect</p>
-            <p className="mt-1 text-sm text-muted-foreground">No connectors are registered on this server yet.</p>
-          </div>
         ) : (
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {connectors!.map((c, i) => (
-              <ServerCard
-                key={c.id}
-                connector={c}
-                state={stateFor(c)}
-                index={i}
-                enabled={enabled[c.id] ?? true}
-                onEnabledChange={(value) => setEnabledFor(c.id, value)}
-                onConnect={() => connect(c)}
-                onDisconnect={() => setDisconnectTarget(c)}
-              />
-            ))}
-          </div>
-        )}
+          <>
+            <ComposioCatalog configured={composioConfigured} />
 
-        {!error && !loading && (
-          <div className="mt-6">
-            <ToolLogPanel entries={logEntries} onAppend={appendLog} labels={labels} />
-          </div>
+            {directConnectors.length > 0 && (
+              <section className="mt-8">
+                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Direct connections</p>
+                <h2 className="mt-1 font-serif text-title">Built into Juno</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Dedicated connections with their own Juno setup and permission flow.
+                </p>
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  {directConnectors.map((c, i) => (
+                    <ServerCard
+                      key={c.id}
+                      connector={c}
+                      state={stateFor(c)}
+                      index={i}
+                      enabled={enabled[c.id] ?? true}
+                      onEnabledChange={(value) => setEnabledFor(c.id, value)}
+                      onConnect={() => connect(c)}
+                      onDisconnect={() => setDisconnectTarget(c)}
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <div className="mt-6">
+              <ToolLogPanel entries={logEntries} onAppend={appendLog} labels={labels} />
+            </div>
+          </>
         )}
 
         <p className="mt-6 text-caption text-muted-foreground/70">

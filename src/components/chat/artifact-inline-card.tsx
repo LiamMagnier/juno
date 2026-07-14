@@ -31,18 +31,11 @@ const ICONS: Record<ArtifactType, typeof Code2> = {
   MERMAID: GitBranch,
 };
 
-const PREVIEW_MAX_LINES = 160;
-
 function SourcePreview({ content, language, streaming, className }: { content: string; language: string; streaming?: boolean; className?: string }) {
-  const { lines, truncated, startLine } = React.useMemo(() => {
-    const split = content.replace(/\n$/, "").split("\n");
-    // While the model is writing, follow the TAIL so live typing never freezes
-    // at the cap; once done, preview the head with the open-canvas affordance.
-    if (streaming && split.length > PREVIEW_MAX_LINES) {
-      return { lines: split.slice(-PREVIEW_MAX_LINES), truncated: true, startLine: split.length - PREVIEW_MAX_LINES + 1 };
-    }
-    return { lines: split.slice(0, PREVIEW_MAX_LINES), truncated: split.length > PREVIEW_MAX_LINES, startLine: 1 };
-  }, [content, streaming]);
+  // Keep the complete source available in the inline preview. The previous
+  // 160-line window made valid artifacts appear truncated and made searching
+  // or copying code from the chat impossible.
+  const lines = React.useMemo(() => content.replace(/\n$/, "").split("\n"), [content]);
 
   // Pin the scroll to the write cursor while streaming (the window itself
   // slides, so holding a scroll position would show shifting lines anyway).
@@ -55,29 +48,21 @@ function SourcePreview({ content, language, streaming, className }: { content: s
 
   return (
     <div className={cn("relative h-full min-h-0 overflow-hidden bg-background/50", className)}>
-      <ol ref={listRef} className="h-full overflow-auto px-0 py-3 font-mono text-[11px] leading-5">
+      <ol ref={listRef} className="h-full overflow-auto py-3 font-mono text-[11px] leading-5">
         <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3 pb-2 text-muted-foreground">
           <span />
-          <span className="text-[11px] uppercase">{language || "source"}</span>
+          <span className="flex items-center gap-2 text-[11px] uppercase">
+            {language || "source"}
+            <span className="normal-case tracking-normal text-muted-foreground/65">{lines.length} lines</span>
+          </span>
         </li>
-        {startLine > 1 && (
-          <li className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3 pb-1 text-muted-foreground/60">
-            <span />
-            <span className="text-[11px]">… {startLine - 1} earlier lines</span>
-          </li>
-        )}
         {lines.map((line, index) => (
-          <li key={startLine + index} className="grid grid-cols-[2.75rem_minmax(0,1fr)] gap-2 px-3">
-            <span className="select-none text-right text-muted-foreground/45">{startLine + index}</span>
-            <code className="min-w-0 overflow-hidden text-ellipsis whitespace-pre text-foreground/80">{line || " "}</code>
+          <li key={index} className="flex min-w-max gap-2 px-3 pr-6 hover:bg-muted/35">
+            <span className="w-[2.75rem] shrink-0 select-none text-right text-muted-foreground/45">{index + 1}</span>
+            <code className="whitespace-pre text-foreground/80">{line || " "}</code>
           </li>
         ))}
       </ol>
-      {truncated && !streaming && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-16 items-end justify-center bg-gradient-to-t from-background/95 to-transparent pb-2">
-          <span className="rounded-[9px] border border-border/60 bg-card/90 px-2 py-1 text-[11px] text-muted-foreground shadow-soft">Open the full canvas to continue</span>
-        </div>
-      )}
     </div>
   );
 }
@@ -217,13 +202,13 @@ export function ArtifactInlineCard({
     <article
       aria-busy={streaming || undefined}
       className={cn(
-        "group/art my-4 w-full max-w-[760px] overflow-hidden rounded-[16px] border border-border/60 bg-card/35",
+        "group/art my-5 w-full max-w-[820px] overflow-hidden rounded-[22px] border border-border/60 bg-card/55 shadow-soft",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
     >
-      <header className="flex flex-col gap-2 border-b border-border/60 px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <header className="flex flex-col gap-3 border-b border-border/60 bg-card/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
         <span className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-primary/10 text-primary">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-primary/15 bg-primary/10 text-primary shadow-soft">
             <Icon className="size-4" />
           </span>
           <span className="min-w-0">
@@ -246,15 +231,15 @@ export function ArtifactInlineCard({
         </span>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 self-end sm:self-auto">
           <Tabs value={view} onValueChange={(value) => setView(value as ArtifactView)}>
-            <TabsList className="h-10 rounded-[14px] bg-muted/60 p-1">
+            <TabsList className="h-9 rounded-[12px] bg-muted/60 p-1">
               {inlinePreview && (
-                <TabsTrigger value="preview" className="h-8 gap-1.5 rounded-[14px] px-3 text-[13px]">
+                <TabsTrigger value="preview" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
                   <Eye className="size-4" aria-hidden />
                   Preview
                 </TabsTrigger>
               )}
               {hasConsole && (
-                <TabsTrigger value="console" className="h-8 gap-1.5 rounded-[14px] px-3 text-[13px]">
+                <TabsTrigger value="console" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
                   <Terminal className="size-4" aria-hidden />
                   Console
                   {consoleEntries.length > 0 && (
@@ -264,7 +249,7 @@ export function ArtifactInlineCard({
                   )}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="code" className="h-8 gap-1.5 rounded-[14px] px-3 text-[13px]">
+              <TabsTrigger value="code" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
                 <Code2 className="size-4" aria-hidden />
                 Code
               </TabsTrigger>
@@ -276,7 +261,7 @@ export function ArtifactInlineCard({
             disabled={!onOpen}
             aria-label="Open in canvas"
             className={cn(
-              "group/open inline-flex h-10 items-center gap-1.5 rounded-[14px] border border-border/70 bg-card px-3.5 text-[13px] font-medium text-foreground/85 shadow-soft",
+              "group/open inline-flex h-9 items-center gap-1.5 rounded-[12px] border border-border/70 bg-card px-3 text-xs font-medium text-foreground/85 shadow-soft",
               "transition-all duration-base ease-out-soft hover:-translate-y-px hover:border-primary/40 hover:text-foreground hover:shadow-[0_4px_14px_-6px_hsl(var(--primary)/0.5)]",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
               "disabled:pointer-events-none disabled:opacity-40"
@@ -318,7 +303,7 @@ export function ArtifactInlineCard({
             </div>
           </div>
         ) : showConsole ? (
-          <div className="h-[min(44vh,380px)] min-h-[240px] overflow-hidden">
+          <div className="h-[min(56vh,560px)] min-h-[280px] overflow-hidden">
             <ConsolePreview entries={consoleEntries} />
           </div>
         ) : (

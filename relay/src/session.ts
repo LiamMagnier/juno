@@ -1,7 +1,12 @@
 import type WebSocket from "ws";
 import { resamplePcm16 } from "./audio.js";
-import type { ClientMessage, ServerMessage, VoiceProviderId } from "./protocol.js";
-import { PLAYBACK_SAMPLE_RATE } from "./protocol.js";
+import type { ClientMessage, ServerMessage, VoiceHistoryEntry, VoiceProviderId } from "./protocol.js";
+import {
+  PLAYBACK_SAMPLE_RATE,
+  VOICE_HISTORY_MAX_TOTAL_CHARS,
+  VOICE_HISTORY_MAX_TURN_CHARS,
+  VOICE_HISTORY_MAX_TURNS,
+} from "./protocol.js";
 import { PROVIDERS } from "./providers/registry.js";
 import type { ProviderEvents, TranscriptEntry, VoiceProviderSession } from "./providers/types.js";
 
@@ -20,6 +25,7 @@ export class RelaySession {
   private sessionTimer: NodeJS.Timeout | null = null;
   private switching = false;
   private closed = false;
+  private historySeeded = false;
 
   constructor(
     private ws: WebSocket,
@@ -37,12 +43,28 @@ export class RelaySession {
     }
     switch (msg.type) {
       case "session.start":
+        // Existing chat context is accepted once, on the initial start only.
+        // Provider switches reuse the relay's finalized running transcript.
+        if (!this.historySeeded) {
+          this.transcript = sanitizeHistory(msg.history);
+          this.historySeeded = true;
+        }
+        await this.startProvider(msg.provider);
+        return;
       case "session.switch":
         await this.startProvider(msg.provider);
         return;
-      case "input.text":
-        this.provider?.sendText(String(msg.text ?? "").slice(0, 4000));
+      case "input.text": {
+        const text = String(msg.text ?? "").trim().slice(0, 4000);
+        if (!text) return;
+        const displayText = String(msg.displayText ?? text).trim().slice(0, 4000) || text;
+        // Typed turns are first-class voice turns: keep them in provider-switch
+        // history and echo them to the client transcript immediately.
+        this.transcript.push({ role: "user", text, final: true });
+        this.send({ type: "transcript", role: "user", text: displayText, final: true, turnId: msg.turnId });
+        this.provider?.sendText(text);
         return;
+      }
       case "control.interrupt":
         this.provider?.interrupt();
         return;
@@ -128,7 +150,14 @@ export class RelaySession {
         }
       },
       onTurn: (phase) => isCurrent() && this.send({ type: "turn", speaker: "assistant", phase }),
-      onInterrupted: () => isCurrent() && this.send({ type: "interrupted" }),
+      onInterrupted: () => {
+        if (!isCurrent()) return;
+        // Providers do not send a final transcript event for cancelled output.
+        // Preserve the audible/visible prefix for provider-switch context, then
+        // let the client seal its matching partial when it receives interrupted.
+        this.commitPartial("assistant");
+        this.send({ type: "interrupted" });
+      },
       onUsage: (u) => {
         if (!isCurrent()) return;
         this.usage.audioInSec += u.audioInSec ?? 0;
@@ -145,10 +174,14 @@ export class RelaySession {
 
   private flushPartials(): void {
     for (const role of ["user", "assistant"] as const) {
-      const text = this.partial[role].trim();
-      if (text) this.transcript.push({ role, text, final: true });
-      this.partial[role] = "";
+      this.commitPartial(role);
     }
+  }
+
+  private commitPartial(role: "user" | "assistant"): void {
+    const text = this.partial[role].trim();
+    this.partial[role] = "";
+    if (text) this.transcript.push({ role, text, final: true });
   }
 
   private pushUsage(): void {
@@ -177,4 +210,26 @@ export class RelaySession {
     await this.provider?.close().catch(() => {});
     this.provider = null;
   }
+}
+
+/** Keep the most recent valid turns within both per-turn and total bounds.
+ * Iterate newest-first so old context is discarded before the latest user
+ * request when the client sends more than the relay allows. */
+function sanitizeHistory(value: unknown): TranscriptEntry[] {
+  if (!Array.isArray(value)) return [];
+
+  const result: TranscriptEntry[] = [];
+  let remaining = VOICE_HISTORY_MAX_TOTAL_CHARS;
+  const candidates = value.slice(-VOICE_HISTORY_MAX_TURNS) as VoiceHistoryEntry[];
+
+  for (let i = candidates.length - 1; i >= 0 && remaining > 0; i--) {
+    const turn = candidates[i];
+    if (!turn || (turn.role !== "user" && turn.role !== "assistant") || typeof turn.text !== "string") continue;
+    const text = turn.text.trim().slice(0, Math.min(VOICE_HISTORY_MAX_TURN_CHARS, remaining));
+    if (!text) continue;
+    result.unshift({ role: turn.role, text, final: true });
+    remaining -= text.length;
+  }
+
+  return result;
 }

@@ -63,7 +63,7 @@ export interface ConnectorDef {
    *  Basic auth; GitHub accepts them in the form body. */
   authStyle: "body" | "basic";
   /** Registered OAuth app credentials plus the remote MCP endpoint to expose. */
-  cfg: { clientId?: string; clientSecret?: string; scope?: string; mcpUrl?: string };
+  cfg: { apiKey?: string; clientId?: string; clientSecret?: string; scope?: string; mcpUrl?: string };
   /** Best-effort account handle fetched right after linking (for display only). */
   fetchAccountLabel(accessToken: string): Promise<string | null>;
 }

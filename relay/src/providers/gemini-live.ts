@@ -20,6 +20,11 @@ export class GeminiLiveSession implements VoiceProviderSession {
   private closedByUs = false;
   private reconnecting = false;
   private assistantSpeaking = false;
+  /** Gemini Live has no explicit cancel frame while automatic VAD is enabled.
+   * After a manual interrupt, discard the old turn's remaining output until
+   * the server acknowledges interruption or completes that turn. */
+  private suppressAssistantOutput = false;
+  private userTranscriptPending = false;
   private setupResolve: (() => void) | null = null;
   private model = process.env.RELAY_GEMINI_MODEL || "gemini-3.1-flash-live-preview";
 
@@ -118,7 +123,9 @@ export class GeminiLiveSession implements VoiceProviderSession {
     // Gemini has no explicit cancel event; its VAD cancels on user speech.
     // For the manual mute-button case, drop our speaking state so the client
     // UI recovers; the client flushes its own playback queue.
-    if (this.assistantSpeaking) {
+    const hadActiveOutput = this.assistantSpeaking;
+    if (hadActiveOutput) {
+      this.suppressAssistantOutput = true;
       this.assistantSpeaking = false;
       this.events?.onTurn("end");
     }
@@ -173,17 +180,31 @@ export class GeminiLiveSession implements VoiceProviderSession {
     if (!sc) return;
 
     if (sc.interrupted) {
+      const alreadyReported = this.suppressAssistantOutput;
+      this.suppressAssistantOutput = false;
       if (this.assistantSpeaking) {
         this.assistantSpeaking = false;
         ev.onTurn("end");
       }
-      ev.onInterrupted();
+      if (!alreadyReported) ev.onInterrupted();
     }
-    if (sc.inputTranscription?.text) ev.onTranscript({ role: "user", text: sc.inputTranscription.text, final: false });
-    if (sc.outputTranscription?.text)
+    if (sc.inputTranscription?.text) {
+      this.userTranscriptPending = true;
+      ev.onTranscript({ role: "user", text: sc.inputTranscription.text, final: false });
+    }
+
+    // Gemini emits input transcription as rolling chunks with no dedicated
+    // completion event. Once the model starts answering, the user's turn is
+    // complete; commit the relay's accumulated user caption exactly once.
+    const suppressAssistantOutput = this.suppressAssistantOutput;
+    const modelResponseStarted =
+      Boolean(sc.outputTranscription?.text) || Boolean(sc.modelTurn?.parts?.some((part) => part.text || part.inlineData));
+    if (modelResponseStarted && !suppressAssistantOutput) this.finalizeUserTranscript();
+
+    if (sc.outputTranscription?.text && !suppressAssistantOutput)
       ev.onTranscript({ role: "assistant", text: sc.outputTranscription.text, final: false });
 
-    for (const part of sc.modelTurn?.parts ?? []) {
+    for (const part of suppressAssistantOutput ? [] : sc.modelTurn?.parts ?? []) {
       const inline = part.inlineData;
       if (inline?.data && inline.mimeType?.startsWith("audio/pcm")) {
         if (!this.assistantSpeaking) {
@@ -196,13 +217,25 @@ export class GeminiLiveSession implements VoiceProviderSession {
         ev.onUsage({ audioOutSec: pcm.length / 2 / rate });
       }
     }
-    if (sc.turnComplete && this.assistantSpeaking) {
-      this.assistantSpeaking = false;
-      ev.onTurn("end");
-      // Gemini transcription arrives as rolling partials; mark the turn's
-      // transcript final so clients can commit the caption line.
-      ev.onTranscript({ role: "assistant", text: "", final: true });
+    if (sc.turnComplete) {
+      // Fallback for textless/error responses where no model delta marked the
+      // boundary. The pending flag prevents a duplicate final event.
+      if (!suppressAssistantOutput) this.finalizeUserTranscript();
+      if (!suppressAssistantOutput && this.assistantSpeaking) {
+        this.assistantSpeaking = false;
+        ev.onTurn("end");
+        // Gemini transcription arrives as rolling partials; mark the turn's
+        // transcript final so clients can commit the caption line.
+        ev.onTranscript({ role: "assistant", text: "", final: true });
+      }
+      this.suppressAssistantOutput = false;
     }
+  }
+
+  private finalizeUserTranscript(): void {
+    if (!this.userTranscriptPending) return;
+    this.userTranscriptPending = false;
+    this.events?.onTranscript({ role: "user", text: "", final: true });
   }
 
   private async reconnect(): Promise<void> {

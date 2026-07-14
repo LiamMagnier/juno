@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { DEFAULT_TOKEN_TTL_MS, getConnector, isConnectorConfigured, refreshTokens, type ConnectorDef } from "@/lib/connectors";
 import { mintConnectorToken } from "@/lib/connector-token";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
+import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
+import { env, isComposioConfigured } from "@/lib/env";
 import type { Connection } from "@prisma/client";
 
 /*
@@ -18,7 +20,7 @@ export interface ActiveConnector {
   id: string;
   label: string;
   mcpUrl: string;
-  token: string;
+  headers: Record<string, string>;
 }
 
 // Refresh a few minutes before expiry so MCP tokens don't die mid-request.
@@ -72,13 +74,27 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
   const rows = await prisma.connection.findMany({ where: { userId, provider: { in: ids } } });
   const out: ActiveConnector[] = [];
   for (const row of rows) {
+    if (isComposioAppId(row.provider)) {
+      const slug = composioSlugFromId(row.provider);
+      if (!slug || row.scope !== "composio:active" || !isComposioConfigured()) continue;
+      out.push({
+        id: row.provider,
+        label: row.accountLabel ?? slug,
+        mcpUrl: `${env.appUrl.replace(/\/$/, "")}/api/mcp/composio/${encodeURIComponent(slug)}`,
+        headers: { Authorization: `Bearer ${mintConnectorToken(userId, row.provider)}` },
+      });
+      continue;
+    }
+
     const def = getConnector(row.provider);
-    if (!def || !isConnectorConfigured(def) || !def.cfg.mcpUrl) continue;
+    if (!def || !isConnectorConfigured(def)) continue;
+
+    if (!def.cfg.mcpUrl) continue;
 
     // Credentials connectors point at our own MCP route: hand out a short-lived
     // signed token instead of the stored credential (which never leaves the server).
     if (def.kind === "credentials") {
-      out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, token: mintConnectorToken(userId, def.id) });
+      out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${mintConnectorToken(userId, def.id)}` } });
       continue;
     }
 
@@ -95,19 +111,23 @@ export async function getActiveConnectors(userId: string, requestedIds?: string[
       }
     }
     if (!token) continue;
-    out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, token });
+    out.push({ id: def.id, label: def.label, mcpUrl: def.cfg.mcpUrl, headers: { Authorization: `Bearer ${token}` } });
   }
   return out;
 }
 
 /** Native Anthropic MCP connector entries (Claude connects to these itself). */
 export function anthropicMcpServers(active: ActiveConnector[]) {
-  return active.map((c) => ({
-    type: "url" as const,
-    url: c.mcpUrl,
-    name: c.id,
-    authorization_token: c.token,
-  }));
+  return active.flatMap((c) => {
+    const authorization = c.headers.Authorization ?? c.headers.authorization;
+    if (!authorization) return [];
+    return [{
+      type: "url" as const,
+      url: c.mcpUrl,
+      name: c.id.replace(/[^a-zA-Z0-9_-]/g, "_"),
+      authorization_token: authorization.replace(/^Bearer\s+/i, ""),
+    }];
+  });
 }
 
 export interface McpFunctionTool {
@@ -170,7 +190,7 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
     active.map(async (c) => {
       try {
         const transport = new StreamableHTTPClientTransport(new URL(c.mcpUrl), {
-          requestInit: { headers: { Authorization: `Bearer ${c.token}` } },
+          requestInit: { headers: c.headers },
         });
         const client = new Client({ name: "juno", version: "1.0.0" });
         await client.connect(transport);

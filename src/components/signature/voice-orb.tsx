@@ -5,106 +5,84 @@ import { cn } from "@/lib/utils";
 
 export type OrbStatus = "idle" | "listening" | "thinking" | "speaking" | "error";
 
-const AMP: Record<OrbStatus, number> = { idle: 0.18, listening: 0.6, thinking: 0.42, speaking: 1, error: 0.1 };
+const FLOOR: Record<OrbStatus, number> = {
+  idle: 0.03,
+  listening: 0.12,
+  thinking: 0.2,
+  speaking: 0.3,
+  error: 0.02,
+};
 
-/** A sphere of dots whose density/brightness pulse with the conversation state. */
+/**
+ * A small liquid voice mark driven by one CSS variable. Audio analysis only
+ * updates the wrapper transform/glow; the mesh itself is pure CSS and remains
+ * cheap enough to sit beside a scrolling transcript.
+ */
 export function VoiceOrb({
   status,
   levelRef,
   className,
 }: {
   status: OrbStatus;
-  /** Live mic level 0..1 — read inside the rAF loop while listening. */
   levelRef?: React.MutableRefObject<number>;
   className?: string;
 }) {
-  const ref = React.useRef<HTMLCanvasElement>(null);
+  const rootRef = React.useRef<HTMLSpanElement>(null);
   const statusRef = React.useRef(status);
+  const liveLevelRef = React.useRef(levelRef);
   statusRef.current = status;
-  // Ref-of-ref so the empty-dep effect below always sees the current prop.
-  const levelRefRef = React.useRef(levelRef);
-  levelRefRef.current = levelRef;
+  liveLevelRef.current = levelRef;
 
   React.useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const root = rootRef.current;
+    if (!root) return;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let frame = 0;
+    let smooth = FLOOR[statusRef.current];
 
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-    let size = 0;
-    const particles = Array.from({ length: 130 }, () => ({
-      ang: Math.random() * Math.PI * 2,
-      baseR: 0.56 + Math.random() * 0.44,
-      spd: (Math.random() - 0.5) * 0.0016,
-      phase: Math.random() * Math.PI * 2,
-      r: 0.8 + Math.random() * 1.4,
-    }));
-
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      size = rect.width;
-      canvas.width = Math.floor(size * dpr);
-      canvas.height = Math.floor(size * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const render = () => {
+      const audio = Math.max(0, Math.min(1, liveLevelRef.current?.current ?? 0));
+      const target = Math.max(FLOOR[statusRef.current], audio);
+      smooth += (target - smooth) * 0.18;
+      root.style.setProperty("--voice-breathe", String(0.965 + smooth * 0.1));
+      root.style.setProperty("--voice-halo", String(0.16 + smooth * 0.32));
+      if (!reducedMotion) frame = requestAnimationFrame(render);
     };
 
-    let raf = 0;
-    let amp = AMP[statusRef.current];
-
-    const frame = (t: number) => {
-      let target = AMP[statusRef.current];
-      if (statusRef.current === "listening") {
-        const lvl = Math.max(0, Math.min(1, levelRefRef.current?.current ?? 0));
-        target = Math.min(1, AMP.listening * (0.55 + 0.9 * lvl));
-      }
-      amp += (target - amp) * 0.06;
-      const primary = getComputedStyle(document.documentElement).getPropertyValue("--primary").trim();
-      const cx = size / 2;
-      const cy = size / 2;
-      const R = size * 0.4;
-      ctx.clearRect(0, 0, size, size);
-
-      // soft central glow
-      const grad = ctx.createRadialGradient(cx, cy, R * 0.2, cx, cy, R * 1.15);
-      grad.addColorStop(0, `hsl(${primary} / ${0.18 + amp * 0.18})`);
-      grad.addColorStop(1, `hsl(${primary} / 0)`);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, size, size);
-
-      for (const p of particles) {
-        p.ang += p.spd * (0.4 + amp);
-        const pulse = 1 + Math.sin(t * 0.002 + p.phase) * 0.07 * (0.4 + amp);
-        const rr = R * p.baseR * pulse;
-        const x = cx + Math.cos(p.ang) * rr;
-        const y = cy + Math.sin(p.ang) * rr;
-        const depth = (Math.sin(p.ang) + 1) / 2; // fake front/back shading
-        ctx.fillStyle = `hsl(${primary} / ${0.25 + depth * 0.55 * (0.4 + amp)})`;
-        ctx.beginPath();
-        ctx.arc(x, y, p.r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      raf = requestAnimationFrame(frame);
-    };
-
-    const ro = new ResizeObserver(resize);
-    ro.observe(canvas);
-    resize();
-    if (reduced) {
-      frame(0);
-      cancelAnimationFrame(raf);
-      raf = 0;
-    } else {
-      raf = requestAnimationFrame(frame);
-    }
-
-    return () => {
-      ro.disconnect();
-      if (raf) cancelAnimationFrame(raf);
-    };
+    render();
+    return () => cancelAnimationFrame(frame);
   }, []);
 
-  return <canvas ref={ref} className={cn("block aspect-square w-full", className)} aria-hidden="true" />;
+  return (
+    <span
+      ref={rootRef}
+      aria-hidden="true"
+      data-status={status}
+      className={cn(
+        "relative block aspect-square rounded-full isolate",
+        status === "error" ? "[--voice-a:var(--destructive)] [--voice-b:0_74%_48%]" : "[--voice-a:var(--primary)] [--voice-b:191_88%_54%]",
+        className
+      )}
+    >
+      <span
+        className="absolute inset-[4%] -z-10 rounded-full bg-[hsl(var(--voice-a)/var(--voice-halo,0.2))] blur-[8px]"
+        style={{ transform: "scale(var(--voice-breathe,1))" }}
+      />
+      <span
+        className={cn(
+          "absolute inset-[8%] overflow-hidden rounded-full border border-white/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.48),inset_0_-7px_14px_rgba(0,0,0,0.12),0_4px_14px_hsl(var(--voice-a)/0.22)]",
+          status === "thinking" && "motion-safe:animate-[spin_3.4s_linear_infinite]"
+        )}
+        style={{
+          transform: "scale(var(--voice-breathe,1))",
+          background:
+            "radial-gradient(circle at 31% 24%, rgba(255,255,255,.96) 0 5%, rgba(255,255,255,.28) 17%, transparent 34%), radial-gradient(circle at 72% 72%, hsl(var(--voice-b) / .96) 0 10%, transparent 56%), radial-gradient(circle at 72% 22%, hsl(var(--voice-a) / .86), transparent 48%), linear-gradient(145deg, hsl(var(--voice-a) / .98), hsl(var(--voice-b) / .72))",
+        }}
+      >
+        <span className="absolute -left-[16%] top-[34%] h-[48%] w-[92%] rotate-[-18deg] rounded-full bg-white/20 blur-[5px] motion-safe:animate-[pulse_2.4s_ease-in-out_infinite]" />
+        <span className="absolute -bottom-[28%] right-[-12%] size-[76%] rounded-full bg-black/10 blur-[7px]" />
+      </span>
+      <span className="absolute inset-[20%] rounded-full border border-white/10" />
+    </span>
+  );
 }

@@ -16,7 +16,8 @@ const openaiDialect: RealtimeDialect = {
   },
   headers: () => ({ Authorization: `Bearer ${requiredEnv("OPENAI_API_KEY")}` }),
   inputRate: 24000,
-  supportsVideo: false, // image-only on OpenAI; not wired as live screen share
+  assistantHistoryContentType: "output_text",
+  supportsVideo: true,
   sessionUpdate: (seed: VoiceSessionSeed) => ({
     // GA session shape: audio config nested under session.audio.
     type: "realtime",
@@ -44,6 +45,7 @@ const qwenDialect: RealtimeDialect = {
     "OpenAI-Beta": "realtime=v1",
   }),
   inputRate: 16000,
+  assistantHistoryContentType: "text",
   supportsVideo: true,
   sessionUpdate: (seed: VoiceSessionSeed) => ({
     // Beta dialect: flat session fields.
@@ -60,7 +62,7 @@ const qwenDialect: RealtimeDialect = {
 export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   openai: {
     id: "openai",
-    capabilities: { videoInput: false, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
+    capabilities: { videoInput: true, screenInput: false, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
     // gpt-realtime-2.1: audio in $32/M @600 tok/min, out $64/M @1200 tok/min.
     pricing: { audioInPerSec: 0.0192 / 60, audioOutPerSec: 0.0768 / 60 },
     available: () => !!process.env.OPENAI_API_KEY,
@@ -70,21 +72,21 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
     id: "gemini",
     // 15-min audio cap is per provider session; resumption stretches the
     // connection, so surface the documented ceiling to the client.
-    capabilities: { videoInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 15 * 60 },
+    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 15 * 60 },
     pricing: { audioInPerSec: 0.005 / 60, audioOutPerSec: 0.018 / 60 },
     available: () => !!(process.env.GEMINI_LIVE_API_KEY || process.env.GOOGLE_API_KEY),
     create: () => new GeminiLiveSession(),
   },
   qwen: {
     id: "qwen",
-    capabilities: { videoInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 120 * 60 },
+    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 120 * 60 },
     pricing: { audioInPerSec: 0.00189 / 60, audioOutPerSec: 0.0133 / 60 },
     available: () => !!process.env.DASHSCOPE_API_KEY,
     create: () => new OpenAiShapedRealtimeSession(qwenDialect),
   },
   minimax: {
     id: "minimax",
-    capabilities: { videoInput: false, trueS2S: false, needsClientTranscript: true, maxSessionSec: 120 * 60 },
+    capabilities: { videoInput: false, screenInput: false, trueS2S: false, needsClientTranscript: true, maxSessionSec: 120 * 60 },
     // Cost is dominated by TTS characters; reported via extraCostUsd instead.
     pricing: { audioInPerSec: 0, audioOutPerSec: 0 },
     available: () => !!process.env.MINIMAX_API_KEY,
@@ -92,7 +94,7 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   },
   mock: {
     id: "mock",
-    capabilities: { videoInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
+    capabilities: { videoInput: true, screenInput: true, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
     pricing: { audioInPerSec: 0, audioOutPerSec: 0 },
     available: () => process.env.RELAY_ENABLE_MOCK === "1",
     create: () => new MockVoiceSession(),

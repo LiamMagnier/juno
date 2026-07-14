@@ -23,6 +23,7 @@ export class MinimaxComposedSession implements VoiceProviderSession {
   private llmAbort: AbortController | null = null;
   private tts: WebSocket | null = null;
   private ttsReady = false;
+  private ttsBusy = false;
   private ttsQueue: string[] = [];
   private speaking = false;
   private generation = 0; // bumped on interrupt: stale async work checks it
@@ -33,6 +34,7 @@ export class MinimaxComposedSession implements VoiceProviderSession {
   private baseUrl = (process.env.MINIMAX_BASE_URL || "https://api.minimax.io/v1").replace(/\/$/, "");
 
   async connect(seed: VoiceSessionSeed, events: ProviderEvents): Promise<void> {
+    this.closedByUs = false;
     this.seed = seed;
     this.events = events;
     this.messages = [
@@ -41,35 +43,71 @@ export class MinimaxComposedSession implements VoiceProviderSession {
         .filter((t) => t.text.trim())
         .map((t) => ({ role: t.role, content: t.text }) as const),
     ];
-    await this.openTts();
+    await this.openTts(this.generation);
   }
 
-  private async openTts(): Promise<void> {
+  private async openTts(expectedGeneration: number): Promise<void> {
+    if (this.closedByUs || expectedGeneration !== this.generation) return;
     const key = requiredEnv("MINIMAX_API_KEY");
     const ws = new WebSocket("wss://api.minimax.io/ws/v1/t2a_v2", {
       headers: { Authorization: `Bearer ${key}` },
     });
     this.tts = ws;
     this.ttsReady = false;
+    this.ttsBusy = false;
 
-    await new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("minimax tts connect timed out")), 15_000);
-      ws.once("open", () => {
-        clearTimeout(timer);
-        resolve();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const finish = (callback: () => void) => {
+          clearTimeout(timer);
+          ws.off("open", onOpen);
+          ws.off("error", onError);
+          ws.off("close", onClose);
+          callback();
+        };
+        const onOpen = () => finish(resolve);
+        const onError = (err: Error) => finish(() => reject(err));
+        const onClose = () => finish(() => reject(new Error("minimax tts closed while connecting")));
+        const timer = setTimeout(
+          () => finish(() => reject(new Error("minimax tts connect timed out"))),
+          15_000
+        );
+        ws.once("open", onOpen);
+        ws.once("error", onError);
+        ws.once("close", onClose);
       });
-      ws.once("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
+    } catch (err) {
+      if (this.tts === ws) {
+        this.tts = null;
+        this.ttsReady = false;
+        this.ttsBusy = false;
+      }
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+      throw err;
+    }
 
-    ws.on("message", (data) => this.handleTts(data));
+    if (
+      this.closedByUs ||
+      expectedGeneration !== this.generation ||
+      this.tts !== ws ||
+      ws.readyState !== WebSocket.OPEN
+    ) {
+      if (this.tts === ws) this.tts = null;
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+      return;
+    }
+
+    ws.on("message", (data) => this.handleTts(data, ws));
     ws.on("close", () => {
+      if (this.tts !== ws) return;
+      this.tts = null;
       this.ttsReady = false;
+      this.ttsBusy = false;
       if (!this.closedByUs) this.events?.onClosed("provider");
     });
-    ws.on("error", (err) => this.events?.onError(`minimax tts: ${err.message}`));
+    ws.on("error", (err) => {
+      if (this.tts === ws) this.events?.onError(`minimax tts: ${err.message}`);
+    });
 
     ws.send(
       JSON.stringify({
@@ -94,12 +132,12 @@ export class MinimaxComposedSession implements VoiceProviderSession {
     if (!trimmed) return;
     this.interrupt(); // a new user utterance always supersedes current output
     this.messages.push({ role: "user", content: trimmed });
-    this.events?.onTranscript({ role: "user", text: trimmed, final: true });
     void this.runLlmTurn();
   }
 
   interrupt(): void {
-    this.generation++;
+    const hadActiveOutput = Boolean(this.llmAbort) || this.ttsBusy || this.ttsQueue.length > 0 || this.speaking;
+    if (hadActiveOutput) this.generation++;
     this.llmAbort?.abort();
     this.llmAbort = null;
     this.ttsQueue = [];
@@ -107,19 +145,25 @@ export class MinimaxComposedSession implements VoiceProviderSession {
       this.speaking = false;
       this.events?.onTurn("end");
     }
+    if (hadActiveOutput && !this.closedByUs) {
+      const generation = this.generation;
+      this.finishTtsSocket();
+      void this.openTts(generation).catch((err) => {
+        if (this.closedByUs || generation !== this.generation) return;
+        this.events?.onError(`minimax tts restart: ${err instanceof Error ? err.message : String(err)}`);
+        this.events?.onClosed("provider");
+      });
+    }
     this.events?.onInterrupted();
   }
 
   async close(): Promise<void> {
     this.closedByUs = true;
+    this.generation++;
     this.llmAbort?.abort();
-    try {
-      this.tts?.send(JSON.stringify({ event: "task_finish" }));
-    } catch {
-      /* socket already gone */
-    }
-    this.tts?.close();
-    this.tts = null;
+    this.llmAbort = null;
+    this.ttsQueue = [];
+    this.finishTtsSocket();
   }
 
   private async runLlmTurn(): Promise<void> {
@@ -188,20 +232,43 @@ export class MinimaxComposedSession implements VoiceProviderSession {
       }
     } catch (err) {
       if (!abort.signal.aborted) ev.onError(`minimax llm: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      if (this.llmAbort === abort) this.llmAbort = null;
     }
   }
 
   private speak(sentence: string, gen: number): void {
     if (gen !== this.generation) return;
-    if (!this.tts || this.tts.readyState !== WebSocket.OPEN) return;
-    if (!this.ttsReady) {
+    const ws = this.tts;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.ttsReady) {
       this.ttsQueue.push(sentence);
       return;
     }
-    this.tts.send(JSON.stringify({ event: "task_continue", text: sentence }));
+    this.continueTts(ws, sentence);
   }
 
-  private handleTts(data: WebSocket.RawData): void {
+  private continueTts(ws: WebSocket, sentence: string): void {
+    if (this.tts !== ws || ws.readyState !== WebSocket.OPEN) return;
+    this.ttsBusy = true;
+    ws.send(JSON.stringify({ event: "task_continue", text: sentence }));
+  }
+
+  private finishTtsSocket(): void {
+    const ws = this.tts;
+    this.tts = null;
+    this.ttsReady = false;
+    this.ttsBusy = false;
+    if (!ws) return;
+    try {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ event: "task_finish" }));
+    } catch {
+      /* socket already gone */
+    }
+    if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
+  }
+
+  private handleTts(data: WebSocket.RawData, ws: WebSocket): void {
+    if (this.tts !== ws || this.closedByUs) return;
     let msg: { event?: string; data?: { audio?: string }; is_final?: boolean; base_resp?: { status_code?: number; status_msg?: string } };
     try {
       msg = JSON.parse(data.toString());
@@ -218,7 +285,7 @@ export class MinimaxComposedSession implements VoiceProviderSession {
     if (msg.event === "task_started" || msg.event === "connected_success") {
       this.ttsReady = true;
       for (const s of this.ttsQueue.splice(0)) {
-        this.tts?.send(JSON.stringify({ event: "task_continue", text: s }));
+        this.continueTts(ws, s);
       }
       return;
     }
@@ -237,6 +304,7 @@ export class MinimaxComposedSession implements VoiceProviderSession {
         this.speaking = false;
         ev.onTurn("end");
       }
+      if (msg.is_final) this.ttsBusy = false;
     }
   }
 }

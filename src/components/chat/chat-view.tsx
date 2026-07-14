@@ -3,9 +3,10 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUpRight, Box, GitFork, GripVertical, Share2, X } from "lucide-react";
+import { ArrowUpRight, Box, GitFork, GripVertical, Loader2, RefreshCw, Share2, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useChat } from "@/hooks/use-chat";
+import { useChat, type ChatMessage } from "@/hooks/use-chat";
+import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
@@ -15,7 +16,6 @@ import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ShareDialog } from "@/components/share/share-dialog";
-import { VoiceMode } from "@/components/voice/voice-mode";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
@@ -120,6 +120,21 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [memoryFlash, setMemoryFlash] = React.useState(false);
   const [memoryLeaving, setMemoryLeaving] = React.useState(false);
   const [voiceOpen, setVoiceOpen] = React.useState(false);
+  const [voiceSaving, setVoiceSaving] = React.useState(false);
+  const [voiceSaveError, setVoiceSaveError] = React.useState<string | null>(null);
+  const [voiceTurnSending, setVoiceTurnSending] = React.useState(false);
+  const voiceSavingRef = React.useRef(voiceSaving);
+  voiceSavingRef.current = voiceSaving;
+  const voiceTurnSendingRef = React.useRef(voiceTurnSending);
+  voiceTurnSendingRef.current = voiceTurnSending;
+  const realtimeVoice = useRealtimeVoice();
+  const realtimeVoiceRef = React.useRef(realtimeVoice);
+  realtimeVoiceRef.current = realtimeVoice;
+  const voiceOpenRef = React.useRef(voiceOpen);
+  voiceOpenRef.current = voiceOpen;
+  const voiceSessionIdRef = React.useRef<string | null>(null);
+  const voiceUnloadPayloadRef = React.useRef<string | null>(null);
+  const voiceSaveDetachedRef = React.useRef(false);
   const [shareOpen, setShareOpen] = React.useState(false);
   const [dictating, setDictating] = React.useState(false);
   // Sticky composer toggles live in AppProvider so they survive ChatView remounts
@@ -242,6 +257,47 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     latestMessagesRef.current = chat.messages;
   }, [chat.messages]);
 
+  // Navigation/page-close fallback. The normal End button awaits the same
+  // idempotent endpoint; sendBeacon protects finalized turns when the view is
+  // torn down before that interaction can happen.
+  React.useEffect(() => {
+    // Once End is pressed, keep the exact payload available until the explicit
+    // save succeeds (or the user discards it). Unmount/new-chat can then retry
+    // the same idempotent session with sendBeacon instead of losing the turn.
+    if (!voiceOpen) return;
+    if (privateMode || !voiceSessionIdRef.current) {
+      voiceUnloadPayloadRef.current = null;
+      return;
+    }
+    const turns = realtimeVoice.transcript
+      .filter((line) => line.text.trim())
+      .map((line) => ({
+        role: line.role === "assistant" ? "ASSISTANT" : "USER",
+        content: line.text,
+        attachmentIds: line.attachments.map((attachment) => attachment.id),
+      }));
+    voiceUnloadPayloadRef.current = turns.length
+      ? JSON.stringify({
+          sessionId: voiceSessionIdRef.current,
+          conversationId: currentConversationId,
+          model,
+          projectId: activeProjectId,
+          connectors: enabledConnectors,
+          turns,
+        })
+      : null;
+  }, [activeProjectId, currentConversationId, enabledConnectors, model, privateMode, realtimeVoice.transcript, voiceOpen]);
+
+  React.useEffect(
+    () => () => {
+      voiceSaveDetachedRef.current = true;
+      const payload = voiceUnloadPayloadRef.current;
+      if (!payload || typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") return;
+      navigator.sendBeacon("/api/voice/transcript", new Blob([payload], { type: "application/json" }));
+    },
+    []
+  );
+
   const runAutoTitle = React.useCallback(
     async (phase: AutoTitlePhase) => {
       const id = currentConversationId;
@@ -339,6 +395,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // same route, so the component won't remount on its own).
   React.useEffect(() => {
     const handler = () => {
+      if (voiceSavingRef.current) voiceSaveDetachedRef.current = true;
+      const payload = voiceUnloadPayloadRef.current;
+      if (payload && typeof navigator.sendBeacon === "function") {
+        navigator.sendBeacon("/api/voice/transcript", new Blob([payload], { type: "application/json" }));
+      }
+      if (voiceOpenRef.current) {
+        realtimeVoiceRef.current.end();
+        setVoiceOpen(false);
+      }
+      realtimeVoiceRef.current.clearTranscript();
+      voiceSessionIdRef.current = null;
+      voiceUnloadPayloadRef.current = null;
+      setVoiceSaveError(null);
+      setVoiceTurnSending(false);
       createdIdRef.current = null;
       localGenerationSeenRef.current = false;
       forkPayloadRef.current = null;
@@ -358,7 +428,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [setActiveConversationId]);
 
   const togglePrivateMode = React.useCallback(() => {
-    if (chat.isBusy) return;
+    if (chat.isBusy || voiceOpen || voiceSaving || voiceSaveError || voiceTurnSending) return;
     const next = !privateMode;
     createdIdRef.current = null;
     forkPayloadRef.current = null;
@@ -371,7 +441,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     // Connectors reach third-party servers, so never carry them into incognito.
     if (next) setEnabledConnectors([]);
     if (next && conversationId) router.push("/chat");
-  }, [chat, conversationId, privateMode, router]);
+  }, [chat, conversationId, privateMode, router, voiceOpen, voiceSaveError, voiceSaving, voiceTurnSending]);
 
   // Pick (or clear) the project for this chat. Existing chat → PATCH immediately;
   // brand-new chat → remember it so the first message is created in that project.
@@ -547,6 +617,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [openArtifact, closingArtifact]);
 
   const openArtifactByIdentifier = (identifier: string, opts?: { fullscreen?: boolean }) => {
+    if (voiceOpen && typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+      toast.error("End voice mode before opening an artifact on this screen, so the microphone controls stay visible.");
+      return;
+    }
     const a = chat.artifacts.find((x) => x.identifier === identifier);
     if (a) {
       setOpenArtifactId(a.id);
@@ -655,7 +729,33 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     setOpenArtifactId(updated.id);
   };
 
-  const hasMessages = chat.messages.length > 0;
+  const voiceMessages = React.useMemo<ChatMessage[]>(() => {
+    const lines: ChatMessage[] = realtimeVoice.transcript.map((line) => ({
+      id: `voice-${line.id}`,
+      role: line.role === "assistant" ? "ASSISTANT" : "USER",
+      content: line.text,
+      model: null,
+      createdAt: line.createdAt,
+      attachments: line.attachments,
+      streaming: !line.final,
+      voice: true,
+    }));
+    if (realtimeVoice.speechInterim.trim()) {
+      lines.push({
+        id: "voice-speech-interim",
+        role: "USER",
+        content: realtimeVoice.speechInterim,
+        model: null,
+        createdAt: new Date().toISOString(),
+        attachments: [],
+        streaming: true,
+        voice: true,
+      });
+    }
+    return lines;
+  }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
+  const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
+  const hasMessages = displayMessages.length > 0 || voiceOpen;
   const quotaReached = quota.limit != null && quota.remaining != null && quota.remaining <= 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
   // Model-parameters live beside the incognito ghost (top-right) so the composer
@@ -677,12 +777,215 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     tts.speak(cleanForSpeech(text), settings.voiceId).finally(() => setSpeakingId((cur) => (cur === id ? null : cur)));
   };
 
+  const sendFromComposer = React.useCallback(
+    async (text: string, attachments: import("@/types/chat").ClientAttachment[], options?: import("@/hooks/use-chat").SendOptions) => {
+      if (voiceSavingRef.current || voiceSaveError) {
+        toast.error(voiceSaveError ?? "Wait for the voice transcript to finish saving.");
+        return { accepted: false };
+      }
+      if (!voiceOpen) return chat.send(text, attachments, options);
+      if (voiceTurnSendingRef.current) return { accepted: false };
+      if (realtimeVoice.status !== "live") {
+        toast.error("Voice is still connecting. Try again in a moment.");
+        return { accepted: false };
+      }
+      if (attachments.some((attachment) => attachment.kind !== "IMAGE")) {
+        toast.error("Voice mode can receive images, but not document attachments yet.");
+        return { accepted: false };
+      }
+      if (attachments.length > 4) {
+        toast.error("Voice mode accepts up to 4 images in one turn.");
+        return { accepted: false };
+      }
+      voiceTurnSendingRef.current = true;
+      setVoiceTurnSending(true);
+      try {
+        const accepted = await realtimeVoice.sendTurn(text, attachments);
+        if (!accepted) {
+          toast.error(attachments.length ? "This voice provider can’t view images. Switch to OpenAI, Gemini, or Qwen." : "Voice could not send that turn.");
+        }
+        return { accepted };
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Voice could not send that turn.");
+        return { accepted: false };
+      } finally {
+        voiceTurnSendingRef.current = false;
+        setVoiceTurnSending(false);
+      }
+    },
+    [chat, realtimeVoice, voiceOpen, voiceSaveError]
+  );
+
+  const openVoice = React.useCallback(() => {
+    if (privateMode || chat.isBusy || chat.pendingClarification || voiceSavingRef.current || voiceSaveError) return;
+    closeArtifact();
+    setComposerQuote(null);
+    realtimeVoice.clearTranscript();
+    voiceSaveDetachedRef.current = false;
+    voiceUnloadPayloadRef.current = null;
+    voiceSessionIdRef.current = crypto.randomUUID();
+    setVoiceOpen(true);
+    const history = chat.messages
+      .filter((message) => (message.role === "USER" || message.role === "ASSISTANT") && message.content.trim())
+      .map((message) => ({
+        role: message.role === "ASSISTANT" ? ("assistant" as const) : ("user" as const),
+        text: message.content,
+      }));
+    void realtimeVoice.start(undefined, history);
+  }, [chat.isBusy, chat.messages, chat.pendingClarification, closeArtifact, privateMode, realtimeVoice, voiceSaveError]);
+
+  const closeVoice = React.useCallback(() => {
+    if (voiceSavingRef.current) return;
+    if (voiceTurnSendingRef.current) {
+      toast.error("Wait for the current voice turn to finish sending.");
+      return;
+    }
+    setVoiceSaveError(null);
+    const finalized = realtimeVoice.transcript
+      .filter((line) => line.text.trim())
+      .map((line) => ({ ...line, final: true }));
+    const sessionId = voiceSessionIdRef.current ?? crypto.randomUUID();
+    realtimeVoice.end();
+    setVoiceOpen(false);
+    if (privateMode || finalized.length === 0) {
+      realtimeVoice.clearTranscript();
+      voiceSessionIdRef.current = null;
+      voiceUnloadPayloadRef.current = null;
+      return;
+    }
+    const savePayload = JSON.stringify({
+      sessionId,
+      conversationId: currentConversationId,
+      model,
+      projectId: activeProjectId,
+      connectors: enabledConnectors,
+      turns: finalized.map((line) => ({
+        role: line.role === "assistant" ? "ASSISTANT" : "USER",
+        content: line.text,
+        attachmentIds: line.attachments.map((attachment) => attachment.id),
+      })),
+    });
+    voiceUnloadPayloadRef.current = savePayload;
+    voiceSavingRef.current = true;
+    setVoiceSaving(true);
+
+    void (async () => {
+      try {
+        // Fetch keepalive is capped by browsers at roughly 64 KiB. It protects
+        // normal sessions during navigation; larger transcripts still retain
+        // the same idempotent payload for retry/beacon fallback.
+        const keepalive = new TextEncoder().encode(savePayload).byteLength <= 60_000;
+        const response = await fetch("/api/voice/transcript", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: savePayload,
+          keepalive,
+        });
+        const data = (await response.json().catch(() => ({}))) as { conversationId?: string; messages?: ClientMessage[]; error?: string };
+        if (!response.ok || !data.conversationId || !data.messages) throw new Error(data.error ?? "Could not save the voice transcript.");
+
+        const detached = voiceSaveDetachedRef.current;
+        if (!detached) {
+          chat.setMessages((current) => {
+            const known = new Set(current.map((message) => message.id));
+            return [...current, ...data.messages!.filter((message) => !known.has(message.id))];
+          });
+        }
+        realtimeVoice.clearTranscript();
+        voiceSessionIdRef.current = null;
+        voiceUnloadPayloadRef.current = null;
+        setVoiceSaveError(null);
+        const now = new Date().toISOString();
+        if (!currentConversationId) {
+          const title = finalized.find((line) => line.role === "user")?.text.slice(0, 48) || "Voice conversation";
+          upsertConversation({
+            id: data.conversationId,
+            title,
+            titleSource: "default",
+            model,
+            pinned: false,
+            folderId: null,
+            projectId: activeProjectId,
+            activeConnectors: enabledConnectors,
+            lastMessageAt: now,
+            createdAt: now,
+          });
+          if (!detached) {
+            createdIdRef.current = data.conversationId;
+            setActiveConversationId(data.conversationId);
+            router.replace(`/chat/${data.conversationId}`);
+          }
+        } else {
+          updateConversation(currentConversationId, { lastMessageAt: now });
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "The voice transcript could not be saved.";
+        setVoiceSaveError(message);
+        toast.error("Voice transcript not saved yet. Retry or discard it below.");
+      } finally {
+        voiceSavingRef.current = false;
+        setVoiceSaving(false);
+      }
+    })();
+  }, [activeProjectId, chat, currentConversationId, enabledConnectors, model, privateMode, realtimeVoice, router, setActiveConversationId, updateConversation, upsertConversation]);
+
+  const discardFailedVoiceSave = React.useCallback(() => {
+    if (voiceSavingRef.current) return;
+    realtimeVoice.clearTranscript();
+    voiceSessionIdRef.current = null;
+    voiceUnloadPayloadRef.current = null;
+    setVoiceSaveError(null);
+  }, [realtimeVoice]);
+
+  const voiceSaveNotice = voiceSaving || voiceSaveError ? (
+    <div
+      role={voiceSaveError ? "alert" : "status"}
+      aria-live="polite"
+      className={cn(
+        "mx-auto mb-2 flex w-[calc(100%-1rem)] max-w-2xl items-center gap-3 rounded-xl border px-3 py-2 text-sm shadow-soft sm:w-full",
+        voiceSaveError
+          ? "border-destructive/30 bg-destructive/5 text-foreground"
+          : "border-border/70 bg-background/85 text-muted-foreground backdrop-blur-xl"
+      )}
+    >
+      {voiceSaving ? (
+        <Loader2 className="size-4 shrink-0 animate-spin text-primary" />
+      ) : (
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">!</span>
+      )}
+      <div className="min-w-0 flex-1">
+        <p className="font-medium text-foreground">{voiceSaving ? "Saving voice transcript…" : "Voice transcript isn’t saved yet"}</p>
+        {voiceSaveError && <p className="mt-0.5 truncate text-xs text-muted-foreground">{voiceSaveError}</p>}
+      </div>
+      {voiceSaveError && (
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={closeVoice}
+            className="pressable inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-primary hover:bg-primary/10"
+          >
+            <RefreshCw className="size-3.5" />
+            Retry
+          </button>
+          <button
+            type="button"
+            onClick={discardFailedVoiceSave}
+            aria-label="Discard unsaved voice transcript"
+            className="pressable inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+
   const composer = (
     <Composer
       conversationId={conversationId}
       model={model}
       onModelChange={setModel}
-      onSend={(text, attachments, options) => chat.send(text, attachments, options)}
+      onSend={sendFromComposer}
       isBusy={chat.isBusy}
       status={chat.status}
       onStop={chat.stop}
@@ -690,7 +993,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onSubmitClarification={(answers) => chat.resolvePendingClarification(answers)}
       onSkipClarification={() => chat.resolvePendingClarification([], true)}
       onCancelClarification={chat.cancelPendingClarification}
-      onOpenVoiceMode={planAllowsVoice ? () => setVoiceOpen(true) : undefined}
+      onOpenVoiceMode={planAllowsVoice && !!process.env.NEXT_PUBLIC_VOICE_RELAY_URL && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
       canvasEnabled={canvasEnabled}
       onToggleCanvas={setCanvasEnabled}
@@ -703,7 +1006,21 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       quote={composerQuote}
       onClearQuote={() => setComposerQuote(null)}
       privateMode={privateMode}
-      placeholder={privateMode ? "How can I help you today?" : undefined}
+      voiceActive={voiceOpen}
+      sendLocked={voiceSaving || !!voiceSaveError || voiceTurnSending}
+      placeholder={
+        privateMode
+          ? "How can I help you today?"
+          : voiceSaving
+            ? "Saving voice transcript…"
+            : voiceSaveError
+              ? "Retry or discard the unsaved voice transcript above."
+              : voiceTurnSending
+                ? "Sending this voice turn…"
+                : voiceOpen
+                  ? "Type or attach an image while voice is active…"
+                  : undefined
+      }
       selectedProjectId={activeProjectId}
       onPickProject={handlePickProject}
       hideDisclaimer={true}
@@ -747,7 +1064,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             disabled={chat.isBusy}
           />
         )}
-        <PrivateChatToggle active={privateMode} disabled={chat.isBusy} onToggle={togglePrivateMode} />
+        <PrivateChatToggle
+          active={privateMode}
+          disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
+          onToggle={togglePrivateMode}
+        />
       </div>
 
       {/* Chat column */}
@@ -852,7 +1173,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <button
               type="button"
               onClick={togglePrivateMode}
-              disabled={chat.isBusy}
+              disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
               aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
               className="pressable inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-10 coarse:w-10"
             >
@@ -874,7 +1195,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
               <MessageList
-                messages={chat.messages}
+                messages={displayMessages}
                 busy={chat.isBusy}
                 status={chat.status}
                 artifacts={chat.artifacts}
@@ -896,6 +1217,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   privateMode ? "px-2 sm:px-4 pb-1" : "px-0 pb-1"
                 )}
               >
+                {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
+                {voiceSaveNotice}
                 {composer}
               </div>
               <p className="pb-2 text-center text-caption text-muted-foreground select-none shrink-0">
@@ -944,6 +1267,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                       privateMode ? "max-w-[46rem]" : "max-w-[48rem]"
                     )}
                   >
+                    {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
+                    {voiceSaveNotice}
                     {composer}
                   </div>
 
@@ -956,7 +1281,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                         (privateMode || chat.pendingClarification) ? "pointer-events-none scale-95 opacity-0" : "scale-100 opacity-100"
                       )}
                     >
-                      <SuggestionPills onPick={(t) => chat.send(t)} />
+                      <SuggestionPills onPick={(t) => void sendFromComposer(t, [])} />
                     </div>
 
                     {/* Private Mode Info */}
@@ -1037,22 +1362,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         <ShareDialog kind="CHAT" conversationId={currentConversationId} open={shareOpen} onOpenChange={setShareOpen} />
       )}
 
-      {voiceOpen &&
-        // With a voice relay deployed, the voice button opens the realtime
-        // speech-to-speech experience; otherwise the legacy STT->chat->TTS mode.
-        (process.env.NEXT_PUBLIC_VOICE_RELAY_URL ? (
-          <RealtimeVoice onClose={() => setVoiceOpen(false)} />
-        ) : (
-          <VoiceMode
-            model={model}
-            conversationId={conversationId}
-            voiceId={settings.voiceId}
-            onClose={() => setVoiceOpen(false)}
-            onExchange={() => {
-              /* voice mode persists its own turns via the chat API */
-            }}
-          />
-        ))}
     </div>
   );
 }

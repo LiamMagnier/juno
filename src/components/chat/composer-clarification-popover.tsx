@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
@@ -158,17 +158,15 @@ export function ComposerClarificationPopover({
       <div
         role="dialog"
         aria-label={pending.result.title}
-        className="relative flex w-full flex-col text-foreground motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 duration-base ease-out-expo"
+        className="relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/60 bg-background/72 text-foreground shadow-soft motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 duration-base ease-out-expo"
       >
-        <div className="flex flex-row items-start gap-3 space-y-0 p-3 pb-1">
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border border-primary/10 bg-primary/5 text-primary shadow-soft">
+        <div className="flex flex-row items-start gap-3 space-y-0 p-4 pb-3">
+          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-primary/15 bg-primary/10 text-primary">
             <HelpCircle className="size-4" aria-hidden="true" />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="secondary" className="rounded-md font-mono text-label uppercase bg-primary/10 text-primary border-none">
-                Tune answer
-              </Badge>
+              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">Quick question</span>
               <span className="font-mono text-label uppercase text-muted-foreground">
                 {index + 1} of {questions.length}
               </span>
@@ -181,10 +179,24 @@ export function ComposerClarificationPopover({
           </Button>
         </div>
 
-        <div className="flex flex-col gap-3 p-3 py-1.5">
+        {questions.length > 1 && (
+          <div className="mx-4 flex h-1 gap-1 overflow-hidden rounded-full bg-muted" aria-label={`Question ${index + 1} of ${questions.length}`}>
+            {questions.map((item, itemIndex) => (
+              <button
+                key={item.id}
+                type="button"
+                disabled={disabled}
+                onClick={() => setIndex(itemIndex)}
+                aria-label={`Go to question ${itemIndex + 1}`}
+                className={cn("h-full flex-1 rounded-full transition-colors duration-base", itemIndex <= index ? "bg-primary" : "bg-transparent")}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-3 p-4 pt-3">
           <div>
-            <p className="font-mono text-label uppercase text-muted-foreground">{active.id.replace(/_/g, " ")}</p>
-            <h4 className="mt-1 text-lg font-semibold leading-tight">{active.question}</h4>
+            <h4 className="text-lg font-semibold leading-snug">{active.question}</h4>
           </div>
 
           {active.options.length > 0 && (
@@ -198,18 +210,18 @@ export function ComposerClarificationPopover({
                     disabled={disabled}
                     onClick={() => selectOption(option)}
                     className={cn(
-                      "flex min-h-11 w-full items-center gap-3 rounded-full border bg-background/50 pl-2.5 pr-5 py-2.5 text-left text-sm transition-all duration-base hover:-translate-y-0.5 hover:border-primary/45 hover:bg-accent/35 disabled:opacity-60",
-                      selected && "border-primary/60 bg-primary/10 shadow-soft"
+                      "flex min-h-11 w-full items-center gap-3 rounded-[13px] border bg-card/55 px-3 py-2.5 text-left text-sm transition-all duration-base hover:border-primary/40 hover:bg-accent/40 disabled:opacity-60",
+                      selected && "border-primary/55 bg-primary/10 shadow-soft"
                     )}
                     aria-pressed={selected}
                   >
                     <span
                       className={cn(
-                        "flex size-6 shrink-0 items-center justify-center rounded-full border bg-card font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast",
-                        selected && "border-primary/45 bg-primary/20 text-primary"
+                        "flex size-6 shrink-0 items-center justify-center rounded-[8px] border bg-background font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast",
+                        selected && "border-primary/45 bg-primary text-primary-foreground"
                       )}
                     >
-                      {optionIndex + 1}
+                      {selected ? <Check className="size-3.5" /> : optionIndex + 1}
                     </span>
                     <span className="min-w-0 flex-1 font-medium leading-5">{option}</span>
                   </button>
@@ -221,7 +233,7 @@ export function ComposerClarificationPopover({
           {active.allowElse && (
             <label
               className={cn(
-                "flex flex-col gap-1.5 rounded-[16px] border bg-muted/25 p-3 transition-colors duration-base",
+                "flex flex-col gap-1.5 rounded-[13px] border bg-muted/20 p-3 transition-colors duration-base",
                 currentAnswer?.source === "else" && "border-primary/55 bg-primary/10"
               )}
             >
@@ -252,24 +264,10 @@ export function ComposerClarificationPopover({
           )}
         </div>
 
-        <div className="flex flex-col gap-2 p-3 pt-1 pb-2 sm:flex-row sm:items-center sm:justify-between">
-          {questions.length > 1 && (
-            <div className="flex items-center gap-1.5" aria-label="Clarification progress">
-              {questions.map((item, itemIndex) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => setIndex(itemIndex)}
-                  aria-label={`Go to question ${itemIndex + 1}`}
-                  className={cn("size-2 rounded-full bg-muted transition-all duration-base ease-out-soft", itemIndex === index && "w-5 bg-primary")}
-                />
-              ))}
-            </div>
-          )}
-          <div className={cn("flex w-full flex-wrap justify-end gap-2 sm:w-auto", questions.length <= 1 && "ml-auto")}>
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/55 bg-muted/15 p-3">
+          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
             <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={disabled}>
-              Skip
+              Use your judgment
             </Button>
             {questions.length > 1 && (
               <Button type="button" variant="outline" size="sm" onClick={() => setIndex((current) => Math.max(0, current - 1))} disabled={disabled || index === 0}>

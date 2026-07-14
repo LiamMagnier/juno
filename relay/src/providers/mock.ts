@@ -45,7 +45,6 @@ export class MockVoiceSession implements VoiceProviderSession {
   }
 
   sendText(text: string): void {
-    this.events?.onTranscript({ role: "user", text, final: true });
     this.reply(`You said: ${text}. Mock reply number ${++this.counter}.`);
   }
 
