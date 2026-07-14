@@ -106,8 +106,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Adds:"
   },
   {
-    "id": "019a8c133048711a",
-    "source": "· realtime"
+    "id": "01792a33c228a70e",
+    "source": "Add files"
   },
   {
     "id": "01bed311e7d0c963",
@@ -1426,10 +1426,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Memory updated"
   },
   {
-    "id": "2e27ba9fbf063b4a",
-    "source": "Upload images"
-  },
-  {
     "id": "2e3ac056d4901875",
     "source": "Shared links"
   },
@@ -1862,10 +1858,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Files and images you send in chat collect here."
   },
   {
-    "id": "3ab9436fa5b9e7d6",
-    "source": "Add an image from library"
-  },
-  {
     "id": "3ac0e5e96b18df7d",
     "source": "Code mode & native apps"
   },
@@ -2080,10 +2072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4105e1eaebe09c4a",
     "source": "New line in composer"
-  },
-  {
-    "id": "4118deee6e13aa90",
-    "source": "Upload files"
   },
   {
     "id": "4145d75c834fd9b5",
@@ -2518,10 +2506,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous OpenAI image generation and editing model."
   },
   {
-    "id": "504bae9c67587d1d",
-    "source": "Voice mode accepts images from your library only."
-  },
-  {
     "id": "50a4122943273ad2",
     "source": "ChatGPT"
   },
@@ -2908,10 +2892,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5dcc6b2201a4282f",
     "source": "No provider"
-  },
-  {
-    "id": "5dfb834c832e5810",
-    "source": "Search connected apps"
   },
   {
     "id": "5e1a0ebc939d884a",
@@ -3742,10 +3722,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search — command palette (⌘K)"
   },
   {
-    "id": "7607faf951a8688a",
-    "source": "Create a canvas"
-  },
-  {
     "id": "762069bc07a6e1b5",
     "source": "out"
   },
@@ -3898,6 +3874,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A Music-User-Token is required."
   },
   {
+    "id": "7b0a3d74494a4f50",
+    "source": "Add photos"
+  },
+  {
     "id": "7b412527489f5ffe",
     "source": "banned"
   },
@@ -4000,10 +3980,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7ec0261b8e8aa3e0",
     "source": "Upgrade"
-  },
-  {
-    "id": "7ecf4d5b6dec67fa",
-    "source": "Create one →"
   },
   {
     "id": "7edb360f06acaef2",
@@ -4534,10 +4510,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This can take a couple of minutes."
   },
   {
-    "id": "919e16f5a2dcb14b",
-    "source": "Add from library"
-  },
-  {
     "id": "91b9c8945cc9ce69",
     "source": "Apple Calendar"
   },
@@ -4680,10 +4652,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9510aa0311db9660",
     "source": "Comparisons aren&rsquo;t saved"
-  },
-  {
-    "id": "9514b7ff4860ead7",
-    "source": "Plugins"
   },
   {
     "id": "9515fc13f4667937",
@@ -4904,10 +4872,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b16cee727b6c137",
     "source": "chat only"
-  },
-  {
-    "id": "9b20aa6c11f0576b",
-    "source": "Choose apps for this chat"
   },
   {
     "id": "9b34e9a73e278708",
@@ -5146,10 +5110,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "3. Hébergement"
   },
   {
-    "id": "a2b529bce3b57e43",
-    "source": "not on this model"
-  },
-  {
     "id": "a2b8baaa846db936",
     "source": "Your files"
   },
@@ -5312,10 +5272,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a7596aa3beb103b5",
     "source": "Invalid input."
-  },
-  {
-    "id": "a75e01c3f211a52a",
-    "source": "Search connected apps…"
   },
   {
     "id": "a76af460bf1b954f",
@@ -6002,10 +5958,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Max x20"
   },
   {
-    "id": "bf6c07f870758424",
-    "source": "Connect an app"
-  },
-  {
     "id": "bf712d9d280a1d8f",
     "source": "/library"
   },
@@ -6118,10 +6070,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete an event by UID from a named calendar."
   },
   {
-    "id": "c3d2e79ebdd046c6",
-    "source": "Connectors"
-  },
-  {
     "id": "c3fdec08538f0fc9",
     "source": "Fastest, most affordable GPT-5.6 — high-volume tasks with 1M context."
   },
@@ -6216,10 +6164,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c7169cf55dbd0f3e",
     "source": "). La création d'un compte ou la souscription d'un abonnement emporte acceptation pleine et entière des présentes."
-  },
-  {
-    "id": "c76cf6c5d7b65f26",
-    "source": "No connected apps match “"
   },
   {
     "id": "c78b3ec88d6a586e",
@@ -6334,10 +6278,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your plan doesn't include this model."
   },
   {
-    "id": "cadfaac7241e3651",
-    "source": "Manage connections"
-  },
-  {
     "id": "cae662172fd450bb",
     "source": "base"
   },
@@ -6428,10 +6368,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cd66f97b9ffbdddc",
     "source": "Juno team"
-  },
-  {
-    "id": "cd7a7120bad25bb8",
-    "source": "Loading connected apps…"
   },
   {
     "id": "cda28699a510f244",
@@ -7410,10 +7346,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ByteDance flagship — multimodal references, native audio, up to 4K."
   },
   {
-    "id": "ec153694483b2b7d",
-    "source": "set up"
-  },
-  {
     "id": "ec7b9944d5410f50",
     "source": "PNG, JPG, WebP, GIF"
   },
@@ -7600,10 +7532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f3f32cc3f49b447f",
     "source": "Answer options"
-  },
-  {
-    "id": "f41072f37020a750",
-    "source": "Canvas & artifacts"
   },
   {
     "id": "f411a1fb62758b4c",
