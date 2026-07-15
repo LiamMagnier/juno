@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { ArrowLeft, Brain, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
+import { ArrowLeft, NotebookPen, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,7 @@ import { resolveModel } from "@/lib/models";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS } from "@/lib/accents";
+import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
 
@@ -240,6 +241,9 @@ export default function SettingsPage() {
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },
   ];
+
+  // Falls back rather than leaving the group unselected if the stored preset was retired.
+  const activePersonality = isPersonalityId(settings.personality) ? settings.personality : DEFAULT_PERSONALITY;
 
   const plan = PLANS[quota.plan];
   const windows = spend.windows;
@@ -478,7 +482,37 @@ export default function SettingsPage() {
             </Select>
           </Tile>
 
-          <Tile eyebrow="Custom instructions" i={4} span>
+          {/* Response style */}
+          <Tile eyebrow="Response style" i={4} span>
+            <p className="mb-3 text-sm text-muted-foreground">
+              How Juno writes. Your custom instructions below still take priority.
+            </p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label="Response style">
+              {PERSONALITIES.map((p) => {
+                const selected = activePersonality === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => save({ personality: p.id })}
+                    className={cn(
+                      "flex flex-col items-start gap-1 rounded-xl border p-3 text-left shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
+                      selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
+                    )}
+                  >
+                    <span className="flex w-full items-center justify-between gap-2 text-sm font-medium">
+                      {p.label}
+                      {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                    </span>
+                    <span className="text-xs leading-relaxed text-muted-foreground">{p.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </Tile>
+
+          <Tile eyebrow="Custom instructions" i={5} span>
             <p className="mb-3 text-sm text-muted-foreground">Juno keeps these in mind in every conversation.</p>
             <div className="relative">
               <Textarea
@@ -496,10 +530,10 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Memory */}
-          <Tile eyebrow="Memory" i={5}>
+          <Tile eyebrow="Memory" i={6}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <Brain className="h-5 w-5 text-primary" />
+                <NotebookPen className="h-5 w-5 text-primary" />
                 <div>
                   <p className="text-sm font-medium">Reference saved memories</p>
                   <p className="text-xs text-muted-foreground">Manage what Juno remembers</p>
@@ -513,7 +547,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Account */}
-          <Tile eyebrow="Account" i={6}>
+          <Tile eyebrow="Account" i={7}>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Current plan</span>
@@ -542,7 +576,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Email notifications */}
-          <Tile eyebrow="Email notifications" i={7} span>
+          <Tile eyebrow="Email notifications" i={8} span>
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>
@@ -581,7 +615,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Danger zone */}
-          <Tile eyebrow="Danger zone" i={8} span className="border-destructive/30">
+          <Tile eyebrow="Danger zone" i={9} span className="border-destructive/30">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>

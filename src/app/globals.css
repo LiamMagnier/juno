@@ -42,6 +42,12 @@
 
     --warning: 40 57% 51%;
     --source: 187 62% 34%;
+    /* Deepest-thinking ("Max") accent — the one place violet is allowed, to mark
+       the tier that is materially slower and pricier. Kept as tokens so the
+       accent-swapping in app-provider can't be bypassed by a hardcoded hex. */
+    --ultra: 258 90% 66%;
+    --ultra-from: 252 100% 68%;
+    --ultra-to: 271 91% 65%;
 
     --border: 43 23% 88%;
     --input: 43 23% 85%;
@@ -112,6 +118,10 @@
 
     --warning: 40 60% 58%;
     --source: 187 58% 49%;
+    /* Lifted a touch on dark so violet keeps contrast against the near-black. */
+    --ultra: 258 92% 74%;
+    --ultra-from: 252 100% 76%;
+    --ultra-to: 271 93% 73%;
 
     --border: 36 5% 21%;
     --input: 36 5% 24%;

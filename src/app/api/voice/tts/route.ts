@@ -62,20 +62,31 @@ export async function POST(req: Request) {
   return new Response(audio, { headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" } });
 }
 
-// gpt-4o-mini-tts: high quality, reads text in its own language (not an English accent).
+// gpt-4o-mini-tts: high quality, and it reads text in the text's OWN language
+// with a native accent — unlike the browser's SpeechSynthesis fallback, which
+// applies the OS voice's accent (e.g. French read with an English accent).
 async function openaiTts(text: string, voiceId: string | undefined, apiKey: string): Promise<ArrayBuffer> {
   const res = await fetch("https://api.openai.com/v1/audio/speech", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gpt-4o-mini-tts",
-      voice: voiceId || "alloy",
+      model: env.voice.ttsModel,
+      voice: voiceId || env.voice.ttsVoice,
       input: text,
       response_format: "mp3",
-      instructions: "Read naturally and clearly, in the same language as the text.",
+      // `instructions` is only accepted by the gpt-4o*-tts line; the older
+      // tts-1/tts-1-hd models reject it.
+      ...(/^gpt-4o.*-tts$/.test(env.voice.ttsModel)
+        ? {
+            instructions:
+              "Detect the language of the text and read it as a native speaker of that language would, " +
+              "with that language's natural accent, rhythm and pronunciation. Never read it with an English accent " +
+              "unless the text itself is English. Speak naturally and clearly at a conversational pace.",
+          }
+        : {}),
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI TTS ${res.status}`);
+  if (!res.ok) throw new Error(`OpenAI TTS ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
   return res.arrayBuffer();
 }
 

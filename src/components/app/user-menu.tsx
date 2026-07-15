@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { Brain, Command, Keyboard, LogOut, Map as MapIcon, Settings, Shield, Sparkles, User } from "lucide-react";
+import { NotebookPen, Command, Keyboard, LogOut, Map as MapIcon, Settings, Shield, Sparkles, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -95,7 +95,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         </DropdownMenuItem>
         <DropdownMenuItem asChild className="h-9">
           <Link href="/memory" className="flex w-full items-center gap-2">
-            <Brain className="h-4 w-4 opacity-70" />
+            <NotebookPen className="h-4 w-4 opacity-70" />
             <span>Memory</span>
           </Link>
         </DropdownMenuItem>

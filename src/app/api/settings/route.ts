@@ -6,11 +6,13 @@ import { getCurrentUser } from "@/lib/session";
 import { ensureUserDefaults } from "@/lib/auth";
 import { isModelId } from "@/lib/models";
 import { ACCENT_IDS } from "@/lib/accents";
+import { PERSONALITY_IDS } from "@/lib/personalities";
 
 const schema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
   accent: z.string().max(30).regex(/^([a-z]+|#[0-9a-fA-F]{6})$/).optional(),
   defaultModel: z.string().optional(),
+  personality: z.enum(PERSONALITY_IDS).optional(),
   customInstructions: z.string().max(4000).optional(),
   responseLanguage: z.string().max(40).optional(),
   memoryEnabled: z.boolean().optional(),
@@ -39,6 +41,7 @@ export async function PATCH(req: Request) {
       ...(d.theme ? { theme: d.theme.toUpperCase() as Theme } : {}),
       ...(d.accent ? { accent: d.accent } : {}),
       ...(d.defaultModel ? { defaultModel: d.defaultModel } : {}),
+      ...(d.personality ? { personality: d.personality } : {}),
       ...(d.customInstructions !== undefined ? { customInstructions: d.customInstructions } : {}),
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),

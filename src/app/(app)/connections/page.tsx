@@ -6,10 +6,10 @@ import { toast } from "sonner";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ServerCard, type ConnectorStatus, type ServerState } from "@/components/connections/server-card";
+import { type ConnectorStatus } from "@/components/connections/server-card";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ToolLogPanel } from "@/components/connections/tool-log-panel";
-import { ComposioCatalog } from "@/components/connections/composio-catalog";
+import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 import { MOCK_LOG, MOCK_TOOLS, type LogEntry } from "@/lib/mcp-dashboard-fixture";
 
 const ERRORS: Record<string, string> = {
@@ -64,7 +64,7 @@ export default function ConnectionsPage() {
   const [connectors, setConnectors] = React.useState<ConnectorStatus[] | null>(null);
   const [composioConfigured, setComposioConfigured] = React.useState(false);
   const [error, setError] = React.useState(false);
-  const [disconnectTarget, setDisconnectTarget] = React.useState<ConnectorStatus | null>(null);
+  const [disconnectTarget, setDisconnectTarget] = React.useState<DirectoryItem | null>(null);
   const [credentialsTarget, setCredentialsTarget] = React.useState<ConnectorStatus | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [connectingId, setConnectingId] = React.useState<string | null>(null);
@@ -152,19 +152,26 @@ export default function ConnectionsPage() {
     toast.success(`Connected ${c.label}.`);
   };
 
+  // One dialog for both backends — each has its own disconnect endpoint.
   const disconnect = async () => {
     if (!disconnectTarget) return;
+    const target = disconnectTarget;
     setBusy(true);
     try {
-      const r = await fetch(`/api/connectors/${disconnectTarget.id}`, { method: "DELETE" });
+      const url =
+        target.source === "composio"
+          ? `/api/connectors/composio/${encodeURIComponent(target.slug!)}`
+          : `/api/connectors/${target.id}`;
+      const r = await fetch(url, { method: "DELETE" });
       if (!r.ok) throw new Error();
       setConnectors(
         (prev) =>
-          prev?.map((c) =>
-            c.id === disconnectTarget.id ? { ...c, connected: false, accountLabel: null, connectedAt: null } : c
-          ) ?? prev
+          prev?.map((c) => (c.id === target.id ? { ...c, connected: false, accountLabel: null, connectedAt: null } : c)) ??
+          prev
       );
-      toast.success(`Disconnected ${disconnectTarget.label}.`);
+      toast.success(`Disconnected ${target.label}.`);
+      // Composio apps live in the directory's own fetched list — refetch both.
+      window.dispatchEvent(new CustomEvent("juno:connections-changed"));
     } catch {
       toast.error("Couldn’t disconnect. Please try again.");
     } finally {
@@ -173,12 +180,8 @@ export default function ConnectionsPage() {
     }
   };
 
-  const stateFor = (c: ConnectorStatus): ServerState =>
-    connectingId === c.id ? "connecting" : c.connected ? "active" : c.configured ? "inactive" : "unavailable";
-
   const loading = connectors === null;
   const connectedList = connectors?.filter((c) => c.connected) ?? [];
-  const directConnectors = connectors?.filter((c) => c.kind !== "composio_app") ?? [];
   const serversActive = loading ? null : connectedList.length;
   const toolsAvailable = loading
     ? null
@@ -255,31 +258,15 @@ export default function ConnectionsPage() {
           </div>
         ) : (
           <>
-            <ComposioCatalog configured={composioConfigured} />
-
-            {directConnectors.length > 0 && (
-              <section className="mt-8">
-                <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Direct connections</p>
-                <h2 className="mt-1 font-serif text-title">Built into Juno</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Dedicated connections with their own Juno setup and permission flow.
-                </p>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  {directConnectors.map((c, i) => (
-                    <ServerCard
-                      key={c.id}
-                      connector={c}
-                      state={stateFor(c)}
-                      index={i}
-                      enabled={enabled[c.id] ?? true}
-                      onEnabledChange={(value) => setEnabledFor(c.id, value)}
-                      onConnect={() => connect(c)}
-                      onDisconnect={() => setDisconnectTarget(c)}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+            <ConnectorDirectory
+              connectors={connectors ?? []}
+              composioConfigured={composioConfigured}
+              enabled={enabled}
+              onEnabledChange={setEnabledFor}
+              onConnectNative={connect}
+              onDisconnect={setDisconnectTarget}
+              connectingId={connectingId}
+            />
 
             <div className="mt-6">
               <ToolLogPanel entries={logEntries} onAppend={appendLog} labels={labels} />

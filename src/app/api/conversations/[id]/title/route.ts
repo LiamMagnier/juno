@@ -3,10 +3,6 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { rateLimit } from "@/lib/rate-limit";
-import { getUserPlan } from "@/lib/usage";
-import { canUseModel } from "@/lib/plans";
-import { MODEL_LIST, type ModelInfo } from "@/lib/models";
-import { isProviderConfigured } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { generateChatTitleFromMessages, fallbackChatTitle, generateProjectName, type TitleContextMessage } from "@/lib/titles";
@@ -33,16 +29,6 @@ function cleanContextMessages(messages: { role: "USER" | "ASSISTANT"; content: s
     .map((m) => ({ role: m.role, content: m.content.trim() }))
     .filter((m) => m.content)
     .slice(0, 8);
-}
-
-function pickTitleModel(plan: Awaited<ReturnType<typeof getUserPlan>>): ModelInfo | null {
-  return (
-    MODEL_LIST.filter((m) => m.modality === "chat" && isProviderConfigured(m.provider) && canUseModel(plan, m.id)).sort((a, b) => {
-      if (a.cost !== b.cost) return a.cost - b.cost;
-      if (a.minPlan !== b.minPlan) return a.minPlan === "FREE" ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    })[0] ?? null
-  );
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -86,10 +72,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ title: existing.title, titleSource: coerceTitleSource(existing.titleSource), renamed: false });
   }
 
-  const plan = await getUserPlan(user.id);
-  const titleModel = pickTitleModel(plan);
-  const generated = titleModel ? await generateChatTitleFromMessages(titleModel, contextMessages).catch(() => null) : null;
+  // Naming is not plan-gated: it runs on the shared utility-model walk, which
+  // picks a cheap fast model from whichever providers the server has keys for.
+  // (It used to resolve a model through canUseModel(), which is Pro-floored —
+  // so a Free user got no title model at all and always hit the crude fallback.)
+  const generated = await generateChatTitleFromMessages(contextMessages).catch((err) => {
+    console.error("[title] generation failed", { conversationId: id, err });
+    return null;
+  });
   const nextTitle = generated ?? fallbackChatTitle(contextMessages) ?? existing.title;
+  if (!generated) console.warn("[title] falling back to prompt-derived title", { conversationId: id });
 
   if (!nextTitle || nextTitle === existing.title) {
     return NextResponse.json({ title: existing.title, titleSource: coerceTitleSource(existing.titleSource), renamed: false });
@@ -111,7 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   }
 
-  if (existing.projectId && titleModel) {
+  if (existing.projectId) {
     const projectId = existing.projectId;
     after(async () => {
       const project = await prisma.project
@@ -122,10 +114,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         .catch(() => null);
       if (!project || !canAutoRenameProjectName({ name: project.name, nameSource: project.nameSource })) return;
       const generatedProjectName =
-        (await generateProjectName(titleModel, {
+        (await generateProjectName({
           firstUser: contextMessages.map((m) => m.content).join("\n\n").slice(0, 2000),
           instructions: project.instructions,
-        }).catch(() => null)) ?? nextTitle;
+        }).catch((err) => {
+          console.error("[title] project name generation failed", { projectId, err });
+          return null;
+        })) ?? nextTitle;
       const projectUpdate = await prisma.project
         .updateMany({
           where: { id: projectId, userId: user.id, name: project.name, nameSource: project.nameSource },

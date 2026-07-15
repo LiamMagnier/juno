@@ -113,13 +113,22 @@ export function EmptyGreeting() {
   return (
     <div className="flex flex-col items-center text-center">
       <h1
-        className="text-3xl font-serif font-normal tracking-tight motion-safe:animate-rise-in [animation-delay:80ms] [animation-fill-mode:backwards] sm:text-display"
+        className="text-3xl font-serif font-normal tracking-tight sm:text-display"
         suppressHydrationWarning
       >
-        {phrase}
+        {/* The greeting and the name rise as two beats rather than one block —
+            the name lands a touch later, so the line reads as addressed to you
+            instead of stamped in. */}
+        <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
+          {phrase}
+          {firstName ? "," : null}
+        </span>
         {firstName ? (
           <>
-            , <span className="italic text-primary">{firstName}</span>
+            {" "}
+            <span className="inline-block italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+              {firstName}
+            </span>
           </>
         ) : null}
       </h1>
@@ -178,6 +187,27 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
 
   const prompts = React.useMemo(() => (displayed ? buildPrompts(displayed, context) : []), [displayed, context]);
 
+  /*
+   * The grid-rows 0fr→1fr expand REQUIRES overflow-hidden to clip the rows while
+   * they animate — but that same clip slices the cards' hover shadow flat, which
+   * reads as a hard bar across them. `shadow-float` reaches ~40px below a card
+   * (0 14px 36px -10px); the previous mitigation was pt-1/pb-1, i.e. 4px, so it
+   * never stood a chance.
+   *
+   * So: clip only WHILE animating, then release. Collapsing re-clips immediately
+   * (settled resets with `active`), which is what the animation needs.
+   */
+  const [settled, setSettled] = React.useState(false);
+  React.useEffect(() => {
+    if (!active) {
+      setSettled(false);
+      return;
+    }
+    // duration-base (220ms) + a frame of margin.
+    const t = window.setTimeout(() => setSettled(true), 240);
+    return () => window.clearTimeout(t);
+  }, [active]);
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-3 px-3 sm:px-0">
       <div className="flex w-full flex-wrap justify-center gap-2 pb-1">
@@ -193,11 +223,25 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
               aria-expanded={selected}
               style={{ animationDelay: `${180 + i * 45}ms` }}
               className={cn(
-                "inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border px-3 font-sans text-sm font-medium shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in sm:h-11 sm:px-4 sm:text-base",
-                selected ? "border-primary/40 bg-primary/10 text-foreground" : "border-border/70 bg-card/70 text-foreground/80 hover:bg-accent"
+                // Pill: full-round so it reads as a chip, not a small card.
+                // transition-[…] rather than transition-all so only compositor
+                // properties (transform/opacity) and paint-cheap colours animate.
+                "group inline-flex h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 font-sans text-sm font-medium shadow-soft backdrop-blur",
+                "transition-[transform,background-color,border-color,box-shadow] duration-base ease-spring",
+                "[animation-fill-mode:backwards] hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none",
+                "sm:h-11 sm:px-4 sm:text-base",
+                // Coral is reserved for the SELECTED pill, so hover only lifts.
+                selected
+                  ? "border-primary/40 bg-primary/10 text-foreground"
+                  : "border-border/70 bg-card/70 text-foreground/80 hover:border-border hover:bg-card hover:text-foreground"
               )}
             >
-              <Icon className="h-4 w-4 text-muted-foreground" />
+              <Icon
+                className={cn(
+                  "h-4 w-4 transition-colors duration-base ease-out-soft",
+                  selected ? "text-primary" : "text-muted-foreground group-hover:text-foreground/70"
+                )}
+              />
               {starter.label}
             </button>
           );
@@ -208,9 +252,9 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
           onClick={() => router.push("/compare")}
           aria-label="Compare models side by side"
           style={{ animationDelay: `${180 + STARTERS.length * 45}ms` }}
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border/70 bg-card/70 px-3 font-sans text-sm font-medium text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:bg-accent hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in sm:h-11 sm:px-4 sm:text-base"
+          className="group inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card/70 px-3.5 font-sans text-sm font-medium text-foreground/80 shadow-soft backdrop-blur transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-border hover:bg-card hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none sm:h-11 sm:px-4 sm:text-base"
         >
-          <Columns2 className="h-4 w-4 text-muted-foreground" />
+          <Columns2 className="h-4 w-4 text-muted-foreground transition-colors duration-base ease-out-soft group-hover:text-foreground/70" />
           Compare
         </button>
       </div>
@@ -221,16 +265,25 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
           active ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
         )}
       >
-        {/* pt/pb keep the hover lift + shadow from clipping on the overflow-hidden wrapper */}
-        <div className="min-h-0 overflow-hidden" inert={!active}>
-          <div className="grid w-full gap-2 pb-1 pt-1 sm:grid-cols-3">
+        {/* Clipped only while the row animates — see `settled` above. */}
+        <div className={cn("min-h-0", settled ? "overflow-visible" : "overflow-hidden")} inert={!active}>
+          <div className="grid w-full gap-2 py-1 sm:grid-cols-3">
             {prompts.map((prompt, i) => (
               <button
                 key={prompt}
                 type="button"
                 onClick={() => onPick(prompt)}
                 style={{ animationDelay: `${80 + i * 45}ms` }}
-                className="min-h-20 rounded-xl border border-border/70 bg-card/70 px-3.5 py-3 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in"
+                // 16px radius: these are cards, not chips — deliberately a step
+                // down from the pills' full round and the composer's 28px shell.
+                // Hover is a LIFT, not a colour wash: the card brightens toward
+                // the card surface and raises its shadow. It used to tint coral
+                // (border-primary/35 + bg-accent), which read as a selected
+                // state on a merely-hovered card and muddied the warm palette.
+                // `relative` + `hover:z-10`: without a stacking order the next
+                // card's opaque background paints over this one's shadow, which
+                // clips it into a straight edge exactly like the wrapper did.
+                className="relative min-h-20 rounded-2xl border border-border/70 bg-card/70 px-4 py-3.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-card hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in motion-reduce:transition-none"
               >
                 <span className="line-clamp-3">{prompt}</span>
               </button>

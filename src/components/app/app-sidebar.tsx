@@ -314,7 +314,10 @@ export function AppSidebar({
 
   return (
     <div key="expanded" className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground motion-safe:animate-fade-in md:w-[280px]">
-      <div className="flex items-center justify-between px-3 pb-7 pt-3">
+      {/* pb-2 (+ the nav's pt-1) = 12px to the first row. This was pb-7, which
+          left a ~32px void between the wordmark and "New chat" and read as a
+          layout gap rather than a deliberate break. */}
+      <div className="flex items-center justify-between px-3 pb-2 pt-3">
         <Link href="/chat" onClick={() => setSidebarOpen(false)} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <span className="font-serif text-2xl font-normal tracking-normal text-foreground pl-1">
             Juno

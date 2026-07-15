@@ -6,12 +6,12 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeft,
-  Check,
   FileCode,
   FileText,
   Image as ImageIcon,
   Info,
   Loader2,
+  Maximize2,
   Pencil,
   Plus,
   Table,
@@ -22,7 +22,7 @@ import {
   FolderClosed,
   FolderInput,
   X,
-  Brain,
+  NotebookPen,
   FileUp,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -51,6 +51,8 @@ import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
 
+const INSTRUCTIONS_LIMIT = 20_000;
+
 interface Detail {
   project: { id: string; name: string; instructions: string; updatedAt: string };
   conversations: { id: string; title: string; lastMessageAt: string; pinned: boolean }[];
@@ -60,11 +62,13 @@ interface Detail {
 export default function ProjectDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
-  const { settings, setSettings, features } = useApp();
+  const { settings } = useApp();
   const [data, setData] = React.useState<Detail | null>(null);
   const [error, setError] = React.useState<"notfound" | "error" | null>(null);
   const [instructions, setInstructions] = React.useState("");
   const [instructionsOpen, setInstructionsOpen] = React.useState(false);
+  /** Guards an unsaved instructions draft against Escape / X / backdrop. */
+  const [confirmDiscard, setConfirmDiscard] = React.useState(false);
   const [editingName, setEditingName] = React.useState(false);
   const [nameDraft, setNameDraft] = React.useState("");
   const [uploading, setUploading] = React.useState(false);
@@ -86,6 +90,8 @@ export default function ProjectDetailPage() {
   const [memories, setMemories] = React.useState<{ id: string; content: string }[]>([]);
   // Store all projects for moving chats
   const [allProjects, setAllProjects] = React.useState<{ id: string; name: string }[]>([]);
+  // Chat pending deletion — a real dialog, matching the project-delete confirm.
+  const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
 
   // Composer states
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
@@ -165,33 +171,70 @@ export default function ProjectDetailPage() {
     window.dispatchEvent(new CustomEvent("starred:sync"));
   };
 
+  /**
+   * Throws on failure — including a network reject, which `fetch` raises rather
+   * than resolving. It used to toast and return normally, so callers carried on
+   * as if the write had landed: a failed instructions save reported success,
+   * overwrote local state and closed the dialog, silently destroying a draft the
+   * user may have spent real effort pasting in.
+   */
   const patch = async (body: Record<string, unknown>) => {
     const r = await fetch(`/api/projects/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    });
-    if (!r.ok) toast.error("Could not save.");
+    }).catch(() => null);
+    if (!r || !r.ok) throw new Error("save-failed");
   };
 
-  const saveInstructions = () => {
-    if (data && instructions !== data.project.instructions) {
-      patch({ instructions });
-      setData({ ...data, project: { ...data.project, instructions } });
-      toast.success("Project instructions saved.");
-    }
-  };
-
-  const saveInstructionsInline = async () => {
-    if (!data || instructions === data.project.instructions || savingInstructions) return;
+  const saveInstructions = async (): Promise<boolean> => {
+    if (!data || instructions === data.project.instructions || savingInstructions) return false;
     setSavingInstructions(true);
     try {
       await patch({ instructions });
       setData({ ...data, project: { ...data.project, instructions, updatedAt: new Date().toISOString() } });
       toast.success("Project instructions saved.");
+      return true;
+    } catch {
+      // Keep the dialog open and the draft intact so the user can retry.
+      toast.error("Couldn’t save — your text is still here. Check your connection and try again.");
+      return false;
     } finally {
       setSavingInstructions(false);
     }
+  };
+
+  // Save from the dialog. Closing via setInstructionsOpen (not onOpenChange) is what
+  // keeps the just-saved draft from being discarded by `discardInstructions`.
+  const saveInstructionsAndClose = async () => {
+    // Only close on a confirmed write — closing after a failure would drop the
+    // draft the error toast just told the user was safe.
+    if (await saveInstructions()) setInstructionsOpen(false);
+  };
+
+  // `instructions` is one shared buffer — the sidebar preview and the Workspace inline
+  // editor both read it. Dismissing the dialog has to restore the saved value, or an
+  // abandoned draft keeps rendering elsewhere as if it were persisted.
+  const discardInstructions = () => {
+    setInstructions(data?.project.instructions ?? "");
+    setInstructionsOpen(false);
+    setConfirmDiscard(false);
+  };
+
+  /**
+   * Every dismissal route — Escape, the X, the backdrop, Cancel — funnels through
+   * here. Dismissing DISCARDS (the shared buffer above forces that), so with an
+   * unsaved draft it must ask first: people paste long prompts in here and a stray
+   * Escape silently destroying one is unacceptable.
+   */
+  const requestCloseInstructions = () => {
+    // Computed here rather than reusing `instructionsDirty`, which is declared
+    // below the early returns — this handler must not depend on that ordering.
+    if (instructions !== (data?.project.instructions ?? "")) {
+      setConfirmDiscard(true);
+      return;
+    }
+    discardInstructions();
   };
 
   const clearFresh = React.useCallback((fileId: string) => {
@@ -352,7 +395,7 @@ export default function ProjectDetailPage() {
 
   // Quick Action: Delete chat
   const deleteChat = async (chatId: string) => {
-    if (!confirm("Are you sure you want to delete this chat?")) return;
+    setChatToDelete(null);
     const r = await fetch(`/api/conversations/${chatId}`, { method: "DELETE" });
     if (r.ok) {
       setData((cur) => {
@@ -399,16 +442,26 @@ export default function ProjectDetailPage() {
     return <Centered title="Couldn’t load this project" body="Something went wrong." retry={load} onBack={() => router.push("/projects")} />;
   }
   if (!data) {
+    // Mirrors the real header rhythm (eyebrow · title · meta) so the page doesn't
+    // reflow when data lands.
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-8">
-        <div className="skeleton mb-4 h-8 w-48 rounded-lg" />
-        <div className="skeleton h-40 w-full rounded-lg" />
+      <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
+        <div className="skeleton mb-8 h-8 w-28 rounded-xl" />
+        <div className="skeleton mb-3 h-3 w-20 rounded-sm" />
+        <div className="skeleton mb-3 h-10 w-72 rounded-md" />
+        <div className="skeleton mb-8 h-3 w-56 rounded-sm" />
+        <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
+          <div className="skeleton h-40 w-full rounded-lg" />
+          <div className="skeleton h-64 w-full rounded-lg" />
+        </div>
       </div>
     );
   }
 
   const workspaceFiles = data.files.filter((f) => f.fileName !== "__cover__");
   const instructionsDirty = instructions !== data.project.instructions;
+  const instructionLines = instructions ? instructions.split("\n").length : 0;
+  const nearInstructionsLimit = instructions.length > INSTRUCTIONS_LIMIT * 0.9;
   const totalTokenEstimate = workspaceFiles.reduce(
     (sum, f) => sum + (isTextExtractable(f.mimeType) ? Math.round(f.size / 4) : 0),
     0
@@ -417,393 +470,440 @@ export default function ProjectDetailPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6">
-        <Button variant="ghost" size="sm" onClick={() => router.push("/projects")} className="mb-4 gap-1.5 text-muted-foreground hover:bg-accent/40">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/projects")}
+          className="-ml-3 mb-6 gap-1.5 text-muted-foreground hover:text-foreground"
+        >
           <ArrowLeft className="h-4 w-4" /> All projects
         </Button>
 
-        {/* Title / Action bar */}
-        <div className="mb-6 flex items-center justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  {editingName ? (
-                    <Input
-                      value={nameDraft}
-                      onChange={(e) => setNameDraft(e.target.value)}
-                      autoFocus
-                      onBlur={saveName}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") saveName();
-                        if (e.key === "Escape") setEditingName(false);
-                      }}
-                      className="max-w-md font-serif text-title focus-visible:ring-1"
-                    />
-                  ) : (
-                    <h1 className="font-serif text-title font-medium truncate">{data.project.name}</h1>
-                  )}
-                  {!editingName && (
-                    <button
-                      onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
-                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label="Rename project"
-                      title="Rename project"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
+        {/* Header — eyebrow · serif hero · mono meta. The old single 22px title had no
+            supporting hierarchy, so it read as a form label on a 1152px page. */}
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <CardEyebrow>Project</CardEyebrow>
+            {/* Type scale lives on the wrapper so the rename input inherits the hero
+                metrics verbatim (text-[length:inherit]). Passing `text-display` into
+                Input would be silently dead: twMerge reads custom type tokens as colour
+                classes and keeps Input's `text-sm`, which wins on alphabetical order. */}
+            <div className="mt-2 flex items-center gap-2 font-serif text-display">
+              {editingName ? (
+                <Input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  autoFocus
+                  onBlur={saveName}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveName();
+                    if (e.key === "Escape") setEditingName(false);
+                  }}
+                  aria-label="Project name"
+                  className="h-auto max-w-xl rounded-md px-2 py-0.5 text-[length:inherit]"
+                />
+              ) : (
+                <>
+                  <h1 className="truncate">{data.project.name}</h1>
+                  <button
+                    onClick={() => { setNameDraft(data.project.name); setEditingName(true); }}
+                    className="pressable shrink-0 rounded-md p-1.5 text-base text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="Rename project"
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+            </div>
+            <p className="mt-2 font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+              {plural(data.conversations.length, "chat")} · {plural(workspaceFiles.length, "file")} · Updated{" "}
+              {timeAgo(data.project.updatedAt)}
+            </p>
+          </div>
 
-              <div className="flex items-center gap-1 shrink-0">
-                {/* Project star */}
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleProjectStar}
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={isStarred ? "Unstar project" : "Star project"}
+              aria-pressed={isStarred}
+            >
+              <Star className={cn("h-4 w-4", isStarred && "fill-primary text-primary")} />
+            </Button>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={toggleProjectStar}
-                  className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                  title={isStarred ? "Unstar project" : "Star project"}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label="Project actions"
                 >
-                  <Star className={cn("h-4 w-4", isStarred ? "fill-primary text-primary" : "")} />
+                  <MoreVertical className="h-4 w-4" />
                 </Button>
-
-                {/* Project actions */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="h-8 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                      title="Project actions"
-                    >
-                      <MoreVertical className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    <DropdownMenuItem onSelect={() => { setNameDraft(data.project.name); setEditingName(true); }}>
-                      <Pencil className="h-4 w-4 mr-2" />
-                      <span>Rename project</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
-                      <Trash2 className="h-4 w-4 mr-2" />
-                      <span>Delete project</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-        </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem onSelect={() => { setNameDraft(data.project.name); setEditingName(true); }}>
+                  <Pencil className="mr-2 h-4 w-4" />
+                  <span>Rename project</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setInstructionsOpen(true)}>
+                  <NotebookPen className="mr-2 h-4 w-4" />
+                  <span>Edit instructions</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setDeleteOpen(true)} className="text-destructive focus:bg-destructive focus:text-destructive-foreground">
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span>Delete project</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
 
         <Tabs value={tab} onValueChange={setTab}>
-          <TabsList className="mb-6 rounded-2xl bg-muted/70 p-1">
-            <TabsTrigger value="overview" className="rounded-xl px-4">Overview</TabsTrigger>
-            <TabsTrigger value="workspace" className="rounded-xl px-4">Workspace</TabsTrigger>
+          {/* Radius/padding left to the primitive — its 14px track / 10px trigger pair is
+              already concentric; the old rounded-2xl + rounded-xl override broke that. */}
+          <TabsList className="mb-6">
+            <TabsTrigger value="overview" className="px-4">Overview</TabsTrigger>
+            <TabsTrigger value="workspace" className="px-4">Workspace</TabsTrigger>
           </TabsList>
 
           {/* Both tabs stay mounted (forceMount) so composer drafts and refs survive switching. */}
           <TabsContent value="overview" forceMount className="data-[state=inactive]:hidden">
-        <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-          {/* Main workspace (Left Column) */}
-          <div className="min-w-0">
-            {/* Premium Composer */}
-            <div className="mb-8">
-              <Composer
-                conversationId={null}
-                model={selectedModel as any}
-                onModelChange={(m) => setSelectedModel(m)}
-                onSend={(text, _attachments, options) => handleSend(text, options)}
-                isBusy={false}
-                status="idle"
-                onStop={() => {}}
-                canvasEnabled={canvasEnabled}
-                onToggleCanvas={setCanvasEnabled}
-                reasoningEffort={reasoningEffort}
-                onReasoningChange={setReasoningEffort}
-                placeholder="How can I help you today?"
-              />
-            </div>
-
-            {/* Conversations list */}
-            <div>
-              <CardEyebrow className="mb-3 block text-muted-foreground/80 tracking-widest font-mono text-[10px] uppercase">
-                Chats in this project
-              </CardEyebrow>
-              {data.conversations.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-6 py-10 text-center motion-safe:animate-rise-in">
-                  <p className="font-serif text-heading">No chats yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Ask a question in the composer above to start a conversation.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {data.conversations.map((c) => (
-                    <div
-                      key={c.id}
-                      className="group relative flex items-center justify-between rounded-xl hover:bg-accent transition-colors duration-fast"
-                    >
-                      <Link href={`/chat/${c.id}`} className="flex flex-1 flex-col gap-0.5 px-3 py-2.5 pr-28">
-                        <span className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">
-                          {c.title}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          Last message {timeAgo(c.lastMessageAt)}
-                        </span>
-                      </Link>
-
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100 transition-opacity duration-fast">
-                        {/* Star/Pin */}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => togglePin(c.id, c.pinned)}
-                          title={c.pinned ? "Unstar chat" : "Star chat"}
-                          className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
-                        >
-                          <Star className={cn("h-4 w-4", c.pinned ? "fill-primary text-primary" : "")} />
-                        </Button>
-
-                        {/* Move Project */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              title="Move chat"
-                              className="h-7 w-7 rounded-md text-muted-foreground hover:text-foreground"
-                            >
-                              <FolderInput className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <span className="block px-2 py-1.5 text-xs font-semibold text-muted-foreground/80">Move to project:</span>
-                            <DropdownMenuSeparator />
-                            {allProjects.filter((p) => p.id !== data.project.id).map((p) => (
-                              <DropdownMenuItem key={p.id} onSelect={() => moveChat(c.id, p.id)}>
-                                <FolderClosed className="h-4 w-4 mr-2" />
-                                <span className="truncate">{p.name}</span>
-                              </DropdownMenuItem>
-                            ))}
-                            <DropdownMenuItem onSelect={() => moveChat(c.id, null)}>
-                              <X className="h-4 w-4 mr-2" />
-                              <span>Remove from project</span>
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-
-                        {/* Delete Chat */}
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => deleteChat(c.id)}
-                          title="Delete chat"
-                          className="h-7 w-7 rounded-md text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Unified Project Sidebar (Right Column) */}
-          <div className="space-y-4">
-            <Card className="bg-card border shadow-soft overflow-hidden">
-              {/* Cover Image Banner */}
-              {coverUrl ? (
-                <div className="relative h-32 w-full group/cover overflow-hidden bg-muted border-b">
-                  <img src={coverUrl} className="h-full w-full object-cover" alt="Cover" />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/cover:opacity-100 focus-within:opacity-100 transition-opacity duration-base ease-out-soft flex items-center justify-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-7 px-2.5 text-xs rounded-md"
-                      onClick={() => coverRef.current?.click()}
-                    >
-                      Change
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-7 px-2.5 text-xs rounded-md"
-                      onClick={removeCover}
-                    >
-                      Remove
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div
-                  onClick={() => coverRef.current?.click()}
-                  className="group relative h-24 w-full bg-muted/20 border-b border-dashed flex flex-col items-center justify-center cursor-pointer hover:bg-muted/30 transition-colors duration-fast ease-out-soft"
-                >
-                  <Plus className="h-5 w-5 text-muted-foreground/60 mb-1 group-hover:scale-110 transition-transform duration-base ease-out-soft" />
-                  <span className="text-[10px] text-muted-foreground/80 font-medium">Add project image</span>
-                </div>
-              )}
-              <input
-                ref={coverRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) uploadCover(f);
-                  e.target.value = "";
-                }}
-              />
-
-              <div className="p-4 divide-y divide-border/40">
-                {/* Memory Section */}
-                <div className="pb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-1.5">
-                      <Brain className="h-4 w-4 text-primary" />
-                      <span className="font-serif text-sm font-semibold">Memory</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground uppercase font-mono tracking-wider">Only you</span>
-                      <button
-                        onClick={() => router.push("/memory")}
-                        className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                        title="Manage memories"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                  {memories.length === 0 ? (
-                    <p className="text-xs text-muted-foreground/80 leading-relaxed italic">
-                      No memories saved yet. Juno builds memories across conversations.
-                    </p>
-                  ) : (
-                    <div className="space-y-1.5 max-h-[120px] overflow-y-auto pr-1">
-                      {memories.slice(0, 3).map((m) => (
-                        <p key={m.id} className="text-xs text-muted-foreground/90 leading-relaxed truncate">
-                          • {m.content}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  <p className="mt-2 text-[10px] text-muted-foreground/60">Automatically updated</p>
+            <div className="grid gap-6 lg:grid-cols-[1fr_20rem] lg:gap-8">
+              {/* Main workspace (Left Column) */}
+              <div className="min-w-0">
+                <div className="mb-8">
+                  <Composer
+                    conversationId={null}
+                    model={selectedModel as any}
+                    onModelChange={(m) => setSelectedModel(m)}
+                    onSend={(text, _attachments, options) => handleSend(text, options)}
+                    isBusy={false}
+                    status="idle"
+                    onStop={() => {}}
+                    canvasEnabled={canvasEnabled}
+                    onToggleCanvas={setCanvasEnabled}
+                    reasoningEffort={reasoningEffort}
+                    onReasoningChange={setReasoningEffort}
+                    placeholder="How can I help you today?"
+                  />
                 </div>
 
-                {/* Instructions Section */}
-                <div className="py-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-serif text-sm font-semibold">Instructions</span>
-                    <button
-                      onClick={() => setInstructionsOpen(true)}
-                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title="Edit instructions"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {instructions ? (
-                    <p className="text-xs text-muted-foreground/90 leading-relaxed line-clamp-4 italic bg-muted/30 border border-border/40 rounded-lg p-2">
-                      {instructions}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground/60 leading-relaxed italic">
-                      No instructions set. Injected into every chat here.
-                    </p>
-                  )}
-                </div>
-
-                {/* Files Section */}
-                <div className="pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-serif text-sm font-semibold">Files</span>
-                    <button
-                      onClick={() => fileRef.current?.click()}
-                      disabled={uploading}
-                      className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      title="Add file"
-                    >
-                      {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  {data.files.filter((f) => f.fileName !== "__cover__").length === 0 ? (
-                    <div
-                      className="rounded-2xl border border-dashed border-border/60 bg-muted/10 p-5 text-center transition-colors duration-fast ease-out-soft hover:bg-muted/20 cursor-pointer"
-                      onClick={() => fileRef.current?.click()}
-                    >
-                      <FileUp className="mx-auto h-6 w-6 text-muted-foreground/60 mb-2" />
-                      <p className="text-xs text-muted-foreground leading-normal">
-                        Add PDFs, documents, or other text to reference in this project.
+                {/* Conversations list */}
+                <section>
+                  <CardEyebrow className="mb-3 block">Chats in this project</CardEyebrow>
+                  {data.conversations.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border/60 bg-muted/10 px-6 py-12 text-center motion-safe:animate-rise-in">
+                      <p className="font-serif text-heading">No chats yet</p>
+                      <p className="mx-auto mt-1.5 max-w-sm text-body text-muted-foreground">
+                        Ask a question in the composer above to start a conversation.
                       </p>
                     </div>
                   ) : (
-                    <ul className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                      {data.files.filter((f) => f.fileName !== "__cover__").map((f) => (
-                        <li key={f.id} className="group/file flex items-center justify-between gap-2 rounded-xl border bg-card p-2 hover:bg-accent transition-colors duration-fast ease-out-soft">
-                          <a
-                            href={f.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex flex-1 items-center gap-2 min-w-0"
-                          >
-                            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-xs font-medium text-foreground">{f.fileName}</p>
-                              <p className="text-[10px] text-muted-foreground">{formatBytes(f.size)}</p>
-                            </div>
-                          </a>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            onClick={() => deleteFile(f.id)}
-                            className="h-6 w-6 rounded-md text-muted-foreground hover:text-destructive opacity-0 group-hover/file:opacity-100 focus-visible:opacity-100 coarse:opacity-100 transition-opacity duration-fast"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
+                    <ul className="space-y-2">
+                      {data.conversations.map((c) => (
+                        // relative + hover:z-10 — without it the next row's opaque bg-card
+                        // paints straight over this row's lift shadow.
+                        <li
+                          key={c.id}
+                          className="group relative flex items-center gap-2 rounded-xl border border-border/60 bg-card px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                        >
+                          <Link href={`/chat/${c.id}`} className="flex min-w-0 flex-1 flex-col gap-0.5 rounded-md">
+                            <span className="truncate text-body font-medium text-foreground">{c.title}</span>
+                            <span className="font-mono text-caption text-muted-foreground">
+                              Last message {timeAgo(c.lastMessageAt)}
+                            </span>
+                          </Link>
+
+                          {/* opacity-0 alone leaves invisible-but-clickable controls in the
+                              row; pointer-events follows visibility. Focus still reaches them. */}
+                          <div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none">
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => togglePin(c.id, c.pinned)}
+                              aria-label={c.pinned ? "Unstar chat" : "Star chat"}
+                              aria-pressed={c.pinned}
+                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            >
+                              <Star className={cn("h-4 w-4", c.pinned && "fill-primary text-primary")} />
+                            </Button>
+
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  aria-label="Move chat to another project"
+                                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                                >
+                                  <FolderInput className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="w-56">
+                                <p className="px-2 py-1.5 font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+                                  Move to project
+                                </p>
+                                <DropdownMenuSeparator />
+                                {allProjects.filter((p) => p.id !== data.project.id).map((p) => (
+                                  <DropdownMenuItem key={p.id} onSelect={() => moveChat(c.id, p.id)}>
+                                    <FolderClosed className="mr-2 h-4 w-4" />
+                                    <span className="truncate">{p.name}</span>
+                                  </DropdownMenuItem>
+                                ))}
+                                <DropdownMenuItem onSelect={() => moveChat(c.id, null)}>
+                                  <X className="mr-2 h-4 w-4" />
+                                  <span>Remove from project</span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              onClick={() => setChatToDelete({ id: c.id, title: c.title })}
+                              aria-label="Delete chat"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </li>
                       ))}
                     </ul>
                   )}
-                </div>
+                </section>
               </div>
-            </Card>
-          </div>
-        </div>
+
+              {/* Unified Project Sidebar (Right Column).
+                  Card radius 24 − p-4 (16) = 8 → every inner surface is rounded-md. */}
+              <div>
+                <Card className="overflow-hidden">
+                  {coverUrl ? (
+                    <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
+                      <img src={coverUrl} className="h-full w-full object-cover" alt="" />
+                      <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none">
+                        <Button variant="secondary" size="sm" onClick={() => coverRef.current?.click()}>
+                          Change
+                        </Button>
+                        <Button variant="destructive" size="sm" onClick={removeCover}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => coverRef.current?.click()}
+                      className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-muted/20 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none"
+                    >
+                      <Plus className="mb-1 h-5 w-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
+                      <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+                        Add project image
+                      </span>
+                    </button>
+                  )}
+                  <input
+                    ref={coverRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) uploadCover(f);
+                      e.target.value = "";
+                    }}
+                  />
+
+                  <div className="divide-y divide-border/60 p-4">
+                    {/* Memory */}
+                    <section className="pb-5">
+                      <div className="mb-2.5 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <NotebookPen className="h-3.5 w-3.5 text-muted-foreground" />
+                          <CardEyebrow>Memory</CardEyebrow>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+                            Only you
+                          </span>
+                          <button
+                            onClick={() => router.push("/memory")}
+                            className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                            aria-label="Manage memories"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      {memories.length === 0 ? (
+                        <p className="text-caption leading-relaxed text-muted-foreground">
+                          No memories saved yet. Juno builds memories across conversations.
+                        </p>
+                      ) : (
+                        <ul className="max-h-[7.5rem] list-disc space-y-1.5 overflow-y-auto pl-4 pr-1 marker:text-muted-foreground/50">
+                          {memories.slice(0, 3).map((m) => (
+                            // truncate lives on the span: `overflow:hidden` on the li itself
+                            // would clip the outside list marker away.
+                            <li key={m.id} className="text-caption leading-relaxed text-muted-foreground">
+                              <span className="block truncate">{m.content}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="mt-2.5 font-mono text-caption text-muted-foreground/70">Automatically updated</p>
+                    </section>
+
+                    {/* Instructions */}
+                    <section className="py-5">
+                      <div className="mb-2.5 flex items-center justify-between gap-2">
+                        <CardEyebrow>Instructions</CardEyebrow>
+                        <button
+                          onClick={() => setInstructionsOpen(true)}
+                          className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                          aria-label="Edit project instructions"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {instructions ? (
+                        <button
+                          type="button"
+                          onClick={() => setInstructionsOpen(true)}
+                          className="block w-full rounded-md border border-border/60 bg-muted/30 p-2.5 text-left transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/50 motion-reduce:transition-none"
+                        >
+                          {/* Mono preview — it's a prompt, and the structure is the point. */}
+                          <p className="line-clamp-4 whitespace-pre-wrap break-words font-mono text-caption leading-relaxed text-muted-foreground">
+                            {instructions}
+                          </p>
+                          <p className="mt-2 font-mono text-caption text-muted-foreground/70">
+                            {instructions.length.toLocaleString()} chars · {plural(instructionLines, "line")}
+                          </p>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setInstructionsOpen(true)}
+                          className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-4 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-reduce:transition-none"
+                        >
+                          <p className="text-caption leading-relaxed text-muted-foreground">
+                            No instructions yet — add a prompt Juno follows in every chat here.
+                          </p>
+                        </button>
+                      )}
+                    </section>
+
+                    {/* Files */}
+                    <section className="pt-5">
+                      <div className="mb-2.5 flex items-center justify-between gap-2">
+                        <CardEyebrow>Files</CardEyebrow>
+                        <button
+                          onClick={() => fileRef.current?.click()}
+                          disabled={uploading}
+                          className="pressable rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"
+                          aria-label="Add file"
+                        >
+                          {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {workspaceFiles.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => fileRef.current?.click()}
+                          className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-5 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-reduce:transition-none"
+                        >
+                          <FileUp className="mx-auto mb-2 h-5 w-5 text-muted-foreground/60" />
+                          <p className="text-caption leading-relaxed text-muted-foreground">
+                            Add PDFs, documents, or other text to reference in this project.
+                          </p>
+                        </button>
+                      ) : (
+                        // -m-1 p-1: the scroll box clips at its padding box, so the inset
+                        // gives each row's lift shadow room instead of shearing it flat.
+                        <ul className="-m-1 max-h-[15rem] space-y-1.5 overflow-y-auto p-1">
+                          {workspaceFiles.map((f) => (
+                            <li
+                              key={f.id}
+                              className="group/file relative flex items-center gap-2 rounded-md border border-border/60 bg-background/40 p-2 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-soft motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                            >
+                              <a
+                                href={f.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex min-w-0 flex-1 items-center gap-2 rounded-sm"
+                              >
+                                <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-caption font-medium text-foreground">{f.fileName}</p>
+                                  <p className="font-mono text-caption text-muted-foreground">{formatBytes(f.size)}</p>
+                                </div>
+                              </a>
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                onClick={() => deleteFile(f.id)}
+                                aria-label={`Remove ${f.fileName}`}
+                                className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast pointer-events-none hover:text-destructive group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  </div>
+                </Card>
+              </div>
+            </div>
           </TabsContent>
 
           <TabsContent value="workspace" forceMount className="data-[state=inactive]:hidden">
-            <div className="grid items-start gap-6 lg:grid-cols-2">
+            <div className="grid items-start gap-6 lg:grid-cols-2 lg:gap-8">
               {/* System instructions — inline editor */}
-              <Card className="p-6">
-                <CardEyebrow className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
-                  System instructions
-                </CardEyebrow>
-                <h2 className="mt-1.5 font-serif text-heading">How Juno behaves in this project</h2>
+              <Card className="p-4">
+                <div className="mb-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <CardEyebrow>System instructions</CardEyebrow>
+                    <h2 className="mt-1.5 font-serif text-heading">How Juno behaves in this project</h2>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInstructionsOpen(true)}
+                    className="shrink-0 gap-1.5"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Full editor
+                  </Button>
+                </div>
 
                 <Textarea
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
                   placeholder="How should Juno behave? (role, tone, constraints…)"
-                  maxLength={20_000}
-                  className="mt-4 min-h-40 rounded-xl text-sm"
+                  maxLength={INSTRUCTIONS_LIMIT}
+                  spellCheck={false}
+                  aria-label="Project instructions"
+                  className="min-h-[18rem] rounded-md font-mono text-[13px] leading-relaxed"
                 />
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-3">
-                  <span
-                    className={cn(
-                      "font-mono text-caption",
-                      instructions.length > 18_000 ? "text-warning" : "text-muted-foreground"
-                    )}
-                  >
-                    {instructions.length.toLocaleString()} / 20,000
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 font-mono text-caption">
+                  {/* Colour set on a bare span: cn() would treat `text-caption` as a colour
+                      class and drop it next to text-warning/text-muted-foreground. */}
+                  <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
+                    {instructions.length.toLocaleString()} / {INSTRUCTIONS_LIMIT.toLocaleString()}
                   </span>
                   <div className="flex items-center gap-3">
-                    <span className="font-mono text-caption text-muted-foreground/80">
-                      Updated {timeAgo(data.project.updatedAt)}
-                    </span>
+                    <span className="text-muted-foreground/80">Updated {timeAgo(data.project.updatedAt)}</span>
                     <Button
                       size="sm"
-                      onClick={saveInstructionsInline}
+                      onClick={saveInstructions}
                       disabled={!instructionsDirty || savingInstructions}
-                      className="gap-1.5 rounded-xl"
+                      className="gap-1.5"
                     >
                       {savingInstructions && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                       Save
@@ -811,7 +911,7 @@ export default function ProjectDetailPage() {
                   </div>
                 </div>
 
-                <div className="mt-4 flex items-start gap-2 rounded-xl bg-muted/40 p-3.5 text-caption text-muted-foreground leading-relaxed">
+                <div className="mt-4 flex items-start gap-2 rounded-md bg-muted/40 p-3 text-caption leading-relaxed text-muted-foreground">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
                   <p>
                     These instructions are prepended to every chat in this project — Juno reads them
@@ -823,7 +923,8 @@ export default function ProjectDetailPage() {
               {/* Referenced files — upload, extraction status, token estimates */}
               <Card
                 className={cn(
-                  "p-6 transition-all duration-base ease-out-soft",
+                  "p-4 transition-[transform,border-color,background-color,box-shadow] duration-base ease-out-soft",
+                  // Coral is the active/selected voice — a live drop target qualifies.
                   dragging && "border-primary/60 ring-2 ring-primary/20"
                 )}
                 onDragEnter={onFilesDragEnter}
@@ -833,12 +934,9 @@ export default function ProjectDetailPage() {
               >
                 <div className="mb-4 flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <CardEyebrow className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
-                      Referenced files
-                    </CardEyebrow>
+                    <CardEyebrow>Referenced files</CardEyebrow>
                     <p className="mt-1.5 font-mono text-caption text-muted-foreground">
-                      ~{formatTokens(totalTokenEstimate)} tokens · {workspaceFiles.length}{" "}
-                      {workspaceFiles.length === 1 ? "file" : "files"}
+                      ~{formatTokens(totalTokenEstimate)} tokens · {plural(workspaceFiles.length, "file")}
                     </p>
                   </div>
                   <Button
@@ -846,7 +944,7 @@ export default function ProjectDetailPage() {
                     size="sm"
                     onClick={() => fileRef.current?.click()}
                     disabled={uploading}
-                    className="shrink-0 gap-1.5 rounded-xl"
+                    className="shrink-0 gap-1.5"
                   >
                     {uploading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -858,16 +956,17 @@ export default function ProjectDetailPage() {
                 </div>
 
                 {workspaceFiles.length === 0 ? (
-                  <div
-                    className="cursor-pointer rounded-lg border border-dashed border-border/60 bg-muted/10 p-10 text-center transition-colors duration-fast ease-out-soft hover:bg-muted/20 motion-safe:animate-rise-in"
+                  <button
+                    type="button"
                     onClick={() => fileRef.current?.click()}
+                    className="w-full rounded-md border border-dashed border-border/60 bg-muted/10 p-10 text-center transition-[border-color,background-color] duration-fast ease-out-soft hover:border-border hover:bg-muted/20 motion-safe:animate-rise-in motion-reduce:transition-none"
                   >
                     <FileUp className="mx-auto h-6 w-6 text-muted-foreground/50" />
                     <p className="mt-3 font-serif text-heading">No files yet</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
+                    <p className="mx-auto mt-1.5 max-w-xs text-body text-muted-foreground">
                       Drop files here or click to browse — Juno references them in every chat.
                     </p>
-                  </div>
+                  </button>
                 ) : (
                   <ul className="space-y-2">
                     {workspaceFiles.map((f, i) => (
@@ -883,7 +982,7 @@ export default function ProjectDetailPage() {
                   </ul>
                 )}
 
-                <p className="mt-3 text-caption text-muted-foreground/70">
+                <p className="mt-3 font-mono text-caption text-muted-foreground/70">
                   Drag &amp; drop anywhere on this card to add files.
                 </p>
               </Card>
@@ -908,7 +1007,7 @@ export default function ProjectDetailPage() {
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif">Delete this project?</DialogTitle>
+            <DialogTitle className="font-serif text-heading">Delete this project?</DialogTitle>
             <DialogDescription>
               Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone.
             </DialogDescription>
@@ -920,30 +1019,136 @@ export default function ProjectDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Instructions Dialog */}
-      <Dialog open={instructionsOpen} onOpenChange={setInstructionsOpen}>
-        <DialogContent className="max-w-md">
+      {/* Delete Chat Confirm Dialog — replaces window.confirm(), which was the only
+          native-modal holdout on the page. */}
+      <Dialog open={chatToDelete !== null} onOpenChange={(open) => !open && setChatToDelete(null)}>
+        <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle className="font-serif text-heading">Project instructions</DialogTitle>
+            <DialogTitle className="font-serif text-heading">Delete this chat?</DialogTitle>
             <DialogDescription>
-              How should Juno behave in this project? These instructions are automatically injected into all chats.
+              “{chatToDelete?.title}” and its messages are removed for good. This can’t be undone.
             </DialogDescription>
           </DialogHeader>
-          <Textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="How should Juno behave? (role, tone, constraints…)"
-            className="min-h-[200px] text-sm rounded-md mt-2"
-            maxLength={20_000}
-          />
-          <DialogFooter className="mt-4">
-            <Button variant="ghost" onClick={() => setInstructionsOpen(false)}>Cancel</Button>
-            <Button onClick={() => { saveInstructions(); setInstructionsOpen(false); }}>Save instructions</Button>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setChatToDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => chatToDelete && deleteChat(chatToDelete.id)}>
+              Delete chat
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Project instructions — a real editing surface. People paste multi-hundred-line
+          system prompts here, so the dialog owns a fixed tall frame (clamped by
+          DialogContent's max-h) and the textarea takes every pixel left between the
+          header and the status bar. */}
+      <Dialog open={instructionsOpen} onOpenChange={(open) => (open ? setInstructionsOpen(true) : requestCloseInstructions())}>
+        <DialogContent
+          // `overflow-hidden` evicts DialogContent's own overflow-y-auto (twMerge) —
+          // the textarea, not the dialog, must be the scroll container.
+          className="flex h-[46rem] max-w-3xl flex-col gap-0 overflow-hidden p-0"
+          // Backdrop clicks are ignored outright while dirty — an accidental click
+          // shouldn't even cost a confirm. Escape and X are deliberate, so they
+          // route through the confirm instead of being swallowed (a dead Escape
+          // key reads as a broken dialog).
+          onInteractOutside={(e) => {
+            if (instructionsDirty) e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (!instructionsDirty) return;
+            e.preventDefault();
+            setConfirmDiscard(true);
+          }}
+        >
+          <DialogHeader className="shrink-0 space-y-0 border-b border-border/60 px-6 py-5 pr-14 text-left">
+            <CardEyebrow>Project instructions</CardEyebrow>
+            <DialogTitle className="mt-2 font-serif text-title">
+              How Juno behaves in this project
+            </DialogTitle>
+            {/* No type token here: twMerge would read `text-body` as a colour and evict
+                DialogDescription's own text-muted-foreground. */}
+            <DialogDescription className="mt-1.5">
+              Prepended to every chat here — Juno reads this before your first message, alongside the
+              referenced files.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Panel radius 28 − p-5 (20) = 8 → the editor well is rounded-md. */}
+          <div className="flex min-h-0 flex-1 flex-col p-5">
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                  e.preventDefault();
+                  void saveInstructionsAndClose();
+                }
+              }}
+              placeholder={"How should Juno behave? (role, tone, constraints…)\n\nPaste a full system prompt — headings, bullets and code fences all keep their shape."}
+              maxLength={INSTRUCTIONS_LIMIT}
+              spellCheck={false}
+              autoFocus
+              aria-label="Project instructions"
+              // Monospace: this is a prompt, so alignment and indentation carry meaning.
+              className="min-h-0 flex-1 resize-none rounded-md px-4 py-3.5 font-mono text-[13px] leading-relaxed"
+            />
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-6 py-4">
+            <div className="flex items-center gap-3 font-mono text-caption">
+              <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
+                {instructions.length.toLocaleString()} / {INSTRUCTIONS_LIMIT.toLocaleString()} chars
+              </span>
+              <span aria-hidden className="text-border">|</span>
+              <span className="text-muted-foreground">{plural(instructionLines, "line")}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <kbd className="hidden rounded-sm border border-border/60 bg-background px-1.5 py-0.5 font-mono text-caption text-muted-foreground sm:inline-block">
+                ⌘↵
+              </kbd>
+              <Button variant="ghost" size="sm" onClick={requestCloseInstructions}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={saveInstructionsAndClose}
+                disabled={!instructionsDirty || savingInstructions}
+                className="gap-1.5"
+              >
+                {savingInstructions && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                Save instructions
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sibling, not nested: two live focus traps fight each other, and this must
+          be able to take focus while the instructions dialog is still open behind it. */}
+      <Dialog open={confirmDiscard} onOpenChange={(open) => !open && setConfirmDiscard(false)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Discard your changes?</DialogTitle>
+            <DialogDescription>
+              These instructions haven’t been saved. Closing now loses what you wrote.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDiscard(false)}>
+              Keep editing
+            </Button>
+            <Button variant="destructive" onClick={discardInstructions}>
+              Discard
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
   );
+}
+
+function plural(n: number, noun: string) {
+  return `${n.toLocaleString()} ${noun}${n === 1 ? "" : "s"}`;
 }
 
 // Mirrors the upload route's extraction rules: text-likes are inlined as tokens,
@@ -1009,7 +1214,7 @@ function WorkspaceFileRow({
 
   return (
     <li
-      className="group flex items-center gap-3 rounded-xl border border-border/60 bg-background/40 px-3 py-2.5 transition-colors duration-fast hover:bg-accent/40 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
+      className="group relative flex items-center gap-3 rounded-md border border-border/60 bg-background/40 px-3 py-2.5 transition-[transform,border-color,box-shadow] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:animate-rise-in motion-reduce:transition-none [animation-fill-mode:backwards]"
       style={{ animationDelay: `${Math.min(index, 10) * 40}ms` }}
     >
       <Icon className={cn("h-4 w-4 shrink-0", isImage ? "text-source" : "text-muted-foreground")} />
@@ -1019,23 +1224,23 @@ function WorkspaceFileRow({
           href={file.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="block truncate text-sm font-medium text-foreground transition-colors hover:text-primary"
+          className="block truncate rounded-sm text-body font-medium text-foreground"
         >
           {file.fileName}
         </a>
-        <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-caption text-muted-foreground">{formatBytes(file.size)}</span>
+        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 font-mono text-caption">
+          <span className="text-muted-foreground">{formatBytes(file.size)}</span>
           {!extracting &&
             (extractable ? (
-              <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-mono text-[10px] font-medium text-muted-foreground">
+              <span className="inline-flex items-center rounded-full border bg-background/60 px-2 py-0.5 font-medium text-muted-foreground">
                 ~{formatTokens(Math.round(file.size / 4))} tokens
               </span>
             ) : isImage ? (
-              <span className="inline-flex items-center gap-1 rounded-full border border-source/30 bg-background/60 px-2 py-0.5 text-[10px] font-medium text-source">
+              <span className="inline-flex items-center gap-1 rounded-full border border-source/30 bg-background/60 px-2 py-0.5 font-medium text-source">
                 <ImageIcon className="h-3 w-3" /> Visual
               </span>
             ) : (
-              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-background/60 px-2 py-0.5 text-[10px] font-medium text-warning">
+              <span className="inline-flex items-center gap-1 rounded-full border border-warning/30 bg-background/60 px-2 py-0.5 font-medium text-warning">
                 <TriangleAlert className="h-3 w-3" /> No text extracted
               </span>
             ))}
@@ -1045,20 +1250,20 @@ function WorkspaceFileRow({
       {extracting ? (
         <div className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-label="Extracting text">
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-[1800ms] ease-out-soft"
+            className="h-full rounded-full bg-primary transition-[width] duration-[1800ms] ease-out-soft motion-reduce:transition-none"
             style={{ width: barFull ? "100%" : "0%" }}
           />
         </div>
       ) : extractable ? (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 px-2 py-0.5 text-caption font-medium text-success">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-success/30 px-2 py-0.5 font-mono text-caption font-medium text-success">
           <span className="size-1.5 rounded-full bg-success" /> Extracted
         </span>
       ) : isImage ? (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 text-caption font-medium text-source">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-source/30 px-2 py-0.5 font-mono text-caption font-medium text-source">
           <span className="size-1.5 rounded-full bg-source" /> Visual
         </span>
       ) : (
-        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/30 px-2 py-0.5 text-caption font-medium text-warning">
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-warning/30 px-2 py-0.5 font-mono text-caption font-medium text-warning">
           <span className="size-1.5 rounded-full bg-warning" /> Skipped
         </span>
       )}
@@ -1067,8 +1272,8 @@ function WorkspaceFileRow({
         variant="ghost"
         size="icon-sm"
         onClick={onDelete}
-        title="Remove file"
-        className="h-7 w-7 shrink-0 rounded-md text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-within:opacity-100 group-hover:opacity-100 coarse:h-11 coarse:w-11 coarse:opacity-100"
+        aria-label={`Remove ${file.fileName}`}
+        className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast pointer-events-none hover:text-destructive group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:h-11 coarse:w-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>
@@ -1080,8 +1285,8 @@ function Centered({ title, body, onBack, retry }: { title: string; body: string;
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center motion-safe:animate-rise-in">
       <p className="font-serif text-heading">{title}</p>
-      <p className="text-sm text-muted-foreground">{body}</p>
-      <div className="flex gap-2">
+      <p className="text-body text-muted-foreground">{body}</p>
+      <div className="mt-1 flex gap-2">
         {retry && <Button variant="outline" size="sm" onClick={retry}>Try again</Button>}
         <Button size="sm" onClick={onBack}>Back to projects</Button>
       </div>

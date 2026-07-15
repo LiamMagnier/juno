@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -93,6 +94,23 @@ const MAX_TOOL_ROUNDS = 6;
  *  When `toolset` is provided, runs an MCP tool-use loop: the model may call the
  *  connected tools, we execute them, feed results back, and continue until it
  *  produces a final answer (bounded by MAX_TOOL_ROUNDS). */
+/**
+ * True when the model expresses "don't think" as reasoning_effort:"none".
+ *
+ * This must be sent explicitly rather than omitted: GPT-5.5 and GPT-5.6 default
+ * to `medium` when the parameter is absent (only 5.4 and earlier default to
+ * "none"), so omitting it made Juno's "Instant" option a no-op on the newest
+ * models. The original GPT-5 generation predates "none" — its floor is
+ * "minimal" — and xAI/DeepSeek/Zhipu express off through their own params.
+ */
+function canDisableViaNoneEffort(model: ModelInfo): boolean {
+  const id = model.providerModel.toLowerCase();
+  if (model.provider === "mistral") return true; // reasoning_effort: "none"
+  if (model.provider !== "openai") return false;
+  if (/gpt-5(\.\d)?-pro/.test(id) || id.includes("codex")) return false; // always reason
+  return /gpt-5\.\d/.test(id); // 5.1+ — the original gpt-5 has no "none"
+}
+
 export async function* streamOpenAICompat(
   model: ModelInfo,
   system: string,
@@ -120,6 +138,7 @@ export async function* streamOpenAICompat(
     }
     messages.splice(lastUser, 0, { role: "system", content: dynamicContext });
   }
+  const modelId = model.providerModel.toLowerCase();
   const isZhipuThinking = model.provider === "zhipu" && model.reasoning;
   const isMiniMax = model.provider === "minimax";
   // Qwen (DashScope) drives thinking with enable_thinking/thinking_budget, not
@@ -130,6 +149,25 @@ export async function* streamOpenAICompat(
   const effectiveReasoningEffort = reasoningEffort;
   const hasTools = !!toolset && toolset.tools.length > 0;
 
+  /*
+   * Only some providers speak OpenAI's top-level `reasoning_effort`. The rest
+   * each have their own dialect, and sending reasoning_effort to them is at best
+   * ignored and at worst a 400 — so the parameter is gated to the providers whose
+   * docs actually define it (verified 2026-07):
+   *   reasoning_effort  → openai, deepseek (v4), xai, mistral (high|none), zhipu (GLM-5.2 only)
+   *   thinking:{type}   → zhipu (all), minimax, moonshot, mimo, longcat
+   *   enable_thinking   → qwen
+   *   chat_template_kwargs.reasoning_effort → hunyuan (NOT a top-level field)
+   */
+  const usesThinkingObject =
+    model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat";
+  const usesReasoningEffort =
+    model.provider === "openai" ||
+    model.provider === "deepseek" ||
+    model.provider === "xai" ||
+    model.provider === "mistral" ||
+    (model.provider === "zhipu" && modelId.includes("glm-5.2"));
+
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
     messages,
@@ -139,24 +177,54 @@ export async function* streamOpenAICompat(
     // if a specific endpoint ever rejects it.)
     stream_options: { include_usage: true },
   };
-  if (effectiveReasoningEffort && !isQwenThinking) (params as Record<string, unknown>)["reasoning_effort"] = effectiveReasoningEffort;
+  // NOTE: assigned through the Record index rather than the SDK's typed field —
+  // the installed openai types predate "none"/"xhigh"/"max", which the REST API
+  // accepts. Providers reject unknown VALUES, not unknown TS types.
+  const setEffort = (value: string) => {
+    (params as Record<string, unknown>).reasoning_effort = value;
+  };
+  if (usesReasoningEffort) {
+    if (effectiveReasoningEffort) {
+      // Mistral's enum is only high|none, so any depth collapses to "high".
+      setEffort(model.provider === "mistral" ? "high" : effectiveReasoningEffort);
+    } else if (canDisableViaNoneEffort(model)) {
+      // Instant must be sent EXPLICITLY as "none": GPT-5.5/5.6 default to
+      // `medium` when the parameter is omitted, so simply leaving it out made
+      // Instant silently think anyway. (5.4 and earlier default to "none", but
+      // being explicit is correct there too.)
+      setEffort("none");
+    }
+  }
   if (isQwenThinking) {
     // Instant (no effort) turns Qwen thinking off; any effort turns it on and
     // maps to a token budget for the thinking phase (extra_body passthrough).
     params.enable_thinking = !!effectiveReasoningEffort;
     if (effectiveReasoningEffort) {
-      params.thinking_budget = { low: 2048, medium: 8192, high: 24000, max: 38000 }[effectiveReasoningEffort];
+      params.thinking_budget = { minimal: 1024, low: 2048, medium: 8192, high: 24000, xhigh: 32000, max: 38000 }[
+        effectiveReasoningEffort
+      ];
     }
   }
   if (isZhipuThinking) {
     // Instant (no effort) turns GLM thinking off; any effort turns it on.
+    // GLM-5.2 additionally takes reasoning_effort (handled above).
     params.thinking = { type: effectiveReasoningEffort ? "enabled" : "disabled" };
   }
+  if (usesThinkingObject && model.reasoning && reasoningCaps(model).canDisable) {
+    // Only send `thinking` to models that can actually switch it — Kimi k2.7
+    // REJECTS {type:"disabled"} outright, and MiniMax M2.x silently ignores the
+    // field (it always reasons). Both are marked canDisable:false in their caps.
+    // MiniMax M3 spells its on-state "adaptive"; the others use "enabled".
+    const onType = model.provider === "minimax" ? "adaptive" : "enabled";
+    params.thinking = { type: effectiveReasoningEffort ? onType : "disabled" };
+  }
   if (isMiniMax) {
+    // Ask MiniMax to return reasoning in its own field rather than inline.
     params.reasoning_split = true;
-    if (model.providerModel.toLowerCase() === "minimax-m3") {
-      params.thinking = { type: effectiveReasoningEffort ? "adaptive" : "disabled" };
-    }
+  }
+  if (model.provider === "hunyuan" && model.reasoning) {
+    // Hunyuan reads effort from the chat template, not a top-level field.
+    params.chat_template_kwargs = { reasoning_effort: effectiveReasoningEffort ?? "no_think" };
   }
   if (model.provider === "openai") {
     const om = model.providerModel.toLowerCase();

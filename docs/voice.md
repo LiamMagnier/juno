@@ -1,3 +1,33 @@
+# Juno voice
+
+## Read-aloud and dictation (NOT the realtime relay)
+
+These are separate from the speech-to-speech relay documented below, and they
+degrade **silently**: with no `TTS_PROVIDER` / `STT_PROVIDER` set, the client
+falls back to the browser's Web Speech API — the OS voice, which reads French
+with an English accent and transcribes non-English dictation badly.
+
+| Feature    | Route             | Model (default)     | Fallback when unset      |
+| ---------- | ----------------- | ------------------- | ------------------------ |
+| Read aloud | `/api/voice/tts`  | `gpt-4o-mini-tts`   | `window.speechSynthesis` |
+| Dictation  | `/api/voice/stt`  | `gpt-4o-transcribe` | Web Speech recognition   |
+
+Set `OPENAI_API_KEY`, `STT_PROVIDER=openai`, `TTS_PROVIDER=openai` to enable
+both. Overrides: `STT_MODEL`, `TTS_MODEL`, `TTS_VOICE`.
+
+Notes:
+
+- Dictation records audio with `MediaRecorder` **alongside** Web Speech: Web
+  Speech drives only the live preview, and the final transcript is always
+  re-transcribed server-side. It sends the browser locale as a `language` hint,
+  which is the single biggest accuracy win for French.
+- `gpt-4o-transcribe` falls back to `whisper-1` automatically if the account
+  rejects it.
+- TTS passes an `instructions` string telling the model to read in the text's own
+  language (only the `gpt-4o*-tts` line accepts `instructions`).
+- The bootstrap exposes `features.serverStt` / `features.serverTts` so the UI can
+  tell whether it is about to use a real model or the OS voice.
+
 # Juno realtime voice
 
 True speech-to-speech voice mode across four providers, on web and iOS, via a

@@ -4,9 +4,19 @@ Juno lets a user link external tools. Once linked, the stored access token is
 handed to the model as a **remote MCP server**, so the model can call that
 provider's tools with the user's own permissions.
 
-Direct connectors come in three shapes. In addition, Composio powers Juno's
-dynamic app directory: Gmail, Slack, Linear, and every other toolkit appear as
-individual connections. Composio itself is never shown as a connector.
+The Connections page shows **one unified directory**
+(`components/connections/connector-directory.tsx`). Two backends feed it and the
+user never has to care which:
+
+- **Native connectors** — the six below, each with its own OAuth/credential flow
+  and MCP endpoint. Always present, no server key needed beyond their own.
+- **Composio** — the managed catalog (Gmail, Slack, Linear, …), searchable and
+  paged. Requires `COMPOSIO_API_KEY`; when it is absent the directory still lists
+  the native connectors and shows setup steps instead of rendering empty.
+
+Composio itself is never shown as a connector. Where both backends offer the same
+app (GitHub, Figma, Notion) the **native connector wins** and Composio's
+duplicate is filtered out — see `NATIVE_EQUIVALENT` in the directory component.
 
 | Connector      | Kind          | Pre-registration          | Refreshes  | MCP endpoint                         |
 | -------------- | ------------- | ------------------------- | ---------- | ------------------------------------ |

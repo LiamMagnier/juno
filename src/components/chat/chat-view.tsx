@@ -12,6 +12,7 @@ import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, SuggestionPills } from "@/components/chat/empty-state";
+import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
@@ -243,6 +244,16 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   });
 
   const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
+
+  // Follow-ups appear only on a settled turn: the stream is idle and the last
+  // message is a non-empty assistant reply. Flipping this false while a new send
+  // is in flight is also what clears the previous turn's suggestions and drives
+  // the refetch (the component keys its effect on `visible`).
+  const followUpsVisible = React.useMemo(() => {
+    if (chat.isBusy || chat.status !== "idle" || privateMode) return false;
+    const last = chat.messages[chat.messages.length - 1];
+    return !!last && last.role === "ASSISTANT" && !!last.content.trim() && !last.errorMessage;
+  }, [chat.isBusy, chat.status, chat.messages, privateMode]);
   const latestConversationsRef = React.useRef(conversations);
   const latestMessagesRef = React.useRef(chat.messages);
   const titleDebounceRef = React.useRef<number | null>(null);
@@ -1211,6 +1222,15 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 onImageEdit={chat.sendImageEdit}
                 currentModelId={model}
               />
+              {currentConversationId && !privateMode && (
+                <div className="shrink-0 px-3 pb-2">
+                  <FollowUpSuggestions
+                    conversationId={currentConversationId}
+                    onPick={(t) => void sendFromComposer(t, [])}
+                    visible={followUpsVisible}
+                  />
+                </div>
+              )}
               <div
                 className={cn(
                   "w-full transition-all duration-500 ease-out-soft",

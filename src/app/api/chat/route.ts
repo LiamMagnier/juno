@@ -33,6 +33,7 @@ import { isWebSearchConfigured } from "@/lib/web-search";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
+import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
 import { clampReasoningEffort } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
@@ -329,6 +330,7 @@ async function handleChat(req: Request) {
     const baseSystem = buildSystemPrompt({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
+      personality: settings?.personality ?? DEFAULT_PERSONALITY,
       responseLanguage: settings?.responseLanguage ?? "auto",
       memories: [],
       memoryEnabled: false,
@@ -850,6 +852,7 @@ async function handleChat(req: Request) {
   const baseSystem = buildSystemPrompt({
     userName: user.name,
     customInstructions: settings?.customInstructions ?? "",
+    personality: settings?.personality ?? DEFAULT_PERSONALITY,
     responseLanguage: settings?.responseLanguage ?? "auto",
     memories: memoryProfile.recent,
     memorySummary: memoryProfile.summary ?? undefined,

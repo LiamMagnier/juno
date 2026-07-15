@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import {
   ArrowRight,
-  Brain,
+  NotebookPen,
   Check,
   ChevronDown,
   Copy,
@@ -276,11 +276,11 @@ export function Onboarding() {
   const capabilities = [
     { icon: MessageSquareText, label: "Chat & code", desc: "Reason and build across the best models." },
     { icon: PenLine, label: "Live canvas", desc: "Docs and apps in a side-by-side artifact." },
-    { icon: Brain, label: "Remembers you", desc: "Context and preferences carry between chats." },
+    { icon: NotebookPen, label: "Remembers you", desc: "Context and preferences carry between chats." },
     features.webSearch
       ? { icon: Globe, label: "Web search", desc: "Answers grounded in live, cited sources." }
       : null,
-  ].filter(Boolean) as { icon: typeof Brain; label: string; desc: string }[];
+  ].filter(Boolean) as { icon: typeof NotebookPen; label: string; desc: string }[];
 
   const currentPlan = quota.plan;
   // Default model must be a text/chat model — image & video models can't be defaults.

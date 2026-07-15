@@ -37,6 +37,52 @@ async function toGeminiContents(history: MessageForModel[], vision: boolean): Pr
 }
 
 /** Gemini with native Google Search grounding (real-time web results + citations). */
+/** Gemini hands back `vertexaisearch.cloud.google.com/grounding-api-redirect/…`. */
+const GROUNDING_REDIRECT = /^https:\/\/vertexaisearch\.cloud\.google\.com\/grounding-api-redirect\//i;
+
+/**
+ * Replace Gemini's grounding redirects with the publisher URLs they point at.
+ *
+ * Left raw, every source shares one host, which breaks three things at once: the
+ * UI dedupes sources BY HOST, so a dozen distinct publishers collapse into a
+ * single "google.com" entry; favicons resolve from the source's own origin, so
+ * every citation shows Google's logo instead of the publisher's; and the favicon
+ * fetch — meant to stay same-origin with a site the reader is already visiting —
+ * would instead ping Google on every render, which is exactly the third-party
+ * leak the same-origin design exists to avoid.
+ *
+ * Resolved SERVER-side (the user's browser never touches the redirect), in
+ * parallel, time-boxed, and best-effort: a redirect that won't resolve keeps its
+ * original URL, which still works when clicked.
+ */
+async function resolveGroundingUrls(list: ClientSource[]): Promise<ClientSource[]> {
+  const needsResolving = list.some((s) => GROUNDING_REDIRECT.test(s.url));
+  if (!needsResolving) return list;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6_000);
+  try {
+    return await Promise.all(
+      list.map(async (s) => {
+        if (!GROUNDING_REDIRECT.test(s.url)) return s;
+        try {
+          // `redirect: "follow"` + HEAD: we want res.url (the final hop), not a body.
+          const res = await fetch(s.url, { method: "HEAD", redirect: "follow", signal: ctrl.signal });
+          const finalUrl = res.url;
+          if (!finalUrl || GROUNDING_REDIRECT.test(finalUrl)) return s;
+          // Gemini's title is often just the bare host; prefer it only if the
+          // resolved URL gives us nothing better to show.
+          return { ...s, url: finalUrl };
+        } catch {
+          return s; // aborted / blocked / dead link — the redirect still works
+        }
+      })
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function* streamGeminiSearch(
   model: ModelInfo,
   system: string,
@@ -144,7 +190,7 @@ export async function* streamGeminiSearch(
     }
   }
 
-  if (sources.size) yield { type: "sources", sources: [...sources.values()] };
+  if (sources.size) yield { type: "sources", sources: await resolveGroundingUrls([...sources.values()]) };
   if (usageIn != null || usageOut != null) {
     yield { type: "usage", input: usageIn, output: usageOut, cacheRead: usageCached };
     // Cache hit-rate instrumentation (Gemini implicit caching).

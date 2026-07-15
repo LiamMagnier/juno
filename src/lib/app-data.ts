@@ -10,6 +10,7 @@ import { configuredProviders } from "@/lib/providers";
 import { providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
+import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -42,6 +43,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     theme: (settings?.theme.toLowerCase() as ClientSettings["theme"]) ?? "system",
     accent: settings?.accent ?? "coral",
     defaultModel: settings?.defaultModel ?? "claude-opus-4-8",
+    personality: settings?.personality ?? DEFAULT_PERSONALITY,
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",
     memoryEnabled: settings?.memoryEnabled ?? true,
@@ -72,7 +74,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     folders,
     features: {
       billing: isStripeConfigured(),
-      voiceServer: isServerSttConfigured() || isServerTtsConfigured(),
+      serverStt: isServerSttConfigured(),
+      serverTts: isServerTtsConfigured(),
       storage: isStorageAvailable(),
       webSearch: configuredProviders().some(providerSupportsWebSearch),
       deepResearch: isWebSearchConfigured(),

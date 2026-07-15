@@ -4,7 +4,8 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  Brain,
+  ArrowRight,
+  NotebookPen,
   Columns2,
   Keyboard,
   Map as MapIcon,
@@ -15,9 +16,9 @@ import {
   Settings,
   Sparkles,
   Sun,
+  X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { DotField } from "@/components/signature/dot-field";
 import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
@@ -35,7 +36,7 @@ const GROUP_ORDER: Record<string, number> = { Actions: 0, Conversations: 1, Navi
 
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
-    <kbd className="inline-flex min-w-[1.4rem] items-center justify-center rounded border border-border/80 bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
+    <kbd className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-[5px] border border-border/70 bg-muted/80 px-1 font-mono text-[10px] leading-none text-muted-foreground shadow-[0_1px_0_hsl(var(--border)/0.7)]">
       {children}
     </kbd>
   );
@@ -114,7 +115,7 @@ export function CommandPalette() {
       { id: "shortcuts", group: "Actions", label: "Keyboard shortcuts", hint: "⌘/", icon: Keyboard, keywords: "keys help", run: () => { setOpen(false); setShortcutsOpen(true); } },
       { id: "compare", group: "Navigate", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "settings", group: "Navigate", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },
-      { id: "memory", group: "Navigate", label: "Memory", icon: Brain, keywords: "remember facts", run: () => go("/memory") },
+      { id: "memory", group: "Navigate", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Navigate", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
       { id: "upgrade", group: "Navigate", label: "Plans & upgrade", icon: Sparkles, keywords: "billing pro max pricing", run: () => go("/upgrade") },
       { id: "theme", group: "Appearance", label: `Switch to ${resolvedTheme === "dark" ? "light" : "dark"} mode`, icon: resolvedTheme === "dark" ? Sun : Moon, keywords: "theme dark light appearance", run: () => { toggleTheme(); setOpen(false); } },
@@ -179,50 +180,63 @@ export function CommandPalette() {
           hideClose
           // svh + inset-x centering (no transform) so the pop-in/out keyframes own
           // `transform`, and the palette stays reachable above the mobile keyboard.
-          className="left-0 right-0 top-[10svh] mx-auto w-[calc(100%-2rem)] max-w-xl origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 shadow-glass data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
+          className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-border/60 p-0 shadow-glass data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
           onOpenAutoFocus={(e) => {
             e.preventDefault();
             (e.currentTarget as HTMLElement).querySelector("input")?.focus();
           }}
         >
           <DialogTitle className="sr-only">Command palette</DialogTitle>
-          <div className="pointer-events-none absolute inset-0 -z-10 opacity-40">
-            <DotField spacing={26} interactive={false} />
-          </div>
 
-          <div className="flex items-center gap-2.5 border-b border-border/70 px-4">
-            <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {/* Search — the palette's one input, given real presence (52px) rather
+              than the density of a list row. */}
+          <div className="flex items-center gap-3 border-b border-border/60 px-4">
+            <Search className="h-[18px] w-[18px] shrink-0 text-muted-foreground/70" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="Search commands, chats…"
-              className="w-full bg-transparent py-3.5 text-sm outline-none placeholder:text-muted-foreground"
+              className="w-full bg-transparent py-4 text-[15px] outline-none placeholder:text-muted-foreground/60"
               aria-label="Command palette search"
             />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                aria-label="Clear search"
+                className="pressable -mr-1 flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground/70 transition-colors duration-fast hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <div
             ref={listRef}
-            className="relative max-h-[min(52svh,calc(100dvh-9rem))] overflow-y-auto overscroll-contain p-2"
+            className="relative max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
           >
+            {/* One highlight that glides between rows. `transform` is animated
+                (not top), so it stays on the compositor. */}
             <div
               ref={highlightRef}
               aria-hidden="true"
-              className="pointer-events-none absolute left-2 right-2 top-0 rounded-md bg-accent opacity-0 transition-[transform,height,opacity] duration-fast ease-out-soft"
+              className="pointer-events-none absolute left-1.5 right-1.5 top-0 rounded-xl bg-accent opacity-0 transition-[transform,height,opacity] duration-base ease-spring motion-reduce:transition-none"
             />
             {items.length === 0 ? (
-              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                No matches for “{query}”.
-              </p>
+              <div className="px-3 py-10 text-center">
+                <p className="text-sm text-muted-foreground">No matches for “{query}”.</p>
+                <p className="mt-1 text-caption text-muted-foreground/60">Try a chat title, or a command like “settings”.</p>
+              </div>
             ) : (
               items.map((c, i) => {
                 const showHeader = i === 0 || items[i - 1].group !== c.group;
                 const Icon = c.icon;
+                const isActive = active === i;
                 return (
                   <React.Fragment key={c.id}>
                     {showHeader && (
-                      <div className="px-3 pb-1 pt-3 font-mono text-label uppercase text-muted-foreground/60">
+                      <div className="px-2.5 pb-1 pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55 first:pt-1.5">
                         {c.group}
                       </div>
                     )}
@@ -231,20 +245,39 @@ export function CommandPalette() {
                       data-index={i}
                       onMouseMove={() => setActive(i)}
                       onClick={() => c.run()}
-                      aria-selected={active === i}
+                      aria-selected={isActive}
                       className={cn(
-                        "relative flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
-                        active === i ? "text-foreground" : "text-foreground/80"
+                        "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >
-                      <Icon
+                      {/* Icon tile — gives every row a consistent optical anchor
+                          and lets the active state read without moving anything. */}
+                      <span
                         className={cn(
-                          "h-4 w-4 shrink-0 transition-colors duration-fast ease-out-soft",
-                          active === i ? "text-foreground" : "text-muted-foreground"
+                          "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors duration-fast ease-out-soft",
+                          isActive
+                            ? "border-border/70 bg-background text-foreground shadow-soft"
+                            : "border-transparent bg-muted/50 text-muted-foreground"
+                        )}
+                      >
+                        <Icon className="h-[15px] w-[15px]" />
+                      </span>
+                      <span className="flex-1 truncate">{c.label}</span>
+                      {c.hint && (
+                        <span className="flex shrink-0 items-center gap-1">
+                          {c.hint.split("").map((k, ki) => (
+                            <Kbd key={ki}>{k}</Kbd>
+                          ))}
+                        </span>
+                      )}
+                      <ArrowRight
+                        aria-hidden="true"
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all duration-base ease-out-soft",
+                          isActive ? "translate-x-0 opacity-60" : "-translate-x-1 opacity-0"
                         )}
                       />
-                      <span className="flex-1 truncate">{c.label}</span>
-                      {c.hint && <span className="font-mono text-[10px] text-muted-foreground">{c.hint}</span>}
                     </button>
                   </React.Fragment>
                 );
@@ -252,18 +285,18 @@ export function CommandPalette() {
             )}
           </div>
 
-          <div className="flex items-center justify-between border-t border-border/70 px-4 py-2 font-mono text-[10px] text-muted-foreground">
+          <div className="flex items-center justify-between border-t border-border/60 bg-muted/25 px-3.5 py-2.5 font-mono text-[10px] text-muted-foreground/80">
             <span className="flex items-center gap-1.5">
               <Kbd>↑</Kbd>
               <Kbd>↓</Kbd>
-              navigate
+              <span className="ml-0.5">navigate</span>
             </span>
             <span className="flex items-center gap-1.5">
               <Kbd>↵</Kbd>
-              select
-              <span className="mx-1">·</span>
+              <span className="ml-0.5">select</span>
+              <span className="mx-1 text-border">·</span>
               <Kbd>esc</Kbd>
-              close
+              <span className="ml-0.5">close</span>
             </span>
           </div>
         </DialogContent>

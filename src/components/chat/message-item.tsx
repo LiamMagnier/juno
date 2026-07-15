@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Globe, Pencil, RefreshCw, Sparkles, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Pencil, RefreshCw, Sparkles, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -12,6 +12,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
+import { SourcesPill } from "@/components/chat/sources-pill";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
@@ -19,7 +20,7 @@ import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput } from "@/hooks/use-chat";
-import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, ClientSource, GenerationStatus } from "@/types/chat";
+import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 
 /**
  * Premium "thinking → writing" indicator shown in the transcript while the
@@ -64,48 +65,29 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
   );
 }
 
-function SourcesList({ sources }: { sources: ClientSource[] }) {
-  const domainOf = (url: string) => {
-    try {
-      return new URL(url).hostname.replace(/^www\./, "");
-    } catch {
-      return url;
-    }
-  };
-  return (
-    <div className="mb-2">
-      <p className="mb-1.5 flex items-center gap-1.5 font-mono text-label uppercase text-muted-foreground">
-        <Globe className="h-3 w-3" /> {sources.length} {sources.length === 1 ? "source" : "sources"}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        {sources.map((s, i) => {
-          const domain = domainOf(s.url);
-          // Prefer a human title; fall back to the domain when the title is just the URL.
-          const label = s.title && s.title !== s.url && !/^https?:\/\//.test(s.title) ? s.title : domain;
-          return (
-            <a
-              key={i}
-              href={s.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={s.title || s.url}
-              className="group inline-flex max-w-[230px] items-center gap-1.5 rounded-lg border border-border/70 bg-card px-2 py-1 text-xs shadow-soft transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:border-source/40 hover:shadow-float"
-            >
-              <span className="font-mono text-caption text-source">[{i + 1}]</span>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={`https://www.google.com/s2/favicons?domain=${domain}&sz=32`}
-                alt=""
-                className="h-3.5 w-3.5 shrink-0 rounded-sm"
-                loading="lazy"
-              />
-              <span className="min-w-0 flex-1 truncate text-foreground/85">{label}</span>
-            </a>
-          );
-        })}
-      </div>
-    </div>
-  );
+/**
+ * Deep-research reports are prompted to end with a "## Sources" section listing
+ * every citation as "[n] Title — URL" (see buildResearchContext). Once the same
+ * list renders as the sources pill, that tail is a duplicate wall of naked URLs
+ * — so drop it from the RENDERED markdown. Copy still yields the full text.
+ *
+ * Conservative on purpose: only the last such heading, only when every line
+ * under it is a citation entry (a "Sources" section the model wrote prose into
+ * is the model saying something, not a list we already render), and only when
+ * the heading isn't inside a code fence.
+ */
+function stripTrailingSourcesSection(content: string): string {
+  const lines = content.split("\n");
+  let start = -1;
+  let fenced = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^ {0,3}(`{3,}|~{3,})/.test(lines[i])) fenced = !fenced;
+    else if (!fenced && /^#{1,6}\s+sources\s*$/i.test(lines[i])) start = i;
+  }
+  if (start === -1) return content;
+  const isEntry = (line: string) => line.trim() === "" || /^\s*(?:[-*]\s+)?\[\d{1,3}\]/.test(line);
+  if (!lines.slice(start + 1).every(isEntry)) return content;
+  return lines.slice(0, start).join("\n").trimEnd();
 }
 
 function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
@@ -348,7 +330,16 @@ export function MessageItem({
     setHeightCapped(true);
     requestAnimationFrame(() => requestAnimationFrame(() => setExpanded(false)));
   };
-  const parts = React.useMemo(() => (isUser ? [] : splitMessageContent(view.content)), [isUser, view.content]);
+  // Stable ref (message.sources / a version's sources) — safe as a memo dep and
+  // as a prop into the memoized Markdown.
+  const sources = view.sources;
+  const parts = React.useMemo(
+    () =>
+      isUser
+        ? []
+        : splitMessageContent(sources?.length ? stripTrailingSourcesSection(view.content) : view.content),
+    [isUser, view.content, sources],
+  );
 
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
@@ -472,7 +463,6 @@ export function MessageItem({
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
       <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
         <ActivityTimeline events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
-        {view.sources && view.sources.length > 0 && <SourcesList sources={view.sources} />}
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor ? (
@@ -534,7 +524,7 @@ export function MessageItem({
             )}
             {parts.map((part, i) =>
               part.type === "text" ? (
-                <Markdown key={i} content={part.text} streaming={message.streaming} />
+                <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} />
               ) : part.type === "artifact" ? (
                 (() => {
                   const artifact = artifactsByIdentifier.get(part.identifier);
@@ -576,6 +566,10 @@ export function MessageItem({
             )}
           </div>
         )}
+
+        {/* Footer, below the answer it backs — the inline chips are the citation,
+            this is the bibliography. */}
+        {sources && sources.length > 0 && <SourcesPill sources={sources} />}
 
         {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>

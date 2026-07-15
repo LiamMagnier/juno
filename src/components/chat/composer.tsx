@@ -19,6 +19,7 @@ import {
   Library,
   Loader2,
   Mic,
+  Paperclip,
   Plug,
   Plus,
   Search,
@@ -44,7 +45,9 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
@@ -182,6 +185,9 @@ export function Composer({
     () => (research && researchAvailable && planAllowsResearch ? { deepResearch: true } : undefined),
     [research, researchAvailable, planAllowsResearch]
   );
+  // Research lives in the + menu now, so the trigger carries its armed state —
+  // otherwise a per-send mode would be on with nothing on screen saying so.
+  const researchArmed = !!sendOptions;
   const placeholder = pendingClarification
     ? "Or type your own answer…"
     : quote
@@ -720,6 +726,10 @@ export function Composer({
   }, [onCancelClarification, pendingClarification]);
 
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
+  // Photos, files and library all ride the same upload path, so they share one
+  // gate — surfaced on the "Attach" submenu trigger rather than repeated per row.
+  const canAttach = features.storage && !privateMode;
+  const attachBlockedReason = privateMode ? "private" : "no storage";
   const activeConnectorCount = connectors.filter((connector) => connectorsEnabled.includes(connector.id)).length;
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
@@ -727,6 +737,49 @@ export function Composer({
         `${connector.label} ${connector.id}`.toLocaleLowerCase().includes(connectorSearch)
       )
     : connectors;
+
+  // Deep research — per-send, so it reads as a toggle that announces its own
+  // expiry. Gating matches the toolbar chip this replaced exactly: hidden
+  // without a Tavily key, in private chat, and on non-chat models; disabled
+  // with an upgrade hint on Free. Shared by both menus because the old chip
+  // lived on the toolbar, which voice mode also renders.
+  const researchMenuItem = researchAvailable ? (
+    <DropdownMenuItem
+      role="menuitemcheckbox"
+      aria-checked={research && planAllowsResearch}
+      disabled={!planAllowsResearch}
+      onSelect={(event) => {
+        event.preventDefault();
+        setResearch((v) => !v);
+      }}
+    >
+      <Telescope className="text-muted-foreground" />
+      {/* min-w-0 + truncate + a non-shrinking caption: this is the only row that
+          renders a caption AND a Switch, so without the guard the label wraps to
+          two lines exactly when research is ON — and any longer translation
+          ("Recherche approfondie") wraps regardless of viewport. */}
+      <span className="min-w-0 flex-1 truncate">Deep research</span>
+      {planAllowsResearch ? (
+        <>
+          {research && (
+            <span className="shrink-0 whitespace-nowrap font-mono text-caption uppercase text-muted-foreground/60">
+              this message
+            </span>
+          )}
+          <Switch checked={research} tabIndex={-1} aria-hidden className="pointer-events-none" />
+        </>
+      ) : (
+        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">paid plan</span>
+      )}
+    </DropdownMenuItem>
+  ) : null;
+
+  const toolsLabel = (
+    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
+      <Blocks className="h-3.5 w-3.5" />
+      Tools
+    </DropdownMenuLabel>
+  );
 
   return (
     <div
@@ -764,16 +817,37 @@ export function Composer({
         </div>
       )}
 
-      <div className={cn("relative w-full flex items-center justify-center transition-all duration-300", dictating ? "min-h-[170px] pt-20 pb-2" : "min-h-[76px]")}>
-        {dictating && (
-          <div className="w-full flex justify-center py-1 relative z-30">
+      {/*
+       * Composer ⇄ Dictation live in the SAME grid cell and cross-fade.
+       *
+       * This used to animate min-height, padding-top AND the composer's
+       * max-height at once, while also flipping the composer to `absolute` —
+       * four layout properties mid-flight, so every frame forced a reflow and
+       * the swap visibly stuttered. Now the only animated layout property is the
+       * container's min-height (needed to open headroom for the dictation
+       * transcript preview, which floats above the capsule); both layers
+       * themselves move on opacity/transform, which stay on the compositor.
+       */}
+      <div
+        className={cn(
+          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+          dictating ? "min-h-[170px]" : "min-h-[76px]"
+        )}
+      >
+        <div
+          className={cn(
+            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+            dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0"
+          )}
+        >
+          {dictating && (
             <ComposerDictation
               onCancel={() => setDictating(false)}
               onStop={(t) => closeDictation(t, false)}
               onSend={(t) => closeDictation(t, true)}
             />
-          </div>
-        )}
+          )}
+        </div>
 
         <div
           onDragOver={(e) => {
@@ -788,10 +862,9 @@ export function Composer({
             if (features.storage && !privateMode && e.dataTransfer.files.length) addComposerFiles(e.dataTransfer.files);
           }}
           className={cn(
-            "rounded-panel border bg-card/90 shadow-float backdrop-blur flex flex-col w-full origin-center relative transition-all duration-300 ease-out-soft",
-            dictating
-              ? "max-h-0 py-0 border-transparent bg-transparent shadow-none opacity-0 scale-95 pointer-events-none overflow-hidden absolute inset-x-0 top-1/2 -translate-y-1/2"
-              : "max-h-[600px] opacity-100 scale-100",
+            "col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-panel border bg-card/90 shadow-float backdrop-blur",
+            "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+            dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "p-4 gap-4" : "",
             privateMode
               ? "border-dashed border-foreground/25"
@@ -993,14 +1066,27 @@ export function Composer({
                   type="button"
                   variant="ghost"
                   size="icon-sm"
-                  aria-label="Add"
+                  aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
                   disabled={controlsLocked}
                   className={cn("rounded-[20px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
                 >
                   <Plus className="h-4 w-4" />
+                  {researchArmed && (
+                    <span
+                      aria-hidden
+                      className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-card motion-safe:animate-fade-in"
+                    />
+                  )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" sideOffset={8} className={voiceActive ? "w-52" : "w-64"}>
+              {/* The voice menu only earns its narrower width when the research
+                  row (label + switch) isn't in it. */}
+              <DropdownMenuContent
+                align="start"
+                side="top"
+                sideOffset={8}
+                className={voiceActive && !researchMenuItem ? "w-52" : "w-64"}
+              >
                 {voiceActive ? (
                   <>
                     <DropdownMenuItem
@@ -1018,39 +1104,45 @@ export function Composer({
                       <span className="flex-1">Add files</span>
                       <span className="text-caption text-muted-foreground/60">chat only</span>
                     </DropdownMenuItem>
+                    {/* Research stays reachable in voice mode — the chip it
+                        replaced lived on the toolbar, which voice also renders. */}
+                    {researchMenuItem && (
+                      <>
+                        <DropdownMenuSeparator />
+                        {toolsLabel}
+                        {researchMenuItem}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
-                    <DropdownMenuItem
-                      disabled={!features.storage || privateMode}
-                      onSelect={() => imageInputRef.current?.click()}
-                    >
-                      <ImagePlus className="text-muted-foreground" />
-                      <span className="flex-1">Add photos</span>
-                      {(privateMode || !features.storage) && (
-                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!features.storage || privateMode}
-                      onSelect={() => fileInputRef.current?.click()}
-                    >
-                      <FileUp className="text-muted-foreground" />
-                      <span className="flex-1">Add files</span>
-                      {(privateMode || !features.storage) && (
-                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
-                      )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      disabled={!features.storage || privateMode}
-                      onSelect={() => setLibraryOpen(true)}
-                    >
-                      <Library className="text-muted-foreground" />
-                      <span className="flex-1">Add from library</span>
-                      {(privateMode || !features.storage) && (
-                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
-                      )}
-                    </DropdownMenuItem>
+                    <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+
+                    {/* Photos + files + library are one gesture ("give Juno something
+                        to look at"), so they collapse behind a single row. */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger disabled={!canAttach}>
+                        <Paperclip className="text-muted-foreground" />
+                        <span className="flex-1">Attach</span>
+                        {!canAttach && <span className="text-caption text-muted-foreground/60">{attachBlockedReason}</span>}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-52">
+                        <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                          <ImagePlus className="text-muted-foreground" />
+                          <span className="flex-1">Photos</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                          <FileUp className="text-muted-foreground" />
+                          <span className="flex-1">Files</span>
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                          <Library className="text-muted-foreground" />
+                          <span className="flex-1">From your library</span>
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+
                     <DropdownMenuItem disabled={privateMode} onSelect={() => startCanvas()}>
                       <SquarePen className="text-muted-foreground" />
                       <span className="flex-1">Create a canvas</span>
@@ -1101,32 +1193,12 @@ export function Composer({
                     )}
 
                     <DropdownMenuSeparator />
-                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
-                      <Blocks className="h-3.5 w-3.5" />
-                      Plugins
-                    </DropdownMenuLabel>
+                    {toolsLabel}
+
+                    {researchMenuItem}
                     <DropdownMenuItem
-                      disabled={privateMode}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onToggleCanvas(!canvasEnabled);
-                      }}
-                    >
-                      <LayoutTemplate className="text-muted-foreground" />
-                      <span className="flex-1">Canvas &amp; artifacts</span>
-                      <Switch checked={!privateMode && canvasEnabled} className="pointer-events-none" />
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        toggleMemory(!settings.memoryEnabled);
-                      }}
-                    >
-                      <Brain className="text-muted-foreground" />
-                      <span className="flex-1">Memory</span>
-                      <Switch checked={settings.memoryEnabled} className="pointer-events-none" />
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={canWebSearch && webSearchEnabled}
                       disabled={!canWebSearch}
                       onSelect={(event) => {
                         event.preventDefault();
@@ -1136,93 +1208,115 @@ export function Composer({
                       <Globe className="text-muted-foreground" />
                       <span className="flex-1">Web search</span>
                       {canWebSearch ? (
-                        <Switch checked={webSearchEnabled} className="pointer-events-none" />
+                        <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
                       ) : (
                         <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
                       )}
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={!privateMode && canvasEnabled}
+                      disabled={privateMode}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onToggleCanvas(!canvasEnabled);
+                      }}
+                    >
+                      <LayoutTemplate className="text-muted-foreground" />
+                      <span className="flex-1">Canvas &amp; artifacts</span>
+                      <Switch checked={!privateMode && canvasEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      role="menuitemcheckbox"
+                      aria-checked={settings.memoryEnabled}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        toggleMemory(!settings.memoryEnabled);
+                      }}
+                    >
+                      <Brain className="text-muted-foreground" />
+                      <span className="flex-1">Memory</span>
+                      <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
+                    </DropdownMenuItem>
 
                     {onToggleConnector && !privateMode && modality === "chat" && (
-                      <>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
-                          <DropdownMenuSubTrigger>
-                            <Plug className="text-muted-foreground" />
-                            <span className="flex-1">Connectors</span>
-                            {activeConnectorCount > 0 && (
-                              <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
-                            )}
-                          </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent className="w-72 p-0">
-                            <div className="border-b border-border/60 p-2">
-                              <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
-                                <span>Choose apps for this chat</span>
-                                <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
-                              </div>
-                              <label className="relative block">
-                                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                                <input
-                                  value={connectorQuery}
-                                  onChange={(event) => setConnectorQuery(event.target.value)}
-                                  onKeyDown={(event) => event.stopPropagation()}
-                                  placeholder="Search connected apps…"
-                                  aria-label="Search connected apps"
-                                  className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                                />
-                              </label>
+                      <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
+                        <DropdownMenuSubTrigger>
+                          <Plug className="text-muted-foreground" />
+                          <span className="flex-1">Connectors</span>
+                          {activeConnectorCount > 0 && (
+                            <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                          )}
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="w-72 p-0">
+                          <div className="border-b border-border/60 p-2">
+                            <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
+                              <span>Choose apps for this chat</span>
+                              <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
                             </div>
-                            <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
-                              {connectorsLoading && connectors.length === 0 ? (
-                                <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                  Loading connected apps…
-                                </div>
-                              ) : connectors.length === 0 ? (
-                                <DropdownMenuItem onSelect={() => router.push("/connections")}>
-                                  <Plug className="text-muted-foreground" />
-                                  <span className="flex-1">Connect an app</span>
-                                  <span className="text-caption text-muted-foreground/60">set up</span>
-                                </DropdownMenuItem>
-                              ) : visibleConnectors.length === 0 ? (
-                                <div className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                  No connected apps match “{connectorQuery.trim()}”.
-                                </div>
-                              ) : (
-                                visibleConnectors.map((connector) => {
-                                  const selected = connectorsEnabled.includes(connector.id);
-                                  return (
-                                    <DropdownMenuItem
-                                      key={connector.id}
-                                      onSelect={(event) => {
-                                        event.preventDefault();
-                                        if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
-                                          toast.error(
-                                            `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
-                                          );
-                                          return;
-                                        }
-                                        onToggleConnector(connector.id);
-                                      }}
-                                      className="min-h-10"
-                                    >
-                                      <Plug className="text-muted-foreground" />
-                                      <span className="min-w-0 flex-1 truncate">{connector.label}</span>
-                                      <Switch checked={selected} className="pointer-events-none" />
-                                    </DropdownMenuItem>
-                                  );
-                                })
-                              )}
-                            </div>
-                            {connectors.length > 0 && (
-                              <div className="border-t border-border/60 p-1.5">
-                                <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
-                                  <Plug />
-                                  Manage connections
-                                </DropdownMenuItem>
+                            <label className="relative block">
+                              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                              <input
+                                value={connectorQuery}
+                                onChange={(event) => setConnectorQuery(event.target.value)}
+                                onKeyDown={(event) => event.stopPropagation()}
+                                placeholder="Search connected apps…"
+                                aria-label="Search connected apps"
+                                className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                              />
+                            </label>
+                          </div>
+                          <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                            {connectorsLoading && connectors.length === 0 ? (
+                              <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                Loading connected apps…
                               </div>
+                            ) : connectors.length === 0 ? (
+                              <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                                <Plug className="text-muted-foreground" />
+                                <span className="flex-1">Connect an app</span>
+                                <span className="text-caption text-muted-foreground/60">set up</span>
+                              </DropdownMenuItem>
+                            ) : visibleConnectors.length === 0 ? (
+                              <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                No connected apps match “{connectorQuery.trim()}”.
+                              </div>
+                            ) : (
+                              visibleConnectors.map((connector) => {
+                                const selected = connectorsEnabled.includes(connector.id);
+                                return (
+                                  <DropdownMenuItem
+                                    key={connector.id}
+                                    onSelect={(event) => {
+                                      event.preventDefault();
+                                      if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
+                                        toast.error(
+                                          `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
+                                        );
+                                        return;
+                                      }
+                                      onToggleConnector(connector.id);
+                                    }}
+                                    className="min-h-10"
+                                  >
+                                    <Plug className="text-muted-foreground" />
+                                    <span className="min-w-0 flex-1 truncate">{connector.label}</span>
+                                    <Switch checked={selected} className="pointer-events-none" />
+                                  </DropdownMenuItem>
+                                );
+                              })
                             )}
-                          </DropdownMenuSubContent>
-                        </DropdownMenuSub>
-                      </>
+                          </div>
+                          {connectors.length > 0 && (
+                            <div className="border-t border-border/60 p-1.5">
+                              <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
+                                <Plug />
+                                Manage connections
+                              </DropdownMenuItem>
+                            </div>
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
                     )}
                   </>
                 )}
@@ -1240,13 +1334,16 @@ export function Composer({
 
             {effortOptions.length > 0 && (() => {
               const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
+              const atTopTier =
+                effortOptions.length > 1 && currentEffort.value === effortOptions[effortOptions.length - 1].value;
               return (
                 <>
-                  {/* Thinking effort as a plain label instead of an icon. */}
+                  {/* Thinking effort — a slider, so the depth ladder reads as one
+                      continuous scale rather than an opaque list of words. */}
                   <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
                   <Tooltip>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
+                    <Popover>
+                      <PopoverTrigger asChild>
                         <TooltipTrigger asChild>
                           <Button
                             type="button"
@@ -1254,67 +1351,30 @@ export function Composer({
                             size="sm"
                             disabled={controlsLocked}
                             aria-label={`Thinking effort: ${currentEffort.label}`}
-                            className="group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight text-foreground/80 hover:text-foreground focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-accent data-[state=open]:bg-accent data-[state=open]:text-foreground"
+                            className={cn(
+                              "group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground",
+                              atTopTier ? "text-ultra" : "text-foreground/80"
+                            )}
                           >
                             {currentEffort.label}
                             <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
                           </Button>
                         </TooltipTrigger>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-44">
-                        {effortOptions.map((e) => (
-                          <DropdownMenuItem key={e.label} onSelect={() => onReasoningChange(e.value)}>
-                            <span className="flex-1">{e.label}</span>
-                            {reasoningEffort === e.value && <Check className="h-4 w-4 text-primary" />}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
+                        <ReasoningSlider
+                          options={effortOptions}
+                          value={reasoningEffort}
+                          onChange={onReasoningChange}
+                        />
+                      </PopoverContent>
+                    </Popover>
                     <TooltipContent>Thinking effort</TooltipContent>
                   </Tooltip>
                 </>
               );
             })()}
 
-            {/* Deep research — per-send chip: one prompt becomes a planned,
-                searched, cited report. Hidden without a Tavily key (and in
-                private chat); disabled with the upgrade hint on Free. */}
-            {researchAvailable && (
-              <>
-                <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      disabled={controlsLocked}
-                      aria-disabled={controlsLocked || !planAllowsResearch}
-                      aria-pressed={research}
-                      aria-label={research ? "Turn off deep research" : "Turn on deep research for the next message"}
-                      onClick={() => planAllowsResearch && setResearch((v) => !v)}
-                      className={cn(
-                        "h-8 gap-1.5 rounded-[10px] px-2 font-mono text-[13px] tracking-tight focus-visible:ring-0 focus-visible:ring-offset-0 focus-visible:bg-accent",
-                        research
-                          ? "bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
-                          : "text-foreground/80 hover:text-foreground",
-                        !planAllowsResearch && "opacity-50"
-                      )}
-                    >
-                      <Telescope className="h-3.5 w-3.5 shrink-0" />
-                      Research
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {!planAllowsResearch
-                      ? "Deep research needs a paid plan"
-                      : research
-                        ? "Deep research is on for this message"
-                        : "Deep research — a multi-step, cited report"}
-                  </TooltipContent>
-                </Tooltip>
-              </>
-            )}
           </div>
 
           {/* Right: dictation mic + primary action (voice ⇄ send ⇄ stop). */}

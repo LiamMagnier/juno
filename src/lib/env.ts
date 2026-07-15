@@ -94,11 +94,19 @@ export const env = {
     priceMax20: process.env.STRIPE_PRICE_MAX20,
   },
 
-  // Voice (optional — falls back to browser Web Speech API)
+  // Voice (optional — falls back to the browser's Web Speech API, i.e. the OS
+  // voice, which reads non-English text with an English accent and transcribes
+  // non-English speech poorly. Set STT_PROVIDER/TTS_PROVIDER to fix both.)
   voice: {
     sttProvider: process.env.STT_PROVIDER, // "openai" | "deepgram"
     ttsProvider: process.env.TTS_PROVIDER, // "openai" | "elevenlabs"
     openaiApiKey: process.env.OPENAI_API_KEY,
+    // gpt-4o-transcribe is markedly more accurate than whisper-1 on French and
+    // other non-English speech; override only to pin an older/cheaper model.
+    sttModel: process.env.STT_MODEL || "gpt-4o-transcribe",
+    // gpt-4o-mini-tts speaks each language natively rather than transliterating.
+    ttsModel: process.env.TTS_MODEL || "gpt-4o-mini-tts",
+    ttsVoice: process.env.TTS_VOICE || "alloy",
     deepgramApiKey: process.env.DEEPGRAM_API_KEY,
     elevenlabsApiKey: process.env.ELEVENLABS_API_KEY,
     elevenlabsVoiceId: process.env.ELEVENLABS_VOICE_ID,

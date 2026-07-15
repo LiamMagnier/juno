@@ -1,0 +1,452 @@
+"use client";
+
+import * as React from "react";
+import { ArrowUpRight, Check, Loader2, Plug, Search, Unplug } from "lucide-react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { ConnectorMark } from "@/components/connections/connector-logos";
+import type { ConnectorStatus } from "@/components/connections/server-card";
+import { cn } from "@/lib/utils";
+
+/**
+ * ONE directory for every tool Juno can connect to.
+ *
+ * Juno has two connector backends — a handful of native integrations (their own
+ * OAuth/credential flow and MCP route) and Composio's managed catalog of
+ * hundreds of apps. They used to be rendered as two disconnected sections
+ * ("Built into Juno" plus a separate, usually-empty "App directory"), which made
+ * the page look broken whenever Composio wasn't configured and forced the user
+ * to understand an implementation detail to find an app.
+ *
+ * Here they are one searchable list. Where both backends offer the same app
+ * (GitHub, Figma, Notion), the native connector wins and the Composio duplicate
+ * is dropped — see NATIVE_EQUIVALENT.
+ */
+
+interface CatalogItem {
+  id: string;
+  slug: string;
+  name: string;
+  logo: string | null;
+  connected: boolean;
+  connecting: boolean;
+  noAuth: boolean;
+  status: string | null;
+  connectedAt: string | null;
+}
+
+export interface DirectoryItem {
+  key: string;
+  source: "native" | "composio";
+  /** Connector id ("github") or composio app id ("composio:gmail"). */
+  id: string;
+  slug?: string;
+  label: string;
+  description: string;
+  logo?: string | null;
+  connected: boolean;
+  connecting: boolean;
+  /** Native only: false when the server is missing this connector's OAuth app. */
+  configured: boolean;
+  noAuth?: boolean;
+  accountLabel?: string | null;
+}
+
+type Filter = "all" | "connected";
+
+/**
+ * Composio toolkit slugs that duplicate a native Juno connector. The native one
+ * is preferred: it has a dedicated MCP endpoint and a richer permission flow.
+ */
+const NATIVE_EQUIVALENT: Record<string, string> = {
+  github: "github",
+  figma: "figma",
+  notion: "notion",
+};
+
+function titleize(slug: string): string {
+  return slug
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((part) => part[0]?.toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function appLabel(item: Pick<CatalogItem, "name" | "slug">): string {
+  return item.name.trim() || titleize(item.slug);
+}
+
+function AppLogo({ item }: { item: DirectoryItem }) {
+  return (
+    <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/60 bg-card shadow-soft">
+      {item.source === "native" ? (
+        <ConnectorMark id={item.id} className="size-5" />
+      ) : item.logo ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={item.logo} alt="" className="size-6 object-contain" loading="lazy" />
+      ) : (
+        <Plug className="size-4 text-primary" />
+      )}
+    </span>
+  );
+}
+
+function ConnectorTile({
+  item,
+  busy,
+  enabled,
+  onEnabledChange,
+  onConnect,
+  onDisconnect,
+}: {
+  item: DirectoryItem;
+  busy: boolean;
+  enabled: boolean;
+  onEnabledChange: (v: boolean) => void;
+  onConnect: () => void;
+  onDisconnect: () => void;
+}) {
+  const unavailable = !item.configured;
+  return (
+    <article
+      className={cn(
+        "group flex min-h-[92px] flex-col justify-between gap-2.5 rounded-2xl border p-3.5 transition-all duration-base ease-out-soft",
+        item.connected
+          ? "border-success/25 bg-success/[0.035]"
+          : unavailable
+            ? "border-border/40 bg-background/40"
+            : "border-border/55 bg-background/55 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background/85 hover:shadow-float"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <AppLogo item={item} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <h3 className="truncate text-sm font-semibold">{item.label}</h3>
+            {item.connected && <Check className="size-3.5 shrink-0 text-success" aria-label="Connected" />}
+          </div>
+          <p className="mt-0.5 line-clamp-2 text-caption leading-4 text-muted-foreground">
+            {item.connected
+              ? (item.accountLabel && item.accountLabel !== item.label ? item.accountLabel : "Connected and ready")
+              : item.connecting
+                ? "Finishing connection…"
+                : unavailable
+                  ? "Not set up on this server"
+                  : item.noAuth
+                    ? "Ready without sign-in"
+                    : item.description}
+          </p>
+        </div>
+        {item.connected ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onDisconnect}
+                disabled={busy}
+                aria-label={`Disconnect ${item.label}`}
+                aria-haspopup="dialog"
+                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50 coarse:size-11"
+              >
+                {busy ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Disconnect</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy || unavailable}
+            onClick={onConnect}
+            className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
+          </Button>
+        )}
+      </div>
+
+      {/* Only a linked app can be exposed to chats. */}
+      {item.connected && (
+        <label className="flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-background/60 px-2.5 py-1.5">
+          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Expose to chats</span>
+          <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Expose ${item.label} to chats`} />
+        </label>
+      )}
+    </article>
+  );
+}
+
+export function ConnectorDirectory({
+  connectors,
+  composioConfigured,
+  enabled,
+  onEnabledChange,
+  onConnectNative,
+  onDisconnect,
+  connectingId,
+}: {
+  connectors: ConnectorStatus[];
+  composioConfigured: boolean;
+  enabled: Record<string, boolean>;
+  onEnabledChange: (id: string, v: boolean) => void;
+  onConnectNative: (c: ConnectorStatus) => void;
+  onDisconnect: (item: DirectoryItem) => void;
+  connectingId: string | null;
+}) {
+  const [query, setQuery] = React.useState("");
+  const [filter, setFilter] = React.useState<Filter>("all");
+  const [apps, setApps] = React.useState<CatalogItem[]>([]);
+  const [cursor, setCursor] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(composioConfigured);
+  const [loadingMore, setLoadingMore] = React.useState(false);
+  const [error, setError] = React.useState(false);
+  const [busySlug, setBusySlug] = React.useState<string | null>(null);
+
+  // Native connectors are a fixed, tiny set — filter them in the client so the
+  // search box covers both backends with one keystroke.
+  const nativeItems = React.useMemo<DirectoryItem[]>(
+    () =>
+      connectors
+        .filter((c) => c.kind !== "composio_app")
+        .map((c) => ({
+          key: `native:${c.id}`,
+          source: "native" as const,
+          id: c.id,
+          label: c.label,
+          description: c.description,
+          connected: c.connected,
+          connecting: connectingId === c.id,
+          configured: c.configured,
+          accountLabel: c.accountLabel,
+        })),
+    [connectors, connectingId]
+  );
+
+  React.useEffect(() => {
+    if (!composioConfigured) {
+      setLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError(false);
+      const params = new URLSearchParams();
+      if (query.trim()) params.set("q", query.trim());
+      if (filter === "connected") params.set("connected", "1");
+      fetch(`/api/connectors/composio/catalog?${params}`, { signal: controller.signal })
+        .then((r) => {
+          if (!r.ok) throw new Error("catalog failed");
+          return r.json() as Promise<{ items?: CatalogItem[]; cursor?: string }>;
+        })
+        .then((data) => {
+          setApps(data.items ?? []);
+          setCursor(data.cursor ?? null);
+        })
+        .catch((err) => {
+          if (err instanceof DOMException && err.name === "AbortError") return;
+          setError(true);
+          setApps([]);
+          setCursor(null);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setLoading(false);
+        });
+    }, query ? 220 : 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [composioConfigured, filter, query]);
+
+  const loadMore = React.useCallback(async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams({ cursor });
+      if (query.trim()) params.set("q", query.trim());
+      if (filter === "connected") params.set("connected", "1");
+      const r = await fetch(`/api/connectors/composio/catalog?${params}`);
+      if (!r.ok) throw new Error("catalog failed");
+      const data = (await r.json()) as { items?: CatalogItem[]; cursor?: string };
+      setApps((current) => {
+        const merged = new Map(current.map((i) => [i.slug, i]));
+        (data.items ?? []).forEach((i) => merged.set(i.slug, i));
+        return [...merged.values()];
+      });
+      setCursor(data.cursor ?? null);
+    } catch {
+      toast.error("Couldn’t load more apps.");
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [cursor, filter, loadingMore, query]);
+
+  const composioItems = React.useMemo<DirectoryItem[]>(
+    () =>
+      apps
+        // Drop Composio's copy of an app Juno integrates natively.
+        .filter((a) => !NATIVE_EQUIVALENT[a.slug])
+        .map((a) => ({
+          key: `composio:${a.slug}`,
+          source: "composio" as const,
+          id: a.id,
+          slug: a.slug,
+          label: appLabel(a),
+          description: a.noAuth ? "Ready without sign-in" : "Available to connect",
+          logo: a.logo,
+          connected: a.connected,
+          connecting: a.connecting,
+          configured: true,
+          noAuth: a.noAuth,
+        })),
+    [apps]
+  );
+
+  const q = query.trim().toLowerCase();
+  const items = React.useMemo(() => {
+    const matches = (i: DirectoryItem) => !q || i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+    const visible = [...nativeItems.filter(matches), ...composioItems];
+    return filter === "connected" ? visible.filter((i) => i.connected) : visible;
+  }, [nativeItems, composioItems, filter, q]);
+
+  const connect = (item: DirectoryItem) => {
+    if (item.source === "native") {
+      const c = connectors.find((x) => x.id === item.id);
+      if (c) onConnectNative(c);
+      return;
+    }
+    setBusySlug(item.slug!);
+    window.location.href = `/api/connectors/composio/${encodeURIComponent(item.slug!)}/connect`;
+  };
+
+  const connectedCount = [...nativeItems, ...composioItems].filter((i) => i.connected).length;
+
+  return (
+    <section className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card/55 shadow-soft">
+      <div className="border-b border-border/60 bg-card/75 p-5 sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">Directory</p>
+            <h2 className="mt-1 font-serif text-title">Every app, one place</h2>
+            <p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">
+              Each app connects separately, and Juno only gets access to the ones you choose.
+            </p>
+          </div>
+          <label className="relative block w-full sm:w-72">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search Gmail, Slack, GitHub…"
+              aria-label="Search apps"
+              className="h-10 rounded-xl bg-background/75 pl-9"
+            />
+          </label>
+        </div>
+        <div className="mt-4 flex w-fit items-center gap-1 rounded-xl bg-muted/55 p-1">
+          {(["all", "connected"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              className={cn(
+                "rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft",
+                filter === value && "bg-background text-foreground shadow-soft"
+              )}
+            >
+              {value === "all" ? "All apps" : `Connected${connectedCount ? ` · ${connectedCount}` : ""}`}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-3 sm:p-4">
+        {/* Composio powers the long tail. Without it the native connectors still
+            work, so explain what's missing instead of showing an empty page. */}
+        {!composioConfigured && <ComposioSetupCallout />}
+
+        {error && (
+          <div className="mb-3 rounded-2xl border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
+            The app directory couldn’t be loaded. Check <code className="font-mono text-xs">COMPOSIO_API_KEY</code> on the server.
+          </div>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {items.map((item) => (
+            <ConnectorTile
+              key={item.key}
+              item={item}
+              busy={busySlug === item.slug || item.connecting}
+              enabled={enabled[item.id] ?? true}
+              onEnabledChange={(v) => onEnabledChange(item.id, v)}
+              onConnect={() => connect(item)}
+              onDisconnect={() => onDisconnect(item)}
+            />
+          ))}
+          {loading &&
+            Array.from({ length: 6 }, (_, i) => (
+              <div key={`sk-${i}`} className="skeleton h-[92px] rounded-2xl" style={{ animationDelay: `${i * 30}ms` }} />
+            ))}
+        </div>
+
+        {!loading && items.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
+            {filter === "connected" ? "No connected apps yet." : q ? `No apps match “${query.trim()}”.` : "No apps available."}
+          </div>
+        )}
+
+        {cursor && !loading && !error && (
+          <div className="flex justify-center pt-4">
+            <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore} className="rounded-xl">
+              {loadingMore && <Loader2 className="size-3.5 animate-spin" />}
+              Load more apps
+            </Button>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/** Actionable setup steps — the old copy just said the directory "is not active". */
+function ComposioSetupCallout() {
+  return (
+    <div className="mb-3 rounded-2xl border border-dashed border-primary/30 bg-primary/[0.04] p-5">
+      <div className="flex items-start gap-3">
+        <Plug className="mt-0.5 size-4 shrink-0 text-primary" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Turn on the full app directory</p>
+          <p className="mt-1 text-caption leading-5 text-muted-foreground">
+            The connectors below are built into Juno and work right now. To add Gmail, Slack, Linear and hundreds more,
+            set a Composio API key on the server:
+          </p>
+          <ol className="mt-2.5 space-y-1 text-caption leading-5 text-muted-foreground">
+            <li>
+              1. Create a free project at{" "}
+              <a
+                href="https://dashboard.composio.dev"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 font-medium text-primary underline-offset-2 hover:underline"
+              >
+                dashboard.composio.dev
+                <ArrowUpRight className="size-3" />
+              </a>{" "}
+              and copy its API key (free, no card).
+            </li>
+            <li>
+              2. Add <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">COMPOSIO_API_KEY=…</code> to the
+              server’s <code className="rounded bg-muted px-1 py-0.5 font-mono text-[10px]">.env</code>.
+            </li>
+            <li>3. Restart Juno, then reload this page.</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}

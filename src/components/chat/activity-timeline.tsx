@@ -1,78 +1,81 @@
 "use client";
 
 import * as React from "react";
-import {
-  AlertCircle,
-  BookOpen,
-  Brain,
-  CheckCircle2,
-  ChevronDown,
-  Cpu,
-  Gauge,
-  Globe,
-  PenLine,
-  Search,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { ActivityKind, ClientActivityEvent } from "@/types/chat";
+import { PanelRight } from "lucide-react";
+import { ACTIVITY_ICONS, ACTIVITY_TONE, ThoughtProcessPanel, domainOf } from "@/components/chat/thought-process-panel";
+import { cn, truncate } from "@/lib/utils";
+import type { ClientActivityEvent } from "@/types/chat";
 
-const ICONS: Record<ActivityKind, LucideIcon> = {
-  context: BookOpen,
-  model: Cpu,
-  reasoning: Brain,
-  search: Search,
-  visit: Globe,
-  write: PenLine,
-  usage: Gauge,
-  done: CheckCircle2,
-  warning: AlertCircle,
-  tool: Wrench,
-};
-
-const ICON_TONE: Record<ActivityKind, string> = {
-  context: "text-muted-foreground",
-  model: "text-muted-foreground",
-  reasoning: "text-primary",
-  search: "text-source",
-  visit: "text-source",
-  write: "text-primary",
-  usage: "text-muted-foreground",
-  done: "text-success",
-  warning: "text-warning",
-  tool: "text-primary",
-};
-
-function domainOf(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
+/** One-line preview of the newest event. Both layers are absolutely positioned
+ *  inside a fixed-height row, so text swaps never reflow the message above.
+ *
+ *  Crossfade without state: `prevRef` lands after paint, so during the render
+ *  that introduces a new `id` it still holds the outgoing one — keying the
+ *  bottom layer on it remounts and plays the exit exactly once. Re-renders that
+ *  only change `detail` (the reasoning tail, which grows token by token) keep
+ *  the same key and update in place, so the line never strobes. */
+function PreviewLine({
+  id,
+  title,
+  detail,
+  streaming,
+}: {
+  id: string;
+  title: string;
+  detail?: string;
+  streaming?: boolean;
+}) {
+  /*
+   * Both layers are keyed by the INCOMING event's id, so a new event remounts the
+   * pair together and their fade-out/fade-in run as one crossfade.
+   *
+   * This previously tracked `prev` in a ref committed by a post-paint effect, and
+   * keyed the outgoing layer `out-${prev.id}`. That key therefore lagged a render
+   * behind: on the A→B render it was still `out-A` — the same key as the previous
+   * render — so React never remounted the layer, its fade-out never re-ran, and
+   * `fill-mode-forwards` had already parked it at opacity 0. The outgoing text was
+   * invisible and the new one popped. Deriving during render fixes the timing;
+   * keying both layers off the same id fixes the pairing.
+   */
+  const [shown, setShown] = React.useState({ id, title, detail });
+  const [outgoing, setOutgoing] = React.useState<{ title: string; detail?: string } | null>(null);
+  if (id !== shown.id) {
+    // A different event: hand the old text to the outgoing layer and crossfade.
+    setOutgoing({ title: shown.title, detail: shown.detail });
+    setShown({ id, title, detail });
+  } else if (title !== shown.title || detail !== shown.detail) {
+    // Same event, refined text (detail arriving late). Update in place — no
+    // crossfade — but still track it, or the NEXT crossfade would fade out text
+    // that has not been on screen since.
+    setShown({ id, title, detail });
   }
-}
 
-function eventTime(value: string) {
-  try {
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return "";
-    return date.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    const match = value.match(/T(\d{2}:\d{2}:\d{2})/);
-    return match?.[1] ?? "";
-  }
-}
-
-function ActivityIcon({ kind }: { kind: ActivityKind }) {
-  const Icon = ICONS[kind];
   return (
-    <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border border-border/60 bg-background/70 shadow-pop">
-      <Icon className={cn("size-3.5", ICON_TONE[kind])} aria-hidden="true" />
+    <span className="relative min-w-0 flex-1 self-stretch">
+      {outgoing && (
+        <span
+          key={`out-${shown.id}`}
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center duration-base ease-out-soft motion-safe:animate-out motion-safe:fade-out-0 motion-safe:fill-mode-forwards motion-reduce:hidden"
+        >
+          <span className="min-w-0 truncate text-body text-foreground/85">
+            {outgoing.title}
+            {outgoing.detail && <span className="text-muted-foreground/65"> — {outgoing.detail}</span>}
+          </span>
+        </span>
+      )}
+
+      <span
+        key={`in-${shown.id}`}
+        className="absolute inset-0 flex items-center duration-base ease-out-soft motion-safe:animate-in motion-safe:fade-in-0"
+      >
+        <span className="min-w-0 truncate text-body text-foreground/85">
+          {/* Shimmer stays on the verb only: `text-shimmer` transparentises text
+              fill, so spanning both would flatten the title/detail contrast. */}
+          <span className={cn(streaming && "text-shimmer")}>{shown.title}</span>
+          {shown.detail && <span className="text-muted-foreground/65"> — {shown.detail}</span>}
+        </span>
+      </span>
     </span>
   );
 }
@@ -86,150 +89,76 @@ export function ActivityTimeline({
   reasoning?: string | null;
   streaming?: boolean;
 }) {
+  const [open, setOpen] = React.useState(false);
+
   const hasEvents = !!events?.length;
   const hasReasoning = !!reasoning?.trim();
-  const userToggledRef = React.useRef(false);
-  const [open, setOpen] = React.useState(!!streaming);
-  const reasoningRef = React.useRef<HTMLDivElement>(null);
+  const latest = hasEvents ? events![events!.length - 1] : undefined;
 
-  React.useEffect(() => {
-    if (streaming && (hasEvents || hasReasoning) && !userToggledRef.current) setOpen(true);
-  }, [hasEvents, hasReasoning, streaming]);
-
-  // Keep the live thinking scrolled to the latest token while it streams.
-  React.useEffect(() => {
-    if (streaming && open && reasoningRef.current) {
-      reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
-    }
-  }, [reasoning, streaming, open]);
-
-  // Soft edge on the newest reasoning text so the stream reads as live. The
-  // boundary sits on whitespace so the dimmed tail never splits a word; on
-  // settle the tail span transitions to full opacity instead of snapping.
-  const tailFrom = React.useMemo(() => {
-    const text = reasoning ?? "";
-    const window = 140;
-    if (text.length <= window) return 0;
-    const cut = text.length - window;
-    const newline = text.lastIndexOf("\n");
-    if (newline >= cut) return newline + 1;
-    const space = text.indexOf(" ", cut);
-    return space === -1 ? cut : space + 1;
+  // Reasoning-only runs still deserve a live line: fall back to the sentence
+  // currently being written.
+  const reasoningTail = React.useMemo(() => {
+    const text = reasoning?.trim();
+    if (!text) return undefined;
+    const line = text.split("\n").reduce<string | undefined>((last, l) => (l.trim() ? l : last), undefined);
+    return line ? truncate(line, 90) : undefined;
   }, [reasoning]);
 
   if (!hasEvents && !hasReasoning) return null;
 
+  const preview = latest
+    ? {
+        id: latest.id,
+        kind: latest.kind,
+        title: latest.title,
+        detail: latest.detail ?? (latest.url ? domainOf(latest.url) : undefined),
+      }
+    : {
+        id: "reasoning",
+        kind: "reasoning" as const,
+        title: streaming ? "Thinking" : "Reasoning",
+        detail: reasoningTail,
+      };
+
+  const Icon = ACTIVITY_ICONS[preview.kind];
+  const count = hasEvents ? `${events!.length} ${events!.length === 1 ? "event" : "events"}` : "reasoning";
+
   return (
-    <div className="mb-3 overflow-hidden rounded-[18px] border border-border/70 bg-muted/25">
+    <>
       <button
         type="button"
+        onClick={() => setOpen(true)}
         aria-expanded={open}
-        onClick={() => {
-          userToggledRef.current = true;
-          setOpen((value) => !value);
-        }}
-        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left transition-colors duration-fast hover:bg-muted/40"
+        aria-haspopup="dialog"
+        aria-label={hasEvents ? `Open thought process — ${count}` : "Open thought process"}
+        className="group/row relative mb-3 flex h-11 w-full items-center gap-2.5 rounded-[18px] border border-border/70 bg-muted/25 pl-2.5 pr-3 text-left transition-[transform,box-shadow,border-color] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0 motion-reduce:transition-none"
       >
-        <span className="relative flex size-3.5 shrink-0 items-center justify-center" aria-hidden="true">
+        <span className="relative flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
           <span
             className={cn(
-              "absolute -inset-[5px] rounded-full bg-primary/25 opacity-0 transition-opacity duration-slow ease-out-soft",
+              "absolute inset-0 rounded-full bg-primary/25 opacity-0 transition-opacity duration-slow ease-out-soft motion-reduce:transition-none",
               streaming && "opacity-100 motion-safe:animate-pulse-ring-slow"
             )}
           />
-          <Brain className={cn("relative size-3.5 text-primary", streaming && "motion-safe:animate-icon-breathe")} />
+          <span className="relative z-10 flex size-6 items-center justify-center rounded-full border border-border/60 bg-background shadow-pop">
+            {/* Two spans: the breathe and the keyed glyph swap are both `animation`,
+                so they cannot share an element. */}
+            <span className={cn("flex", streaming && "motion-safe:animate-icon-breathe")}>
+              <Icon key={preview.kind} className={cn("size-3.5 motion-safe:animate-fade-in", ACTIVITY_TONE[preview.kind])} />
+            </span>
+          </span>
         </span>
-        {/* Key swap crossfades live → settled instead of snapping the label. */}
-        <span
-          key={streaming ? "live" : "settled"}
-          className={cn(
-            "font-mono text-label uppercase text-muted-foreground/90 motion-safe:animate-fade-in",
-            streaming && "text-shimmer"
-          )}
-        >
-          {streaming ? "Thinking" : "Thought process"}
-        </span>
-        <span className="ml-auto font-mono text-caption tabular-nums text-muted-foreground/60">
-          {hasEvents ? `${events!.length} ${events!.length === 1 ? "event" : "events"}` : "reasoning"}
-        </span>
-        <ChevronDown className={cn("size-3.5 text-muted-foreground/70 transition-transform duration-base ease-out-soft", open && "rotate-180")} />
+
+        <PreviewLine id={preview.id} title={preview.title} detail={preview.detail} streaming={streaming} />
+
+        <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">{count}</span>
+        <PanelRight
+          className="size-3.5 shrink-0 text-muted-foreground/50 transition-colors duration-base ease-out-soft group-hover/row:text-foreground/70 motion-reduce:transition-none"
+          aria-hidden="true"
+        />
       </button>
 
-      {/* Grid-rows collapse: the body stays mounted so open/close animate height. */}
-      <div
-        className={cn(
-          "grid transition-[grid-template-rows] duration-base ease-out-soft",
-          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
-        )}
-      >
-        <div className="min-h-0 overflow-hidden" inert={!open}>
-          <div className="border-t border-border/60 bg-background/25 px-3.5 py-3 flex flex-col gap-3">
-            {hasReasoning && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-1.5 px-0.5">
-                  <Brain className="size-3.5 text-primary/80" aria-hidden="true" />
-                  <span className="font-mono text-label uppercase text-muted-foreground/80">Reasoning</span>
-                </div>
-                {/* Frame and scroller are separate so the fade mask dissolves the
-                    text at the edges without eating the border or background. */}
-                <div className="field-well rounded-[14px] border border-border/40 bg-background/40">
-                  <div
-                    ref={reasoningRef}
-                    className="scroll-fade-y max-h-72 overflow-y-auto whitespace-pre-wrap px-3.5 py-3 font-serif text-body italic text-muted-foreground/90"
-                  >
-                    {reasoning!.slice(0, tailFrom)}
-                    <span
-                      className={cn(
-                        "transition-opacity duration-slow ease-out-soft",
-                        streaming ? "opacity-60" : "opacity-100"
-                      )}
-                    >
-                      {reasoning!.slice(tailFrom)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {hasEvents && (
-              <div className="flex flex-col gap-2">
-                {hasReasoning && <div className="border-t border-border/40 my-1" />}
-                <div className="flex items-center gap-1.5 px-0.5">
-                  <span className="font-mono text-label uppercase text-muted-foreground/80">Timeline</span>
-                </div>
-                <ol className="flex flex-col gap-2.5">
-                  {events!.map((event) => (
-                    <li
-                      key={event.id}
-                      className="grid grid-cols-[auto_minmax(0,1fr)] gap-2.5 px-0.5 items-start motion-safe:animate-fade-in-up"
-                    >
-                      <ActivityIcon kind={event.kind} />
-                      <div className="min-w-0 pt-0.5">
-                        <div className="flex min-w-0 items-center justify-between gap-2">
-                          <p className="min-w-0 flex-1 truncate text-body font-semibold text-foreground/85">{event.title}</p>
-                          <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/60">{eventTime(event.createdAt)}</span>
-                        </div>
-                        {event.detail && <p className="mt-0.5 break-words text-sm leading-relaxed text-muted-foreground/75">{event.detail}</p>}
-                        {event.url && (
-                          <a
-                            href={event.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="mt-1 inline-flex max-w-full items-center gap-1 text-sm text-source hover:text-source/80 transition-colors duration-fast underline-offset-2 hover:underline"
-                          >
-                            <Globe className="size-3 shrink-0" aria-hidden="true" />
-                            <span className="truncate">{domainOf(event.url)}</span>
-                          </a>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      <ThoughtProcessPanel open={open} onOpenChange={setOpen} events={events} reasoning={reasoning} streaming={streaming} />
+    </>
   );
 }

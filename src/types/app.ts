@@ -17,6 +17,8 @@ export interface ClientSettings {
   theme: "light" | "dark" | "system";
   accent: string;
   defaultModel: string;
+  /** Response-style preset id (see @/lib/personalities); "default" injects nothing. */
+  personality: string;
   customInstructions: string;
   responseLanguage: string;
   memoryEnabled: boolean;
@@ -62,7 +64,12 @@ export interface AppBootstrap {
   folders: ClientFolder[];
   features: {
     billing: boolean;
-    voiceServer: boolean;
+    /** Server speech-to-text is configured — dictation transcribes with a real
+     *  STT model instead of the browser's (poor, English-biased) recognizer. */
+    serverStt: boolean;
+    /** Server text-to-speech is configured — read-aloud uses a multilingual
+     *  model instead of the OS voice. */
+    serverTts: boolean;
     storage: boolean;
     webSearch: boolean;
     /** Deep research is configured (TAVILY_API_KEY present) — gates the composer toggle. */

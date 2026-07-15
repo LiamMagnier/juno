@@ -301,7 +301,10 @@ export async function runDeepResearch(opts: {
     ok: true,
     context: buildResearchContext(prompt, pages, readUrls),
     // Strip rawContent: the client/persisted sources stay snippet-sized.
-    sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet })),
+    // `cited` marks these as the numbered corpus the model was actually given,
+    // which is what licenses the UI to resolve inline [n] markers positionally.
+    // Deep research is the ONLY path that numbers sources for the model.
+    sources: pages.map(({ title, url, snippet }) => ({ title, url, snippet, cited: true })),
     costUsd: plan.costUsd,
   };
 }

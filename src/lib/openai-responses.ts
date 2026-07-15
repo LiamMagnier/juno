@@ -91,11 +91,31 @@ async function toResponsesInput(
   return out;
 }
 
-/** The pro line only accepts high effort; other Responses models take the full range. */
-function mapEffort(model: ModelInfo, effort?: ReasoningEffort): "low" | "medium" | "high" | undefined {
-  if (/-pro$/.test(model.providerModel)) return "high";
-  if (!effort) return undefined;
-  return effort === "max" ? "high" : effort;
+/**
+ * Map Juno's tier to the Responses API's reasoning.effort.
+ *
+ * The gpt-5.x-pro models accept medium|high|xhigh and cannot be run
+ * non-thinking, so a missing/too-shallow tier is raised to their "high" default
+ * rather than dropped. Everything else relays the tier as-is — including
+ * "xhigh" and "max", which this used to flatten to "high" and thereby silently
+ * cap the deepest settings the user picked.
+ */
+function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefined {
+  const id = model.providerModel.toLowerCase();
+  if (/-pro$/.test(id)) {
+    if (effort === "medium" || effort === "high" || effort === "xhigh") return effort;
+    return "high"; // pro's own default; it has no none/low
+  }
+  if (!effort) return canDisableViaNoneEffort(id) ? "none" : undefined;
+  // "max" exists on gpt-5.6 only; older Responses models top out at xhigh.
+  if (effort === "max" && !id.includes("gpt-5.6")) return "xhigh";
+  return effort;
+}
+
+/** GPT-5.1+ express "don't think" as an explicit effort of "none". */
+function canDisableViaNoneEffort(id: string): boolean {
+  if (id.includes("codex")) return false;
+  return /gpt-5\.\d/.test(id);
 }
 
 export async function* streamOpenAIResponses(
@@ -172,7 +192,9 @@ export async function* streamOpenAIResponses(
       store: false,
       max_output_tokens: maxTokens,
     };
-    if (effort) params.reasoning = { effort };
+    // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
+    // that the Responses API now accepts.
+    if (effort) params.reasoning = { effort } as OpenAI.Responses.ResponseCreateParams["reasoning"];
     if (tools) {
       params.tools = tools;
       params.tool_choice = isFinalRound ? "none" : "auto";

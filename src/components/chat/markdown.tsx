@@ -10,7 +10,9 @@ import { toast } from "sonner";
 import { Check, Copy } from "lucide-react";
 import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
 import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
+import { SourceChip } from "@/components/chat/source-chip";
 import { cn } from "@/lib/utils";
+import type { ClientSource } from "@/types/chat";
 
 /** Pull the `language-xxx` hint rehype-highlight writes onto the inner <code>. */
 function langOf(children: React.ReactNode): string {
@@ -193,7 +195,101 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
   );
 }
 
-const REMARK_PLUGINS: Options["remarkPlugins"] = [remarkGfm, remarkMath];
+/*
+ * ---- Inline citations -------------------------------------------------------
+ * `buildResearchContext` (deep-research.ts) hands the model a 1-based numbered
+ * source list and asks it to cite as `[1]`/`[2][3]`, so on THAT path a marker maps
+ * to `sources[n - 1]` BY POSITION. Those markers become favicon chips.
+ *
+ * It is the ONLY path with that contract. `buildSearchContext` (web-search.ts) has
+ * the same shape but zero call sites — it is dead code, so citing it as
+ * justification would be citing something that never runs. On the native-search
+ * paths (Claude/Gemini/xAI provider tools) sources arrive from grounding metadata
+ * and the model is never shown an index, so a `[1]` there is coincidental prose and
+ * resolving it positionally would attach a confidently WRONG source to a claim.
+ *
+ * Hence chips render only for sources flagged `cited` (see ClientSource). Anything
+ * unflagged, unresolvable, or out of range stays literal text.
+ */
+
+/** mdast doesn't model custom nodes, so the walk uses a structural shape instead. */
+type MdNode = {
+  type: string;
+  value?: string;
+  children?: MdNode[];
+  data?: { hName?: string; hProperties?: Record<string, string> };
+};
+
+const CITATION_RE = /\[(\d{1,3})\]/g;
+
+/** Citation-marked pieces of `value`, or null when it holds no resolvable marker. */
+function splitCitations(value: string, sourceCount: number): MdNode[] | null {
+  if (!value.includes("[")) return null;
+  const out: MdNode[] = [];
+  let last = 0;
+  CITATION_RE.lastIndex = 0;
+  for (let m = CITATION_RE.exec(value); m; m = CITATION_RE.exec(value)) {
+    const index = Number(m[1]);
+    // Models invent indices past the list they were given. Leave those as the
+    // literal text the model wrote rather than render a chip pointing nowhere.
+    if (index < 1 || index > sourceCount) continue;
+    if (m.index > last) out.push({ type: "text", value: value.slice(last, m.index) });
+    out.push({
+      type: "junoCitation",
+      // An unknown mdast node carrying hName/hProperties survives mdast→hast as
+      // this element, which the `span` component below picks back up.
+      data: { hName: "span", hProperties: { "data-cite": String(index) } },
+      children: [],
+    });
+    last = m.index + m[0].length;
+  }
+  if (out.length === 0) return null;
+  if (last < value.length) out.push({ type: "text", value: value.slice(last) });
+  return out;
+}
+
+function remarkCitations(sourceCount: number) {
+  const walk = (node: MdNode) => {
+    const children = node.children;
+    if (!children) return;
+    // Inline code and math arrive as value-bearing nodes (not `text`), so they're
+    // skipped for free. Link labels are skipped deliberately: a chip nested in
+    // another link would be an unclickable link inside a link.
+    if (node.type === "link" || node.type === "linkReference" || node.type === "definition") return;
+
+    const out: MdNode[] = [];
+    let changed = false;
+    for (let i = 0; i < children.length; ) {
+      if (children[i].type !== "text") {
+        walk(children[i]);
+        out.push(children[i]);
+        i++;
+        continue;
+      }
+      // Coalesce the whole run of adjacent text nodes before matching: micromark
+      // can split a literal `[7]` across siblings when an earlier `[` fails to
+      // resolve as a link, and a split marker still has to match.
+      const start = i;
+      let value = "";
+      while (i < children.length && children[i].type === "text") value += children[i++].value ?? "";
+      const pieces = splitCitations(value, sourceCount);
+      if (pieces) {
+        out.push(...pieces);
+        changed = true;
+      } else {
+        out.push(...children.slice(start, i));
+      }
+    }
+    if (changed) node.children = out;
+  };
+  return function attacher() {
+    return function transformer(tree: MdNode) {
+      walk(tree);
+    };
+  };
+}
+
+const REMARK_PLUGINS = [remarkGfm, remarkMath] satisfies Options["remarkPlugins"];
 const REHYPE_PLUGINS: Options["rehypePlugins"] = [
   [rehypeHighlight, { detect: true, ignoreMissing: true }],
   // `throwOnError: false` keeps a malformed/incomplete expression (common mid-stream)
@@ -202,26 +298,62 @@ const REHYPE_PLUGINS: Options["rehypePlugins"] = [
 ];
 
 /** One parsed block. Memoized so streamed chunks only re-render the final block. */
-const MarkdownBlock = React.memo(function MarkdownBlock({ content, streaming }: { content: string; streaming?: boolean }) {
+const MarkdownBlock = React.memo(function MarkdownBlock({
+  content,
+  streaming,
+  sources,
+}: {
+  content: string;
+  streaming?: boolean;
+  sources?: ClientSource[];
+}) {
+  // Positional [n] resolution is licensed ONLY by the numbered-corpus contract,
+  // which deep research marks with `cited`. It flags every source it supplies, so
+  // this is all-or-nothing per message: either the model was given the numbered
+  // list, or brackets in its prose mean nothing and must stay literal text.
+  const sourceCount = sources?.some((s) => s.cited) ? sources.length : 0;
+  const remarkPlugins = React.useMemo<Options["remarkPlugins"]>(
+    () => (sourceCount > 0 ? [...REMARK_PLUGINS, remarkCitations(sourceCount)] : REMARK_PLUGINS),
+    [sourceCount],
+  );
   const components = React.useMemo<Components>(
     () => ({
       pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
-      a: ({ children, ...props }) => (
+      a: ({ children, node: _node, ...props }) => (
         <a {...props} target="_blank" rel="noopener noreferrer">
           {children}
         </a>
       ),
+      // Only remarkCitations emits `data-cite`; every other span here (KaTeX
+      // emits a great many) falls straight through untouched.
+      span: ({ node: _node, ...props }) => {
+        const cite = (props as { "data-cite"?: string })["data-cite"];
+        const source = cite ? sources?.[Number(cite) - 1] : undefined;
+        if (!source) return <span {...props} />;
+        return <SourceChip source={source} index={Number(cite)} />;
+      },
     }),
-    [streaming],
+    [streaming, sources],
   );
   return (
-    <ReactMarkdown remarkPlugins={REMARK_PLUGINS} rehypePlugins={REHYPE_PLUGINS} components={components}>
+    <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={REHYPE_PLUGINS} components={components}>
       {content}
     </ReactMarkdown>
   );
 });
 
-export const Markdown = React.memo(function Markdown({ content, className, streaming }: { content: string; className?: string; streaming?: boolean }) {
+export const Markdown = React.memo(function Markdown({
+  content,
+  className,
+  streaming,
+  sources,
+}: {
+  content: string;
+  className?: string;
+  streaming?: boolean;
+  /** Web-search / deep-research sources backing this message, in citation order. */
+  sources?: ClientSource[];
+}) {
   const blocks = React.useMemo(() => splitIntoBlocks(normalizeMathDelimiters(content)), [content]);
   return (
     <div className={cn("prose-juno", className)} data-no-auto-translate>
@@ -230,6 +362,7 @@ export const Markdown = React.memo(function Markdown({ content, className, strea
           key={i}
           content={streaming && i === blocks.length - 1 ? closeDangling(block) : block}
           streaming={streaming}
+          sources={sources}
         />
       ))}
     </div>

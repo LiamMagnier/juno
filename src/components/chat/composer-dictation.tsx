@@ -1,19 +1,26 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, MicOff, Square, X } from "lucide-react";
+import { ArrowUp, Loader2, MicOff, Square, X } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
+import { useApp } from "@/components/app/app-provider";
 import { cn } from "@/lib/utils";
 
 /**
  * Dictate Mode — a floating capsule that replaces the composer input while
- * listening. Deliberately fixed-dark (iOS-dictation-style glass) in BOTH
- * themes per the reference design, so it reads as a distinct hardware-like
- * layer rather than a themed panel.
+ * listening.
  *
  * Real audio pipeline: getUserMedia → AudioContext → AnalyserNode, sampled in
  * a rAF loop that drives the dot bar via direct style mutation (no re-renders).
- * Transcription: Web Speech API via useSpeechRecognition (continuous+interim).
+ *
+ * Transcription is two-tier:
+ *  - LIVE PREVIEW comes from the Web Speech API — instant, free, approximate.
+ *  - The FINAL transcript is re-transcribed server-side (/api/voice/stt →
+ *    gpt-4o-transcribe) from audio captured in parallel by a MediaRecorder.
+ * Web Speech alone is poor at non-English speech (it mangles French badly), so
+ * it is never trusted for the text that actually reaches the composer. If the
+ * server route is unconfigured or fails, we fall back to the Web Speech text
+ * rather than losing the user's words.
  */
 
 const DOT_COUNT = 36;
@@ -23,6 +30,42 @@ const NOISE_FLOOR = 9; // 0-255 — ignore ambient hiss so silence is truly stil
 const EXIT_MS = 150;
 
 type Phase = "active" | "stopping" | "cancelling" | "sending";
+
+/** First container the browser will actually record (Safari has no webm). */
+function pickRecorderMime(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((t) =>
+    MediaRecorder.isTypeSupported(t)
+  );
+}
+
+function extensionFor(mime: string): string {
+  const subtype = (mime.split(";")[0]?.split("/")[1] ?? "webm").toLowerCase();
+  return ({ mpeg: "mp3", "x-m4a": "m4a", "x-wav": "wav" } as Record<string, string>)[subtype] ?? subtype;
+}
+
+/**
+ * Server transcription (gpt-4o-transcribe). Returns null when the route is
+ * unconfigured (501) or fails, so the caller can fall back to the Web Speech
+ * text rather than dropping what the user just said.
+ */
+async function transcribeBlob(blob: Blob): Promise<string | null> {
+  try {
+    const form = new FormData();
+    form.append("audio", blob, `dictation.${extensionFor(blob.type)}`);
+    // The browser locale is the best available hint for what the user speaks.
+    // Without it the model guesses from the first syllables and often picks
+    // English, which is exactly what mangles French dictation.
+    if (typeof navigator !== "undefined" && navigator.language) form.append("language", navigator.language);
+    const res = await fetch("/api/voice/stt", { method: "POST", body: form });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { text?: string };
+    const text = data.text?.trim();
+    return text ? text : null;
+  } catch {
+    return null;
+  }
+}
 
 export function ComposerDictation({
   onCancel,
@@ -39,12 +82,18 @@ export function ComposerDictation({
   const [finals, setFinals] = React.useState<string[]>([]);
   const [micError, setMicError] = React.useState(false);
   const [closing, setClosing] = React.useState(false);
+  const [transcribing, setTranscribing] = React.useState(false);
+
+  const { features } = useApp();
+  const serverStt = features.serverStt;
 
   const phaseRef = React.useRef<Phase>("active");
   const restartAtRef = React.useRef(0);
   const dotRefs = React.useRef<(HTMLSpanElement | null)[]>([]);
   const levelsRef = React.useRef<Float32Array>(new Float32Array(DOT_COUNT));
   const previewRef = React.useRef<HTMLDivElement | null>(null);
+  const recorderRef = React.useRef<MediaRecorder | null>(null);
+  const chunksRef = React.useRef<Blob[]>([]);
   // Support is resolved by the hook's mount effect (declared before ours), so
   // by the time `ready` flips, `speech.supported` is trustworthy — no banner flash.
   const [ready, setReady] = React.useState(false);
@@ -81,7 +130,10 @@ export function ComposerDictation({
 
     const boot = async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream = await navigator.mediaDevices.getUserMedia({
+          // Browser-side cleanup measurably improves transcription accuracy.
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
       } catch {
         if (!cancelled) setMicError(true);
         return;
@@ -90,6 +142,23 @@ export function ComposerDictation({
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
+
+      // Capture the raw audio alongside the analyser so the final transcript can
+      // be produced by a real STT model instead of the browser's recognizer.
+      try {
+        const mimeType = pickRecorderMime();
+        const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunksRef.current.push(e.data);
+        };
+        recorder.start(250);
+        recorderRef.current = recorder;
+      } catch {
+        // No MediaRecorder (or no supported container) — the Web Speech
+        // transcript remains as the fallback.
+        recorderRef.current = null;
+      }
+
       const Ctor =
         window.AudioContext ??
         (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
@@ -159,17 +228,53 @@ export function ComposerDictation({
     if (el) el.scrollTop = el.scrollHeight;
   }, [transcript]);
 
+  /** Stop the recorder and resolve the captured audio (null if nothing usable). */
+  const stopRecorder = React.useCallback((): Promise<Blob | null> => {
+    const recorder = recorderRef.current;
+    const collect = () =>
+      chunksRef.current.length
+        ? new Blob(chunksRef.current, { type: recorder?.mimeType || chunksRef.current[0].type || "audio/webm" })
+        : null;
+    if (!recorder || recorder.state === "inactive") return Promise.resolve(collect());
+    return new Promise((resolve) => {
+      recorder.onstop = () => resolve(collect());
+      try {
+        recorder.stop();
+      } catch {
+        resolve(collect());
+      }
+    });
+  }, []);
+
   const finish = React.useCallback(
     (phase: Phase, done: (text: string) => void) => {
       if (phaseRef.current !== "active") return;
       phaseRef.current = phase;
-      // Freeze the transcript before recognition teardown clears the interim.
-      const text = transcriptRef.current;
+      // Freeze the Web Speech text before recognition teardown clears the interim.
+      const previewText = transcriptRef.current;
       speech.stop();
-      setClosing(true);
-      window.setTimeout(() => done(text), EXIT_MS);
+
+      const close = (text: string) => {
+        setClosing(true);
+        window.setTimeout(() => done(text), EXIT_MS);
+      };
+
+      if (phase === "cancelling") {
+        void stopRecorder();
+        close("");
+        return;
+      }
+
+      void (async () => {
+        const blob = await stopRecorder();
+        // No server STT, nothing captured, or nothing said — keep the preview text.
+        if (!serverStt || !blob || blob.size < 1200) return close(previewText);
+        setTranscribing(true);
+        const accurate = await transcribeBlob(blob);
+        close(accurate ?? previewText);
+      })();
     },
-    [speech]
+    [serverStt, speech, stopRecorder]
   );
 
   const cancel = React.useCallback(() => finish("cancelling", () => onCancel()), [finish, onCancel]);
@@ -190,7 +295,11 @@ export function ComposerDictation({
     return () => window.removeEventListener("keydown", onKey);
   }, [cancel, send]);
 
-  const showFallback = micError || (ready && !speech.supported && !closing);
+  // Web Speech only powers the live preview now, so its absence (Firefox,
+  // Safari) no longer blocks dictation — the server does the real transcription.
+  // Only a dead microphone, or having neither transcription path, is fatal.
+  const noTranscription = ready && !speech.supported && !serverStt;
+  const showFallback = micError || (noTranscription && !closing);
 
   return (
     <div
@@ -218,6 +327,12 @@ export function ComposerDictation({
             ) : (
               <span className="italic text-muted-foreground/60">Listening…</span>
             )}
+            {transcribing && (
+              <span className="mt-1.5 flex items-center gap-1.5 text-caption text-muted-foreground/70">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Transcribing…
+              </span>
+            )}
           </div>
         )}
 
@@ -229,7 +344,7 @@ export function ComposerDictation({
               <span className="truncate">
                 {micError
                   ? "Microphone access was denied — allow it in your browser to dictate."
-                  : "Dictation isn't supported here — try Chrome or Edge."}
+                  : "Dictation isn't available here — try Chrome, or enable server transcription."}
               </span>
             </span>
             <button
@@ -270,8 +385,9 @@ export function ComposerDictation({
               type="button"
               onClick={stop}
               autoFocus
+              disabled={transcribing}
               aria-label="Stop and edit"
-              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-muted/80 coarse:h-11 coarse:w-11"
+              className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-muted/80 disabled:pointer-events-none disabled:opacity-40 coarse:h-11 coarse:w-11"
             >
               <Square className="h-3.5 w-3.5 fill-current" />
             </button>
@@ -279,11 +395,13 @@ export function ComposerDictation({
             <button
               type="button"
               onClick={send}
-              disabled={!transcript}
+              // While transcribing there may be no preview text yet (Web Speech
+              // unsupported), so gate on the recorder rather than the preview.
+              disabled={transcribing || (!transcript && !serverStt)}
               aria-label="Send dictation"
               className="pressable flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-40 coarse:h-11 coarse:w-11"
             >
-              <ArrowUp className="h-[18px] w-[18px]" />
+              {transcribing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-[18px] w-[18px]" />}
             </button>
           </div>
         )}

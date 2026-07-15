@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/app/app-sidebar";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
+import { PageTransition } from "@/components/app/page-transition";
 import { AnnouncementPopup } from "@/components/app/announcement-popup";
 import { useApp } from "@/components/app/app-provider";
 import { DotField } from "@/components/signature/dot-field";
@@ -113,7 +114,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Plus className="h-5 w-5" />
           </Button>
         </div>
-        <div className="min-h-0 flex-1">{children}</div>
+        <div className="min-h-0 flex-1">
+          <PageTransition>{children}</PageTransition>
+        </div>
       </main>
 
       <Onboarding />

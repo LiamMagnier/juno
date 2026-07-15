@@ -24,9 +24,11 @@ const EMPTY: ModelParams = { temperature: null, topP: null, maxTokens: null };
 const PROVIDER_DEFAULTS = { temperature: 1, topP: 1, maxTokens: 8192 } as const;
 
 const EFFORT_LABEL: Record<Exclude<ReasoningEffort, null>, string> = {
+  minimal: "Minimal effort",
   low: "Low effort",
   medium: "Medium effort",
   high: "High effort",
+  xhigh: "Extra-high effort",
   max: "Max effort",
 };
 

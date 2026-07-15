@@ -64,7 +64,9 @@ export async function* streamChat(opts: {
   // "high" allowance. Each provider's own ceiling still applies.
   const alwaysReasons = model.reasoning && !reasoningCaps(model).canDisable;
   const thinkingTier = model.provider === "anthropic" ? null : (reasoningEffort ?? (alwaysReasons ? "high" : null));
-  const thinkingAllowance = thinkingTier ? { low: 4096, medium: 8192, high: 16384, max: 32768 }[thinkingTier] : 0;
+  const thinkingAllowance = thinkingTier
+    ? { minimal: 2048, low: 4096, medium: 8192, high: 16384, xhigh: 24576, max: 32768 }[thinkingTier]
+    : 0;
   const maxTokens = clampMaxTokens(model.provider, opts.maxTokens + thinkingAllowance);
   const active = opts.connectors ?? [];
 

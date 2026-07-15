@@ -139,6 +139,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     folderId: conv.folderId,
     projectId: conv.projectId,
     activeConnectors: conv.activeConnectors,
+    archivedAt: conv.archivedAt?.toISOString() ?? null,
     lastMessageAt: conv.lastMessageAt.toISOString(),
     createdAt: conv.createdAt.toISOString(),
   };

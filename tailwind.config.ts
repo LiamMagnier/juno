@@ -74,6 +74,10 @@ const config: Config = {
         source: {
           DEFAULT: "hsl(var(--source) / <alpha-value>)",
         },
+
+        ultra: {
+          DEFAULT: "hsl(var(--ultra) / <alpha-value>)",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar) / <alpha-value>)",
           foreground: "hsl(var(--sidebar-foreground) / <alpha-value>)",
@@ -239,6 +243,26 @@ const config: Config = {
           "0%": { transform: "translateX(-100%)" },
           "100%": { transform: "translateX(300%)" },
         },
+        // ---- Reasoning slider, top tier ("Max") ----
+        // The gradient is sized 200% and panned, so the hue drifts without the
+        // element itself moving. Paired with `bg-[length:200%_100%]`.
+        "ultra-pan": {
+          "0%": { backgroundPosition: "0% 50%" },
+          "100%": { backgroundPosition: "-200% 50%" },
+        },
+        // Star field over the filled track. Long, prime-ish periods per particle
+        // (set inline) keep the twinkle from reading as a loop.
+        "ultra-spark": {
+          "0%, 100%": { opacity: "0", transform: "scale(0.3)" },
+          "45%": { opacity: "0.95", transform: "scale(1)" },
+          "70%": { opacity: "0.2", transform: "scale(0.7)" },
+        },
+        // One-shot flourish when the thumb lands on the top tier.
+        "ultra-pop": {
+          "0%": { transform: "translateY(-50%) scale(1)" },
+          "45%": { transform: "translateY(-50%) scale(1.18)" },
+          "100%": { transform: "translateY(-50%) scale(1)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
@@ -263,9 +287,17 @@ const config: Config = {
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
         "pop-in": "pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "pop-out": "pop-out 120ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
+        // keyframe on purpose — a transform here would create a containing block
+        // and break the `fixed` model-selector / canvas panel.
+        "page-in": "fade-in 280ms cubic-bezier(0.16, 1, 0.3, 1) both",
         // Dialog/sheet backdrops.
         "overlay-in": "fade-in 220ms cubic-bezier(0.33, 1, 0.68, 1) both",
         "overlay-out": "fade-out 150ms cubic-bezier(0.33, 1, 0.68, 1) both",
+        // Reasoning slider's top tier (reasoning-slider.tsx).
+        "ultra-pan": "ultra-pan 6s linear infinite",
+        "ultra-spark": "ultra-spark 2.6s ease-in-out infinite",
+        "ultra-pop": "ultra-pop 420ms cubic-bezier(0.32, 0.72, 0, 1)",
         // Media-generation placeholder (generation-placeholder.tsx).
         "gen-drift-a": "gen-drift-a 16s ease-in-out infinite",
         "gen-drift-b": "gen-drift-b 22s ease-in-out infinite",

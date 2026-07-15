@@ -3,7 +3,15 @@ import type { ArtifactType } from "@/lib/message-content";
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
 export type AttachmentKind = "IMAGE" | "FILE";
-export type ReasoningEffort = "low" | "medium" | "high" | "max";
+/**
+ * Thinking depth, ordered shallowest → deepest. Mirrors the union of what real
+ * providers expose (verified against provider docs, 2026-07):
+ *  - "minimal" — GPT-5's floor, Gemini's thinking_level minimum, GLM-5.2.
+ *  - "xhigh"   — OpenAI 5.4+, Claude Opus 4.7+, GLM-5.2, Grok multi-agent.
+ *  - "max"     — GPT-5.6 only (not 5.5), Claude Opus 4.6+, DeepSeek V4, GLM-5.2.
+ * `null` (absent) means Instant / thinking off — see ReasoningCaps.canDisable.
+ */
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 export type GenerationStatus = "idle" | "checking" | "submitting" | "thinking" | "writing" | "stopping" | "error";
 export type TitleSource = "default" | "ai" | "manual";
 export type ChatFinishReason =
@@ -59,6 +67,16 @@ export interface ClientSource {
   title: string;
   url: string;
   snippet: string;
+  /**
+   * True only when the model was handed this source as a NUMBERED corpus and told
+   * to cite it as [n] — i.e. deep research (buildResearchContext). Inline [n]
+   * chips map positionally onto `sources`, so they may only render when this is
+   * set: on the native-search paths (Claude/Gemini/xAI tools) sources come from
+   * provider grounding metadata and the model never saw an index, so a bracket in
+   * that text means nothing and would resolve to an arbitrary, WRONG source.
+   * Absent on older persisted rows, which correctly degrades to plain text.
+   */
+  cited?: boolean;
 }
 
 /** Metadata for one preserved prior version of a message (regenerate / edit-and-resend history). */
@@ -117,6 +135,8 @@ export interface ClientConversation {
   folderId: string | null;
   projectId: string | null;
   activeConnectors: string[];
+  /** When set, the chat is archived: hidden from Recent but still readable and searchable. */
+  archivedAt?: string | null;
   lastMessageAt: string;
   createdAt: string;
 }

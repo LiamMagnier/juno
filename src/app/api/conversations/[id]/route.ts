@@ -18,6 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const patchSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
   folderId: z.string().cuid().nullable().optional(),
   projectId: z.string().cuid().nullable().optional(),
 });
@@ -45,10 +46,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
+  // `archived` is a request-shaped boolean, not a column — keep it out of the
+  // spread and map it onto the archivedAt timestamp.
+  const { archived, ...fields } = parsed.data;
   const data = {
-    ...parsed.data,
-    ...(parsed.data.title != null ? { titleSource: "manual" } : {}),
+    ...fields,
+    ...(fields.title != null ? { titleSource: "manual" } : {}),
+    // Un-archiving is unconditional; archiving is stamped separately below.
+    ...(archived === false ? { archivedAt: null } : {}),
   };
+
+  // Stamp archivedAt only on the null→now transition. A blanket
+  // `archivedAt: new Date()` reset the timestamp every time an already-archived
+  // chat was PATCHed, which defeats the point of storing "when" at all.
+  if (archived === true) {
+    await prisma.conversation.updateMany({
+      where: { id, userId: user.id, archivedAt: null },
+      data: { archivedAt: new Date() },
+    });
+  }
+
   const updated = await prisma.conversation.update({ where: { id, userId: user.id }, data });
   return NextResponse.json({ conversation: serializeConversation(updated) });
 }

@@ -12,17 +12,21 @@ import {
   Eraser,
   Eye,
   FileCode2,
+  FileDown,
+  FileSpreadsheet,
   FileText,
   GitBranch,
   GitCompare,
   Globe,
   History,
   Image as ImageIcon,
+  Loader2,
   Maximize2,
   MessageCircleQuestion,
   Minimize2,
   Pencil,
   Play,
+  Presentation,
   RotateCcw,
   RotateCw,
   Share2,
@@ -38,6 +42,12 @@ import {
   SelectItem,
   SelectTrigger,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
@@ -69,6 +79,33 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
 
 // Types whose sandbox carries the element inspector (MERMAID renders opaque SVG).
 const INSPECTABLE_LANG = new Set(["html", "tsx", "jsx", "svg", "css"]);
+
+type OfficeFormat = "docx" | "xlsx" | "pptx";
+
+const OFFICE_FORMATS: Record<OfficeFormat, { label: string; icon: typeof Code2 }> = {
+  docx: { label: "Word document (.docx)", icon: FileText },
+  xlsx: { label: "Excel workbook (.xlsx)", icon: FileSpreadsheet },
+  pptx: { label: "PowerPoint deck (.pptx)", icon: Presentation },
+};
+
+function isOfficeFormat(v: unknown): v is OfficeFormat {
+  return v === "docx" || v === "xlsx" || v === "pptx";
+}
+
+/** Fetching as a blob drops the server's filename, so read it back off the header. */
+function fileNameFromDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header);
+  if (utf8) {
+    try {
+      return decodeURIComponent(utf8[1]);
+    } catch {
+      // Malformed encoding — fall back to the ASCII name below.
+    }
+  }
+  const ascii = /filename="([^"]+)"/i.exec(header);
+  return ascii?.[1] ?? null;
+}
 
 type SelectionBarState = {
   top: number;
@@ -141,6 +178,8 @@ export function CanvasPanel({
   const rt = React.useMemo(() => runtimeFor(artifact.type, artifact.language), [artifact.type, artifact.language]);
   const isMarkdown = artifact.type === "MARKDOWN";
   const hasPreview = rt.mode === "web" || rt.mode === "console" || isMarkdown;
+  // Incognito artifacts are never persisted, so there is no row for the route to export.
+  const canExportOffice = isMarkdown && !!shareable;
 
   const [tab, setTab] = React.useState<"preview" | "console" | "code">(hasPreview ? "preview" : "code");
   const [selectedVersion, setSelectedVersion] = React.useState(artifact.currentVersion);
@@ -159,6 +198,8 @@ export function CanvasPanel({
   const [consoleEntries, setConsoleEntries] = React.useState<ConsoleEntry[]>([]);
   const [runStatus, setRunStatus] = React.useState<RunStatus>("idle");
   const [shareOpen, setShareOpen] = React.useState(false);
+  const [officeFormats, setOfficeFormats] = React.useState<OfficeFormat[]>([]);
+  const [exportingFormat, setExportingFormat] = React.useState<OfficeFormat | null>(null);
   const previewScrollRef = React.useRef<HTMLDivElement>(null);
   const codeScrollRef = React.useRef<HTMLDivElement>(null);
 
@@ -185,6 +226,29 @@ export function CanvasPanel({
   React.useEffect(() => {
     if (tab !== "preview" || historyOpen) setInspecting(false);
   }, [tab, historyOpen]);
+
+  // Which Office files this markdown can become is decided server-side: the
+  // converters are Node-only, so detection can't run in the browser.
+  React.useEffect(() => {
+    setOfficeFormats([]);
+    if (!canExportOffice) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/artifacts/${artifact.id}/export`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.formats)) {
+          setOfficeFormats(data.formats.filter(isOfficeFormat));
+        }
+      } catch {
+        // Best-effort — no menu is better than a menu that can't deliver.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.id, artifact.currentVersion, canExportOffice]);
 
   const versionContent =
     artifact.versions.find((v) => v.version === selectedVersion)?.content ?? artifact.content;
@@ -269,6 +333,33 @@ export function CanvasPanel({
     a.download = `${artifact.identifier}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const downloadOffice = async (format: OfficeFormat) => {
+    setExportingFormat(format);
+    try {
+      const res = await fetch(`/api/artifacts/${artifact.id}/export?format=${format}`);
+      if (!res.ok) {
+        const msg = await res
+          .json()
+          .then((d) => (typeof d?.error === "string" ? d.error : null))
+          .catch(() => null);
+        throw new Error(msg ?? "Export failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download =
+        fileNameFromDisposition(res.headers.get("Content-Disposition")) ??
+        `${artifact.identifier}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not build that file.");
+    } finally {
+      setExportingFormat(null);
+    }
   };
 
   const startEdit = () => {
@@ -596,8 +687,44 @@ export function CanvasPanel({
                 <Download className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Download</TooltipContent>
+            <TooltipContent>Download source</TooltipContent>
           </Tooltip>
+          {/* Office export always renders the latest version — don't offer it while an
+              older one is on screen, or the file wouldn't match what you're reading. */}
+          {officeFormats.length > 0 && isLatest && (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      disabled={exportingFormat !== null}
+                      aria-label="Download as…"
+                      className={iconBtn}
+                    >
+                      {exportingFormat ? (
+                        <Loader2 className="h-4 w-4 motion-safe:animate-spin" />
+                      ) : (
+                        <FileDown className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{exportingFormat ? "Building your file…" : "Download as…"}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56">
+                {officeFormats.map((f) => {
+                  const { label, icon: FormatIcon } = OFFICE_FORMATS[f];
+                  return (
+                    <DropdownMenuItem key={f} onSelect={() => downloadOffice(f)}>
+                      <FormatIcon className="h-4 w-4" /> {label}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
           {shareable && (
             <Tooltip>
               <TooltipTrigger asChild>

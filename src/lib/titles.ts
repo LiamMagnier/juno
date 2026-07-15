@@ -1,6 +1,5 @@
 import "server-only";
-import { streamChat } from "@/lib/llm";
-import type { ModelInfo } from "@/lib/models";
+import { runUtilityPrompt, type UtilityLlm } from "@/lib/memory";
 
 export interface TitleContextMessage {
   role: "USER" | "ASSISTANT";
@@ -23,21 +22,25 @@ function clean(raw: string, max: number, maxWords = 7): string | null {
   return t || null;
 }
 
-async function complete(model: ModelInfo, system: string, user: string, maxTokens: number): Promise<string | null> {
-  let out = "";
-  try {
-    for await (const ev of streamChat({
-      model,
-      system,
-      history: [{ role: "USER", content: user, attachments: [] }],
-      maxTokens,
-    })) {
-      if (ev.type === "text") out += ev.text;
-    }
-  } catch {
-    return null;
-  }
-  return out;
+/**
+ * Naming runs on the shared utility-model walk (the same one memory and
+ * clarification use): it tries the fastest free-tier model of each configured
+ * provider in turn, retries transient failures, and logs why an attempt failed.
+ *
+ * This used to be a single streamChat call whose errors were swallowed by a
+ * bare `catch`, so one rate-limited provider silently downgraded every title to
+ * the crude first-7-words fallback with nothing in the logs to explain it.
+ */
+async function complete(
+  system: string,
+  user: string,
+  maxTokens: number,
+  label: string,
+  parse: (text: string) => string | null,
+  llm?: UtilityLlm
+): Promise<string | null> {
+  const { result } = await runUtilityPrompt({ system, userMsg: user, maxTokens, label, parse, llm });
+  return result;
 }
 
 function compact(text: string): string {
@@ -61,8 +64,8 @@ export function fallbackChatTitle(messages: TitleContextMessage[]): string | nul
 }
 
 export async function generateChatTitleFromMessages(
-  model: ModelInfo,
-  messages: TitleContextMessage[]
+  messages: TitleContextMessage[],
+  opts: { llm?: UtilityLlm } = {}
 ): Promise<string | null> {
   const usable = messages
     .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
@@ -80,26 +83,34 @@ Return ONLY the title.`;
   const transcript = usable
     .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${compact(m.content).slice(0, m.role === "USER" ? 1600 : 1000)}`)
     .join("\n\n");
-  const raw = await complete(model, system, `Conversation so far:\n${transcript}\n\nTitle:`, 32);
-  return raw == null ? null : clean(raw, 60, 7);
+  return complete(
+    system,
+    `Conversation so far:\n${transcript}\n\nTitle:`,
+    32,
+    "title",
+    (raw) => clean(raw, 60, 7),
+    opts.llm
+  );
 }
 
 /** A concise, specific title for a chat, derived from its first exchange. */
 export async function generateChatTitle(
-  model: ModelInfo,
   userText: string,
-  assistantText: string
+  assistantText: string,
+  opts: { llm?: UtilityLlm } = {}
 ): Promise<string | null> {
-  return generateChatTitleFromMessages(model, [
-    { role: "USER", content: userText },
-    { role: "ASSISTANT", content: assistantText },
-  ]);
+  return generateChatTitleFromMessages(
+    [
+      { role: "USER", content: userText },
+      { role: "ASSISTANT", content: assistantText },
+    ],
+    opts
+  );
 }
 
 /** A concise folder-style name for a project, derived from its instructions and/or first chat. */
 export async function generateProjectName(
-  model: ModelInfo,
-  opts: { firstUser?: string; instructions?: string }
+  opts: { firstUser?: string; instructions?: string; llm?: UtilityLlm }
 ): Promise<string | null> {
   const basis = [
     opts.instructions?.trim() ? `Project instructions:\n"""${opts.instructions.slice(0, 1500)}"""` : "",
@@ -115,6 +126,5 @@ Rules:
   - No quotes, no ending punctuation, no emoji.
   - Write it in the SAME language as the content.
 Reply with ONLY the name.`;
-  const raw = await complete(model, system, `${basis}\n\nProject name:`, 16);
-  return raw == null ? null : clean(raw, 40, 4);
+  return complete(system, `${basis}\n\nProject name:`, 16, "project-name", (raw) => clean(raw, 40, 4), opts.llm);
 }

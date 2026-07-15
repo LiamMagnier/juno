@@ -49,6 +49,7 @@ export async function GET(req: Request) {
           defaultModel: true,
           customInstructions: true,
           responseLanguage: true,
+          personality: true,
           memoryEnabled: true,
           voiceId: true,
           favoriteModels: true,

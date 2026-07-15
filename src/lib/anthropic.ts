@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { personalitySystemPrompt } from "@/lib/personalities";
 import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -26,6 +27,8 @@ const BINARY_ATTACHMENT_LOOKBACK = 8;
 export interface SystemPromptOptions {
   userName?: string | null;
   customInstructions?: string;
+  /** Response-style preset id (see lib/personalities); "default" injects nothing. */
+  personality?: string;
   responseLanguage?: string;
   memories?: string[];
   /** Consolidated, deduped memory profile (Markdown). Preferred over `memories`. */
@@ -178,7 +181,13 @@ Rules:
 - Use a short stable "identifier". To revise an existing artifact, REUSE its identifier and output the complete updated content (a new version is saved automatically).
 - "type": REACT for a React component (default export, no imports needed beyond react), HTML for a standalone page, SVG for vector graphics, MERMAID for diagrams, MARKDOWN for documents, CODE for any other code (set "language").
 - Put a one-line explanation before the artifact. Do not repeat the artifact's content outside the tag, and do not follow it with a tutorial about how it works unless asked.
-- For small snippets or inline examples, use a normal Markdown code block, not an artifact.`
+- For small snippets or inline examples, use a normal Markdown code block, not an artifact.
+
+Documents, spreadsheets and decks are MARKDOWN artifacts — the user can download one as a real .docx, .xlsx or .pptx. When they ask for a document, report, spreadsheet, budget, tracker, comparison or deck, write the whole thing as ONE MARKDOWN artifact, shaped for what they asked for:
+- Document / report: normal Markdown headings, prose and lists.
+- Spreadsheet / budget / tracker / comparison: a real Markdown table — one header row, every row the same column count, and RAW NUMBERS in numeric cells (\`1200\`, never \`$1,200\`). Units and currency go in the header ("Cost (USD)"), so cells land as real spreadsheet numbers instead of text.
+- Deck / presentation: one slide per \`## \` heading with bullets under it, slides separated by a \`---\` line.
+You write the content; the USER picks the download format. Never say you attached a file, exported anything, or generated a .docx/.xlsx/.pptx.`
     );
   }
 
@@ -203,6 +212,13 @@ Save proactively, but only durable facts — not one-off task details — and ne
 
   if (opts.projectContext && opts.projectContext.trim()) {
     parts.push(opts.projectContext.trim());
+  }
+
+  // Personality goes BEFORE custom instructions on purpose: it is a preset
+  // default, so anything the user wrote themselves must be able to override it.
+  const personality = opts.personality ? personalitySystemPrompt(opts.personality) : null;
+  if (personality) {
+    parts.push(`# Response style\n${personality}`);
   }
 
   if (opts.customInstructions && opts.customInstructions.trim()) {
@@ -361,7 +377,9 @@ export async function* streamAnthropic(
   // and the total must stay within the model's own output ceiling — current
   // Claude generations allow 64k output; only the deprecated Opus 4.1 line is
   // still capped at 32k.
-  const requestedBudget = reasoningEffort ? { low: 2048, medium: 8192, high: 16000, max: 32000 }[reasoningEffort] : 0;
+  const requestedBudget = reasoningEffort
+    ? { minimal: 1024, low: 2048, medium: 8192, high: 16000, xhigh: 24000, max: 32000 }[reasoningEffort]
+    : 0;
   const outputCap = /opus-4-1|claude-3/.test(model.providerModel) ? 32000 : 64000;
   const totalTokens = Math.min(requestedBudget + maxTokens, outputCap);
   // Keep at least a quarter of the window for the visible answer; Anthropic

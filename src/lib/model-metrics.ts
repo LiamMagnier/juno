@@ -2,7 +2,7 @@ import type { ModelInfo } from "@/lib/models";
 import type { Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
-export type ReasoningEffort = "low" | "medium" | "high" | "max" | null;
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
 
 export interface ModelMetrics {
   inputUsdPerMTok: number;
@@ -295,17 +295,25 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {
   if (effort === "max") return 2;
+  if (effort === "xhigh") return 1.85;
   if (effort === "high") return 1.65;
   if (effort === "medium") return 1.25;
   if (effort === "low") return 1.08;
+  if (effort === "minimal") return 1.02;
   return 1;
 }
 
 export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, supportsReasoning: boolean): ModelMetrics {
   if (!supportsReasoning || !effort) return metrics;
   const multiplier = reasoningMultiplier(effort);
-  const intelligenceBoost = effort === "max" ? 2.4 : effort === "high" ? 2 : effort === "medium" ? 1 : 0.4;
-  const speedPenalty = effort === "max" ? 0.48 : effort === "high" ? 0.62 : effort === "medium" ? 0.82 : 0.93;
+  const BOOST: Record<Exclude<ReasoningEffort, null>, number> = {
+    minimal: 0.15, low: 0.4, medium: 1, high: 2, xhigh: 2.2, max: 2.4,
+  };
+  const PENALTY: Record<Exclude<ReasoningEffort, null>, number> = {
+    minimal: 0.98, low: 0.93, medium: 0.82, high: 0.62, xhigh: 0.54, max: 0.48,
+  };
+  const intelligenceBoost = BOOST[effort];
+  const speedPenalty = PENALTY[effort];
   return {
     ...metrics,
     outputUsdPerMTok: roundMoney(metrics.outputUsdPerMTok * multiplier),
@@ -315,15 +323,34 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 }
 
 // ---------------------------------------------------------------------------
-// Per-model thinking/reasoning tiers — REAL, provider-verified data (2026-07).
-// Juno's ladder is Instant · Low · Medium · High · Max. Most providers stop at
-// "high"; only a few genuinely expose a tier above it. Some models always reason
-// (no Instant), and a couple are pure on/off toggles.
+// Per-model thinking/reasoning tiers — REAL, provider-verified data.
+// Audited against official provider docs on 2026-07-15; see docs/models.md.
+//
+// Juno's ladder is Instant · Minimal · Low · Medium · High · Extra high · Max,
+// which is the UNION of what providers expose. No single model offers all of it,
+// so every entry below is an explicit subset. Getting this wrong is not cosmetic:
+// clampReasoningEffort() feeds these tiers straight to the provider, and sending
+// a tier a model doesn't accept (e.g. "max" to GPT-5.5) is a 400.
+//
+// Notable, easily-missed facts encoded here:
+//  - "max" is GPT-5.6 ONLY. GPT-5.5 stops at xhigh.
+//  - The gpt-5.x-pro MODELS accept only medium|high|xhigh and cannot be run
+//    non-thinking. On GPT-5.6, by contrast, "pro" is not an effort at all — it is
+//    a separate reasoning.mode axis (see PRO_MODE_MODELS below).
+//  - Claude Haiku 4.5 has NO effort parameter — extended thinking is on/off only.
+//  - Claude Opus 4.5 tops out at high; 4.6 adds max; 4.7+ adds xhigh.
+//  - Gemini uses thinking_level and CANNOT disable thinking on 3.x/2.5-pro;
+//    only the 2.5 flash line can (thinking_budget: 0).
+//  - Mistral Medium 3.5 / Small are on/off only (reasoning_effort: high|none).
+//  - GLM-5.2 is the only GLM with reasoning_effort; the rest are on/off.
 // ---------------------------------------------------------------------------
-export type ReasoningTier = "low" | "medium" | "high" | "max";
-const TIER_ORDER: ReasoningTier[] = ["low", "medium", "high", "max"];
+export type ReasoningTier = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+const TIER_ORDER: ReasoningTier[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 const LMH: ReasoningTier[] = ["low", "medium", "high"];
-const LMHX: ReasoningTier[] = ["low", "medium", "high", "max"];
+/** OpenAI's full non-thinking-excluded ladder for the 5.4/5.5 generation. */
+const LMHX: ReasoningTier[] = ["low", "medium", "high", "xhigh"];
+/** GPT-5.6 / Claude Opus 4.7+ — the only families with a real tier above xhigh. */
+const LMHXM: ReasoningTier[] = ["low", "medium", "high", "xhigh", "max"];
 
 export interface ReasoningCaps {
   /** Selectable depth tiers for this model (subset of low/medium/high/max). */
@@ -342,51 +369,89 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
   const id = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
-      if (id.includes("fable") || id.includes("mythos")) return caps(LMHX, false); // always reason
-      if (id.includes("opus-4-5") || id.includes("haiku")) return caps(LMH, true); // no "max"
-      return caps(LMHX, true); // opus 4.6/4.7/4.8, sonnet 4.6/5
+      // output_config.effort. Haiku 4.5 is absent from the effort-supported list
+      // entirely — it only has extended thinking on/off (budget_tokens).
+      if (id.includes("haiku")) return caps([], true, true);
+      // Fable/Mythos run adaptive thinking that cannot be disabled.
+      if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false);
+      if (id.includes("opus-4-5")) return caps(LMH, true); // no xhigh, no max
+      if (id.includes("opus-4-6")) return caps(["low", "medium", "high", "max"], true); // max, but no xhigh
+      return caps(LMHXM, true); // opus 4.7/4.8, sonnet 4.6/5
     case "openai":
-      if (/gpt-5(\.\d)?-pro/.test(id)) return caps([], false); // pro tier (5-pro/5.4-pro/5.5-pro): fixed effort, no control
-      if (id.includes("gpt-5.6") || id.includes("gpt-5.5") || id.includes("gpt-5.3-codex") || id.includes("gpt-5.2")) return caps(LMHX, true);
+      // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
+      // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.
+      if (/gpt-5(\.\d)?-pro/.test(id)) return caps(["medium", "high", "xhigh"], false);
+      if (id.includes("gpt-5.6")) return caps(LMHXM, true); // "max" is 5.6-only
+      // Codex is the family's exception: no non-thinking tier at all.
+      if (id.includes("codex")) return caps(LMHX, false);
+      if (/gpt-5\.[1245]/.test(id)) return caps(LMHX, true); // none|low|medium|high|xhigh
+      // Original GPT-5: `minimal` is the floor and `none` did not exist yet.
+      if (id.includes("gpt-5")) return caps(["minimal", "low", "medium", "high"], false);
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
-      if (id.includes("gpt-5")) return caps(LMH, true); // gpt-5, gpt-5.1 (no "max")
       return caps(LMH, true);
     case "google":
-      if (id.includes("pro")) return caps(LMH, false); // Gemini Pro always thinks, no "max"
-      return caps(LMH, true); // flash / flash-lite — no "max"
+      // thinking_level. Only the 2.5 flash line can switch thinking off
+      // (thinking_budget: 0); everything else always thinks.
+      if (/2\.5-flash/.test(id)) return caps(LMH, true);
+      if (id.includes("pro")) return caps(LMH, false); // 3.1/3/2.5 Pro: low|medium|high
+      return caps(["minimal", "low", "medium", "high"], false); // 3.x flash / flash-lite
     case "xai":
-      if (id.includes("grok-4.3")) return caps(LMH, true); // effort none/low/medium/high
-      if (id.includes("grok-3-mini")) return caps(["low", "high"], false); // only low + high
-      return caps([], false); // grok-4 / grok-build: reasons, no control
+      if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
+      if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
+      if (id.includes("grok-4.3")) return caps(LMH, true); // none|low|medium|high
+      return caps([], false); // grok-build: reasons, no documented control
     case "deepseek":
-      if (id.includes("v4")) return caps(["high", "max"], true);
+      if (id.includes("v4")) return caps(["high", "max"], true); // thinking on/off + effort
       return caps([], false); // deepseek-reasoner: always on, no control
     case "zhipu":
-      if (/glm-?5/.test(id)) return caps(["high", "max"], true);
-      return caps([], true, true); // glm-4.5/4.6: on/off toggle
+      // GLM-5.2 is the ONLY GLM exposing reasoning_effort; the rest are on/off.
+      if (id.includes("glm-5.2")) return caps(["minimal", ...LMHXM], true);
+      return caps([], true, true); // glm-5 / 4.6 / 4.7: thinking on/off toggle
     case "mistral":
-      if (id.includes("magistral")) return caps([], false); // always on, no control
-      if (id.includes("medium")) return caps(LMH, true); // Medium 3.5: reasoning effort, off by default
-      return caps([], false); // small 4 hybrid: reasons, no exposed control
+      // reasoning_effort is "high" | "none" — an on/off switch, not a ladder.
+      if (id.includes("medium") || id.includes("small")) return caps([], true, true);
+      return caps([], false); // magistral / large 3: no exposed control
     case "moonshot":
-      return caps([], false); // kimi thinking: always on, no control
+      if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
+      return caps([], true, true); // k2.6: thinking enabled/disabled
     case "minimax":
-      if (id.includes("m3")) return caps([], true, true); // M3 adaptive thinking: on/off toggle
-      return caps([], false); // M2.x: always-on interleaved thinking
+      if (id.includes("m3")) return caps([], true, true); // adaptive/disabled toggle
+      return caps([], false); // M2.x: thinking param ignored, always on
     case "mimo":
-      return caps(LMH, true); // MiMo: OpenAI-style reasoning_effort, off by default
+      return caps([], true, true); // thinking: enabled/disabled — not an effort ladder
     case "qwen":
       if (id.includes("qwq")) return caps([], false); // QwQ always reasons, no control
       if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
-      return caps(LMHX, true); // Qwen3 hybrid: instant + budget-mapped depth tiers
+      // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
+      return caps(LMH, true);
     case "hunyuan":
-      return caps(LMH, true); // Hunyuan: OpenAI-style reasoning_effort, off by default
+      return caps(["low", "high"], true); // reasoning_effort: no_think|low|high
+    case "longcat":
+      return caps([], true, true); // thinking: enabled/disabled
     default:
       return caps([], false);
   }
 }
 
-const TIER_LABEL: Record<ReasoningTier, string> = { low: "Low", medium: "Medium", high: "High", max: "Max" };
+/**
+ * Models where "Pro" is a SEPARATE axis from effort — OpenAI's GPT-5.6 line
+ * takes `reasoning.mode: "standard" | "pro"` on the same model id and at the
+ * same per-token price (Pro simply reasons more). This is why GPT-5.6 has no
+ * `-pro` model id, unlike the 5.5/5.4/5.2 generations where Pro is its own
+ * (far pricier) model.
+ */
+export function supportsProMode(model: ModelInfo): boolean {
+  return model.provider === "openai" && model.providerModel.toLowerCase().includes("gpt-5.6");
+}
+
+const TIER_LABEL: Record<ReasoningTier, string> = {
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra high",
+  max: "Max",
+};
 
 export interface ReasoningOption {
   value: ReasoningEffort;
