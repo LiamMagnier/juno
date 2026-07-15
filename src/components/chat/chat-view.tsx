@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUpRight, Box, GitFork, GripVertical, Loader2, RefreshCw, Share2, Trash2, X } from "lucide-react";
+import { Box, GitFork, GripVertical, Loader2, RefreshCw, Share2, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -1085,42 +1085,42 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       {/* Chat column */}
       {/* Below lg the canvas replaces the chat entirely — a split there leaves the
           chat column narrower than a phone. */}
-      <div className={cn("flex h-full min-h-0 min-w-0 flex-1 flex-col", openArtifact && "hidden lg:flex")}>
+      <div className={cn("relative flex h-full min-h-0 min-w-0 flex-1 flex-col", openArtifact && "hidden lg:flex")}>
         {/* Project scope indicator — persistent while this chat is filed in a
-            project. Brand-new chats use the composer chip until they exist. */}
+            project. Brand-new chats use the composer chip until they exist.
+
+            Floats over the thread rather than occupying a full-width band, so
+            the reply keeps the vertical space. Mirrors the top-right action
+            cluster's inset (right-3/top-3, md:4) so the two read as one row.
+            Anchored to the chat column, not the chat root: the root also hosts
+            the canvas panel, and a root-anchored pill would strand itself over
+            the canvas on the breakpoint where this column is hidden. */}
         {activeProjectId && !privateMode && currentConversationId && (
-          <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-border/60 bg-card/45 px-4 backdrop-blur-md motion-safe:animate-fade-in sm:px-5">
-            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] border border-primary/25 bg-primary/10">
-              <Box className="h-3.5 w-3.5 text-primary" />
-            </span>
-            <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
-              Project
-            </span>
-            {projectMeta ? (
-              <button
-                type="button"
-                onClick={() => router.push(`/projects/${activeProjectId}`)}
-                className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
-              >
-                {projectMeta.name}
-              </button>
-            ) : (
-              <span className="skeleton h-3.5 w-28 rounded-full" aria-hidden />
-            )}
-            <div className="ml-auto mr-11 flex items-center gap-0.5 coarse:gap-1.5 md:mr-12">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => router.push(`/projects/${activeProjectId}`)}
-                    aria-label="Open project"
-                    className="pressable inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground coarse:h-10 coarse:w-10"
-                  >
-                    <ArrowUpRight className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>Open project</TooltipContent>
-              </Tooltip>
+          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
+            <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-card/70 py-1 pl-1 pr-1 shadow-soft backdrop-blur-md motion-safe:animate-fade-in">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
+                <Box className="h-3 w-3 text-primary" />
+              </span>
+              <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
+                Project
+              </span>
+              <span aria-hidden className="hidden h-3 w-px shrink-0 bg-border/70 sm:block" />
+              {projectMeta ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/projects/${activeProjectId}`)}
+                      className="min-w-0 truncate text-sm font-medium text-foreground underline-offset-4 transition-colors hover:text-primary hover:underline"
+                    >
+                      {projectMeta.name}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Open project</TooltipContent>
+                </Tooltip>
+              ) : (
+                <span className="skeleton h-3.5 w-24 rounded-full" aria-hidden />
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
@@ -1128,7 +1128,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     onClick={() => handlePickProject(null)}
                     disabled={chat.isBusy}
                     aria-label="Remove from project"
-                    className="pressable inline-flex h-7 w-7 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-10 coarse:w-10"
+                    className="pressable inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-7 coarse:w-7"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
