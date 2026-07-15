@@ -19,6 +19,10 @@ const ERRORS: Record<string, string> = {
   connection_busy: "That app already has a connection change in progress. Please wait a moment and try again.",
   rate_limited: "Too many connection attempts. Please wait a moment and try again.",
   exchange_failed: "The provider rejected the connection. Please try again.",
+  // Not retryable: Composio ships no shared OAuth app for this toolkit, so it
+  // needs the user's own app credentials added in the Composio dashboard first.
+  needs_auth_config:
+    "That app has no shared Composio sign-in. Add your own app credentials for it in the Composio dashboard, then connect it here.",
   use_credentials: "That app connects with credentials, not OAuth — use its Connect button here.",
   invalid_credentials: "Apple didn’t accept those credentials. Check the Apple ID and app-specific password.",
   unknown: "Unknown connector.",

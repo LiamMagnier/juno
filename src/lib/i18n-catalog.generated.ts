@@ -2634,6 +2634,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete this task?"
   },
   {
+    "id": "4da10f1fbb17cac2",
+    "source": "Set up"
+  },
+  {
     "id": "4da37bcef49bf8a9",
     "source": "Search a mailbox by text, sender, or date."
   },
@@ -4170,6 +4174,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "on the server."
   },
   {
+    "id": "7b778c41b18cb07f",
+    "source": "needs_auth_config"
+  },
+  {
     "id": "7b82859afe24bd24",
     "source": "Publish popup"
   },
@@ -4408,6 +4416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "81d78f6b289e9b4d",
     "source": "Données de compte"
+  },
+  {
+    "id": "81f92e15edf9dfcd",
+    "source": "app credentials in the Composio dashboard, then connect it here."
   },
   {
     "id": "822299ffc169e5fb",
@@ -4810,6 +4822,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "[Hébergeur — ex. Google Cloud Platform, machine virtuelle localisée à préciser]"
   },
   {
+    "id": "90e7403053ef0a0d",
+    "source": "Composio has no shared OAuth app for"
+  },
+  {
     "id": "9106d6212bb4dfc9",
     "source": "modify"
   },
@@ -5192,6 +5208,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9aee6b1bcdf617d8",
     "source": "POST"
+  },
+  {
+    "id": "9af2f1e32c224cbe",
+    "source": ". Add your own"
   },
   {
     "id": "9af8dcb5fb8872f3",
@@ -7298,6 +7318,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Match the From address."
   },
   {
+    "id": "d924f619d6309943",
+    "source": "Needs its own OAuth app in Composio"
+  },
+  {
     "id": "d93e9a7a0dc19066",
     "source": "(voir les"
   },
@@ -7714,6 +7738,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Sonnet, 200K context."
   },
   {
+    "id": "e4e376233b59688d",
+    "source": "exchange_failed"
+  },
+  {
     "id": "e4e77efdc37460b2",
     "source": "Voice mode can receive images, but not document attachments yet."
   },
@@ -8040,6 +8068,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "efb52e7172b77731",
     "source": "Theme"
+  },
+  {
+    "id": "f02ee2fdfa040071",
+    "source": "connection_busy"
   },
   {
     "id": "f0634588c55458d0",

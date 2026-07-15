@@ -34,6 +34,8 @@ interface CatalogItem {
   connected: boolean;
   connecting: boolean;
   noAuth: boolean;
+  /** False = Composio hosts no OAuth app for it; Connect cannot work yet. */
+  managedAuth: boolean;
   status: string | null;
   connectedAt: string | null;
 }
@@ -64,6 +66,10 @@ export interface DirectoryItem {
   /** Native only: false when the server is missing this connector's OAuth app. */
   configured: boolean;
   noAuth?: boolean;
+  /** Composio only: false = no managed OAuth app, so Connect 400s until an auth
+   *  config is created in the Composio dashboard. Native connectors are always
+   *  true — their auth is Juno's own. */
+  managedAuth?: boolean;
   accountLabel?: string | null;
 }
 
@@ -168,6 +174,12 @@ function ConnectorTile({
   onDisconnect: () => void;
 }) {
   const unavailable = !item.configured;
+  // Composio hosts no OAuth app for this toolkit (verified live: e.g. twitter),
+  // so authorize() 400s with "Composio does not manage auth for toolkit …".
+  // Rendering a Connect button here bounced the user straight back to this page
+  // with a generic error — indistinguishable from a reload, and "try again"
+  // could never work. Say what is actually required instead.
+  const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
   return (
     <article
       className={cn(
@@ -193,9 +205,11 @@ function ConnectorTile({
                 ? "Finishing connection…"
                 : unavailable
                   ? "Not set up on this server"
-                  : item.noAuth
-                    ? "Ready without sign-in"
-                    : item.description}
+                  : needsSetup
+                    ? "Needs its own OAuth app in Composio"
+                    : item.noAuth
+                      ? "Ready without sign-in"
+                      : item.description}
           </p>
         </div>
         {item.connected ? (
@@ -213,6 +227,24 @@ function ConnectorTile({
               </button>
             </TooltipTrigger>
             <TooltipContent>Disconnect</TooltipContent>
+          </Tooltip>
+        ) : needsSetup ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <a
+                href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`}
+                target="_blank"
+                rel="noreferrer"
+                className="pressable inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-border hover:text-foreground"
+              >
+                Set up
+                <ArrowUpRight className="size-3" />
+              </a>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-[240px]">
+              Composio has no shared OAuth app for {item.label}. Add your own {item.label} app
+              credentials in the Composio dashboard, then connect it here.
+            </TooltipContent>
           </Tooltip>
         ) : (
           <Button
@@ -375,6 +407,7 @@ export function ConnectorDirectory({
           connecting: a.connecting,
           configured: true,
           noAuth: a.noAuth,
+          managedAuth: a.managedAuth,
         })),
     [apps]
   );

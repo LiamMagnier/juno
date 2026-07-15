@@ -30,7 +30,14 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
     if (result.connected) return back({ connected: slug });
     return NextResponse.redirect(result.redirectUrl);
   } catch (err) {
-    console.error("[composio] connect failed", slug, err instanceof Error ? err.message : err);
-    return back({ error: isComposioOperationBusyError(err) ? "connection_busy" : "exchange_failed" });
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[composio] connect failed", slug, message);
+    if (isComposioOperationBusyError(err)) return back({ error: "connection_busy" });
+    // Composio hosts no OAuth app for some toolkits (verified live: twitter).
+    // authorize() 400s with "Composio does not manage auth for toolkit …", and
+    // telling the user to "try again" is advice that can never succeed — the
+    // fix is an auth config in the Composio dashboard.
+    if (/does not manage auth|auth config/i.test(message)) return back({ error: "needs_auth_config", app: slug });
+    return back({ error: "exchange_failed" });
   }
 }

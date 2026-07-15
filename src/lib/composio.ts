@@ -436,6 +436,10 @@ export interface ComposioAppItem {
   connected: boolean;
   connecting: boolean;
   noAuth: boolean;
+  /** False = Composio hosts no OAuth app for this toolkit, so Connect cannot
+   *  work until an auth config exists in the Composio dashboard. Offering a bare
+   *  Connect button here just bounces the user back with an error. */
+  managedAuth: boolean;
   status: string | null;
   connectedAt: string | null;
 }
@@ -463,6 +467,11 @@ interface RestToolkit {
   name?: string;
   slug?: string;
   no_auth?: boolean;
+  /** Auth schemes Composio hosts an OAuth app for. EMPTY means the developer
+   *  must supply their own credentials in the Composio dashboard first —
+   *  authorize() 400s until they do. Verified live: twitter is [], gmail/slack/
+   *  notion/linear/googledrive/hubspot are ["OAUTH2"]. */
+  composio_managed_auth_schemes?: string[] | null;
   meta?: { logo?: string | null } | null;
 }
 
@@ -614,6 +623,7 @@ interface ToolkitSummary {
   name: string;
   logo: string | null;
   noAuth: boolean;
+  managedAuth: boolean;
 }
 
 interface LocalAppRow {
@@ -654,6 +664,7 @@ function buildAppItem(
       operationInProgress ||
       (row?.scope === PENDING_SCOPE && Date.now() - row.updatedAt.getTime() < PENDING_UI_GRACE_MS),
     noAuth: toolkit.noAuth,
+    managedAuth: toolkit.managedAuth,
     status: connection?.status || null,
     connectedAt: row?.createdAt.toISOString() ?? null,
   };
@@ -672,6 +683,7 @@ interface RestToolkitDetail {
   name?: string;
   meta?: { logo?: string | null } | null;
   auth_config_details?: { mode?: string }[] | null;
+  composio_managed_auth_schemes?: string[] | null;
 }
 
 /**
@@ -685,6 +697,7 @@ async function fetchToolkitDetail(slug: string): Promise<ToolkitSummary> {
     name: detail.name?.trim() || slug,
     logo: detail.meta?.logo ?? null,
     noAuth: (detail.auth_config_details ?? []).some((scheme) => scheme.mode === "NO_AUTH"),
+    managedAuth: (detail.composio_managed_auth_schemes ?? []).length > 0,
   };
 }
 
@@ -730,7 +743,9 @@ async function listConnectedComposioAppItems(
       // without an accountId is by construction a connection with no credential
       // to verify — the same thing `noAuth` means here.
       const stored = safeDecodeStoredApp(row.accessToken);
-      toolkit = { slug, name: row.accountLabel ?? slug, logo: null, noAuth: !stored?.accountId };
+      // Already connected, so managed auth is moot — never render "needs setup"
+      // for an app the user has successfully linked.
+      toolkit = { slug, name: row.accountLabel ?? slug, logo: null, noAuth: !stored?.accountId, managedAuth: true };
     }
     return buildAppItem(toolkit, row, remote);
   });
@@ -796,6 +811,9 @@ export async function listComposioApps(
       name: item.name?.trim() || slug,
       logo: item.meta?.logo ?? null,
       noAuth: item.no_auth === true,
+      // Empty/absent = Composio hosts no OAuth app for this toolkit; Connect
+      // would 400 ("Composio does not manage auth for toolkit …").
+      managedAuth: (item.composio_managed_auth_schemes ?? []).length > 0,
     }];
   });
   const local = await localAppRows(userId, toolkits.map((toolkit) => composioAppId(toolkit.slug)));
