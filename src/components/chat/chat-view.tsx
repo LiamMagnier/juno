@@ -1223,7 +1223,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 currentModelId={model}
               />
               {currentConversationId && !privateMode && (
-                <div className="shrink-0 px-3 pb-2">
+                // Same width cap, centring and horizontal padding as the composer
+                // itself (composer.tsx:~1153) — otherwise these sit against the
+                // chat column's left edge while the composer is centred under
+                // them, and the two never line up.
+                <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] shrink-0 px-0 pb-2 sm:max-w-[48rem] sm:px-4">
                   <FollowUpSuggestions
                     conversationId={currentConversationId}
                     onPick={(t) => void sendFromComposer(t, [])}
