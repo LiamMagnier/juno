@@ -38,6 +38,18 @@ interface CatalogItem {
   connectedAt: string | null;
 }
 
+interface Category {
+  id: string;
+  label: string;
+  count?: number;
+}
+
+interface CatalogResponse {
+  items?: CatalogItem[];
+  cursor?: string;
+  categories?: Category[];
+}
+
 export interface DirectoryItem {
   key: string;
   source: "native" | "composio";
@@ -67,6 +79,21 @@ const NATIVE_EQUIVALENT: Record<string, string> = {
   notion: "notion",
 };
 
+/**
+ * Native connectors carry no Composio categories, so without this they would
+ * vanish the moment any category is picked — including Notion under
+ * "Productivity", the one place a user would most expect to find it. Ids match
+ * the curated set in src/lib/composio.ts.
+ */
+const NATIVE_CATEGORIES: Record<string, string[]> = {
+  github: ["developer-tools"],
+  figma: ["images-&-design"],
+  notion: ["productivity", "documents"],
+  "apple-calendar": ["calendar"],
+  "apple-mail": ["email"],
+  "apple-music": ["video-&-audio"],
+};
+
 function titleize(slug: string): string {
   return slug
     .split(/[_-]+/)
@@ -91,6 +118,37 @@ function AppLogo({ item }: { item: DirectoryItem }) {
         <Plug className="size-4 text-primary" />
       )}
     </span>
+  );
+}
+
+function CategoryChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count?: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "pressable shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-fast ease-out-soft",
+        active
+          ? "border-primary/30 bg-primary/10 text-primary"
+          : "border-border/55 bg-background/55 text-muted-foreground hover:border-border hover:text-foreground hover:shadow-soft motion-safe:hover:-translate-y-px"
+      )}
+    >
+      {label}
+      {count !== undefined && (
+        <span className="ml-1.5 font-mono text-[10px] tabular-nums opacity-60">{count}</span>
+      )}
+    </button>
   );
 }
 
@@ -162,7 +220,9 @@ function ConnectorTile({
             variant="outline"
             disabled={busy || unavailable}
             onClick={onConnect}
-            className="h-8 shrink-0 rounded-lg px-2.5 text-xs"
+            // No radius override: size="sm" already sets a 10px corner. The old
+            // `rounded-lg` here was 24px on a 32px-tall button — an accidental pill.
+            className="shrink-0 px-2.5 text-xs"
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
           </Button>
@@ -199,6 +259,8 @@ export function ConnectorDirectory({
 }) {
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
+  const [category, setCategory] = React.useState<string | null>(null);
+  const [categories, setCategories] = React.useState<Category[]>([]);
   const [apps, setApps] = React.useState<CatalogItem[]>([]);
   const [cursor, setCursor] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(composioConfigured);
@@ -226,6 +288,17 @@ export function ConnectorDirectory({
     [connectors, connectingId]
   );
 
+  /** Category only narrows the catalog; the Connected tab is served from local state. */
+  const activeCategory = filter === "connected" ? null : category;
+
+  const catalogParams = React.useCallback(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (filter === "connected") params.set("connected", "1");
+    if (activeCategory) params.set("category", activeCategory);
+    return params;
+  }, [activeCategory, filter, query]);
+
   React.useEffect(() => {
     if (!composioConfigured) {
       setLoading(false);
@@ -235,17 +308,17 @@ export function ConnectorDirectory({
     const timer = window.setTimeout(() => {
       setLoading(true);
       setError(false);
-      const params = new URLSearchParams();
-      if (query.trim()) params.set("q", query.trim());
-      if (filter === "connected") params.set("connected", "1");
-      fetch(`/api/connectors/composio/catalog?${params}`, { signal: controller.signal })
+      fetch(`/api/connectors/composio/catalog?${catalogParams()}`, { signal: controller.signal })
         .then((r) => {
           if (!r.ok) throw new Error("catalog failed");
-          return r.json() as Promise<{ items?: CatalogItem[]; cursor?: string }>;
+          return r.json() as Promise<CatalogResponse>;
         })
         .then((data) => {
           setApps(data.items ?? []);
           setCursor(data.cursor ?? null);
+          // Categories are static per deploy; keep the last good set rather than
+          // letting a partial response empty the filter row mid-browse.
+          if (data.categories?.length) setCategories(data.categories);
         })
         .catch((err) => {
           if (err instanceof DOMException && err.name === "AbortError") return;
@@ -261,18 +334,17 @@ export function ConnectorDirectory({
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [composioConfigured, filter, query]);
+  }, [catalogParams, composioConfigured, query]);
 
   const loadMore = React.useCallback(async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const params = new URLSearchParams({ cursor });
-      if (query.trim()) params.set("q", query.trim());
-      if (filter === "connected") params.set("connected", "1");
+      const params = catalogParams();
+      params.set("cursor", cursor);
       const r = await fetch(`/api/connectors/composio/catalog?${params}`);
       if (!r.ok) throw new Error("catalog failed");
-      const data = (await r.json()) as { items?: CatalogItem[]; cursor?: string };
+      const data = (await r.json()) as CatalogResponse;
       setApps((current) => {
         const merged = new Map(current.map((i) => [i.slug, i]));
         (data.items ?? []).forEach((i) => merged.set(i.slug, i));
@@ -284,7 +356,7 @@ export function ConnectorDirectory({
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, filter, loadingMore, query]);
+  }, [catalogParams, cursor, loadingMore]);
 
   const composioItems = React.useMemo<DirectoryItem[]>(
     () =>
@@ -309,10 +381,14 @@ export function ConnectorDirectory({
 
   const q = query.trim().toLowerCase();
   const items = React.useMemo(() => {
-    const matches = (i: DirectoryItem) => !q || i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q);
+    // Composio items arrive already searched and category-filtered by the API;
+    // the native handful is matched here so one keystroke covers both backends.
+    const matches = (i: DirectoryItem) =>
+      (!q || i.label.toLowerCase().includes(q) || i.id.toLowerCase().includes(q)) &&
+      (!activeCategory || (NATIVE_CATEGORIES[i.id] ?? []).includes(activeCategory));
     const visible = [...nativeItems.filter(matches), ...composioItems];
     return filter === "connected" ? visible.filter((i) => i.connected) : visible;
-  }, [nativeItems, composioItems, filter, q]);
+  }, [activeCategory, nativeItems, composioItems, filter, q]);
 
   const connect = (item: DirectoryItem) => {
     if (item.source === "native") {
@@ -325,6 +401,7 @@ export function ConnectorDirectory({
   };
 
   const connectedCount = [...nativeItems, ...composioItems].filter((i) => i.connected).length;
+  const categoryLabel = categories.find((c) => c.id === activeCategory)?.label.toLowerCase();
 
   return (
     <section className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card/55 shadow-soft">
@@ -348,14 +425,18 @@ export function ConnectorDirectory({
             />
           </label>
         </div>
-        <div className="mt-4 flex w-fit items-center gap-1 rounded-xl bg-muted/55 p-1">
+        {/* Two rounded-full elements are concentric at any padding — the safe
+            segmented control. This was a rounded-xl (12px) track wrapping
+            rounded-lg (24px!) thumbs, so the thumbs bulged past their own rail. */}
+        <div className="mt-4 flex w-fit items-center gap-1 rounded-full bg-muted/55 p-1">
           {(["all", "connected"] as const).map((value) => (
             <button
               key={value}
               type="button"
               onClick={() => setFilter(value)}
+              aria-pressed={filter === value}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft",
+                "rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-fast ease-out-soft",
                 filter === value && "bg-background text-foreground shadow-soft"
               )}
             >
@@ -363,6 +444,33 @@ export function ConnectorDirectory({
             </button>
           ))}
         </div>
+
+        {/* Composio has ~1048 toolkits. Categories are the only thing standing
+            between the user and an endlessly-paged flat list, so they sit here
+            rather than behind a menu. Hidden on Connected — that tab is small
+            enough to read whole, and the API cannot filter it by category. */}
+        {filter === "all" && categories.length > 0 && (
+          <div
+            role="group"
+            aria-label="Filter by category"
+            // overflow-x forces the block axis to clip too, so the padding here is
+            // load-bearing: it is the room the chips' hover lift needs to cast
+            // shadow-soft (~10px of reach) instead of having it shorn off flat.
+            // The negative margins keep the visual gutter aligned with the header.
+            className="-mx-1 mt-1.5 flex gap-1.5 overflow-x-auto px-1 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
+            <CategoryChip label="All categories" active={!category} onClick={() => setCategory(null)} />
+            {categories.map((c) => (
+              <CategoryChip
+                key={c.id}
+                label={c.label}
+                count={c.count}
+                active={category === c.id}
+                onClick={() => setCategory(category === c.id ? null : c.id)}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="p-3 sm:p-4">
@@ -396,13 +504,19 @@ export function ConnectorDirectory({
 
         {!loading && items.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-            {filter === "connected" ? "No connected apps yet." : q ? `No apps match “${query.trim()}”.` : "No apps available."}
+            {filter === "connected"
+              ? "No connected apps yet."
+              : q
+                ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
+                : categoryLabel
+                  ? `No apps in ${categoryLabel}.`
+                  : "No apps available."}
           </div>
         )}
 
         {cursor && !loading && !error && (
           <div className="flex justify-center pt-4">
-            <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore} className="rounded-xl">
+            <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
               {loadingMore && <Loader2 className="size-3.5 animate-spin" />}
               Load more apps
             </Button>

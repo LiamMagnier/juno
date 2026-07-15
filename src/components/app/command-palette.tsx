@@ -236,7 +236,15 @@ export function CommandPalette() {
                 return (
                   <React.Fragment key={c.id}>
                     {showHeader && (
-                      <div className="px-2.5 pb-1 pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55 first:pt-1.5">
+                      // The sliding highlight is this list's real :first-child, so a
+                      // `first:` variant here would never match — key the tighter top
+                      // padding off the index instead.
+                      <div
+                        className={cn(
+                          "px-2.5 pb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55",
+                          i === 0 ? "pt-1.5" : "pt-3"
+                        )}
+                      >
                         {c.group}
                       </div>
                     )}
@@ -252,10 +260,13 @@ export function CommandPalette() {
                       )}
                     >
                       {/* Icon tile — gives every row a consistent optical anchor
-                          and lets the active state read without moving anything. */}
+                          and lets the active state read without moving anything.
+                          rounded-md (8px): the row is rounded-xl (12px) and the tile
+                          sits 8px/10px inside it, so ~8px is the concentric read.
+                          NB rounded-lg is 24px here — on a 28px tile that is a circle. */}
                       <span
                         className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors duration-fast ease-out-soft",
+                          "flex size-7 shrink-0 items-center justify-center rounded-md border transition-colors duration-fast ease-out-soft",
                           isActive
                             ? "border-border/70 bg-background text-foreground shadow-soft"
                             : "border-transparent bg-muted/50 text-muted-foreground"
@@ -274,7 +285,7 @@ export function CommandPalette() {
                       <ArrowRight
                         aria-hidden="true"
                         className={cn(
-                          "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-all duration-base ease-out-soft",
+                          "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-[transform,opacity] duration-base ease-out-soft motion-reduce:transition-none",
                           isActive ? "translate-x-0 opacity-60" : "-translate-x-1 opacity-0"
                         )}
                       />

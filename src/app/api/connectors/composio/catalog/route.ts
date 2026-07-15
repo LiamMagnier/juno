@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { isComposioConfigured } from "@/lib/env";
-import { listComposioApps } from "@/lib/composio";
+import { isComposioCategory, listComposioApps, listComposioCategories } from "@/lib/composio";
 import { checkComposioRateLimit } from "@/lib/composio-rate-limit";
 
 export const runtime = "nodejs";
@@ -23,9 +23,21 @@ export async function GET(req: Request) {
   const query = (url.searchParams.get("q") ?? "").slice(0, 100);
   const cursor = (url.searchParams.get("cursor") ?? "").slice(0, 300) || undefined;
   const connectedOnly = url.searchParams.get("connected") === "1";
+  // An unknown category is dropped rather than rejected: it would reach the API
+  // as a filter matching nothing, which reads to the user as a broken directory.
+  const requested = url.searchParams.get("category") ?? "";
+  const category = isComposioCategory(requested) ? requested : undefined;
   try {
-    const result = await listComposioApps(user.id, { query, cursor, connectedOnly, limit: 30 });
-    return NextResponse.json(result);
+    // The category chips and the items they filter render on the same screen at
+    // the same moment, so they ship together: a separate route would add a
+    // round-trip, a second auth + rate-limit path and a second failure mode to
+    // render, all for a static ~18-entry payload that is already cached
+    // server-side and cannot drift from the items beside it.
+    const [result, categories] = await Promise.all([
+      listComposioApps(user.id, { query, cursor, connectedOnly, limit: 30, category }),
+      listComposioCategories(),
+    ]);
+    return NextResponse.json({ ...result, categories });
   } catch (err) {
     console.error("[composio] catalog failed", err instanceof Error ? err.message : err);
     return NextResponse.json({ error: "Could not load the Composio catalog" }, { status: 502 });

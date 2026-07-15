@@ -236,7 +236,9 @@ export function PromptLibraryDialog({ open, onOpenChange, onInsert }: PromptLibr
               ) : loading ? (
                 <div className="space-y-2">
                   {[...Array(5)].map((_, i) => (
-                    <div key={i} className="skeleton h-16 rounded-lg" style={{ animationDelay: `${i * 50}ms` }} />
+                    // Radius tracks the real card below (rounded-xl) so the list
+                    // doesn't reflow its corners when the fetch resolves.
+                    <div key={i} className="skeleton h-16 rounded-xl" style={{ animationDelay: `${i * 50}ms` }} />
                   ))}
                 </div>
               ) : filtered.length === 0 ? (
@@ -255,7 +257,9 @@ export function PromptLibraryDialog({ open, onOpenChange, onInsert }: PromptLibr
                       <li
                         key={p.id}
                         className={cn(
-                          "group flex items-start gap-2 rounded-lg border bg-card p-2.5 shadow-soft transition-[border-color,box-shadow,opacity] duration-base ease-out-soft hover:border-primary/35 hover:shadow-float",
+                          // rounded-xl is 12px; rounded-lg would be 24px, which on a
+                          // ~70px p-2.5 row swallows the corners.
+                          "group flex items-start gap-2 rounded-xl border bg-card p-2.5 shadow-soft transition-[border-color,box-shadow,opacity] duration-base ease-out-soft hover:border-primary/35 hover:shadow-float",
                           busy && "pointer-events-none opacity-60"
                         )}
                       >

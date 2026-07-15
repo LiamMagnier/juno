@@ -8,9 +8,10 @@ import {
   AudioLines,
   Blocks,
   Box,
-  Brain,
+  NotebookPen,
   Check,
   ChevronDown,
+  ChevronRight,
   FileText,
   FileUp,
   Globe,
@@ -118,6 +119,8 @@ type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; ite
 
 const MAX_CHAT_CONNECTORS = 5;
 const MAX_VOICE_IMAGES = 4;
+// Namespaced like the sidebar's own disclosure prefs (juno:sidebar:recents:collapsed).
+const TOOLS_COLLAPSED_KEY = "juno:composer:tools:collapsed";
 
 
 export function Composer({
@@ -731,12 +734,62 @@ export function Composer({
   const canAttach = features.storage && !privateMode;
   const attachBlockedReason = privateMode ? "private" : "no storage";
   const activeConnectorCount = connectors.filter((connector) => connectorsEnabled.includes(connector.id)).length;
+  const showConnectors = !!onToggleConnector && !privateMode && modality === "chat";
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
     ? connectors.filter((connector) =>
         `${connector.label} ${connector.id}`.toLocaleLowerCase().includes(connectorSearch)
       )
     : connectors;
+
+  // TOOLS is a disclosure that mirrors the sidebar's RECENT section — chevron in
+  // the icon slot, mono eyebrow, trailing count — because it is the same control
+  // and should not read as a second invented pattern.
+  //
+  // Collapsed by default: the everyday reason to open this menu is the ADD group,
+  // and the tool switches are sticky prefs people set once. The one genuinely
+  // transient thing in here is deep research (per-send), and it stays legible
+  // while collapsed via the ON count below plus the coral dot on the + trigger —
+  // so we never override the user's saved preference to shout about it.
+  const [toolsCollapsed, setToolsCollapsed] = React.useState(true);
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(TOOLS_COLLAPSED_KEY);
+      if (saved) setToolsCollapsed(JSON.parse(saved));
+    } catch {}
+  }, []);
+  const toggleToolsCollapsed = () => {
+    const next = !toolsCollapsed;
+    setToolsCollapsed(next);
+    try {
+      localStorage.setItem(TOOLS_COLLAPSED_KEY, JSON.stringify(next));
+    } catch {}
+  };
+
+  // The 0fr→1fr sweep needs overflow-hidden to clip the rows mid-flight, but that
+  // same clip slices the Switch thumbs' shadow-pop flat at the fold. Clip only
+  // while animating, then release — see empty-state.tsx. Collapsing re-clips
+  // immediately, which is what the animation needs.
+  const [toolsSettled, setToolsSettled] = React.useState(false);
+  React.useEffect(() => {
+    if (toolsCollapsed) {
+      setToolsSettled(false);
+      return;
+    }
+    // duration-base (220ms) + a frame of margin.
+    const t = window.setTimeout(() => setToolsSettled(true), 240);
+    return () => window.clearTimeout(t);
+  }, [toolsCollapsed]);
+
+  // Counts rows that are ON, not rows that exist: while collapsed this is the only
+  // thing in the menu saying that e.g. deep research is armed for this message.
+  // Each term repeats its row's own gate so a row that isn't rendered can't count.
+  const activeToolCount =
+    (researchArmed ? 1 : 0) +
+    (canWebSearch && webSearchEnabled ? 1 : 0) +
+    (!privateMode && canvasEnabled ? 1 : 0) +
+    (settings.memoryEnabled ? 1 : 0) +
+    (showConnectors && activeConnectorCount > 0 ? 1 : 0);
 
   // Deep research — per-send, so it reads as a toggle that announces its own
   // expiry. Gating matches the toolbar chip this replaced exactly: hidden
@@ -774,11 +827,52 @@ export function Composer({
     </DropdownMenuItem>
   ) : null;
 
+  // Voice mode's TOOLS group is a single row (research), so it stays a plain
+  // label — a disclosure over one item is just a lid.
   const toolsLabel = (
     <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
       <Blocks className="h-3.5 w-3.5" />
       Tools
     </DropdownMenuLabel>
+  );
+
+  // A DropdownMenuItem rather than a plain <button>: Radix roves focus over its
+  // own items only, so a bare button would be skipped by the arrow keys.
+  // preventDefault on select toggles without closing the menu — the same idiom
+  // the switch rows below already use.
+  const toolsDisclosure = (
+    <DropdownMenuItem
+      aria-expanded={!toolsCollapsed}
+      aria-label={activeToolCount > 0 ? `Tools, ${activeToolCount} on` : "Tools"}
+      onSelect={(event) => {
+        event.preventDefault();
+        toggleToolsCollapsed();
+      }}
+    >
+      {/* The chevron takes the icon slot (as it does in the sidebar's Section) and
+          is boxed to size-4 so the eyebrow aligns with the rows it discloses. */}
+      <span className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/80">
+        <ChevronRight
+          className={cn(
+            "!size-3.5 transition-transform duration-fast ease-out-soft motion-reduce:transition-none",
+            !toolsCollapsed && "rotate-90"
+          )}
+        />
+      </span>
+      {/* Matches the sibling ADD eyebrow exactly — DropdownMenuLabel resolves to
+          text-muted-foreground, so a /70 here made the two group headers read as
+          different levels of the hierarchy when they are peers. */}
+      <span className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground">Tools</span>
+      <span
+        aria-hidden
+        className={cn(
+          "shrink-0 font-mono text-caption tabular-nums transition-colors duration-base ease-out-soft motion-reduce:transition-none",
+          activeToolCount > 0 ? "text-primary" : "text-muted-foreground/50"
+        )}
+      >
+        {activeToolCount}
+      </span>
+    </DropdownMenuItem>
   );
 
   return (
@@ -1193,131 +1287,151 @@ export function Composer({
                     )}
 
                     <DropdownMenuSeparator />
-                    {toolsLabel}
+                    {toolsDisclosure}
 
-                    {researchMenuItem}
-                    <DropdownMenuItem
-                      role="menuitemcheckbox"
-                      aria-checked={canWebSearch && webSearchEnabled}
-                      disabled={!canWebSearch}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onToggleWebSearch?.(!webSearchEnabled);
-                      }}
-                    >
-                      <Globe className="text-muted-foreground" />
-                      <span className="flex-1">Web search</span>
-                      {canWebSearch ? (
-                        <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                      ) : (
-                        <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
+                    {/* visibility (not just 0fr) rides the same transition: a
+                        visibility:hidden item can't take focus, so Radix's roving
+                        focusFirst walks straight past the collapsed rows instead
+                        of parking on something nobody can see. */}
+                    <div
+                      className={cn(
+                        "grid transition-[grid-template-rows,visibility] duration-base ease-out-soft motion-reduce:transition-none",
+                        toolsCollapsed ? "invisible grid-rows-[0fr]" : "visible grid-rows-[1fr]"
                       )}
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      role="menuitemcheckbox"
-                      aria-checked={!privateMode && canvasEnabled}
-                      disabled={privateMode}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        onToggleCanvas(!canvasEnabled);
-                      }}
                     >
-                      <LayoutTemplate className="text-muted-foreground" />
-                      <span className="flex-1">Canvas &amp; artifacts</span>
-                      <Switch checked={!privateMode && canvasEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                    </DropdownMenuItem>
-                    <DropdownMenuItem
-                      role="menuitemcheckbox"
-                      aria-checked={settings.memoryEnabled}
-                      onSelect={(event) => {
-                        event.preventDefault();
-                        toggleMemory(!settings.memoryEnabled);
-                      }}
-                    >
-                      <Brain className="text-muted-foreground" />
-                      <span className="flex-1">Memory</span>
-                      <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
-                    </DropdownMenuItem>
+                      <div
+                        className={cn(
+                          "min-h-0 transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+                          toolsCollapsed && "opacity-0",
+                          // Clipped only while the rows sweep — see toolsSettled.
+                          toolsSettled ? "overflow-visible" : "overflow-hidden"
+                        )}
+                      >
+                        {researchMenuItem}
+                        <DropdownMenuItem
+                          role="menuitemcheckbox"
+                          aria-checked={canWebSearch && webSearchEnabled}
+                          disabled={!canWebSearch}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            onToggleWebSearch?.(!webSearchEnabled);
+                          }}
+                        >
+                          <Globe className="text-muted-foreground" />
+                          <span className="flex-1">Web search</span>
+                          {canWebSearch ? (
+                            <Switch checked={webSearchEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
+                          ) : (
+                            <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
+                          )}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          role="menuitemcheckbox"
+                          aria-checked={!privateMode && canvasEnabled}
+                          disabled={privateMode}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            onToggleCanvas(!canvasEnabled);
+                          }}
+                        >
+                          <LayoutTemplate className="text-muted-foreground" />
+                          <span className="flex-1">Canvas &amp; artifacts</span>
+                          <Switch checked={!privateMode && canvasEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          role="menuitemcheckbox"
+                          aria-checked={settings.memoryEnabled}
+                          onSelect={(event) => {
+                            event.preventDefault();
+                            toggleMemory(!settings.memoryEnabled);
+                          }}
+                        >
+                          <NotebookPen className="text-muted-foreground" />
+                          <span className="flex-1">Memory</span>
+                          <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
+                        </DropdownMenuItem>
 
-                    {onToggleConnector && !privateMode && modality === "chat" && (
-                      <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
-                        <DropdownMenuSubTrigger>
-                          <Plug className="text-muted-foreground" />
-                          <span className="flex-1">Connectors</span>
-                          {activeConnectorCount > 0 && (
-                            <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
-                          )}
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-72 p-0">
-                          <div className="border-b border-border/60 p-2">
-                            <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
-                              <span>Choose apps for this chat</span>
-                              <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
-                            </div>
-                            <label className="relative block">
-                              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-                              <input
-                                value={connectorQuery}
-                                onChange={(event) => setConnectorQuery(event.target.value)}
-                                onKeyDown={(event) => event.stopPropagation()}
-                                placeholder="Search connected apps…"
-                                aria-label="Search connected apps"
-                                className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
-                              />
-                            </label>
-                          </div>
-                          <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
-                            {connectorsLoading && connectors.length === 0 ? (
-                              <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                Loading connected apps…
+                        {showConnectors && onToggleConnector && (
+                          <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
+                            <DropdownMenuSubTrigger>
+                              <Plug className="text-muted-foreground" />
+                              <span className="flex-1">Connectors</span>
+                              {activeConnectorCount > 0 && (
+                                <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                              )}
+                            </DropdownMenuSubTrigger>
+                            <DropdownMenuSubContent className="w-72 p-0">
+                              <div className="border-b border-border/60 p-2">
+                                <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
+                                  <span>Choose apps for this chat</span>
+                                  <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
+                                </div>
+                                <label className="relative block">
+                                  <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                  <input
+                                    value={connectorQuery}
+                                    onChange={(event) => setConnectorQuery(event.target.value)}
+                                    onKeyDown={(event) => event.stopPropagation()}
+                                    placeholder="Search connected apps…"
+                                    aria-label="Search connected apps"
+                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                                  />
+                                </label>
                               </div>
-                            ) : connectors.length === 0 ? (
-                              <DropdownMenuItem onSelect={() => router.push("/connections")}>
-                                <Plug className="text-muted-foreground" />
-                                <span className="flex-1">Connect an app</span>
-                                <span className="text-caption text-muted-foreground/60">set up</span>
-                              </DropdownMenuItem>
-                            ) : visibleConnectors.length === 0 ? (
-                              <div className="px-2 py-5 text-center text-xs text-muted-foreground">
-                                No connected apps match “{connectorQuery.trim()}”.
-                              </div>
-                            ) : (
-                              visibleConnectors.map((connector) => {
-                                const selected = connectorsEnabled.includes(connector.id);
-                                return (
-                                  <DropdownMenuItem
-                                    key={connector.id}
-                                    onSelect={(event) => {
-                                      event.preventDefault();
-                                      if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
-                                        toast.error(
-                                          `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
-                                        );
-                                        return;
-                                      }
-                                      onToggleConnector(connector.id);
-                                    }}
-                                    className="min-h-10"
-                                  >
+                              <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                                {connectorsLoading && connectors.length === 0 ? (
+                                  <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                    Loading connected apps…
+                                  </div>
+                                ) : connectors.length === 0 ? (
+                                  <DropdownMenuItem onSelect={() => router.push("/connections")}>
                                     <Plug className="text-muted-foreground" />
-                                    <span className="min-w-0 flex-1 truncate">{connector.label}</span>
-                                    <Switch checked={selected} className="pointer-events-none" />
+                                    <span className="flex-1">Connect an app</span>
+                                    <span className="text-caption text-muted-foreground/60">set up</span>
                                   </DropdownMenuItem>
-                                );
-                              })
-                            )}
-                          </div>
-                          {connectors.length > 0 && (
-                            <div className="border-t border-border/60 p-1.5">
-                              <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
-                                <Plug />
-                                Manage connections
-                              </DropdownMenuItem>
-                            </div>
-                          )}
-                        </DropdownMenuSubContent>
-                      </DropdownMenuSub>
-                    )}
+                                ) : visibleConnectors.length === 0 ? (
+                                  <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                    No connected apps match “{connectorQuery.trim()}”.
+                                  </div>
+                                ) : (
+                                  visibleConnectors.map((connector) => {
+                                    const selected = connectorsEnabled.includes(connector.id);
+                                    return (
+                                      <DropdownMenuItem
+                                        key={connector.id}
+                                        onSelect={(event) => {
+                                          event.preventDefault();
+                                          if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
+                                            toast.error(
+                                              `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
+                                            );
+                                            return;
+                                          }
+                                          onToggleConnector(connector.id);
+                                        }}
+                                        className="min-h-10"
+                                      >
+                                        <Plug className="text-muted-foreground" />
+                                        <span className="min-w-0 flex-1 truncate">{connector.label}</span>
+                                        <Switch checked={selected} className="pointer-events-none" />
+                                      </DropdownMenuItem>
+                                    );
+                                  })
+                                )}
+                              </div>
+                              {connectors.length > 0 && (
+                                <div className="border-t border-border/60 p-1.5">
+                                  <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
+                                    <Plug />
+                                    Manage connections
+                                  </DropdownMenuItem>
+                                </div>
+                              )}
+                            </DropdownMenuSubContent>
+                          </DropdownMenuSub>
+                        )}
+                      </div>
+                    </div>
                   </>
                 )}
               </DropdownMenuContent>

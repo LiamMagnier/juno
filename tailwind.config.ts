@@ -13,7 +13,12 @@ import plugin from "tailwindcss/plugin";
  * Touch ................. p{t,b,l,r}-safe (env safe-area insets) · .pressable (press feedback, globals.css)
  * Elevation ............. shadow-{soft,float,glass} — theme-aware via --shadow-* CSS vars
  *                         (names avoid the `card`/`accent`/… color keys to dodge collisions)
- * Radius ................ rounded-{sm,md,lg(=--radius=1rem),panel} (panel = floating layers)
+ * Radius ................ NON-MONOTONIC — overriding `lg` reorders Tailwind's scale. Real sizes:
+ *                           sm 4 · md 8 · xl 12* · 2xl 16* · lg 24 (=--radius) · 3xl 24* · panel 28
+ *                         (* = stock Tailwind, not overridden below.) So `rounded-lg` is BIGGER than
+ *                         `rounded-xl`/`rounded-2xl`, not a mid step. Want ~8px? rounded-md. ~12px?
+ *                         rounded-xl. ~16px? rounded-2xl. A pill? rounded-full. Reach for rounded-lg
+ *                         only when you actually mean 24px. panel = floating layers.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
  * Thinking .............. animate-{dot-think,dot-tint,dot-breathe} (constellation) ·
  *                         animate-{icon-breathe,pulse-ring-slow} + .text-shimmer / .scroll-fade-y (globals.css)

@@ -1,0 +1,12 @@
+  ANTHROPIC_API_KEY length: 93
+=== live probe ===
+  HTTP 401
+  File "<string>", line 3
+    d=json.load(open(/tmp/an.json))
+                     ^
+SyntaxError: invalid syntax
+=== which providers ARE alive? (Juno falls back across them) ===
+  ZHIPU_API_KEY: set (len 49)
+  OPENAI_API_KEY: set (len 164)
+  XAI_API_KEY: set (len 93)
+  DEEPSEEK_API_KEY: set (len 35)

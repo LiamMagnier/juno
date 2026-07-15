@@ -36,14 +36,102 @@ import type { ReasoningOption } from "@/lib/model-metrics";
  */
 const PAD = "0.25rem"; // 4px
 const THUMB = "1.75rem"; // 28px — same as the lane height
-/** Distance the thumb's left edge can travel. */
+/** Distance the thumb's left edge can travel, measured against the TRACK's width. */
 const TRAVEL = `(100% - ${PAD} * 2 - ${THUMB})`;
-/** Left edge of the thumb at `frac` (0..1). */
-const thumbLeft = (frac: number) => `calc(${PAD} + ${TRAVEL} * ${frac})`;
 /** Centre of stop `frac` — dots share the thumb's travel, so one always sits under it. */
 const centerAt = (frac: number) => `calc(${PAD} + ${THUMB} / 2 + ${TRAVEL} * ${frac})`;
-/** Fill grows from exactly-thumb-sized (hidden) to the full lane. */
-const fillWidth = (frac: number) => `calc(${THUMB} + ${TRAVEL} * ${frac})`;
+
+/* ── Motion ────────────────────────────────────────────────────────────────
+ * The thumb and the fill's right cap are welded together: the cap lives exactly
+ * under the thumb, so any disagreement between them shows up instantly as a
+ * coral crescent. Keeping them in lockstep drives the whole rig below.
+ *
+ * Both ride a "carrier" element sized to the LANE and animate `transform`, never
+ * `left`/`width`. Two reasons, in order of importance:
+ *   1. transform is compositor-only — no reflow per frame, and it interpolates
+ *      off the main thread.
+ *   2. it is the only way the two stay locked. `width` is a layout property and
+ *      `transform` is not; run one of each and the browser resolves them on
+ *      different clocks, so the fill's cap visibly lags the thumb mid-flight.
+ *      Same property + same duration + same curve + same distance = same frame.
+ *
+ * The "same distance" half of that is why both carriers are LANE-sized: `100%`
+ * inside a translate resolves against the element's OWN width, so one expression
+ * is literally the same number of pixels for both. LANE − THUMB is the identical
+ * quantity as the track-relative TRAVEL above (track − 2·PAD − THUMB).
+ *
+ * The transform ladder, outermost first. Each rung owns exactly one transform,
+ * because a single element has a single `transform` and a single transition for
+ * it — rungs are how motions get independent curves.
+ *   carrier  translateX(travel)   detent → detent
+ *   flight   translateX(±RECOIL)  the spring past the detent
+ *   popper   translateY(-50%)     static centring / the ultra-pop flourish
+ *   thumb    scale(…)             squash + grip
+ */
+
+/** Travel to `frac`, expressed against a LANE-sized element. */
+const travelX = (frac: number) => `translateX(calc((100% - ${THUMB}) * ${frac}))`;
+
+/** Shared verbatim by the thumb carrier and the fill carrier — the lockstep
+ *  guarantee is that neither can drift from the other without editing this. */
+const TRAVEL_MOTION =
+  "motion-safe:transition-[transform] motion-safe:duration-base motion-safe:ease-spring";
+
+/** The recoil layer: leads the travel by RECOIL while a move is in flight, then
+ *  releases. Faster in than the travel, so the thumb is running ahead of its own
+ *  carrier and lands past the detent before easing back into it. */
+const FLIGHT_MOTION =
+  "motion-safe:transition-[transform] motion-safe:duration-fast motion-safe:ease-out-expo";
+
+/**
+ * Overshoot past the detent — a FIXED distance, not a percentage of the step,
+ * and not an overshooting cubic-bezier (a y > 1 control point would have been
+ * the one-liner here).
+ *
+ * A bezier's overshoot scales with the distance travelled, and this slider's step
+ * size is set by the model: on a seven-stop track a ~4% overshoot is a tidy ~1.5px
+ * detent, but a two-stop Instant/Thinking model makes one step the ENTIRE 204px
+ * travel, and the same curve throws the thumb ~8px clean off the end of the rail.
+ * There is no percentage that is both visible at seven stops and safe at two.
+ *
+ * A fixed lead has no such coupling, and the geometry bounds it: the thumb springs
+ * into the track's own padding and can never leave the rail. The budget is exact and
+ * nearly spent — recoil + the squash's half-growth must stay under PAD:
+ *     3px + 28px × (1.06 − 1) / 2  =  3.84px  ≤  PAD 4px
+ * so raising either RECOIL or the squash below pushes the thumb off the track at the
+ * last stop. It also self-regulates: a long step's travel curve has not yet converged
+ * when the recoil releases, so it absorbs the lead instead of overshooting — exactly
+ * the case (two stops, one 200px step) where an overshoot would have looked broken.
+ *
+ * Direction is not cosmetic. The fill runs off the left of the clip, so it is only
+ * hidden at stop 0 because the thumb is parked over the lane's left cap; a RIGHTWARD
+ * recoil there would slide the thumb off it and let a coral crescent out — the halo,
+ * back. That state is unreachable rather than lucky: dir is sign(index − from), so
+ * arriving at stop 0 means from > 0 means dir < 0, and the recoil can only ever push
+ * the thumb deeper into the left pad. Keep that coupling if you touch either end.
+ */
+const RECOIL = (dir: number) =>
+  dir > 0 ? "motion-safe:translate-x-[3px]" : dir < 0 ? "motion-safe:-translate-x-[3px]" : "";
+
+/*
+ * At the TOP stop the ultra-pop flourish plays on the `popper` rung — an ANCESTOR
+ * of the thumb's squash — and nested transforms MULTIPLY: 1.18 × 1.06 = 1.2508.
+ * On the real 264px popover (track 240) the last stop centres the thumb at 222, so
+ * a +3px recoil plus a half-width of 14 × 1.2508 = 17.51 puts its right edge at
+ * 242.51 against a 240px track: a 2.51px overhang, at the one stop the flourish
+ * exists to celebrate. (The earlier "0.16px clearance" figure counted the squash
+ * alone and missed the ancestor entirely.)
+ *
+ * So the top stop yields: ultra-pop IS the landing there, and stacking a recoil and
+ * a squash on top of it is both redundant and what pushes the thumb off the rail.
+ * Dropping both restores 14 × 1.18 = 16.52 -> right edge 238.52, i.e. 1.48px inside
+ * the track — exactly the clearance this control had before the motion work.
+ * See `topOwnsLanding` at the call site.
+ */
+
+/** Just under the travel's duration-base (220ms): the recoil releases as the
+ *  carrier converges, so the release *is* the landing rather than a second move. */
+const FLIGHT_MS = 210;
 
 /** Violet accent reserved for the top tier (Juno's own primary is coral).
  *  Driven by the --ultra token, never a hardcoded hex: the app swaps accent
@@ -95,8 +183,48 @@ export function ReasoningSlider({
     wasTop.current = isTop;
   }, [isTop]);
 
+  // Sign of the move currently in flight (0 = settled). Drives both the recoil
+  // and the squash, which are the same event seen from two elements.
+  const [flight, setFlight] = React.useState(0);
+  const prevIndex = React.useRef(index);
+  React.useEffect(() => {
+    const from = prevIndex.current;
+    prevIndex.current = index;
+    if (from === index) return; // also covers first render, so mount never animates
+    setFlight(Math.sign(index - from));
+    // Re-running (arrow key held down) restarts the timer, so a run of steps stays
+    // in one continuous flight and only settles once the user stops — which is what
+    // a real object dragged across detents does.
+    const t = window.setTimeout(() => setFlight(0), FLIGHT_MS);
+    return () => window.clearTimeout(t);
+  }, [index]);
+
+  // "Held" while the pointer is down on the range. The native range keeps tracking
+  // a drag well outside its own box, so the release has to be caught on the window
+  // or the thumb stays gripped forever.
+  const [held, setHeld] = React.useState(false);
+  const releaseRef = React.useRef<AbortController | null>(null);
+  const grab = React.useCallback(() => {
+    releaseRef.current?.abort();
+    const ac = new AbortController();
+    releaseRef.current = ac;
+    setHeld(true);
+    const release = () => {
+      setHeld(false);
+      ac.abort();
+    };
+    window.addEventListener("pointerup", release, { signal: ac.signal });
+    window.addEventListener("pointercancel", release, { signal: ac.signal });
+  }, []);
+  React.useEffect(() => () => releaseRef.current?.abort(), []);
+
   if (count < 2) return null;
   const current = options[index];
+  // At the top stop ultra-pop plays on an ancestor rung and its scale MULTIPLIES
+  // with the thumb's squash, so recoil + squash there overhang the track by
+  // 2.51px. Let the flourish own the landing instead — see RECOIL above.
+  const topOwnsLanding = isTop;
+  const recoil = topOwnsLanding ? "" : RECOIL(flight);
 
   return (
     <div className={cn("select-none", className)}>
@@ -117,18 +245,33 @@ export function ReasoningSlider({
           disabled && "pointer-events-none opacity-50"
         )}
       >
-        {/* Filled portion — inset into the thumb's lane on all four sides, so its
-            right cap sits exactly under the thumb instead of haloing around it. */}
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-y-1 left-1 overflow-hidden rounded-full transition-[width] duration-base ease-spring",
-            isTop
-              ? "bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--ultra-from)),hsl(var(--ultra-to)),hsl(var(--ultra-from)),hsl(var(--primary)))] bg-[length:200%_100%] motion-safe:animate-ultra-pan"
-              : "bg-primary"
-          )}
-          style={{ width: fillWidth(frac) }}
-        >
-          {/* Star field — only meaningful once the gradient is showing. */}
+        {/* The lane window. Clips the fill to the exact 28px lane and lends it its
+            left cap (r14, concentric with the track's r18 across PAD 4). The thumb
+            is deliberately NOT in here — this is the one overflow-hidden in the
+            control, and it would slice shadow-pop into a hard bar. */}
+        <div className="pointer-events-none absolute inset-1 overflow-hidden rounded-full">
+          {/* Carrier: lane-sized, so `100%` below is the lane. */}
+          <div className={cn("absolute inset-0", TRAVEL_MOTION)} style={{ transform: travelX(frac) }}>
+            {/* The fill is a pill THUMB-wide at its right end and long enough to run
+                off the left of the clip at every frac, so growth is pure translation
+                rather than an animated width. Its right cap keeps a true r14 — it is
+                never scaled — and rides under the thumb exactly as before. The fill
+                doubles as the recoil rung; its transform is otherwise unused. */}
+            <div
+              className={cn(
+                "absolute inset-y-0 rounded-full",
+                FLIGHT_MOTION,
+                recoil,
+                isTop
+                  ? "bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--ultra-from)),hsl(var(--ultra-to)),hsl(var(--ultra-from)),hsl(var(--primary)))] bg-[length:200%_100%] motion-safe:animate-ultra-pan"
+                  : "bg-primary"
+              )}
+              style={{ left: "-100%", width: `calc(100% + ${THUMB})` }}
+            />
+          </div>
+
+          {/* Star field — only meaningful once the gradient is showing, and by then
+              the fill is the whole lane, so these scatter across the clip itself. */}
           {isTop &&
             SPARKS.map((s, i) => (
               <span
@@ -160,16 +303,49 @@ export function ReasoningSlider({
           />
         ))}
 
-        {/* Thumb */}
-        <span
-          key={popKey}
+        {/* Thumb carrier — the fill carrier's twin: same box (the lane), same
+            transform, same class constant. */}
+        <div
           aria-hidden="true"
-          className={cn(
-            "pointer-events-none absolute top-1/2 size-7 -translate-y-1/2 rounded-full bg-white shadow-pop ring-1 ring-black/[0.06] transition-[left] duration-base ease-spring",
-            isTop && "motion-safe:animate-ultra-pop"
-          )}
-          style={{ left: thumbLeft(frac) }}
-        />
+          className={cn("pointer-events-none absolute inset-y-1 left-1 right-1", TRAVEL_MOTION)}
+          style={{ transform: travelX(frac) }}
+        >
+          <div className={cn("absolute inset-0", FLIGHT_MOTION, recoil)}>
+            {/* The ultra-pop keyframe hardcodes translateY(-50%), so the element it
+                animates has to be the one that owes a -50% — hence top-1/2 here
+                rather than pinning the thumb to this lane-height box. */}
+            <span
+              key={popKey}
+              className={cn("absolute left-0 top-1/2 size-7 -translate-y-1/2", isTop && "motion-safe:animate-ultra-pop")}
+            >
+              {/* Squash lives on a thumb-sized box, never on a carrier: scaling a
+                  lane-sized box would drag its offset children sideways.
+                  Every scale here is ≥ 1, and that is load-bearing. The fill's cap
+                  is a r14 semicircle centred on the thumb, so a thumb any smaller
+                  than 28px lets coral out around it — the exact halo the geometry
+                  above exists to kill. So the move stretches along travel rather
+                  than squashing across it, and the grip grows.
+                  Held wins over in-flight: under a finger it reads as gripped, not
+                  flying, and one class at a time keeps the two out of a transform
+                  fight. The in-flight stretch also yields at the top stop, where
+                  ultra-pop's 1.18 on the ancestor would multiply with it (1.2508)
+                  and push the thumb past the rail — `held` is exempt because a
+                  finger holding the thumb is not travelling, so the flourish is
+                  not playing. */}
+              <span
+                className={cn(
+                  "block size-full rounded-full bg-white shadow-pop ring-1 ring-black/[0.06]",
+                  "motion-safe:transition-[transform] motion-safe:duration-fast motion-safe:ease-out-soft",
+                  held
+                    ? "motion-safe:scale-[1.06]"
+                    : flight !== 0 && !topOwnsLanding
+                      ? "motion-safe:scale-x-[1.06]"
+                      : ""
+                )}
+              />
+            </span>
+          </div>
+        </div>
 
         {/* The real control. Transparent, full-bleed, owns all interaction. */}
         <input
@@ -179,6 +355,7 @@ export function ReasoningSlider({
           step={1}
           value={index}
           disabled={disabled}
+          onPointerDown={grab}
           onChange={(e) => {
             // Index into options directly. Do NOT `?? value` the result: Instant's
             // value is null, and `null ?? value` would silently discard it and

@@ -34,6 +34,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Toggle budget alert emails"
   },
   {
+    "id": "0072e6b934945d5b",
+    "source": "Design"
+  },
+  {
     "id": "007a76ae20f75e68",
     "source": "account.apple.com"
   },
@@ -168,6 +172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "02cc19a0e89bac95",
     "source": "Expand the memory summary"
+  },
+  {
+    "id": "02d9be75b85e3cc3",
+    "source": "E-commerce"
   },
   {
     "id": "030c559b3513b328",
@@ -618,6 +626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This chat will be saved to the project."
   },
   {
+    "id": "11a2b0f914523300",
+    "source": "Collaboration"
+  },
+  {
     "id": "11a6767d5674c7e4",
     "source": "Done"
   },
@@ -628,6 +640,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "11fa5fea8a1819e6",
     "source": "Deep research isn't available on this plan right now."
+  },
+  {
+    "id": "11fb682be0a0233d",
+    "source": "AI"
   },
   {
     "id": "11ff6a5083a7150d",
@@ -660,6 +676,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "12e3ac0ddf410f08",
     "source": "plan_locked"
+  },
+  {
+    "id": "130f70ae5b44ed4c",
+    "source": "CRM"
   },
   {
     "id": "13171917da828fe5",
@@ -1666,6 +1686,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Waiting for Apple…"
   },
   {
+    "id": "329b3c4622ceca56",
+    "source": "Project management"
+  },
+  {
     "id": "32e83e92d45d71f6",
     "source": "ai"
   },
@@ -2202,6 +2226,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "[Hébergeur — ex. Google Cloud Platform (Google Cloud EMEA Limited), 70 Sir John Rogerson's Quay, Dublin 2, Irlande — préciser raison sociale, adresse et téléphone]"
   },
   {
+    "id": "4222c6eee7308abc",
+    "source": "Video & audio"
+  },
+  {
     "id": "4222cc712e8e90a1",
     "source": "Older efficient GLM-4.5 Air variant."
   },
@@ -2516,6 +2544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4c15583ff6e2f485",
     "source": "GPT-5.6 Sol"
+  },
+  {
+    "id": "4c46466854cbb4df",
+    "source": "Customer support"
   },
   {
     "id": "4c587d5f264a9f0d",
@@ -2952,6 +2984,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5b4336a49fb1d097",
     "source": "MiniMax text/image-to-video with strong motion."
+  },
+  {
+    "id": "5b59f3e44358493a",
+    "source": "i18n"
   },
   {
     "id": "5b6576df223a2acc",
@@ -4830,6 +4866,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "App connections have not been enabled on this Juno workspace yet."
   },
   {
+    "id": "94c116ee118a7299",
+    "source": "Analytics"
+  },
+  {
     "id": "94d192b3a326be1f",
     "source": "timeline"
   },
@@ -4904,6 +4944,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "96dbedeca7dfb7fa",
     "source": "Starts"
+  },
+  {
+    "id": "96f0c06bbcb724cd",
+    "source": "Developer tools"
   },
   {
     "id": "96f1d84eb0027931",
@@ -5148,6 +5192,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9d3cab2b5efed4ea",
     "source": "Focus"
+  },
+  {
+    "id": "9d5097a837102a17",
+    "source": "All categories"
   },
   {
     "id": "9d513d0beae65365",
@@ -5538,6 +5586,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "File removed from project."
   },
   {
+    "id": "a9b0a2e6303f4ad3",
+    "source": "Filter by category"
+  },
+  {
     "id": "a9c2e2487f978e3a",
     "source": "Attachment not found."
   },
@@ -5608,6 +5660,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ab3128911b66e72e",
     "source": "llm --predict"
+  },
+  {
+    "id": "ab48fcf706cb01d3",
+    "source": "Accounting"
   },
   {
     "id": "ab530a13e4591498",
@@ -5938,6 +5994,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Read a file or directory listing from a repository."
   },
   {
+    "id": "b46a096aa0eac51c",
+    "source": "Files & storage"
+  },
+  {
     "id": "b4877d84aeecea27",
     "source": "No model provider is configured."
   },
@@ -5956,6 +6016,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b4d879ff56f2c045",
     "source": "Claude Fable"
+  },
+  {
+    "id": "b4e929d8bcfe0418",
+    "source": "Documents"
   },
   {
     "id": "b4fb846b6356ea21",
@@ -6284,6 +6348,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c1f88e9d6c4145cf",
     "source": "In progress"
+  },
+  {
+    "id": "c2016c62e239e082",
+    "source": "News & lifestyle"
   },
   {
     "id": "c26b3ed4ce70e202",
@@ -6988,6 +7056,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d5cdfcf7ff75338f",
     "source": "Top"
+  },
+  {
+    "id": "d5d0a30b517e3bea",
+    "source": "Calendar"
   },
   {
     "id": "d62e935dc545f6d8",
@@ -7934,6 +8006,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Free"
   },
   {
+    "id": "f42bca637cb367c6",
+    "source": "Productivity"
+  },
+  {
     "id": "f42d0f9e4b0ec07d",
     "source": "favorites"
   },
@@ -7964,6 +8040,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f4ccae29e1bb0c20",
     "source": "Running"
+  },
+  {
+    "id": "f5904cf7a1231a7a",
+    "source": "Marketing"
   },
   {
     "id": "f59336eb9a299cd6",
