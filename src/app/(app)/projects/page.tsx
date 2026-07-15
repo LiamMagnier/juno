@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Box, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Box, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Star, StarOff, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 
 interface ProjectItem {
@@ -38,6 +39,7 @@ export default function ProjectsPage() {
 
   // Actions dialog states
   const [editingProject, setEditingProject] = React.useState<ProjectItem | null>(null);
+  const [starred, setStarred] = React.useState<string[]>([]);
   const [renameName, setRenameName] = React.useState("");
   const [renaming, setRenaming] = React.useState(false);
 
@@ -58,6 +60,16 @@ export default function ProjectsPage() {
   React.useEffect(() => {
     load();
   }, [load]);
+
+  // Hydrate after mount: localStorage doesn't exist during SSR, so reading it in
+  // the initial state would break hydration. Also re-read on projects:sync so a
+  // star toggled in the sidebar or on a detail page shows up here.
+  React.useEffect(() => {
+    const sync = () => setStarred(readStarredProjects());
+    sync();
+    window.addEventListener("projects:sync", sync);
+    return () => window.removeEventListener("projects:sync", sync);
+  }, []);
 
   const create = async () => {
     setCreating(true);
@@ -108,9 +120,8 @@ export default function ProjectsPage() {
       if (!r.ok) throw new Error();
       setItems((cur) => (cur ? cur.filter((p) => p.id !== deletingProject.id) : null));
       toast.success("Project deleted.");
-      const starred = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-      const nextStarred = starred.filter((pId: string) => pId !== deletingProject.id);
-      localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
+      // A deleted project must not linger as a ghost star in the sidebar.
+      setStarred(removeStarredProject(deletingProject.id));
       window.dispatchEvent(new CustomEvent("projects:sync"));
       setDeletingProject(null);
     } catch {
@@ -291,6 +302,19 @@ export default function ProjectsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="w-40">
+                            <DropdownMenuItem onSelect={() => setStarred(toggleStarredProject(p.id))}>
+                              {starred.includes(p.id) ? (
+                                <>
+                                  <StarOff className="h-4 w-4 mr-2" />
+                                  <span>Unstar</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Star className="h-4 w-4 mr-2" />
+                                  <span>Star</span>
+                                </>
+                              )}
+                            </DropdownMenuItem>
                             <DropdownMenuItem onSelect={() => { setEditingProject(p); setRenameName(p.name); }}>
                               <Pencil className="h-4 w-4 mr-2" />
                               <span>Rename</span>
