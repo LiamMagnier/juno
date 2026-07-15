@@ -558,6 +558,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Honest metering"
   },
   {
+    "id": "0ebb2df5559c53a4",
+    "source": "Bright and expressive"
+  },
+  {
     "id": "0f082e133791d7da",
     "source": "Mermaid diagram"
   },
@@ -576,6 +580,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0f86fcbc55ca6901",
     "source": "Incognito chats aren't saved, added to memory, or used to train models."
+  },
+  {
+    "id": "0f8bf74360a15708",
+    "source": "Low and steady"
   },
   {
     "id": "0f94d04f9a39bf79",
@@ -742,6 +750,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Resetting…"
   },
   {
+    "id": "15092f9bacc75440",
+    "source": "@search"
+  },
+  {
     "id": "1509f561f2416598",
     "source": "Save"
   },
@@ -778,6 +790,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Regenerate"
   },
   {
+    "id": "1654a20d27e5d8a0",
+    "source": "Ballad"
+  },
+  {
     "id": "16566a7dfd444a02",
     "source": "learning-card"
   },
@@ -792,6 +808,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "169547d486376dd3",
     "source": "Couldn’t draft that change right now — try again in a moment."
+  },
+  {
+    "id": "169b0fa60afccb36",
+    "source": "Calm and level"
   },
   {
     "id": "16ab9562b08c2d29",
@@ -828,6 +848,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "18885f27b5af9012",
     "source": "Python"
+  },
+  {
+    "id": "189a3bafd629dd95",
+    "source": "The voice Juno reads answers aloud in. Press play to hear one."
   },
   {
     "id": "18d2a1927942b40d",
@@ -1486,6 +1510,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Pro reasoning model (Responses API)."
   },
   {
+    "id": "2caf9fee4536b57f",
+    "source": "Even and measured"
+  },
+  {
+    "id": "2cba68fa497a9d0d",
+    "source": "Onyx"
+  },
+  {
     "id": "2cff9baabf56ca00",
     "source": "Import"
   },
@@ -1652,6 +1684,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "31a46d0b3b80b114",
     "source": "Best speed-to-intelligence balance — near-Opus quality for everyday work."
+  },
+  {
+    "id": "31d74aa0f335ae1a",
+    "source": "@research"
   },
   {
     "id": "31e06f7d89feb99a",
@@ -1918,6 +1954,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "follow-ups"
   },
   {
+    "id": "3972950aaae06671",
+    "source": "Could not play that preview."
+  },
+  {
     "id": "399d0f64b21089fb",
     "source": "Voice conversation"
   },
@@ -2072,6 +2112,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3dfa14cf30343f3a",
     "source": "Couldn’t load your connections."
+  },
+  {
+    "id": "3e186ddf0659304d",
+    "source": "Soft and unhurried"
   },
   {
     "id": "3e27248726bee57c",
@@ -2320,6 +2364,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4521eba120ffc685",
     "source": "Your artifacts"
+  },
+  {
+    "id": "4529950e3cce03a4",
+    "source": "Cedar"
   },
   {
     "id": "45ae340c9f75d893",
@@ -2822,6 +2870,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "code"
   },
   {
+    "id": "56ac628a2f10b3b0",
+    "source": "Coral"
+  },
+  {
     "id": "56ce55050e7ddc1c",
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
@@ -2880,6 +2932,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "589324034b0667ab",
     "source": "No apps available."
+  },
+  {
+    "id": "58a9ee9e9992a7b9",
+    "source": "Deep research is available on paid plans."
   },
   {
     "id": "58bd8b632c81d03e",
@@ -3122,6 +3178,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The app directory is not active yet"
   },
   {
+    "id": "5faa713a75d77607",
+    "source": "Sage"
+  },
+  {
     "id": "5fec248d4c1ee6ec",
     "source": "Couldn’t disconnect. Please try again."
   },
@@ -3286,6 +3346,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "plan"
   },
   {
+    "id": "6489664b94f0ae56",
+    "source": "Fable"
+  },
+  {
     "id": "648a2d985fcedc71",
     "source": "Previous Plus generation, superseded by Qwen3.7 Plus."
   },
@@ -3320,6 +3384,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6515ecd1c23f0d82",
     "source": "Le responsable du traitement est"
+  },
+  {
+    "id": "656b4440cd4a6208",
+    "source": "Shimmer"
   },
   {
     "id": "656bc2d49dc8614b",
@@ -3386,6 +3454,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create one to keep a topic’s chats, instructions, and files together."
   },
   {
+    "id": "679370d459371562",
+    "source": "Rounded and friendly"
+  },
+  {
     "id": "679e1a274096567a",
     "source": "peuvent être inexactes, incomplètes ou inappropriées"
   },
@@ -3396,6 +3468,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "67c53056c534cb27",
     "source": "Continue in chat"
+  },
+  {
+    "id": "685fdb489644bc05",
+    "source": "Animated and varied"
   },
   {
     "id": "68a79c562fa5737d",
@@ -4126,6 +4202,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Tune the look and pick a default — change anything later in settings."
   },
   {
+    "id": "7d3194f79e645c42",
+    "source": "openai"
+  },
+  {
     "id": "7d483b027c9427f2",
     "source": "Connected and ready"
   },
@@ -4274,6 +4354,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "· not configured"
   },
   {
+    "id": "8053f9c1e94c2741",
+    "source": "Marin"
+  },
+  {
     "id": "807bc8cd37324d90",
     "source": "Clarification progress"
   },
@@ -4362,6 +4446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "cannot ban an owner"
   },
   {
+    "id": "8335e4c92c40556a",
+    "source": "Echo"
+  },
+  {
     "id": "833a29d1cd1567be",
     "source": "Server STT not configured."
   },
@@ -4418,6 +4506,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete this chat?"
   },
   {
+    "id": "85113963b501a6ad",
+    "source": "Smooth and easy-going"
+  },
+  {
     "id": "8527a710e86dde5c",
     "source": "Early reasoning model, two generations behind."
   },
@@ -4460,6 +4552,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "863fc35e8f0e3292",
     "source": "Update a page's properties and content."
+  },
+  {
+    "id": "8646d0d81468ec10",
+    "source": "Verse"
   },
   {
     "id": "86471506a7028227",
@@ -4892,6 +4988,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "951a19d085bbab7f",
     "source": "Rate limit exceeded. Try again shortly."
+  },
+  {
+    "id": "955c8d605cb9387a",
+    "source": "Neutral and crisp"
   },
   {
     "id": "957b0b874524d09a",
@@ -5798,6 +5898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older free-tier model."
   },
   {
+    "id": "aefa6fb5a58d4f2e",
+    "source": "Light and airy"
+  },
+  {
     "id": "af10493d8cea8778",
     "source": "Cheapest, lowest-latency tier for high-volume simple tasks."
   },
@@ -5932,10 +6036,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b2609f7d7b0979ee",
     "source": "Add model"
-  },
-  {
-    "id": "b269dc4e81a528a4",
-    "source": "Commands"
   },
   {
     "id": "b27ad06d123c6145",
@@ -6236,6 +6336,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bda30c75cd3afd7e",
     "source": "2. Données collectées"
+  },
+  {
+    "id": "bda94d3dce78637e",
+    "source": "Ash"
   },
   {
     "id": "bdcd897ab8ed5859",
@@ -6544,6 +6648,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c7ff6dcd94d7161e",
     "source": "stage"
+  },
+  {
+    "id": "c81624a18f80771b",
+    "source": "@memory"
   },
   {
     "id": "c8177798c2e1cbdc",
@@ -6952,6 +7060,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d21ecf10f17540f4",
     "source": "Expose to chats"
+  },
+  {
+    "id": "d22690508549026b",
+    "source": "Read-aloud voice"
+  },
+  {
+    "id": "d24ed98df66f7239",
+    "source": "@canvas"
   },
   {
     "id": "d285f965626eaf07",
@@ -7706,6 +7822,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "From your library"
   },
   {
+    "id": "e8f39fbba89aec1c",
+    "source": "Warm and lively"
+  },
+  {
     "id": "e9467bb04f2b75df",
     "source": "https://www.anthropic.com/news/..."
   },
@@ -7806,12 +7926,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not delete chat."
   },
   {
+    "id": "ebda8449c830b436",
+    "source": "Firm and direct"
+  },
+  {
     "id": "ebef198219e87244",
     "source": "ByteDance flagship — multimodal references, native audio, up to 4K."
   },
   {
     "id": "ec153694483b2b7d",
     "source": "set up"
+  },
+  {
+    "id": "ec653e8e8748dbab",
+    "source": "Nova"
   },
   {
     "id": "ec7b9944d5410f50",
@@ -7836,6 +7964,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ed31db69d49d227e",
     "source": "Voice transcript isn’t saved yet"
+  },
+  {
+    "id": "ed880dc9b9cbfc38",
+    "source": "Canvas is off in incognito chats."
   },
   {
     "id": "edb2e96b17249502",
@@ -8334,6 +8466,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not rename project."
   },
   {
+    "id": "fcc41bccbdb8b793",
+    "source": "Alloy"
+  },
+  {
     "id": "fcdeb241b9acbe38",
     "source": "Update popup"
   },
@@ -8408,6 +8544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "feed787788a639b9",
     "source": "sur nos serveurs et privées à votre compte."
+  },
+  {
+    "id": "ff2fac8c7fcc39fc",
+    "source": "Relaxed and conversational"
   },
   {
     "id": "ff59df2bc243c174",

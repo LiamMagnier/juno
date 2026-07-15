@@ -70,6 +70,10 @@ export interface AppBootstrap {
     /** Server text-to-speech is configured — read-aloud uses a multilingual
      *  model instead of the OS voice. */
     serverTts: boolean;
+    /** Which TTS provider is actually in use. The read-aloud voice picker lists
+     *  OpenAI's voices, so it is only meaningful when this is "openai": under
+     *  ElevenLabs those ids mean nothing and the choice is silently ignored. */
+    ttsProvider: "openai" | "elevenlabs" | null;
     storage: boolean;
     webSearch: boolean;
     /** Deep research is configured (TAVILY_API_KEY present) — gates the composer toggle. */

@@ -12,13 +12,16 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Cpu,
   FileText,
   FileUp,
   Globe,
+  GraduationCap,
   ImagePlus,
   LayoutTemplate,
   Library,
   Loader2,
+  MessageSquarePlus,
   Mic,
   Paperclip,
   Plug,
@@ -31,6 +34,7 @@ import {
   TextQuote,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -47,6 +51,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
@@ -112,15 +117,102 @@ interface ComposerProps {
   onDictatingChange?: (dictating: boolean) => void;
 }
 
-// Slash commands typed into the composer (e.g. "/model", "/projects", "/artifact").
-type SlashCommand = { id: string; label: string; hint: string; run?: () => void };
+// One palette serves both composer triggers: "/" (commands, e.g. "/model") and
+// "@" (tools + connectors, e.g. "@notion"). Rows are grouped for rendering but
+// stay ONE flat, ordered list so the keyboard cursor is a single index.
+type PaletteGroup = "commands" | "tools" | "navigate" | "connectors";
+
+type SlashCommand = {
+  id: string;
+  /** Token typed after the trigger ("model" → "/model"); what the query filters on. */
+  key: string;
+  label: string;
+  hint: string;
+  group: PaletteGroup;
+  /** Brand mark for connector rows; `icon` covers everything else. */
+  connectorId?: string;
+  icon?: LucideIcon;
+  /** Defined ⇒ the row is an on/off tool and renders its state. */
+  on?: boolean;
+  /** Trailing note for a row that can't toggle right now ("not connected"). */
+  note?: string;
+  /** Extra haystack for `includes` matching — connector labels ("Google
+   *  Calendar") rarely share a prefix with their slug ("googlecalendar"). */
+  match?: string;
+  run?: () => void;
+};
 type SlashItem = ModelInfo | SlashCommand;
-type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; items: SlashCommand[] } | null;
+type SlashState =
+  | { kind: "model"; items: ModelInfo[] }
+  | { kind: "command"; items: SlashCommand[] }
+  | { kind: "mention"; items: SlashCommand[] }
+  | null;
+
+const GROUP_LABELS: Record<PaletteGroup, string> = {
+  commands: "Commands",
+  tools: "Tools",
+  navigate: "Go to",
+  connectors: "Connectors",
+};
 
 const MAX_CHAT_CONNECTORS = 5;
 const MAX_VOICE_IMAGES = 4;
 // Namespaced like the sidebar's own disclosure prefs (juno:sidebar:recents:collapsed).
 const TOOLS_COLLAPSED_KEY = "juno:composer:tools:collapsed";
+// Mirrors COMPOSIO_APP_PREFIX in lib/composio, which pulls in prisma and so
+// cannot be imported from a client component.
+const COMPOSIO_ID_PREFIX = "composio:";
+
+/** The token an app answers to after "@": "composio:googlecalendar" → "googlecalendar". */
+const connectorKey = (id: string) =>
+  (id.startsWith(COMPOSIO_ID_PREFIX) ? id.slice(COMPOSIO_ID_PREFIX.length) : id).toLowerCase();
+
+// Prefix match only, exactly as the slash list has always filtered — `match`
+// widens connector rows without changing how commands behave.
+const filterRows = (rows: SlashCommand[], query: string) =>
+  query ? rows.filter((row) => row.key.startsWith(query) || (row.match?.includes(query) ?? false)) : rows;
+
+// Selection is carried by the neutral accent fill + a coral hairline, never a
+// coral wash: the mouse moves the cursor here, so a filled coral row would read
+// as a hover colour rather than as "this is what Enter picks".
+const paletteRowClass = (selected: boolean) =>
+  cn(
+    "flex w-full cursor-pointer select-none items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-[background-color,box-shadow] duration-fast ease-out-soft motion-reduce:transition-none",
+    selected ? "bg-accent ring-1 ring-inset ring-primary/20" : "hover:bg-accent/50"
+  );
+
+/** Chunk the flat, pre-ordered rows into their groups while keeping each row's
+ *  index in the FLAT list — that index is the keyboard cursor. */
+function groupRows(items: SlashCommand[]) {
+  const out: { group: PaletteGroup; rows: { item: SlashCommand; index: number }[] }[] = [];
+  items.forEach((item, index) => {
+    const last = out[out.length - 1];
+    if (last?.group === item.group) last.rows.push({ item, index });
+    else out.push({ group: item.group, rows: [{ item, index }] });
+  });
+  return out;
+}
+
+// aria-hidden: the enclosing role="group" already carries this label, so exposing
+// it again would announce every section name twice.
+function PaletteEyebrow({ label, counter }: { label: string; counter?: string }) {
+  return (
+    <div aria-hidden className="flex items-baseline justify-between gap-2 px-2 pb-1 pt-1.5">
+      <span className="font-mono text-label uppercase text-muted-foreground">{label}</span>
+      {counter && <span className="font-mono text-caption tabular-nums text-muted-foreground/60">{counter}</span>}
+    </div>
+  );
+}
+
+/** Uniform icon slot: brand marks need a surface to read on, and a shared tile
+ *  keeps lucide glyphs, provider logos and connector marks on one baseline. */
+function PaletteIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-[6px] border border-border/50 bg-background/60">
+      {children}
+    </span>
+  );
+}
 
 
 export function Composer({
@@ -178,6 +270,9 @@ export function Composer({
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
   const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
+  // Voice mode never loads connectors (every fetch effect below bails on it), so
+  // the "@" palette must not offer rows it has no data for either.
+  const showConnectors = !!onToggleConnector && !privateMode && !voiceActive && modality === "chat";
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   // private chat; visible-but-disabled on plans without web tooling (FREE).
@@ -211,7 +306,14 @@ export function Composer({
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<{ id: string; name: string; conversationCount: number }[]>([]);
   const [loadingProjects, setLoadingProjects] = React.useState(false);
-  const [connectors, setConnectors] = React.useState<{ id: string; label: string; connected: boolean }[]>([]);
+  // The whole account list, not just the linked apps: "@notion" on an unlinked
+  // Notion must be able to say so instead of matching nothing. `configured`
+  // gates out apps this deployment has no OAuth credentials for — those can
+  // never be connected, so offering them would be a dead end.
+  const [allConnectors, setAllConnectors] = React.useState<
+    { id: string; label: string; connected: boolean; configured?: boolean }[]
+  >([]);
+  const connectors = React.useMemo(() => allConnectors.filter((c) => c.connected), [allConnectors]);
   const [connectorsLoading, setConnectorsLoading] = React.useState(false);
   const [connectorQuery, setConnectorQuery] = React.useState("");
   const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
@@ -431,77 +533,255 @@ export function Composer({
     [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize]
   );
 
-  // ——— Slash commands (type "/" then a command, e.g. "/model", "/projects") ———
+  // ——— Composer palette: "/" for commands, "@" for tools + connectors ———
   const router = useRouter();
+
+  const toggleMemory = React.useCallback(
+    (v: boolean) => {
+      setSettings({ memoryEnabled: v });
+      fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ memoryEnabled: v }),
+      }).catch(() => {});
+    },
+    [setSettings]
+  );
+
+  // The per-chat cap is a rule about connectors, not about one menu — the +
+  // submenu and the "@" palette both go through here so they can't drift.
+  const pickConnector = React.useCallback(
+    (id: string) => {
+      if (!onToggleConnector) return;
+      const selected = connectorsEnabled.includes(id);
+      if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
+        toast.error(`You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`);
+        return;
+      }
+      onToggleConnector(id);
+    },
+    [connectorsEnabled, onToggleConnector]
+  );
+
+  // Group order is also the keyboard order, so "commands" stays first: "/" then
+  // Enter has always landed on /model and should keep doing so.
   const commands = React.useMemo<SlashCommand[]>(
     () => [
-      { id: "model", label: "/model", hint: "Switch the AI model" },
-      { id: "artifact", label: "/artifact", hint: "Start a canvas / artifact" },
+      { id: "model", key: "model", label: "/model", hint: "Switch the AI model", group: "commands", icon: Cpu },
+      { id: "artifact", key: "artifact", label: "/artifact", hint: "Start a canvas / artifact", group: "commands", icon: SquarePen },
+      ...(onOpenVoiceMode
+        ? [{ id: "voice", key: "voice", label: "/voice", hint: "Start voice mode", group: "commands" as const, icon: AudioLines, run: onOpenVoiceMode }]
+        : []),
+      {
+        id: "new",
+        key: "new",
+        label: "/new",
+        hint: "Start a new chat",
+        group: "commands",
+        icon: MessageSquarePlus,
+        run: () => {
+          window.dispatchEvent(new CustomEvent("juno:new-chat"));
+          router.push("/chat");
+        },
+      },
+      {
+        id: "learn-demo",
+        key: "learn-demo",
+        label: "/learn-demo",
+        hint: "Preview the visual learning blocks",
+        group: "commands",
+        icon: GraduationCap,
+        run: () => window.dispatchEvent(new CustomEvent("juno:learning-demo")),
+      },
       {
         id: "search",
+        key: "search",
         label: "/search",
-        hint: webSearchEnabled ? "Turn web search off" : "Turn web search on",
+        hint: "Let Juno search the web",
+        group: "tools",
+        icon: Globe,
+        on: webSearchEnabled,
         run: () => onToggleWebSearch?.(!webSearchEnabled),
       },
       ...(researchAvailable && planAllowsResearch
         ? [
             {
               id: "research",
+              key: "research",
               label: "/research",
-              hint: research ? "Turn deep research off" : "Deep-research the next message",
+              hint: "Deep-research the next message",
+              group: "tools" as const,
+              icon: Telescope,
+              on: research,
               run: () => setResearch((v) => !v),
             },
           ]
         : []),
-      {
-        id: "learn-demo",
-        label: "/learn-demo",
-        hint: "Preview the visual learning blocks",
-        run: () => window.dispatchEvent(new CustomEvent("juno:learning-demo")),
-      },
-      { id: "projects", label: "/projects", hint: "Open your projects", run: () => router.push("/projects") },
-      { id: "library", label: "/library", hint: "Open your library", run: () => router.push("/library") },
-      { id: "memory", label: "/memory", hint: "Open memory", run: () => router.push("/memory") },
-      ...(onOpenVoiceMode ? [{ id: "voice", label: "/voice", hint: "Start voice mode", run: onOpenVoiceMode }] : []),
-      {
-        id: "new",
-        label: "/new",
-        hint: "Start a new chat",
-        run: () => {
-          window.dispatchEvent(new CustomEvent("juno:new-chat"));
-          router.push("/chat");
-        },
-      },
+      { id: "projects", key: "projects", label: "/projects", hint: "Open your projects", group: "navigate", icon: Box, run: () => router.push("/projects") },
+      { id: "library", key: "library", label: "/library", hint: "Open your library", group: "navigate", icon: Library, run: () => router.push("/library") },
+      { id: "memory", key: "memory", label: "/memory", hint: "Open memory", group: "navigate", icon: NotebookPen, run: () => router.push("/memory") },
     ],
     [webSearchEnabled, onToggleWebSearch, researchAvailable, planAllowsResearch, research, onOpenVoiceMode, router]
   );
 
-  const slash = React.useMemo((): SlashState => {
-    if (!text.startsWith("/")) return null;
-    const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
-    if (modelMatch) {
-      const q = (modelMatch[1] ?? "").toLowerCase().trim();
-      const items = models
-        .filter((m) => !q || m.name.toLowerCase().includes(q) || (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q))
-        .slice(0, 8);
-      return { kind: "model", items };
+  // "@" rows toggle a capability rather than navigate. A row whose capability is
+  // unavailable stays VISIBLE with the reason attached — "@search" on a model
+  // that can't search has to say why, not vanish and match nothing.
+  const mentions = React.useMemo<SlashCommand[]>(() => {
+    const rows: SlashCommand[] = [
+      {
+        id: "tool:search",
+        key: "search",
+        label: "@search",
+        hint: "Search the web",
+        group: "tools",
+        icon: Globe,
+        on: canWebSearch ? webSearchEnabled : undefined,
+        note: canWebSearch ? undefined : modality === "chat" ? "not on this model" : "chat only",
+        run: canWebSearch
+          ? () => onToggleWebSearch?.(!webSearchEnabled)
+          : () => toast.error(`Web search isn’t available ${modality === "chat" ? "on this model" : "for this modality"}.`),
+      },
+      ...(researchAvailable
+        ? [
+            {
+              id: "tool:research",
+              key: "research",
+              label: "@research",
+              hint: "Deep-research the next message",
+              group: "tools" as const,
+              icon: Telescope,
+              on: planAllowsResearch ? research : undefined,
+              note: planAllowsResearch ? undefined : "paid plan",
+              run: planAllowsResearch
+                ? () => setResearch((v) => !v)
+                : () => toast.error("Deep research is available on paid plans."),
+            },
+          ]
+        : []),
+      {
+        id: "tool:canvas",
+        key: "canvas",
+        label: "@canvas",
+        hint: "Canvas & artifacts",
+        group: "tools",
+        icon: LayoutTemplate,
+        on: privateMode ? undefined : canvasEnabled,
+        note: privateMode ? "private" : undefined,
+        run: privateMode ? () => toast.error("Canvas is off in incognito chats.") : () => onToggleCanvas(!canvasEnabled),
+      },
+      {
+        id: "tool:memory",
+        key: "memory",
+        label: "@memory",
+        hint: "Remember things across chats",
+        group: "tools",
+        icon: NotebookPen,
+        on: settings.memoryEnabled,
+        run: () => toggleMemory(!settings.memoryEnabled),
+      },
+    ];
+
+    if (showConnectors) {
+      // Linked apps first: they're the ones "@" can actually switch on.
+      const usable = allConnectors
+        .filter((connector) => connector.connected || connector.configured)
+        .sort((a, b) => Number(b.connected) - Number(a.connected));
+      for (const connector of usable) {
+        const key = connectorKey(connector.id);
+        rows.push({
+          id: `connector:${connector.id}`,
+          key,
+          label: `@${key}`,
+          hint: connector.label,
+          group: "connectors",
+          connectorId: connector.id,
+          match: `${connector.label.toLowerCase()} ${key}`,
+          on: connector.connected ? connectorsEnabled.includes(connector.id) : undefined,
+          note: connector.connected ? undefined : "not connected",
+          // Not connected is not a failure — it's a missing setup step, so say
+          // what's wrong and go to the one place that can fix it.
+          run: connector.connected
+            ? () => pickConnector(connector.id)
+            : () => {
+                toast.info(`${connector.label} isn’t connected yet — opening Connections.`);
+                router.push("/connections");
+              },
+        });
+      }
     }
-    const cmdMatch = text.match(/^\/([\w-]*)$/);
-    if (cmdMatch) {
-      const c = cmdMatch[1].toLowerCase();
-      const items = commands.filter((cmd) => cmd.id.startsWith(c));
-      return items.length ? { kind: "command", items } : null;
+    return rows;
+  }, [
+    canWebSearch,
+    webSearchEnabled,
+    onToggleWebSearch,
+    modality,
+    researchAvailable,
+    planAllowsResearch,
+    research,
+    privateMode,
+    canvasEnabled,
+    onToggleCanvas,
+    settings.memoryEnabled,
+    toggleMemory,
+    showConnectors,
+    allConnectors,
+    connectorsEnabled,
+    pickConnector,
+    router,
+  ]);
+
+  // Both triggers share one convention (the only one this composer has ever
+  // had): anchored at the START of the draft, and closed by any character the
+  // token can't contain — typing a space is how you get a literal "@" or "/".
+  const slash = React.useMemo((): SlashState => {
+    if (text.startsWith("/")) {
+      const modelMatch = text.match(/^\/model(?:\s+(.*))?$/i);
+      if (modelMatch) {
+        const q = (modelMatch[1] ?? "").toLowerCase().trim();
+        const items = models
+          .filter((m) => !q || m.name.toLowerCase().includes(q) || (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q))
+          .slice(0, 8);
+        return { kind: "model", items };
+      }
+      const cmdMatch = text.match(/^\/([\w-]*)$/);
+      if (cmdMatch) {
+        const items = filterRows(commands, cmdMatch[1].toLowerCase());
+        return items.length ? { kind: "command", items } : null;
+      }
+      return null;
+    }
+    if (text.startsWith("@")) {
+      const mentionMatch = text.match(/^@([\w-]*)$/);
+      if (mentionMatch) {
+        const items = filterRows(mentions, mentionMatch[1].toLowerCase());
+        return items.length ? { kind: "mention", items } : null;
+      }
+      return null;
     }
     return null;
-  }, [text, models, commands]);
+  }, [text, models, commands, mentions]);
 
   const [slashIndex, setSlashIndex] = React.useState(0);
+  /*
+   * True only when the arrow keys last moved the selection. The list is
+   * `max-h-72 overflow-y-auto`, so arrowing past ~6 rows walked the cursor
+   * somewhere the user could not see. Scrolling on EVERY index change is not the
+   * fix: rows set the index on mouseEnter too, so it would yank the list out from
+   * under the pointer. Same guard the command palette uses.
+   */
+  const paletteKeyNavRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!paletteKeyNavRef.current) return;
+    paletteKeyNavRef.current = false;
+    document.getElementById(`composer-palette-${slashIndex}`)?.scrollIntoView({ block: "nearest" });
+  }, [slashIndex]);
   const [slashDismissed, setSlashDismissed] = React.useState(false);
   const slashOpen = !controlsLocked && !!slash && !slashDismissed && slash.items.length > 0;
 
   React.useEffect(() => setSlashIndex(0), [text]);
   React.useEffect(() => {
-    if (!text.startsWith("/")) setSlashDismissed(false);
+    if (!text.startsWith("/") && !text.startsWith("@")) setSlashDismissed(false);
   }, [text]);
 
   const applySlash = (item: SlashItem) => {
@@ -538,11 +818,13 @@ export function Composer({
       const n = slash.items.length;
       if (e.key === "ArrowDown") {
         e.preventDefault();
+        paletteKeyNavRef.current = true;
         setSlashIndex((i) => (i + 1) % n);
         return;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
+        paletteKeyNavRef.current = true;
         setSlashIndex((i) => (i - 1 + n) % n);
         return;
       }
@@ -589,15 +871,6 @@ export function Composer({
     });
   };
 
-  const toggleMemory = (v: boolean) => {
-    setSettings({ memoryEnabled: v });
-    fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ memoryEnabled: v }),
-    }).catch(() => {});
-  };
-
   // Load the project list when the normal + menu opens, and also when a
   // brand-new chat already belongs to a project whose name is not loaded yet.
   const loadProjects = React.useCallback(() => {
@@ -621,11 +894,11 @@ export function Composer({
         const response = await fetch("/api/connectors", { signal });
         if (!response.ok) return;
         const data = (await response.json()) as {
-          connectors?: { id: string; label: string; connected: boolean }[];
+          connectors?: { id: string; label: string; connected: boolean; configured?: boolean }[];
         };
         if (signal?.aborted) return;
+        setAllConnectors(data.connectors ?? []);
         const connected = (data.connectors ?? []).filter((connector) => connector.connected);
-        setConnectors(connected);
 
         // Reconcile the conversation's saved IDs against the live account
         // connections, removing disconnected apps and anything over the limit.
@@ -734,7 +1007,6 @@ export function Composer({
   const canAttach = features.storage && !privateMode;
   const attachBlockedReason = privateMode ? "private" : "no storage";
   const activeConnectorCount = connectors.filter((connector) => connectorsEnabled.includes(connector.id)).length;
-  const showConnectors = !!onToggleConnector && !privateMode && modality === "chat";
   const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
   const visibleConnectors = connectorSearch
     ? connectors.filter((connector) =>
@@ -1093,45 +1365,115 @@ export function Composer({
           </div>
         )}
 
+        {/* Matches the DropdownMenu/Popover surface exactly — this is the same
+            kind of object as the + menu and shouldn't read as its own species.
+            No duration or ease utility here: tailwindcss-animate would land it on
+            animate-pop-in's animation- longhands and clobber the pop. origin-bottom
+            rather than .origin-popper because this is not Radix popper content —
+            it's pinned to the composer's top edge, so the pop scales out of it. */}
         {slashOpen && slash && (
-          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 overflow-hidden rounded-xl border bg-popover/95 shadow-float backdrop-blur duration-fast ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
-            <div className="px-3 pb-1 pt-2 font-mono text-label uppercase text-muted-foreground">
-              {slash.kind === "model" ? "Switch model" : "Commands"}
-            </div>
-            <div className="max-h-64 overflow-y-auto p-1">
-              {slash.kind === "model"
-                ? slash.items.map((m, i) => (
-                    <button
+          // No `shadow-float` here: .glass-raised already sets box-shadow (its
+          // inset sheen + --shadow-glass), and a utility beats the components
+          // layer — so adding shadow-float silently replaced the glass entirely
+          // and left this popover looking unlike the + menu beside it.
+          // DropdownMenuContent uses glass-raised alone; match it.
+          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
+            {/* Options, not tab stops: the caret never leaves the textarea, so this
+                is a combobox popup. A button row also could not legally hold the
+                Switch, which is itself a button. */}
+            <div
+              role="listbox"
+              aria-label={slash.kind === "model" ? "Switch model" : slash.kind === "mention" ? "Tools and connectors" : "Commands"}
+              className="max-h-72 overflow-y-auto overscroll-contain"
+            >
+              {slash.kind === "model" ? (
+                <div role="group" aria-label="Switch model">
+                  <PaletteEyebrow label="Switch model" />
+                  {slash.items.map((m, i) => (
+                    <div
                       key={m.id}
-                      type="button"
+                      id={`composer-palette-${i}`}
+                      role="option"
+                      aria-selected={i === slashIndex}
                       onMouseEnter={() => setSlashIndex(i)}
+                      onMouseDown={(event) => event.preventDefault()}
                       onClick={() => applySlash(m)}
-                      className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast",
-                        i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
-                      )}
+                      className={paletteRowClass(i === slashIndex)}
                     >
-                      <ProviderLogo provider={m.provider} className="h-5 w-5" />
+                      <PaletteIcon>
+                        <ProviderLogo provider={m.provider} className="size-4" />
+                      </PaletteIcon>
                       <span className="min-w-0 flex-1 truncate text-sm font-medium">{m.name}</span>
-                      <span className="shrink-0 text-caption text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
-                      {m.id === model && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
-                    </button>
-                  ))
-                : slash.items.map((c, i) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onMouseEnter={() => setSlashIndex(i)}
-                      onClick={() => applySlash(c)}
-                      className={cn(
-                        "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors duration-fast",
-                        i === slashIndex ? "bg-accent" : "hover:bg-accent/50"
-                      )}
-                    >
-                      <span className="font-mono text-sm text-primary">{c.label}</span>
-                      <span className="text-xs text-muted-foreground">{c.hint}</span>
-                    </button>
+                      <span className="shrink-0 text-caption text-muted-foreground">
+                        {PROVIDERS[m.provider].label.split(" · ")[0]}
+                      </span>
+                      {m.id === model && <Check className="size-3.5 shrink-0 text-primary" />}
+                    </div>
                   ))}
+                </div>
+              ) : (
+                groupRows(slash.items).map(({ group, rows }) => (
+                  <div
+                    key={group}
+                    role="group"
+                    // The eyebrow is aria-hidden, so the cap has to ride on the
+                    // group name or it would exist for sighted users only.
+                    aria-label={
+                      group === "connectors"
+                        ? `Connectors, ${activeConnectorCount} of ${MAX_CHAT_CONNECTORS} on`
+                        : GROUP_LABELS[group]
+                    }
+                  >
+                    <PaletteEyebrow
+                      label={GROUP_LABELS[group]}
+                      counter={group === "connectors" ? `${activeConnectorCount}/${MAX_CHAT_CONNECTORS}` : undefined}
+                    />
+                    {rows.map(({ item, index }) => {
+                      const Icon = item.icon;
+                      const selected = index === slashIndex;
+                      return (
+                        <div
+                          key={item.id}
+                          id={`composer-palette-${index}`}
+                          role="option"
+                          aria-selected={selected}
+                          // aria-selected is the keyboard cursor; aria-checked is
+                          // the tool's own state. The Switch that draws it is
+                          // aria-hidden, so without this the state is visual only.
+                          aria-checked={item.on}
+                          onMouseEnter={() => setSlashIndex(index)}
+                          // Keeps the caret (and the draft's selection) in the
+                          // textarea when a row is picked with the mouse.
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => applySlash(item)}
+                          className={paletteRowClass(selected)}
+                        >
+                          <PaletteIcon>
+                            {item.connectorId ? (
+                              <ConnectorMark id={item.connectorId} className="size-3.5 text-foreground" />
+                            ) : Icon ? (
+                              // Coral marks a tool that is ON — the one state worth
+                              // colouring. Selection is the ring, not the colour.
+                              <Icon className={cn("size-3.5", item.on ? "text-primary" : "text-muted-foreground")} />
+                            ) : null}
+                          </PaletteIcon>
+                          <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                            <span className="max-w-[55%] shrink-0 truncate font-mono text-sm">{item.label}</span>
+                            <span className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{item.hint}</span>
+                          </span>
+                          {item.note ? (
+                            <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">
+                              {item.note}
+                            </span>
+                          ) : item.on !== undefined ? (
+                            <Switch checked={item.on} tabIndex={-1} aria-hidden className="pointer-events-none shrink-0" />
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -1145,6 +1487,11 @@ export function Composer({
           disabled={isBusy || sendLocked || status === "checking"}
           rows={1}
           placeholder={placeholder}
+          // The palette is driven from here — focus never moves to it — so the
+          // textarea has to name the row the arrow keys are sitting on.
+          aria-activedescendant={
+            slashOpen && slash ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}` : undefined
+          }
           className={cn(
             "w-full resize-none bg-transparent px-3.5 py-3.5 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4",
             clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[86px] text-body-lg"
@@ -1351,7 +1698,10 @@ export function Composer({
                           <Switch checked={settings.memoryEnabled} tabIndex={-1} aria-hidden className="pointer-events-none" />
                         </DropdownMenuItem>
 
-                        {showConnectors && onToggleConnector && (
+                        {/* showConnectors already proves onToggleConnector exists, and
+                            the rows below go through pickConnector rather than calling
+                            the prop directly. */}
+                        {showConnectors && (
                           <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
                             <DropdownMenuSubTrigger>
                               <Plug className="text-muted-foreground" />
@@ -1401,17 +1751,11 @@ export function Composer({
                                         key={connector.id}
                                         onSelect={(event) => {
                                           event.preventDefault();
-                                          if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
-                                            toast.error(
-                                              `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
-                                            );
-                                            return;
-                                          }
-                                          onToggleConnector(connector.id);
+                                          pickConnector(connector.id);
                                         }}
                                         className="min-h-10"
                                       >
-                                        <Plug className="text-muted-foreground" />
+                                        <ConnectorMark id={connector.id} className="size-4 text-muted-foreground" />
                                         <span className="min-w-0 flex-1 truncate">{connector.label}</span>
                                         <Switch checked={selected} className="pointer-events-none" />
                                       </DropdownMenuItem>

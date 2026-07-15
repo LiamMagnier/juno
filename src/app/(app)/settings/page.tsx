@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { ArrowLeft, NotebookPen, Check, Download, Monitor, Moon, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
+import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -33,10 +33,15 @@ import { PROVIDERS, type Provider } from "@/lib/providers";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS } from "@/lib/accents";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
+import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
 
 const LANGUAGES = ["auto", "English", "Spanish", "French", "German", "Portuguese", "Italian", "Japanese", "Korean", "Chinese", "Hindi", "Arabic"];
+
+// Short on purpose: a preview is billed per character and the user may audition
+// a dozen voices in a row. Long enough to hear timbre, not a paragraph.
+const VOICE_PREVIEW_TEXT = "Hi, I'm Juno. This is how I sound when I read an answer aloud.";
 
 function Tile({
   eyebrow,
@@ -169,6 +174,66 @@ export default function SettingsPage() {
   const [deleting, setDeleting] = React.useState(false);
   const [deletingChats, setDeletingChats] = React.useState(false);
   const [portalLoading, setPortalLoading] = React.useState(false);
+
+  // Voice preview: at most one audition at a time — a new click cancels whatever
+  // is loading or playing. `previewSeq` is the ownership token; every stop mints
+  // a fresh one so a slow fetch that lands after its click was superseded can
+  // neither start playing nor touch the UI.
+  const [preview, setPreview] = React.useState<{ id: string; loading: boolean } | null>(null);
+  const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const previewUrlRef = React.useRef<string | null>(null);
+  const previewSeqRef = React.useRef(0);
+
+  const stopPreview = React.useCallback(() => {
+    previewSeqRef.current++;
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current.onended = null;
+      previewAudioRef.current.onerror = null;
+      previewAudioRef.current = null;
+    }
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    setPreview(null);
+  }, []);
+
+  // Leaving the page mid-preview must not keep the blob alive or keep talking.
+  React.useEffect(() => stopPreview, [stopPreview]);
+
+  const playPreview = async (voiceId: string) => {
+    const wasActive = preview?.id === voiceId;
+    stopPreview();
+    if (wasActive) return; // clicking the live preview again just stops it
+    const seq = previewSeqRef.current; // claim the token stopPreview just minted
+    setPreview({ id: voiceId, loading: true });
+    try {
+      const res = await fetch("/api/voice/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: VOICE_PREVIEW_TEXT, voiceId }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      if (previewSeqRef.current !== seq) return; // superseded while fetching
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      previewUrlRef.current = url;
+      previewAudioRef.current = audio;
+      const done = () => {
+        if (previewSeqRef.current === seq) stopPreview();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      setPreview({ id: voiceId, loading: false });
+      await audio.play();
+    } catch {
+      if (previewSeqRef.current !== seq) return; // a newer preview already owns the UI
+      stopPreview();
+      toast.error("Could not play that preview.");
+    }
+  };
 
   const save = React.useCallback(
     async (patch: Partial<ClientSettings>) => {
@@ -512,7 +577,85 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
-          <Tile eyebrow="Custom instructions" i={5} span>
+          {/* Read-aloud voice — every clause here removes a way this could be a
+              control that looks alive and does nothing:
+                serverTts   — else the browser fallback speaks in the OS voice and
+                              none of these thirteen voices is ever heard.
+                ttsProvider — the list is OpenAI's. Under ElevenLabs the route
+                              correctly drops an OpenAI id (it would 404 there) and
+                              uses its own default, so the choice is ignored.
+                plan.voice  — /api/voice/tts 403s without it, so on Free every
+                              preview button would fail silently. */}
+          {features.serverTts && features.ttsProvider === "openai" && plan.voice && (
+            <Tile eyebrow="Read-aloud voice" i={5} span>
+              <p className="mb-3 text-sm text-muted-foreground">
+                The voice Juno reads answers aloud in. Press play to hear one.
+              </p>
+              <div
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3"
+                role="radiogroup"
+                aria-label="Read-aloud voice"
+              >
+                {VOICES.map((v) => {
+                  const selected = (settings.voiceId ?? DEFAULT_VOICE) === v.id;
+                  const active = preview?.id === v.id;
+                  const loading = active && preview.loading;
+                  return (
+                    // relative + hover:z-10 so the lifted tile's shadow lands on top
+                    // of its neighbours instead of being painted over by them.
+                    <div
+                      key={v.id}
+                      className={cn(
+                        "relative flex items-center gap-2 rounded-xl border p-3 shadow-pop transition-[transform,box-shadow,background-color,border-color] duration-fast ease-out-soft hover:z-10 hover:bg-accent hover:shadow-float motion-safe:hover:-translate-y-0.5",
+                        selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border/70"
+                      )}
+                    >
+                      {/* Overlay button = the whole tile selects, while the play
+                          button below stays a real sibling (nesting it inside would
+                          be invalid HTML and unreachable by keyboard). */}
+                      <button
+                        role="radio"
+                        aria-checked={selected}
+                        aria-label={`Read aloud in the ${v.label} voice`}
+                        onClick={() => save({ voiceId: v.id })}
+                        className="absolute inset-0 rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card"
+                      />
+                      <div className="pointer-events-none min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5 text-sm font-medium">
+                          {v.label}
+                          {selected && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                        </span>
+                        <span className="block text-xs leading-relaxed text-muted-foreground">{v.description}</span>
+                      </div>
+                      {/* secondary, not ghost: a ghost button's hover:bg-accent is the
+                          same wash the tile itself gets on hover, which would leave
+                          the play control with no hover feedback of its own. */}
+                      <Button
+                        variant="secondary"
+                        size="icon-sm"
+                        // z-10: sits above the full-tile overlay button that precedes it.
+                        className="relative z-10 shrink-0"
+                        onClick={() => void playPreview(v.id)}
+                        aria-label={active ? `Stop the ${v.label} preview` : `Preview the ${v.label} voice`}
+                      >
+                        {/* h-4 w-4 to match the [&_svg]:size-4 the Button base forces —
+                            a smaller class here would be silently out-specified. */}
+                        {loading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : active ? (
+                          <Square className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            </Tile>
+          )}
+
+          <Tile eyebrow="Custom instructions" i={6} span>
             <p className="mb-3 text-sm text-muted-foreground">Juno keeps these in mind in every conversation.</p>
             <div className="relative">
               <Textarea
@@ -530,7 +673,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Memory */}
-          <Tile eyebrow="Memory" i={6}>
+          <Tile eyebrow="Memory" i={7}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <NotebookPen className="h-5 w-5 text-primary" />
@@ -547,7 +690,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Account */}
-          <Tile eyebrow="Account" i={7}>
+          <Tile eyebrow="Account" i={8}>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Current plan</span>
@@ -576,7 +719,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Email notifications */}
-          <Tile eyebrow="Email notifications" i={8} span>
+          <Tile eyebrow="Email notifications" i={9} span>
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>
@@ -615,7 +758,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Danger zone */}
-          <Tile eyebrow="Danger zone" i={9} span className="border-destructive/30">
+          <Tile eyebrow="Danger zone" i={10} span className="border-destructive/30">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>

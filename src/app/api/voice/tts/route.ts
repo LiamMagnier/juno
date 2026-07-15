@@ -6,9 +6,12 @@ import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { env, isServerTtsConfigured } from "@/lib/env";
 import { isOwnerEmail } from "@/lib/owner";
+import { isOpenAiVoice } from "@/lib/voices";
 
 export const runtime = "nodejs";
 
+// voiceId stays a loose string: ElevenLabs ids are arbitrary account-specific
+// hashes, so there is no shape to validate here. It's narrowed per provider below.
 const schema = z.object({ text: z.string().min(1).max(4000), voiceId: z.string().max(100).optional() });
 
 export async function POST(req: Request) {
@@ -32,13 +35,23 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Invalid input." }, { status: 400 });
   const { text, voiceId } = parsed.data;
 
+  // A saved voiceId is only ever as good as the moment it was stored: it can be
+  // stale (a voice OpenAI retired), hand-edited, or belong to the OTHER provider
+  // now that the fallback chain below can cross over. Feeding either provider an
+  // id it doesn't own is a guaranteed 400/404, so each keeps only what it can
+  // actually use and falls back to its own configured default.
+  const openaiVoice = isOpenAiVoice(voiceId) ? voiceId : undefined;
+  // ElevenLabs ids can't be validated (arbitrary hashes) — but a known OpenAI
+  // voice name is definitely not one of them, so drop those and keep the rest.
+  const elevenVoice = isOpenAiVoice(voiceId) ? undefined : voiceId;
+
   // Try the configured provider first, then fall back to the other if its key is
   // set — so read-aloud still works (and stays multilingual) when one provider is
   // rate-limited or out of credit.
   const attempts: Array<() => Promise<ArrayBuffer>> = [];
-  const addOpenAI = () => env.voice.openaiApiKey && attempts.push(() => openaiTts(text, voiceId, env.voice.openaiApiKey!));
+  const addOpenAI = () => env.voice.openaiApiKey && attempts.push(() => openaiTts(text, openaiVoice, env.voice.openaiApiKey!));
   const addEleven = () =>
-    env.voice.elevenlabsApiKey && attempts.push(() => elevenTts(text, voiceId, env.voice.elevenlabsApiKey!, env.voice.elevenlabsVoiceId));
+    env.voice.elevenlabsApiKey && attempts.push(() => elevenTts(text, elevenVoice, env.voice.elevenlabsApiKey!, env.voice.elevenlabsVoiceId));
 
   if (env.voice.ttsProvider === "elevenlabs") {
     addEleven();
@@ -71,6 +84,9 @@ async function openaiTts(text: string, voiceId: string | undefined, apiKey: stri
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: env.voice.ttsModel,
+      // Caller-supplied ids are vetted against the known list before they get
+      // here; TTS_VOICE deliberately is NOT, so an operator can adopt a voice
+      // OpenAI ships before this code learns about it.
       voice: voiceId || env.voice.ttsVoice,
       input: text,
       response_format: "mp3",
