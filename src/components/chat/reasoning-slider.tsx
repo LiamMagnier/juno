@@ -138,19 +138,31 @@ const FLIGHT_MS = 210;
  *  colours at runtime, and a literal would silently opt out of that. */
 const ULTRA = "hsl(var(--ultra))";
 
-/** Fixed scatter — deterministic so SSR and client agree (no Math.random). */
-const SPARKS: { left: number; top: number; size: number; delay: number; duration: number }[] = [
-  { left: 9, top: 32, size: 2, delay: 0, duration: 2.6 },
-  { left: 18, top: 64, size: 1.5, delay: 0.7, duration: 3.1 },
-  { left: 27, top: 26, size: 2.5, delay: 1.4, duration: 2.3 },
-  { left: 35, top: 58, size: 1.5, delay: 0.35, duration: 3.4 },
-  { left: 44, top: 34, size: 2, delay: 1.9, duration: 2.8 },
-  { left: 53, top: 68, size: 1.5, delay: 0.9, duration: 3.7 },
-  { left: 60, top: 40, size: 2.5, delay: 2.2, duration: 2.5 },
-  { left: 69, top: 62, size: 1.5, delay: 1.15, duration: 3.2 },
-  { left: 76, top: 30, size: 2, delay: 0.5, duration: 2.9 },
-  { left: 84, top: 56, size: 1.5, delay: 1.7, duration: 3.5 },
-  { left: 91, top: 38, size: 2, delay: 2.4, duration: 2.7 },
+/**
+ * Fixed scatter — deterministic so SSR and client agree (no Math.random).
+ *
+ * `dx/dy` give each spark its own slow drift and `peak` its own ceiling, so the
+ * field never pulses in unison. Durations are long (7-13s) and mutually
+ * non-harmonic: shared or multiple periods re-sync into a visible collective
+ * blink, which is what the old 2.3-3.7s set did. Peaks stay ≤0.55 — a dim,
+ * drifting star reads as atmosphere; a bright one reads as a notification.
+ */
+const SPARKS: {
+  left: number; top: number; size: number;
+  delay: number; duration: number;
+  dx: number; dy: number; peak: number;
+}[] = [
+  { left: 9, top: 32, size: 2, delay: 0, duration: 9.3, dx: 5, dy: -3, peak: 0.5 },
+  { left: 18, top: 64, size: 1.5, delay: 1.7, duration: 11.7, dx: -4, dy: 2, peak: 0.38 },
+  { left: 27, top: 26, size: 2.5, delay: 3.4, duration: 8.1, dx: 3, dy: 3, peak: 0.55 },
+  { left: 35, top: 58, size: 1.5, delay: 0.9, duration: 12.9, dx: -6, dy: -2, peak: 0.34 },
+  { left: 44, top: 34, size: 2, delay: 4.6, duration: 7.3, dx: 4, dy: 3, peak: 0.46 },
+  { left: 53, top: 68, size: 1.5, delay: 2.3, duration: 10.9, dx: -3, dy: -4, peak: 0.36 },
+  { left: 60, top: 40, size: 2.5, delay: 5.8, duration: 8.7, dx: 6, dy: -2, peak: 0.52 },
+  { left: 69, top: 62, size: 1.5, delay: 3.1, duration: 12.1, dx: -5, dy: 3, peak: 0.34 },
+  { left: 76, top: 30, size: 2, delay: 1.2, duration: 9.9, dx: 2, dy: 4, peak: 0.44 },
+  { left: 84, top: 56, size: 1.5, delay: 4.1, duration: 11.3, dx: -4, dy: -3, peak: 0.36 },
+  { left: 91, top: 38, size: 2, delay: 6.2, duration: 7.9, dx: 5, dy: 2, peak: 0.48 },
 ];
 
 export function ReasoningSlider({
@@ -258,16 +270,31 @@ export function ReasoningSlider({
                 never scaled — and rides under the thumb exactly as before. The fill
                 doubles as the recoil rung; its transform is otherwise unused. */}
             <div
-              className={cn(
-                "absolute inset-y-0 rounded-full",
-                FLIGHT_MOTION,
-                recoil,
-                isTop
-                  ? "bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--ultra-from)),hsl(var(--ultra-to)),hsl(var(--ultra-from)),hsl(var(--primary)))] bg-[length:200%_100%] motion-safe:animate-ultra-pan"
-                  : "bg-primary"
-              )}
+              className={cn("absolute inset-y-0 overflow-hidden rounded-full", FLIGHT_MOTION, recoil, !isTop && "bg-primary")}
               style={{ left: "-100%", width: `calc(100% + ${THUMB})` }}
-            />
+            >
+              {/*
+               * The gradient lives on its OWN child, not on the rung above.
+               *
+               * tailwindcss-animate makes `duration-*` / `ease-*` set
+               * animation-duration / animation-timing-function as well as the
+               * transition ones. The rung carries FLIGHT_MOTION's
+               * `duration-fast ease-out-expo` for the 120ms recoil — which
+               * silently clobbered animate-ultra-pan down to a 0.12s ease-out
+               * loop. That is a full colour sweep ~8x a second: the flashing.
+               * Verified in the browser: computed animationDuration was "0.12s",
+               * never the 24s the config declares.
+               *
+               * Keeping the animation on an element with no timing utilities is
+               * the fix; the two can never share a rung again.
+               */}
+              {isTop && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-full bg-[linear-gradient(90deg,hsl(var(--primary)),hsl(var(--ultra-from)),hsl(var(--ultra-to)),hsl(var(--ultra-from)),hsl(var(--primary)))] bg-[length:200%_100%] motion-safe:animate-ultra-pan"
+                />
+              )}
+            </div>
           </div>
 
           {/* Star field — only meaningful once the gradient is showing, and by then
@@ -277,14 +304,37 @@ export function ReasoningSlider({
               <span
                 key={i}
                 aria-hidden="true"
-                className="absolute hidden rounded-full bg-white motion-safe:block"
-                style={{
-                  left: `${s.left}%`,
-                  top: `${s.top}%`,
-                  width: `${s.size}px`,
-                  height: `${s.size}px`,
-                  animation: `ultra-spark ${s.duration}s ease-in-out ${s.delay}s infinite`,
-                }}
+                /*
+                 * The `animate-ultra-spark` CLASS is what makes this work at all.
+                 * Tailwind only emits an @keyframes block when its animate-*
+                 * utility appears in the scanned source; this used to set
+                 * `animation: ultra-spark …` purely via inline style, so the JIT
+                 * never emitted `@keyframes ultra-spark` and the browser silently
+                 * ignored an animation naming a rule that did not exist. Verified
+                 * in the browser: the rule was absent from every stylesheet and
+                 * the sparks were static dots, never twinkling once.
+                 * The class supplies name/keyframes; the inline longhands below
+                 * (which beat the class's shorthand) give each star its period.
+                 */
+                className="absolute hidden rounded-full bg-white will-change-[transform,opacity] motion-safe:block motion-safe:animate-ultra-spark"
+                style={
+                  {
+                    left: `${s.left}%`,
+                    top: `${s.top}%`,
+                    width: `${s.size}px`,
+                    height: `${s.size}px`,
+                    // Read by the ultra-spark keyframe, so each star drifts its
+                    // own way and to its own ceiling.
+                    "--spark-dx": `${s.dx}px`,
+                    "--spark-dy": `${s.dy}px`,
+                    "--spark-peak": s.peak,
+                    animationDuration: `${s.duration}s`,
+                    // Negative delay: start each star mid-cycle so the field is
+                    // already alive on open, instead of every star igniting from
+                    // zero together — the tell that gave away the old loop.
+                    animationDelay: `-${s.delay}s`,
+                  } as React.CSSProperties
+                }
               />
             ))}
         </div>

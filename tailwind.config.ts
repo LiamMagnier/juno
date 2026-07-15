@@ -255,12 +255,21 @@ const config: Config = {
           "0%": { backgroundPosition: "0% 50%" },
           "100%": { backgroundPosition: "-200% 50%" },
         },
-        // Star field over the filled track. Long, prime-ish periods per particle
-        // (set inline) keep the twinkle from reading as a loop.
+        // Star field over the filled track: each particle DRIFTS a little and
+        // breathes, rather than blinking in place.
+        //
+        // It used to snap 0 -> 0.95 -> 0.2 opacity on a ~2.6s loop. Hard white
+        // pulsing that fast, over a gradient that was itself sweeping every 6s,
+        // read as strobing rather than as a field of stars. Now the peak is soft
+        // (~0.5) and the motion is carried by translation, which the eye reads as
+        // life without demanding attention. Direction/peak are per-particle CSS
+        // vars so no two sparks travel the same way.
         "ultra-spark": {
-          "0%, 100%": { opacity: "0", transform: "scale(0.3)" },
-          "45%": { opacity: "0.95", transform: "scale(1)" },
-          "70%": { opacity: "0.2", transform: "scale(0.7)" },
+          "0%, 100%": { opacity: "0", transform: "translate3d(0, 0, 0) scale(0.6)" },
+          "50%": {
+            opacity: "var(--spark-peak, 0.5)",
+            transform: "translate3d(var(--spark-dx, 4px), var(--spark-dy, -2px), 0) scale(1)",
+          },
         },
         // One-shot flourish when the thumb lands on the top tier.
         "ultra-pop": {
@@ -300,8 +309,12 @@ const config: Config = {
         "overlay-in": "fade-in 220ms cubic-bezier(0.33, 1, 0.68, 1) both",
         "overlay-out": "fade-out 150ms cubic-bezier(0.33, 1, 0.68, 1) both",
         // Reasoning slider's top tier (reasoning-slider.tsx).
-        "ultra-pan": "ultra-pan 6s linear infinite",
-        "ultra-spark": "ultra-spark 2.6s ease-in-out infinite",
+        // 24s, not 6s: the gradient should read as a slow luminous drift, not a
+        // sweep. `linear` is deliberate — an eased loop visibly pulses at the
+        // seam, which is the thing that looked like flashing.
+        "ultra-pan": "ultra-pan 24s linear infinite",
+        // Per-particle durations (7-13s) are set inline; this is only the fallback.
+        "ultra-spark": "ultra-spark 9s ease-in-out infinite",
         "ultra-pop": "ultra-pop 420ms cubic-bezier(0.32, 0.72, 0, 1)",
         // Media-generation placeholder (generation-placeholder.tsx).
         "gen-drift-a": "gen-drift-a 16s ease-in-out infinite",
