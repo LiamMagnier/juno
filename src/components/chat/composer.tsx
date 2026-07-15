@@ -6,31 +6,46 @@ import { useRouter } from "next/navigation";
 import {
   ArrowUp,
   AudioLines,
+  Blocks,
   Box,
+  Brain,
   Check,
   ChevronDown,
   FileText,
   FileUp,
+  Globe,
   ImagePlus,
+  LayoutTemplate,
+  Library,
   Loader2,
   Mic,
+  Plug,
   Plus,
+  Search,
   Square,
   SquareDashedMousePointer,
+  SquarePen,
   Telescope,
   TextQuote,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ModelSelector } from "@/components/chat/model-selector";
+import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
@@ -98,6 +113,7 @@ type SlashCommand = { id: string; label: string; hint: string; run?: () => void 
 type SlashItem = ModelInfo | SlashCommand;
 type SlashState = { kind: "model"; items: ModelInfo[] } | { kind: "command"; items: SlashCommand[] } | null;
 
+const MAX_CHAT_CONNECTORS = 5;
 const MAX_VOICE_IMAGES = 4;
 
 
@@ -121,6 +137,8 @@ export function Composer({
   onToggleWebSearch,
   reasoningEffort,
   onReasoningChange,
+  connectorsEnabled = [],
+  onToggleConnector,
   quote = null,
   onClearQuote,
   placeholder: customPlaceholder,
@@ -132,7 +150,7 @@ export function Composer({
   onPickProject,
   onDictatingChange,
 }: ComposerProps) {
-  const { features, quota, models } = useApp();
+  const { features, settings, setSettings, quota, models } = useApp();
   const resolved = resolveModel(model);
   // Only the thinking tiers this specific model actually supports (real data).
   const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
@@ -153,6 +171,7 @@ export function Composer({
   );
   // Native web search (Gemini grounding, Claude/Grok tools) — gated by plan +
   // model capability; no third-party key required.
+  const canWebSearch = !!onToggleWebSearch && PLANS[quota.plan].webSearch && modality === "chat" && (resolved?.webSearch ?? false);
   // Deep research — per-send flag (resets after each send, unlike the sticky
   // web-search pref). Hidden entirely when the server has no Tavily key or in
   // private chat; visible-but-disabled on plans without web tooling (FREE).
@@ -180,12 +199,19 @@ export function Composer({
   const [clarificationAnswers, setClarificationAnswers] = React.useState<PreflightClarificationAnswer[]>([]);
   const [dragging, setDragging] = React.useState(false);
   const [plusOpen, setPlusOpen] = React.useState(false);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [projects, setProjects] = React.useState<{ id: string; name: string; conversationCount: number }[]>([]);
+  const [loadingProjects, setLoadingProjects] = React.useState(false);
+  const [connectors, setConnectors] = React.useState<{ id: string; label: string; connected: boolean }[]>([]);
+  const [connectorsLoading, setConnectorsLoading] = React.useState(false);
+  const [connectorQuery, setConnectorQuery] = React.useState("");
+  const enabledConnectorIdsRef = React.useRef(connectorsEnabled);
+  enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
-  const { uploads, addFiles, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
+  const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
   const sendAttachments = privateMode ? [] : readyAttachments;
   const uploading = privateMode ? false : isUploading;
 
@@ -203,6 +229,31 @@ export function Composer({
     },
     [addFiles, uploads.length, voiceActive]
   );
+  const addComposerAttachments = React.useCallback(
+    (attachments: ClientAttachment[]) => {
+      const matching = voiceActive ? attachments.filter((attachment) => attachment.kind === "IMAGE") : attachments;
+      if (voiceActive && matching.length !== attachments.length) toast.error("Voice mode accepts images from your library only.");
+      const remaining = voiceActive ? Math.max(0, MAX_VOICE_IMAGES - uploads.length) : matching.length;
+      const allowed = matching.slice(0, remaining);
+      if (voiceActive && matching.length > remaining) {
+        toast.error(`Voice mode accepts up to ${MAX_VOICE_IMAGES} images in one turn.`);
+      }
+      if (allowed.length > 0) addAttachments(allowed);
+    },
+    [addAttachments, uploads.length, voiceActive]
+  );
+
+  // Enforce the per-chat connector limit even for conversations saved by an
+  // older client that may contain duplicate or excess connector IDs.
+  React.useEffect(() => {
+    if (voiceActive || !onToggleConnector) return;
+    const excess = Array.from(new Set(connectorsEnabled)).slice(MAX_CHAT_CONNECTORS);
+    excess.forEach((id) => onToggleConnector(id));
+  }, [connectorsEnabled, onToggleConnector, voiceActive]);
+
+  React.useEffect(() => {
+    if (voiceActive) setLibraryOpen(false);
+  }, [voiceActive]);
   // Chip exit: play pop-out (120ms) before the upload actually leaves state.
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const removeUpload = React.useCallback(
@@ -529,17 +580,86 @@ export function Composer({
     });
   };
 
-  // Load the project name when a brand-new chat already belongs to a project.
+  const toggleMemory = (v: boolean) => {
+    setSettings({ memoryEnabled: v });
+    fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ memoryEnabled: v }),
+    }).catch(() => {});
+  };
+
+  // Load the project list when the normal + menu opens, and also when a
+  // brand-new chat already belongs to a project whose name is not loaded yet.
   const loadProjects = React.useCallback(() => {
+    setLoadingProjects(true);
     fetch("/api/projects")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setProjects(d?.projects ?? []))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setLoadingProjects(false));
   }, []);
 
   React.useEffect(() => {
-    if (selectedProjectId && projects.length === 0 && !privateMode) loadProjects();
-  }, [selectedProjectId, projects.length, privateMode, loadProjects]);
+    if (plusOpen && !privateMode && !voiceActive) loadProjects();
+  }, [plusOpen, privateMode, voiceActive, loadProjects]);
+
+  const refreshConnectors = React.useCallback(
+    async (signal?: AbortSignal) => {
+      if (privateMode || !onToggleConnector) return;
+      setConnectorsLoading(true);
+      try {
+        const response = await fetch("/api/connectors", { signal });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          connectors?: { id: string; label: string; connected: boolean }[];
+        };
+        if (signal?.aborted) return;
+        const connected = (data.connectors ?? []).filter((connector) => connector.connected);
+        setConnectors(connected);
+
+        // Reconcile the conversation's saved IDs against the live account
+        // connections, removing disconnected apps and anything over the limit.
+        const availableIds = new Set(connected.map((connector) => connector.id));
+        const enabledIds = Array.from(new Set(enabledConnectorIdsRef.current));
+        const removals = enabledIds.filter((id, index) => !availableIds.has(id) || index >= MAX_CHAT_CONNECTORS);
+        if (removals.length > 0) {
+          const removeSet = new Set(removals);
+          enabledConnectorIdsRef.current = enabledIds.filter((id) => !removeSet.has(id));
+          removals.forEach((id) => onToggleConnector(id));
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          // Keep the last known list on transient failures.
+        }
+      } finally {
+        if (!signal?.aborted) setConnectorsLoading(false);
+      }
+    },
+    [onToggleConnector, privateMode]
+  );
+
+  // Reconcile on mount, when returning from Connections, and when the normal
+  // + menu opens in case another tab changed an app connection.
+  React.useEffect(() => {
+    if (privateMode || voiceActive || !onToggleConnector) return;
+    const controller = new AbortController();
+    void refreshConnectors(controller.signal);
+    const handleConnectionsChanged = () => void refreshConnectors(controller.signal);
+    window.addEventListener("juno:connections-changed", handleConnectionsChanged);
+    return () => {
+      controller.abort();
+      window.removeEventListener("juno:connections-changed", handleConnectionsChanged);
+    };
+  }, [onToggleConnector, privateMode, refreshConnectors, voiceActive]);
+
+  React.useEffect(() => {
+    if (plusOpen && !privateMode && !voiceActive && onToggleConnector) void refreshConnectors();
+  }, [onToggleConnector, plusOpen, privateMode, refreshConnectors, voiceActive]);
+
+  React.useEffect(() => {
+    if (selectedProjectId && projects.length === 0 && !privateMode && !voiceActive) loadProjects();
+  }, [selectedProjectId, projects.length, privateMode, voiceActive, loadProjects]);
 
   const pickProject = (projectId: string | null) => {
     onPickProject?.(projectId);
@@ -600,6 +720,13 @@ export function Composer({
   }, [onCancelClarification, pendingClarification]);
 
   const selectedProject = selectedProjectId ? projects.find((p) => p.id === selectedProjectId) ?? null : null;
+  const activeConnectorCount = connectors.filter((connector) => connectorsEnabled.includes(connector.id)).length;
+  const connectorSearch = connectorQuery.trim().toLocaleLowerCase();
+  const visibleConnectors = connectorSearch
+    ? connectors.filter((connector) =>
+        `${connector.label} ${connector.id}`.toLocaleLowerCase().includes(connectorSearch)
+      )
+    : connectors;
 
   return (
     <div
@@ -873,29 +1000,232 @@ export function Composer({
                   <Plus className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-52">
-                <DropdownMenuItem
-                  disabled={!features.storage || privateMode}
-                  onSelect={() => imageInputRef.current?.click()}
-                >
-                  <ImagePlus className="text-muted-foreground" />
-                  <span className="flex-1">Add photos</span>
-                  {(privateMode || !features.storage) && (
-                    <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
-                  )}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!features.storage || privateMode || voiceActive}
-                  onSelect={() => fileInputRef.current?.click()}
-                >
-                  <FileUp className="text-muted-foreground" />
-                  <span className="flex-1">Add files</span>
-                  {(privateMode || !features.storage || voiceActive) && (
-                    <span className="text-caption text-muted-foreground/60">
-                      {privateMode ? "private" : !features.storage ? "no storage" : "chat only"}
-                    </span>
-                  )}
-                </DropdownMenuItem>
+              <DropdownMenuContent align="start" side="top" sideOffset={8} className={voiceActive ? "w-52" : "w-64"}>
+                {voiceActive ? (
+                  <>
+                    <DropdownMenuItem
+                      disabled={!features.storage || privateMode}
+                      onSelect={() => imageInputRef.current?.click()}
+                    >
+                      <ImagePlus className="text-muted-foreground" />
+                      <span className="flex-1">Add photos</span>
+                      {(privateMode || !features.storage) && (
+                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled>
+                      <FileUp className="text-muted-foreground" />
+                      <span className="flex-1">Add files</span>
+                      <span className="text-caption text-muted-foreground/60">chat only</span>
+                    </DropdownMenuItem>
+                  </>
+                ) : (
+                  <>
+                    <DropdownMenuItem
+                      disabled={!features.storage || privateMode}
+                      onSelect={() => imageInputRef.current?.click()}
+                    >
+                      <ImagePlus className="text-muted-foreground" />
+                      <span className="flex-1">Add photos</span>
+                      {(privateMode || !features.storage) && (
+                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!features.storage || privateMode}
+                      onSelect={() => fileInputRef.current?.click()}
+                    >
+                      <FileUp className="text-muted-foreground" />
+                      <span className="flex-1">Add files</span>
+                      {(privateMode || !features.storage) && (
+                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!features.storage || privateMode}
+                      onSelect={() => setLibraryOpen(true)}
+                    >
+                      <Library className="text-muted-foreground" />
+                      <span className="flex-1">Add from library</span>
+                      {(privateMode || !features.storage) && (
+                        <span className="text-caption text-muted-foreground/60">{privateMode ? "private" : "no storage"}</span>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={privateMode} onSelect={() => startCanvas()}>
+                      <SquarePen className="text-muted-foreground" />
+                      <span className="flex-1">Create a canvas</span>
+                    </DropdownMenuItem>
+
+                    {privateMode ? (
+                      <DropdownMenuItem disabled>
+                        <Box className="text-muted-foreground" />
+                        <span className="flex-1">Add to project</span>
+                        <span className="text-caption text-muted-foreground/60">private</span>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuSub>
+                        <DropdownMenuSubTrigger>
+                          <Box className="text-muted-foreground" />
+                          <span className="flex-1">Add to project</span>
+                        </DropdownMenuSubTrigger>
+                        <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
+                          {loadingProjects && projects.length === 0 ? (
+                            <div className="flex items-center justify-center py-6">
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            </div>
+                          ) : projects.length === 0 ? (
+                            <div className="px-2 py-4 text-center">
+                              <p className="text-caption text-muted-foreground">No projects yet.</p>
+                              <a href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
+                                Create one →
+                              </a>
+                            </div>
+                          ) : (
+                            projects.map((project) => {
+                              const active = selectedProjectId === project.id;
+                              return (
+                                <DropdownMenuItem key={project.id} onSelect={() => pickProject(active ? null : project.id)}>
+                                  <Box className={cn(active ? "text-primary" : "text-muted-foreground")} />
+                                  <span className="flex-1 truncate">{project.name}</span>
+                                  {active ? (
+                                    <Check className="!size-3.5 text-primary" />
+                                  ) : (
+                                    <span className="font-mono text-caption text-muted-foreground/60">{project.conversationCount}</span>
+                                  )}
+                                </DropdownMenuItem>
+                              );
+                            })
+                          )}
+                        </DropdownMenuSubContent>
+                      </DropdownMenuSub>
+                    )}
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
+                      <Blocks className="h-3.5 w-3.5" />
+                      Plugins
+                    </DropdownMenuLabel>
+                    <DropdownMenuItem
+                      disabled={privateMode}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onToggleCanvas(!canvasEnabled);
+                      }}
+                    >
+                      <LayoutTemplate className="text-muted-foreground" />
+                      <span className="flex-1">Canvas &amp; artifacts</span>
+                      <Switch checked={!privateMode && canvasEnabled} className="pointer-events-none" />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        toggleMemory(!settings.memoryEnabled);
+                      }}
+                    >
+                      <Brain className="text-muted-foreground" />
+                      <span className="flex-1">Memory</span>
+                      <Switch checked={settings.memoryEnabled} className="pointer-events-none" />
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={!canWebSearch}
+                      onSelect={(event) => {
+                        event.preventDefault();
+                        onToggleWebSearch?.(!webSearchEnabled);
+                      }}
+                    >
+                      <Globe className="text-muted-foreground" />
+                      <span className="flex-1">Web search</span>
+                      {canWebSearch ? (
+                        <Switch checked={webSearchEnabled} className="pointer-events-none" />
+                      ) : (
+                        <span className="text-caption text-muted-foreground/60">{modality === "chat" ? "not on this model" : "chat only"}</span>
+                      )}
+                    </DropdownMenuItem>
+
+                    {onToggleConnector && !privateMode && modality === "chat" && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuSub onOpenChange={(open) => !open && setConnectorQuery("")}>
+                          <DropdownMenuSubTrigger>
+                            <Plug className="text-muted-foreground" />
+                            <span className="flex-1">Connectors</span>
+                            {activeConnectorCount > 0 && (
+                              <span className="mr-1 font-mono text-caption text-primary">{activeConnectorCount}</span>
+                            )}
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-72 p-0">
+                            <div className="border-b border-border/60 p-2">
+                              <div className="mb-1.5 flex items-center justify-between px-1 text-caption text-muted-foreground">
+                                <span>Choose apps for this chat</span>
+                                <span className="font-mono tabular-nums">{activeConnectorCount}/{MAX_CHAT_CONNECTORS}</span>
+                              </div>
+                              <label className="relative block">
+                                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                                <input
+                                  value={connectorQuery}
+                                  onChange={(event) => setConnectorQuery(event.target.value)}
+                                  onKeyDown={(event) => event.stopPropagation()}
+                                  placeholder="Search connected apps…"
+                                  aria-label="Search connected apps"
+                                  className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-primary/50 focus:ring-2 focus:ring-primary/15"
+                                />
+                              </label>
+                            </div>
+                            <div className="max-h-64 overflow-y-auto p-1.5 overscroll-contain">
+                              {connectorsLoading && connectors.length === 0 ? (
+                                <div role="status" className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                  Loading connected apps…
+                                </div>
+                              ) : connectors.length === 0 ? (
+                                <DropdownMenuItem onSelect={() => router.push("/connections")}>
+                                  <Plug className="text-muted-foreground" />
+                                  <span className="flex-1">Connect an app</span>
+                                  <span className="text-caption text-muted-foreground/60">set up</span>
+                                </DropdownMenuItem>
+                              ) : visibleConnectors.length === 0 ? (
+                                <div className="px-2 py-5 text-center text-xs text-muted-foreground">
+                                  No connected apps match “{connectorQuery.trim()}”.
+                                </div>
+                              ) : (
+                                visibleConnectors.map((connector) => {
+                                  const selected = connectorsEnabled.includes(connector.id);
+                                  return (
+                                    <DropdownMenuItem
+                                      key={connector.id}
+                                      onSelect={(event) => {
+                                        event.preventDefault();
+                                        if (!selected && new Set(connectorsEnabled).size >= MAX_CHAT_CONNECTORS) {
+                                          toast.error(
+                                            `You can use up to ${MAX_CHAT_CONNECTORS} connectors at once. Turn one off before adding another.`
+                                          );
+                                          return;
+                                        }
+                                        onToggleConnector(connector.id);
+                                      }}
+                                      className="min-h-10"
+                                    >
+                                      <Plug className="text-muted-foreground" />
+                                      <span className="min-w-0 flex-1 truncate">{connector.label}</span>
+                                      <Switch checked={selected} className="pointer-events-none" />
+                                    </DropdownMenuItem>
+                                  );
+                                })
+                              )}
+                            </div>
+                            {connectors.length > 0 && (
+                              <div className="border-t border-border/60 p-1.5">
+                                <DropdownMenuItem onSelect={() => router.push("/connections")} className="text-muted-foreground">
+                                  <Plug />
+                                  Manage connections
+                                </DropdownMenuItem>
+                              </div>
+                            )}
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </>
+                    )}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -1082,6 +1412,15 @@ export function Composer({
             e.target.value = "";
           }}
         />
+
+        {!voiceActive && !privateMode && features.storage && (
+          <LibraryPicker
+            open={libraryOpen}
+            onOpenChange={setLibraryOpen}
+            onAttach={addComposerAttachments}
+            existingCount={uploads.length}
+          />
+        )}
         </div>
       </div>
       </div>
