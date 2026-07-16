@@ -79,3 +79,18 @@ Shared migrations, OpenAPI sources, generated Swift DTOs, shared domain models, 
 ## Milestone acceptance rule
 
 An item moves to complete only when its contract/code/migration is committed, required checks in `07-test-and-acceptance-plan.md` pass, web compatibility is demonstrated, known failures are documented or fixed, and rollback/recovery exists. This ledger does not claim the rebuild or Phase 1 is complete.
+
+## 2026-07-16 integration and release-owner run
+
+Status: **release candidate rejected**. Dependency-ordered integration is committed, but live-development, migration, parity, Code-isolation, accessibility, performance, signing and notarization gates are absent or failing. Full evidence is in `08-release-candidate-report.md`.
+
+| Order | Repository | Commit | Scope |
+|---|---|---|---|
+| 1 | `juno` | `3de47b0` | OpenAPI sync contract, change revisions/tombstones, receipts and native endpoints |
+| 2 | `juno-app` | `54d22f4` | Generated client, cursor cache, encrypted outbox and blocking cache failure |
+| 3 | `juno` | `213d6fc` | Reasoning sanitization, dependency remediation and lint gate |
+| 4 | `juno-app` | `1a5f8b4` | Updater/distribution hardening, filtered command environment and prototype removal |
+
+Secure native authentication is in prerequisite commits `0969b57` and `564c848`. Web static/unit/build/relay/audit checks passed; Mac Release build, 32 Swift tests, 16 Code tests and audits passed. Hardened Runtime is enabled, but App Sandbox is disabled. No valid Developer ID identity exists on the host. The Mac remained locked, so real-account UI, accessibility and all cross-surface scenarios were not run. The only discovered database configuration was production-facing, so migrations were not executed.
+
+Next blocking slice: unlock the reference Mac; supply a disposable PostgreSQL stack and development account; replace in-process Code execution with the signed XPC boundary and enable the UI sandbox; finish parity/sync vertical slices and convergence tests; then run accessibility/performance, signing/notarization, update/rollback and all ten acceptance scenarios on the exact candidate SHA.

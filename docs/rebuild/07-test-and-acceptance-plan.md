@@ -48,7 +48,7 @@ npx tsc --noEmit
 npm run lint
 npm run test:auth
 AUTH_SECRET='test-only-at-least-32-bytes-long' \
-DATA_ENCRYPTION_KEY='0000000000000000000000000000000000000000000000000000000000000000' \
+DATA_ENCRYPTION_KEY='AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=' \
   npx tsx scripts/test-message-crypto.ts
 npm run validate:models
 npm run build
