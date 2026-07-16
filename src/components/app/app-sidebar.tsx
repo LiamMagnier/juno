@@ -99,6 +99,12 @@ export function AppSidebar({
   // Home shows web + app chats; Code shows Juno Code sessions synced from the
   // app (conversations with kind "code"). Persisted like the collapse prefs.
   const [mode, setMode] = React.useState<"home" | "code">("home");
+  // Code mode data: the app's workspaces (project folders) mirrored from
+  // /api/code/workspaces, and scheduled tasks for the Tasks section.
+  const [codeWorkspaces, setCodeWorkspaces] = React.useState<
+    { id: string; name: string; path: string; lastOpenedAt: string }[]
+  >([]);
+  const [codeTasks, setCodeTasks] = React.useState<{ id: string; name: string }[]>([]);
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
@@ -249,20 +255,55 @@ export function AppSidebar({
     );
   }, [conversations, query, folderFilter, mode]);
 
+  React.useEffect(() => {
+    if (mode !== "code") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [w, t] = await Promise.all([fetch("/api/code/workspaces"), fetch("/api/tasks")]);
+        if (w.ok) {
+          const data = await w.json();
+          if (!cancelled) setCodeWorkspaces(Array.isArray(data.workspaces) ? data.workspaces : []);
+        }
+        if (t.ok) {
+          const data = await t.json();
+          if (!cancelled)
+            setCodeTasks(
+              (Array.isArray(data.tasks) ? data.tasks : [])
+                .map((x: { id?: string; name?: string }) => ({ id: String(x.id ?? ""), name: String(x.name ?? "") }))
+                .filter((x: { id: string; name: string }) => x.id && x.name)
+            );
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
   // Code mode: group synced Juno Code sessions by their app-side workspace
   // (project folder), mirroring the app's own sidebar. Sessions without a
   // workspace fall through to the flat Sessions list below.
   const codeProjects = React.useMemo(() => {
     if (mode !== "code") return [] as { name: string; sessions: ClientConversation[] }[];
-    const byName = new Map<string, ClientConversation[]>();
+    const sessionsFor = (w: { name: string; path: string }) =>
+      filtered.filter(
+        (c) => c.codeWorkspacePath === w.path || (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name)
+      );
+    const projects = codeWorkspaces.map((w) => ({ name: w.name, path: w.path, sessions: sessionsFor(w) }));
+    // Sessions naming a workspace the mirror doesn't know yet still group.
+    const known = new Set(projects.map((p) => p.path));
+    const knownNames = new Set(projects.map((p) => p.name));
+    const orphans = new Map<string, ClientConversation[]>();
     for (const c of filtered) {
       const name = c.codeWorkspaceName?.trim();
-      if (!name) continue;
-      if (!byName.has(name)) byName.set(name, []);
-      byName.get(name)!.push(c);
+      if (!name || knownNames.has(name)) continue;
+      if (c.codeWorkspacePath && known.has(c.codeWorkspacePath)) continue;
+      if (!orphans.has(name)) orphans.set(name, []);
+      orphans.get(name)!.push(c);
     }
-    return [...byName.entries()].map(([name, sessions]) => ({ name, sessions }));
-  }, [filtered, mode]);
+    return [...projects, ...[...orphans.entries()].map(([name, sessions]) => ({ name, path: name, sessions }))];
+  }, [filtered, mode, codeWorkspaces]);
 
 
   const pinned = React.useMemo(() => filtered.filter((c) => c.pinned), [filtered]);
@@ -459,7 +500,7 @@ export function AppSidebar({
             {mode === "code" && codeProjects.length > 0 && (
               <Section label="Projects">
                 {codeProjects.map((p) => (
-                  <div key={p.name}>
+                  <div key={"path" in p ? (p as { path: string }).path : p.name}>
                     <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground">
                       <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70">
                         <Folder className="h-[16px] w-[16px]" />
@@ -562,6 +603,21 @@ export function AppSidebar({
                       />
                     ))}
                 </div>
+              </Section>
+            )}
+            {mode === "code" && codeTasks.length > 0 && (
+              <Section label="Tasks">
+                {codeTasks.slice(0, 6).map((t) => (
+                  <Link
+                    key={t.id}
+                    href="/tasks"
+                    onClick={() => setSidebarOpen(false)}
+                    title={t.name}
+                    className="flex items-center rounded-md px-2.5 py-1 text-[13px] text-sidebar-foreground/70 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
+                  >
+                    <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                  </Link>
+                ))}
               </Section>
             )}
           </>

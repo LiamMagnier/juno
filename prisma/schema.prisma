@@ -66,6 +66,7 @@ model User {
   accountChanges           AccountChange[]
   entityRevisions          EntityRevision[]
   mutationReceipts         MutationReceipt[]
+  codeWorkspaces           CodeWorkspace[]
 }
 
 // ----------------------------------------------------------------------------
@@ -963,4 +964,22 @@ model MessageVersion {
   message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId, createdAt])
+}
+
+// The Juno app's Code workspaces (project folders), mirrored so the website's
+// Code tab can list the same Projects the app shows. The app owns the list and
+// mirror-syncs it (PUT replaces the user's set).
+model CodeWorkspace {
+  id           String   @id
+  userId       String
+  name         String
+  path         String
+  lastOpenedAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, path])
+  @@index([userId, lastOpenedAt])
 }
