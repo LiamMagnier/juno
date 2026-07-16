@@ -86,6 +86,12 @@ jobs:
             "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -e
           cd ~/juno
+          # Prisma's migrate advisory lock doesn't survive pooled connections
+          # (Neon pooler/PgBouncer): a canceled deploy leaves the lock held by an
+          # orphaned session and every later migrate times out with P1002.
+          # Deploys are already serialized by this workflow's concurrency group,
+          # so the lock adds no safety here — only that failure mode.
+          export PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1
           # Reinstall app deps only when the lockfile actually changed (rare).
           LOCK_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
           if [ "$LOCK_HASH" != "$(cat ~/.juno-lock.sha 2>/dev/null || true)" ]; then
