@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { getCurrentUser } from "@/lib/session";
 import { isValidBrowserAuthorization } from "@/lib/native-auth-core";
 import { issueNativeAuthorizationCode } from "@/lib/native-auth";
-import { AppAuthHandoff } from "./handoff";
+import { AppAuthHandoff, LegacyAppAuthHandoff } from "./handoff";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +20,23 @@ export default async function AppAuthPage({ searchParams }: { searchParams: Prom
     redirectUri: one(params.redirect_uri),
     installationId: one(params.installation_id),
   };
+
+  // Stable-lineage apps (build ≤30) open /app-auth with NO parameters and
+  // expect the session token over the juno:// deep link. Only requests that
+  // carry v3 parameters but fail validation are actually invalid.
+  const isLegacyRequest =
+    !authorization.state && !authorization.nonce && !authorization.codeChallenge &&
+    !authorization.redirectUri && !authorization.installationId;
+  if (isLegacyRequest) {
+    const user = await getCurrentUser();
+    if (!user) redirect("/sign-in?callbackUrl=/app-auth");
+    const store = await cookies();
+    const token =
+      store.get("authjs.session-token")?.value ??
+      store.get("__Secure-authjs.session-token")?.value ??
+      "";
+    return <LegacyAppAuthHandoff token={token} />;
+  }
 
   if (!isValidBrowserAuthorization(authorization)) {
     return <AuthFailure message="This sign-in request is invalid or came from an unsupported version of Juno." />;
