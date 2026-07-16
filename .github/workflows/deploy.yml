@@ -92,6 +92,11 @@ jobs:
           # Deploys are already serialized by this workflow's concurrency group,
           # so the lock adds no safety here — only that failure mode.
           export PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1
+          # Schema operations (migrate/push) run over Neon's DIRECT host — the
+          # pooled connection keeps dropping the _prisma_migrations completion
+          # write, leaving "failed" records that P3009-poison every later
+          # deploy (bitten twice). Runtime keeps the pooler.
+          DIRECT_DB_URL="$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2- | sed 's/-pooler//')"
           # Reinstall app deps only when the lockfile actually changed (rare).
           LOCK_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
           if [ "$LOCK_HASH" != "$(cat ~/.juno-lock.sha 2>/dev/null || true)" ]; then
@@ -108,13 +113,13 @@ jobs:
           # matching migrations. Converge that history once, then use reviewed
           # migrations exclusively on every subsequent deploy.
           if node scripts/baseline-production-migrations.mjs --status; then
-            npx prisma migrate deploy
+            DATABASE_URL="$DIRECT_DB_URL" npx prisma migrate deploy
           else
             echo "Converging existing production schema with migration history…"
-            npx prisma db push --skip-generate
-            npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
+            DATABASE_URL="$DIRECT_DB_URL" npx prisma db push --skip-generate
+            DATABASE_URL="$DIRECT_DB_URL" npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
             JUNO_ALLOW_MIGRATION_BASELINE=1 node scripts/baseline-production-migrations.mjs --apply
-            npx prisma migrate deploy
+            DATABASE_URL="$DIRECT_DB_URL" npx prisma migrate deploy
           fi
           mkdir -p logs
           # Upsert every PROD_ENV key shipped alongside the build into the
