@@ -230,10 +230,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "zhipu", id: "glm-4.5-flash", name: "GLM-4.5 Flash", family: "glm-flash", status: "legacy", released: "2025-07", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 128_000, description: "Older free-tier model." }),
 
   // —— Moonshot / Kimi ——
-  // K3 isn't served by Moonshot's API yet (absent from every live catalog we
-  // watch) — listed as coming-soon so it appears under Kimi and flips on the
-  // moment the id goes live.
-  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi-k3", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, comingSoon: true, description: "Moonshot's next-generation flagship — successor to the K2 line." }),
+  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi-k3", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Moonshot's flagship — 2.5T-parameter reasoner with 1M context, always-on thinking, and image/video input." }),
   def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Kimi flagship — multimodal (image + video input) with toggleable thinking." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code", name: "Kimi K2.7 Code", family: "kimi-code", status: "current", released: "2026-06", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Strongest Kimi coding model — always-on thinking, agentic coding." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),

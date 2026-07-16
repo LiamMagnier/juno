@@ -1,8 +1,8 @@
 {
-  "version": "3.0.1",
-  "build": 29,
+  "version": "3.0.2",
+  "build": 30,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "7282291038c6a897344584b5faecef2802087e9be7e5f3b1f5312ca6a3fe3866",
-  "notes": "Juno 3.0.1 — the thinking slider comes to the app (Chat, Code, and the model picker), token-usage meters land in Settings and the account menu, the Code composer gains attach-file mentions and a cleaner model pill, the sidebar chat menu stops flickering, and the updater now reports real errors, backs up the old app during installs, and logs to ~/Library/Logs/Juno.",
+  "sha256": "db76e398b83f0380e2e1dd2ac764bc9e5b9a41544c01e8013815ccfa081f8201",
+  "notes": "Juno 3.0.2 \u2014 updates now install themselves quietly: when a new build is ready, a 'Relaunch to update' button appears at the bottom of the sidebar and one click applies it. Conversation kinds sync with the website (Code sessions land in the Code sidebar), the model picker loses its star clutter, and Kimi K3 appears in the catalog.",
   "minimumSystemVersion": "26.0"
 }
