@@ -1,28 +1,57 @@
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
-import { auth } from "@/lib/auth";
+import { getCurrentUser } from "@/lib/session";
+import { isValidBrowserAuthorization } from "@/lib/native-auth-core";
+import { issueNativeAuthorizationCode } from "@/lib/native-auth";
 import { AppAuthHandoff } from "./handoff";
 
-/**
- * Native-app sign-in handoff. The macOS/iOS app opens this URL inside an
- * ASWebAuthenticationSession. If the visitor isn't signed in yet we bounce them
- * through the normal web sign-in (credentials OR Google), which returns here via
- * `callbackUrl`. Once signed in we read the session-token cookie and hand it to
- * the app through a `juno://` deep link the auth session captures.
- */
 export const dynamic = "force-dynamic";
 
-export default async function AppAuthPage() {
-  const session = await auth();
-  if (!session?.user) {
-    redirect("/sign-in?callbackUrl=/app-auth");
+type SearchParams = Record<string, string | string[] | undefined>;
+const one = (value: string | string[] | undefined) => typeof value === "string" ? value : "";
+
+export default async function AppAuthPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const params = await searchParams;
+  const authorization = {
+    state: one(params.state),
+    nonce: one(params.nonce),
+    codeChallenge: one(params.code_challenge),
+    codeChallengeMethod: one(params.code_challenge_method),
+    redirectUri: one(params.redirect_uri),
+    installationId: one(params.installation_id),
+  };
+
+  if (!isValidBrowserAuthorization(authorization)) {
+    return <AuthFailure message="This sign-in request is invalid or came from an unsupported version of Juno." />;
   }
 
-  const store = await cookies();
-  const token =
-    store.get("authjs.session-token")?.value ??
-    store.get("__Secure-authjs.session-token")?.value ??
-    "";
+  const callback = `/app-auth?${new URLSearchParams({
+    state: authorization.state,
+    nonce: authorization.nonce,
+    code_challenge: authorization.codeChallenge,
+    code_challenge_method: authorization.codeChallengeMethod,
+    redirect_uri: authorization.redirectUri,
+    installation_id: authorization.installationId,
+  })}`;
+  const user = await getCurrentUser();
+  if (!user) redirect(`/sign-in?callbackUrl=${encodeURIComponent(callback)}`);
 
-  return <AppAuthHandoff token={token} />;
+  const code = await issueNativeAuthorizationCode({
+    userId: user.id,
+    codeChallenge: authorization.codeChallenge,
+    redirectUri: authorization.redirectUri,
+    nonce: authorization.nonce,
+    installationId: authorization.installationId,
+  });
+  return <AppAuthHandoff code={code} state={authorization.state} nonce={authorization.nonce} />;
+}
+
+function AuthFailure({ message }: { message: string }) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-background p-8 text-foreground">
+      <div className="max-w-md space-y-2 text-center">
+        <h1 className="text-lg font-semibold">Juno couldn’t start sign-in</h1>
+        <p className="text-sm text-muted-foreground">{message}</p>
+      </div>
+    </main>
+  );
 }
