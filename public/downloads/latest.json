@@ -1,8 +1,8 @@
 {
-  "version": "3.0.2",
-  "build": 30,
+  "version": "3.0.3",
+  "build": 31,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "db76e398b83f0380e2e1dd2ac764bc9e5b9a41544c01e8013815ccfa081f8201",
-  "notes": "Juno 3.0.2 \u2014 updates now install themselves quietly: when a new build is ready, a 'Relaunch to update' button appears at the bottom of the sidebar and one click applies it. Conversation kinds sync with the website (Code sessions land in the Code sidebar), the model picker loses its star clutter, and Kimi K3 appears in the catalog.",
+  "sha256": "7f0b0ea08a4d30275de3981aaa68100f8c5aab732fdbc0c683033573e85be13b",
+  "notes": "Juno 3.0.3 \u2014 voice and dictation are rebuilt (no more crashes when your audio devices change, and the assistant can no longer hear itself), Settings gets a calm redesign with smooth section transitions, the whole shell gains consistent motion, star becomes pin everywhere, and your Code sessions now sync to the website grouped by project.",
   "minimumSystemVersion": "26.0"
 }
