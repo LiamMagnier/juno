@@ -382,23 +382,19 @@ export function AppSidebar({
         </div>
       </div>
 
-      {/* Primary nav (Claude-style rows). Code mode keeps everything that
-          makes sense for code sessions — only chat-only entries hide. */}
+      {/* Primary nav (Claude-style rows) — the same full set in Home and Code,
+          like the reference sidebars; only the session list below differs. */}
       <nav className="space-y-0.5 px-2 pt-1">
-        {mode === "home" && (
-          <>
-            <NavRow
-              onClick={newChat}
-              icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-105">
-                  <Plus className="h-3.5 w-3.5" />
-                </span>
-              }
-              label="New chat"
-            />
-            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
-          </>
-        )}
+        <NavRow
+          onClick={newChat}
+          icon={
+            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-105">
+              <Plus className="h-3.5 w-3.5" />
+            </span>
+          }
+          label="New chat"
+        />
+        <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
         <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
         <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
         <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
@@ -442,15 +438,15 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {((mode === "home" && sidebarProjects.length > 0) || pinned.length > 0) && (
+            {(sidebarProjects.length > 0 || pinned.length > 0) && (
               <Section
                 label="Pinned"
-                count={(mode === "home" ? sidebarProjects.length : 0) + pinned.length}
+                count={sidebarProjects.length + pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
               >
-                {(mode === "home" ? sidebarProjects : []).map((p) => (
+                {sidebarProjects.map((p) => (
                   <ProjectRow
                     key={p.id}
                     project={p}
@@ -489,7 +485,7 @@ export function AppSidebar({
             )}
             {filtered.filter((c) => !c.pinned).length > 0 && (
               <Section
-                label="Recents"
+                label={mode === "code" ? "Sessions" : "Recents"}
                 count={filtered.filter((c) => !c.pinned).length}
                 collapsible
                 isCollapsed={recentsCollapsed}
