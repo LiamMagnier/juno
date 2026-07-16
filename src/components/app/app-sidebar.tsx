@@ -25,8 +25,8 @@ import {
   Shapes,
   Plus,
   Trash2,
+  Pin,
   X,
-  Star,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
@@ -182,7 +182,7 @@ export function AppSidebar({
       const isStarred = starred.includes(id);
       const nextStarred = isStarred ? starred.filter((pId) => pId !== id) : [...starred, id];
       localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
-      toast.success(isStarred ? "Project unstarred." : "Project starred!");
+      toast.success(isStarred ? "Project unpinned." : "Project pinned!");
       window.dispatchEvent(new CustomEvent("starred:sync"));
     } catch {}
   };
@@ -669,7 +669,7 @@ function Section({
 }: {
   label: string;
   count?: number;
-  icon?: typeof Star;
+  icon?: typeof Pin;
   children: React.ReactNode;
   collapsible?: boolean;
   isCollapsed?: boolean;
@@ -890,8 +890,8 @@ function ConversationRow({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
           <DropdownMenuItem onSelect={() => patch({ pinned: !conversation.pinned })}>
-            <Star className={cn("h-4 w-4", conversation.pinned ? "fill-primary text-primary" : "")} />
-            <span>{conversation.pinned ? "Unstar" : "Star"}</span>
+            <Pin className={cn("h-4 w-4", conversation.pinned ? "fill-primary text-primary" : "")} />
+            <span>{conversation.pinned ? "Unpin" : "Pin"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem
             onSelect={() => {
@@ -1020,8 +1020,8 @@ function ProjectRow({
             <Plus className="h-4 w-4" /> New chat in project
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onToggleStar}>
-            <Star className={cn("h-4 w-4", starred && "fill-primary text-primary")} />
-            <span>{starred ? "Unstar" : "Star"}</span>
+            <Pin className={cn("h-4 w-4", starred && "fill-primary text-primary")} />
+            <span>{starred ? "Unpin" : "Pin"}</span>
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onRename}>
             <Pencil className="h-4 w-4" /> Rename

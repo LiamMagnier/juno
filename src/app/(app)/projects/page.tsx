@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Box, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Star, StarOff, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, Box, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -305,13 +305,13 @@ export default function ProjectsPage() {
                             <DropdownMenuItem onSelect={() => setStarred(toggleStarredProject(p.id))}>
                               {starred.includes(p.id) ? (
                                 <>
-                                  <StarOff className="h-4 w-4 mr-2" />
-                                  <span>Unstar</span>
+                                  <PinOff className="h-4 w-4 mr-2" />
+                                  <span>Unpin</span>
                                 </>
                               ) : (
                                 <>
-                                  <Star className="h-4 w-4 mr-2" />
-                                  <span>Star</span>
+                                  <Pin className="h-4 w-4 mr-2" />
+                                  <span>Pin</span>
                                 </>
                               )}
                             </DropdownMenuItem>

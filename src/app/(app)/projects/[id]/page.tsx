@@ -17,7 +17,7 @@ import {
   Table,
   Trash2,
   TriangleAlert,
-  Star,
+  Pin,
   MoreVertical,
   FolderClosed,
   FolderInput,
@@ -527,10 +527,10 @@ export default function ProjectDetailPage() {
               size="icon-sm"
               onClick={toggleProjectStar}
               className="text-muted-foreground hover:text-foreground"
-              aria-label={isStarred ? "Unstar project" : "Star project"}
+              aria-label={isStarred ? "Unpin project" : "Pin project"}
               aria-pressed={isStarred}
             >
-              <Star className={cn("h-4 w-4", isStarred && "fill-primary text-primary")} />
+              <Pin className={cn("h-4 w-4", isStarred && "fill-primary text-primary")} />
             </Button>
 
             <DropdownMenu>
@@ -626,11 +626,11 @@ export default function ProjectDetailPage() {
                               variant="ghost"
                               size="icon-sm"
                               onClick={() => togglePin(c.id, c.pinned)}
-                              aria-label={c.pinned ? "Unstar chat" : "Star chat"}
+                              aria-label={c.pinned ? "Unpin chat" : "Pin chat"}
                               aria-pressed={c.pinned}
                               className="h-7 w-7 text-muted-foreground hover:text-foreground"
                             >
-                              <Star className={cn("h-4 w-4", c.pinned && "fill-primary text-primary")} />
+                              <Pin className={cn("h-4 w-4", c.pinned && "fill-primary text-primary")} />
                             </Button>
 
                             <DropdownMenu>

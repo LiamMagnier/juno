@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useParams, useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, BadgeCheck, Star } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
@@ -147,7 +147,7 @@ export default function RoadmapDetailPage() {
               <CategoryChip category={r.category} />
               {r.pinned && (
                 <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-primary">
-                  <Star className="h-3 w-3 fill-primary text-primary" /> Starred
+                  <Pin className="h-3 w-3 fill-primary text-primary" /> Pinned
                 </span>
               )}
             </div>
@@ -185,7 +185,7 @@ export default function RoadmapDetailPage() {
                 </SelectContent>
               </Select>
               <Button variant={r.pinned ? "default" : "outline"} size="sm" onClick={() => moderate({ pinned: !r.pinned })} className="gap-1.5">
-                <Star className={`h-3.5 w-3.5 ${r.pinned ? "fill-current" : ""}`} /> {r.pinned ? "Unstar" : "Star"}
+                <Pin className={`h-3.5 w-3.5 ${r.pinned ? "fill-current" : ""}`} /> {r.pinned ? "Unpin" : "Pin"}
               </Button>
               {r.status === "DECLINED" && (
                 <Button
