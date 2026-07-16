@@ -94,3 +94,15 @@ Status: **release candidate rejected**. Dependency-ordered integration is commit
 Secure native authentication is in prerequisite commits `0969b57` and `564c848`. Web static/unit/build/relay/audit checks passed; Mac Release build, 32 Swift tests, 16 Code tests and audits passed. Hardened Runtime is enabled, but App Sandbox is disabled. No valid Developer ID identity exists on the host. The Mac remained locked, so real-account UI, accessibility and all cross-surface scenarios were not run. The only discovered database configuration was production-facing, so migrations were not executed.
 
 Next blocking slice: unlock the reference Mac; supply a disposable PostgreSQL stack and development account; replace in-process Code execution with the signed XPC boundary and enable the UI sandbox; finish parity/sync vertical slices and convergence tests; then run accessibility/performance, signing/notarization, update/rollback and all ten acceptance scenarios on the exact candidate SHA.
+
+## 2026-07-16 Juno Code workspace redesign
+
+Status: **published for manual alpha evaluation, not promoted to production**.
+
+- Native commit `a58209a` removes the persisted `junoClassicCode` selection path and deletes the retired `CodeModeView` and `CodeSidebarView` compatibility surfaces. Shared relative-time formatting moved to `CodeSupport.swift` because the activity and inspector views still consume it.
+- The native Code surface now uses a dedicated Juno Code product header, project/task navigation, four workspace-first starter actions, and an anchored context-aware composer. Existing project selection, model choice, permission mode, Computer Use consent, plugins, artifacts, inspector, session history, and send/stop behavior remain wired to native state.
+- Debug macOS build passed after the redesign. The complete Swift Testing run passed: 32 tests in 8 suites. The Objective-C harness still reports 0 before Swift Testing starts; that line is not the test count.
+- A running Debug app was inspected at the default Mac window size in mock mode. The intended sidebar, landing actions, and composer rendered; the accessibility tree exposed the navigation rows, four starter buttons, composer field, context menu, Computer Use control, model button, and disabled empty-draft send button.
+- Universal arm64/x86_64 Release build `3.0.0 (25)` passed and was ad-hoc signed for evaluation. GitHub prerelease `v3.0.0-alpha.3` contains `Juno-3.0.0-alpha.3-unsigned.dmg` with SHA-256 `ad24181b665fbdd50609e15b186d7d298ff5dac2b42857d3a78b566944792afb`.
+
+Residual release status is unchanged: the installer is not Developer ID signed or notarized, the production updater does not point to it, and a real development account plus the cross-surface acceptance matrix have not been completed on this exact build.
