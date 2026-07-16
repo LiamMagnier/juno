@@ -1,7 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { SignJWT, errors as joseErrors, jwtVerify } from "jose";
 
-export const NATIVE_REDIRECT_URI = "juno://auth/callback";
+export const NATIVE_REDIRECT_URI = "com.liammagnier.juno://auth/callback";
+export const LEGACY_NATIVE_REDIRECT_URI = "juno://auth/callback";
+const NATIVE_REDIRECT_URIS = new Set([NATIVE_REDIRECT_URI, LEGACY_NATIVE_REDIRECT_URI]);
 export const NATIVE_ACCESS_AUDIENCE = "juno-native";
 export const NATIVE_ACCESS_TTL_SECONDS = 10 * 60;
 export const NATIVE_AUTH_CODE_TTL_MS = 2 * 60 * 1000;
@@ -49,7 +51,7 @@ export function isValidBrowserAuthorization(input: {
     BASE64URL_256.test(input.nonce) &&
     BASE64URL_256.test(input.codeChallenge) &&
     input.codeChallengeMethod === "S256" &&
-    input.redirectUri === NATIVE_REDIRECT_URI &&
+    NATIVE_REDIRECT_URIS.has(input.redirectUri) &&
     INSTALLATION_ID.test(input.installationId)
   );
 }
