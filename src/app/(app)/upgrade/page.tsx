@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowLeft, Check, Sparkles } from "lucide-react";
+import { ArrowLeft, Check, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApp } from "@/components/app/app-provider";
 import { PLANS, planRank } from "@/lib/plans";
@@ -183,7 +183,7 @@ export default function UpgradePage() {
         </div>
 
         <p className="mt-6 flex items-center gap-1.5 text-caption text-muted-foreground">
-          <Sparkles className="h-3.5 w-3.5" />
+          <Info className="h-3.5 w-3.5" />
           Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.
         </p>
       </div>

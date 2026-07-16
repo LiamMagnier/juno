@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, TriangleAlert, Video, Zap } from "lucide-react";
+import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -347,7 +347,7 @@ export function ModelSelector({
 
   // Group the visible models by modality so image/video sit in their own sections.
   const MODALITY_GROUPS: { key: "chat" | "image" | "video"; label: string; icon: typeof Brain }[] = [
-    { key: "chat", label: "Chat", icon: Sparkles },
+    { key: "chat", label: "Chat", icon: MessageSquare },
     { key: "image", label: "Image", icon: ImageIcon },
     { key: "video", label: "Video", icon: Video },
   ];
@@ -455,7 +455,7 @@ export function ModelSelector({
             className="flex w-full shrink-0 items-center justify-between border-b bg-primary/5 px-4 py-2.5 text-left transition-colors duration-fast ease-out-soft hover:bg-primary/10"
           >
             <span className="flex items-center gap-2 text-sm font-medium">
-              <Sparkles className="h-4 w-4 text-primary" /> Unlock every model
+              <Zap className="h-4 w-4 text-primary" /> Unlock every model
             </span>
             <span className="rounded-md bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">Upgrade</span>
           </button>

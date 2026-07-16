@@ -11,7 +11,8 @@ import {
   Pause,
   Play,
   RotateCcw,
-  Sparkles,
+  Wand2,
+  Zap,
   Terminal,
   TrendingUp,
 } from "lucide-react";
@@ -636,7 +637,7 @@ function ProbabilityVisual({ step, compact }: { step: StepLabStep; compact?: boo
                 <span className="font-semibold text-foreground">&quot;{item.token}&quot;</span>
                 {isTop && (
                   <Badge variant="success" className="rounded-md px-1.5 py-0 font-mono text-[10px] uppercase tracking-[0.14em] scale-90">
-                    <Sparkles className="size-2.5 mr-0.5 inline" /> top
+                    <Zap className="size-2.5 mr-0.5 inline" /> top
                   </Badge>
                 )}
               </div>
@@ -700,7 +701,7 @@ function NextTokenSelectionVisual({ step, compact }: { step: StepLabStep; compac
         </div>
         <ArrowRight className="mx-auto size-4 rotate-90 text-primary motion-safe:animate-pulse shrink-0 sm:rotate-0" aria-hidden />
         <div className={cn("rounded-lg border bg-primary/5 text-center text-xs font-semibold font-mono flex flex-col items-center border-primary/25", compact ? "p-2.5" : "p-3")}>
-          <Sparkles className="size-3.5 text-primary mb-1" />
+          <Wand2 className="size-3.5 text-primary mb-1" />
           <span className="text-primary">Append &quot;{selectedToken}&quot;</span>
         </div>
       </div>
@@ -1050,7 +1051,7 @@ export function StepLabFallback({ message }: { message?: string }) {
   return (
     <div className="my-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground motion-safe:animate-fade-in">
       <div className="flex items-center gap-2">
-        <Sparkles className="size-4 text-primary motion-safe:animate-pulse" />
+        <Wand2 className="size-4 text-primary motion-safe:animate-pulse" />
         <span>{message ?? "Building visual explanation..."}</span>
       </div>
     </div>

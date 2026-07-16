@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Sparkles } from "lucide-react";
+import { AlertCircle, Wand2 } from "lucide-react";
 import { StepLabBlock } from "@/components/chat/step-lab-block";
 import { LearningCardBlock } from "@/components/chat/learning/learning-card-block";
 import { ProcessTimelineBlock } from "@/components/chat/learning/process-timeline-block";
@@ -21,7 +21,7 @@ function BlockStreamingPlaceholder({ kind }: { kind: ParsedLearningBlock["kind"]
     <div className="my-4 overflow-hidden rounded-[18px] border border-border/70 bg-card/80 shadow-pop motion-safe:animate-fade-in">
       <div className="flex items-center gap-3 px-4 py-3.5">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-[14px] border border-primary/25 bg-primary/10">
-          <Sparkles className="size-4 text-primary motion-safe:animate-pulse" />
+          <Wand2 className="size-4 text-primary motion-safe:animate-pulse" />
         </span>
         <div className="min-w-0 flex-1">
           <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/80">

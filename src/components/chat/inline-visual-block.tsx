@@ -14,7 +14,7 @@ import {
   Lightbulb,
   ListChecks,
   Maximize2,
-  Sparkles,
+  Wand2,
   Table2,
   XCircle,
 } from "lucide-react";
@@ -448,7 +448,7 @@ function CalloutBlock({ block }: { block: VisualBlock }) {
         <div className="grid gap-2">
           {items.map((item, index) => (
             <div key={index} className="flex gap-2 rounded-lg bg-muted/40 px-3 py-2">
-              <Sparkles className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
+              <Wand2 className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
               <p className="text-sm leading-6">
                 <span className="font-semibold">{itemTitle(item, `Point ${index + 1}`)}</span>
                 {primaryText(item) ? <span className="text-muted-foreground"> - {primaryText(item)}</span> : null}
@@ -500,7 +500,7 @@ export function InlineVisualBlock({ source, streaming }: { source: string; strea
     return (
       <div className="my-3 rounded-lg border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
         <div className="flex items-center gap-2">
-          {streaming ? <Sparkles className="h-4 w-4 animate-pulse text-primary" /> : <AlertCircle className="h-4 w-4 text-warning" />}
+          {streaming ? <Wand2 className="h-4 w-4 animate-pulse text-primary" /> : <AlertCircle className="h-4 w-4 text-warning" />}
           <span>{streaming ? "Drawing inline visual..." : "This inline visual could not be rendered."}</span>
         </div>
       </div>

@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Pencil, RefreshCw, Sparkles, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
