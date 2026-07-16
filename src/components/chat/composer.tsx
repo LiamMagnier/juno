@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -367,7 +368,7 @@ export function Composer({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
-  const sendAttachments = privateMode ? [] : readyAttachments;
+  const sendAttachments = React.useMemo(() => (privateMode ? [] : readyAttachments), [privateMode, readyAttachments]);
   const uploading = privateMode ? false : isUploading;
 
   const addComposerFiles = React.useCallback(
@@ -574,7 +575,7 @@ export function Composer({
         requestAnimationFrame(autoresize);
       })();
     },
-    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize]
+    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize, setDictating]
   );
 
   // ——— Composer palette: "/" for commands, "@" for tools + connectors ———
@@ -1040,7 +1041,7 @@ export function Composer({
     clear();
     setDictating(false);
     requestAnimationFrame(autoresize);
-  }, [autoresize, clear]);
+  }, [autoresize, clear, setDictating]);
 
   const submitClarification = React.useCallback(
     async (answers: PreflightClarificationAnswer[]) => {
@@ -1703,9 +1704,9 @@ export function Composer({
                           ) : projects.length === 0 ? (
                             <div className="px-2 py-4 text-center">
                               <p className="text-caption text-muted-foreground">No projects yet.</p>
-                              <a href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
+                              <Link href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
                                 Create one →
-                              </a>
+                              </Link>
                             </div>
                           ) : (
                             projects.map((project) => {

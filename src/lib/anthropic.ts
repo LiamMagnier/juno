@@ -414,7 +414,9 @@ export async function* streamAnthropic(
     } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       yield { type: "text", text: event.delta.text };
     } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
-      yield { type: "reasoning", text: event.delta.thinking };
+      // Provider-internal chain of thought is intentionally neither exposed nor
+      // persisted. Only explicit provider reasoning-summary events are public.
+      continue;
     } else if (event.type === "content_block_start" && (event.content_block as { type?: string }).type === "mcp_tool_use") {
       const block = event.content_block as { name?: string; server_name?: string };
       yield { type: "tool", server: block.server_name || "connector", name: block.name || "tool", phase: "call" };

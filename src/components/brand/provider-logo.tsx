@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { PROVIDERS, type Provider } from "@/lib/providers";
 
@@ -88,8 +89,8 @@ export function ProviderLogo({
         className
       )}
     >
-      <img src={src.light} alt={alt} className="h-full w-full object-contain p-[12%] dark:hidden" draggable={false} loading="lazy" />
-      <img src={src.dark} alt="" className="hidden h-full w-full object-contain p-[12%] dark:block" draggable={false} loading="lazy" />
+      <Image src={src.light} alt={alt} width={20} height={20} className="h-full w-full object-contain p-[12%] dark:hidden" draggable={false} />
+      <Image src={src.dark} alt="" width={20} height={20} className="hidden h-full w-full object-contain p-[12%] dark:block" draggable={false} />
     </span>
   );
 }

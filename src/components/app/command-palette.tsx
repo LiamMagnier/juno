@@ -250,6 +250,7 @@ export function CommandPalette() {
                     )}
                     <button
                       type="button"
+                      role="option"
                       data-index={i}
                       onMouseMove={() => setActive(i)}
                       onClick={() => c.run()}

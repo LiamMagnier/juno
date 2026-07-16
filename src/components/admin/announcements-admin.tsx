@@ -121,6 +121,8 @@ function AnnouncementMedia({ draft, className }: { draft: Pick<Draft, "imageUrl"
   if (draft.imageUrl) {
     const logoLike = draft.imageUrl.includes("/provider-logos/");
     return (
+      // Admin previews accept draft URLs that may not be allowlisted for the production image proxy.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={draft.imageUrl}
         alt=""

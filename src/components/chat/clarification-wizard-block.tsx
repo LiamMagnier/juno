@@ -142,7 +142,7 @@ export function ClarificationWizardBlock({
     setAnswerMap(initialAnswerMap(block));
     setCustomDrafts({});
     setLocalSubmitted(block.submitted);
-  }, [block.blockId, block.submitted]);
+  }, [block]);
 
   const questions = block.questions;
   const activeQuestion = questions[Math.min(activeIndex, questions.length - 1)];

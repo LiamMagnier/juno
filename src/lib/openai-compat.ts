@@ -377,32 +377,20 @@ export async function* streamOpenAICompat(
     let roundOutput = 0;
     let roundCached = 0;
     let roundSawUsage = false;
-    let minimaxReasoningBuffer = "";
     // Accumulate streamed tool-call fragments by their choice index.
     const toolCalls = new Map<number, { id: string; name: string; args: string }>();
 
     for await (const chunk of stream) {
       const choice = chunk.choices?.[0];
       const choiceDelta = choice?.delta;
-      const reasoning = choiceDelta as unknown as
-        | { reasoning_content?: string; reasoning?: string; reasoning_details?: Array<{ text?: string }> }
-        | undefined;
-      let reasoningText = reasoning?.reasoning_content ?? reasoning?.reasoning;
-      if (!reasoningText && reasoning?.reasoning_details?.length) {
-        const fullReasoning = reasoning.reasoning_details.map((d) => d.text ?? "").join("");
-        reasoningText = fullReasoning.startsWith(minimaxReasoningBuffer)
-          ? fullReasoning.slice(minimaxReasoningBuffer.length)
-          : fullReasoning;
-        minimaxReasoningBuffer = fullReasoning;
-      }
-      if (reasoningText) yield { type: "reasoning", text: reasoningText };
+      // OpenAI-compatible `reasoning_content`/typed thinking chunks are raw
+      // hidden work, not user-facing summaries; never forward or persist them.
       // `content` is typed string|null, but Mistral's reasoning models stream an
       // array of typed chunks — normalise before it gets concatenated.
       const rawDelta = choiceDelta?.content as unknown;
       let delta = typeof rawDelta === "string" ? rawDelta : "";
       if (Array.isArray(rawDelta)) {
         const split = splitTypedContent(rawDelta);
-        if (split.reasoning) yield { type: "reasoning", text: split.reasoning };
         delta = split.text;
       }
       if (delta) {
