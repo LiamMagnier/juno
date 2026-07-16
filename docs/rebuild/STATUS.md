@@ -120,3 +120,16 @@ Status: **published for manual alpha evaluation; final live-account callback acc
 - Before the final build was installed, the browser authorization action reached the waiting state but could not be accepted as evidence for the repaired binary. The Mac then locked before the final installed build could complete a real account callback. Do not mark browser sign-in or cross-surface acceptance complete until build 26 returns from Safari, exchanges the one-time code, displays the signed-in account, and completes first sync.
 
 Production blockers remain: Developer ID signing, Apple notarization, a signed production update feed, the exact-candidate real-account flow above, and the complete cross-surface acceptance matrix.
+
+## 2026-07-16 native browser sign-in fallback and alpha 5
+
+Status: **published for manual alpha evaluation; exact-candidate live-account acceptance remains pending because the reference Mac locked**.
+
+- Native commit `a8e17d2` replaces the hanging macOS `ASWebAuthenticationSession` path with an ordinary Safari launch and a SwiftUI `onOpenURL` receiver for the registered `juno://auth/callback`. The one-time grant still requires the exact callback route, state, nonce and PKCE verifier; the pending request expires after five minutes. The AuthenticationServices path remains available for non-macOS builds.
+- Exact native check passed: `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Juno.xcodeproj -scheme Juno -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-v3-test27 test`. Swift Testing ran 33 tests in 8 suites with zero failures.
+- Exact universal build passed: `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Juno.xcodeproj -scheme Juno -configuration Release -destination 'generic/platform=macOS' -derivedDataPath /tmp/juno-v3-release27 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO build`. `lipo -archs` returned `x86_64 arm64`; strict code-signature verification passed; the bundle reports `3.0.0 (27)` and registers the `juno` scheme.
+- `hdiutil verify` passed for `Juno-3.0.0-alpha.5-unsigned.dmg`. GitHub prerelease `v3.0.0-alpha.5` targets `codex/native-v3-integration`; SHA-256 is `999840e8eef52f92b282bac2653f30f7e514325dec2567f4af9613f2f7362b3c`.
+- Build 27 is installed at `/Applications/Juno.app`. Duplicate app bundles were removed from `/Applications` and preserved under `/Users/liammagnier/Desktop/Juno Backups` so LaunchServices has one installed owner for the callback scheme. The disposable ad-hoc installation identifier was cleared before the retry; no server data or native device credentials were removed.
+- Build 26 reproduced the macOS embedded-session hang: Juno entered its waiting state but Safari did not open the authorization URL. The fallback was implemented from that evidence. The reference Mac locked immediately after build 27 launched, so do not mark the live browser return, token exchange, signed-in account or first sync accepted until they run on build 27.
+
+Production blockers remain unchanged: Developer ID signing, Apple notarization, a signed production update feed, the exact-candidate real-account flow, and the complete cross-surface acceptance matrix.
