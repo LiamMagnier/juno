@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Box, GitFork, GripVertical, Loader2, RefreshCw, Share2, Trash2, X } from "lucide-react";
+import { Box, GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, X } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -1333,7 +1333,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 onClick={() => setShareOpen(true)}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-full text-foreground/75 transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:text-foreground active:translate-y-0 active:scale-95 coarse:h-11 coarse:w-11"
               >
-                <Share2 className="h-[18px] w-[18px]" />
+                <Share className="h-[18px] w-[18px]" />
               </button>
             </TooltipTrigger>
             <TooltipContent>Share chat</TooltipContent>

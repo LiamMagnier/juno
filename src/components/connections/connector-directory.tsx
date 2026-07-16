@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Check, Loader2, Plug, Search, Unplug } from "lucide-react";
+import { ArrowUpRight, Loader2, Plug, Search, Sparkles, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +158,51 @@ function CategoryChip({
   );
 }
 
+type TileState = "connected" | "connecting" | "available" | "setup" | "unavailable";
+
+/** Status pill echoing the connector's state, keyed off the shared theme tokens. */
+function TileStatus({ state }: { state: TileState }) {
+  if (state === "connected") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-2 py-0.5 text-caption font-medium text-success">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-success/70 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+        </span>
+        Connected
+      </span>
+    );
+  }
+  if (state === "connecting") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-caption font-medium text-warning">
+        <span className="h-1.5 w-1.5 rounded-full bg-warning motion-safe:animate-pulse" />
+        Connecting
+      </span>
+    );
+  }
+  if (state === "setup") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-caption font-medium text-muted-foreground">
+        Setup needed
+      </span>
+    );
+  }
+  if (state === "unavailable") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border/70 px-2 py-0.5 text-caption font-medium text-muted-foreground/70">
+        Unavailable
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/60 px-2 py-0.5 text-caption font-medium text-muted-foreground/80">
+      <span className="h-1.5 w-1.5 rounded-full border border-muted-foreground/40" />
+      Available
+    </span>
+  );
+}
+
 function ConnectorTile({
   item,
   busy,
@@ -180,93 +225,100 @@ function ConnectorTile({
   // with a generic error — indistinguishable from a reload, and "try again"
   // could never work. Say what is actually required instead.
   const needsSetup = item.source === "composio" && item.managedAuth === false && !item.connected;
+  const state: TileState = item.connected
+    ? "connected"
+    : item.connecting
+      ? "connecting"
+      : unavailable
+        ? "unavailable"
+        : needsSetup
+          ? "setup"
+          : "available";
+
+  const description = item.connected
+    ? item.accountLabel && item.accountLabel !== item.label
+      ? item.accountLabel
+      : "Connected and ready"
+    : item.connecting
+      ? "Finishing connection…"
+      : unavailable
+        ? "Not set up on this server"
+        : needsSetup
+          ? "Needs its own OAuth app in Composio"
+          : item.noAuth
+            ? "Ready without sign-in"
+            : item.description;
+
   return (
     <article
       className={cn(
-        "group flex min-h-[92px] flex-col justify-between gap-2.5 rounded-2xl border p-3.5 transition-all duration-base ease-out-soft",
+        // Canonical card: 16px radius, hairline border, card fill, soft shadow,
+        // with the shared lift-on-hover treatment used across the app.
+        "group flex flex-col justify-between gap-3 rounded-[16px] border bg-card p-4 shadow-soft transition-all duration-base ease-out-soft",
         item.connected
-          ? "border-success/25 bg-success/[0.035]"
+          ? "border-success/30"
           : unavailable
-            ? "border-border/40 bg-background/40"
-            : "border-border/55 bg-background/55 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-background/85 hover:shadow-float"
+            ? "border-border/60 bg-card/60"
+            : "border-border/70 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-float"
       )}
     >
       <div className="flex items-start gap-3">
         <AppLogo item={item} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <h3 className="truncate text-sm font-semibold">{item.label}</h3>
-            {item.connected && <Check className="size-3.5 shrink-0 text-success" aria-label="Connected" />}
-          </div>
-          <p className="mt-0.5 line-clamp-2 text-caption leading-4 text-muted-foreground">
-            {item.connected
-              ? (item.accountLabel && item.accountLabel !== item.label ? item.accountLabel : "Connected and ready")
-              : item.connecting
-                ? "Finishing connection…"
-                : unavailable
-                  ? "Not set up on this server"
-                  : needsSetup
-                    ? "Needs its own OAuth app in Composio"
-                    : item.noAuth
-                      ? "Ready without sign-in"
-                      : item.description}
-          </p>
+          <h3 className="truncate text-sm font-semibold tracking-tight">{item.label}</h3>
+          <p className="mt-1 line-clamp-2 text-caption leading-4 text-muted-foreground">{description}</p>
         </div>
-        {item.connected ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={onDisconnect}
-                disabled={busy}
-                aria-label={`Disconnect ${item.label}`}
-                aria-haspopup="dialog"
-                className="pressable inline-flex size-9 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50 coarse:size-11"
-              >
-                {busy ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
-              </button>
-            </TooltipTrigger>
-            <TooltipContent>Disconnect</TooltipContent>
-          </Tooltip>
-        ) : needsSetup ? (
-          <Tooltip>
-            <TooltipTrigger asChild>
+        <TileStatus state={state} />
+      </div>
+
+      {item.connected ? (
+        <div className="flex items-center justify-between gap-2">
+          {/* Only a linked app can be exposed to chats. */}
+          <label className="flex cursor-pointer items-center gap-2">
+            <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Expose ${item.label} to chats`} />
+            <span className="text-caption text-muted-foreground">In chats</span>
+          </label>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onDisconnect}
+            disabled={busy}
+            aria-haspopup="dialog"
+            className="gap-1.5 px-2.5 text-muted-foreground hover:text-destructive"
+          >
+            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Unplug className="size-3.5" />}
+            Disconnect
+          </Button>
+        </div>
+      ) : needsSetup ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button asChild variant="outline" size="sm" className="w-full gap-1.5">
               <a
                 href={`https://platform.composio.dev/marketplace/${encodeURIComponent(item.slug ?? "")}`}
                 target="_blank"
                 rel="noreferrer"
-                className="pressable inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] border border-border/60 px-2.5 text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:border-border hover:text-foreground"
               >
-                Set up
-                <ArrowUpRight className="size-3" />
+                Set up in Composio
+                <ArrowUpRight className="size-3.5" />
               </a>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-[240px]">
-              Composio has no shared OAuth app for {item.label}. Add your own {item.label} app
-              credentials in the Composio dashboard, then connect it here.
-            </TooltipContent>
-          </Tooltip>
-        ) : (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={busy || unavailable}
-            onClick={onConnect}
-            // No radius override: size="sm" already sets a 10px corner. The old
-            // `rounded-lg` here was 24px on a 32px-tall button — an accidental pill.
-            className="shrink-0 px-2.5 text-xs"
-          >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
-          </Button>
-        )}
-      </div>
-
-      {/* Only a linked app can be exposed to chats. */}
-      {item.connected && (
-        <label className="flex items-center justify-between gap-2 rounded-xl border border-border/50 bg-background/60 px-2.5 py-1.5">
-          <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">Expose to chats</span>
-          <Switch checked={enabled} onCheckedChange={onEnabledChange} aria-label={`Expose ${item.label} to chats`} />
-        </label>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[240px]">
+            Composio has no shared OAuth app for {item.label}. Add your own {item.label} app credentials in the Composio
+            dashboard, then connect it here.
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || unavailable}
+          onClick={onConnect}
+          className="w-full"
+        >
+          {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
+        </Button>
       )}
     </article>
   );
@@ -437,31 +489,13 @@ export function ConnectorDirectory({
   const categoryLabel = categories.find((c) => c.id === activeCategory)?.label.toLowerCase();
 
   return (
-    <section className="mt-6 overflow-hidden rounded-3xl border border-border/60 bg-card/55 shadow-soft">
-      <div className="border-b border-border/60 bg-card/75 p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">Directory</p>
-            <h2 className="mt-1 font-serif text-title">Every app, one place</h2>
-            <p className="mt-1 max-w-xl text-sm leading-5 text-muted-foreground">
-              Each app connects separately, and Juno only gets access to the ones you choose.
-            </p>
-          </div>
-          <label className="relative block w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search Gmail, Slack, GitHub…"
-              aria-label="Search apps"
-              className="h-10 rounded-xl bg-background/75 pl-9"
-            />
-          </label>
-        </div>
+    <section className="mt-6">
+      {/* Toolbar — a calm search + filter row rather than a second page header. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         {/* Two rounded-full elements are concentric at any padding — the safe
             segmented control. This was a rounded-xl (12px) track wrapping
             rounded-lg (24px!) thumbs, so the thumbs bulged past their own rail. */}
-        <div className="mt-4 flex w-fit items-center gap-1 rounded-full bg-muted/55 p-1">
+        <div className="flex w-fit items-center gap-1 rounded-full border bg-card p-1 shadow-soft">
           {(["all", "connected"] as const).map((value) => (
             <button
               key={value}
@@ -469,55 +503,66 @@ export function ConnectorDirectory({
               onClick={() => setFilter(value)}
               aria-pressed={filter === value}
               className={cn(
-                "rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-[color,background-color,box-shadow] duration-fast ease-out-soft",
-                filter === value && "bg-background text-foreground shadow-soft"
+                "rounded-full px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] duration-fast ease-out-soft",
+                filter === value
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               )}
             >
               {value === "all" ? "All apps" : `Connected${connectedCount ? ` · ${connectedCount}` : ""}`}
             </button>
           ))}
         </div>
-
-        {/* Composio has ~1048 toolkits. Categories are the only thing standing
-            between the user and an endlessly-paged flat list, so they sit here
-            rather than behind a menu. Hidden on Connected — that tab is small
-            enough to read whole, and the API cannot filter it by category. */}
-        {filter === "all" && categories.length > 0 && (
-          <div
-            role="group"
-            aria-label="Filter by category"
-            // overflow-x forces the block axis to clip too, so the padding here is
-            // load-bearing: it is the room the chips' hover lift needs to cast
-            // shadow-soft (~10px of reach) instead of having it shorn off flat.
-            // The negative margins keep the visual gutter aligned with the header.
-            className="-mx-1 mt-1.5 flex gap-1.5 overflow-x-auto px-1 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
-            <CategoryChip label="All categories" active={!category} onClick={() => setCategory(null)} />
-            {categories.map((c) => (
-              <CategoryChip
-                key={c.id}
-                label={c.label}
-                count={c.count}
-                active={category === c.id}
-                onClick={() => setCategory(category === c.id ? null : c.id)}
-              />
-            ))}
-          </div>
-        )}
+        <label className="relative block w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search Gmail, Slack, GitHub…"
+            aria-label="Search apps"
+            className="h-10 rounded-xl bg-card pl-9"
+          />
+        </label>
       </div>
 
-      <div className="p-3 sm:p-4">
+      {/* Composio has ~1048 toolkits. Categories are the only thing standing
+          between the user and an endlessly-paged flat list, so they sit here
+          rather than behind a menu. Hidden on Connected — that tab is small
+          enough to read whole, and the API cannot filter it by category. */}
+      {filter === "all" && categories.length > 0 && (
+        <div
+          role="group"
+          aria-label="Filter by category"
+          // overflow-x forces the block axis to clip too, so the padding here is
+          // load-bearing: it is the room the chips' hover lift needs to cast
+          // shadow-soft (~10px of reach) instead of having it shorn off flat.
+          className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <CategoryChip label="All categories" active={!category} onClick={() => setCategory(null)} />
+          {categories.map((c) => (
+            <CategoryChip
+              key={c.id}
+              label={c.label}
+              count={c.count}
+              active={category === c.id}
+              onClick={() => setCategory(category === c.id ? null : c.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5">
         {/* Composio powers the long tail. Without it the native connectors still
             work, so explain what's missing instead of showing an empty page. */}
         {!composioConfigured && <ComposioSetupCallout />}
 
         {error && (
-          <div className="mb-3 rounded-2xl border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
+          <div className="mb-4 rounded-[16px] border border-dashed border-destructive/40 bg-destructive/5 p-4 text-center text-sm text-destructive">
             The app directory couldn’t be loaded. Check <code className="font-mono text-xs">COMPOSIO_API_KEY</code> on the server.
           </div>
         )}
 
-        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((item) => (
             <ConnectorTile
               key={item.key}
@@ -531,24 +576,29 @@ export function ConnectorDirectory({
           ))}
           {loading &&
             Array.from({ length: 6 }, (_, i) => (
-              <div key={`sk-${i}`} className="skeleton h-[92px] rounded-2xl" style={{ animationDelay: `${i * 30}ms` }} />
+              <div key={`sk-${i}`} className="skeleton h-[132px] rounded-[16px]" style={{ animationDelay: `${i * 30}ms` }} />
             ))}
         </div>
 
         {!loading && items.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-border/70 p-8 text-center text-sm text-muted-foreground">
-            {filter === "connected"
-              ? "No connected apps yet."
-              : q
-                ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
-                : categoryLabel
-                  ? `No apps in ${categoryLabel}.`
-                  : "No apps available."}
+          <div className="flex flex-col items-center gap-4 rounded-[16px] border border-dashed border-border/70 px-6 py-12 text-center">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <Sparkles className="size-6" />
+            </span>
+            <p className="max-w-xs text-sm text-muted-foreground">
+              {filter === "connected"
+                ? "No connected apps yet. Connect one from All apps to get started."
+                : q
+                  ? `No apps match “${query.trim()}”${categoryLabel ? ` in ${categoryLabel}` : ""}.`
+                  : categoryLabel
+                    ? `No apps in ${categoryLabel}.`
+                    : "No apps available."}
+            </p>
           </div>
         )}
 
         {cursor && !loading && !error && (
-          <div className="flex justify-center pt-4">
+          <div className="flex justify-center pt-6">
             <Button variant="outline" size="sm" onClick={() => void loadMore()} disabled={loadingMore}>
               {loadingMore && <Loader2 className="size-3.5 animate-spin" />}
               Load more apps

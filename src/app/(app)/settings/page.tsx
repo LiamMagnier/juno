@@ -706,7 +706,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Memory */}
-          <Tile eyebrow="Memory" i={8}>
+          <Tile eyebrow="Memory" i={8} className="self-start">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <NotebookPen className="h-5 w-5 text-primary" />
@@ -717,8 +717,8 @@ export default function SettingsPage() {
               </div>
               <Switch checked={settings.memoryEnabled} onCheckedChange={(v) => save({ memoryEnabled: v })} aria-label="Toggle memory" />
             </div>
-            <Button asChild variant="link" className="mt-2 h-auto p-0">
-              <Link href="/memory">Open memory manager →</Link>
+            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
+              <Link href="/memory">Open memory manager</Link>
             </Button>
           </Tile>
 

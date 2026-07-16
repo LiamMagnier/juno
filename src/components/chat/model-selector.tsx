@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, Star, TriangleAlert, Video, Zap } from "lucide-react";
+import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, Search, Sparkles, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -25,7 +25,7 @@ import {
 import { providerAccent } from "@/lib/provider-colors";
 import { cn } from "@/lib/utils";
 
-type Filter = "all" | "favorites" | Provider;
+type Filter = "all" | Provider;
 
 type MetricKey = "intelligence" | "speed" | "context" | "cost";
 
@@ -300,28 +300,17 @@ export function ModelSelector({
   onReasoningChange?: (effort: ReasoningEffort) => void;
 }) {
   const router = useRouter();
-  const { quota, features, models, settings, setSettings } = useApp();
+  const { quota, features, models } = useApp();
   const plan = quota.plan;
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [filter, setFilter] = React.useState<Filter>("all");
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
 
-  const favSet = React.useMemo(() => new Set(settings.favoriteModels), [settings.favoriteModels]);
   const current = models.find((m) => m.id === value) ?? resolveModel(value);
   const q = query.trim().toLowerCase();
 
-  const toggleFavorite = (id: string) => {
-    const next = favSet.has(id) ? settings.favoriteModels.filter((m) => m !== id) : [...settings.favoriteModels, id];
-    setSettings({ favoriteModels: next });
-    fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ favoriteModels: next }),
-    }).catch(() => {});
-  };
-
-  const providerFilter = filter !== "all" && filter !== "favorites" ? (filter as Provider) : null;
+  const providerFilter = filter !== "all" ? (filter as Provider) : null;
   const filterConfigured = providerFilter ? features.providers.includes(providerFilter) : true;
 
   // Sort [lab asc, intelligence desc, released desc, name asc] to match the
@@ -329,7 +318,7 @@ export function ModelSelector({
   // web selector looks identical even before the API response lands.
   const visible: ModelInfo[] = sortModelsForDisplay(
     models
-      .filter((m) => (filter === "favorites" ? favSet.has(m.id) : providerFilter ? m.provider === providerFilter : true))
+      .filter((m) => (providerFilter ? m.provider === providerFilter : true))
       .filter(
         (m) =>
           !q ||
@@ -366,7 +355,6 @@ export function ModelSelector({
   const renderRow = (m: ModelInfo, i: number) => {
     const soon = !!m.comingSoon;
     const locked = !soon && planRank(plan) < planRank(effectiveMinPlan(m.minPlan));
-    const fav = favSet.has(m.id);
     const active = value === m.id;
     return (
       <div
@@ -433,20 +421,6 @@ export function ModelSelector({
             ) : null}
           </div>
         </button>
-        
-        {/* Favorite Star */}
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleFavorite(m.id);
-          }}
-          aria-label={fav ? "Remove from favorites" : "Add to favorites"}
-          aria-pressed={fav}
-          className="absolute top-2.5 right-2.5 rounded-md p-1.5 opacity-45 hover:opacity-100 group-hover:opacity-100 transition-all duration-fast ease-out-soft active:scale-90"
-        >
-          <Star className={cn("h-4 w-4 transition-colors", fav ? "fill-primary text-primary opacity-100" : "text-muted-foreground/70")} />
-        </button>
       </div>
     );
   };
@@ -495,9 +469,6 @@ export function ModelSelector({
             <RailButton active={filter === "all"} title="All models" onClick={() => setFilter("all")}>
               <LayoutGrid className={cn("h-5 w-5", filter === "all" ? "text-primary" : "text-muted-foreground")} />
             </RailButton>
-            <RailButton active={filter === "favorites"} title="Favorites" onClick={() => setFilter("favorites")}>
-              <Star className={cn("h-5 w-5", filter === "favorites" ? "fill-primary text-primary" : "text-muted-foreground")} />
-            </RailButton>
             <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
             {PROVIDER_LIST.map((p) => (
               <RailButton key={p} active={filter === p} dimmed={!features.providers.includes(p)} title={PROVIDERS[p].label} onClick={() => setFilter(p)}>
@@ -522,9 +493,7 @@ export function ModelSelector({
                   </p>
                 </div>
               ) : visible.length === 0 ? (
-                <p className="px-2 py-10 text-center text-sm text-muted-foreground">
-                  {filter === "favorites" ? "No favorites yet — tap a star to add one." : "No models found."}
-                </p>
+                <p className="px-2 py-10 text-center text-sm text-muted-foreground">No models found.</p>
               ) : (
                 MODALITY_GROUPS.map((g) => {
                   const items = visible.filter((m) => (m.modality ?? "chat") === g.key);

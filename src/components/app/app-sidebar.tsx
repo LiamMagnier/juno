@@ -453,7 +453,7 @@ export function AppSidebar({
                     className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[12px] font-medium text-muted-foreground/70 transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5 hover:text-foreground"
                   >
                     <span className="h-[22px] w-[22px] shrink-0" />
-                    <span className="truncate">View all {projects.length}</span>
+                    <span className="truncate">All projects ({projects.length})</span>
                   </Link>
                 )}
               </Section>
@@ -957,19 +957,39 @@ function ProjectRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  // Per-project disclosure. Session-only state (plain useState, nothing
+  // persisted), so every reload starts collapsed — the requested default.
+  const [expanded, setExpanded] = React.useState(false);
   const [showAll, setShowAll] = React.useState(false);
   const PREVIEW = 2;
   const visibleChats = showAll ? chats : chats.slice(0, PREVIEW);
+  const hasChats = chats.length > 0;
 
   return (
     <div>
     <div
       className={cn(
-        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
+        "group relative flex items-center rounded-md pl-1 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
       <ActiveIndicator active={active} />
+      {hasChats ? (
+        <button
+          type="button"
+          onClick={() => {
+            setExpanded((v) => !v);
+            if (expanded) setShowAll(false);
+          }}
+          aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
+          aria-expanded={expanded}
+          className="flex h-6 w-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 transition-colors hover:text-foreground"
+        >
+          <ChevronRight className={cn("h-3 w-3 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
+        </button>
+      ) : (
+        <span className="h-6 w-4 shrink-0" />
+      )}
       <Link
         href={`/projects/${project.id}`}
         onClick={onNavigate}
@@ -1015,7 +1035,7 @@ function ProjectRow({
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
-    {chats.length > 0 && (
+    {hasChats && expanded && (
       <div className="mt-0.5 flex flex-col">
         {visibleChats.map((c) => (
           <Link
@@ -1025,7 +1045,7 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group/pc flex items-center gap-2 rounded-md py-1 pl-9 pr-2 text-[12.5px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
+              "group/pc flex items-center gap-2 rounded-md py-1 pl-11 pr-2 text-[12.5px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
               activePath === `/chat/${c.id}`
                 ? "font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"
@@ -1039,7 +1059,7 @@ function ProjectRow({
           <button
             type="button"
             onClick={() => setShowAll((v) => !v)}
-            className="flex items-center rounded-md py-1 pl-9 pr-2 text-[12px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
+            className="flex items-center rounded-md py-1 pl-11 pr-2 text-[12px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
           >
             {showAll ? "Show less" : `View all ${chats.length}`}
           </button>

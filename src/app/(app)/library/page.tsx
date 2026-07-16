@@ -186,17 +186,17 @@ export default function LibraryPage() {
         <p className="mt-1 text-sm text-muted-foreground">Everything you’ve shared with Juno, in one place.</p>
 
         <div className="mt-5 flex flex-wrap items-center gap-3">
-          <div className="flex w-fit items-center gap-1 rounded-full border bg-card p-1 shadow-soft">
+          <div className="flex w-fit items-center gap-1 rounded-[12px] bg-muted/70 p-1">
             {TABS.map((t) => (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
                 aria-pressed={tab === t.key}
                 className={cn(
-                  "rounded-full px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-wider transition-all duration-fast",
+                  "rounded-[9px] px-3 py-1 text-[13px] font-medium transition-all duration-fast ease-out-soft",
                   tab === t.key
-                    ? "bg-primary/10 text-primary font-medium"
-                    : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                    ? "bg-card text-foreground shadow-pop"
+                    : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {t.label}
