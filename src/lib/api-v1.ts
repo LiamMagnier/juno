@@ -5,6 +5,19 @@ import { NativeAuthError } from "@/lib/native-auth";
 
 export const CONTRACT_VERSION = "1.0.0";
 
+export class ApiV1Error extends Error {
+  constructor(
+    public readonly code: string,
+    public readonly status: number,
+    message: string,
+    public readonly retryable = false,
+    public readonly details?: Record<string, unknown>,
+  ) {
+    super(message);
+    this.name = "ApiV1Error";
+  }
+}
+
 export function apiV1Json(body: unknown, init: ResponseInit = {}, requestId = `req_${randomUUID()}`) {
   const headers = new Headers(init.headers);
   headers.set("X-Juno-Request-Id", requestId);
@@ -20,6 +33,8 @@ export function apiV1Error(error: unknown, requestId = `req_${randomUUID()}`) {
   if (error instanceof NativeAuthError) {
     ({ code, message, status } = error);
     retryable = false;
+  } else if (error instanceof ApiV1Error) {
+    ({ code, message, status, retryable } = error);
   } else if (error instanceof ZodError) {
     code = "invalid_request";
     message = "The request body is invalid.";
@@ -27,6 +42,7 @@ export function apiV1Error(error: unknown, requestId = `req_${randomUUID()}`) {
     retryable = false;
   }
   return apiV1Json({
-    error: { code, message, requestId, retryable, retryAfterMs: null },
+    error: { code, message, requestId, retryable, retryAfterMs: null,
+      ...(error instanceof ApiV1Error && error.details ? { details: error.details } : {}) },
   }, { status }, requestId);
 }

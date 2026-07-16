@@ -56,10 +56,18 @@ fi
 echo -e "${YELLOW}📦 Installing npm dependencies...${NC}"
 npm ci
 
-# Apply committed production migrations. Using `db push` here would change the
-# schema without recording the migration, making later deploys fail or drift.
+# Apply committed production migrations. Historical production deploys used
+# `db push`, so the first run safely converges the existing schema and records
+# that baseline; later runs use only `migrate deploy`.
 echo -e "${YELLOW}🗄️ Applying database migrations...${NC}"
-npx prisma migrate deploy
+if node scripts/baseline-production-migrations.mjs --status; then
+  npx prisma migrate deploy
+else
+  npx prisma db push --skip-generate
+  npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
+  JUNO_ALLOW_MIGRATION_BASELINE=1 node scripts/baseline-production-migrations.mjs --apply
+  npx prisma migrate deploy
+fi
 
 # Generate prisma client
 echo -e "${YELLOW}💎 Generating Prisma client...${NC}"

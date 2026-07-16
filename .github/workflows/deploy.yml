@@ -98,7 +98,18 @@ jobs:
           # Relay runtime deps (small/fast) + prisma client + schema + reload.
           npm ci --omit=dev --prefix relay
           npx prisma generate
-          npx prisma db push --skip-generate
+          # Historical deploys used db push and did not consistently record the
+          # matching migrations. Converge that history once, then use reviewed
+          # migrations exclusively on every subsequent deploy.
+          if node scripts/baseline-production-migrations.mjs --status; then
+            npx prisma migrate deploy
+          else
+            echo "Converging existing production schema with migration history…"
+            npx prisma db push --skip-generate
+            npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
+            JUNO_ALLOW_MIGRATION_BASELINE=1 node scripts/baseline-production-migrations.mjs --apply
+            npx prisma migrate deploy
+          fi
           mkdir -p logs
           # Upsert every PROD_ENV key shipped alongside the build into the
           # runtime .env (replace-or-add per key), preserving any VM-only value

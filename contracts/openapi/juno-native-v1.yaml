@@ -101,6 +101,52 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ModelManifest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /bootstrap:
+    get:
+      operationId: getBootstrap
+      responses:
+        '200':
+          description: Consistent account metadata and synchronization baseline.
+          content: { application/json: { schema: { $ref: '#/components/schemas/BootstrapResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /changes:
+    get:
+      operationId: listAccountChanges
+      parameters:
+        - { in: query, name: after, schema: { type: string, pattern: '^(0|[1-9][0-9]*)$' } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 500, default: 100 } }
+      responses:
+        '200':
+          description: Cursor-ordered account changes. Numeric gaps are valid.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ChangesResponse' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410':
+          description: Cursor predates the compaction floor and snapshot reconciliation is required.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+  /changes/stream:
+    get:
+      operationId: streamAccountChangeWakeups
+      parameters:
+        - { in: query, name: after, schema: { type: string, pattern: '^(0|[1-9][0-9]*)$' } }
+      responses:
+        '200':
+          description: SSE wakeup stream. Clients fetch authoritative pages after cursor events.
+          content: { text/event-stream: { schema: { type: string } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /mutations:
+    post:
+      operationId: applyAccountMutation
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MutationRequest' } } }
+      responses:
+        '200':
+          description: Mutation result or the stored result of an identical retry.
+          content: { application/json: { schema: { type: object, additionalProperties: true } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Revision conflict or mutation identifier reused with different content.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -183,6 +229,51 @@ components:
             type: object
             required: [id, provider, displayName, lifecycle, availability, minimumPlan, modalities, contextWindowTokens, pricing, supportedReasoningEfforts, reasoning, capabilities]
             additionalProperties: true
+    BootstrapResponse:
+      type: object
+      required: [profile, subscription, usage, settings, featureFlags, currentChangeCursor, compactionFloorCursor, modelManifestVersion, contractVersion, minimumClientVersions, announcements]
+      additionalProperties: true
+      properties:
+        currentChangeCursor: { type: string }
+        compactionFloorCursor: { type: string }
+        modelManifestVersion: { type: string }
+    AccountChange:
+      type: object
+      additionalProperties: false
+      required: [cursor, entityType, entityId, parentEntityId, revision, operation, changedAt]
+      properties:
+        cursor: { type: string }
+        entityType: { type: string }
+        entityId: { type: string }
+        parentEntityId: { type: [string, 'null'] }
+        revision: { type: integer, minimum: 1 }
+        operation: { type: string, enum: [upsert, delete] }
+        changedAt: { type: string, format: date-time }
+    ChangesResponse:
+      type: object
+      additionalProperties: false
+      required: [after, changes, nextCursor, compactionFloorCursor, hasMore]
+      properties:
+        after: { type: string }
+        changes: { type: array, items: { $ref: '#/components/schemas/AccountChange' } }
+        nextCursor: { type: string }
+        compactionFloorCursor: { type: string }
+        hasMore: { type: boolean }
+    MutationRequest:
+      type: object
+      additionalProperties: false
+      required: [clientMutationId, baseRevision, operation]
+      properties:
+        clientMutationId: { type: string, format: uuid }
+        baseRevision: { type: integer, minimum: 0 }
+        operation:
+          type: object
+          required: [type]
+          additionalProperties: true
+          properties:
+            type:
+              type: string
+              enum: [conversation.create, conversation.rename, conversation.update, conversation.delete, project.create, project.update, project.delete, memory.create, memory.update, memory.delete, settings.update]
     ErrorEnvelope:
       type: object
       required: [error]
