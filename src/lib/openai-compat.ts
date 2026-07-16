@@ -105,10 +105,67 @@ const MAX_TOOL_ROUNDS = 6;
  */
 function canDisableViaNoneEffort(model: ModelInfo): boolean {
   const id = model.providerModel.toLowerCase();
-  if (model.provider === "mistral") return true; // reasoning_effort: "none"
+  if (model.provider === "mistral") {
+    // Was `return true` UNCONDITIONALLY, which sent reasoning_effort:"none" to
+    // every Mistral model and 400'd all of them ("reasoning_effort is not
+    // enabled for this model") — only mistral-medium/small expose the parameter
+    // at all. Both clauses are load-bearing: `model.reasoning` rejects
+    // large/codestral/ministral/devstral (which reach reasoningCaps' top gate
+    // and would otherwise report canDisable:true), and canDisable rejects
+    // magistral, which reasons but exposes no control.
+    return model.reasoning && reasoningCaps(model).canDisable;
+  }
+  // Google's compat shim accepts reasoning_effort:"none" and genuinely stops
+  // thinking (verified on gemini-3.1-flash-lite by budget starvation against
+  // native thoughtsTokenCount — see reasoningCaps). This must be sent
+  // EXPLICITLY: gemini-3-flash-preview thinks by DEFAULT when the parameter is
+  // omitted (native thoughts=380), so omission would make Instant a silent lie.
+  if (model.provider === "google") return model.reasoning && reasoningCaps(model).canDisable;
   if (model.provider !== "openai") return false;
-  if (/gpt-5(\.\d)?-pro/.test(id) || id.includes("codex")) return false; // always reason
+  if (/gpt-5(\.\d)?-pro/.test(id)) return false; // always reason
+  // Codex is not uniformly always-on: 5.3-codex accepts "none" (-> 0 reasoning
+  // tokens) while 5.1/5.2-codex reject it. Defer to the per-model caps rather
+  // than a blanket substring rule. (Codex snapshots run on the Responses
+  // adapter, which has its own mapEffort; this keeps the two consistent.)
+  if (id.includes("codex")) return reasoningCaps(model).canDisable;
   return /gpt-5\.\d/.test(id); // 5.1+ — the original gpt-5 has no "none"
+}
+
+/**
+ * Split a non-string `delta.content` into reasoning vs answer text.
+ *
+ * Mistral's reasoning models stream thinking as an ARRAY of typed chunks —
+ * [{ type: "thinking", thinking: [{ type: "text", text: "…" }] }] — and deliver
+ * the final answer as ordinary string deltas afterwards. The plain `+= delta`
+ * path stringifies those objects, so a thinking Mistral model rendered its
+ * reasoning as literal "[object Object]" repeated into the user's answer
+ * (verified live on magistral-medium-2509 and mistral-medium/small at "high").
+ */
+function splitTypedContent(content: unknown): { reasoning: string; text: string } {
+  let reasoning = "";
+  let text = "";
+  if (!Array.isArray(content)) return { reasoning, text };
+  for (const chunk of content) {
+    if (typeof chunk === "string") {
+      text += chunk;
+      continue;
+    }
+    if (!chunk || typeof chunk !== "object") continue;
+    const c = chunk as { type?: string; text?: string; thinking?: unknown };
+    if (c.type === "thinking") {
+      // `thinking` is itself a list of {type:"text",text} parts.
+      const inner = Array.isArray(c.thinking) ? c.thinking : [];
+      for (const part of inner) {
+        if (typeof part === "string") reasoning += part;
+        else if (part && typeof part === "object" && typeof (part as { text?: string }).text === "string") {
+          reasoning += (part as { text: string }).text;
+        }
+      }
+    } else if (typeof c.text === "string") {
+      text += c.text;
+    }
+  }
+  return { reasoning, text };
 }
 
 export async function* streamOpenAICompat(
@@ -154,7 +211,8 @@ export async function* streamOpenAICompat(
    * each have their own dialect, and sending reasoning_effort to them is at best
    * ignored and at worst a 400 — so the parameter is gated to the providers whose
    * docs actually define it (verified 2026-07):
-   *   reasoning_effort  → openai, deepseek (v4), xai, mistral (high|none), zhipu (GLM-5.2 only)
+   *   reasoning_effort  → openai, google (Gemini compat shim), deepseek (v4),
+   *                       xai, mistral (high|none), zhipu (GLM-5.2 only)
    *   thinking:{type}   → zhipu (all), minimax, moonshot, mimo, longcat
    *   enable_thinking   → qwen
    *   chat_template_kwargs.reasoning_effort → hunyuan (NOT a top-level field)
@@ -163,6 +221,14 @@ export async function* streamOpenAICompat(
     model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat";
   const usesReasoningEffort =
     model.provider === "openai" ||
+    // Google was previously absent from EVERY send path here, so no thinking
+    // parameter ever reached Gemini and every tier in the UI was inert. Its
+    // OpenAI-compat shim does take reasoning_effort (enum
+    // none|minimal|low|medium|high) and honours it — the shim rejects sending
+    // both this and a custom thinking_config with "Expected one of either
+    // `reasoning_effort` or custom `thinking_config`", i.e. they set the same
+    // backend field. Only gated tiers are ever sent (clampReasoningEffort).
+    model.provider === "google" ||
     model.provider === "deepseek" ||
     model.provider === "xai" ||
     model.provider === "mistral" ||
@@ -235,7 +301,14 @@ export async function* streamOpenAICompat(
     // so a tight cap can yield empty/truncated output — give it headroom.
     params.max_completion_tokens = Math.min(Math.max(maxTokens, 16000), legacyCap);
   } else {
-    params.max_tokens = maxTokens;
+    // Same per-model-ceiling problem as the gpt-4o line above: glm-4.5v rejects
+    // max_tokens over 16384 with 400 "max_tokens参数非法：限制数值范围[1,16384]",
+    // while every other GLM (incl. 4.5-air/x/airx/flash and the 4.6v line)
+    // accepts more — verified live. This matters because the route adds an
+    // effort-scaled thinking allowance on top of the plan cap, which pushes a
+    // thinking request past 16384.
+    const zhipuCap = modelId.includes("glm-4.5v") ? 16384 : Infinity;
+    params.max_tokens = Math.min(maxTokens, model.provider === "zhipu" ? zhipuCap : Infinity);
   }
   // Prompt-cache routing hints. OpenAI: automatic caching on >1024-token
   // stable prefixes; prompt_cache_key routes same-prefix requests (one
@@ -312,7 +385,15 @@ export async function* streamOpenAICompat(
         minimaxReasoningBuffer = fullReasoning;
       }
       if (reasoningText) yield { type: "reasoning", text: reasoningText };
-      const delta = choiceDelta?.content;
+      // `content` is typed string|null, but Mistral's reasoning models stream an
+      // array of typed chunks — normalise before it gets concatenated.
+      const rawDelta = choiceDelta?.content as unknown;
+      let delta = typeof rawDelta === "string" ? rawDelta : "";
+      if (Array.isArray(rawDelta)) {
+        const split = splitTypedContent(rawDelta);
+        if (split.reasoning) yield { type: "reasoning", text: split.reasoning };
+        delta = split.text;
+      }
       if (delta) {
         assistantText += delta;
         yield { type: "text", text: delta };

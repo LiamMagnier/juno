@@ -380,21 +380,70 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
     case "openai":
       // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
       // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.
+      // Verified on /v1/responses: none|minimal|low all 400 with "Supported
+      // values are: 'medium', 'high', and 'xhigh'" on 5.5/5.4/5.2-pro.
       if (/gpt-5(\.\d)?-pro/.test(id)) return caps(["medium", "high", "xhigh"], false);
-      if (id.includes("gpt-5.6")) return caps(LMHXM, true); // "max" is 5.6-only
-      // Codex is the family's exception: no non-thinking tier at all.
-      if (id.includes("codex")) return caps(LMHX, false);
-      if (/gpt-5\.[1245]/.test(id)) return caps(LMHX, true); // none|low|medium|high|xhigh
+      // 5.6 REJECTS "max" (the old '"max" is 5.6-only' comment was backwards).
+      // Oracle: "does not support 'max' with this model. Supported values are:
+      // 'none', 'low', 'medium', 'high', and 'xhigh'." canDisable verified:
+      // reasoning_effort:"none" -> 200 with reasoning_tokens=0 on sol/terra/luna.
+      if (id.includes("gpt-5.6")) return caps(LMHX, true);
+      // Codex is NOT uniformly always-on — each snapshot verified separately on
+      // /v1/responses (they 404 on chat/completions, so the oracle lives there).
+      // 5.3-codex: "minimal" -> 400 "Supported values are: 'none', 'low',
+      // 'medium', 'high', and 'xhigh'"; "none" -> 200 reasoning_tokens=0.
+      if (id.includes("gpt-5.3-codex")) return caps(LMHX, true);
+      // 5.2-codex: "none" -> 400 "Supported values are: 'low', 'medium',
+      // 'high', and 'xhigh'" — genuinely always-on.
+      if (id.includes("gpt-5.2-codex")) return caps(LMHX, false);
+      // 5.1-codex / -codex-mini: "none" -> 400 "Supported values are: 'low',
+      // 'medium', and 'high'" — no xhigh, no off-switch.
+      if (id.includes("codex")) return caps(LMH, false);
+      // gpt-5.1 has NO xhigh. Oracle: "does not support 'xhigh' with this
+      // model. Supported values are: 'none', 'low', 'medium', and 'high'."
+      // Must precede the 5.2/5.4/5.5 branch, which does grant xhigh.
+      if (id.includes("gpt-5.1")) return caps(LMH, true);
+      // 5.2/5.4/5.5 (+ -mini/-nano): oracle enumerates
+      // none|low|medium|high|xhigh on each; xhigh -> 200 verified on all.
+      if (/gpt-5\.[245]/.test(id)) return caps(LMHX, true);
       // Original GPT-5: `minimal` is the floor and `none` did not exist yet.
       if (id.includes("gpt-5")) return caps(["minimal", "low", "medium", "high"], false);
       if (/(^|[^a-z0-9])o[134](-|$)/.test(id) || id.includes("o4-mini")) return caps(LMH, false); // o-series always reason
       return caps(LMH, true);
     case "google":
-      // thinking_level. Only the 2.5 flash line can switch thinking off
-      // (thinking_budget: 0); everything else always thinks.
-      if (/2\.5-flash/.test(id)) return caps(LMH, true);
-      if (id.includes("pro")) return caps(LMH, false); // 3.1/3/2.5 Pro: low|medium|high
-      return caps(["minimal", "low", "medium", "high"], false); // 3.x flash / flash-lite
+      // These tiers are only real because openai-compat.ts now actually SENDS
+      // reasoning_effort to Google (it previously sent nothing, making every
+      // Gemini tier inert). The shim's enum is none|minimal|low|medium|high.
+      //
+      // Honouring is PROVEN, not assumed. The compat shim reports no reasoning
+      // accounting at all, so it was measured by budget starvation (max_tokens
+      // 64), calibrated against native generateContent thoughtsTokenCount on
+      // the same model:
+      //   native   thinkingLevel=high    -> thoughts=646, answer truncated
+      //   native   thinkingLevel=minimal -> thoughts=0,   full answer
+      //   compat   effort=low/medium/high -> completion<=1 (thinking ate it)
+      //   compat   effort=none/minimal    -> completion=60, full answer
+      // i.e. the shim maps reasoning_effort onto the same thinking_config the
+      // native API uses — corroborated by the shim's own 400 when both are set:
+      // "Expected one of either `reasoning_effort` or custom `thinking_config`".
+      //
+      // Pro line: UNVERIFIED — this key's free tier is quota 0 on gemini-*-pro
+      // (429 "limit: 0"), so no completion was ever obtainable. Left as-is.
+      if (id.includes("pro")) return caps(LMH, false);
+      // gemini-3.1-flash-lite: off-switch PROVEN on both transports (native
+      // thinkingLevel=minimal/thinkingBudget=0 -> thoughtsTokenCount absent(=0);
+      // compat effort=none -> full answer under a 64-token cap).
+      if (/3\.1-flash-lite/.test(id)) return caps(["minimal", "low", "medium", "high"], true);
+      // Everything else on the flash line keeps canDisable:false DELIBERATELY.
+      // gemini-3-flash-preview THINKS BY DEFAULT (native thoughts=380 with the
+      // param omitted; compat omitted -> completion=0, fully starved), and its
+      // off-switch is proven NATIVELY (thinkingLevel=minimal -> 0) but could NOT
+      // be exercised through the compat transport Juno actually uses — the
+      // free-tier daily cap was exhausted mid-probe. gemini-3.5-flash is 429 on
+      // every transport today, so it is unverified too. Exposing "Instant" here
+      // on inference alone would risk an Instant that silently reasons and bills
+      // the user, so the tier stays hidden until it can be proven.
+      return caps(["minimal", "low", "medium", "high"], false);
     case "xai":
       if (id.includes("multi-agent")) return caps(LMHX, false); // effort selects agent COUNT
       if (id.includes("grok-4.5")) return caps(LMH, false); // always reasons, default high
@@ -408,9 +457,23 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("glm-5.2")) return caps(["minimal", ...LMHXM], true);
       return caps([], true, true); // glm-5 / 4.6 / 4.7: thinking on/off toggle
     case "mistral":
-      // reasoning_effort is "high" | "none" — an on/off switch, not a ladder.
+      // SUBSTRING COLLISION FIX: "magistral-medium-2509".includes("medium") is
+      // true, so magistral used to take the on/off branch below and was told it
+      // could be switched — but it REJECTS the parameter outright:
+      // reasoning_effort "none" AND "high" both -> 400 "reasoning_effort is not
+      // enabled for this model". It reasons unconditionally (bare call -> 200
+      // with a "thinking" content chunk) and exposes no control. Must be matched
+      // BEFORE the medium/small test to be reachable at all.
+      if (id.includes("magistral")) return caps([], false);
+      // Medium/Small ONLY. Per-model oracle: 'max' -> 400 "reasoning_effort max
+      // is not supported for this model, supported values: [high, none]".
+      // Off is real: "none" -> 200, content a plain string (no thinking chunk);
+      // "high" -> content list with chunk types ['thinking','text'].
       if (id.includes("medium") || id.includes("small")) return caps([], true, true);
-      return caps([], false); // magistral / large 3: no exposed control
+      // large 3 / codestral / ministral / devstral: verified to REJECT the
+      // parameter (400 "reasoning_effort is not enabled for this model") and to
+      // never reason (bare call -> 200, plain-string content).
+      return caps([], false);
     case "moonshot":
       if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
       return caps([], true, true); // k2.6: thinking enabled/disabled

@@ -141,7 +141,10 @@ const CURATED: ModelInfo[] = [
   def({ provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus 4.6", family: "opus", status: "legacy", released: "2026-01", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Older Opus generation." }),
   def({ provider: "anthropic", id: "claude-opus-4-5", name: "Claude Opus 4.5", family: "opus", status: "legacy", released: "2025-11", minPlan: "PRO", vision: true, cost: 3, contextWindow: 200_000, description: "Older Opus, 200K context." }),
   def({ provider: "anthropic", id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5", family: "sonnet", status: "legacy", released: "2025-09", minPlan: "FREE", vision: true, cost: 2, contextWindow: 200_000, description: "Older Sonnet, 200K context." }),
-  def({ provider: "anthropic", id: "claude-opus-4-1", name: "Claude Opus 4.1", family: "opus", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 3, contextWindow: 200_000, description: "Deprecated by Anthropic.", deprecationNote: "Retires Aug 5, 2026 — use Claude Opus 4.8" }),
+  // claude-opus-4-1 removed — retired at the API. GET /v1/models/claude-opus-4-1
+  // -> 404 not_found_error while the other nine Claude ids return 200 on the
+  // same key, so this is model existence, not the account's credit block.
+  // See RETIRED_MODELS below.
 
   // —— OpenAI ——
   // GPT-5.6 family (GA 2026-07-09): three tiers named Sol / Terra / Luna, all
@@ -155,14 +158,20 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-5.4", name: "GPT-5.4", family: "gpt-value", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_050_000, description: "Previous affordable frontier tier." }),
   def({ provider: "openai", id: "gpt-5.4-mini", name: "GPT-5.4 Mini", family: "gpt-mini", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, contextWindow: 400_000, description: "OpenAI's strongest mini — fast, cheap coding and subagents." }),
   def({ provider: "openai", id: "gpt-5.4-nano", name: "GPT-5.4 Nano", family: "gpt-nano", status: "current", released: "2026-03", minPlan: "FREE", vision: true, cost: 1, description: "Cheapest, lowest-latency tier for high-volume simple tasks." }),
-  def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, description: "Codex-tuned model for long-running coding, refactors, and agent loops." }),
+  // api:"responses" — verified live: chat/completions returns 404 "This model is
+  // not supported in the v1/chat/completions endpoint. Use the v1/responses
+  // endpoint instead." even with NO reasoning parameter, so every request to
+  // this CURRENT model failed until it was routed to the Responses adapter.
+  def({ provider: "openai", id: "gpt-5.3-codex", name: "GPT-5.3 Codex", family: "gpt-codex", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 400_000, api: "responses", description: "Codex-tuned model for long-running coding, refactors, and agent loops." }),
   def({ provider: "openai", id: "gpt-5.4-pro", name: "GPT-5.4 Pro", family: "gpt-pro", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, cost: 3, api: "responses", description: "Previous Pro reasoning model (Responses API)." }),
   def({ provider: "openai", id: "gpt-5.2", name: "GPT-5.2", family: "gpt", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous frontier GPT model with configurable reasoning." }),
   def({ provider: "openai", id: "gpt-5.2-pro", name: "GPT-5.2 Pro", family: "gpt-pro", status: "legacy", released: "2025-12", minPlan: "PRO", vision: true, cost: 3, contextWindow: 400_000, api: "responses", description: "Older Pro reasoning model (Responses API)." }),
-  def({ provider: "openai", id: "gpt-5.2-codex", name: "GPT-5.2 Codex", family: "gpt-codex", status: "deprecated", released: "2026-01", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, description: "Older Codex-tuned model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
+  // api:"responses" — same verified 404 on chat/completions as the other Codex snapshots.
+  def({ provider: "openai", id: "gpt-5.2-codex", name: "GPT-5.2 Codex", family: "gpt-codex", status: "deprecated", released: "2026-01", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, api: "responses", description: "Older Codex-tuned model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
   def({ provider: "openai", id: "gpt-5.1", name: "GPT-5.1", family: "gpt", status: "legacy", released: "2025-11", minPlan: "PRO", vision: true, cost: 2, contextWindow: 400_000, description: "Previous coding and agentic GPT model with configurable reasoning." }),
   def({ provider: "openai", id: "gpt-5.1-codex", name: "GPT-5.1 Codex", family: "gpt-codex", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, api: "responses", description: "Older Codex model (Responses API).", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
-  def({ provider: "openai", id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", family: "gpt-codex-mini", status: "deprecated", released: "2025-11", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 400_000, description: "Older small Codex model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
+  // api:"responses" — same verified 404 on chat/completions as the other Codex snapshots.
+  def({ provider: "openai", id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", family: "gpt-codex-mini", status: "deprecated", released: "2025-11", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 400_000, api: "responses", description: "Older small Codex model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
   def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
   def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini" }),
   def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
@@ -179,7 +188,11 @@ const CURATED: ModelInfo[] = [
   def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
   def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by 3.5 Flash." }),
   def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
-  def({ provider: "google", id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", family: "flash", status: "deprecated", released: "2025-04", minPlan: "FREE", vision: true, cost: 1, description: "2.5-generation Flash.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.5 Flash" }),
+  // gemini-2.5-flash removed — ListModels still lists it, but EVERY call returns
+  // 404 "This model models/gemini-2.5-flash is no longer available to new
+  // users." (reproduced natively and through the compat shim). It was also the
+  // only Gemini model the old caps marked canDisable:true, i.e. Juno's sole
+  // advertised Gemini "Instant" was on an unreachable model. See RETIRED_MODELS.
 
   // —— Meta · Llama —— (provider decommissioned)
   // Meta shut down the entire Llama API (llama.developer.meta.com) on
@@ -199,12 +212,22 @@ const CURATED: ModelInfo[] = [
   def({ provider: "zhipu", id: "glm-4.6v", name: "GLM-4.6V", family: "glm-v", status: "legacy", released: "2025-11", minPlan: "FREE", vision: true, cost: 1, description: "Previous-generation vision model." }),
   def({ provider: "zhipu", id: "glm-4.6v-flashx", name: "GLM-4.6V FlashX", family: "glm-v-flashx", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Fast GLM vision-language model for image understanding." }),
   def({ provider: "zhipu", id: "glm-4.6v-flash", name: "GLM-4.6V Flash", family: "glm-v-flash", status: "current", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Cheaper GLM vision-language model for image understanding." }),
-  def({ provider: "zhipu", id: "glm-4.5v", name: "GLM-4.5V", family: "glm-v", status: "legacy", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Older GLM vision-language model." }),
-  def({ provider: "zhipu", id: "glm-4.5-x", name: "GLM-4.5-X", family: "glm-x", status: "legacy", released: "2025-07", minPlan: "PRO", cost: 2, description: "Older high-capability GLM-4.5 variant." }),
-  def({ provider: "zhipu", id: "glm-4.5-air", name: "GLM-4.5 Air", family: "glm-air", status: "legacy", released: "2025-07", minPlan: "FREE", cost: 1, description: "Older efficient GLM-4.5 Air variant." }),
-  def({ provider: "zhipu", id: "glm-4.5-airx", name: "GLM-4.5 AirX", family: "glm-airx", status: "legacy", released: "2025-07", minPlan: "FREE", cost: 1, description: "Older low-latency GLM-4.5 AirX variant." }),
+  // The GLM-4.5 line is BELOW guessReasoning's `glm-(4\.[6-9]|[5-9])` cutoff, so
+  // it defaulted to reasoning:false — but all five demonstrably reason and
+  // DEFAULT TO THINKING (verified live: reasoning_content 1.6k–2.7k chars, up to
+  // 837 reasoning tokens, with `thinking` omitted). Because openai-compat gates
+  // the thinking object on model.reasoning, that flag meant Juno never sent
+  // thinking:{type:"disabled"} and these models could never be turned off.
+  // thinking:{type:"disabled"} -> 0 reasoning chars + a direct answer on each.
+  def({ provider: "zhipu", id: "glm-4.5v", name: "GLM-4.5V", family: "glm-v", status: "legacy", released: "2025-08", minPlan: "FREE", vision: true, reasoning: true, cost: 1, description: "Older GLM vision-language model." }),
+  def({ provider: "zhipu", id: "glm-4.5-x", name: "GLM-4.5-X", family: "glm-x", status: "legacy", released: "2025-07", minPlan: "PRO", reasoning: true, cost: 2, description: "Older high-capability GLM-4.5 variant." }),
+  def({ provider: "zhipu", id: "glm-4.5-air", name: "GLM-4.5 Air", family: "glm-air", status: "legacy", released: "2025-07", minPlan: "FREE", reasoning: true, cost: 1, description: "Older efficient GLM-4.5 Air variant." }),
+  def({ provider: "zhipu", id: "glm-4.5-airx", name: "GLM-4.5 AirX", family: "glm-airx", status: "legacy", released: "2025-07", minPlan: "FREE", reasoning: true, cost: 1, description: "Older low-latency GLM-4.5 AirX variant." }),
+  // Control for the above: the ONE zhipu chat model that genuinely never reasons
+  // — 0 reasoning chars with thinking omitted, enabled, AND disabled. Verified
+  // reasoning:false is correct here.
   def({ provider: "zhipu", id: "glm-4-32b-0414-128k", name: "GLM-4 32B 128K", family: "glm-4-32b", status: "legacy", released: "2025-04", minPlan: "FREE", cost: 1, contextWindow: 128_000, description: "Older open GLM-4 32B long-context model." }),
-  def({ provider: "zhipu", id: "glm-4.5-flash", name: "GLM-4.5 Flash", family: "glm-flash", status: "legacy", released: "2025-07", minPlan: "FREE", cost: 1, contextWindow: 128_000, description: "Older free-tier model." }),
+  def({ provider: "zhipu", id: "glm-4.5-flash", name: "GLM-4.5 Flash", family: "glm-flash", status: "legacy", released: "2025-07", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 128_000, description: "Older free-tier model." }),
 
   // —— Moonshot / Kimi ——
   def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Kimi flagship — multimodal (image + video input) with toggleable thinking." }),
@@ -231,13 +254,15 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
   // —— xAI (SpaceXAI) / Grok ——
-  // grok-4.5 launched 2026-07-08 but is NOT yet callable from EU accounts
-  // (rollout expected mid-July 2026) — kept comingSoon in its own family so
-  // grok-4.3 stays the selectable flagship until the API serves 4.5 here.
-  // When it goes live: move to family "grok" (current), demote 4.3 to legacy,
-  // repoint the retired grok-* migrations at 4.5. See docs/models.md watchlist.
-  def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok-45", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, comingSoon: true, description: "SpaceXAI's smartest model — coding, agents and knowledge work (EU access mid-July)." }),
-  def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "current", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive flagship tier — chat, coding, and agentic tool calling." }),
+  // EU rollout landed (watchlist item cleared 2026-07-16). The /models list is
+  // unreadable while the team carries no credit balance, so availability was
+  // proven by resolution instead: chat/completions on `grok-4.5` returns 403
+  // permission-denied (no credits) — i.e. it resolved — while a fabricated id
+  // returns 400 "Model not found". 4.5 answers identically to the already-live
+  // 4.3, so it is served to this account; only billing gates it, and that gates
+  // every xAI model equally rather than this one specifically.
+  def({ provider: "xai", id: "grok-4.5", name: "Grok 4.5", family: "grok", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 2, contextWindow: 500_000, description: "SpaceXAI's smartest model — coding, agents and knowledge work." }),
+  def({ provider: "xai", id: "grok-4.3", name: "Grok 4.3", family: "grok", status: "legacy", released: "2026-05", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Fast, inexpensive tier — chat, coding, and agentic tool calling. Superseded by 4.5." }),
   def({ provider: "xai", id: "grok-build-0.1", name: "Grok Build 0.1", family: "grok-build", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 256_000, description: "Fast agentic coding — successor to Grok Code Fast." }),
   def({ provider: "xai", id: "grok-4.20-multi-agent-0309", name: "Grok 4.20 Multi-Agent", family: "grok-multi-agent", status: "current", released: "2026-03", minPlan: "PRO", vision: true, cost: 2, contextWindow: 1_000_000, description: "Parallel multi-agent deep research (beta)." }),
   def({ provider: "xai", id: "grok-4.20-0309-reasoning", name: "Grok 4.20 (Reasoning)", family: "grok", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous flagship reasoning Grok." }),
@@ -293,7 +318,9 @@ const GENERATIVE: ModelInfo[] = [
   def({ provider: "xai", id: "grok-imagine-image-quality", name: "Grok Imagine (Quality)", family: "imagine-image", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's recommended image model — generation and editing." }),
   def({ provider: "xai", id: "grok-imagine-image", name: "Grok Imagine (Fast)", family: "imagine-image-fast", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 1, description: "Fast, low-cost image tier." }),
   def({ provider: "zhipu", id: "glm-image", name: "GLM Image", family: "glm-image", status: "current", released: "2026-01", modality: "image", minPlan: "PRO", cost: 2, description: "Z.AI's flagship image model — posters and in-image text." }),
-  def({ provider: "zhipu", id: "cogview-4", name: "CogView-4", family: "cogview", status: "legacy", released: "2025-03", modality: "image", minPlan: "PRO", cost: 1, description: "Older Zhipu image model." }),
+  // cogview-4 removed — POST /images/generations -> 400 code 1211 "模型不存在"
+  // ("model does not exist") while glm-image returns 200 on the identical key,
+  // so this is model existence, not auth. See RETIRED_MODELS.
   def({ provider: "minimax", id: "image-01", name: "MiniMax Image-01", family: "image", status: "current", released: "2025-01", modality: "image", minPlan: "PRO", cost: 2, description: "Fine-grained text-to-image with reference support." }),
 
   // —— Video ——
@@ -382,6 +409,9 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "anthropic:claude-3-opus-20240229": "anthropic:claude-opus-4-8",
   "anthropic:claude-3-sonnet-20240229": "anthropic:claude-sonnet-5",
   "anthropic:claude-3-haiku-20240307": "anthropic:claude-haiku-4-5",
+  // Retired at the API: GET /v1/models/claude-opus-4-1 -> 404 not_found_error
+  // (the other nine Claude ids return 200 on the same key).
+  "anthropic:claude-opus-4-1": "anthropic:claude-opus-4-8",
   // OpenAI — retired ids + ids that never existed in the API.
   "openai:gpt-5.6": "openai:gpt-5.6-sol", // bare API alias — routes to Sol
   "openai:gpt-5.5-thinking": "openai:gpt-5.6-sol", // ChatGPT product name, never an API id
@@ -395,6 +425,8 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "google:nano-banana-2": "google:gemini-3.5-flash", // was mis-listed as a chat model
   "google:imagen-3.0-generate-002": "google:gemini-3.1-flash-image", // shut down 2025-11-10
   "google:imagen-3.0-fast-002": "google:gemini-3.1-flash-lite-image", // id never existed; line retired
+  // Listed by ListModels but 404s on every call: "no longer available to new users".
+  "google:gemini-2.5-flash": "google:gemini-3.5-flash",
   "google:veo-3.0-generate-001": "google:veo-3.1-generate-preview", // shut down 2026-06-30
   "google:veo-2.0": "google:veo-3.1-generate-preview", // wrong id + shut down 2026-06-30
   // Meta — the Llama API shut down entirely on 2026-07-06 (Meta's Muse line is
@@ -407,15 +439,18 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "meta:Llama-3.3-70B-Instruct": "anthropic:claude-sonnet-5",
   // Zhipu
   "zhipu:glm-4-plus": "zhipu:glm-5.2", // absent from all current Z.AI/bigmodel listings
+  // 400 code 1211 "模型不存在" on both /images/generations and /chat/completions,
+  // while glm-image returns 200 on the same key.
+  "zhipu:cogview-4": "zhipu:glm-image",
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
   "moonshot:kimi-k2": "moonshot:kimi-k2.6",
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
   "deepseek:deepseek-coder": "deepseek:deepseek-v4-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.
-  "xai:grok-4": "xai:grok-4.3",
-  "xai:grok-2": "xai:grok-4.3",
-  "xai:grok-beta": "xai:grok-4.3",
-  "xai:grok-3": "xai:grok-4.3",
+  "xai:grok-4": "xai:grok-4.5",
+  "xai:grok-2": "xai:grok-4.5",
+  "xai:grok-beta": "xai:grok-4.5",
+  "xai:grok-3": "xai:grok-4.5",
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
