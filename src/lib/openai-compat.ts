@@ -127,8 +127,19 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
   // tokens) while 5.1/5.2-codex reject it. Defer to the per-model caps rather
   // than a blanket substring rule. (Codex snapshots run on the Responses
   // adapter, which has its own mapEffort; this keeps the two consistent.)
-  if (id.includes("codex")) return reasoningCaps(model).canDisable;
-  return /gpt-5\.\d/.test(id); // 5.1+ — the original gpt-5 has no "none"
+  //
+  // `model.reasoning &&` is load-bearing on BOTH lines below, for the same
+  // reason it is on the mistral/google branches above: reasoningCaps() returns
+  // canDisable:TRUE for a non-reasoning model (its top gate is
+  // `if (!model.reasoning) return caps([], true)`), so without this guard a
+  // codex- or gpt-5.x-named model marked reasoning:false would be sent
+  // reasoning_effort:"none" — the exact shape of the mistral outage. No current
+  // model reaches it (every reasoning:false OpenAI id is gpt-4o/4-turbo/3.5 and
+  // matches neither test), so this changes no behaviour today; it closes the
+  // trapdoor and matches openai-responses.ts's canDisableViaNoneEffort, which
+  // already guards this way.
+  if (id.includes("codex")) return model.reasoning && reasoningCaps(model).canDisable;
+  return model.reasoning && /gpt-5\.\d/.test(id); // 5.1+ — the original gpt-5 has no "none"
 }
 
 /**

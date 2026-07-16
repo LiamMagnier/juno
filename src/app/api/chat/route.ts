@@ -35,7 +35,7 @@ import { truncate, formatUsd } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
-import { clampReasoningEffort } from "@/lib/model-metrics";
+import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessage } from "@/lib/moderation-ai";
@@ -108,7 +108,14 @@ const bodySchema = z.object({
   // Deep research mode: plan → search → read → cited report (saved chats only;
   // ignored in private mode, where the toggle is hidden client-side).
   deepResearch: z.boolean().optional(),
-  reasoningEffort: z.enum(["low", "medium", "high", "max"]).optional(),
+  // Built from REASONING_TIERS, never repeated literals: this enum listed only
+  // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
+  // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,
+  // every Claude Opus 4.7+/Sonnet, grok multi-agent, glm-5.2) — 26 models whose
+  // top tier 400'd here, inside Juno, before any provider was called. Per-model
+  // support is NOT this schema's job; it is enforced by effectiveReasoningEffort
+  // -> clampReasoningEffort below, which coerces to what the model accepts.
+  reasoningEffort: z.enum(REASONING_TIERS).optional(),
   connectors: z.array(z.string()).max(5).optional(),
   generationId: z.string().trim().min(8).max(120).optional(),
   privateMode: z.boolean().optional(),

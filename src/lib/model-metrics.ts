@@ -333,23 +333,44 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 // a tier a model doesn't accept (e.g. "max" to GPT-5.5) is a 400.
 //
 // Notable, easily-missed facts encoded here:
-//  - "max" is GPT-5.6 ONLY. GPT-5.5 stops at xhigh.
+//  - "max" is NOT a GPT tier at all. GPT-5.6 REJECTS it ("Supported values are:
+//    'none', 'low', 'medium', 'high', and 'xhigh'") and GPT-5.5 stops at xhigh.
+//    The old note here read '"max" is GPT-5.6 ONLY', which was backwards and is
+//    what shipped a 400 on every sol/terra/luna request at the top tier.
+//    Where "max" IS real: Claude Opus 4.6+/4.7+ and Sonnet 4.6+; GLM-5.2
+//    (live-verified, its deepest rung); DeepSeek v4 (unverified — key has no
+//    balance).
 //  - The gpt-5.x-pro MODELS accept only medium|high|xhigh and cannot be run
 //    non-thinking. On GPT-5.6, by contrast, "pro" is not an effort at all — it is
 //    a separate reasoning.mode axis (see PRO_MODE_MODELS below).
 //  - Claude Haiku 4.5 has NO effort parameter — extended thinking is on/off only.
 //  - Claude Opus 4.5 tops out at high; 4.6 adds max; 4.7+ adds xhigh.
-//  - Gemini uses thinking_level and CANNOT disable thinking on 3.x/2.5-pro;
-//    only the 2.5 flash line can (thinking_budget: 0).
+//  - Gemini reads reasoning_effort on its OpenAI-compat shim (enum
+//    none|minimal|low|medium|high), which maps onto the native thinking_config.
+//    Only gemini-3.1-flash-lite has a PROVEN off-switch; the pro line is
+//    unverified (this key's free tier is quota 0 there).
 //  - Mistral Medium 3.5 / Small are on/off only (reasoning_effort: high|none).
 //  - GLM-5.2 is the only GLM with reasoning_effort; the rest are on/off.
 // ---------------------------------------------------------------------------
-export type ReasoningTier = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
-const TIER_ORDER: ReasoningTier[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
+/**
+ * Every tier Juno knows, ORDERED shallowest → deepest (TIER_ORDER depends on
+ * that order for clamping).
+ *
+ * This is the single source of truth: /api/chat's body schema builds its zod
+ * enum from this array rather than repeating the literals. It used to repeat
+ * them and drifted — the schema listed only low|medium|high|max, so every
+ * "Extra high" and "Minimal" option this file advertised was rejected by Juno's
+ * OWN route with 400 "Invalid request." before the request ever reached a
+ * provider (26 models). Adding a tier here now extends the route enum for free.
+ */
+export const REASONING_TIERS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
+export type ReasoningTier = (typeof REASONING_TIERS)[number];
+const TIER_ORDER: ReasoningTier[] = [...REASONING_TIERS];
 const LMH: ReasoningTier[] = ["low", "medium", "high"];
 /** OpenAI's full non-thinking-excluded ladder for the 5.4/5.5 generation. */
 const LMHX: ReasoningTier[] = ["low", "medium", "high", "xhigh"];
-/** GPT-5.6 / Claude Opus 4.7+ — the only families with a real tier above xhigh. */
+/** Claude Opus 4.7+ / Sonnet 4.6+ — the only families with a real tier above
+ *  xhigh. NOT GPT-5.6, which rejects "max" (see the openai branch below). */
 const LMHXM: ReasoningTier[] = ["low", "medium", "high", "xhigh", "max"];
 
 export interface ReasoningCaps {
