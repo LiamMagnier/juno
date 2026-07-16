@@ -278,6 +278,8 @@ export default function ProjectsPage() {
                   {/* Render Cover Image only if explicitly set */}
                   {p.coverUrl && (
                     <div className="relative h-28 w-full overflow-hidden bg-muted border-b shrink-0">
+                      {/* Project covers may be short-lived signed object URLs and must bypass the Next image proxy. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={p.coverUrl} className="h-full w-full object-cover" alt="" />
                     </div>
                   )}

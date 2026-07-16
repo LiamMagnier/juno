@@ -160,7 +160,7 @@ export async function* streamGeminiSearch(
     }
     for (const p of cand?.content?.parts ?? []) {
       if (!p.text) continue;
-      events.push(p.thought ? { type: "reasoning", text: p.text } : { type: "text", text: p.text });
+      if (!p.thought) events.push({ type: "text", text: p.text });
     }
     for (const ch of cand?.groundingMetadata?.groundingChunks ?? []) {
       const web = ch.web;

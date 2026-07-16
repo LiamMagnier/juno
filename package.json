@@ -9,7 +9,7 @@
     "prebuild": "npm run i18n:extract",
     "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=2048 next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -18,6 +18,7 @@
     "db:studio": "prisma studio",
     "test:memory": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-memory.ts",
     "test:auth": "tsx scripts/test-auth.ts",
+    "test:native-auth": "tsx --test tests/native-auth-core.test.ts tests/sync-protocol.test.ts",
     "test:clarify": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-clarify.ts",
     "test:moderation": "NODE_OPTIONS=--conditions=react-server tsx scripts/test-moderation.ts",
     "crypto:rotate": "NODE_OPTIONS=--conditions=react-server tsx scripts/rotate-encryption-keys.ts",
@@ -26,6 +27,7 @@
     "sync:models": "tsx scripts/sync-models.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
+    "contracts:swift": "node scripts/generate-native-swift-contract.mjs",
     "radar:models": "tsx scripts/model-radar.ts"
   },
   "prisma": {
@@ -90,7 +92,7 @@
     "autoprefixer": "^10.4.0",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.5.0",
-    "postcss": "^8.4.0",
+    "postcss": "^8.5.10",
     "prisma": "^6.0.0",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.22.4",
@@ -98,5 +100,9 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "uuid": "^11.1.1"
   }
 }

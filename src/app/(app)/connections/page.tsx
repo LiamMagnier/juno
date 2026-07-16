@@ -206,7 +206,7 @@ export default function ConnectionsPage() {
         </div>
         <h1 className="font-serif text-display font-medium tracking-tight">Connect your tools</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Link an app so Juno's models can work with your repositories, designs, docs, and workspace tools.
+          Link an app so Juno&apos;s models can work with your repositories, designs, docs, and workspace tools.
         </p>
 
         {/* Mesh-gradient stats strip */}

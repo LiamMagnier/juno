@@ -38,6 +38,8 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
   if (announcement.imageUrl) {
     const logoLike = announcement.imageUrl.includes("/provider-logos/");
     return (
+      // Announcement media is administrator-configured and can be hosted outside the image proxy allowlist.
+      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={announcement.imageUrl}
         alt=""

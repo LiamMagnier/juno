@@ -685,6 +685,8 @@ export default function ProjectDetailPage() {
                 <Card className="overflow-hidden">
                   {coverUrl ? (
                     <div className="group/cover relative h-32 w-full overflow-hidden border-b bg-muted">
+                      {/* Project covers may be short-lived signed object URLs and must bypass the Next image proxy. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={coverUrl} className="h-full w-full object-cover" alt="" />
                       <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/40 opacity-0 transition-opacity duration-base ease-out-soft focus-within:opacity-100 group-hover/cover:opacity-100 motion-reduce:transition-none">
                         <Button variant="secondary" size="sm" onClick={() => coverRef.current?.click()}>

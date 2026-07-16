@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { authenticateNativeBearer } from "@/lib/native-auth";
 
 export type SessionUser = {
   id: string;
@@ -12,6 +14,22 @@ export type SessionUser = {
 
 /** Returns the signed-in user or null (use in pages/route handlers). */
 export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
+  const authorization = (await headers()).get("authorization");
+  // A presented bearer credential is authoritative. Invalid native credentials
+  // never fall back to a browser cookie attached to the same request.
+  if (authorization) {
+    try {
+      const native = await authenticateNativeBearer(authorization);
+      return {
+        id: native.user.id,
+        name: native.user.name,
+        email: native.user.email,
+        image: native.user.image,
+      };
+    } catch {
+      return null;
+    }
+  }
   const session = await auth();
   const sessionUser = (session?.user as SessionUser | undefined) ?? null;
   if (!sessionUser) return null;

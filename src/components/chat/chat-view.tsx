@@ -462,7 +462,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   React.useEffect(() => {
     if (!currentConversationId || privateMode) return;
     if (chat.messages.some((m) => m.role === "USER" && m.content.trim())) scheduleAutoTitle("first_user", 160);
-  }, [chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
+  }, [chat.messages, currentConversationId, privateMode, scheduleAutoTitle]);
 
   React.useEffect(() => {
     if (!currentConversationId || privateMode) return;
@@ -477,7 +477,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         scheduleAutoTitle(latestAssistant.finishReason === "user_stopped" ? "stopped" : "completed", 420);
       }
     }
-  }, [chat.status, chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
+  }, [chat.status, chat.messages, currentConversationId, privateMode, scheduleAutoTitle]);
 
   React.useEffect(() => {
     return () => {
