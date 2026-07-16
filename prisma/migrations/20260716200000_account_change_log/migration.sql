@@ -1,29 +1,40 @@
-CREATE TABLE "EntityRevision" (
+BEGIN;
+
+CREATE TABLE IF NOT EXISTS "EntityRevision" (
     "id" TEXT NOT NULL, "accountId" TEXT NOT NULL, "entityType" TEXT NOT NULL,
     "entityId" TEXT NOT NULL, "parentEntityId" TEXT, "revision" INTEGER NOT NULL DEFAULT 1,
     "deletedAt" TIMESTAMP(3), "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "EntityRevision_pkey" PRIMARY KEY ("id")
 );
-CREATE TABLE "AccountChange" (
+CREATE TABLE IF NOT EXISTS "AccountChange" (
     "cursor" BIGSERIAL NOT NULL, "accountId" TEXT NOT NULL, "entityType" TEXT NOT NULL,
     "entityId" TEXT NOT NULL, "parentEntityId" TEXT, "revision" INTEGER NOT NULL, "operation" TEXT NOT NULL,
     "changedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "AccountChange_pkey" PRIMARY KEY ("cursor")
 );
-CREATE TABLE "MutationReceipt" (
+CREATE TABLE IF NOT EXISTS "MutationReceipt" (
     "id" TEXT NOT NULL, "accountId" TEXT NOT NULL, "authenticatedDeviceId" TEXT NOT NULL,
     "clientMutationId" TEXT NOT NULL, "requestHash" TEXT NOT NULL, "status" INTEGER NOT NULL,
     "result" JSONB NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "MutationReceipt_pkey" PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX "EntityRevision_accountId_entityType_entityId_key" ON "EntityRevision"("accountId", "entityType", "entityId");
-CREATE INDEX "EntityRevision_accountId_entityType_idx" ON "EntityRevision"("accountId", "entityType");
-CREATE INDEX "AccountChange_accountId_cursor_idx" ON "AccountChange"("accountId", "cursor");
-CREATE UNIQUE INDEX "MutationReceipt_accountId_authenticatedDeviceId_clientMutationId_key" ON "MutationReceipt"("accountId", "authenticatedDeviceId", "clientMutationId");
-CREATE INDEX "MutationReceipt_accountId_createdAt_idx" ON "MutationReceipt"("accountId", "createdAt");
-ALTER TABLE "EntityRevision" ADD CONSTRAINT "EntityRevision_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "AccountChange" ADD CONSTRAINT "AccountChange_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-ALTER TABLE "MutationReceipt" ADD CONSTRAINT "MutationReceipt_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+CREATE UNIQUE INDEX IF NOT EXISTS "EntityRevision_accountId_entityType_entityId_key" ON "EntityRevision"("accountId", "entityType", "entityId");
+CREATE INDEX IF NOT EXISTS "EntityRevision_accountId_entityType_idx" ON "EntityRevision"("accountId", "entityType");
+CREATE INDEX IF NOT EXISTS "AccountChange_accountId_cursor_idx" ON "AccountChange"("accountId", "cursor");
+CREATE UNIQUE INDEX IF NOT EXISTS "MutationReceipt_accountId_authenticatedDeviceId_clientMutationId_key" ON "MutationReceipt"("accountId", "authenticatedDeviceId", "clientMutationId");
+CREATE INDEX IF NOT EXISTS "MutationReceipt_accountId_createdAt_idx" ON "MutationReceipt"("accountId", "createdAt");
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'EntityRevision_accountId_fkey') THEN
+    ALTER TABLE "EntityRevision" ADD CONSTRAINT "EntityRevision_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'AccountChange_accountId_fkey') THEN
+    ALTER TABLE "AccountChange" ADD CONSTRAINT "AccountChange_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'MutationReceipt_accountId_fkey') THEN
+    ALTER TABLE "MutationReceipt" ADD CONSTRAINT "MutationReceipt_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION juno_record_account_change() RETURNS trigger AS $$
 DECLARE
@@ -72,6 +83,28 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS juno_change_user ON "User";
+DROP TRIGGER IF EXISTS juno_change_settings ON "Settings";
+DROP TRIGGER IF EXISTS juno_change_subscription ON "Subscription";
+DROP TRIGGER IF EXISTS juno_change_folder ON "Folder";
+DROP TRIGGER IF EXISTS juno_change_conversation ON "Conversation";
+DROP TRIGGER IF EXISTS juno_change_message ON "Message";
+DROP TRIGGER IF EXISTS juno_change_message_version ON "MessageVersion";
+DROP TRIGGER IF EXISTS juno_change_attachment ON "Attachment";
+DROP TRIGGER IF EXISTS juno_change_artifact ON "Artifact";
+DROP TRIGGER IF EXISTS juno_change_artifact_version ON "ArtifactVersion";
+DROP TRIGGER IF EXISTS juno_change_project ON "Project";
+DROP TRIGGER IF EXISTS juno_change_memory ON "MemoryEntry";
+DROP TRIGGER IF EXISTS juno_change_prompt ON "SavedPrompt";
+DROP TRIGGER IF EXISTS juno_change_connection ON "Connection";
+DROP TRIGGER IF EXISTS juno_change_usage ON "Usage";
+DROP TRIGGER IF EXISTS juno_change_share ON "Share";
+DROP TRIGGER IF EXISTS juno_change_announcement_dismissal ON "AnnouncementDismissal";
+DROP TRIGGER IF EXISTS juno_change_task ON "ScheduledTask";
+DROP TRIGGER IF EXISTS juno_change_code_device ON "CodeDevice";
+DROP TRIGGER IF EXISTS juno_change_code_task ON "CodeTask";
+DROP TRIGGER IF EXISTS juno_change_code_event ON "CodeTaskEvent";
+
 CREATE TRIGGER juno_change_user AFTER UPDATE ON "User" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('profile', 'user');
 CREATE TRIGGER juno_change_settings AFTER INSERT OR UPDATE OR DELETE ON "Settings" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('settings', 'direct');
 CREATE TRIGGER juno_change_subscription AFTER INSERT OR UPDATE OR DELETE ON "Subscription" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('subscription', 'direct');
@@ -93,3 +126,5 @@ CREATE TRIGGER juno_change_task AFTER INSERT OR UPDATE OR DELETE ON "ScheduledTa
 CREATE TRIGGER juno_change_code_device AFTER INSERT OR UPDATE OR DELETE ON "CodeDevice" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('code_device', 'direct');
 CREATE TRIGGER juno_change_code_task AFTER INSERT OR UPDATE OR DELETE ON "CodeTask" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('code_task', 'direct');
 CREATE TRIGGER juno_change_code_event AFTER INSERT OR UPDATE OR DELETE ON "CodeTaskEvent" FOR EACH ROW EXECUTE FUNCTION juno_record_account_change('code_task_event', 'code_task');
+
+COMMIT;
