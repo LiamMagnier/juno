@@ -850,6 +850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Could not delete conversations."
   },
   {
+    "id": "1809881604a20047",
+    "source": "You can return to the app."
+  },
+  {
     "id": "187943dc3d68d560",
     "source": "Stopped at its token limit."
   },
@@ -1136,6 +1140,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2168d175f7ab2343",
     "source": "5. Paiement et facturation"
+  },
+  {
+    "id": "217c308240732b92",
+    "source": "Juno couldn’t start sign-in"
   },
   {
     "id": "21a4120ab17cd5e2",
@@ -2312,6 +2320,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4330c250082f7165",
     "source": "Search the Apple Music catalog for songs, albums, artists, or playlists."
+  },
+  {
+    "id": "4358e64b14e20c42",
+    "source": "Juno could not complete this request."
   },
   {
     "id": "4359809f24dba80a",
@@ -4930,6 +4942,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "hors taxes (HT)"
   },
   {
+    "id": "92fec4adc761df6b",
+    "source": "Authentication is required."
+  },
+  {
     "id": "9311d87436f800c9",
     "source": "GLM AirX"
   },
@@ -5566,6 +5582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Tip"
   },
   {
+    "id": "a46825514c22acda",
+    "source": "This sign-in request is invalid or came from an unsupported version of Juno."
+  },
+  {
     "id": "a48bce7b21519953",
     "source": "Manage memories"
   },
@@ -5632,10 +5652,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a57b08a480b822a0",
     "source": "Previous"
-  },
-  {
-    "id": "a5ad44331985aa24",
-    "source": "You can return to the app. If it didn’t open automatically:"
   },
   {
     "id": "a5c6fb18c9af89b2",

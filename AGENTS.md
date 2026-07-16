@@ -17,7 +17,7 @@ npx tsc --noEmit
 npm run validate:models
 npm run test:auth
 AUTH_SECRET=juno-test-only-auth-secret \
-DATA_ENCRYPTION_KEY=0000000000000000000000000000000000000000000000000000000000000000 \
+DATA_ENCRYPTION_KEY=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= \
   npx tsx scripts/test-message-crypto.ts
 npm run build
 npm ci --prefix relay

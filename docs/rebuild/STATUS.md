@@ -6,14 +6,14 @@ Last updated: 2026-07-16 (Europe/Paris)
 
 | Repository | Main checkout | Isolated worktree | Branch | Main modified? |
 |---|---|---|---|---|
-| `juno` | `/Users/liammagnier/Desktop/workspace/juno` | `/Users/liammagnier/Desktop/workspace/.worktrees/juno-rebuild` | `codex/rebuild-phase0` | No; clean after read-only build/runtime smoke |
-| `juno-app` | `/Users/liammagnier/Desktop/workspace/juno-app` | `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild` | `codex/rebuild-phase0` | No; clean |
+| `juno` | `/Users/liammagnier/Desktop/workspace/juno` | `/Users/liammagnier/Desktop/workspace/.worktrees/juno-rebuild` | `codex/native-v3-integration` | No; clean after read-only build/runtime smoke |
+| `juno-app` | `/Users/liammagnier/Desktop/workspace/juno-app` | `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild` | `codex/native-v3-integration` | No; clean |
 
 The sibling worktrees are the only authorized write locations. The canonical program documents live in `juno/docs/rebuild/`; native-specific contributor rules live in `juno-app/AGENTS.md`.
 
 ## Milestone 0: baseline and forensic audit
 
-Status: documentation in progress on this branch; production code unchanged.
+Status: committed as web/backend `2937b86` and native `632c1cb`; production code unchanged at this milestone.
 
 ### Completed evidence
 
@@ -60,7 +60,7 @@ Status: documentation in progress on this branch; production code unchanged.
 - `juno` is the canonical account/backend/database and owns versioned contracts, model truth, and semantic token sources.
 - The native `Juno/` target is the migration host. The prototype desktop shell is not a second product.
 - SwiftData is an account-scoped cache/outbox; signed-in server data remains authoritative.
-- Native auth is trusted-browser + S256 PKCE + hashed one-time code + short access + rotating refresh family + per-device revocation. Existing cookie credentials receive a time-bounded migration only.
+- Native auth is trusted-browser + S256 PKCE + hashed one-time code + short access + rotating refresh family + per-device revocation. A new app may detect a legacy cookie's presence but requires fresh browser authorization and deletes the old Keychain item only after the new session and initial sync succeed; it never silently converts the legacy bearer.
 - Sync uses stable mutation IDs, receipts, revisions, tombstones, a monotonic cursor, SSE wakeups, visible conflicts/failures, and idempotent reconciliation.
 - The model endpoint supplies explicit ordered effort values and capabilities; the native offline manifest is generated.
 - Code execution is capability-based and local. Account tokens/source/paths are not handed to a sidecar. The current unauthenticated sidecar is a release blocker.
@@ -74,7 +74,7 @@ Status: documentation in progress on this branch; production code unchanged.
 4. Phase 1C: add account change/mutation-receipt/revision/tombstone foundation with settings + conversation metadata as the sync canary; add durable Swift outbox/cursor and two-client convergence tests.
 5. Separately gate the unauthenticated sidecar from release while its protected transport and Code safety test suite are built.
 
-Shared migrations, OpenAPI sources, generated Swift DTOs, shared domain models, and design tokens have one integration owner. Parallel agents may audit or implement non-overlapping files but do not merge competing contract changes.
+Shared migrations, OpenAPI sources, generated Swift DTOs, shared domain models, and design tokens have one integration owner. Release integration is now single-owner and dependency-ordered; no parallel writer may merge competing contract or migration changes.
 
 ## Milestone acceptance rule
 
