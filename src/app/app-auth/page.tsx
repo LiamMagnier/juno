@@ -42,7 +42,7 @@ export default async function AppAuthPage({ searchParams }: { searchParams: Prom
     nonce: authorization.nonce,
     installationId: authorization.installationId,
   });
-  return <AppAuthHandoff code={code} state={authorization.state} nonce={authorization.nonce} />;
+  return <AppAuthHandoff code={code} state={authorization.state} nonce={authorization.nonce} redirectUri={authorization.redirectUri} />;
 }
 
 function AuthFailure({ message }: { message: string }) {

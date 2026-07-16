@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  LEGACY_NATIVE_REDIRECT_URI,
   NATIVE_REDIRECT_URI,
   NativeTokenError,
   isValidBrowserAuthorization,
@@ -23,6 +24,7 @@ test("browser authorization requires exact redirect, S256, and high-entropy valu
     installationId: `install_${randomSecret()}`,
   };
   assert.equal(isValidBrowserAuthorization(valid), true);
+  assert.equal(isValidBrowserAuthorization({ ...valid, redirectUri: LEGACY_NATIVE_REDIRECT_URI }), true);
   assert.equal(isValidBrowserAuthorization({ ...valid, codeChallengeMethod: "plain" }), false);
   assert.equal(isValidBrowserAuthorization({ ...valid, redirectUri: `${NATIVE_REDIRECT_URI}/extra` }), false);
   assert.equal(isValidBrowserAuthorization({ ...valid, state: "predictable" }), false);

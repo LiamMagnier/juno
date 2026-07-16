@@ -2,11 +2,21 @@
 
 import { useEffect, useMemo } from "react";
 
-export function AppAuthHandoff({ code, state, nonce }: { code: string; state: string; nonce: string }) {
+export function AppAuthHandoff({
+  code,
+  state,
+  nonce,
+  redirectUri,
+}: {
+  code: string;
+  state: string;
+  nonce: string;
+  redirectUri: string;
+}) {
   const deepLink = useMemo(() => {
     const query = new URLSearchParams({ code, state, nonce });
-    return `juno://auth/callback?${query}`;
-  }, [code, state, nonce]);
+    return `${redirectUri}?${query}`;
+  }, [code, state, nonce, redirectUri]);
 
   useEffect(() => {
     window.location.replace(deepLink);
