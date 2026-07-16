@@ -128,8 +128,6 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.4, output: 1.2 };
     case "longcat":
       return { input: 0.75, output: 2.95 }; // standard rate (launch promo $0.30/$1.20)
-    case "hunyuan":
-      return { input: 0.123, output: 0.43 }; // ~¥1/¥4 via Tencent TokenHub
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };

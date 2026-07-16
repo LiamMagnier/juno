@@ -129,6 +129,33 @@ ${bindings}
 }
 
 /**
+ * A sandboxed opaque-origin iframe (no `allow-same-origin`, kept that way so
+ * artifact code can never reach the app's cookies/storage) throws
+ * "The operation is insecure." the moment code touches localStorage /
+ * sessionStorage or calls history.pushState/replaceState. Portfolios hit this
+ * constantly — a saved theme read in a useEffect, hash-nav, or client routing —
+ * and it crashes the whole preview. Shim those APIs with in-memory / swallowing
+ * versions so the artifact runs; nothing actually persists (correct for a
+ * sandbox), it just no longer throws. Injected FIRST, before any artifact code.
+ */
+const SANDBOX_SHIM = `<script>
+(function(){
+  function mem(){var s={};return{getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(s,k)?s[k]:null;},setItem:function(k,v){s[String(k)]=String(v);},removeItem:function(k){delete s[String(k)];},clear:function(){s={};},key:function(i){var ks=Object.keys(s);return i<ks.length?ks[i]:null;},get length(){return Object.keys(s).length;}};}
+  function shimStorage(name){var ok=false;try{var t=window[name];t.getItem('__juno_probe__');t.removeItem('__juno_probe__');ok=true;}catch(e){ok=false;}if(!ok){try{Object.defineProperty(window,name,{value:mem(),configurable:true});}catch(e){}}}
+  shimStorage('localStorage');
+  shimStorage('sessionStorage');
+  try{
+    var h=window.history;
+    ['pushState','replaceState'].forEach(function(m){
+      var orig=h[m];
+      if(typeof orig!=='function')return;
+      h[m]=function(){try{return orig.apply(h,arguments);}catch(e){/* sandboxed: swallow "operation is insecure" */}};
+    });
+  }catch(e){}
+})();
+</${"script"}>`;
+
+/**
  * Forwards the sandboxed page's console + uncaught errors to the parent
  * (canvas Console panel) as { type:"juno:console", level, text }. Injected into
  * every runnable web doc so a React/HTML artifact's logs are visible in-app.
@@ -272,7 +299,10 @@ const INSPECTOR_SCRIPT = `<script>
 /** Inject the console bridge (early) + inspector (late) into a web document. */
 function withChrome(doc: string): string {
   const head = doc.indexOf("</head>");
-  let out = head !== -1 ? doc.slice(0, head) + CONSOLE_BRIDGE + doc.slice(head) : CONSOLE_BRIDGE + doc;
+  // Shim first (before console bridge), so storage/history are safe before any
+  // artifact or bridge code runs.
+  const chrome = SANDBOX_SHIM + CONSOLE_BRIDGE;
+  let out = head !== -1 ? doc.slice(0, head) + chrome + doc.slice(head) : chrome + doc;
   const body = out.lastIndexOf("</body>");
   return body !== -1 ? out.slice(0, body) + INSPECTOR_SCRIPT + out.slice(body) : out + INSPECTOR_SCRIPT;
 }
@@ -451,7 +481,7 @@ function consoleDoc(rawCode: string, engine: "js" | "python" | "unsupported", la
       : `run(body);`
   }`;
 
-  return `<!doctype html><html><head><meta charset="utf-8"/>${TERMINAL_STYLE}${
+  return `<!doctype html><html><head><meta charset="utf-8"/>${SANDBOX_SHIM}${TERMINAL_STYLE}${
     lang === "typescript" ? `<script src="${BABEL_CDN}"></script>` : ""
   }</head>
 <body><div id="wrap"><div id="bar"><span id="dot"></span><span id="label">${escapeHtml(label ?? lang)}</span><span id="st" style="margin-left:auto"></span></div><div id="term"></div></div>

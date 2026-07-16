@@ -226,7 +226,6 @@ export async function* streamOpenAICompat(
    *                       xai, mistral (high|none), zhipu (GLM-5.2 only)
    *   thinking:{type}   → zhipu (all), minimax, moonshot, mimo, longcat
    *   enable_thinking   → qwen
-   *   chat_template_kwargs.reasoning_effort → hunyuan (NOT a top-level field)
    */
   const usesThinkingObject =
     model.provider === "minimax" || model.provider === "moonshot" || model.provider === "mimo" || model.provider === "longcat";
@@ -298,10 +297,6 @@ export async function* streamOpenAICompat(
   if (isMiniMax) {
     // Ask MiniMax to return reasoning in its own field rather than inline.
     params.reasoning_split = true;
-  }
-  if (model.provider === "hunyuan" && model.reasoning) {
-    // Hunyuan reads effort from the chat template, not a top-level field.
-    params.chat_template_kwargs = { reasoning_effort: effectiveReasoningEffort ?? "no_think" };
   }
   if (model.provider === "openai") {
     const om = model.providerModel.toLowerCase();

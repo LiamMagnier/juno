@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "google" | "meta" | "zhipu" | "moonshot" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat" | "hunyuan";
+export type Provider = "anthropic" | "openai" | "zhipu" | "moonshot" | "google" | "meta" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat";
 
 interface ProviderDef {
   label: string;
@@ -32,6 +32,22 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     kind: "openai",
     docsUrl: "https://platform.openai.com/api-keys",
   },
+  zhipu: {
+    label: "Zhipu · GLM",
+    apiKeyEnv: "ZHIPU_API_KEY",
+    baseUrlEnv: "ZHIPU_BASE_URL",
+    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
+    kind: "openai",
+    docsUrl: "https://open.bigmodel.cn/usercenter/apikeys",
+  },
+  moonshot: {
+    label: "Moonshot · Kimi",
+    apiKeyEnv: "MOONSHOT_API_KEY",
+    baseUrlEnv: "MOONSHOT_BASE_URL",
+    defaultBaseUrl: "https://api.moonshot.ai/v1",
+    kind: "openai",
+    docsUrl: "https://platform.moonshot.ai/console/api-keys",
+  },
   google: {
     label: "Google · Gemini",
     apiKeyEnv: "GOOGLE_API_KEY",
@@ -48,22 +64,6 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://api.llama.com/compat/v1",
     kind: "openai",
     docsUrl: "https://llama.developer.meta.com/",
-  },
-  zhipu: {
-    label: "Zhipu · GLM",
-    apiKeyEnv: "ZHIPU_API_KEY",
-    baseUrlEnv: "ZHIPU_BASE_URL",
-    defaultBaseUrl: "https://open.bigmodel.cn/api/paas/v4",
-    kind: "openai",
-    docsUrl: "https://open.bigmodel.cn/usercenter/apikeys",
-  },
-  moonshot: {
-    label: "Moonshot · Kimi",
-    apiKeyEnv: "MOONSHOT_API_KEY",
-    baseUrlEnv: "MOONSHOT_BASE_URL",
-    defaultBaseUrl: "https://api.moonshot.ai/v1",
-    kind: "openai",
-    docsUrl: "https://platform.moonshot.ai/console/api-keys",
   },
   deepseek: {
     label: "DeepSeek",
@@ -132,14 +132,6 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     defaultBaseUrl: "https://api.longcat.chat/openai",
     kind: "openai",
     docsUrl: "https://longcat.chat/platform/api_keys",
-  },
-  hunyuan: {
-    label: "Tencent · Hunyuan",
-    apiKeyEnv: "HUNYUAN_API_KEY",
-    baseUrlEnv: "HUNYUAN_BASE_URL",
-    defaultBaseUrl: "https://api.hunyuan.cloud/v1",
-    kind: "openai",
-    docsUrl: "https://cloud.tencent.com/document/product/1729/111008",
   },
 };
 

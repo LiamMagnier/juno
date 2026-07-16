@@ -54,21 +54,19 @@ function SelectCheck({ checked, onClick, className }: { checked: boolean; onClic
 
 function ItemAction({ icon: Icon, label, onClick, tone }: { icon: typeof Pencil; label: string; onClick: () => void; tone?: "danger" }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      aria-label={label}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
         onClick();
       }}
-      aria-label={label}
-      className={cn(
-        "flex h-7 w-7 items-center justify-center rounded-md bg-background/80 text-muted-foreground backdrop-blur transition-colors hover:bg-background",
-        tone === "danger" ? "hover:text-destructive" : "hover:text-foreground"
-      )}
+      className={cn("text-muted-foreground", tone === "danger" ? "hover:text-destructive" : "hover:text-foreground")}
     >
       <Icon className="h-3.5 w-3.5" />
-    </button>
+    </Button>
   );
 }
 
@@ -206,13 +204,9 @@ export default function LibraryPage() {
             ))}
           </div>
           {!loading && !empty && (
-            <button
-              type="button"
-              onClick={toggleSelectAll}
-              className="rounded-md px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {allSelected ? "Clear" : "Select all"}
-            </button>
+            <Button variant="ghost" size="sm" onClick={toggleSelectAll} className="text-muted-foreground">
+              {allSelected ? "Clear selection" : "Select all"}
+            </Button>
           )}
         </div>
 
@@ -331,15 +325,11 @@ export default function LibraryPage() {
                         </div>
                         <div className="flex shrink-0 items-center gap-0.5">
                           <ItemAction icon={Pencil} label="Rename" onClick={() => openRename(f)} />
-                          <a
-                            href={f.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Download"
-                            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                          >
-                            <Download className="h-4 w-4" />
-                          </a>
+                          <Button variant="ghost" size="icon-sm" asChild className="text-muted-foreground hover:text-foreground">
+                            <a href={f.url} target="_blank" rel="noopener noreferrer" aria-label="Download">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          </Button>
                           <ItemAction icon={Trash2} label="Delete" tone="danger" onClick={() => setDeleteTargets([f])} />
                         </div>
                       </div>

@@ -109,36 +109,35 @@ export default function ArtifactsPage() {
                   key={a.id}
                   href={`/chat/${a.conversationId}`}
                   style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
-                  className="group/art block overflow-hidden rounded-[16px] border border-border/70 bg-card shadow-soft outline-none transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-float focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-rise-in"
+                  className="group/art block rounded-[16px] border border-border/70 bg-card p-4 shadow-soft outline-none transition-all duration-base ease-out-soft [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-float focus-visible:ring-2 focus-visible:ring-ring motion-safe:animate-rise-in"
                 >
-                  <div className="flex items-center gap-2 border-b border-border/60 bg-gradient-to-b from-muted/50 to-muted/25 px-3 py-2">
-                    <span className="flex items-center gap-1.5" aria-hidden>
-                      <span className="size-2.5 rounded-full bg-[#ff5f57]/85 ring-1 ring-black/5" />
-                      <span className="size-2.5 rounded-full bg-[#febc2e]/85 ring-1 ring-black/5" />
-                      <span className="size-2.5 rounded-full bg-[#28c840]/85 ring-1 ring-black/5" />
-                    </span>
-                    <span className="ml-1 truncate font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{rt.label}</span>
-                    <span className="ml-auto flex items-center gap-1.5">
-                      {runnable && (
-                        <span className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background/60 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground transition-colors group-hover/art:border-primary/40 group-hover/art:text-primary">
-                          <RunIcon className="h-2.5 w-2.5" />
-                          {rt.runVerb}
-                        </span>
-                      )}
-                      <ArrowUpRight className="h-4 w-4 text-muted-foreground/50 transition-all duration-base ease-out-soft group-hover/art:translate-x-0.5 group-hover/art:-translate-y-0.5 group-hover/art:text-primary" />
-                    </span>
-                  </div>
-                  <div className="flex gap-3 p-4">
+                  <div className="flex items-start gap-3.5">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-primary/10 text-primary transition-transform duration-base ease-out-soft group-hover/art:scale-105">
                       <Icon className="h-5 w-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate font-semibold tracking-tight">{a.title || "Untitled artifact"}</p>
-                      <p className="mt-0.5 truncate text-caption text-muted-foreground">
-                        {a.version > 1 ? `v${a.version} · ` : ""}
-                        {timeAgo(a.updatedAt)}
-                      </p>
-                      <p className="mt-1 truncate text-caption text-muted-foreground/80">in “{a.conversationTitle}”</p>
+                      <div className="flex items-center gap-2">
+                        <p className="truncate font-semibold tracking-tight">{a.title || "Untitled artifact"}</p>
+                        <ArrowUpRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/40 transition-all duration-base ease-out-soft group-hover/art:translate-x-0.5 group-hover/art:-translate-y-0.5 group-hover/art:text-primary" />
+                      </div>
+                      <div className="mt-1 flex items-center gap-1.5 text-caption text-muted-foreground">
+                        <span className="font-medium text-foreground/70">{rt.label}</span>
+                        {runnable && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span className="inline-flex items-center gap-1">
+                              <RunIcon className="h-3 w-3" />
+                              {rt.runVerb}
+                            </span>
+                          </>
+                        )}
+                        <span aria-hidden>·</span>
+                        <span>
+                          {a.version > 1 ? `v${a.version} · ` : ""}
+                          {timeAgo(a.updatedAt)}
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-caption text-muted-foreground/70">in “{a.conversationTitle}”</p>
                     </div>
                   </div>
                 </Link>

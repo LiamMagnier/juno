@@ -636,20 +636,25 @@ export async function consolidateWithFallback(userId: string, _maxCandidates = I
 }
 
 /**
- * Background, periodic-ish consolidation: regenerate the summary only when
- * memory changed AND the existing summary is missing or stale (>12h old).
- * Cheap no-op otherwise — safe to call after every exchange.
+ * Background consolidation: regenerate the summary whenever the stored fact
+ * count actually changed, so it refreshes as soon as new chats add memories —
+ * throttled to at most once every few minutes so a burst of messages doesn't
+ * rebuild it each time. Cheap no-op otherwise — safe to call after every
+ * exchange. (Previously gated on a 12h staleness window, which left the summary
+ * showing "updated Nd ago" long after new chats had added facts.)
  */
 export async function maybeConsolidate(userId: string, model: ModelInfo): Promise<void> {
   const [count, summary] = await Promise.all([
     prisma.memoryEntry.count({ where: { userId, kind: "FACT" } }),
     prisma.memorySummary.findUnique({ where: { userId }, select: { entryCount: true, updatedAt: true } }),
   ]);
-  const STALE_MS = 12 * 60 * 60 * 1000;
-  const stale = !summary || Date.now() - summary.updatedAt.getTime() > STALE_MS;
-  if (!stale) return;
   const changed = !summary || summary.entryCount !== count;
-  if (changed && count > 0) {
+  // Don't rebuild more than once every few minutes, so rapid-fire messages that
+  // each distill a fact don't each trigger a full consolidation.
+  const MIN_INTERVAL_MS = 5 * 60 * 1000;
+  const recentlyBuilt = summary != null && Date.now() - summary.updatedAt.getTime() < MIN_INTERVAL_MS;
+  if (!changed || recentlyBuilt) return;
+  if (count > 0) {
     await consolidateMemories({ userId, model }).catch(() => {});
   }
 }

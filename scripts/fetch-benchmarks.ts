@@ -84,7 +84,6 @@ const CREATOR_TO_PROVIDER: Record<string, string> = {
   "moonshot-ai": "moonshot",
   moonshotai: "moonshot",
   xiaomi: "mimo",
-  tencent: "hunyuan",
   meituan: "longcat",
   bytedance: "seedance",
   spacexai: "xai",

@@ -1,5 +1,5 @@
 import type { ModelInfo } from "@/lib/models";
-import type { Provider } from "@/lib/providers";
+import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
 export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | null;
@@ -201,10 +201,6 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // $0.75/$2.95 (launch promo $0.30/$1.20 not baked in).
     { hints: ["longcat"], metric: metric(0.75, 2.95, 1_000_000, 6, 7) },
   ],
-  hunyuan: [
-    { hints: ["hy3"], metric: official(0.123, 0.43, 256_000, 9, 5) }, // II 33.6 · 180 tok/s · ~¥1/¥4 via TokenHub
-    { hints: ["hunyuan"], metric: metric(0.123, 0.43, 256_000, 8, 5) },
-  ],
 };
 
 // Sensible per-provider default so an unrecognized model still gets real-ish
@@ -223,7 +219,6 @@ const PROVIDER_DEFAULT: Partial<Record<Provider, ModelMetrics>> = {
   mimo: metric(0.435, 0.87, 256_000, 4, 6),
   qwen: metric(0.4, 1.2, 262_144, 6, 5),
   longcat: metric(0.75, 2.95, 1_000_000, 6, 7),
-  hunyuan: metric(0.123, 0.43, 256_000, 8, 5),
 };
 
 function familyMetric(model: ModelInfo): ModelMetrics | null {
@@ -291,6 +286,29 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
     return { ...grounded, contextTokens: model.contextWindow };
   }
   return grounded;
+}
+
+/**
+ * Canonical display order for a model list, applied wherever the payload/list is
+ * built so BOTH the web selector and the Mac app (which consumes /api/models and
+ * trusts its order) render identically. Sort key, in order:
+ *   1. lab/provider — PROVIDER_LIST index ascending (the rail order)
+ *   2. intelligence — descending (best model in a lab first)
+ *   3. release date — descending as a "YYYY-MM" string compare (nullish last)
+ *   4. name — ascending, as a stable final tiebreak
+ * Returns a new array; the input is not mutated.
+ */
+export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
+  return [...models].sort((a, b) => {
+    const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
+    if (labDelta !== 0) return labDelta;
+    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+    if (intelDelta !== 0) return intelDelta;
+    // "" sorts before any real date; descending compare pushes nullish releases last.
+    const relDelta = (b.released ?? "").localeCompare(a.released ?? "");
+    if (relDelta !== 0) return relDelta;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {
@@ -508,8 +526,6 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
       // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
       return caps(LMH, true);
-    case "hunyuan":
-      return caps(["low", "high"], true); // reasoning_effort: no_think|low|high
     case "longcat":
       return caps([], true, true); // thinking: enabled/disabled
     default:

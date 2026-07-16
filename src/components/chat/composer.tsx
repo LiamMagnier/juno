@@ -1166,22 +1166,21 @@ export function Composer({
       }}
     >
       <Telescope className="text-muted-foreground" />
-      {/* min-w-0 + truncate + a non-shrinking caption: this is the only row that
-          renders a caption AND a Switch, so without the guard the label wraps to
-          two lines exactly when research is ON — and any longer translation
-          ("Recherche approfondie") wraps regardless of viewport. */}
       <span className="min-w-0 flex-1 truncate">Deep research</span>
+      {/* Badge + Switch share one right-aligned slot so the toggle lands in the
+          same column as the sibling rows' switches (Web search / Canvas /
+          Memory), instead of the "this message" caption pushing it inboard. */}
       {planAllowsResearch ? (
-        <>
+        <span className="ml-auto flex shrink-0 items-center gap-2">
           {research && (
-            <span className="shrink-0 whitespace-nowrap font-mono text-caption uppercase text-muted-foreground/60">
+            <span className="whitespace-nowrap font-mono text-caption uppercase text-muted-foreground/60">
               this message
             </span>
           )}
           <Switch checked={research} tabIndex={-1} aria-hidden className="pointer-events-none" />
-        </>
+        </span>
       ) : (
-        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">paid plan</span>
+        <span className="ml-auto shrink-0 whitespace-nowrap text-caption text-muted-foreground/60">paid plan</span>
       )}
     </DropdownMenuItem>
   ) : null;

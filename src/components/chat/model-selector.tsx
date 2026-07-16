@@ -19,6 +19,7 @@ import {
   getModelMetrics,
   hasLiveBenchmark,
   reasoningOptions,
+  sortModelsForDisplay,
   type ReasoningEffort,
 } from "@/lib/model-metrics";
 import { providerAccent } from "@/lib/provider-colors";
@@ -323,17 +324,22 @@ export function ModelSelector({
   const providerFilter = filter !== "all" && filter !== "favorites" ? (filter as Provider) : null;
   const filterConfigured = providerFilter ? features.providers.includes(providerFilter) : true;
 
-  const visible: ModelInfo[] = models
-    .filter((m) => (filter === "favorites" ? favSet.has(m.id) : providerFilter ? m.provider === providerFilter : true))
-    .filter(
-      (m) =>
-        !q ||
-        m.name.toLowerCase().includes(q) ||
-        m.providerModel.toLowerCase().includes(q) ||
-        (m.family ?? "").toLowerCase().includes(q) ||
-        m.modality.includes(q) ||
-        (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
-    );
+  // Sort [lab asc, intelligence desc, released desc, name asc] to match the
+  // /api/models payload order (the Mac app trusts that order verbatim), so the
+  // web selector looks identical even before the API response lands.
+  const visible: ModelInfo[] = sortModelsForDisplay(
+    models
+      .filter((m) => (filter === "favorites" ? favSet.has(m.id) : providerFilter ? m.provider === providerFilter : true))
+      .filter(
+        (m) =>
+          !q ||
+          m.name.toLowerCase().includes(q) ||
+          m.providerModel.toLowerCase().includes(q) ||
+          (m.family ?? "").toLowerCase().includes(q) ||
+          m.modality.includes(q) ||
+          (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
+      )
+  );
   const hoveredModel = React.useMemo(
     () => visible.find((m) => m.id === hoveredId) ?? visible.find((m) => m.id === value) ?? current ?? visible[0] ?? null,
     [current, hoveredId, value, visible]

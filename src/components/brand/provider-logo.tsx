@@ -58,11 +58,6 @@ const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
     light: "/provider-logos/light/longcat.png",
     dark: "/provider-logos/dark/longcat.png",
   },
-  // Placeholder monogram — swap for the official Tencent Hunyuan mark when added.
-  hunyuan: {
-    light: "/provider-logos/light/hunyuan.png",
-    dark: "/provider-logos/dark/hunyuan.png",
-  },
 };
 
 export function providerLogoSrc(provider: Provider, theme: "light" | "dark" = "light"): string {

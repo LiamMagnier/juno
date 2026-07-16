@@ -478,10 +478,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No chats yet — start one to see your mix."
   },
   {
-    "id": "0c0feecd6934cf96",
-    "source": "Hunyuan HY3"
-  },
-  {
     "id": "0c486180bb8a7b51",
     "source": "Kimi Code"
   },
@@ -1544,10 +1540,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2cff9baabf56ca00",
     "source": "Import"
-  },
-  {
-    "id": "2d3f133d939f53df",
-    "source": "Tencent · Hunyuan"
   },
   {
     "id": "2d5e8600a4fba66e",
@@ -4928,10 +4920,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "929260ad9b9ea9fe",
     "source": "auto"
-  },
-  {
-    "id": "92b647f737923ac1",
-    "source": "Tencent's open-weight flagship (Apache 2.0) — fast, capable, and very cheap."
   },
   {
     "id": "92b7b421992ef490",
@@ -8356,10 +8344,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f793de205ead5ac3",
     "source": "Low"
-  },
-  {
-    "id": "f79644f62819d816",
-    "source": "Hunyuan"
   },
   {
     "id": "f7970f23e75a0dd2",

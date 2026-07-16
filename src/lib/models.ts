@@ -297,10 +297,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwq-plus", name: "QwQ Plus", family: "qwq", status: "legacy", released: "2025-03", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 131_072, description: "Dedicated QwQ reasoning model, superseded by Qwen3 thinking." }),
 
   // —— Meituan · LongCat ——
-  def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention." }),
-
-  // —— Tencent · Hunyuan ——
-  def({ provider: "hunyuan", id: "hunyuan-HY3", name: "Hunyuan HY3", family: "hunyuan", status: "current", released: "2026-07", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 256_000, description: "Tencent's open-weight flagship (Apache 2.0) — fast, capable, and very cheap." }),
+  def({ provider: "longcat", id: "LongCat-2.0", name: "LongCat 2.0", family: "longcat", status: "current", comingSoon: true, released: "2026-07", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Meituan's 1.6T-parameter open MoE — native 1M context via LongCat Sparse Attention." }),
 ];
 
 /** Image / video generation models — grouped by lab in the picker; each runs

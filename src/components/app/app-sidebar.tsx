@@ -12,6 +12,7 @@ import {
   Command,
   Folder,
   Library,
+  MessageSquare,
   MoreHorizontal,
   PanelLeftClose,
   PanelLeft,
@@ -428,7 +429,9 @@ export function AppSidebar({
                   <ProjectRow
                     key={p.id}
                     project={p}
+                    chats={conversations.filter((c) => c.projectId === p.id)}
                     active={pathname === `/projects/${p.id}`}
+                    activePath={pathname}
                     starred={starredProjectIds.includes(p.id)}
                     onNavigate={() => setSidebarOpen(false)}
                     onNewChat={() => {
@@ -933,7 +936,9 @@ function ConversationRow({
 
 function ProjectRow({
   project,
+  chats,
   active,
+  activePath,
   starred,
   onNavigate,
   onNewChat,
@@ -942,7 +947,9 @@ function ProjectRow({
   onDelete,
 }: {
   project: SidebarProject;
+  chats: ClientConversation[];
   active: boolean;
+  activePath: string;
   starred: boolean;
   onNavigate: () => void;
   onNewChat: () => void;
@@ -950,7 +957,12 @@ function ProjectRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const [showAll, setShowAll] = React.useState(false);
+  const PREVIEW = 2;
+  const visibleChats = showAll ? chats : chats.slice(0, PREVIEW);
+
   return (
+    <div>
     <div
       className={cn(
         "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
@@ -1002,6 +1014,38 @@ function ProjectRow({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+    {chats.length > 0 && (
+      <div className="mt-0.5 flex flex-col">
+        {visibleChats.map((c) => (
+          <Link
+            key={c.id}
+            href={`/chat/${c.id}`}
+            onClick={onNavigate}
+            aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
+            title={c.title}
+            className={cn(
+              "group/pc flex items-center gap-2 rounded-md py-1 pl-9 pr-2 text-[12.5px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
+              activePath === `/chat/${c.id}`
+                ? "font-medium text-foreground"
+                : "text-sidebar-foreground/70 hover:text-foreground"
+            )}
+          >
+            <MessageSquare className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/pc:text-foreground" />
+            <span className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
+          </Link>
+        ))}
+        {chats.length > PREVIEW && (
+          <button
+            type="button"
+            onClick={() => setShowAll((v) => !v)}
+            className="flex items-center rounded-md py-1 pl-9 pr-2 text-[12px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground"
+          >
+            {showAll ? "Show less" : `View all ${chats.length}`}
+          </button>
+        )}
+      </div>
+    )}
     </div>
   );
 }

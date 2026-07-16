@@ -163,6 +163,9 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       if (
         statusRef.current === "live" &&
         !mutedRef.current &&
+        // Same half-duplex guard as the PCM upload: don't feed the browser's
+        // caption of the assistant's own TTS back in as a user turn.
+        !speakingRef.current &&
         capsRef.current?.needsClientTranscript &&
         text.trim()
       ) {
@@ -400,7 +403,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       let sum = 0;
       for (let i = 0; i < chunk.length; i++) sum += chunk[i] * chunk[i];
       micLevelRef.current = Math.min(1, Math.sqrt(sum / chunk.length) * 5);
-      if (mutedRef.current) return;
+      // Half-duplex: while the assistant is speaking, keep measuring the local
+      // level (above, for the orb) but DON'T upload frames. Browser
+      // echoCancellation can't cancel audio played through a separate Web Audio
+      // graph, so on speakers the mic captures the assistant's own TTS and the
+      // provider transcribes it as user speech — the model answers itself. Users
+      // interrupt with the on-screen control instead of by talking over it.
+      if (mutedRef.current || speakingRef.current) return;
       // Downsample inRate -> 16k with simple decimation-by-average.
       const merged = new Float32Array(carry.length + chunk.length);
       merged.set(carry);
