@@ -90,3 +90,54 @@ Do not deploy while this report is rejected.
 ## Required next acceptance run
 
 Provide an unlocked reference Mac with required OS permissions, a disposable PostgreSQL stack, a disposable Juno account usable on web and Mac, and a Developer ID/notary profile. Execute all ten scenarios in `07-test-and-acceptance-plan.md` with redacted state digests and UI evidence, then rerun this checklist on the exact signed SHA. Until green, release is prohibited.
+
+## 2026-07-16 release-owner addendum: callback and V3 sync rollout
+
+Disposition remains **REJECT for public production distribution**, while the reproducible browser-callback and production bootstrap blockers are fixed. The exact-candidate real-account Mac acceptance is still blocked by the locked reference Mac, and this host still has no valid Developer ID Application identity or notarization profile.
+
+### Promoted dependency order
+
+1. `juno` PR `#10`, merge `0ff3255` — secure native authorization endpoints and versioned session envelope.
+2. `juno-app` commit `b0c4edb` — build 28, isolated Release/Debug callback schemes, existing-scene routing, and Keychain-persisted five-minute PKCE request.
+3. `juno` PR `#11`, merge `b283c91` — exact validated callback handoff for both build 27 and build 28.
+4. `juno` PR `#12`, merge `37c3690` — revisioned sync routes, account-change substrate, ownership enforcement, idempotent migration convergence, and permanent transition to `prisma migrate deploy`.
+
+### Exact verification and rollout evidence
+
+| Gate | Exact command | Result |
+|---|---|---|
+| Native universal Release | `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Juno.xcodeproj -scheme Juno -configuration Release -destination 'generic/platform=macOS' -derivedDataPath /tmp/juno-v3-release28 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build` | Pass; `3.0.0 (28)`, `x86_64 arm64`, Release callback `com.liammagnier.juno://auth/callback` |
+| Native exact tests | `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild test -project Juno.xcodeproj -scheme Juno -destination 'platform=macOS' -derivedDataPath /tmp/juno-v3-auth28-test CODE_SIGNING_ALLOWED=NO` | Compiled; runner could not materialize while the Mac was locked, then was interrupted. Must rerun after unlock. |
+| Web native auth | `AUTH_SECRET='test-only-at-least-32-bytes-long' npm run test:native-auth` | Pass: 7/7 on integration; 4/4 on the production callback hotfix |
+| Web sync protocol | `AUTH_SECRET='test-only-at-least-32-bytes-long' npm run test:native-sync` | Pass: 3/3 |
+| Web types/build | `npx tsc --noEmit`; production-environment-shaped `npm run build` | Pass; 79 generated pages; known ambiguous Tailwind-duration advisories remain |
+| Relay | `npm ci --prefix relay`; `npm run typecheck --prefix relay`; `npm run build --prefix relay` | Pass |
+| Dependency security | `npm audit --audit-level=high` | Pass for high/critical; four moderate transitive advisories remain in `postcss` through Next and `uuid` through ExcelJS; available automated fixes are breaking and were not forced |
+| Migration rehearsal | PostgreSQL 17 disposable cluster, all 22 then-current migrations, seeded user/settings/project/conversation/message, one-time schema/history convergence, account-change SQL applied twice, then `prisma migrate deploy` | Pass; transaction/idempotency preserved; ordered changes and conversation revision 1→2 observed |
+| Disposable API acceptance | Exact production-branch Next server plus signed native bearer | Pass: bootstrap 200, mutation 200, exact replay 200, key/body mismatch 409, changes 200, foreign project link 404, owned project update 200, revision 4 observed |
+| Production promotion | `gh pr merge 12 --repo LiamMagnier/juno --squash --delete-branch`; GitHub Actions run `29521990017` | Pass; four historical migrations baselined once, 23 migrations current, PM2 backend/relay/scheduler online |
+| Production unauthenticated probes | `curl https://chat.liams.dev/api/v1/bootstrap`; GET `/api/v1/changes?after=0`; POST `/api/v1/mutations` | Pass: each returns versioned 401 rather than 404; bootstrap response carries `x-juno-contract-version: 1.0.0` |
+| Query plan review | `EXPLAIN ANALYZE` for account/cursor scan and exact entity-revision lookup | Pass on rehearsal data; expected indexes used, 0.020 ms and 0.012 ms respectively |
+| Manual test DMG | ad-hoc sign build 28; `hdiutil verify`; `shasum -a 256`; publish prerelease `v3.0.0-alpha.6` | Pass for manual evaluation only; [GitHub prerelease](https://github.com/LiamMagnier/juno-app/releases/tag/v3.0.0-alpha.6); SHA-256 `a167587a642694ac5476bd1c14af7885cb74a58afab1ba04ba7ae017deb00abc` |
+
+### Security, accessibility, performance, migration and rollback
+
+- Authorization remains browser-only with state, nonce, S256 PKCE, hashed one-time grants, short access tokens, rotating refresh families and device revocation. The reverse-domain custom scheme separates Release from legacy/debug handlers; PKCE limits code interception risk. A claimed HTTPS universal link remains preferable for a later hardened release.
+- Mutation writes are bearer-authenticated and account-scoped. Conversation reference updates now reject another account's project/folder before writing. No high/critical npm advisory is open in the promoted slice.
+- The callback changes introduce no new unlabeled control. Existing onboarding controls retain accessibility labels, but keyboard, VoiceOver and display-setting inspection on build 28 is not accepted until the Mac is unlocked.
+- Change and revision lookups use their intended indexes in rehearsal. `AccountChange` still needs an observed retention/compaction policy before high-volume rollout; initial compaction floor remains zero.
+- Production convergence is additive. Roll back application code first by reverting merge `37c3690`; leave change/revision/receipt tables and triggers dormant during an incident. Do not drop them or edit migration history. The baselined history is now the source for future `prisma migrate deploy` runs.
+- Mac rollback is the last previously installed build 27. Never point the automatic update feed at the ad-hoc build 28; the updater pins Team ID `58PVP763WX` and must reject it.
+
+### Revised Definition of Done delta
+
+| Requirement | Current gate |
+|---|---|
+| No raw web-session token callback | **Pass in production and build 28 code**; exact build-28 real-account callback pending |
+| One canonical server truth and deterministic sync | **Partial** — production substrate/routes deployed; complete entity parity and two-surface scenarios pending |
+| Website backward compatible | **Pass for targeted static/auth/sync/build probes**; full authenticated regression matrix pending |
+| Migration/rollback/recovery | **Partial** — disposable rehearsal and production additive rollout passed; restore drill remains pending |
+| Security review | **Partial** — promoted auth/sync slice reviewed and foreign-reference defect fixed; Code/XPC and App Sandbox blockers remain |
+| Accessibility/performance | **Partial** — static and indexed-query checks passed; exact-candidate UI/VoiceOver/reference-Mac budgets pending |
+| Signed/notarized public download and secure updater | **Fail** — Developer ID Application certificate and notarization credentials absent |
+| Real development account across web and Mac | **Fail for build 28 while Mac is locked** |
