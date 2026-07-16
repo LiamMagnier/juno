@@ -1,0 +1,198 @@
+openapi: 3.1.0
+info:
+  title: Juno Native API
+  version: 1.0.0
+  description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
+servers:
+  - url: /api/v1
+security:
+  - nativeBearer: []
+paths:
+  /auth/token:
+    post:
+      security: []
+      operationId: exchangeAuthorizationCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TokenExchangeRequest' }
+      responses:
+        '200':
+          description: Device credentials issued after atomic code consumption.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenResponse' }
+        '400': { $ref: '#/components/responses/InvalidGrant' }
+  /auth/refresh:
+    post:
+      security: []
+      operationId: rotateRefreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [refreshToken]
+              properties: { refreshToken: { type: string, minLength: 32 } }
+      responses:
+        '200':
+          description: Rotated access and refresh credentials.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RefreshResponse' }
+        '400': { $ref: '#/components/responses/InvalidGrant' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/session:
+    get:
+      operationId: getNativeSession
+      responses:
+        '200':
+          description: Current account and device session.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SessionResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      operationId: logoutNativeDevice
+      responses:
+        '200':
+          description: Current device revoked.
+          content:
+            application/json:
+              schema: { type: object, required: [revoked], properties: { revoked: { const: true } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/devices:
+    get:
+      operationId: listNativeDevices
+      responses:
+        '200':
+          description: User-visible device sessions without credential material.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices: { type: array, items: { $ref: '#/components/schemas/DeviceSession' } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/devices/{id}:
+    delete:
+      operationId: revokeNativeDevice
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Device revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /models:
+    get:
+      operationId: listModels
+      responses:
+        '200':
+          description: Authoritative available model manifest and exact reasoning controls.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModelManifest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    InvalidGrant:
+      description: Grant invalid, expired, reused, or mismatched.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unauthorized:
+      description: Credential missing, expired, invalid, reused, or revoked.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    NotFound:
+      description: Resource not found within the authenticated account.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+  schemas:
+    TokenExchangeRequest:
+      type: object
+      additionalProperties: false
+      required: [code, codeVerifier, redirectUri, installationId, deviceName, platform, appVersion]
+      properties:
+        code: { type: string }
+        codeVerifier: { type: string, minLength: 43, maxLength: 256 }
+        redirectUri: { type: string, const: 'juno://auth/callback' }
+        installationId: { type: string, minLength: 16, maxLength: 200 }
+        deviceName: { type: string, minLength: 1, maxLength: 120 }
+        platform: { type: string, minLength: 1, maxLength: 40 }
+        appVersion: { type: string, minLength: 1, maxLength: 40 }
+    RefreshResponse:
+      type: object
+      required: [tokenType, accessToken, accessTokenExpiresAt, refreshToken, refreshTokenExpiresAt]
+      properties:
+        tokenType: { const: Bearer }
+        accessToken: { type: string }
+        accessTokenExpiresAt: { type: string, format: date-time }
+        refreshToken: { type: string }
+        refreshTokenExpiresAt: { type: string, format: date-time }
+    TokenResponse:
+      allOf:
+        - { $ref: '#/components/schemas/RefreshResponse' }
+        - type: object
+          required: [deviceSession]
+          properties: { deviceSession: { $ref: '#/components/schemas/DeviceSession' } }
+    DeviceSession:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        platform: { type: string }
+        appVersion: { type: string }
+        createdAt: { type: string, format: date-time }
+        lastSeenAt: { type: string, format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        current: { type: boolean }
+    SessionResponse:
+      type: object
+      required: [profile, deviceSession, accessTokenExpiresAt, contractVersion, minimumSupportedAppVersion]
+      properties:
+        profile:
+          type: object
+          required: [id, email]
+          properties:
+            id: { type: string }
+            name: { type: [string, 'null'] }
+            email: { type: string, format: email }
+            image: { type: [string, 'null'] }
+        deviceSession: { $ref: '#/components/schemas/DeviceSession' }
+        accessTokenExpiresAt: { type: string, format: date-time }
+        contractVersion: { type: string }
+        minimumSupportedAppVersion: { type: string }
+    ModelManifest:
+      type: object
+      required: [manifestVersion, contractDigest, generatedAt, models]
+      properties:
+        manifestVersion: { type: string }
+        contractDigest: { type: string }
+        generatedAt: { type: string, format: date-time }
+        models:
+          type: array
+          items:
+            type: object
+            required: [id, provider, displayName, lifecycle, availability, minimumPlan, modalities, contextWindowTokens, pricing, supportedReasoningEfforts, reasoning, capabilities]
+            additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, requestId, retryable]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            requestId: { type: string }
+            retryable: { type: boolean }
+            retryAfterMs: { type: [integer, 'null'] }

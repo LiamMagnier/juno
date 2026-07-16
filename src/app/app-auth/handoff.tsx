@@ -1,60 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo } from "react";
 
-/**
- * Redirects to the app's custom scheme with the session token. The native
- * ASWebAuthenticationSession watches for `juno://` and completes sign-in; if the
- * app isn't driving this (e.g. opened in a normal browser), we show a manual
- * "Open Juno" link instead.
- */
-export function AppAuthHandoff({ token }: { token: string }) {
-  const [deepLink, setDeepLink] = useState<string | null>(null);
+export function AppAuthHandoff({ code, state, nonce }: { code: string; state: string; nonce: string }) {
+  const deepLink = useMemo(() => {
+    const query = new URLSearchParams({ code, state, nonce });
+    return `juno://auth/callback?${query}`;
+  }, [code, state, nonce]);
 
   useEffect(() => {
-    if (!token) return;
-    const link = `juno://auth?token=${encodeURIComponent(token)}`;
-    setDeepLink(link);
-    window.location.href = link;
-  }, [token]);
+    window.location.replace(deepLink);
+  }, [deepLink]);
 
   return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 12,
-        fontFamily:
-          "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
-        color: "#e8e4dd",
-        background: "#111010",
-        padding: 40,
-        textAlign: "center",
-      }}
-    >
-      <p style={{ fontSize: 17, fontWeight: 600 }}>Signing you in to Juno…</p>
-      <p style={{ fontSize: 13, opacity: 0.7 }}>
-        You can return to the app. If it didn’t open automatically:
-      </p>
-      {deepLink && (
-        <a
-          href={deepLink}
-          style={{
-            fontSize: 14,
-            fontWeight: 600,
-            color: "#fff",
-            background: "#c6613f",
-            padding: "10px 18px",
-            borderRadius: 12,
-            textDecoration: "none",
-          }}
-        >
+    <main className="flex min-h-dvh items-center justify-center bg-background p-8 text-foreground">
+      <div className="max-w-md space-y-3 text-center">
+        <h1 className="text-lg font-semibold">Signing you in to Juno…</h1>
+        <p className="text-sm text-muted-foreground">You can return to the app.</p>
+        <a className="inline-flex rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground" href={deepLink}>
           Open Juno
         </a>
-      )}
-    </div>
+      </div>
+    </main>
   );
 }

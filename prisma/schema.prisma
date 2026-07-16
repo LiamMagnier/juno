@@ -35,32 +35,34 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  accounts                Account[]
-  sessions                Session[]
-  settings                Settings?
-  subscription            Subscription?
-  folders                 Folder[]
-  conversations           Conversation[]
-  memories                MemoryEntry[]
-  memorySummary           MemorySummary?
-  conversationMemories    ConversationMemory[]
-  attachments             Attachment[]
-  usage                   Usage[]
-  featureRequests         FeatureRequest[]
-  votes                   FeatureVote[]
-  featureComments         FeatureComment[]
-  projects                Project[]
-  savedPrompts            SavedPrompt[]
-  authoredAnnouncements   Announcement[]           @relation("AnnouncementAuthor")
-  announcementDismissals  AnnouncementDismissal[]
-  connections             Connection[]
-  codeDevices             CodeDevice[]
-  codeTasks               CodeTask[]
-  apiSpend                ApiSpend[]
-  moderationFlags         ModerationFlag[]
-  shares                  Share[]
-  scheduledTasks          ScheduledTask[]
-  voiceTranscriptSessions VoiceTranscriptSession[]
+  accounts                 Account[]
+  sessions                 Session[]
+  settings                 Settings?
+  subscription             Subscription?
+  folders                  Folder[]
+  conversations            Conversation[]
+  memories                 MemoryEntry[]
+  memorySummary            MemorySummary?
+  conversationMemories     ConversationMemory[]
+  attachments              Attachment[]
+  usage                    Usage[]
+  featureRequests          FeatureRequest[]
+  votes                    FeatureVote[]
+  featureComments          FeatureComment[]
+  projects                 Project[]
+  savedPrompts             SavedPrompt[]
+  authoredAnnouncements    Announcement[]            @relation("AnnouncementAuthor")
+  announcementDismissals   AnnouncementDismissal[]
+  connections              Connection[]
+  codeDevices              CodeDevice[]
+  codeTasks                CodeTask[]
+  apiSpend                 ApiSpend[]
+  moderationFlags          ModerationFlag[]
+  shares                   Share[]
+  scheduledTasks           ScheduledTask[]
+  voiceTranscriptSessions  VoiceTranscriptSession[]
+  nativeAuthorizationCodes NativeAuthorizationCode[]
+  nativeDeviceSessions     NativeDeviceSession[]
 }
 
 // ----------------------------------------------------------------------------
@@ -121,6 +123,61 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+// Native clients authenticate with short-lived access tokens and rotating
+// refresh tokens. Raw Auth.js cookies must never cross the browser boundary.
+model NativeAuthorizationCode {
+  id                 String    @id @default(cuid())
+  codeHash           String    @unique
+  userId             String
+  codeChallenge      String
+  redirectUri        String
+  nonce              String
+  installationIdHash String
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime
+  usedAt             DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+}
+
+model NativeDeviceSession {
+  id                 String    @id @default(cuid())
+  userId             String
+  installationIdHash String
+  name               String
+  platform           String
+  appVersion         String
+  createdAt          DateTime  @default(now())
+  lastSeenAt         DateTime  @default(now())
+  revokedAt          DateTime?
+  revocationReason   String?
+
+  user          User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokens NativeRefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([userId, installationIdHash])
+}
+
+model NativeRefreshToken {
+  id              String    @id @default(cuid())
+  deviceSessionId String
+  familyId        String
+  tokenHash       String    @unique
+  parentTokenId   String?
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  usedAt          DateTime?
+  revokedAt       DateTime?
+
+  deviceSession NativeDeviceSession @relation(fields: [deviceSessionId], references: [id], onDelete: Cascade)
+
+  @@index([deviceSessionId, familyId])
+  @@index([expiresAt])
 }
 
 // ----------------------------------------------------------------------------
@@ -190,12 +247,12 @@ model Folder {
 }
 
 model Conversation {
-  id               String   @id @default(cuid())
+  id               String    @id @default(cuid())
   userId           String
-  title            String   @default("New chat")
-  titleSource      String   @default("default")
-  model            String   @default("claude-opus-4-8")
-  pinned           Boolean  @default(false)
+  title            String    @default("New chat")
+  titleSource      String    @default("default")
+  model            String    @default("claude-opus-4-8")
+  pinned           Boolean   @default(false)
   // Archived chats stay fully readable and searchable but leave the sidebar's
   // Recent list. Nullable timestamp rather than a boolean so "when" is kept.
   archivedAt       DateTime?
@@ -206,10 +263,10 @@ model Conversation {
   forkedFromId     String?
   // Tool connectors (github/figma/notion…) the user turned on for this chat.
   // Persisted so they stay active for every later prompt without re-toggling.
-  activeConnectors String[] @default([])
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-  lastMessageAt    DateTime @default(now())
+  activeConnectors String[]  @default([])
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  lastMessageAt    DateTime  @default(now())
 
   user                    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
   folder                  Folder?                  @relation(fields: [folderId], references: [id], onDelete: SetNull)

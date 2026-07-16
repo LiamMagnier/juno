@@ -24,7 +24,17 @@ function GoogleIcon() {
 export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; googleEnabled: boolean }) {
   const router = useRouter();
   const params = useSearchParams();
-  const callbackUrl = params.get("callbackUrl") || "/chat";
+  const requestedCallback = params.get("callbackUrl");
+  const callbackUrl = React.useMemo(() => {
+    if (!requestedCallback || !requestedCallback.startsWith("/") || requestedCallback.startsWith("//")) return "/chat";
+    try {
+      const parsed = new URL(requestedCallback, "https://juno.invalid");
+      if (parsed.origin !== "https://juno.invalid") return "/chat";
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    } catch {
+      return "/chat";
+    }
+  }, [requestedCallback]);
 
   const [name, setName] = React.useState("");
   const [email, setEmail] = React.useState("");
@@ -138,14 +148,14 @@ export function AuthForm({ mode, googleEnabled }: { mode: "signin" | "signup"; g
         {mode === "signup" ? (
           <>
             Already have an account?{" "}
-            <Link href="/sign-in" className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={`/sign-in?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium text-foreground underline-offset-4 hover:underline">
               Sign in
             </Link>
           </>
         ) : (
           <>
             New to Juno?{" "}
-            <Link href="/sign-up" className="font-medium text-foreground underline-offset-4 hover:underline">
+            <Link href={`/sign-up?callbackUrl=${encodeURIComponent(callbackUrl)}`} className="font-medium text-foreground underline-offset-4 hover:underline">
               Create an account
             </Link>
           </>
