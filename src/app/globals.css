@@ -89,32 +89,32 @@
   }
 
   .dark {
-    --background: 40 6% 10%;
+    --background: 28 9% 9%;
     --foreground: 45 24% 93%;
 
-    --card: 40 4% 13%;
+    --card: 28 7% 12.5%;
     --card-foreground: 45 24% 93%;
 
-    --popover: 40 3% 19%;
+    --popover: 28 6% 18%;
     --popover-foreground: 45 24% 93%;
 
     --primary: 15 54% 51%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 45 5% 16%;
+    --secondary: 30 7% 15%;
     --secondary-foreground: 45 22% 90%;
 
-    --muted: 45 5% 16%;
+    --muted: 30 7% 15%;
     --muted-foreground: 37 7% 63%;
 
-    --accent: 40 3% 19%;
+    --accent: 28 6% 18%;
     --accent-foreground: 45 22% 90%;
 
     --destructive: 11 51% 56%;
     --destructive-foreground: 0 0% 100%;
 
     --success: 140 33% 53%;
-    --success-foreground: 40 6% 10%;
+    --success-foreground: 28 9% 9%;
 
     --warning: 40 60% 58%;
     --source: 187 58% 49%;
@@ -123,14 +123,14 @@
     --ultra-from: 252 100% 76%;
     --ultra-to: 271 93% 73%;
 
-    --border: 36 5% 21%;
-    --input: 36 5% 24%;
+    --border: 30 6% 21%;
+    --input: 30 6% 24%;
     --ring: 15 54% 51%;
 
-    --sidebar: 40 6% 10%;
+    --sidebar: 28 10% 7.5%;
     --sidebar-foreground: 37 7% 70%;
-    --sidebar-border: 36 5% 18%;
-    --sidebar-accent: 45 5% 16%;
+    --sidebar-border: 28 7% 16%;
+    --sidebar-accent: 30 8% 14%;
 
     /* Elevation (dark) — deeper throw + faint warm top inner-highlight for real lift,
        not an inverted light shadow. */
