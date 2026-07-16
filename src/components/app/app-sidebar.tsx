@@ -359,7 +359,7 @@ export function AppSidebar({
       {/* Home / Code — the same two surfaces as the Juno app. Code lists the
           Juno Code sessions synced from the Mac app. */}
       <div className="px-3 pb-2 pt-1">
-        <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted/70 p-1" role="tablist" aria-label="Sidebar mode">
+        <div className="grid grid-cols-2 gap-0.5 rounded-[10px] bg-muted/50 p-0.5" role="tablist" aria-label="Sidebar mode">
           {(["home", "code"] as const).map((value) => (
             <button
               key={value}
@@ -368,18 +368,22 @@ export function AppSidebar({
               aria-selected={mode === value}
               onClick={() => switchMode(value)}
               className={cn(
-                "flex items-center justify-center gap-2 rounded-[9px] px-3 py-1.5 text-[13.5px] font-medium transition-all duration-fast ease-out-soft",
-                mode === value ? "bg-card text-foreground shadow-pop" : "text-muted-foreground hover:text-foreground"
+                "flex items-center justify-center gap-1.5 rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors duration-base ease-out-soft",
+                mode === value
+                  ? "bg-sidebar-accent text-foreground"
+                  : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
               )}
             >
-              {value === "home" ? <Home className="h-4 w-4" /> : <Code className="h-4 w-4" />}
+              {value === "home" ? <Home className="h-3.5 w-3.5" /> : <Code className="h-3.5 w-3.5" />}
               {value === "home" ? "Home" : "Code"}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Primary nav (Claude-style rows) */}
+      {/* Primary nav (Claude-style rows) — chat surfaces only; Code mode keeps
+          just the synced session list below. */}
+      {mode === "home" && (
       <nav className="space-y-0.5 px-2 pt-1">
         <NavRow
           onClick={newChat}
@@ -396,6 +400,7 @@ export function AppSidebar({
         <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
         <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
       </nav>
+      )}
 
       <div className="pt-2" />
 
@@ -481,18 +486,15 @@ export function AppSidebar({
             )}
             {filtered.filter((c) => !c.pinned).length > 0 && (
               <Section
-                label="Recent"
+                label="Recents"
                 count={filtered.filter((c) => !c.pinned).length}
                 collapsible
                 isCollapsed={recentsCollapsed}
                 onToggleCollapse={toggleRecentsCollapsed}
               >
-                {groups.map(([groupLabel, items], index) => (
-                  <div key={groupLabel} className={cn("space-y-0.5", index > 0 ? "mt-5" : "mt-3")}>
-                    <div className="flex items-center px-2 py-1 font-mono text-label uppercase text-muted-foreground/50">
-                      {groupLabel}
-                    </div>
-                    {items.map((c) => (
+                {/* One flat list, newest first — no date-group headers. */}
+                <div className="mt-1 space-y-0.5">
+                    {groups.flatMap(([, items]) => items).map((c) => (
                       <ConversationRow
                         key={c.id}
                         conversation={c}
@@ -506,8 +508,7 @@ export function AppSidebar({
                         onRequestConfirm={setConfirm}
                       />
                     ))}
-                  </div>
-                ))}
+                </div>
               </Section>
             )}
           </>
@@ -631,7 +632,7 @@ function NavRow({
   // Claude-density rows: a touch taller (py-2) with roomier gaps, so the nav
   // breathes like the reference sidebar instead of packing rows tight.
   const cls = cn(
-    "group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-[15px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
+    "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -686,7 +687,7 @@ function Section({
         ) : null}
       </span>
       {/* Sentence-case section labels, per the Claude-sidebar reference. */}
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-muted-foreground/70">
+      <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-muted-foreground/60">
         {label}
       </span>
       {count != null && <span className="pr-1 font-mono text-[10px] text-muted-foreground/50">{count}</span>}
@@ -871,11 +872,10 @@ function ConversationRow({
         )}
         title={conversation.title}
       >
-        {conversation.pinned && (
-          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
-            <Star className="h-[14px] w-[14px] fill-primary text-primary" />
-          </span>
-        )}
+        {/* Claude-style: every chat carries the same speech-bubble mark. */}
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-colors duration-fast group-hover:text-foreground">
+          <MessageSquare className="h-[15px] w-[15px]" />
+        </span>
         <AnimatedTitle title={conversation.title} className="min-w-0 flex-1" />
       </Link>
       <DropdownMenu>
