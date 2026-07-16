@@ -1,7 +1,7 @@
 {
-  "version": "2.6.1",
-  "build": 23,
+  "version": "3.0.0",
+  "build": 24,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Model selector now matches the website: the same models (synced live, so new ones show up without an update), the same official provider logos, and \u2014 in Code \u2014 a Computer Use badge on compatible models.",
+  "notes": "Juno 3.0 \u2014 Your chats now sync live between the app and the website: projects, pins, renames and deletes included. Settings gains plan-usage meters (monthly budget, session and weekly windows), every reply shows its real token and cost readout, and the GPT-5.6 family (Sol, Terra, Luna) joins the model selector.",
   "minimumSystemVersion": "26.0"
 }
