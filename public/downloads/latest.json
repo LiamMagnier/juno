@@ -1,7 +1,7 @@
 {
-  "version": "3.0.0",
-  "build": 24,
+  "version": "3.0.1",
+  "build": 29,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Juno 3.0 \u2014 Your chats now sync live between the app and the website: projects, pins, renames and deletes included. Settings gains plan-usage meters (monthly budget, session and weekly windows), every reply shows its real token and cost readout, and the GPT-5.6 family (Sol, Terra, Luna) joins the model selector.",
+  "notes": "Juno 3.0.1 \u2014 the thinking slider comes to the app (Chat, Code, and the model picker), token-usage meters land in Settings and the account menu, the Code composer gains attach-file mentions and a cleaner model pill, the sidebar chat menu stops flickering, and the updater now reports real errors, backs up the old app during installs, and logs to ~/Library/Logs/Juno.",
   "minimumSystemVersion": "26.0"
 }
