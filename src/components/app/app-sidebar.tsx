@@ -413,7 +413,9 @@ export function AppSidebar({
         <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
         <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
         <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
-        <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
+        {mode === "home" && (
+          <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
+        )}
         <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
       </nav>
 
