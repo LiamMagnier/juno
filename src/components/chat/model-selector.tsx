@@ -22,6 +22,7 @@ import {
   sortModelsForDisplay,
   type ReasoningEffort,
 } from "@/lib/model-metrics";
+import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { providerAccent } from "@/lib/provider-colors";
 import { cn } from "@/lib/utils";
 
@@ -211,47 +212,31 @@ function ModelDetailPanel({
           </div>
         </div>
 
-        {/* Thinking mode — drives the metrics above. Hover to preview, click to set. */}
+        {/* Thinking — the same slider as the composer; dragging previews the
+            metrics live and commits without closing the picker. */}
         <div className="mt-auto border-t p-5 pt-4">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Thinking</span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">
-              {model.reasoning && options.length === 0 ? "Always on" : thinking ? `${effectiveEffort} effort` : "Instant"}
-            </span>
-          </div>
-          {options.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {options.map((o) => {
-                const active = effectiveEffort === o.value;
-                return (
-                  <button
-                    key={o.label}
-                    type="button"
-                    onMouseEnter={() => setPreview({ effort: o.value })}
-                    onFocus={() => setPreview({ effort: o.value })}
-                    onMouseLeave={() => setPreview(null)}
-                    onBlur={() => setPreview(null)}
-                    onClick={() => onCommit?.(o.value)}
-                    className={cn(
-                      "flex-1 basis-16 rounded-lg px-1 py-1.5 text-[11px] font-medium transition-all duration-fast ease-out-soft active:scale-[0.97]",
-                      active
-                        ? "bg-primary/15 text-primary ring-1 ring-primary/40"
-                        : "bg-muted/60 text-muted-foreground hover:bg-accent hover:text-foreground"
-                    )}
-                  >
-                    {o.label}
-                  </button>
-                );
-              })}
-            </div>
+          {options.length > 1 ? (
+            <ReasoningSlider
+              options={options}
+              value={effectiveEffort}
+              onChange={(v) => {
+                setPreview({ effort: v });
+                onCommit?.(v);
+              }}
+            />
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Thinking</span>
+                <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/80">
+                  {model.reasoning ? "Always on" : "Instant"}
+                </span>
+              </div>
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                {model.reasoning ? "This model always reasons — no effort control." : "This model replies instantly."}
+              </p>
+            </>
           )}
-          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
-            {options.length > 0
-              ? "Pick a level to switch to this model with that thinking effort."
-              : model.reasoning
-                ? "This model always reasons — no effort control."
-                : "This model replies instantly."}
-          </p>
         </div>
       </div>
     </div>
@@ -540,9 +525,16 @@ export function ModelSelector({
             model={hoveredModel}
             reasoningEffort={reasoningEffort}
             onCommit={(effort) => {
-              if (!hoveredModel) return;
+              // Slider drag: apply effort AND the hovered model, but keep the
+              // picker open so the user can keep comparing tiers.
+              if (!hoveredModel || hoveredModel.comingSoon) return;
+              if (planRank(plan) < planRank(effectiveMinPlan(hoveredModel.minPlan))) {
+                setOpen(false);
+                router.push("/upgrade");
+                return;
+              }
               onReasoningChange?.(effort);
-              select(hoveredModel); // plan-gates, applies the model, and closes
+              onChange(hoveredModel.id);
             }}
           />
         </div>

@@ -382,26 +382,28 @@ export function AppSidebar({
         </div>
       </div>
 
-      {/* Primary nav (Claude-style rows) — chat surfaces only; Code mode keeps
-          just the synced session list below. */}
-      {mode === "home" && (
+      {/* Primary nav (Claude-style rows). Code mode keeps everything that
+          makes sense for code sessions — only chat-only entries hide. */}
       <nav className="space-y-0.5 px-2 pt-1">
-        <NavRow
-          onClick={newChat}
-          icon={
-            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-105">
-              <Plus className="h-3.5 w-3.5" />
-            </span>
-          }
-          label="New chat"
-        />
-        <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
+        {mode === "home" && (
+          <>
+            <NavRow
+              onClick={newChat}
+              icon={
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-105">
+                  <Plus className="h-3.5 w-3.5" />
+                </span>
+              }
+              label="New chat"
+            />
+            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
+          </>
+        )}
         <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
         <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
         <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
         <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
       </nav>
-      )}
 
       <div className="pt-2" />
 
