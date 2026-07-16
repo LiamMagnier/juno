@@ -107,7 +107,7 @@ Disposition remains **REJECT for public production distribution**, while the rep
 | Gate | Exact command | Result |
 |---|---|---|
 | Native universal Release | `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project Juno.xcodeproj -scheme Juno -configuration Release -destination 'generic/platform=macOS' -derivedDataPath /tmp/juno-v3-release28 ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO build` | Pass; `3.0.0 (28)`, `x86_64 arm64`, Release callback `com.liammagnier.juno://auth/callback` |
-| Native exact tests | `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild test -project Juno.xcodeproj -scheme Juno -destination 'platform=macOS' -derivedDataPath /tmp/juno-v3-auth28-test CODE_SIGNING_ALLOWED=NO` | Compiled; runner could not materialize while the Mac was locked, then was interrupted. Must rerun after unlock. |
+| Native exact tests | `xcodebuild build-for-testing ... -derivedDataPath /tmp/juno-v3-auth28-cli-test CODE_SIGNING_ALLOWED=NO`; place the app debug dylib on the test bundle's command-line rpath; `xcrun xctest JunoTests.xctest` | Pass: 34 Swift tests in 8 suites. Test-only commit `b927f7f` makes the callback registration assertion locate the containing app when run without a normal UI host. |
 | Web native auth | `AUTH_SECRET='test-only-at-least-32-bytes-long' npm run test:native-auth` | Pass: 7/7 on integration; 4/4 on the production callback hotfix |
 | Web sync protocol | `AUTH_SECRET='test-only-at-least-32-bytes-long' npm run test:native-sync` | Pass: 3/3 |
 | Web types/build | `npx tsc --noEmit`; production-environment-shaped `npm run build` | Pass; 79 generated pages; known ambiguous Tailwind-duration advisories remain |
@@ -140,4 +140,4 @@ Disposition remains **REJECT for public production distribution**, while the rep
 | Security review | **Partial** — promoted auth/sync slice reviewed and foreign-reference defect fixed; Code/XPC and App Sandbox blockers remain |
 | Accessibility/performance | **Partial** — static and indexed-query checks passed; exact-candidate UI/VoiceOver/reference-Mac budgets pending |
 | Signed/notarized public download and secure updater | **Fail** — Developer ID Application certificate and notarization credentials absent |
-| Real development account across web and Mac | **Fail for build 28 while Mac is locked** |
+| Real development account across web and Mac | **Fail for build 28 while Mac is locked**; native static/unit suite is green |
