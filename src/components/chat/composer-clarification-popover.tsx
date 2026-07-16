@@ -76,10 +76,17 @@ export function ComposerClarificationPopover({
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key !== "Escape") return;
+      // CLAIM THE KEY, IN CAPTURE. This popover is the topmost transient layer,
+      // and other window-level Escape listeners now stand down on
+      // defaultPrevented (see the thought dock in chat-view). Capture runs before
+      // every bubble-phase listener regardless of which mounted first, so the
+      // claim lands deterministically instead of racing registration order.
+      event.preventDefault();
+      onClose();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [onClose]);
 
   const saveAnswer = React.useCallback((question: PreflightClarificationQuestion, answer: PreflightClarificationAnswer | null) => {

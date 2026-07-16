@@ -50,6 +50,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Semantic Coordinate Vector ("
   },
   {
+    "id": "00a05fce19732187",
+    "source": "Notices"
+  },
+  {
     "id": "00a54f38dceaac87",
     "source": "Uploading your export"
   },
@@ -1214,6 +1218,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Catalog song ids (from search_catalog)."
   },
   {
+    "id": "2419329067823cab",
+    "source": "search"
+  },
+  {
     "id": "247610f4dedd4ab7",
     "source": "live"
   },
@@ -1466,6 +1474,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search published components across team libraries."
   },
   {
+    "id": "2ba2e92aef3c9fe7",
+    "source": "Fast, inexpensive tier — chat, coding, and agentic tool calling. Superseded by 4.5."
+  },
+  {
     "id": "2bab3ee1aa4f7a28",
     "source": "Juno signs in with an app-specific password — never your main Apple ID password."
   },
@@ -1492,10 +1504,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c79decdcc6480e0",
     "source": "Fast GLM vision-language model for image understanding."
-  },
-  {
-    "id": "2c7f50a2e1ab1353",
-    "source": "SpaceXAI's smartest model — coding, agents and knowledge work (EU access mid-July)."
   },
   {
     "id": "2c83c00f0e83b39c",
@@ -1770,10 +1778,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Code"
   },
   {
-    "id": "34453736ed4458a2",
-    "source": "Older Zhipu image model."
-  },
-  {
     "id": "346018aaed094887",
     "source": "Fastest, most cost-effective Claude — great for high-volume tasks."
   },
@@ -1824,6 +1828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3664895579f0a7e6",
     "source": "Export"
+  },
+  {
+    "id": "3683709dabc0ad05",
+    "source": "Facts"
   },
   {
     "id": "3683c643d61d41fb",
@@ -2300,6 +2308,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4359809f24dba80a",
     "source": "Cross-origin request rejected."
+  },
+  {
+    "id": "4387e5d3966fc436",
+    "source": "Effort"
   },
   {
     "id": "439411711cd404d0",
@@ -4286,6 +4298,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create one →"
   },
   {
+    "id": "7ed41c126536ea75",
+    "source": "Think"
+  },
+  {
     "id": "7edb360f06acaef2",
     "source": "call"
   },
@@ -4344,10 +4360,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "800190d22f103a73",
     "source": "The provider stopped the response for safety reasons."
-  },
-  {
-    "id": "8021c5eb1b6cfb64",
-    "source": "Fast, inexpensive flagship tier — chat, coding, and agentic tool calling."
   },
   {
     "id": "8024ee8fc5f4004b",
@@ -5114,6 +5126,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "pong"
   },
   {
+    "id": "979d6300fd9884ff",
+    "source": "Research"
+  },
+  {
     "id": "97afd5706463632d",
     "source": "In the picker today"
   },
@@ -5344,10 +5360,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9dc153ad5ced423d",
     "source": "Le Service est proposé selon les plans suivants. Les prix sont exprimés"
-  },
-  {
-    "id": "9dcff98e275f0cb9",
-    "source": "Timeline"
   },
   {
     "id": "9df0bd5b87de60c7",
@@ -6190,10 +6202,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ran"
   },
   {
-    "id": "b6be5245a6331f36",
-    "source": "2.5-generation Flash."
-  },
-  {
     "id": "b6d42ac2bd053a21",
     "source": ": pour générer une réponse, le contenu de vos messages (« prompts ») et les pièces jointes nécessaires sont"
   },
@@ -6546,6 +6554,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Word document (.docx)"
   },
   {
+    "id": "c395b289f5a38a8b",
+    "source": "Open thought process — in progress"
+  },
+  {
     "id": "c3963aedaac6c83c",
     "source": "Memory"
   },
@@ -6656,6 +6668,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c7169cf55dbd0f3e",
     "source": "). La création d'un compte ou la souscription d'un abonnement emporte acceptation pleine et entière des présentes."
+  },
+  {
+    "id": "c76159a1edb6a9c4",
+    "source": "searches"
   },
   {
     "id": "c76cf6c5d7b65f26",
@@ -7530,8 +7546,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search the catalog and work with your playlists."
   },
   {
+    "id": "de74965831a25264",
+    "source": "SpaceXAI's smartest model — coding, agents and knowledge work."
+  },
+  {
     "id": "de97042844bf60d9",
     "source": "Discard unsaved voice transcript"
+  },
+  {
+    "id": "deb04a0d67010703",
+    "source": "Thought"
   },
   {
     "id": "df0fbf9c008fb166",
@@ -7732,10 +7756,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e3ebaa16dd9d9b9f",
     "source": "Not found"
-  },
-  {
-    "id": "e41a2ff683ba8916",
-    "source": "Deprecated by Anthropic."
   },
   {
     "id": "e46ee9fc0d6f038f",

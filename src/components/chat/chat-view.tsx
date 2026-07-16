@@ -16,6 +16,7 @@ import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
 import { CanvasPanel } from "@/components/canvas/canvas-panel";
+import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
@@ -112,6 +113,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // Holds the last artifact while the canvas plays its slide-out exit.
   const [closingArtifact, setClosingArtifact] = React.useState<ClientArtifact | null>(null);
   const [fullscreen, setFullscreen] = React.useState(false);
+  // The docked thought panel: which message's run is open, and the column its
+  // panel is portalled into. Only the ID is lifted — the run model and its one
+  // clock stay in ActivityTimeline. See thought-panel-context.
+  const [thoughtOpenId, setThoughtOpenId] = React.useState<string | null>(null);
+  const [thoughtContainer, setThoughtContainer] = React.useState<HTMLDivElement | null>(null);
   const [canvasWidth, setCanvasWidth] = React.useState(() => {
     if (typeof window === "undefined") return 560;
     const saved = Number(window.localStorage.getItem(CANVAS_WIDTH_KEY));
@@ -636,8 +642,59 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     if (a) {
       setOpenArtifactId(a.id);
       setFullscreen(!!opts?.fullscreen);
+      // COEXISTENCE RULE: the canvas and the thought panel are both docked right
+      // columns, and chat + canvas + panel does not fit — the canvas alone
+      // already reserves CHAT_MIN_WIDTH for what is left. So they are mutually
+      // exclusive: the newest request wins and the other yields. Whichever the
+      // user just asked for is the one they want to look at.
+      setThoughtOpenId(null);
     }
   };
+
+  const openThoughtPanel = React.useCallback(
+    (id: string | null) => {
+      setThoughtOpenId(id);
+      if (id) closeArtifact();
+    },
+    [closeArtifact]
+  );
+
+  // SELF-HEAL. `openArtifact` is DERIVED from chat.artifacts, so every path that
+  // replaces the transcript drops the canvas for free. `thoughtOpenId` is raw
+  // state rendered directly, so it must be reconciled here or the dock outlives
+  // the message it names: chat.reset() (new chat, private-mode toggle),
+  // applyFork, switching conversations, and regenerate (which re-adds the answer
+  // under a fresh id) all unmount the ActivityTimeline that portals the panel —
+  // and with it the only close button. What is left is an empty bg-card column
+  // that hides the whole chat below lg. One reconciliation covers them all;
+  // clearing at each call site would keep missing the ones that are not call
+  // sites at all.
+  React.useEffect(() => {
+    if (!thoughtOpenId) return;
+    if (!chat.messages.some((m) => m.id === thoughtOpenId)) setThoughtOpenId(null);
+  }, [chat.messages, thoughtOpenId]);
+
+  // Esc closes the dock. The Sheet used to give us this for free; a docked,
+  // non-modal panel has to ask. Bound while open only, so it never competes
+  // with the composer's own Esc handling when there is nothing to close.
+  React.useEffect(() => {
+    if (!thoughtOpenId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      // ONLY IF NO NEARER LAYER CLAIMED IT. At lg the chat stays typeable beside
+      // the dock, so the composer's slash palette and quote chip are live at the
+      // same time; both preventDefault on their own Escape but the native event
+      // still bubbles up to window. Without this check one Escape dismisses the
+      // palette AND destroys the panel the user is reading next to it.
+      if (e.key === "Escape" && !e.defaultPrevented) setThoughtOpenId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [thoughtOpenId]);
+
+  const thoughtPanel = React.useMemo(
+    () => ({ openId: thoughtOpenId, setOpenId: openThoughtPanel, container: thoughtContainer }),
+    [thoughtOpenId, openThoughtPanel, thoughtContainer]
+  );
 
   React.useEffect(() => {
     window.localStorage.setItem(CANVAS_WIDTH_KEY, String(canvasWidth));
@@ -737,7 +794,13 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   const handleArtifactUpdated = (updated: ClientArtifact) => {
     chat.setArtifacts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    setOpenArtifactId(updated.id);
+    // Re-point the canvas at the saved artifact, but never RE-OPEN it. This
+    // fires from fetch closures in CanvasPanel that resolve independently of
+    // CanvasPanel's lifetime, so by the time a save lands the user may have
+    // opened a thought dock — which closed the canvas on purpose (see the
+    // COEXISTENCE RULE in openArtifactByIdentifier). Forcing it back open would
+    // put both docked columns in flow at once and crush the chat to zero width.
+    setOpenArtifactId((prev) => (prev ? updated.id : prev));
   };
 
   const voiceMessages = React.useMemo<ChatMessage[]>(() => {
@@ -1040,6 +1103,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   );
 
   return (
+    <ThoughtPanelProvider value={thoughtPanel}>
     <div ref={layoutRef} data-juno-chat-root className="relative flex h-full min-h-0 w-full overflow-hidden">
       {/* Model parameters + incognito ghost, top-right in normal mode. */}
       <div
@@ -1084,8 +1148,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
       {/* Chat column */}
       {/* Below lg the canvas replaces the chat entirely — a split there leaves the
-          chat column narrower than a phone. */}
-      <div className={cn("relative flex h-full min-h-0 min-w-0 flex-1 flex-col", openArtifact && "hidden lg:flex")}>
+          chat column narrower than a phone. The thought dock follows the same
+          precedent for the same reason, rather than inventing a second story. */}
+      <div
+        className={cn(
+          "relative flex h-full min-h-0 min-w-0 flex-1 flex-col",
+          (openArtifact || thoughtOpenId) && "hidden lg:flex"
+        )}
+      >
         {/* Project scope indicator — persistent while this chat is filed in a
             project. Brand-new chats use the composer chip until they exist.
 
@@ -1338,6 +1408,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         </div>
       </div>
 
+      {/* Thought dock — a real column, not an overlay. The chat narrows beside it
+          and stays fully readable, scrollable and typeable: no backdrop, no
+          dimming, no focus trap, no scroll lock. Sized like the canvas (shrink-0
+          column at lg, full-bleed below it) but fixed-width: the canvas earns a
+          drag handle because it holds documents the user is editing at arbitrary
+          widths; this holds one fixed-measure column of receipts.
+          ActivityTimeline portals the panel in here — see thought-panel-context.
+          `duration-slow` sits on an `animate-*` element ON PURPOSE, exactly as
+          the canvas does below: tailwindcss-animate makes it the slide's
+          duration, which is the intent. */}
+      {thoughtOpenId && (
+        <div
+          ref={setThoughtContainer}
+          className={cn(
+            "relative z-40 h-full w-full shrink-0 overflow-hidden border-border/70 bg-card",
+            "lg:w-[30rem] lg:min-w-[26rem] lg:border-l",
+            "duration-slow ease-out-expo motion-safe:animate-in motion-safe:slide-in-from-right"
+          )}
+        />
+      )}
+
       {/* Canvas — slides in from the right; on close it lingers (absolute, so the
           chat reflows underneath) while the slide-out plays, then unmounts. */}
       {(openArtifact ?? closingArtifact) && (
@@ -1387,5 +1478,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       )}
 
     </div>
+    </ThoughtPanelProvider>
   );
 }

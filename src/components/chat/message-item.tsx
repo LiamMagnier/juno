@@ -462,7 +462,7 @@ export function MessageItem({
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
       <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
-        <ActivityTimeline events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
+        <ActivityTimeline messageId={message.id} events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor ? (

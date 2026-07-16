@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
 import { ThoughtProcessPanel, buildRun, domainOf, formatSpan, useRunClock } from "@/components/chat/thought-process-panel";
+import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
 
@@ -122,19 +124,56 @@ function PreviewLine({
  * leaves — and motion stopping is the least of them.
  */
 export function ActivityTimeline({
+  messageId,
   events,
   reasoning,
   streaming,
 }: {
+  /** Identifies THIS run's panel in the chat-scoped open state, so only one
+   *  dock is open at a time across the whole thread. */
+  messageId: string;
   events?: ClientActivityEvent[];
   reasoning?: string | null;
   streaming?: boolean;
 }) {
-  const [open, setOpen] = React.useState(false);
+  // Open/close lives in chat-view (see thought-panel-context): the panel is a
+  // docked column and cannot be painted from inside this scrolling row. The RUN
+  // and its clock stay here, and the panel rides a portal to reach the dock.
+  const panel = useThoughtPanel();
+  const open = !!panel && panel.openId === messageId;
+  const panelDomId = `thought-panel-${messageId}`;
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
   const list = React.useMemo(() => events ?? [], [events]);
+
+  // Focus comes back on close — the panel took it on open and nothing else
+  // claimed it (Esc, or the close button, which unmounts under the caret and
+  // drops focus to <body>). If the user closed this dock by opening ANOTHER
+  // row's, focus is already on that row's trigger, so we leave it alone rather
+  // than yanking it backwards.
+  const wasOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (wasOpen.current && !open) {
+      const active = document.activeElement;
+      if (!active || active === document.body) triggerRef.current?.focus();
+    }
+    wasOpen.current = open;
+  }, [open]);
 
   const hasEvents = list.length > 0;
   const hasReasoning = !!reasoning?.trim();
+
+  // WITHDRAW THE CLAIM when there is nothing left to show. The dock is keyed on
+  // `messageId`, but this row can stop rendering while that id stays perfectly
+  // valid: paging the VersionPager back to an older version hands us
+  // `activity: undefined` and `reasoning: null` under the SAME message, and the
+  // early return below takes the panel AND the trigger with it — leaving an
+  // empty dock with nothing left to toggle it shut. chat-view reconciles against
+  // the message list and cannot see this; only we can.
+  const renders = hasEvents || hasReasoning;
+  const setPanelOpenId = panel?.setOpenId;
+  React.useEffect(() => {
+    if (open && !renders) setPanelOpenId?.(null);
+  }, [open, renders, setPanelOpenId]);
 
   // THE run's clock and THE run's model — singular, and passed down to the panel
   // rather than rebuilt there. Calibration happens on the render that first sees
@@ -200,10 +239,14 @@ export function ActivityTimeline({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => panel?.setOpenId(open ? null : messageId)}
         aria-expanded={open}
-        aria-haspopup="dialog"
+        /* No aria-haspopup: this is no longer a dialog, it is a disclosure that
+           docks a region. aria-controls is set only while the panel is mounted,
+           so it never points at an id that is not in the document. */
+        aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         /* Deliberate deviation from hover=LIFT. Lift applies to SURFACES; this is
            a text link with no surface, and inventing a card to lift is precisely
@@ -243,7 +286,21 @@ export function ActivityTimeline({
         />
       </button>
 
-      <ThoughtProcessPanel open={open} onOpenChange={setOpen} run={run} reasoning={reasoning} streaming={streaming} />
+      {/* The portal is the whole trick: the panel stays in THIS React subtree —
+          so it keeps receiving the run built from the one clock above — while
+          its DOM lands in the dock beside the chat column. */}
+      {open && panel.container
+        ? createPortal(
+            <ThoughtProcessPanel
+              id={panelDomId}
+              onClose={() => panel.setOpenId(null)}
+              run={run}
+              reasoning={reasoning}
+              streaming={streaming}
+            />,
+            panel.container
+          )
+        : null}
     </>
   );
 }

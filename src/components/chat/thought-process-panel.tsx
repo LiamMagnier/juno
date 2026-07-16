@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { X } from "lucide-react";
-import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
 
@@ -349,15 +348,31 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
  *  the middle truncates; the number is shrink-0 and never truncates. */
 const ROW = "grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-3 py-1.5";
 
+/**
+ * DOCKED, NOT OVERLAID. This was a Radix <Sheet> — a modal dialog with a
+ * backdrop that dimmed the chat, trapped focus and locked scroll. The chat is
+ * the thing the user is reading; the panel is an annotation on it, so the panel
+ * now takes a column and the chat narrows beside it, exactly like CanvasPanel.
+ *
+ * Everything the Sheet gave us that we still want is re-supplied deliberately
+ * and nothing else: an accessible name, focus moved in on open, Esc-to-close
+ * (owned by chat-view, which owns the open state), and a visible close control.
+ * The behaviours we shed — backdrop, dimming, focus trap, scroll lock,
+ * inert-ing the page — are shed on purpose: the chat MUST stay readable,
+ * scrollable and typeable while this is open.
+ *
+ * The panel mounts only while open, so there is no `open` prop to thread.
+ */
 export function ThoughtProcessPanel({
-  open,
-  onOpenChange,
+  id,
+  onClose,
   run,
   reasoning,
   streaming,
 }: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  /** DOM id, so the trigger's aria-controls points at something real. */
+  id: string;
+  onClose: () => void;
   /** Built ONCE by the caller, from the caller's clock. The panel deliberately
    *  owns no clock: the collapsed row and the panel opened from it must be
    *  incapable of disagreeing, and the only way to guarantee that is for there
@@ -368,13 +383,22 @@ export function ThoughtProcessPanel({
 }) {
   const hasReasoning = !!reasoning?.trim();
   const reasoningRef = React.useRef<HTMLDivElement>(null);
+  const rootRef = React.useRef<HTMLElement>(null);
+
+  // Focus moves in on open — the user pressed a control to get here, so the
+  // caret follows. Nothing holds it: Tab leaves the panel normally, and
+  // ActivityTimeline hands focus back to the trigger on close. preventScroll
+  // stops the dock stealing the chat's scroll position on the way in.
+  React.useEffect(() => {
+    rootRef.current?.focus({ preventScroll: true });
+  }, []);
 
   // Keep the live thinking pinned to the latest token while it streams.
   React.useEffect(() => {
-    if (open && streaming && reasoningRef.current) {
+    if (streaming && reasoningRef.current) {
       reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
     }
-  }, [reasoning, streaming, open]);
+  }, [reasoning, streaming]);
 
   // Soft edge on the newest reasoning text so the stream reads as live. The
   // boundary sits on whitespace so the dimmed tail never splits a word; on
@@ -407,13 +431,13 @@ export function ThoughtProcessPanel({
   const showBar = run.phases.length >= 2 && totalMs > 0;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="right"
-        title="Thought process"
-        aria-describedby={undefined}
-        className="flex w-[min(30rem,100vw-3rem)] max-w-none flex-col border-border/70 bg-card"
-      >
+    <aside
+      id={id}
+      ref={rootRef}
+      tabIndex={-1}
+      aria-label="Thought process"
+      className="flex h-full w-full flex-col bg-card focus:outline-none"
+    >
         <header className="flex shrink-0 items-start gap-3 border-b border-border/60 px-5 pb-4 pt-5">
           <div className="min-w-0 flex-1">
             <h2 className="truncate font-serif text-heading text-foreground">Thought process</h2>
@@ -422,10 +446,14 @@ export function ThoughtProcessPanel({
             )}
           </div>
 
-          <SheetClose className="flex size-8 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-[transform,box-shadow,border-color,color] duration-base ease-out-soft hover:border-border hover:text-foreground hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none coarse:size-10">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-[transform,box-shadow,border-color,color] duration-base ease-out-soft hover:border-border hover:text-foreground hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none coarse:size-10"
+          >
             <X className="size-4" aria-hidden="true" />
             <span className="sr-only">Close thought process</span>
-          </SheetClose>
+          </button>
         </header>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto bg-muted/15 px-5 py-5">
@@ -591,7 +619,6 @@ export function ThoughtProcessPanel({
             </section>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+    </aside>
   );
 }
