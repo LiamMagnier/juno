@@ -174,6 +174,22 @@ export async function* streamOpenAIResponses(
     : undefined;
 
   const effort = mapEffort(model, reasoningEffort);
+  // ASK FOR WHAT THE MODEL ALREADY MAKES.
+  //
+  // Without this key the API emits no reasoning_summary_* events at all, so the
+  // handler below was dead code and every gpt-*-pro / gpt-*-codex run showed NO
+  // reasoning whatsoever. Verified live on all seven api:"responses" models Juno
+  // ships (5.5/5.4/5.2-pro, 5.3/5.2/5.1-codex, 5.1-codex-mini): every one
+  // accepts summary:"detailed" -> 200.
+  //
+  // "detailed" over "auto" because "auto" collapses to a single part on most
+  // prompts, and the parts ARE the steps. Cost: summary tokens bill as output
+  // tokens (already counted by the usage handler below) — measured ~600 chars
+  // per part, 17 parts on a hard prompt ≈ 2.5k output tokens.
+  //
+  // Skipped when effort is "none": the model does not think, so there is
+  // nothing to summarise and nothing to pay for.
+  const wantsSummary = !!effort && effort !== "none";
 
   console.info("[llm:openai-responses] stream start", {
     model: model.providerModel,
@@ -187,6 +203,11 @@ export async function* streamOpenAIResponses(
   let cumCached = 0;
   let sawUsage = false;
   let finishRaw: string | undefined;
+  // Declared OUTSIDE the round loop on purpose: a tool round starts a fresh
+  // response whose summary_index restarts at 0, but the user is watching one
+  // continuous run. Keeping the ordinal monotonic across rounds is what stops
+  // round 2's first part from overwriting round 1's.
+  let summaryPart = -1;
 
   const c = client();
   const maxRounds = hasTools ? MAX_TOOL_ROUNDS + 1 : 1;
@@ -204,7 +225,12 @@ export async function* streamOpenAIResponses(
     };
     // Cast: the installed openai types predate the "none"/"xhigh"/"max" values
     // that the Responses API now accepts.
-    if (effort) params.reasoning = { effort } as OpenAI.Responses.ResponseCreateParams["reasoning"];
+    if (effort) {
+      params.reasoning = {
+        effort,
+        ...(wantsSummary ? { summary: "detailed" } : {}),
+      } as OpenAI.Responses.ResponseCreateParams["reasoning"];
+    }
     if (tools) {
       params.tools = tools;
       params.tool_choice = isFinalRound ? "none" : "auto";
@@ -221,8 +247,18 @@ export async function* streamOpenAIResponses(
         case "response.output_text.delta":
           yield { type: "text", text: event.delta };
           break;
+        // A part boundary is a FACT the API states, not something to infer from
+        // the text later. Counting the announcements is the whole mechanism:
+        // each `part.added` opens a step, and every delta until the next one
+        // belongs to it.
+        case "response.reasoning_summary_part.added":
+          summaryPart++;
+          break;
         case "response.reasoning_summary_text.delta":
-          yield { type: "reasoning", text: event.delta };
+          // Defensive: a delta with no preceding part.added still belongs to a
+          // real part, so open one rather than emitting part:-1.
+          if (summaryPart < 0) summaryPart = 0;
+          yield { type: "reasoning", text: event.delta, part: summaryPart };
           break;
         case "response.output_item.done": {
           const item = event.item as { type: string; call_id?: string; name?: string; arguments?: string };

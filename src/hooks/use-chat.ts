@@ -3,6 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
+import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import {
   formatPreflightClarificationVisibleMessage,
@@ -225,6 +226,16 @@ export function useChat(opts: UseChatOptions) {
       let sawTerminal = false;
       let metaUserMessageId: string | null = null;
       let metaArrived = false;
+      // The reasoning fold for this generation, accumulated HERE rather than
+      // inside the setMessages updater. React defers an updater to the render
+      // phase whenever the fiber already has queued work — which is routine,
+      // since one network read parses every buffered SSE frame in a synchronous
+      // loop — so an updater that read a mutable local would see the ordinal the
+      // NEXT delta had already written, and place the "\n\n" part separator in
+      // the wrong spot. This loop is the only writer, so the local is the source
+      // of truth and the message mirrors it: the same synchronous fold the route
+      // does, which is what makes server and client byte-identical.
+      let reasoningState = emptyReasoning();
 
       // Mark the bubble as awaiting background recovery and start polling for
       // the answer the server is (very likely) still writing. No finishReason
@@ -314,8 +325,24 @@ export function useChat(opts: UseChatOptions) {
             }
             case "reasoning": {
               setStatus((cur) => (cur === "writing" ? cur : "thinking"));
+              // Fold through the SAME helper the route uses, so the steps the
+              // panel shows mid-stream are byte-identical to the ones it shows
+              // after a reload. Providers without part boundaries fall through
+              // it as a plain concat and keep `reasoningParts` absent.
+              reasoningState = appendReasoningDelta(reasoningState, chunk.text, chunk.part);
+              const { text: reasoning, parts: reasoningParts } = reasoningState;
               setMessages((prev) =>
-                prev.map((m) => (m.id === assistantTempId ? { ...m, reasoning: (m.reasoning ?? "") + chunk.text } : m))
+                prev.map((m) =>
+                  m.id === assistantTempId
+                    ? {
+                        ...m,
+                        reasoning,
+                        // Copied because `reasoningState.parts` is re-read by the
+                        // next delta; the message must not alias live state.
+                        ...(reasoningParts.length ? { reasoningParts: [...reasoningParts] } : {}),
+                      }
+                    : m
+                )
               );
               break;
             }

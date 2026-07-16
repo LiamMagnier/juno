@@ -35,6 +35,21 @@ const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "tool",
 ]);
 
+/**
+ * Decrypt the stored reasoning parts back into plain strings.
+ *
+ * `undefined` (not `[]`) for anything that is not a real array of strings —
+ * NULL from a message written before the column existed, or from a provider
+ * that never sent boundaries. The panel reads that absence as "no steps exist"
+ * and shows the collapsed reasoning alone, which is the honest rendering for
+ * both cases: the structure was never there to recover.
+ */
+function serializeReasoningParts(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const parts = raw.filter((p): p is string => typeof p === "string").map((p) => decryptMessageTextSafe(p));
+  return parts.length ? parts : undefined;
+}
+
 function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
   if (!Array.isArray(raw)) return undefined;
 
@@ -93,6 +108,7 @@ export async function serializeMessage(
     role: msg.role,
     content: decryptMessageTextSafe(msg.content),
     reasoning: msg.reasoning != null ? decryptMessageTextSafe(msg.reasoning) : undefined,
+    reasoningParts: serializeReasoningParts(msg.reasoningParts),
     model: msg.model,
     feedback: msg.feedback,
     createdAt: msg.createdAt.toISOString(),

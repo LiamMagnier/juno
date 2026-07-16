@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { X } from "lucide-react";
+import { ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toSteps } from "@/lib/reasoning-parts";
 import type { ClientActivityEvent } from "@/types/chat";
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -368,6 +369,7 @@ export function ThoughtProcessPanel({
   onClose,
   run,
   reasoning,
+  reasoningParts,
   streaming,
 }: {
   /** DOM id, so the trigger's aria-controls points at something real. */
@@ -379,11 +381,29 @@ export function ThoughtProcessPanel({
    *  to be one number, not two agreeing ones. See useRunClock. */
   run: RunModel;
   reasoning?: string | null;
+  /** The provider's OWN discrete summary parts, or absent when it sent none.
+   *  Absence is a fact carried from the wire, never a gap to fill in. */
+  reasoningParts?: string[] | null;
   streaming?: boolean;
 }) {
   const hasReasoning = !!reasoning?.trim();
   const reasoningRef = React.useRef<HTMLDivElement>(null);
   const rootRef = React.useRef<HTMLElement>(null);
+  // COLLAPSED BY DEFAULT. The prose was the loudest thing in the panel; it is
+  // evidence, not the headline. It stays mounted-on-demand: when closed the
+  // scroller is unmounted, which the autoscroll effect below already tolerates.
+  const [rawOpen, setRawOpen] = React.useState(false);
+
+  /**
+   * STEPS — the model's own words, or nothing.
+   *
+   * `toSteps` returns null unless the provider actually delivered parts, so
+   * this is null for Anthropic, Zhipu, Mistral, Google and for every message
+   * persisted before parts were carried. Those runs render the disclosure
+   * alone. Nothing here inspects `reasoning` to look for structure: the only
+   * boundaries that exist are the ones the provider sent.
+   */
+  const steps = React.useMemo(() => toSteps(reasoningParts), [reasoningParts]);
 
   // Focus moves in on open — the user pressed a control to get here, so the
   // caret follows. Nothing holds it: Tab leaves the panel normally, and
@@ -394,11 +414,17 @@ export function ThoughtProcessPanel({
   }, []);
 
   // Keep the live thinking pinned to the latest token while it streams.
+  //
+  // The null check is now load-bearing rather than defensive: while collapsed
+  // the scroller is UNMOUNTED, so this no-ops for the whole time the disclosure
+  // is shut. `rawOpen` is in the deps because opening mid-stream must pin to the
+  // tail immediately — without it the effect would not run again until the next
+  // delta, and a paused stream would open scrolled to the top.
   React.useEffect(() => {
     if (streaming && reasoningRef.current) {
       reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
     }
-  }, [reasoning, streaming]);
+  }, [reasoning, streaming, rawOpen]);
 
   // Soft edge on the newest reasoning text so the stream reads as live. The
   // boundary sits on whitespace so the dimmed tail never splits a word; on
@@ -476,30 +502,106 @@ export function ThoughtProcessPanel({
             </section>
           )}
 
-          {/* REASONING — the prose. It answers "what did it do?", which is the
-              question that made the user open the panel, so it leads. The bounded
-              box + inner scroll is what stops the autoscroll stealing page scroll
-              from the answer. */}
+          {/* REASONING — steps lead, prose is the evidence behind them.
+              The question that made the user open the panel is "what did it
+              do?", and a wall of streaming prose answers it worse than the
+              model's own titles do. So the titles are the headline and the full
+              text moved behind a disclosure.
+
+              The steps are NOT a summary we wrote. They are the parts the
+              provider emitted, in order, verbatim — which is why they appear for
+              OpenAI's Responses models and for nobody else. When no provider
+              parts exist there is no Steps list and no placeholder for one: the
+              section is just the disclosure, and its absence is the design (same
+              rule PROFILE follows at line ~530). */}
           {hasReasoning && (
             <section className="flex flex-col gap-2.5">
               <SectionLabel>Reasoning</SectionLabel>
-              {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
-                  the border, and 2xl(16) − p-1(4) = xl(12) keeps it concentric. */}
-              <div className="field-well rounded-2xl border border-border/50 bg-background/40 p-1">
-                <div
-                  ref={reasoningRef}
-                  className="scroll-fade-y max-h-[46vh] overflow-y-auto whitespace-pre-wrap rounded-xl px-3.5 py-3 font-serif text-body italic text-muted-foreground/90"
+
+              {steps && (
+                <ol className="flex flex-col">
+                  {steps.map((s, i) => {
+                    // Only the LAST step can be in flight, and only while the run
+                    // is live. Coral is ACTIVE/SELECTED ONLY — same rule as the
+                    // Profile rows.
+                    const active = !!streaming && i === steps.length - 1;
+                    return (
+                      // Keyed by ARRAY POSITION, never by the provider's index or
+                      // the title: OpenAI repeats summary_index within one
+                      // response (live: [0…14, 13, 14]) and repeats titles too,
+                      // so either would collide two steps into one and drop text.
+                      <li key={i} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
+                        <span
+                          className={cn(
+                            "font-mono text-caption uppercase tracking-[0.1em] tabular-nums transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
+                            active ? "text-primary" : "text-muted-foreground/55"
+                          )}
+                        >
+                          {/* An ordinal, not a duration. Steps have no clock —
+                              ActivityTimeline owns the only one. */}
+                          {String(i + 1).padStart(2, "0")}
+                        </span>
+                        {/* The model's own title when it wrote one; otherwise its
+                            own opening line, truncated for width. Either way the
+                            words are the model's — we never compose a label. */}
+                        <span className="col-span-2 min-w-0 truncate text-body text-foreground/85">
+                          {s.title ?? s.body.split("\n")[0]}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
+
+              <div className="flex flex-col gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setRawOpen((v) => !v)}
+                  aria-expanded={rawOpen}
+                  aria-controls={`${id}-reasoning-full`}
+                  className="group flex items-center gap-1.5 self-start rounded-md font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/70 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
                 >
-                  {reasoning!.slice(0, tailFrom)}
-                  <span
+                  <ChevronRight
+                    aria-hidden="true"
                     className={cn(
-                      "transition-opacity duration-slow ease-out-soft motion-reduce:transition-none",
-                      streaming ? "opacity-60" : "opacity-100"
+                      "size-3 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
+                      rawOpen && "rotate-90"
                     )}
+                  />
+                  {/* Never "raw". No provider here hands over unedited
+                      chain-of-thought: OpenAI sends a summary it wrote, and
+                      Anthropic summarises server-side too. Calling this the raw
+                      thinking would be a small lie in the one panel that exists
+                      not to tell them. */}
+                  {rawOpen ? "Hide full thinking" : "Show full thinking"}
+                </button>
+
+                {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
+                    the border, and 2xl(16) − p-1(4) = xl(12) keeps it concentric. */}
+                {rawOpen && (
+                  <div
+                    id={`${id}-reasoning-full`}
+                    className="field-well rounded-2xl border border-border/50 bg-background/40 p-1 motion-safe:animate-fade-in"
                   >
-                    {reasoning!.slice(tailFrom)}
-                  </span>
-                </div>
+                    <div
+                      ref={reasoningRef}
+                      /* Smaller than it was (text-caption, max-h-[32vh]) because it
+                         is no longer the headline — but the serif-italic voice is
+                         kept exactly as approved. */
+                      className="scroll-fade-y max-h-[32vh] overflow-y-auto whitespace-pre-wrap rounded-xl px-3.5 py-3 font-serif text-caption italic leading-relaxed text-muted-foreground/90"
+                    >
+                      {reasoning!.slice(0, tailFrom)}
+                      <span
+                        className={cn(
+                          "transition-opacity duration-slow ease-out-soft motion-reduce:transition-none",
+                          streaming ? "opacity-60" : "opacity-100"
+                        )}
+                      >
+                        {reasoning!.slice(tailFrom)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
             </section>
           )}

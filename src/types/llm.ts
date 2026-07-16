@@ -7,7 +7,22 @@ export type MessageForModel = { role: Role; content: string; attachments: Attach
 /** Events yielded by a provider stream. */
 export type LlmEvent =
   | { type: "text"; text: string }
-  | { type: "reasoning"; text: string } // visible chain-of-thought / thinking
+  /**
+   * Visible chain-of-thought / thinking.
+   *
+   * `part` is the ordinal of the discrete summary part this delta belongs to,
+   * assigned by the adapter from ARRAY POSITION — never from the provider's own
+   * index. OpenAI's `summary_index` repeats within a single response (live:
+   * [0…14, 13, 14] on gpt-5.4-mini), so using it as a key would collide two
+   * parts into one and silently drop text.
+   *
+   * Only the OpenAI Responses adapter sets it, because it is the only provider
+   * that delivers reasoning as discrete parts on the wire. Everyone else emits
+   * one continuous stream and leaves it undefined — which is what makes
+   * "this provider has no steps" a fact carried by the pipeline rather than a
+   * guess made by the UI.
+   */
+  | { type: "reasoning"; text: string; part?: number }
   | { type: "sources"; sources: ClientSource[] }
   | { type: "tool"; server: string; name: string; phase: "call" | "result"; detail?: string }
   | {

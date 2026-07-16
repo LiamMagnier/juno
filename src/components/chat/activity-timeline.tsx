@@ -127,6 +127,7 @@ export function ActivityTimeline({
   messageId,
   events,
   reasoning,
+  reasoningParts,
   streaming,
 }: {
   /** Identifies THIS run's panel in the chat-scoped open state, so only one
@@ -134,6 +135,9 @@ export function ActivityTimeline({
   messageId: string;
   events?: ClientActivityEvent[];
   reasoning?: string | null;
+  /** Discrete summary parts, when the provider sent them. Passed straight
+   *  through — this component derives nothing from them. */
+  reasoningParts?: string[] | null;
   streaming?: boolean;
 }) {
   // Open/close lives in chat-view (see thought-panel-context): the panel is a
@@ -296,6 +300,7 @@ export function ActivityTimeline({
               onClose={() => panel.setOpenId(null)}
               run={run}
               reasoning={reasoning}
+              reasoningParts={reasoningParts}
               streaming={streaming}
             />,
             panel.container

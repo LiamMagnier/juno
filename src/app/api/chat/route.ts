@@ -26,6 +26,7 @@ import {
   formatPreflightClarificationVisibleMessage,
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
+import { appendReasoningDelta } from "@/lib/reasoning-parts";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
@@ -369,6 +370,12 @@ async function handleChat(req: Request) {
         let activityCounter = 0;
         let full = "";
         let reasoning = "";
+        // Parallel to `reasoning`, not a replacement for it: the flat text is
+        // what every provider has and what the disclosure renders; these are the
+        // boundaries only some providers send. Empty stays empty — see
+        // lib/reasoning-parts.
+        let reasoningParts: string[] = [];
+        let lastReasoningPart: number | null = null;
         let promptTokens: number | undefined;
         let completionTokens: number | undefined;
         let cacheReadTokens: number | undefined;
@@ -477,8 +484,14 @@ async function handleChat(req: Request) {
             } else if (ev.type === "tool") {
               if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
             } else if (ev.type === "reasoning") {
-              reasoning += ev.text;
-              send({ type: "reasoning", text: ev.text });
+              ({
+                text: reasoning,
+                parts: reasoningParts,
+                lastPart: lastReasoningPart,
+              } = appendReasoningDelta({ text: reasoning, parts: reasoningParts, lastPart: lastReasoningPart }, ev.text, ev.part));
+              // `part` rides the SSE so the panel can build steps AS THEY
+              // ARRIVE, from the same boundaries the API gave the adapter.
+              send({ type: "reasoning", text: ev.text, part: ev.part });
               enforceStreamBudget();
             } else if (ev.type === "sources") {
               for (const source of ev.sources) {
@@ -522,6 +535,7 @@ async function handleChat(req: Request) {
               role: "ASSISTANT",
               content: full,
               reasoning: reasoning || undefined,
+              reasoningParts: reasoningParts.length ? reasoningParts : undefined,
               model: modelId,
               feedback: null,
               createdAt: new Date().toISOString(),
@@ -585,6 +599,7 @@ async function handleChat(req: Request) {
                 role: "ASSISTANT",
                 content: full,
                 reasoning: reasoning || undefined,
+                reasoningParts: reasoningParts.length ? reasoningParts : undefined,
                 model: modelId,
                 feedback: null,
                 createdAt: new Date().toISOString(),
@@ -906,6 +921,10 @@ async function handleChat(req: Request) {
       let activityCounter = 0;
       let full = "";
       let reasoning = "";
+      // See the private branch: flat text for everyone, boundaries only from
+      // providers that actually send them.
+      let reasoningParts: string[] = [];
+      let lastReasoningPart: number | null = null;
       let promptTokens: number | undefined;
       let completionTokens: number | undefined;
       let cacheReadTokens: number | undefined;
@@ -941,9 +960,18 @@ async function handleChat(req: Request) {
       const persistAssistantTurn = async (data: {
         content: string;
         reasoning: string;
+        /** Empty for every provider that streams unbroken prose. Persisted as
+         *  NULL in that case, so "no steps" survives a reload as a fact. */
+        reasoningParts: string[];
         promptTokens: number | null;
         completionTokens: number | null;
       }) => {
+        // Each part is encrypted individually, exactly like `reasoning` — same
+        // message-crypto path, same key. The array shape stays in plaintext
+        // because the count of steps is not the secret; their contents are.
+        const encryptedParts = data.reasoningParts.length
+          ? (data.reasoningParts.map(encryptMessageText) as unknown as Prisma.InputJsonValue)
+          : null;
         const base = {
           content: encryptMessageText(data.content),
           model: modelId,
@@ -980,6 +1008,11 @@ async function handleChat(req: Request) {
                 data: {
                   ...base,
                   reasoning: data.reasoning ? encryptMessageText(data.reasoning) : null,
+                  // MUST clear, not skip. A regenerate can swap a part-emitting
+                  // model for one that sends none; leaving the old array behind
+                  // would show the PREVIOUS answer's steps above the new one's
+                  // reasoning — the exact fabrication this work exists to avoid.
+                  reasoningParts: encryptedParts ?? Prisma.DbNull,
                   feedback: null, // a fresh answer starts with clean feedback
                   sources: webSources.length ? (webSources as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
                   createdAt: new Date(), // the timestamp reflects the current version
@@ -997,6 +1030,7 @@ async function handleChat(req: Request) {
             role: "ASSISTANT",
             ...base,
             ...(data.reasoning ? { reasoning: encryptMessageText(data.reasoning) } : {}),
+            ...(encryptedParts ? { reasoningParts: encryptedParts } : {}),
             ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
           },
           include,
@@ -1145,8 +1179,12 @@ async function handleChat(req: Request) {
           } else if (ev.type === "tool") {
             if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
           } else if (ev.type === "reasoning") {
-            reasoning += ev.text;
-            send({ type: "reasoning", text: ev.text });
+            ({
+              text: reasoning,
+              parts: reasoningParts,
+              lastPart: lastReasoningPart,
+            } = appendReasoningDelta({ text: reasoning, parts: reasoningParts, lastPart: lastReasoningPart }, ev.text, ev.part));
+            send({ type: "reasoning", text: ev.text, part: ev.part });
             enforceStreamBudget();
           } else if (ev.type === "sources") {
             for (const source of ev.sources) {
@@ -1182,6 +1220,7 @@ async function handleChat(req: Request) {
         const assistant = await persistAssistantTurn({
           content: full,
           reasoning,
+          reasoningParts,
           promptTokens: usage.totalInput || promptTokens || null,
           completionTokens: usage.output || completionTokens || null,
         });
@@ -1282,6 +1321,7 @@ async function handleChat(req: Request) {
             const assistant = await persistAssistantTurn({
               content: full,
               reasoning,
+              reasoningParts,
               promptTokens: partialUsage.totalInput || promptTokens || null,
               completionTokens: partialUsage.output || completionTokens || null,
             });

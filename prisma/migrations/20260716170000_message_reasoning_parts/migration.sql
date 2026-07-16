@@ -1,0 +1,13 @@
+-- Discrete reasoning summary parts, as the provider emitted them.
+--
+-- Additive and nullable: every existing Message keeps its flat `reasoning` and
+-- gets NULL here, which the UI reads as "this run has no step structure" and
+-- renders as the collapsed reasoning alone. No backfill is possible or wanted —
+-- the boundaries were never on the wire for those rows, so inventing them now
+-- would be fabricating structure the model never produced.
+--
+-- Idempotent by necessity: deploy.yml:101 runs `prisma db push`, which creates this
+-- column from schema.prisma WITHOUT recording a row in _prisma_migrations. A later
+-- `migrate deploy` would then fail on "column already exists" and block all deploys.
+-- AlterTable
+ALTER TABLE "Message" ADD COLUMN IF NOT EXISTS     "reasoningParts" JSONB;

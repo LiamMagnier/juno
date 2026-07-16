@@ -41,6 +41,17 @@ export interface ClientMessage {
   role: MessageRole;
   content: string;
   reasoning?: string | null; // the model's visible thinking / chain-of-thought
+  /**
+   * The same thinking, still divided into the discrete parts the provider
+   * actually emitted — one entry per part, in order, each verbatim.
+   *
+   * Present only for providers that deliver reasoning as parts (today: OpenAI's
+   * Responses API). Absent means the provider streamed one continuous block and
+   * NO step structure exists — which the UI must render as "no steps", never as
+   * steps guessed out of the prose. `reasoning` stays the flat, complete text
+   * for display and for every provider.
+   */
+  reasoningParts?: string[] | null;
   model?: string | null;
   feedback?: FeedbackValue;
   createdAt: string;
@@ -167,7 +178,9 @@ export type StreamChunk =
   | { type: "title"; conversationId: string; title: string; titleSource?: TitleSource }
   | { type: "activity"; event: ClientActivityEvent }
   | { type: "sources"; sources: ClientSource[] }
-  | { type: "reasoning"; text: string }
+  /** `part` mirrors LlmEvent's: the ordinal of the discrete summary part this
+   *  delta belongs to, or absent when the provider streams unbroken prose. */
+  | { type: "reasoning"; text: string; part?: number }
   | { type: "delta"; text: string }
   | { type: "progress"; stage: GenerationProgressStage; pct?: number; note?: string }
   | {

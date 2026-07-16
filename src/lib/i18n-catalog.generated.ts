@@ -142,6 +142,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "React"
   },
   {
+    "id": "02069f2c274641c5",
+    "source": "Drag to resize. Arrow keys adjust, Home resets."
+  },
+  {
     "id": "021a734de7748f42",
     "source": "(latest)"
   },
@@ -1512,6 +1516,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c938047bc75f4d9",
     "source": "Invalid name."
+  },
+  {
+    "id": "2ca645a0b9349aaa",
+    "source": "Show full thinking"
   },
   {
     "id": "2caa2fa6ead091fc",
@@ -7022,6 +7030,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Vous vous engagez à ne pas utiliser le Service pour :"
   },
   {
+    "id": "d034d59e5ed3c56a",
+    "source": "Hide full thinking"
+  },
+  {
     "id": "d0788ad759ba4cc5",
     "source": "New prompt"
   },
@@ -8012,6 +8024,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ec90198450a9db6f",
     "source": "Servers active"
+  },
+  {
+    "id": "eceb78636505e244",
+    "source": "Resize thought process panel"
   },
   {
     "id": "ecf84bc72cf06348",

@@ -283,6 +283,12 @@ export function MessageItem({
         ...message,
         content: viewingOld.content,
         reasoning: viewingOld.reasoning ?? null,
+        // MUST be nulled, not inherited from `...message`. MessageVersion stores
+        // only the flat reasoning, so an old version HAS no steps — spreading
+        // the current message's would caption the old answer's thinking with the
+        // new answer's steps. Same rule as `activity` below: this describes the
+        // CURRENT answer only. The version degrades to collapsed reasoning.
+        reasoningParts: null,
         model: viewingOld.model,
         sources: viewingOld.sources,
         promptTokens: viewingOld.promptTokens ?? null,
@@ -462,7 +468,13 @@ export function MessageItem({
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
       <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
-        <ActivityTimeline messageId={message.id} events={view.activity} reasoning={view.reasoning} streaming={message.streaming} />
+        <ActivityTimeline
+          messageId={message.id}
+          events={view.activity}
+          reasoning={view.reasoning}
+          reasoningParts={view.reasoningParts}
+          streaming={message.streaming}
+        />
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
         ) : showCursor ? (

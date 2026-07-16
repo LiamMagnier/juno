@@ -248,6 +248,13 @@ model Message {
   role             Role
   content          String    @db.Text
   reasoning        String?   @db.Text // visible chain-of-thought when a thinking model is used
+  // The same thinking kept as the discrete parts the provider actually emitted:
+  // an array of encrypted strings, one per part, in order (encrypted exactly
+  // like `reasoning`, same message-crypto path). Written only by providers that
+  // deliver parts on the wire — NULL means the provider streamed unbroken prose
+  // and no step structure ever existed. Nullable and additive, so every message
+  // written before this column degrades to "reasoning, no steps" on its own.
+  reasoningParts   Json? // [encrypted part, …] — discrete reasoning summary parts
   model            String?
   feedback         Feedback? // thumbs up/down on assistant messages
   promptTokens     Int?
