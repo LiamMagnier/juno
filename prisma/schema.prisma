@@ -302,6 +302,9 @@ model Conversation {
   title            String    @default("New chat")
   titleSource      String    @default("default")
   model            String    @default("claude-opus-4-8")
+  // Which surface owns this conversation: "chat" (web + app chat) or "code"
+  // (Juno Code sessions synced from the app).
+  kind             String    @default("chat")
   pinned           Boolean   @default(false)
   // Archived chats stay fully readable and searchable but leave the sidebar's
   // Recent list. Nullable timestamp rather than a boolean so "when" is kept.

@@ -16,11 +16,14 @@ export async function GET(req: Request) {
   return NextResponse.json({ conversations });
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const conversation = await prisma.conversation.create({ data: { userId: user.id, titleSource: "default" } });
+  // The Juno app marks Code sessions at create; everything else is a chat.
+  const body = (await req.json().catch(() => ({}))) as { kind?: unknown };
+  const kind = body.kind === "code" ? "code" : "chat";
+  const conversation = await prisma.conversation.create({ data: { userId: user.id, titleSource: "default", kind } });
   return NextResponse.json({ conversation: serializeConversation(conversation) }, { status: 201 });
 }
 

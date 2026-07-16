@@ -9,8 +9,10 @@ import {
   CalendarClock,
   Check,
   ChevronRight,
+  Code,
   Command,
   Folder,
+  Home,
   Library,
   MessageSquare,
   MoreHorizontal,
@@ -93,6 +95,9 @@ export function AppSidebar({
   const [starredProjectIds, setStarredProjectIds] = React.useState<string[]>([]);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
+  // Home shows web + app chats; Code shows Juno Code sessions synced from the
+  // app (conversations with kind "code"). Persisted like the collapse prefs.
+  const [mode, setMode] = React.useState<"home" | "code">("home");
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
@@ -129,6 +134,8 @@ export function AppSidebar({
       if (starred) setStarredCollapsed(JSON.parse(starred));
       const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
       if (recents) setRecentsCollapsed(JSON.parse(recents));
+      const modePref = localStorage.getItem("juno:sidebar:mode");
+      if (modePref === "code") setMode("code");
     } catch {}
 
     const handleSync = () => {
@@ -224,12 +231,22 @@ export function AppSidebar({
     });
   };
 
+  const switchMode = React.useCallback((next: "home" | "code") => {
+    setMode(next);
+    try {
+      localStorage.setItem("juno:sidebar:mode", next);
+    } catch {}
+  }, []);
+
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return conversations.filter(
-      (c) => (!q || c.title.toLowerCase().includes(q)) && (!folderFilter || c.folderId === folderFilter)
+      (c) =>
+        (mode === "code" ? c.kind === "code" : c.kind !== "code") &&
+        (!q || c.title.toLowerCase().includes(q)) &&
+        (!folderFilter || c.folderId === folderFilter)
     );
-  }, [conversations, query, folderFilter]);
+  }, [conversations, query, folderFilter, mode]);
 
   const pinned = React.useMemo(() => filtered.filter((c) => c.pinned), [filtered]);
   const groups = React.useMemo(() => {
@@ -339,6 +356,29 @@ export function AppSidebar({
         </div>
       </div>
 
+      {/* Home / Code — the same two surfaces as the Juno app. Code lists the
+          Juno Code sessions synced from the Mac app. */}
+      <div className="px-3 pb-2 pt-1">
+        <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-muted/70 p-1" role="tablist" aria-label="Sidebar mode">
+          {(["home", "code"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={mode === value}
+              onClick={() => switchMode(value)}
+              className={cn(
+                "flex items-center justify-center gap-2 rounded-[9px] px-3 py-1.5 text-[13.5px] font-medium transition-all duration-fast ease-out-soft",
+                mode === value ? "bg-card text-foreground shadow-pop" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {value === "home" ? <Home className="h-4 w-4" /> : <Code className="h-4 w-4" />}
+              {value === "home" ? "Home" : "Code"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Primary nav (Claude-style rows) */}
       <nav className="space-y-0.5 px-2 pt-1">
         <NavRow
@@ -359,7 +399,7 @@ export function AppSidebar({
 
       <div className="pt-2" />
 
-      {folders.length > 0 && (
+      {mode === "home" && folders.length > 0 && (
         <div className="flex flex-wrap gap-1 px-3 pb-2">
           <FolderChip active={folderFilter === null} onClick={() => setFolderFilter(null)}>All</FolderChip>
           {folders.map((f) => (
@@ -385,22 +425,24 @@ export function AppSidebar({
         ) : filtered.length === 0 ? (
           <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
             {query ? (
-              <>No chats match “{query}”.</>
+              <>No {mode === "code" ? "code sessions" : "chats"} match “{query}”.</>
+            ) : mode === "code" ? (
+              <>No Juno Code sessions yet.<br />They sync here from the Juno app.</>
             ) : (
               <>No conversations yet.<br />Start one above.</>
             )}
           </p>
         ) : (
           <>
-            {(sidebarProjects.length > 0 || pinned.length > 0) && (
+            {((mode === "home" && sidebarProjects.length > 0) || pinned.length > 0) && (
               <Section
                 label="Pinned"
-                count={sidebarProjects.length + pinned.length}
+                count={(mode === "home" ? sidebarProjects.length : 0) + pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
               >
-                {sidebarProjects.map((p) => (
+                {(mode === "home" ? sidebarProjects : []).map((p) => (
                   <ProjectRow
                     key={p.id}
                     project={p}
@@ -586,8 +628,10 @@ function NavRow({
   label: string;
   active?: boolean;
 }) {
+  // Claude-density rows: a touch taller (py-2) with roomier gaps, so the nav
+  // breathes like the reference sidebar instead of packing rows tight.
   const cls = cn(
-    "group relative flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[15px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
+    "group relative flex items-center gap-3 rounded-lg px-2.5 py-2 text-[15px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
@@ -641,7 +685,8 @@ function Section({
           <Icon className="h-3.5 w-3.5 text-muted-foreground/75" />
         ) : null}
       </span>
-      <span className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground/70">
+      {/* Sentence-case section labels, per the Claude-sidebar reference. */}
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-muted-foreground/70">
         {label}
       </span>
       {count != null && <span className="pr-1 font-mono text-[10px] text-muted-foreground/50">{count}</span>}
@@ -649,7 +694,7 @@ function Section({
   );
 
   return (
-    <div className="mb-3">
+    <div className="mb-5 mt-1">
       <div className="flex items-center">
         {collapsible ? (
           <button

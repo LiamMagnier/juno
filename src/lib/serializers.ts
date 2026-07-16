@@ -151,6 +151,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     title: conv.title,
     titleSource: coerceTitleSource(conv.titleSource),
     model: conv.model,
+    kind: conv.kind === "code" ? "code" : "chat",
     pinned: conv.pinned,
     folderId: conv.folderId,
     projectId: conv.projectId,

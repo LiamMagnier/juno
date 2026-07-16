@@ -142,6 +142,8 @@ export interface ClientConversation {
   title: string;
   titleSource: TitleSource;
   model: string;
+  /** Which surface owns this conversation: web/app chat, or a Juno Code session. */
+  kind: "chat" | "code";
   pinned: boolean;
   folderId: string | null;
   projectId: string | null;

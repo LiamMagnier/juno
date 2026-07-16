@@ -21,6 +21,8 @@ const patchSchema = z.object({
   archived: z.boolean().optional(),
   folderId: z.string().cuid().nullable().optional(),
   projectId: z.string().cuid().nullable().optional(),
+  // The Juno app retro-marks synced Code sessions.
+  kind: z.enum(["chat", "code"]).optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
