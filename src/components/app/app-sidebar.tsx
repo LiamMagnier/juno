@@ -93,7 +93,6 @@ export function AppSidebar({
   const [starredProjectIds, setStarredProjectIds] = React.useState<string[]>([]);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
-  const [projectsCollapsed, setProjectsCollapsed] = React.useState(false);
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
@@ -130,8 +129,6 @@ export function AppSidebar({
       if (starred) setStarredCollapsed(JSON.parse(starred));
       const recents = localStorage.getItem("juno:sidebar:recents:collapsed");
       if (recents) setRecentsCollapsed(JSON.parse(recents));
-      const projectsPref = localStorage.getItem("juno:sidebar:projects:collapsed");
-      if (projectsPref) setProjectsCollapsed(JSON.parse(projectsPref));
     } catch {}
 
     const handleSync = () => {
@@ -160,14 +157,6 @@ export function AppSidebar({
     setRecentsCollapsed(next);
     try {
       localStorage.setItem("juno:sidebar:recents:collapsed", JSON.stringify(next));
-    } catch {}
-  };
-
-  const toggleProjectsCollapsed = () => {
-    const next = !projectsCollapsed;
-    setProjectsCollapsed(next);
-    try {
-      localStorage.setItem("juno:sidebar:projects:collapsed", JSON.stringify(next));
     } catch {}
   };
 
@@ -403,27 +392,13 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {sidebarProjects.length > 0 && (
+            {(sidebarProjects.length > 0 || pinned.length > 0) && (
               <Section
-                label="Projects"
-                count={sidebarProjects.length}
+                label="Pinned"
+                count={sidebarProjects.length + pinned.length}
                 collapsible
-                isCollapsed={projectsCollapsed}
-                onToggleCollapse={toggleProjectsCollapsed}
-                action={
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    className="h-6 w-6 text-muted-foreground/70 hover:text-foreground"
-                    onClick={() => {
-                      router.push("/projects");
-                      setSidebarOpen(false);
-                    }}
-                    aria-label="New project"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </Button>
-                }
+                isCollapsed={starredCollapsed}
+                onToggleCollapse={toggleStarredCollapsed}
               >
                 {sidebarProjects.map((p) => (
                   <ProjectRow
@@ -446,26 +421,6 @@ export function AppSidebar({
                     onDelete={() => deleteProject(p)}
                   />
                 ))}
-                {projects.length > sidebarProjects.length && (
-                  <Link
-                    href="/projects"
-                    onClick={() => setSidebarOpen(false)}
-                    className="group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[12px] font-medium text-muted-foreground/70 transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5 hover:text-foreground"
-                  >
-                    <span className="h-[22px] w-[22px] shrink-0" />
-                    <span className="truncate">All projects ({projects.length})</span>
-                  </Link>
-                )}
-              </Section>
-            )}
-            {pinned.length > 0 && (
-              <Section
-                label="Starred"
-                count={pinned.length}
-                collapsible
-                isCollapsed={starredCollapsed}
-                onToggleCollapse={toggleStarredCollapsed}
-              >
                 {pinned.map((c) => (
                   <ConversationRow
                     key={c.id}

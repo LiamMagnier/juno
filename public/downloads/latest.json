@@ -2,6 +2,7 @@
   "version": "3.0.1",
   "build": 29,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "notes": "Juno 3.0.1 \u2014 the thinking slider comes to the app (Chat, Code, and the model picker), token-usage meters land in Settings and the account menu, the Code composer gains attach-file mentions and a cleaner model pill, the sidebar chat menu stops flickering, and the updater now reports real errors, backs up the old app during installs, and logs to ~/Library/Logs/Juno.",
+  "sha256": "7282291038c6a897344584b5faecef2802087e9be7e5f3b1f5312ca6a3fe3866",
+  "notes": "Juno 3.0.1 — the thinking slider comes to the app (Chat, Code, and the model picker), token-usage meters land in Settings and the account menu, the Code composer gains attach-file mentions and a cleaner model pill, the sidebar chat menu stops flickering, and the updater now reports real errors, backs up the old app during installs, and logs to ~/Library/Logs/Juno.",
   "minimumSystemVersion": "26.0"
 }

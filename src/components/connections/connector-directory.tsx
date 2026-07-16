@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
-import type { ConnectorStatus } from "@/components/connections/server-card";
+import type { ConnectorStatus } from "@/components/connections/types";
 import { cn } from "@/lib/utils";
 
 /**
@@ -492,10 +492,9 @@ export function ConnectorDirectory({
     <section className="mt-6">
       {/* Toolbar — a calm search + filter row rather than a second page header. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Two rounded-full elements are concentric at any padding — the safe
-            segmented control. This was a rounded-xl (12px) track wrapping
-            rounded-lg (24px!) thumbs, so the thumbs bulged past their own rail. */}
-        <div className="flex w-fit items-center gap-1 rounded-full border bg-card p-1 shadow-soft">
+        {/* The site's canonical segmented control (same as Library's filter):
+            a recessed muted track with a raised bg-card active pill. */}
+        <div className="flex w-fit items-center gap-1 rounded-[12px] bg-muted/70 p-1">
           {(["all", "connected"] as const).map((value) => (
             <button
               key={value}
@@ -503,10 +502,10 @@ export function ConnectorDirectory({
               onClick={() => setFilter(value)}
               aria-pressed={filter === value}
               className={cn(
-                "rounded-full px-3.5 py-1.5 text-xs font-medium transition-[color,background-color,box-shadow] duration-fast ease-out-soft",
+                "rounded-[9px] px-3 py-1 text-[13px] font-medium transition-all duration-fast ease-out-soft",
                 filter === value
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                  ? "bg-card text-foreground shadow-pop"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               {value === "all" ? "All apps" : `Connected${connectedCount ? ` · ${connectedCount}` : ""}`}
