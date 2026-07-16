@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AlertCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { type ConnectorStatus } from "@/components/connections/server-card";
+import { type ConnectorStatus } from "@/components/connections/types";
 import { CredentialsDialog } from "@/components/connections/credentials-dialog";
 import { ConnectorDirectory, type DirectoryItem } from "@/components/connections/connector-directory";
 

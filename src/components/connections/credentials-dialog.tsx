@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { ConnectorStatus } from "@/components/connections/server-card";
+import type { ConnectorStatus } from "@/components/connections/types";
 
 /*
  * Connect dialog for credentials-kind connectors. Apple Calendar/Mail take an
