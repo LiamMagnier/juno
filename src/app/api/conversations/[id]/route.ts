@@ -21,8 +21,10 @@ const patchSchema = z.object({
   archived: z.boolean().optional(),
   folderId: z.string().cuid().nullable().optional(),
   projectId: z.string().cuid().nullable().optional(),
-  // The Juno app retro-marks synced Code sessions.
+  // The Juno app retro-marks synced Code sessions (+ their workspace).
   kind: z.enum(["chat", "code"]).optional(),
+  codeWorkspaceName: z.string().trim().min(1).max(300).nullable().optional(),
+  codeWorkspacePath: z.string().trim().min(1).max(1000).nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

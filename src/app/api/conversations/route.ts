@@ -20,10 +20,24 @@ export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // The Juno app marks Code sessions at create; everything else is a chat.
-  const body = (await req.json().catch(() => ({}))) as { kind?: unknown };
+  // The Juno app marks Code sessions (and their workspace) at create.
+  const body = (await req.json().catch(() => ({}))) as {
+    kind?: unknown;
+    codeWorkspaceName?: unknown;
+    codeWorkspacePath?: unknown;
+  };
   const kind = body.kind === "code" ? "code" : "chat";
-  const conversation = await prisma.conversation.create({ data: { userId: user.id, titleSource: "default", kind } });
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null);
+  const conversation = await prisma.conversation.create({
+    data: {
+      userId: user.id,
+      titleSource: "default",
+      kind,
+      ...(kind === "code"
+        ? { codeWorkspaceName: str(body.codeWorkspaceName), codeWorkspacePath: str(body.codeWorkspacePath) }
+        : {}),
+    },
+  });
   return NextResponse.json({ conversation: serializeConversation(conversation) }, { status: 201 });
 }
 

@@ -305,6 +305,10 @@ model Conversation {
   // Which surface owns this conversation: "chat" (web + app chat) or "code"
   // (Juno Code sessions synced from the app).
   kind             String    @default("chat")
+  // For kind "code": the app-side workspace (project folder) the session
+  // belongs to, so the website can group sessions the way the app does.
+  codeWorkspaceName String?
+  codeWorkspacePath String?
   pinned           Boolean   @default(false)
   // Archived chats stay fully readable and searchable but leave the sidebar's
   // Recent list. Nullable timestamp rather than a boolean so "when" is kept.

@@ -249,6 +249,22 @@ export function AppSidebar({
     );
   }, [conversations, query, folderFilter, mode]);
 
+  // Code mode: group synced Juno Code sessions by their app-side workspace
+  // (project folder), mirroring the app's own sidebar. Sessions without a
+  // workspace fall through to the flat Sessions list below.
+  const codeProjects = React.useMemo(() => {
+    if (mode !== "code") return [] as { name: string; sessions: ClientConversation[] }[];
+    const byName = new Map<string, ClientConversation[]>();
+    for (const c of filtered) {
+      const name = c.codeWorkspaceName?.trim();
+      if (!name) continue;
+      if (!byName.has(name)) byName.set(name, []);
+      byName.get(name)!.push(c);
+    }
+    return [...byName.entries()].map(([name, sessions]) => ({ name, sessions }));
+  }, [filtered, mode]);
+
+
   const pinned = React.useMemo(() => filtered.filter((c) => c.pinned), [filtered]);
   const groups = React.useMemo(() => {
     const map = new Map<string, ClientConversation[]>();
@@ -438,15 +454,48 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {(sidebarProjects.length > 0 || pinned.length > 0) && (
+            {mode === "code" && codeProjects.length > 0 && (
+              <Section label="Projects">
+                {codeProjects.map((p) => (
+                  <div key={p.name}>
+                    <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground">
+                      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70">
+                        <Folder className="h-[16px] w-[16px]" />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                    </div>
+                    <div className="flex flex-col">
+                      {p.sessions.map((c) => (
+                        <Link
+                          key={c.id}
+                          href={`/chat/${c.id}`}
+                          onClick={() => setSidebarOpen(false)}
+                          aria-current={pathname === `/chat/${c.id}` ? "page" : undefined}
+                          title={c.title}
+                          className={cn(
+                            "flex items-center rounded-md py-1 pl-11 pr-2 text-[13px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
+                            pathname === `/chat/${c.id}`
+                              ? "font-medium text-foreground"
+                              : "text-sidebar-foreground/70 hover:text-foreground"
+                          )}
+                        >
+                          <span className="min-w-0 flex-1 truncate">{c.title || "New session"}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </Section>
+            )}
+            {((mode === "home" && sidebarProjects.length > 0) || pinned.length > 0) && (
               <Section
                 label="Pinned"
-                count={sidebarProjects.length + pinned.length}
+                count={(mode === "home" ? sidebarProjects.length : 0) + pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
               >
-                {sidebarProjects.map((p) => (
+                {(mode === "home" ? sidebarProjects : []).map((p) => (
                   <ProjectRow
                     key={p.id}
                     project={p}
@@ -493,7 +542,10 @@ export function AppSidebar({
               >
                 {/* One flat list, newest first — no date-group headers. */}
                 <div className="mt-1 space-y-0.5">
-                    {groups.flatMap(([, items]) => items).map((c) => (
+                    {groups
+                      .flatMap(([, items]) => items)
+                      .filter((c) => mode !== "code" || !c.codeWorkspaceName?.trim())
+                      .map((c) => (
                       <ConversationRow
                         key={c.id}
                         conversation={c}
