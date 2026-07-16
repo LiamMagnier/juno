@@ -1571,7 +1571,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   <div
                     className={cn(
                       "w-full transition-all duration-500 ease-out-soft z-10",
-                      privateMode ? "max-w-[46rem]" : "max-w-[48rem]"
+                      privateMode ? "max-w-[42.5rem]" : "max-w-[44rem]"
                     )}
                   >
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}

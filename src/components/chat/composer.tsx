@@ -1579,7 +1579,7 @@ export function Composer({
           }
           className={cn(
             "w-full resize-none bg-transparent px-3.5 py-3.5 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4",
-            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[86px] text-body-lg"
+            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[74px] text-body-lg"
           )}
         />
 
