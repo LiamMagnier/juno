@@ -63,8 +63,15 @@ export const PROVIDERS: Record<VoiceProviderId, VoiceProviderFactory> = {
   openai: {
     id: "openai",
     capabilities: { videoInput: true, screenInput: false, trueS2S: true, needsClientTranscript: false, maxSessionSec: 60 * 60 },
-    // gpt-realtime-2.1: audio in $32/M @600 tok/min, out $64/M @1200 tok/min.
-    pricing: { audioInPerSec: 0.0192 / 60, audioOutPerSec: 0.0768 / 60 },
+    // gpt-realtime-2.1, USD/1M tokens, verified 2026-07-16 against
+    // developers.openai.com/api/docs/pricing. `tokens` takes precedence, so the
+    // $/sec rates below are display-only here — a response that omits the token
+    // detail objects falls back to its measured totals, not to duration.
+    pricing: {
+      audioInPerSec: 0.0192 / 60,
+      audioOutPerSec: 0.0768 / 60,
+      tokens: { audioIn: 32, audioInCached: 0.4, textIn: 4, textInCached: 0.4, audioOut: 64, textOut: 24 },
+    },
     available: () => !!process.env.OPENAI_API_KEY,
     create: () => new OpenAiShapedRealtimeSession(openaiDialect),
   },

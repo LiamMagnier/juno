@@ -69,9 +69,19 @@ export async function GET(req: Request) {
   }
   if (!missing.length) return response(translations);
 
+  // Only cache MISSES reach here, so these count model calls, not page views.
+  // The old 60/hr per IP sat below the cost of using the product: one cold load
+  // of the homepage alone is ~6 chunks, so ~10 loads exhausted the hour and the
+  // rest of the interface stayed English. A picker makes that sharper — asking
+  // for a locale nobody has warmed pulls the catalog from scratch.
   const ip = await getClientIp();
-  const limits = [rateLimit({ key: "i18n:global", limit: 1000, windowSec: 60 * 60 })];
-  if (ip !== "unknown") limits.push(rateLimit({ key: `i18n:ip:${ip}`, limit: 60, windowSec: 60 * 60 }));
+  const limits = [rateLimit({ key: "i18n:global", limit: 4000, windowSec: 60 * 60 })];
+  // 200, not 600: this route has no auth check and calls a utility model on every
+  // cache miss, and normalizeWebLocale accepts ~180 languages x any region — so a
+  // rotating `locale` param guarantees misses and bills us for each one. 200/hr
+  // still clears a real session (the limiter sits after the cache check, so it
+  // counts model calls, not page views) while cutting the burn ceiling by a third.
+  if (ip !== "unknown") limits.push(rateLimit({ key: `i18n:ip:${ip}`, limit: 200, windowSec: 60 * 60 }));
   if ((await Promise.all(limits)).some((limit) => !limit.success)) return response(translations, 429);
 
   const source = Object.fromEntries(missing.map((id) => [id, catalogById.get(id)!]));

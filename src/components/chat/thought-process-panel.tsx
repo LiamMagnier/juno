@@ -1,49 +1,36 @@
 "use client";
 
 import * as React from "react";
-import {
-  AlertCircle,
-  BookOpen,
-  Brain,
-  CheckCircle2,
-  Cpu,
-  Gauge,
-  Globe,
-  PenLine,
-  Search,
-  Wrench,
-  X,
-  type LucideIcon,
-} from "lucide-react";
+import { X } from "lucide-react";
 import { Sheet, SheetClose, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import type { ActivityKind, ClientActivityEvent } from "@/types/chat";
+import type { ClientActivityEvent } from "@/types/chat";
 
-export const ACTIVITY_ICONS: Record<ActivityKind, LucideIcon> = {
-  context: BookOpen,
-  model: Cpu,
-  reasoning: Brain,
-  search: Search,
-  visit: Globe,
-  write: PenLine,
-  usage: Gauge,
-  done: CheckCircle2,
-  warning: AlertCircle,
-  tool: Wrench,
-};
-
-export const ACTIVITY_TONE: Record<ActivityKind, string> = {
-  context: "text-muted-foreground",
-  model: "text-muted-foreground",
-  reasoning: "text-primary",
-  search: "text-source",
-  visit: "text-source",
-  write: "text-primary",
-  usage: "text-muted-foreground",
-  done: "text-success",
-  warning: "text-warning",
-  tool: "text-primary",
-};
+/* ─────────────────────────────────────────────────────────────────────────────
+ * THE FORM MUST BE INCAPABLE OF LYING.
+ *
+ * The producer emits its preflight block (context/model/tool/reasoning/search)
+ * with zero awaits between the sends, and usage→warning→done likewise. Every
+ * event inside each block therefore receives the same Date.now(). A typical run
+ * has exactly TWO distinct instants with `write` alone in between — that is
+ * guaranteed by the control flow, not an artifact of a fast run.
+ *
+ * So a rail of ten timestamped rows renders a two-point dataset as though it
+ * were a process. The fix is not to restyle the rail; it is to delete the form
+ * that lies and split the data by what was actually measured:
+ *
+ *   - things with a real duration  → PROFILE, which HAS a duration column
+ *   - things that took no time     → FACTS,   which has NO time column at all
+ *
+ * That absence is the design. It becomes structurally impossible to imply that
+ * "Selected model" took time, because there is nowhere for that implication to
+ * live. It is also forward-compatible: if the producer ever grows a `duration`
+ * field, rows migrate from FACTS to PROFILE into a column already built.
+ *
+ * Wall-clock is gone outright. It was the SERVER's absolute clock answering
+ * "what time was it?" — a question nobody asked — from the exact slot where a
+ * duration belongs, hiding the only question the panel exists to answer.
+ * ───────────────────────────────────────────────────────────────────────────── */
 
 export function domainOf(url: string) {
   try {
@@ -53,78 +40,332 @@ export function domainOf(url: string) {
   }
 }
 
-export function eventTime(value: string) {
-  try {
-    const date = new Date(value);
-    if (isNaN(date.getTime())) return "";
-    return date.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-  } catch {
-    const match = value.match(/T(\d{2}:\d{2}:\d{2})/);
-    return match?.[1] ?? "";
+function parseTs(value: string) {
+  const t = Date.parse(value);
+  return Number.isFinite(t) ? t : null;
+}
+
+/** The ms are already in the ISO strings and were merely thrown away by
+ *  toLocaleTimeString. Unknown stays unknown — never a guess. */
+export function formatSpan(ms: number) {
+  const s = ms / 1000;
+  if (s < 10) return `${s.toFixed(1)}s`;
+  if (s < 60) return `${Math.round(s)}s`;
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
+}
+
+function plural(n: number, one: string, many = `${one}s`) {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+/* Producer titles we discriminate on. `tool`, `search`, `context` and `reasoning`
+ * each cover both a zero-cost preflight send and a real mid-run one; only the
+ * title separates them. */
+const T_CORPUS = "Research corpus ready";
+const T_SEARCHING = "Searching the web";
+const T_CONNECTORS = "Connected tools ready";
+const T_EFFORT = "Reasoning mode enabled";
+
+type PhaseKey = "research" | "think" | "write";
+
+interface Phase {
+  key: PhaseKey;
+  label: string;
+  object: string;
+  ms: number | null;
+  active: boolean;
+}
+
+interface Fact {
+  label: string;
+  value: string;
+}
+
+interface Call {
+  id: string;
+  label: string;
+  object: string;
+  offsetMs: number | null;
+  warn: boolean;
+}
+
+export interface RunModel {
+  t0: number | null;
+  phases: Phase[];
+  facts: Fact[];
+  calls: Call[];
+  sources: { url: string; domain: string }[];
+  searches: number;
+  sourceCount: number;
+  elapsedMs: number | null;
+  restingLabel: string;
+  /** Last warning title, surfaced verbatim. We never editorialise it into a
+   *  claim like "Stopped early" — several warnings are non-fatal. */
+  note: string | null;
+}
+
+/**
+ * Reclassify every event by what it physically IS, not by its `kind`.
+ *
+ * Only three genuine spans exist, all derivable from `createdAt` with no
+ * backend change:
+ *   RESEARCH = corpusReady − search[0]   (the Tavily await; deep research only)
+ *   THINK    = (write − t0) − RESEARCH   (time-to-first-token, enclosing all
+ *                                         hidden reasoning; research is a real
+ *                                         sub-interval of it, so subtracting
+ *                                         keeps total = sum of parts)
+ *   WRITE    = end − write               (body streaming)
+ *
+ * `nowServer` is non-null only while streaming, and is the CLIENT clock already
+ * corrected into the server's frame (see useRunClock). Passing it in is what
+ * lets the running phase be open-ended instead of missing.
+ */
+export function buildRun(events: ClientActivityEvent[], nowServer: number | null, anchorT0?: number | null): RunModel {
+  const streaming = nowServer !== null;
+  const at = (e?: ClientActivityEvent) => (e ? parseTs(e.createdAt) : null);
+
+  // Before the first event lands there is no server anchor, so we measure from
+  // when this line appeared. That is a client-frame number — but with no events
+  // the skew is uncalibrated and therefore zero, so `nowServer` is client-frame
+  // too. The two ends always sit in the same frame; we never mix them.
+  const t0 = at(events[0]) ?? anchorT0 ?? null;
+  const writeEv = events.find((e) => e.kind === "write");
+  const usageEv = events.find((e) => e.kind === "usage");
+  const modelEv = events.find((e) => e.kind === "model");
+  const effortEv = events.find((e) => e.kind === "reasoning" && e.title === T_EFFORT);
+  const connectorsEv = events.find((e) => e.kind === "tool" && e.title === T_CONNECTORS);
+  const contextEv = events.find((e) => e.kind === "context" && e.title !== T_CORPUS);
+  const corpusEv = events.find((e) => e.kind === "context" && e.title === T_CORPUS);
+  // Only deep research's per-query sends are real searches. "Preparing web
+  // search" is an INTENT, not work — counting it would inflate the noun.
+  const searchEvs = events.filter((e) => e.kind === "search" && e.title === T_SEARCHING);
+
+  const tWrite = at(writeEv);
+  const tSearch0 = at(searchEvs[0]);
+  const tCorpus = at(corpusEv);
+
+  // THE RUN'S TERMINATOR. `usage` is emitted only after the producer's stream
+  // loop has exited, so while streaming it has not landed and the run is
+  // genuinely open-ended: it ends at NOW, not at whichever event happened to
+  // arrive last. This ordering is load-bearing and was got wrong once. Falling
+  // back to `events[last]` mid-stream reads the `write` event itself — so WRITE
+  // measured write→write = 0.0s for the entire body stream — or, on a run with
+  // native search, the last `visit`, which is "time until the last citation
+  // appeared" wearing a WRITE label. Both are the form lying.
+  //
+  // `nowServer` is non-null exactly when streaming, so this chain says: real end
+  // if we have one, else now if live, else the last thing we saw (an aborted run
+  // that never reported usage).
+  const tEnd = at(usageEv) ?? nowServer ?? at(events[events.length - 1]);
+
+  const sources: { url: string; domain: string }[] = [];
+  const seen = new Set<string>();
+  for (const e of events) {
+    if (!e.url || seen.has(e.url)) continue;
+    seen.add(e.url);
+    sources.push({ url: e.url, domain: domainOf(e.url) });
   }
+
+  const warnings = events.filter((e) => e.kind === "warning");
+  const calls: Call[] = events
+    .filter((e) => e.kind === "warning" || (e.kind === "tool" && e.title.startsWith("Using ")))
+    .map((e) => {
+      const ts = at(e);
+      return {
+        id: e.id,
+        label: e.kind === "warning" ? "Warning" : "Tool",
+        object:
+          e.kind === "warning"
+            ? [e.title, e.detail].filter(Boolean).join(" · ")
+            : [e.title.slice("Using ".length), e.detail].filter(Boolean).join(" · "),
+        offsetMs: ts !== null && t0 !== null && ts >= t0 ? ts - t0 : null,
+        warn: e.kind === "warning",
+      };
+    });
+
+  // ── PHASES ────────────────────────────────────────────────────────────────
+  const phases: Phase[] = [];
+  const span = (a: number | null, b: number | null) => (a !== null && b !== null && b >= a ? b - a : null);
+
+  // Research is open-ended while its await is still in flight.
+  const researchMs = tSearch0 === null ? null : span(tSearch0, tCorpus ?? nowServer);
+  const researchRunning = streaming && tSearch0 !== null && tCorpus === null && tWrite === null;
+  const writeRunning = streaming && tWrite !== null;
+  const thinkRunning = streaming && tWrite === null && !researchRunning;
+
+  if (tSearch0 !== null) {
+    phases.push({
+      key: "research",
+      label: "Research",
+      object: [
+        searchEvs.length ? plural(searchEvs.length, "search", "searches") : null,
+        sources.length ? plural(sources.length, "source") : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      ms: researchMs,
+      active: researchRunning,
+    });
+  }
+
+  // THINK is time-to-first-token minus the research sub-interval. While
+  // streaming with no `write` yet it is open-ended — which is precisely the
+  // longest window, and the one a user is most likely to open the panel during.
+  // Hiding the profile until first token would make the running phase invisible
+  // for the whole of it, so it stays and simply has no end yet.
+  const thinkEnd = tWrite ?? tEnd;
+  const thinkTotal = span(t0, thinkEnd);
+  const thinkMs = thinkTotal === null ? null : Math.max(0, thinkTotal - (researchMs ?? 0));
+  if (tWrite !== null || streaming) {
+    phases.push({
+      key: "think",
+      label: "Think",
+      object: effortEv?.detail ?? "",
+      ms: thinkMs,
+      active: thinkRunning,
+    });
+  }
+
+  const outMatch = usageEv?.detail?.match(/(\d[\d,]*)\s*output/);
+  if (tWrite !== null) {
+    phases.push({
+      key: "write",
+      label: "Write",
+      object: outMatch ? `${outMatch[1]} tokens` : "",
+      ms: span(tWrite, tEnd),
+      active: writeRunning,
+    });
+  }
+
+  // ── FACTS: zero-duration truths, and nowhere for a number to live ─────────
+  const facts: Fact[] = [];
+  if (modelEv?.detail) facts.push({ label: "Model", value: modelEv.detail });
+  if (effortEv?.detail) facts.push({ label: "Effort", value: effortEv.detail.replace(/\s+effort$/i, "") });
+  if (contextEv?.detail) facts.push({ label: "Context", value: contextEv.detail });
+  if (connectorsEv?.detail) facts.push({ label: "Tools", value: connectorsEv.detail });
+  if (usageEv?.detail) facts.push({ label: "Cost", value: usageEv.detail });
+
+  // One end for the header and for the last phase, so "total = sum of parts" is
+  // arithmetic rather than aspiration.
+  const elapsedMs = span(t0, tEnd);
+
+  const restingLabel = ["Thought", searchEvs.length ? plural(searchEvs.length, "search", "searches") : null, sources.length ? plural(sources.length, "source") : null]
+    .filter(Boolean)
+    .join(" · ");
+
+  return {
+    t0,
+    phases,
+    facts,
+    calls,
+    sources,
+    searches: searchEvs.length,
+    sourceCount: sources.length,
+    elapsedMs,
+    restingLabel,
+    note: warnings.length ? warnings[warnings.length - 1].title : null,
+  };
 }
 
-/** Wall-clock span of the run, for the header meta line. Null when the stamps
- *  are unusable (single event, unparseable, or clock skew running backwards). */
-function elapsedOf(events: ClientActivityEvent[]) {
-  if (events.length < 2) return null;
-  const start = Date.parse(events[0].createdAt);
-  const end = Date.parse(events[events.length - 1].createdAt);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return null;
-  const seconds = (end - start) / 1000;
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
-  return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = React.useState(false);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setReduced(mq.matches);
+    const on = () => setReduced(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return reduced;
 }
 
-/** Round icon chip on the timeline rail. The opaque fill is load-bearing: it
- *  occludes the rail hairline running behind it. */
-export function ActivityIcon({ kind, live }: { kind: ActivityKind; live?: boolean }) {
-  const Icon = ACTIVITY_ICONS[kind];
+/**
+ * THE TICK — the one live signal, and the number the whole design stakes its
+ * credibility on. It replaces the ring, the breathe and the shimmer combined,
+ * and unlike all three it is different at every instant because it is measuring
+ * something.
+ *
+ * CLOCK FRAME (load-bearing): `createdAt` is minted on the SERVER; Date.now()
+ * is the browser's. Subtracting one from the other measures skew as much as
+ * elapsed time — on a skewed machine the headline reads wrong, or negative. So
+ * we capture the offset ONCE, from the first event we see while live, and tick
+ * in the server's frame thereafter. Every span buildRun derives is server−server
+ * and needs no correction; only this tick crosses the boundary.
+ *
+ * CALIBRATE ONCE, AT THE TOP, AND NEVER GATE IT. `skew` is captured on the first
+ * render where `streaming` is true, so it is only skew if that render is also
+ * when the first event arrived. Hand this hook a gate that turns on LATER — say
+ * `streaming && open` — and it silently absorbs the run's entire age into skew:
+ * `nowServer` collapses to exactly t0 and the clock restarts from 0.0s. That is
+ * why there is exactly ONE caller (ActivityTimeline, which mounts with the run)
+ * and why the panel is handed the finished RunModel instead of building its own.
+ * A second instance is not a second opinion; it is a second, wrong answer.
+ *
+ * Reduced motion slows the cadence to 1Hz but never removes the number: a
+ * changing number is information, not vestibular motion.
+ */
+export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) {
+  const reduced = usePrefersReducedMotion();
+  const mountRef = React.useRef(Date.now());
+  const skewRef = React.useRef<number | null>(null);
+  const firstIso = events[0]?.createdAt;
+
+  // Only ever calibrate against a live run. A persisted message's first event is
+  // hours old; that difference is history, not skew — and resting runs are
+  // measured server−server anyway, so they never consult this.
+  if (streaming && skewRef.current === null && firstIso) {
+    const t = parseTs(firstIso);
+    if (t !== null) skewRef.current = Date.now() - t;
+  }
+
+  const [now, setNow] = React.useState(() => Date.now());
+  React.useEffect(() => {
+    if (!streaming) return;
+    setNow(Date.now());
+    const id = window.setInterval(() => setNow(Date.now()), reduced ? 1000 : 100);
+    return () => window.clearInterval(id);
+  }, [streaming, reduced]);
+
+  // Zero-event runs (reasoning only) have no server anchor, so skew stays 0 and
+  // both ends of the measurement sit in the client's own frame. Consistent
+  // either way — we never mix frames.
+  return {
+    nowServer: streaming ? now - (skewRef.current ?? 0) : null,
+    /** Synthetic T0 for the window before the first event lands. */
+    anchorT0: mountRef.current,
+  };
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="relative flex size-6 shrink-0 items-center justify-center" aria-hidden="true">
-      {live && <span className="absolute inset-0 rounded-full bg-primary/25 motion-safe:animate-pulse-ring-slow" />}
-      <span
-        className={cn(
-          "relative z-10 flex size-6 items-center justify-center rounded-full border bg-background shadow-pop",
-          live ? "border-primary/45" : "border-border/60"
-        )}
-      >
-        <Icon className={cn("size-3.5", ACTIVITY_TONE[kind], live && "motion-safe:animate-icon-breathe")} />
-      </span>
-    </span>
-  );
-}
-
-function SectionLabel({ icon: Icon, children }: { icon?: LucideIcon; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-2">
-      {Icon && <Icon className="size-3.5 shrink-0 text-muted-foreground/60" aria-hidden="true" />}
+    <div className="flex items-center gap-3">
       <span className="font-mono text-label uppercase text-muted-foreground/70">{children}</span>
       <span className="h-px flex-1 bg-border/50" aria-hidden="true" />
     </div>
   );
 }
 
+/** Shared row geometry. 4.5rem holds "RESEARCH" at caption/0.1em at every width;
+ *  the middle truncates; the number is shrink-0 and never truncates. */
+const ROW = "grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-3 py-1.5";
+
 export function ThoughtProcessPanel({
   open,
   onOpenChange,
-  events,
+  run,
   reasoning,
   streaming,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  events?: ClientActivityEvent[];
+  /** Built ONCE by the caller, from the caller's clock. The panel deliberately
+   *  owns no clock: the collapsed row and the panel opened from it must be
+   *  incapable of disagreeing, and the only way to guarantee that is for there
+   *  to be one number, not two agreeing ones. See useRunClock. */
+  run: RunModel;
   reasoning?: string | null;
   streaming?: boolean;
 }) {
-  const list = events ?? [];
-  const hasEvents = list.length > 0;
   const hasReasoning = !!reasoning?.trim();
   const reasoningRef = React.useRef<HTMLDivElement>(null);
 
@@ -149,17 +390,21 @@ export function ThoughtProcessPanel({
     return space === -1 ? cut : space + 1;
   }, [reasoning]);
 
-  const meta = React.useMemo(() => {
-    const sources = list.filter((event) => event.url).length;
-    const elapsed = elapsedOf(list);
-    return [
-      hasEvents ? `${list.length} ${list.length === 1 ? "event" : "events"}` : "reasoning only",
-      sources > 0 ? `${sources} ${sources === 1 ? "source" : "sources"}` : null,
-      elapsed,
-    ]
-      .filter(Boolean)
-      .join(" · ");
-  }, [list, hasEvents]);
+  const meta = [
+    run.elapsedMs === null ? null : formatSpan(run.elapsedMs),
+    run.searches ? plural(run.searches, "search", "searches") : null,
+    run.sourceCount ? plural(run.sourceCount, "source") : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const warnings = run.calls.filter((c) => c.warn);
+  const tools = run.calls.filter((c) => !c.warn);
+  const totalMs = run.phases.reduce((sum, p) => sum + (p.ms ?? 0), 0);
+  // A one-segment bar is a rectangle carrying zero bits — the exact ornament
+  // this redesign exists to delete. It appears only once it encodes a real
+  // proportion between at least two measured spans.
+  const showBar = run.phases.length >= 2 && totalMs > 0;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -170,24 +415,11 @@ export function ThoughtProcessPanel({
         className="flex w-[min(30rem,100vw-3rem)] max-w-none flex-col border-border/70 bg-card"
       >
         <header className="flex shrink-0 items-start gap-3 border-b border-border/60 px-5 pb-4 pt-5">
-          <span className="relative flex size-8 shrink-0 items-center justify-center" aria-hidden="true">
-            {streaming && <span className="absolute inset-0 rounded-full bg-primary/20 motion-safe:animate-pulse-ring-slow" />}
-            <span className="relative z-10 flex size-8 items-center justify-center rounded-full border border-border/60 bg-background shadow-pop">
-              <Brain className={cn("size-4 text-primary", streaming && "motion-safe:animate-icon-breathe")} />
-            </span>
-          </span>
-
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h2 className="truncate font-serif text-heading text-foreground">Thought process</h2>
-              {streaming && (
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 font-mono text-caption uppercase tracking-[0.1em] text-primary">
-                  <span className="size-1.5 rounded-full bg-primary motion-safe:animate-dot-think" aria-hidden="true" />
-                  Live
-                </span>
-              )}
-            </div>
-            <p className="mt-1 truncate font-mono text-caption uppercase tracking-[0.12em] text-muted-foreground/70">{meta}</p>
+            <h2 className="truncate font-serif text-heading text-foreground">Thought process</h2>
+            {meta && (
+              <p className="mt-1 truncate font-mono text-caption uppercase tracking-[0.12em] text-muted-foreground/70">{meta}</p>
+            )}
           </div>
 
           <SheetClose className="flex size-8 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-[transform,box-shadow,border-color,color] duration-base ease-out-soft hover:border-border hover:text-foreground hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none coarse:size-10">
@@ -197,15 +429,38 @@ export function ThoughtProcessPanel({
         </header>
 
         <div className="flex flex-1 flex-col gap-6 overflow-y-auto bg-muted/15 px-5 py-5">
+          {/* NOTICES — success is not news; failure is. Fixed position at the top
+              so the panel's structure never reshuffles between runs. */}
+          {warnings.length > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <SectionLabel>Notices</SectionLabel>
+              <ul className="flex flex-col">
+                {warnings.map((c) => (
+                  <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
+                    <span className="font-mono text-caption uppercase tracking-[0.1em] text-warning">{c.label}</span>
+                    <span className="min-w-0 break-words text-body text-warning">{c.object}</span>
+                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
+                      {c.offsetMs === null ? "—" : `+${formatSpan(c.offsetMs)}`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {/* REASONING — the prose. It answers "what did it do?", which is the
+              question that made the user open the panel, so it leads. The bounded
+              box + inner scroll is what stops the autoscroll stealing page scroll
+              from the answer. */}
           {hasReasoning && (
             <section className="flex flex-col gap-2.5">
-              <SectionLabel icon={Brain}>Reasoning</SectionLabel>
+              <SectionLabel>Reasoning</SectionLabel>
               {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
-                  the border, and 16 − 4 keeps the inner radius concentric. */}
-              <div className="field-well rounded-[16px] border border-border/50 bg-background/40 p-1">
+                  the border, and 2xl(16) − p-1(4) = xl(12) keeps it concentric. */}
+              <div className="field-well rounded-2xl border border-border/50 bg-background/40 p-1">
                 <div
                   ref={reasoningRef}
-                  className="scroll-fade-y max-h-[46vh] overflow-y-auto whitespace-pre-wrap rounded-[12px] px-3.5 py-3 font-serif text-body italic text-muted-foreground/90"
+                  className="scroll-fade-y max-h-[46vh] overflow-y-auto whitespace-pre-wrap rounded-xl px-3.5 py-3 font-serif text-body italic text-muted-foreground/90"
                 >
                   {reasoning!.slice(0, tailFrom)}
                   <span
@@ -221,54 +476,118 @@ export function ThoughtProcessPanel({
             </section>
           )}
 
-          {hasEvents && (
-            <section className="flex flex-col gap-3">
-              <SectionLabel>Timeline</SectionLabel>
-              <ol className="relative flex flex-col gap-1">
-                {/* Rail: 11.5px centres a 1px hairline under the 24px icon chips;
-                    top/bottom 20px lands it on the first and last chip centres. */}
-                <span className="absolute bottom-5 left-[11.5px] top-5 w-px bg-border/60" aria-hidden="true" />
-                {list.map((event, index) => {
-                  const live = !!streaming && index === list.length - 1;
-                  return (
-                    <li key={event.id} className="relative motion-safe:animate-fade-in-up">
-                      <div
-                        className={cn(
-                          "-mx-2 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 rounded-[14px] px-2 py-2 transition-colors duration-base ease-out-soft motion-reduce:transition-none",
-                          // Coral is reserved for active state — the newest event is exactly that.
-                          live && "bg-primary/[0.06]"
-                        )}
-                      >
-                        <ActivityIcon kind={event.kind} live={live} />
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 items-baseline justify-between gap-3">
-                            <p className="min-w-0 flex-1 text-body font-semibold text-foreground/90">{event.title}</p>
-                            <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
-                              {eventTime(event.createdAt)}
-                            </span>
-                          </div>
-                          {event.detail && (
-                            <p className="mt-0.5 break-words text-sm leading-relaxed text-muted-foreground/75">{event.detail}</p>
-                          )}
-                          {event.url && (
-                            // relative + hover:z-10 so the lift shadow is not painted
-                            // over by the next event's row tint.
-                            <a
-                              href={event.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="relative mt-2 inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2 py-1 font-mono text-caption text-source shadow-pop transition-[transform,box-shadow,border-color] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
-                            >
-                              <Globe className="size-3 shrink-0" aria-hidden="true" />
-                              <span className="truncate">{domainOf(event.url)}</span>
-                            </a>
-                          )}
-                        </div>
-                      </div>
-                    </li>
-                  );
-                })}
+          {/* SOURCES — the durable asset. Survives the stream, addressable,
+              auditable. No Globe glyph: "nytimes.com" already says it is a site. */}
+          {run.sources.length > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <SectionLabel>Sources</SectionLabel>
+              <div className="flex flex-wrap gap-1.5">
+                {run.sources.map((s) => (
+                  <a
+                    key={s.url}
+                    href={s.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="relative inline-flex max-w-full items-center rounded-md border border-border/60 bg-background/70 px-2 py-1 font-mono text-caption text-source shadow-pop transition-[transform,box-shadow,border-color] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                  >
+                    <span className="truncate">{s.domain}</span>
+                  </a>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* PROFILE — the receipt. Right-aligned durations: scan the right edge
+              and the slow phase announces itself. Header total = sum of parts.
+              Hidden entirely when no span is derivable, so none is claimed. */}
+          {run.phases.length > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <SectionLabel>Profile</SectionLabel>
+
+              {showBar && (
+                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/40" aria-hidden="true">
+                  {run.phases.map((p) => (
+                    <div
+                      key={p.key}
+                      /* No floor. A span too short to see gets no segment — its
+                         row still carries the exact number. A 2% floor would be
+                         the form lying about proportion in the one element that
+                         claims to show it.
+                         flexGrow is rewritten by the 100ms tick, so it carries NO
+                         transition: a 220ms transition against a 100ms value lags
+                         and fights it into mush. The cadence alone is continuous.
+                         Colour is the only transition, and there is no animate-*
+                         on this element (rule 4). */
+                      style={{ flexGrow: p.ms ?? 0 }}
+                      className={cn(
+                        "transition-[background-color] duration-slow ease-out-soft motion-reduce:transition-none",
+                        p.active
+                          ? "bg-primary"
+                          : p.key === "research"
+                            ? "bg-source/60"
+                            : p.key === "think"
+                              ? "bg-muted-foreground/35"
+                              : "bg-foreground/45"
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
+
+              <ol className="flex flex-col">
+                {run.phases.map((p) => (
+                  <li key={p.key} className={ROW}>
+                    <span
+                      className={cn(
+                        "font-mono text-caption uppercase tracking-[0.1em] transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
+                        p.active ? "text-primary" : "text-muted-foreground/70"
+                      )}
+                    >
+                      {p.label}
+                    </span>
+                    {/* May be empty. An empty cell is honest; filler is not. The
+                        row earns its place on its duration alone. */}
+                    <span className="min-w-0 truncate text-body text-foreground/85">{p.object}</span>
+                    <span className="shrink-0 font-mono text-caption tabular-nums text-foreground/70">
+                      {p.ms === null ? "—" : formatSpan(p.ms)}
+                    </span>
+                  </li>
+                ))}
               </ol>
+
+              {tools.length > 0 && (
+                <ul className="mt-1 flex flex-col border-t border-border/40 pt-1">
+                  {tools.map((c) => (
+                    <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
+                      <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/70">{c.label}</span>
+                      <span className="min-w-0 truncate text-body text-foreground/85">{c.object}</span>
+                      {/* "+" marks an offset from T0, not a duration and never a
+                          wall clock. Tool calls land at genuinely arbitrary
+                          moments, which is the one place a stamp means anything. */}
+                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
+                        {c.offsetMs === null ? "—" : `+${formatSpan(c.offsetMs)}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
+
+          {/* FACTS — five things that were five rows in a fake timeline wearing
+              five coloured circles and a fake wall-clock stamp. They are five
+              facts. The missing time column is the whole point. */}
+          {run.facts.length > 0 && (
+            <section className="flex flex-col gap-2.5">
+              <SectionLabel>Facts</SectionLabel>
+              <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+                {run.facts.map((f) => (
+                  <React.Fragment key={f.label}>
+                    <dt className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/60">{f.label}</dt>
+                    <dd className="min-w-0 break-words text-body text-foreground/80">{f.value}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
             </section>
           )}
         </div>

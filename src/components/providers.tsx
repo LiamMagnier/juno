@@ -13,11 +13,14 @@ export function Providers({
   defaultTheme = "system",
   session = null,
   locale = "en",
+  autoDetect = true,
 }: {
   children: React.ReactNode;
   defaultTheme?: string;
   session?: Session | null;
   locale?: string;
+  /** False when `locale` is the user's explicit choice, which no client-side detection may override. */
+  autoDetect?: boolean;
 }) {
   return (
     // Hydrate with the server-resolved session so the client doesn't fetch
@@ -27,7 +30,7 @@ export function Providers({
       <ThemeProvider attribute="class" defaultTheme={defaultTheme} enableSystem disableTransitionOnChange>
         <TooltipProvider delayDuration={200}>
           {children}
-          <AutoTranslate locale={locale} />
+          <AutoTranslate locale={locale} autoDetect={autoDetect} />
           <Toaster position="top-center" richColors closeButton />
         </TooltipProvider>
       </ThemeProvider>

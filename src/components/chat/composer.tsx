@@ -193,6 +193,48 @@ function groupRows(items: SlashCommand[]) {
   return out;
 }
 
+/* The palette's ceiling and the chrome that sits between the listbox and the
+ * top edge it is clamped against: the popover's mb-2 gap, its own hairline
+ * border and p-1.5, and a gutter so the palette never kisses that edge. The
+ * ceiling stays 18rem — it is the room above the anchor, measured below against
+ * the nearest clipping ancestor, that decides the rest. */
+const PALETTE_MAX_H = 288;
+const PALETTE_CHROME = 8 + 2 * 1 + 2 * 6 + 8;
+
+/** Ancestors that clip the palette. Nothing portals it, so its rows are lost to
+ *  the nearest overflow-hiding boxes — the chat column, and the empty-state
+ *  scroller — rather than to the viewport. Their padding-box top sits BELOW y=0
+ *  whenever anything stacks above the chat column (the md:hidden mobile header,
+ *  the incognito bar plus the column's own margin), so measuring room against
+ *  the viewport over-counts by exactly that offset and lets the palette clip.
+ *  Resolved once per open: getComputedStyle on every ancestor every frame would
+ *  force a style recalc, and the clip chain only changes with the tree. */
+function clipAncestors(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.overflowY !== "visible" || style.overflowX !== "visible") out.push(node);
+  }
+  return out;
+}
+
+/** Land the clamp on a row boundary so the list never opens onto a sliced row.
+ *  Row offsets are read against the popover (the nearest positioned ancestor),
+ *  so the listbox's own offset comes back out; unlike getBoundingClientRect,
+ *  offsetTop ignores scrollTop, which is what keeps this stable to re-measure.
+ *  Snapping only applies once the content actually overflows: rounding a fitting
+ *  list down to its last row would conjure a 1px scrollbar out of nothing. */
+function snapPaletteToRow(list: HTMLElement | null, limit: number) {
+  if (!list || list.scrollHeight <= limit) return limit;
+  let snapped = limit;
+  for (const row of list.querySelectorAll<HTMLElement>('[role="option"]')) {
+    const bottom = row.offsetTop - list.offsetTop + row.offsetHeight;
+    if (bottom > limit) break;
+    snapped = bottom;
+  }
+  return snapped;
+}
+
 // aria-hidden: the enclosing role="group" already carries this label, so exposing
 // it again would announce every section name twice.
 function PaletteEyebrow({ label, counter }: { label: string; counter?: string }) {
@@ -320,6 +362,8 @@ export function Composer({
   enabledConnectorIdsRef.current = connectorsEnabled;
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const rootRef = React.useRef<HTMLDivElement>(null);
+  const paletteAnchorRef = React.useRef<HTMLDivElement>(null);
+  const paletteListRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
@@ -765,10 +809,10 @@ export function Composer({
   const [slashIndex, setSlashIndex] = React.useState(0);
   /*
    * True only when the arrow keys last moved the selection. The list is
-   * `max-h-72 overflow-y-auto`, so arrowing past ~6 rows walked the cursor
-   * somewhere the user could not see. Scrolling on EVERY index change is not the
-   * fix: rows set the index on mouseEnter too, so it would yank the list out from
-   * under the pointer. Same guard the command palette uses.
+   * height-capped and scrolls, so arrowing past the last visible row walked the
+   * cursor somewhere the user could not see. Scrolling on EVERY index change is
+   * not the fix: rows set the index on mouseEnter too, so it would yank the list
+   * out from under the pointer. Same guard the command palette uses.
    */
   const paletteKeyNavRef = React.useRef(false);
   React.useEffect(() => {
@@ -778,6 +822,49 @@ export function Composer({
   }, [slashIndex]);
   const [slashDismissed, setSlashDismissed] = React.useState(false);
   const slashOpen = !controlsLocked && !!slash && !slashDismissed && slash.items.length > 0;
+
+  /*
+   * The palette is pinned above the anchor by hand, not by Radix popper, so it
+   * gets no --radix-*-available-height and nothing measures the room above it
+   * for us. That room is not a constant: in the empty state the composer is
+   * vertically centred (chat-view.tsx), so a ~700px laptop leaves ~250-320px
+   * above it — less than the list's own 18rem — and the content BELOW the
+   * composer (the starter pills) shrinks it further, at half a pixel per pixel,
+   * because centring splits the difference. Overflowing is unrecoverable, not
+   * merely ugly: rows laid out above a clipper's top edge create no scrollable
+   * area, so they cannot be reached.
+   */
+  const [paletteMaxH, setPaletteMaxH] = React.useState(PALETTE_MAX_H);
+  React.useLayoutEffect(() => {
+    if (!slashOpen) return;
+    const anchor = paletteAnchorRef.current;
+    if (!anchor) return;
+    const clippers = clipAncestors(anchor);
+    const measure = () => {
+      let ceiling = 0;
+      for (const clipper of clippers) {
+        // clientTop = border-top: overflow clips at the padding box, not the border box.
+        ceiling = Math.max(ceiling, clipper.getBoundingClientRect().top + clipper.clientTop);
+      }
+      const room = anchor.getBoundingClientRect().top - ceiling - PALETTE_CHROME;
+      const limit = Math.max(0, Math.min(PALETTE_MAX_H, room));
+      setPaletteMaxH(snapPaletteToRow(paletteListRef.current, limit));
+    };
+    /* The clamp depends on the anchor's POSITION, but everything that moves it
+     * leaves its own box the same size — the greeting cross-fading out above,
+     * the starter-pill grid sweeping 0fr->1fr below — so a ResizeObserver on the
+     * anchor never fires for any of it. Sample per frame while the palette is
+     * open (Floating UI's autoUpdate does the same for moved-not-resized
+     * anchors); React bails out when the measurement is unchanged, and the
+     * palette is open only while a slash/mention token is being typed. */
+    let raf = 0;
+    const tick = () => {
+      measure();
+      raf = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(raf);
+  }, [slashOpen, slash]);
 
   React.useEffect(() => setSlashIndex(0), [text]);
   React.useEffect(() => {
@@ -1258,6 +1345,10 @@ export function Composer({
         )}
 
         <div
+          // The palette's containing block: it carries `relative`, so this — not
+          // the capsule — is what its `bottom-full` resolves against, and so this
+          // is the top edge the room above it must be measured from.
+          ref={paletteAnchorRef}
           className={cn(
             "flex flex-col w-full relative transition-[opacity,transform] duration-base ease-out-soft",
             clarificationOpen
@@ -1382,9 +1473,12 @@ export function Composer({
                 is a combobox popup. A button row also could not legally hold the
                 Switch, which is itself a button. */}
             <div
+              ref={paletteListRef}
               role="listbox"
               aria-label={slash.kind === "model" ? "Switch model" : slash.kind === "mention" ? "Tools and connectors" : "Commands"}
-              className="max-h-72 overflow-y-auto overscroll-contain"
+              // Measured, not `max-h-72`: the cap is whatever fits above the anchor.
+              style={{ maxHeight: paletteMaxH }}
+              className="overflow-y-auto overscroll-contain"
             >
               {slash.kind === "model" ? (
                 <div role="group" aria-label="Switch model">

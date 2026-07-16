@@ -7,6 +7,7 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { isModelId } from "@/lib/models";
 import { ACCENT_IDS } from "@/lib/accents";
 import { PERSONALITY_IDS } from "@/lib/personalities";
+import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 
 const schema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
@@ -15,6 +16,7 @@ const schema = z.object({
   personality: z.enum(PERSONALITY_IDS).optional(),
   customInstructions: z.string().max(4000).optional(),
   responseLanguage: z.string().max(40).optional(),
+  uiLocale: z.string().max(35).optional(),
   memoryEnabled: z.boolean().optional(),
   voiceId: z.string().max(100).nullable().optional(),
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
@@ -34,6 +36,14 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Unknown model" }, { status: 400 });
   }
 
+  // Store the canonical tag ("fr_fr" -> "fr-FR") so `<html lang>` and the
+  // picker's value always agree, and a junk tag can never reach the renderer.
+  let uiLocale: string | undefined;
+  if (d.uiLocale !== undefined) {
+    uiLocale = d.uiLocale === AUTO_LOCALE ? AUTO_LOCALE : normalizeWebLocale(d.uiLocale) ?? undefined;
+    if (!uiLocale) return NextResponse.json({ error: "Unknown locale" }, { status: 400 });
+  }
+
   await ensureUserDefaults(user.id);
   await prisma.settings.update({
     where: { userId: user.id },
@@ -44,6 +54,7 @@ export async function PATCH(req: Request) {
       ...(d.personality ? { personality: d.personality } : {}),
       ...(d.customInstructions !== undefined ? { customInstructions: d.customInstructions } : {}),
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
+      ...(uiLocale !== undefined ? { uiLocale } : {}),
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),
       ...(d.voiceId !== undefined ? { voiceId: d.voiceId } : {}),
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),

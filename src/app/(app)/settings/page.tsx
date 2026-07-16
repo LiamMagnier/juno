@@ -34,6 +34,7 @@ import { PLANS, canUseModel } from "@/lib/plans";
 import { ACCENTS } from "@/lib/accents";
 import { PERSONALITIES, DEFAULT_PERSONALITY, isPersonalityId } from "@/lib/personalities";
 import { VOICES, DEFAULT_VOICE } from "@/lib/voices";
+import { AUTO_LOCALE, UI_LOCALES, localeNativeName } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { ClientSettings } from "@/types/app";
 
@@ -244,6 +245,7 @@ export default function SettingsPage() {
         body: JSON.stringify(patch),
       });
       if (!res.ok) toast.error("Could not save settings.");
+      return res.ok;
     },
     [setSettings]
   );
@@ -256,6 +258,13 @@ export default function SettingsPage() {
   const setThemePref = (theme: ClientSettings["theme"]) => {
     setTheme(theme);
     save({ theme });
+  };
+
+  // A full reload, not router.refresh(): the locale decides `<html lang>`/`dir`
+  // server-side, and the already-translated DOM has to come back from the
+  // source catalog rather than be translated a second time in place.
+  const setUiLocale = async (uiLocale: string) => {
+    if (await save({ uiLocale })) window.location.reload();
   };
 
   const saveInstructions = () => {
@@ -501,8 +510,9 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
-          {/* Default model */}
-          <Tile eyebrow="Default model" i={2}>
+          {/* Default model — spans so the two language selects below pair off
+              in the 2-column grid instead of leaving a half-empty row. */}
+          <Tile eyebrow="Default model" i={2} span>
             <p className="mb-3 text-sm text-muted-foreground">Used for new conversations.</p>
             <Select
               value={resolveModel(settings.defaultModel)?.id ?? settings.defaultModel}
@@ -547,8 +557,31 @@ export default function SettingsPage() {
             </Select>
           </Tile>
 
+          {/* Interface language — Juno's own chrome, not Juno's replies. */}
+          <Tile eyebrow="Interface language" i={4}>
+            <p className="mb-3 text-sm text-muted-foreground">The language Juno&apos;s buttons and menus are in.</p>
+            <Select value={settings.uiLocale} onValueChange={(v) => void setUiLocale(v)}>
+              <SelectTrigger aria-label="Interface language">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={AUTO_LOCALE}>Auto-detect</SelectItem>
+                {UI_LOCALES.map((l) => (
+                  // Each language names itself, so whoever needs the option can
+                  // read it — and data-no-auto-translate keeps it that way if a
+                  // future catalog ever picks these names up.
+                  <SelectItem key={l} value={l}>
+                    <span data-no-auto-translate lang={l}>
+                      {localeNativeName(l)}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Tile>
+
           {/* Response style */}
-          <Tile eyebrow="Response style" i={4} span>
+          <Tile eyebrow="Response style" i={5} span>
             <p className="mb-3 text-sm text-muted-foreground">
               How Juno writes. Your custom instructions below still take priority.
             </p>
@@ -587,7 +620,7 @@ export default function SettingsPage() {
                 plan.voice  — /api/voice/tts 403s without it, so on Free every
                               preview button would fail silently. */}
           {features.serverTts && features.ttsProvider === "openai" && plan.voice && (
-            <Tile eyebrow="Read-aloud voice" i={5} span>
+            <Tile eyebrow="Read-aloud voice" i={6} span>
               <p className="mb-3 text-sm text-muted-foreground">
                 The voice Juno reads answers aloud in. Press play to hear one.
               </p>
@@ -655,7 +688,7 @@ export default function SettingsPage() {
             </Tile>
           )}
 
-          <Tile eyebrow="Custom instructions" i={6} span>
+          <Tile eyebrow="Custom instructions" i={7} span>
             <p className="mb-3 text-sm text-muted-foreground">Juno keeps these in mind in every conversation.</p>
             <div className="relative">
               <Textarea
@@ -673,7 +706,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Memory */}
-          <Tile eyebrow="Memory" i={7}>
+          <Tile eyebrow="Memory" i={8}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <NotebookPen className="h-5 w-5 text-primary" />
@@ -690,7 +723,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Account */}
-          <Tile eyebrow="Account" i={8}>
+          <Tile eyebrow="Account" i={9}>
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Current plan</span>
@@ -719,7 +752,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Email notifications */}
-          <Tile eyebrow="Email notifications" i={9} span>
+          <Tile eyebrow="Email notifications" i={10} span>
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>
@@ -758,7 +791,7 @@ export default function SettingsPage() {
           </Tile>
 
           {/* Danger zone */}
-          <Tile eyebrow="Danger zone" i={10} span className="border-destructive/30">
+          <Tile eyebrow="Danger zone" i={11} span className="border-destructive/30">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>

@@ -23,7 +23,7 @@ import {
 import { VoiceOrb, type OrbStatus } from "@/components/signature/voice-orb";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { VOICE_PROVIDER_LABELS, VOICE_PROVIDERS } from "@/lib/voice-relay-protocol";
-import { cn } from "@/lib/utils";
+import { cn, formatUsd } from "@/lib/utils";
 
 type VoiceController = ReturnType<typeof useRealtimeVoice>;
 
@@ -64,6 +64,14 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
 
   const restartable = voice.status === "ended" || voice.status === "error";
 
+  // Relay list prices, not billing: always an estimate, hence the "~".
+  const usage = voice.usage;
+  const costLabel = usage && usage.estCostUsd > 0 ? `~${formatUsd(usage.estCostUsd)}` : null;
+  const costTitle =
+    usage && usage.estCostInUsd != null && usage.estCostOutUsd != null
+      ? `Estimated session cost · you ~${formatUsd(usage.estCostInUsd)} · Juno ~${formatUsd(usage.estCostOutUsd)}`
+      : "Estimated session cost";
+
   return (
     <section
       aria-label="Voice conversation controls"
@@ -72,13 +80,23 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       <div className="flex max-w-full items-center gap-0.5 rounded-full border border-border bg-popover/95 p-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.1),0_10px_28px_-20px_hsl(var(--foreground)/0.55)] backdrop-blur-lg supports-[backdrop-filter]:bg-popover/88">
         <div className="flex min-w-0 items-center gap-2 pl-0.5 pr-1.5">
           <VoiceOrb status={orbStatus} levelRef={voice.levelRef} className="size-9" />
-          <p
-            aria-live="polite"
-            className="w-[5.75rem] truncate text-sm font-semibold leading-4 text-foreground max-[350px]:hidden sm:w-[7.5rem]"
-            title={voice.error ?? statusLabel}
-          >
-            {statusLabel}
-          </p>
+          {/* Stacked inside the orb's height so the cost line cannot grow the pill.
+              No aria-live on the cost: it reprices every 5s and would talk over
+              the conversation it is measuring. */}
+          <div className="flex w-[5.75rem] flex-col justify-center gap-0.5 max-[350px]:hidden sm:w-[7.5rem]">
+            <p
+              aria-live="polite"
+              className="truncate text-sm font-semibold leading-4 text-foreground"
+              title={voice.error ?? statusLabel}
+            >
+              {statusLabel}
+            </p>
+            {costLabel && (
+              <span className="truncate font-mono text-caption text-muted-foreground/60" title={costTitle}>
+                {costLabel}
+              </span>
+            )}
+          </div>
         </div>
 
         {restartable ? (

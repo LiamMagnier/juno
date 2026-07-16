@@ -37,7 +37,17 @@ export type VoiceServerMessage =
   | { type: "transcript"; role: "user" | "assistant"; text: string; final: boolean; turnId?: string }
   | { type: "turn"; speaker: "assistant"; phase: "start" | "end" }
   | { type: "interrupted" }
-  | { type: "usage"; provider: VoiceProviderId; audioInSec: number; audioOutSec: number; estCostUsd: number }
+  /** estCostInUsd/estCostOutUsd split estCostUsd into the user's speech vs the
+   *  model's; optional — a provider may report no usable token counts. */
+  | {
+      type: "usage";
+      provider: VoiceProviderId;
+      audioInSec: number;
+      audioOutSec: number;
+      estCostUsd: number;
+      estCostInUsd?: number;
+      estCostOutUsd?: number;
+    }
   | { type: "session.closed"; reason: "session-limit" | "provider" | "client" | "error" }
   | { type: "error"; message: string }
   | { type: "pong" };

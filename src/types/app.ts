@@ -21,6 +21,8 @@ export interface ClientSettings {
   personality: string;
   customInstructions: string;
   responseLanguage: string;
+  /** Interface language: "auto" (follow the browser) or a BCP-47 tag. */
+  uiLocale: string;
   memoryEnabled: boolean;
   voiceId: string | null;
   favoriteModels: string[];

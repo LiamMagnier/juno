@@ -3802,6 +3802,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Diff copied"
   },
   {
+    "id": "6fdd75a55cd6ac56",
+    "source": "Estimated session cost"
+  },
+  {
     "id": "6ff81986ead18583",
     "source": "Weekday"
   },
@@ -4352,6 +4356,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "802600d124464157",
     "source": "Too many requests"
+  },
+  {
+    "id": "8027f432a7fb7c27",
+    "source": "Interface language"
   },
   {
     "id": "802e9409ad7b0ac2",
@@ -5096,6 +5104,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9783d67132021b87",
     "source": "SpaceXAI · Grok"
+  },
+  {
+    "id": "9785b3da0cd33ab7",
+    "source": "The language Juno's buttons and menus are in."
   },
   {
     "id": "9795c5ff8937f235",
@@ -7524,6 +7536,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "df0fbf9c008fb166",
     "source": "Add to project"
+  },
+  {
+    "id": "dfb167939789bfc4",
+    "source": "Unknown locale"
   },
   {
     "id": "dfca811acf71f3e9",

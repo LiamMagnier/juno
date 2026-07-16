@@ -11,6 +11,7 @@ import { providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { isOwnerEmail } from "@/lib/owner";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
+import { AUTO_LOCALE } from "@/lib/i18n";
 import type { AppBootstrap, ClientSettings } from "@/types/app";
 import type { SessionUser } from "@/lib/session";
 
@@ -46,6 +47,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     personality: settings?.personality ?? DEFAULT_PERSONALITY,
     customInstructions: settings?.customInstructions ?? "",
     responseLanguage: settings?.responseLanguage ?? "auto",
+    uiLocale: settings?.uiLocale ?? AUTO_LOCALE,
     memoryEnabled: settings?.memoryEnabled ?? true,
     voiceId: settings?.voiceId ?? null,
     favoriteModels: settings?.favoriteModels ?? [],

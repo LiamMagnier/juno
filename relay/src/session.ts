@@ -20,7 +20,21 @@ export class RelaySession {
   private transcript: TranscriptEntry[] = [];
   // Rolling partials per role so switch-seeding only carries finalized turns.
   private partial: Record<"user" | "assistant", string> = { user: "", assistant: "" };
-  private usage = { audioInSec: 0, audioOutSec: 0, extraCostUsd: 0 };
+  // Cost accrues in dollars at report time rather than from a running seconds
+  // total, so a mid-session provider switch cannot re-rate earlier audio at the
+  // new provider's prices.
+  // costIn/OutMeasured stay false until a side is actually priced from a
+  // measurement, so an unmeasured side is reported as absent rather than as a
+  // confident $0 (qwen reports no input tokens or seconds at all; minimax
+  // prices no input). Zero and unknown must not render identically.
+  private usage = {
+    audioInSec: 0,
+    audioOutSec: 0,
+    costInUsd: 0,
+    costOutUsd: 0,
+    costInMeasured: false,
+    costOutMeasured: false,
+  };
   private usageTimer: NodeJS.Timeout | null = null;
   private sessionTimer: NodeJS.Timeout | null = null;
   private switching = false;
@@ -160,9 +174,41 @@ export class RelaySession {
       },
       onUsage: (u) => {
         if (!isCurrent()) return;
+        const { pricing } = PROVIDERS[id];
         this.usage.audioInSec += u.audioInSec ?? 0;
         this.usage.audioOutSec += u.audioOutSec ?? 0;
-        this.usage.extraCostUsd += u.extraCostUsd ?? 0;
+        if (pricing.tokens) {
+          // Token-priced provider: seconds are display-only, so only a report
+          // carrying counts moves the cost. Each side is priced independently —
+          // a report can measure one modality and omit the other.
+          const r = pricing.tokens;
+          const input = u.tokens?.input;
+          const output = u.tokens?.output;
+          if (input) {
+            this.usage.costInUsd +=
+              (input.audio * r.audioIn +
+                input.audioCached * r.audioInCached +
+                input.text * r.textIn +
+                input.textCached * r.textInCached) /
+              1e6;
+            this.usage.costInMeasured = true;
+          }
+          if (output) {
+            this.usage.costOutUsd += (output.audio * r.audioOut + output.text * r.textOut) / 1e6;
+            this.usage.costOutMeasured = true;
+          }
+        } else {
+          this.usage.costInUsd += (u.audioInSec ?? 0) * pricing.audioInPerSec;
+          this.usage.costOutUsd += (u.audioOutSec ?? 0) * pricing.audioOutPerSec;
+          // A zero rate is "not priced by duration", not "free".
+          if (u.audioInSec != null && pricing.audioInPerSec > 0) this.usage.costInMeasured = true;
+          if (u.audioOutSec != null && pricing.audioOutPerSec > 0) this.usage.costOutMeasured = true;
+        }
+        // Composed pipelines (MiniMax TTS) bill their spoken output per character.
+        if (u.extraCostUsd != null) {
+          this.usage.costOutUsd += u.extraCostUsd;
+          this.usage.costOutMeasured = true;
+        }
       },
       onError: (message) => isCurrent() && this.send({ type: "error", message }),
       onClosed: (reason) => {
@@ -186,16 +232,22 @@ export class RelaySession {
 
   private pushUsage(): void {
     if (!this.providerId) return;
-    const p = PROVIDERS[this.providerId].pricing;
-    const est =
-      this.usage.audioInSec * p.audioInPerSec + this.usage.audioOutSec * p.audioOutPerSec + this.usage.extraCostUsd;
+    const { costInUsd, costOutUsd } = this.usage;
+    const est = costInUsd + costOutUsd;
     if (this.usage.audioInSec === 0 && this.usage.audioOutSec === 0 && est === 0) return;
+    // 6dp: the client renders 4, and rounding the parts as coarsely as the
+    // total would let the displayed split disagree with the displayed sum.
+    const round = (n: number) => Math.round(n * 1e6) / 1e6;
     this.send({
       type: "usage",
       provider: this.providerId,
       audioInSec: Math.round(this.usage.audioInSec * 10) / 10,
       audioOutSec: Math.round(this.usage.audioOutSec * 10) / 10,
-      estCostUsd: Math.round(est * 10000) / 10000,
+      estCostUsd: round(est),
+      // Omitted, not zeroed, when a side was never measured — the client shows
+      // the split only when both halves are real numbers.
+      estCostInUsd: this.usage.costInMeasured ? round(costInUsd) : undefined,
+      estCostOutUsd: this.usage.costOutMeasured ? round(costOutUsd) : undefined,
     });
   }
 

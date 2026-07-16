@@ -1,7 +1,7 @@
 import WebSocket from "ws";
 import { resamplePcm16 } from "../audio.js";
 import type { VoiceProviderId } from "../protocol.js";
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
+import type { ProviderEvents, TokenUsage, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
 
 /**
  * Adapter for the OpenAI Realtime event vocabulary, used by TWO providers:
@@ -25,6 +25,67 @@ export interface RealtimeDialect {
   assistantHistoryContentType: "output_text" | "text";
   sessionUpdate(seed: VoiceSessionSeed): Record<string, unknown>;
   supportsVideo: boolean;
+}
+
+interface RealtimeUsagePayload {
+  input_tokens?: number;
+  output_tokens?: number;
+  input_token_details?: {
+    audio_tokens?: number;
+    text_tokens?: number;
+    cached_tokens?: number;
+    cached_tokens_details?: { audio_tokens?: number; text_tokens?: number };
+  };
+  output_token_details?: { audio_tokens?: number; text_tokens?: number };
+}
+
+/**
+ * Per-response billed tokens. `cached_tokens` is a SUBSET of `input_tokens`
+ * (docs/guides/realtime-costs), so the cached counts are subtracted out to
+ * leave the portion billed at the full rate.
+ *
+ * The detail objects are documented but not always sent
+ * (github.com/openai/openai-agents-js/issues/538), and the two sides are
+ * omitted INDEPENDENTLY — the response.done reference currently documents
+ * input_token_details without an output_token_details counterpart. So each side
+ * falls back on its own: gating both on the absence of both would price the
+ * present side from details and the missing side at $0, discarding the measured
+ * total sitting in the same payload.
+ */
+function readTokenUsage(response: unknown): TokenUsage | undefined {
+  const usage = (response as { usage?: RealtimeUsagePayload } | undefined)?.usage;
+  if (!usage) return undefined;
+  const input = readInputTokens(usage);
+  const output = readOutputTokens(usage);
+  return input || output ? { input, output } : undefined;
+}
+
+/** Detail object absent, or present but carrying no counts, falls back to the
+ *  measured total attributed to audio — the dominant and dearest modality in a
+ *  speech session, keeping the estimate an upper bound rather than a silent
+ *  undercount. No total either means unmeasured, which must stay distinct. */
+function readInputTokens(usage: RealtimeUsagePayload): TokenUsage["input"] {
+  const detail = usage.input_token_details;
+  const audio = detail?.audio_tokens ?? 0;
+  const text = detail?.text_tokens ?? 0;
+  if (audio || text) {
+    // cached_tokens_details splits the cache by modality; when only the
+    // cached_tokens total is present, charge it against audio for the same reason.
+    const audioCached = Math.min(audio, detail?.cached_tokens_details?.audio_tokens ?? detail?.cached_tokens ?? 0);
+    const textCached = Math.min(text, detail?.cached_tokens_details?.text_tokens ?? 0);
+    return { audio: audio - audioCached, audioCached, text: text - textCached, textCached };
+  }
+  const total = usage.input_tokens ?? 0;
+  return total ? { audio: total, audioCached: 0, text: 0, textCached: 0 } : undefined;
+}
+
+function readOutputTokens(usage: RealtimeUsagePayload): TokenUsage["output"] {
+  const detail = usage.output_token_details;
+  const audio = detail?.audio_tokens ?? 0;
+  const text = detail?.text_tokens ?? 0;
+  if (audio || text) return { audio, text };
+  const total = usage.output_tokens ?? 0;
+  return total ? { audio: total, text: 0 } : undefined;
 }
 
 export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
@@ -188,10 +249,14 @@ export class OpenAiShapedRealtimeSession implements VoiceProviderSession {
           this.assistantSpeaking = false;
           ev.onTurn("end");
         }
-        const usage = (msg.response as { usage?: { input_token_details?: { audio_tokens?: number } } } | undefined)?.usage;
-        const audioTokens = usage?.input_token_details?.audio_tokens;
-        // OpenAI audio input ≈ 1 token / 100 ms.
-        if (typeof audioTokens === "number" && this.provider === "openai") ev.onUsage({ audioInSec: audioTokens / 10 });
+        if (this.provider !== "openai") return;
+        const tokens = readTokenUsage(msg.response);
+        if (!tokens) return;
+        // OpenAI audio input ≈ 1 token / 100 ms. Seconds are display-only here;
+        // the cost comes from the token counts above. Omit them when the input
+        // side went unmeasured rather than reporting a confident 0s.
+        const audioIn = tokens.input ? tokens.input.audio + tokens.input.audioCached : undefined;
+        ev.onUsage({ tokens, audioInSec: audioIn === undefined ? undefined : audioIn / 10 });
         return;
       }
       case "error": {

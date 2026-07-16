@@ -153,6 +153,10 @@ model Settings {
   defaultModel       String   @default("claude-sonnet-4-6")
   customInstructions String   @default("") @db.Text
   responseLanguage   String   @default("auto")
+  // Interface language: "auto" (follow Accept-Language) or a BCP-47 tag.
+  // Distinct from responseLanguage, which is the AI's reply language and holds
+  // English language NAMES ("French"), not tags.
+  uiLocale           String   @default("auto")
   // Response personality. A preset id from lib/personalities.ts ("default",
   // "concise", "socratic"…). Layered UNDER customInstructions so a user's own
   // instructions always win.

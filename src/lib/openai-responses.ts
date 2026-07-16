@@ -3,6 +3,7 @@ import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
+import { reasoningCaps } from "@/lib/model-metrics";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -106,16 +107,25 @@ function mapEffort(model: ModelInfo, effort?: ReasoningEffort): string | undefin
     if (effort === "medium" || effort === "high" || effort === "xhigh") return effort;
     return "high"; // pro's own default; it has no none/low
   }
-  if (!effort) return canDisableViaNoneEffort(id) ? "none" : undefined;
+  if (!effort) return canDisableViaNoneEffort(model) ? "none" : undefined;
   // "max" exists on gpt-5.6 only; older Responses models top out at xhigh.
   if (effort === "max" && !id.includes("gpt-5.6")) return "xhigh";
   return effort;
 }
 
-/** GPT-5.1+ express "don't think" as an explicit effort of "none". */
-function canDisableViaNoneEffort(id: string): boolean {
-  if (id.includes("codex")) return false;
-  return /gpt-5\.\d/.test(id);
+/**
+ * GPT-5.1+ express "don't think" as an explicit effort of "none".
+ *
+ * The old blanket `codex -> false` rule was WRONG for gpt-5.3-codex, which
+ * verifiably accepts "none" (-> 200, reasoning_tokens=0) while 5.1/5.2-codex
+ * reject it ("Supported values are: 'low', 'medium', 'high'..."). Defer to the
+ * per-model caps, which encode each snapshot's live-probed enum, rather than
+ * re-deriving support from a substring here.
+ */
+function canDisableViaNoneEffort(model: ModelInfo): boolean {
+  const id = model.providerModel.toLowerCase();
+  if (!/gpt-5\.\d/.test(id)) return false;
+  return model.reasoning && reasoningCaps(model).canDisable;
 }
 
 export async function* streamOpenAIResponses(

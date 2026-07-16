@@ -21,7 +21,7 @@ import plugin from "tailwindcss/plugin";
  *                         only when you actually mean 24px. panel = floating layers.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
  * Thinking .............. animate-{dot-think,dot-tint,dot-breathe} (constellation) ·
- *                         animate-{icon-breathe,pulse-ring-slow} + .text-shimmer / .scroll-fade-y (globals.css)
+ *                         animate-icon-breathe + .text-shimmer / .scroll-fade-y (globals.css)
  * Keep raw hex out of components; drive everything from these tokens + the HSL vars.
  */
 
@@ -294,7 +294,6 @@ const config: Config = {
         "dot-tint": "dot-tint 3.4s ease-in-out infinite",
         "dot-breathe": "dot-breathe 5.6s ease-in-out infinite",
         "icon-breathe": "icon-breathe 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
-        "pulse-ring-slow": "pulse-ring 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
         "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
         "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out

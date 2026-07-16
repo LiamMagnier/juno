@@ -41,23 +41,35 @@ function excluded(element: Element | null): boolean {
  * sends only opaque catalog ids to the server, so conversations and all other
  * user content stay on the device.
  */
-export function AutoTranslate({ locale }: { locale: string }) {
+export function AutoTranslate({ locale, autoDetect = true }: { locale: string; autoDetect?: boolean }) {
   React.useEffect(() => {
     if (!document.body) return;
     // Accept-Language is the server source of truth. navigator.languages is a
-    // client fallback for unusual proxies/webviews that strip that header.
+    // client fallback for unusual proxies/webviews that strip that header —
+    // hence `languageOf`, not `locale === "en"`: a stripped header resolves to
+    // the bare "en" default, but so does a real "en-US", and the strict compare
+    // rescued only the former. An explicit choice is never second-guessed.
     const navigatorLocale = navigator.languages?.length
       ? localeFromAcceptLanguage(navigator.languages.join(","))
       : locale;
-    const activeLocale = locale === "en" && navigatorLocale !== "en" ? navigatorLocale : locale;
-    if (languageOf(activeLocale) === "en") return;
+    const activeLocale =
+      autoDetect && languageOf(locale) === "en" && languageOf(navigatorLocale) !== "en" ? navigatorLocale : locale;
+
+    // Set before the English bail-out: switching back to English must clear a
+    // previous locale's lang/dir rather than leave the document mislabelled.
     document.documentElement.lang = activeLocale;
     document.documentElement.dir = directionOf(activeLocale);
+    if (languageOf(activeLocale) === "en") return;
 
     const storageKey = `juno:ui-translations:${activeLocale}:v1`;
     const translations = new Map<string, string>();
     const pending = new Set<string>();
+    // Permanent: the model had nothing usable for this id, so retrying is waste.
     const failed = new Set<string>();
+    // Transient (429/5xx): ids stay missing and are retried after this deadline.
+    // Marking a throttled chunk `failed` stranded it for the effect's lifetime,
+    // leaving the page permanently half-translated.
+    let retryAfter = 0;
 
     try {
       const stored = JSON.parse(localStorage.getItem(storageKey) ?? "{}") as Record<string, unknown>;
@@ -72,6 +84,8 @@ export function AutoTranslate({ locale }: { locale: string }) {
 
     let stopped = false;
     let scanTimer: ReturnType<typeof setTimeout> | null = null;
+    // When the pending scanTimer will fire, so a sooner request can preempt it.
+    let scanAt = Number.POSITIVE_INFINITY;
 
     const persist = () => {
       try {
@@ -86,6 +100,12 @@ export function AutoTranslate({ locale }: { locale: string }) {
       try {
         const params = new URLSearchParams({ locale: activeLocale, ids: [...ids].sort().join(",") });
         const res = await fetch(`/api/i18n/translations?${params}`, { credentials: "same-origin" });
+        // Throttled, or the model walk is down — both recover on their own, so
+        // leave these ids missing rather than burning them.
+        if (res.status === 429 || res.status >= 500) {
+          retryAfter = Date.now() + (res.status === 429 ? 5 * 60_000 : 30_000);
+          return;
+        }
         if (!res.ok) throw new Error(`translation request failed (${res.status})`);
         const data = (await res.json()) as { translations?: Record<string, unknown> };
         for (const id of ids) {
@@ -138,22 +158,47 @@ export function AutoTranslate({ locale }: { locale: string }) {
 
     const scan = async () => {
       scanTimer = null;
+      scanAt = Number.POSITIVE_INFINITY;
       if (stopped) return;
       const missing = applyAndCollect(document.body);
       if (!missing.length) return;
+      const cooldown = retryAfter - Date.now();
+      if (cooldown > 0) {
+        scheduleScan(cooldown);
+        return;
+      }
       const chunks: string[][] = [];
       for (let i = 0; i < missing.length; i += 30) chunks.push(missing.slice(i, i + 30));
       await Promise.allSettled(chunks.map(requestChunk));
-      if (!stopped) applyAndCollect(document.body);
+      if (stopped) return;
+      applyAndCollect(document.body);
+      // A throttled chunk left its ids missing; come back for them unprompted,
+      // since a mutation may never arrive to trigger the next scan.
+      const retry = retryAfter - Date.now();
+      if (retry > 0) scheduleScan(retry);
     };
 
-    const scheduleScan = () => {
-      if (scanTimer || stopped) return;
-      scanTimer = setTimeout(() => void scan(), 20);
+    const scheduleScan = (delay = 20) => {
+      if (stopped) return;
+      const at = Date.now() + delay;
+      if (scanTimer) {
+        // Only bail for a request that would fire no sooner than the pending one.
+        // A plain `if (scanTimer) return` let the 5-minute post-429 cooldown
+        // swallow every ordinary scan behind it, so DOM rendered during those
+        // minutes stayed English even when its translations were already cached
+        // locally. Preempting is safe: scan() applies cached strings before it
+        // consults retryAfter, so an early run issues no request and re-arms the
+        // cooldown itself.
+        if (at >= scanAt) return;
+        clearTimeout(scanTimer);
+      }
+      scanAt = at;
+      scanTimer = setTimeout(() => void scan(), delay);
     };
 
     scheduleScan();
-    const observer = new MutationObserver(scheduleScan);
+    // Wrapped: the observer would otherwise pass MutationRecord[] as `delay`.
+    const observer = new MutationObserver(() => scheduleScan());
     observer.observe(document.body, {
       subtree: true,
       childList: true,
@@ -167,7 +212,7 @@ export function AutoTranslate({ locale }: { locale: string }) {
       observer.disconnect();
       if (scanTimer) clearTimeout(scanTimer);
     };
-  }, [locale]);
+  }, [locale, autoDetect]);
 
   return null;
 }

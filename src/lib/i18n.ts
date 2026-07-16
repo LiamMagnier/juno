@@ -71,3 +71,50 @@ export function localeDisplayName(locale: string): string {
     return locale;
   }
 }
+
+/**
+ * The language's name in that language ("français", "日本語") — the accessible
+ * convention for a language picker: whoever needs an option can read it.
+ */
+export function localeNativeName(locale: string): string {
+  try {
+    return new Intl.DisplayNames([locale], { type: "language" }).of(locale) ?? locale;
+  } catch {
+    return localeDisplayName(locale);
+  }
+}
+
+/** Sentinel: follow the browser's Accept-Language instead of a stored choice. */
+export const AUTO_LOCALE = "auto";
+
+/**
+ * Locales offered by the interface picker. Not a whitelist — the catalog is
+ * machine-translated on demand so any valid tag renders; this is the curated
+ * menu. Every tag round-trips through `canonicalLocale` unchanged.
+ */
+export const UI_LOCALES = [
+  "en", "es", "fr", "de", "it", "pt-BR", "nl", "pl", "tr", "ru", "uk", "sv",
+  "id", "vi", "th", "hi", "ja", "ko", "zh-Hans", "zh-Hant",
+  // RTL locales (ar/he/fa/ur) are deliberately withheld from the menu, not
+  // unsupported: directionOf() and <html dir> already handle them, but the
+  // stylesheet does not. A count of directional utilities across src/**/*.tsx
+  // returns 176 physical (pl-/pr-/ml-/mr-/left-/right-) against 16 logical
+  // (ps-/pe-/ms-/me-/start-/end-), so dir="rtl" would mirror the text while
+  // every padding, margin and absolute offset stayed pinned LTR. Offering a
+  // language whose layout is visibly broken is worse than not offering it.
+  // Restore these once the physical utilities are converted to logical ones.
+] as const;
+
+/** True when no usable explicit choice is stored, i.e. the browser decides. */
+export function isAutoLocale(stored: string | null | undefined): boolean {
+  return !stored || stored === AUTO_LOCALE || normalizeWebLocale(stored) === null;
+}
+
+/**
+ * Resolve a stored UI-locale preference. "auto" — and anything unparseable —
+ * defers to the detected locale, so a bad stored value degrades to
+ * auto-detection rather than to a broken `<html lang>`.
+ */
+export function resolveUiLocale(stored: string | null | undefined, detected: string): string {
+  return isAutoLocale(stored) ? detected : normalizeWebLocale(stored)!;
+}

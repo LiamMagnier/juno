@@ -65,7 +65,19 @@ export type ServerMessage =
   /** Model output was cancelled (user barge-in). Client must flush its
    *  audio playback queue immediately. */
   | { type: "interrupted" }
-  | { type: "usage"; provider: VoiceProviderId; audioInSec: number; audioOutSec: number; estCostUsd: number }
+  /** Running session estimate, pushed every 5s. `estCostInUsd`/`estCostOutUsd`
+   *  split `estCostUsd` into what the user's speech and the model's speech
+   *  cost; both are optional because a provider may report no usable token
+   *  counts, and clients predating the split simply ignore them. */
+  | {
+      type: "usage";
+      provider: VoiceProviderId;
+      audioInSec: number;
+      audioOutSec: number;
+      estCostUsd: number;
+      estCostInUsd?: number;
+      estCostOutUsd?: number;
+    }
   | { type: "session.closed"; reason: "session-limit" | "provider" | "client" | "error" }
   | { type: "error"; message: string }
   | { type: "pong" };

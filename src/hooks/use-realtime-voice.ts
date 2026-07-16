@@ -42,6 +42,9 @@ export interface RealtimeUsage {
   audioInSec: number;
   audioOutSec: number;
   estCostUsd: number;
+  /** Absent when the provider reported no usable per-modality token counts. */
+  estCostInUsd?: number;
+  estCostOutUsd?: number;
 }
 
 const MAX_REALTIME_IMAGE_BYTES = 1_900_000;
@@ -454,7 +457,13 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           setAssistantSpeaking(false);
           return;
         case "usage":
-          setUsage({ audioInSec: msg.audioInSec, audioOutSec: msg.audioOutSec, estCostUsd: msg.estCostUsd });
+          setUsage({
+            audioInSec: msg.audioInSec,
+            audioOutSec: msg.audioOutSec,
+            estCostUsd: msg.estCostUsd,
+            estCostInUsd: msg.estCostInUsd,
+            estCostOutUsd: msg.estCostOutUsd,
+          });
           return;
         case "session.closed":
           setClosedReason(msg.reason);
