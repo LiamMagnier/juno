@@ -120,6 +120,7 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "conversation.update": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
+      await requireOwnedConversationReferences(tx, accountId, op.patch);
       const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
         ...op.patch,
         ...(op.patch.title !== undefined ? { titleSource: "user" } : {}),
@@ -174,5 +175,20 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       const row = await tx.settings.upsert({ where: { userId: accountId }, create: { userId: accountId, ...op.patch }, update: op.patch });
       return { entity: { id: row.id, revision: await nextRevision(tx, accountId, "settings", row.id) } };
     }
+  }
+}
+
+async function requireOwnedConversationReferences(
+  tx: Tx,
+  accountId: string,
+  patch: { projectId?: string | null; folderId?: string | null },
+) {
+  if (patch.projectId) {
+    const project = await tx.project.findFirst({ where: { id: patch.projectId, userId: accountId }, select: { id: true } });
+    if (!project) throw new ApiV1Error("not_found", 404, "The project was not found.");
+  }
+  if (patch.folderId) {
+    const folder = await tx.folder.findFirst({ where: { id: patch.folderId, userId: accountId }, select: { id: true } });
+    if (!folder) throw new ApiV1Error("not_found", 404, "The folder was not found.");
   }
 }
