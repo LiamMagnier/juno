@@ -5,19 +5,19 @@
 -- Stable, client-minted workspace identity. When present, mirror-sync matches
 -- on (userId, key) before falling back to (userId, path), so a moved folder
 -- keeps its server row (and therefore its sessions).
-ALTER TABLE "CodeWorkspace" ADD COLUMN "key" TEXT;
+ALTER TABLE "CodeWorkspace" ADD COLUMN IF NOT EXISTS "key" TEXT;
 
 -- Partial unique index: identity is unique per user, but pre-key rows (NULL)
 -- stay unconstrained. Hand-written because Prisma cannot express filtered
 -- unique indexes.
-CREATE UNIQUE INDEX "CodeWorkspace_userId_key_key"
+CREATE UNIQUE INDEX IF NOT EXISTS "CodeWorkspace_userId_key_key"
   ON "CodeWorkspace"("userId", "key")
   WHERE "key" IS NOT NULL;
 
 -- Tasks carry the workspace identity alongside the (still required) path the
 -- executing device resolves locally.
-ALTER TABLE "CodeTask" ADD COLUMN "workspaceKey" TEXT;
+ALTER TABLE "CodeTask" ADD COLUMN IF NOT EXISTS "workspaceKey" TEXT;
 
 -- Code sessions (kind:"code" conversations) attribute to their workspace by
 -- key when known; name/path remain display/device metadata.
-ALTER TABLE "Conversation" ADD COLUMN "codeWorkspaceKey" TEXT;
+ALTER TABLE "Conversation" ADD COLUMN IF NOT EXISTS "codeWorkspaceKey" TEXT;
