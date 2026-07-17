@@ -3,9 +3,29 @@ import { spawnSync } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 
 const cutoff = "20260716200000_account_change_log";
+
+/**
+ * The baseline covers exactly the migrations production already carried via its
+ * historical `db push` deploys. That is a closed set, not simply "everything at
+ * or below the cutoff": a migration authored later may still need an earlier
+ * timestamp so it runs first on a fresh database. `20260716195900_backfill_
+ * drifted_tables` is one — it creates the tables the cutoff migration's triggers
+ * reference, so it must precede it from empty, yet on production it is an
+ * ordinary pending migration. Baselining it away would resolve it as applied
+ * without running it, and divert the deploy into the one-time `db push`
+ * convergence branch it was written to make unnecessary.
+ */
+const authoredAfterBaseline = new Set(["20260716195900_backfill_drifted_tables"]);
+
 const mode = process.argv[2] ?? "--status";
 const expected = readdirSync(new URL("../prisma/migrations", import.meta.url), { withFileTypes: true })
-  .filter((entry) => entry.isDirectory() && /^\d+_/.test(entry.name) && entry.name <= cutoff)
+  .filter(
+    (entry) =>
+      entry.isDirectory() &&
+      /^\d+_/.test(entry.name) &&
+      entry.name <= cutoff &&
+      !authoredAfterBaseline.has(entry.name),
+  )
   .map((entry) => entry.name)
   .sort();
 
