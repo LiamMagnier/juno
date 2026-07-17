@@ -872,6 +872,12 @@ model CodeTask {
   repoName      String?
   baseRef       String?
   prUrl         String?
+  // Cloud runner one-time handoff: set the first time the GitHub Actions runner
+  // successfully exchanges its dispatch code for runner-context (clone token +
+  // fresh task token). A non-null value means that handoff is spent, so a
+  // second runner-context call for this task is refused — the clone token is
+  // handed out AT MOST once per task. NULL for device tasks and un-started runs.
+  runnerClaimedAt DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

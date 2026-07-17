@@ -3,7 +3,7 @@ import type { CodeDevice, CodeTask, CodeTaskEvent, Prisma } from "@prisma/client
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
-import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
+import { readTaskToken, verifyExchangeCode, verifyTaskToken } from "@/lib/cloud-code-token";
 import type { ClientActivityEvent } from "@/types/chat";
 
 export const ONLINE_WINDOW_MS = 120_000;
@@ -45,6 +45,10 @@ export async function requireUser(): Promise<
 // prefix lets us route it to task-token auth instead of native-bearer auth,
 // which would otherwise 401 a perfectly valid task token.
 const CCT_BEARER_RE = /^Bearer (cct_[A-Za-z0-9._-]+)$/;
+// A one-time exchange code looks like `Bearer ccx_<payload>.<sig>`. Only the
+// runner-context handoff accepts it (and single-uses it); it never authenticates
+// any other surface.
+const CCX_BEARER_RE = /^Bearer (ccx_[A-Za-z0-9._-]+)$/;
 
 export type TaskAuthResult =
   | { user: SessionUser; viaTaskToken: boolean; error: null }
@@ -86,13 +90,17 @@ export async function requireTaskAuth(taskId: string, req: Request): Promise<Tas
 }
 
 /**
- * Resolve a Cloud Code task bearer to its task's owner WITHOUT binding to a
- * known taskId — for surfaces that have no taskId in their path (the provider
- * proxy). Returns null when the Authorization header is absent, not a task
- * token, or invalid/expired. The token's own embedded audience selects the
- * task, so it can only ever resolve to that one task's owner.
+ * Resolve a Cloud Code task bearer to its task WITHOUT binding to a known
+ * taskId — for surfaces that have no taskId in their path (the provider proxy).
+ * Returns null when the Authorization header is absent, not a task token, or
+ * invalid/expired. The token's own embedded audience selects the task, so it
+ * can only ever resolve to that one task's owner. `status` lets the proxy refuse
+ * calls for a task that has already finished (a terminal task must not keep
+ * spending plan budget through a replayed runner).
  */
-export async function taskTokenUser(req: Request): Promise<SessionUser | null> {
+export async function taskTokenAuth(
+  req: Request,
+): Promise<{ user: SessionUser; taskId: string; status: string } | null> {
   const authorization = req.headers.get("authorization");
   const match = authorization ? CCT_BEARER_RE.exec(authorization) : null;
   if (!match) return null;
@@ -100,8 +108,36 @@ export async function taskTokenUser(req: Request): Promise<SessionUser | null> {
   if (!taskId) return null;
   // Unguarded by design — the token's verified audience selects the task and
   // authorizes resolving its owner (see requireTaskAuth).
+  const task = await prismaUnguarded.codeTask.findUnique({
+    where: { id: taskId },
+    select: { userId: true, status: true },
+  });
+  return task ? { user: { id: task.userId }, taskId, status: task.status } : null;
+}
+
+/**
+ * Authorize the runner-context handoff against ONE task via its one-time
+ * EXCHANGE code ("Authorization: Bearer ccx_…"). Distinct from requireTaskAuth
+ * on purpose: runner-context is the SINGLE place the exchange code is redeemed,
+ * and a full-power task token ("cct_…") must NOT be accepted here — only the
+ * exchange code, whose audience must be EXACTLY this taskId. Resolves to the
+ * task's owner (unguarded lookup) so the route's ownership-scoped queries work.
+ */
+export async function requireExchangeAuth(
+  taskId: string,
+  req: Request,
+): Promise<{ user: SessionUser; error: null } | { user: null; error: NextResponse }> {
+  const unauthorized = {
+    user: null,
+    error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+  };
+  const authorization = req.headers.get("authorization");
+  const match = authorization ? CCX_BEARER_RE.exec(authorization) : null;
+  if (!match) return unauthorized;
+  if (!verifyExchangeCode(match[1], taskId)) return unauthorized;
   const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
-  return task ? { id: task.userId } : null;
+  if (!task) return unauthorized;
+  return { user: { id: task.userId }, error: null };
 }
 
 export function serializeDevice(device: CodeDevice, online?: boolean) {

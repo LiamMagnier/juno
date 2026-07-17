@@ -4,10 +4,18 @@ import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
-import { appendTaskEvents, persistCodeTaskOutcome, requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
-import { mintTaskToken } from "@/lib/cloud-code-token";
+import { requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
+import { mintExchangeCode } from "@/lib/cloud-code-token";
 import { dispatchCloudRunner } from "@/lib/cloud-code";
+import { rateLimit } from "@/lib/rate-limit";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
+
+// Abuse controls for cloud task creation (the dispatch fans out to a fresh CI VM
+// that burns Actions minutes + plan budget, so it must not be floodable).
+/** Max cloud dispatches per user per minute. */
+const CLOUD_TASK_RATE_LIMIT = 10;
+/** Max simultaneously-active (queued/running) cloud tasks per user. */
+const CLOUD_TASK_CONCURRENCY_CAP = 3;
 
 export const runtime = "nodejs";
 
@@ -105,6 +113,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "cloud_runner_not_configured" }, { status: 503 });
     }
 
+    // Abuse control 1 — burst rate limit (mirrors /api/agent). A cloud dispatch
+    // spins up a whole CI VM + agent loop, so cap how fast one user can fire them.
+    const rl = await rateLimit({ key: `code-cloud:${user.id}`, limit: CLOUD_TASK_RATE_LIMIT, windowSec: 60 });
+    if (!rl.success) {
+      return NextResponse.json({ error: "Too many cloud runs started. Try again shortly." }, { status: 429 });
+    }
+    // Abuse control 2 — concurrent-run cap. Refuse a new run when the user
+    // already has CLOUD_TASK_CONCURRENCY_CAP cloud tasks in flight, so a runaway
+    // client can't hold open an unbounded fleet of runners.
+    const active = await prisma.codeTask.count({
+      where: { userId: user.id, target: "cloud", status: { in: ["queued", "running", "awaiting_approval"] } },
+    });
+    if (active >= CLOUD_TASK_CONCURRENCY_CAP) {
+      return NextResponse.json(
+        { error: `You already have ${active} cloud runs in progress. Let one finish first.` },
+        { status: 429 },
+      );
+    }
+
     task = await prisma.codeTask.create({
       data: {
         userId: user.id,
@@ -123,6 +150,31 @@ export async function POST(req: Request) {
         conversationId: conversationId ?? null,
       },
     });
+
+    // Dispatch BEFORE persisting the user message (below), so a dispatch failure
+    // leaves nothing orphaned — no half-created session turn to reconcile, and a
+    // retry starts clean. The dispatch input is the one-time ccx_ EXCHANGE code
+    // (NOT a task token): the runner redeems it once at runner-context for a real
+    // cct_ token, so the only credential in the public workflow input is inert
+    // after that single exchange. The workflow re-masks it immediately.
+    try {
+      await dispatchCloudRunner({
+        taskId: task.id,
+        exchangeCode: mintExchangeCode(task.id),
+        repoOwner: task.repoOwner!,
+        repoName: task.repoName!,
+        baseRef: task.baseRef ?? "",
+        callbackBase: env.appUrl.replace(/\/$/, ""),
+      });
+    } catch (err) {
+      // Honest failure with NO orphan: drop the task we just created (no user
+      // message was written yet) so a client retry can't accumulate duplicates.
+      console.error("[cloud-code] workflow_dispatch failed", err);
+      await prisma.codeTask.deleteMany({ where: { id: task.id, userId: user.id } }).catch((delErr) => {
+        console.error("[cloud-code] failed to roll back task after dispatch failure", delErr);
+      });
+      return NextResponse.json({ error: "cloud_dispatch_failed" }, { status: 502 });
+    }
   } else {
     // Device (default) — unchanged behavior: a real device + local path.
     if (!deviceId || !workspacePath) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
@@ -146,9 +198,11 @@ export async function POST(req: Request) {
     });
   }
 
-  // Linked sessions persist the prompt as a normal USER message immediately, so
-  // the session's history is durable even if the run never starts (Mac offline,
-  // or a cloud dispatch that fails below).
+  // Linked sessions persist the prompt as a normal USER message. For device
+  // tasks this makes the session durable even if the run never starts (Mac
+  // offline). For cloud tasks we are PAST a successful dispatch here, so persist
+  // only now — a failed dispatch returned above without ever writing a message,
+  // leaving nothing to reconcile on a retry.
   let userMessage = null;
   if (conversationId) {
     const created = await prisma.message.create({
@@ -160,40 +214,6 @@ export async function POST(req: Request) {
       where: { id: conversationId, userId: user.id },
       data: { lastMessageAt: new Date(), ...(sessionTitleUpdate ? { title: sessionTitleUpdate } : {}) },
     });
-  }
-
-  // Cloud: kick off the runner. The task token authenticates ONLY the runner's
-  // first callback (runner-context), which then hands over the real credentials;
-  // the workflow re-masks it. Never sent to the runner any other way.
-  if (isCloud) {
-    try {
-      await dispatchCloudRunner({
-        taskId: task.id,
-        taskToken: mintTaskToken(task.id),
-        repoOwner: task.repoOwner!,
-        repoName: task.repoName!,
-        baseRef: task.baseRef ?? "",
-        callbackBase: env.appUrl.replace(/\/$/, ""),
-      });
-    } catch (err) {
-      // Honest failure: mark the task failed (so it never hangs queued) and
-      // persist the linked session's outcome, then report the error.
-      console.error("[cloud-code] workflow_dispatch failed", err);
-      const { task: failed } = await appendTaskEvents(
-        task.id,
-        [
-          { kind: "error", payload: { message: "Failed to start the cloud runner." } },
-          { kind: "status", payload: { status: "failed" } },
-        ],
-        { status: "failed" },
-      );
-      try {
-        await persistCodeTaskOutcome(failed);
-      } catch (persistErr) {
-        console.error("[cloud-code] failed to persist dispatch-failure outcome", persistErr);
-      }
-      return NextResponse.json({ error: "cloud_dispatch_failed" }, { status: 502 });
-    }
   }
 
   return NextResponse.json(

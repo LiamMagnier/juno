@@ -2,21 +2,32 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decryptSecret } from "@/lib/crypto";
-import { requireTaskAuth } from "@/lib/code-remote";
+import { isTerminalTaskStatus, requireExchangeAuth } from "@/lib/code-remote";
 import { mintTaskToken } from "@/lib/cloud-code-token";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
 
 export const runtime = "nodejs";
 
 /**
- * Everything the Cloud Code runner needs to execute a task — served ONCE, at
- * the start of a run, to the GitHub Actions runner ONLY.
+ * Everything the Cloud Code runner needs to execute a task — served AT MOST
+ * ONCE, at the start of a run, to the GitHub Actions runner ONLY.
  *
- * Auth is task-token-ONLY: `viaTaskToken` must be true. A plain user session is
- * 403 here on purpose — this response carries the user's decrypted GitHub
- * connector token (`cloneToken`), which must never reach a browser. This route
- * is the SINGLE place that token crosses to the runner, fetched + decrypted
- * just-in-time and never persisted anywhere the runner logs can see.
+ * Auth is EXCHANGE-CODE-only: the request must carry the one-time `ccx_` code
+ * that rode the workflow_dispatch input (see requireExchangeAuth). A plain user
+ * session is rejected — this response carries the user's decrypted GitHub
+ * connector token (`cloneToken`), which must never reach a browser — and a
+ * full-power `cct_` task token is ALSO rejected here, so the only thing that can
+ * redeem this handoff is the short-lived, single-use exchange code.
+ *
+ * Two gates make the handoff safe against a hostile runner:
+ *   1. STATUS GATE — the task must be queued/running. A terminal task (a replay
+ *      after the run finished) is 409.
+ *   2. SINGLE-USE — the first successful call atomically stamps `runnerClaimedAt`
+ *      (updateMany guarded on runnerClaimedAt IS NULL). A second call finds it
+ *      already set and is 409 `runner_context_consumed`. So the clone token +
+ *      fresh task token are handed out AT MOST ONCE. After this, the spent
+ *      exchange code in the runner's /proc is inert — it cannot re-fetch the
+ *      clone token.
  *
  *   GET → 200 {
  *     prompt, repoOwner, repoName, baseRef,
@@ -25,23 +36,41 @@ export const runtime = "nodejs";
  *     taskToken,                        // fresh cct_ for claim/events/respond/cancel
  *     models: BackendAgentModel[]       // agent-core proxy catalog
  *   }
- *         401 unauthenticated · 403 not a task token · 404 gone / wrong target
- *         409 { error: "github_not_connected" }  connector unlinked/undecryptable
+ *         401 unauthenticated / not an exchange code
+ *         404 gone / wrong target
+ *         409 { error: "task_terminal" }             run already finished
+ *         409 { error: "runner_context_consumed" }   handoff already redeemed
+ *         409 { error: "github_not_connected" }       connector unlinked/undecryptable
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, viaTaskToken, error } = await requireTaskAuth(id, req);
+  const { user, error } = await requireExchangeAuth(id, req);
   if (!user) return error;
-  // Only the runner (task token) may read this — never a browser session, which
-  // would leak the connector token to the client.
-  if (!viaTaskToken) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const task = await prisma.codeTask.findFirst({
     where: { id, userId: user.id },
-    select: { prompt: true, target: true, repoOwner: true, repoName: true, baseRef: true },
+    select: { prompt: true, target: true, repoOwner: true, repoName: true, baseRef: true, status: true },
   });
   if (!task || task.target !== "cloud" || !task.repoOwner || !task.repoName) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // STATUS GATE: only a queued/running task may be bootstrapped. A terminal task
+  // (or one otherwise past its start) never hands out fresh credentials.
+  if (isTerminalTaskStatus(task.status) || (task.status !== "queued" && task.status !== "running")) {
+    return NextResponse.json({ error: "task_terminal" }, { status: 409 });
+  }
+
+  // SINGLE-USE: atomically claim the one-time runner handoff. The first caller
+  // flips runnerClaimedAt NULL → now(); any later caller matches zero rows and
+  // is refused, so the clone token + fresh task token cross the wire AT MOST
+  // once per task.
+  const claim = await prisma.codeTask.updateMany({
+    where: { id, userId: user.id, runnerClaimedAt: null },
+    data: { runnerClaimedAt: new Date() },
+  });
+  if (claim.count === 0) {
+    return NextResponse.json({ error: "runner_context_consumed" }, { status: 409 });
   }
 
   // The user's GitHub connector token, decrypted just-in-time (same Connection
@@ -71,7 +100,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       cloneToken,
       agentBaseUrl: `${env.appUrl.replace(/\/$/, "")}/api/agent`,
       // A fresh task token for every subsequent callback, so the runner gets a
-      // full TTL window from run-start rather than from dispatch time.
+      // full TTL window from run-start rather than from dispatch time. This is
+      // the ONLY place a cct_ task token is minted for the runner — it never
+      // rides the public dispatch input.
       taskToken: mintTaskToken(id),
       models,
     },

@@ -16,9 +16,13 @@ export const CLOUD_RUNNER_REF = "main";
 
 export interface CloudDispatchInputs {
   taskId: string;
-  /** The cct_ bearer that authenticates the runner's FIRST call (runner-context).
-   *  The workflow MUST `::add-mask::` it immediately so it never hits the logs. */
-  taskToken: string;
+  /** The one-time ccx_ EXCHANGE code that authenticates the runner's FIRST and
+   *  ONLY use of it — GET runner-context, which single-uses it and hands back a
+   *  real cct_ task token. A full-power task token is NEVER a dispatch input, so
+   *  the credential sitting in the public workflow input (and later in /proc) is
+   *  inert the moment the runner redeems it. The workflow MUST `::add-mask::` it
+   *  immediately so it never hits the logs. */
+  exchangeCode: string;
   repoOwner: string;
   repoName: string;
   /** Empty string means "use the repo default branch". */
@@ -53,7 +57,7 @@ export async function dispatchCloudRunner(inputs: CloudDispatchInputs): Promise<
       ref: CLOUD_RUNNER_REF,
       inputs: {
         taskId: inputs.taskId,
-        taskToken: inputs.taskToken,
+        exchangeCode: inputs.exchangeCode,
         repoOwner: inputs.repoOwner,
         repoName: inputs.repoName,
         baseRef: inputs.baseRef,

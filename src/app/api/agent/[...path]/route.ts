@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { taskTokenUser } from "@/lib/code-remote";
+import { isTerminalTaskStatus, taskTokenAuth } from "@/lib/code-remote";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
@@ -39,9 +39,20 @@ export async function POST(
   // applies (no free provider calls); everyone else uses the normal session /
   // native-bearer path, unchanged.
   const authorization = req.headers.get("authorization");
-  const user = authorization?.startsWith("Bearer cct_")
-    ? await taskTokenUser(req)
-    : await getCurrentUser();
+  let user;
+  if (authorization?.startsWith("Bearer cct_")) {
+    const task = await taskTokenAuth(req);
+    if (!task) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    // A finished task must not keep driving paid provider calls: once the run is
+    // done/failed/cancelled the runner has no business here, so a replayed token
+    // is refused even though it hasn't expired yet.
+    if (isTerminalTaskStatus(task.status)) {
+      return NextResponse.json({ error: "Task is no longer active." }, { status: 409 });
+    }
+    user = task.user;
+  } else {
+    user = await getCurrentUser();
+  }
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // This proxy carries real provider spend (Juno Code agent loops, voice and

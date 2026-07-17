@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { appendTaskEvents, requireTaskAuth, type TaskEventInput } from "@/lib/code-remote";
+import { appendTaskEvents, isTerminalTaskStatus, requireTaskAuth, type TaskEventInput } from "@/lib/code-remote";
 
 export const runtime = "nodejs";
 
@@ -9,7 +9,7 @@ const schema = z.object({ requestId: z.string().min(1).max(200), approve: z.bool
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, error } = await requireTaskAuth(id, req);
+  const { user, viaTaskToken, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
   const parsed = schema.safeParse(await req.json().catch(() => null));
@@ -17,6 +17,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const task = await prisma.codeTask.findFirst({ where: { id, userId: user.id }, select: { id: true, status: true } });
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // A finished task takes no more input from the untrusted runner.
+  if (viaTaskToken && isTerminalTaskStatus(task.status)) {
+    return NextResponse.json({ error: "Task is no longer active." }, { status: 409 });
+  }
 
   const resume = task.status === "awaiting_approval";
   const events: TaskEventInput[] = [

@@ -2606,6 +2606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Quick options"
   },
   {
+    "id": "4abdef514fb15d09",
+    "source": "Task is no longer active."
+  },
+  {
     "id": "4abf8c1f286554cb",
     "source": "This permanently deletes your account, conversations, and memories. This cannot be undone."
   },
@@ -3880,6 +3884,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6ff81986ead18583",
     "source": "Weekday"
+  },
+  {
+    "id": "6ffa9147d00cabde",
+    "source": "task_terminal"
   },
   {
     "id": "70259983660c7670",
@@ -5410,6 +5418,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reconnected — Juno's answer came through."
   },
   {
+    "id": "9ecce0b1bba753b0",
+    "source": "runner_context_consumed"
+  },
+  {
     "id": "9f1e8ab9c9961541",
     "source": "Projects & memory"
   },
@@ -6044,10 +6056,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b1a36d25d9633ed2",
     "source": "select"
-  },
-  {
-    "id": "b1ae268932dd9294",
-    "source": "Failed to start the cloud runner."
   },
   {
     "id": "b1ed18d341ca874e",
@@ -8300,6 +8308,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f3d75a69ea9dd309",
     "source": "session.closed"
+  },
+  {
+    "id": "f3ec00fe297844cc",
+    "source": "Too many cloud runs started. Try again shortly."
   },
   {
     "id": "f3f32cc3f49b447f",

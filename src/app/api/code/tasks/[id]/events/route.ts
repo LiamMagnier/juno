@@ -29,7 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { id } = await params;
   // POST accepts the cloud runner's task token (to stream its own task's events)
   // as well as the session/native host. The GET stream below stays session-only.
-  const { user, error } = await requireTaskAuth(id, req);
+  const { user, viaTaskToken, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
   const raw = await req.text();
@@ -46,8 +46,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = schema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const task = await prisma.codeTask.findFirst({ where: { id, userId: user.id }, select: { id: true } });
+  const task = await prisma.codeTask.findFirst({ where: { id, userId: user.id }, select: { id: true, status: true } });
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  // The untrusted cloud runner may post its ONE terminal (done/failed/cancelled)
+  // transition — which is fine, the task isn't terminal yet at that point — but a
+  // token replayed AFTER the task has already finished is refused. The native
+  // host (session/native bearer, viaTaskToken=false) keeps its existing behavior.
+  if (viaTaskToken && isTerminalTaskStatus(task.status)) {
+    return NextResponse.json({ error: "Task is no longer active." }, { status: 409 });
+  }
 
   const { task: updated, lastSeq, control } = await appendTaskEvents(
     task.id,
