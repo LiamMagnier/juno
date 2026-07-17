@@ -161,10 +161,20 @@ export async function requireOidcRunnerAuth(
   const result = await verifyGithubActionsOidc(match[1], { repository: env.cloudCodeRepo });
   if (!result.ok) {
     console.warn(`[cloud-code] runner-context OIDC rejected: ${result.reason}`);
-    return unauthorized;
+    // Surface the coarse, secret-free reason: it can't help forge a valid token
+    // (that needs a real run of OUR workflow) and it makes runner failures
+    // diagnosable without server-log access.
+    return {
+      user: null,
+      error: NextResponse.json({ error: "Unauthorized", reason: result.reason }, { status: 401 }),
+    };
   }
+  // OIDC passed → this is a trusted runner of our workflow. A missing task is a
+  // genuine 404 (not 401): conflating the two hid whether auth or the task was
+  // the problem, and a trusted runner is never a task-existence oracle for an
+  // attacker (who can't pass OIDC at all).
   const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
-  if (!task) return unauthorized;
+  if (!task) return { user: null, error: NextResponse.json({ error: "Not found" }, { status: 404 }) };
   return { user: { id: task.userId }, error: null };
 }
 
