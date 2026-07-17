@@ -233,7 +233,7 @@ function PaletteShell({
                       <div
                         aria-hidden="true"
                         className={cn(
-                          "px-2.5 pb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55",
+                          "px-2.5 pb-1 text-[11px] font-medium text-muted-foreground/70",
                           i === 0 ? "pt-1.5" : "pt-3"
                         )}
                       >
