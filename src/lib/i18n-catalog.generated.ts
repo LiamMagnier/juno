@@ -14,6 +14,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Codex model (Responses API)."
   },
   {
+    "id": "0039a45ea19fc154",
+    "source": "Command menu"
+  },
+  {
     "id": "003d95ff4a5ecc4f",
     "source": "Small GPT-4o tier."
   },
@@ -188,10 +192,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "032e9af597096f48",
     "source": "fits you"
-  },
-  {
-    "id": "0347f794d69ca5c4",
-    "source": "Command palette"
   },
   {
     "id": "038602ae4071e6dd",
@@ -426,10 +426,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Codex-tuned model."
   },
   {
-    "id": "09e3e5e73c0be5dc",
-    "source": "Could not rename folder."
-  },
-  {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
   },
@@ -460,10 +456,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0b4806d0fc924c9d",
     "source": "Inspect elements"
-  },
-  {
-    "id": "0b4988ba7eb2c763",
-    "source": "Folder renamed."
   },
   {
     "id": "0b7004c8459afc3a",
@@ -674,6 +666,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Moderation"
   },
   {
+    "id": "1283eb37c57b60ec",
+    "source": "New scheduled task"
+  },
+  {
     "id": "12a0015fa3221777",
     "source": "Terms of Use"
   },
@@ -704,10 +700,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "13637bcc09439fb1",
     "source": "The stream was interrupted. The partial answer was preserved."
-  },
-  {
-    "id": "13a1515e2fd2adc4",
-    "source": "Could not create folder."
   },
   {
     "id": "13bbde57e2a6805a",
@@ -752,10 +744,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "14bb43e1aa46e05c",
     "source": "Previous flagship reasoning Grok."
-  },
-  {
-    "id": "14d34edf50ef6c87",
-    "source": "Folder name"
   },
   {
     "id": "1505f40de62c4f26",
@@ -1202,6 +1190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "1. Éditeur du service"
   },
   {
+    "id": "2348f99874421257",
+    "source": "open"
+  },
+  {
     "id": "2374113faeb59024",
     "source": "List the user's iCloud calendars by name."
   },
@@ -1272,6 +1264,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "254fba7c1ece2dd9",
     "source": "Attach as file"
+  },
+  {
+    "id": "25800e77e6d343ea",
+    "source": "No chats or projects yet"
   },
   {
     "id": "25b3ce41d80b130c",
@@ -1578,10 +1574,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Memory updated"
   },
   {
-    "id": "2e2406372e00bcca",
-    "source": "Folders group conversations — filter by one from the sidebar."
-  },
-  {
     "id": "2e3ac056d4901875",
     "source": "Shared links"
   },
@@ -1652,6 +1644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3064d79a295cefe4",
     "source": "Rename"
+  },
+  {
+    "id": "308acd244a4ee06b",
+    "source": "Search or start a chat"
   },
   {
     "id": "30f4b51e73bdb2f0",
@@ -2000,10 +1996,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "39e15e2c9d48cbdb",
     "source": "uploading"
-  },
-  {
-    "id": "39f35f2d44d61152",
-    "source": "Delete folder"
   },
   {
     "id": "3a10096667af87d5",
@@ -2522,10 +2514,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Signed up"
   },
   {
-    "id": "489b9f7c7b087a39",
-    "source": "New folder name"
-  },
-  {
     "id": "48e6f00bc1d91905",
     "source": "Back to roadmap"
   },
@@ -3034,10 +3022,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Back to chat"
   },
   {
-    "id": "59952f14d8ede6df",
-    "source": "e.g. Research"
-  },
-  {
     "id": "59be71333c960fd0",
     "source": "Optional"
   },
@@ -3172,6 +3156,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5d4ef7cc3becb77c",
     "source": "Project actions"
+  },
+  {
+    "id": "5d4fbaa609ef425f",
+    "source": "Search all chats and projects"
   },
   {
     "id": "5d811d15b4c909fa",
@@ -3356,10 +3344,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "62daa93abbe81f32",
     "source": "Undoing…"
-  },
-  {
-    "id": "62f73a814dfa6cdf",
-    "source": "Could not delete folder."
   },
   {
     "id": "630c2f1c0ee1b8d7",
@@ -3710,10 +3694,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Selected model"
   },
   {
-    "id": "6cca52922d2c71b9",
-    "source": "New folder…"
-  },
-  {
     "id": "6ccd5c7856042d36",
     "source": "Close menu"
   },
@@ -3946,10 +3926,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A reason of 3–500 characters is required."
   },
   {
-    "id": "7249f19c9e4f482a",
-    "source": "Rename folder"
-  },
-  {
     "id": "725768b8d7b4d664",
     "source": "Couldn’t load your shared links."
   },
@@ -4058,10 +4034,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "/voice"
   },
   {
-    "id": "75f7c80262af35d4",
-    "source": "Search — command palette (⌘K)"
-  },
-  {
     "id": "7607faf951a8688a",
     "source": "Create a canvas"
   },
@@ -4080,10 +4052,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7674021617159190",
     "source": "Ada Lovelace"
-  },
-  {
-    "id": "767648083c70e983",
-    "source": "Delete this folder?"
   },
   {
     "id": "76900f1bfd16c8d4",
@@ -4350,6 +4318,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No bans on record."
   },
   {
+    "id": "7eeb1423b33b5adc",
+    "source": "Open command menu"
+  },
+  {
     "id": "7f1d5f1f0f91863a",
     "source": "/ MTok"
   },
@@ -4396,10 +4368,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "800190d22f103a73",
     "source": "The provider stopped the response for safety reasons."
-  },
-  {
-    "id": "8024ee8fc5f4004b",
-    "source": "Command palette search"
   },
   {
     "id": "802600d124464157",
@@ -4492,10 +4460,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "82a3537ff0dbce7e",
     "source": "name"
-  },
-  {
-    "id": "82b9e1ef0b404cf1",
-    "source": "Create folder"
   },
   {
     "id": "82e36fc2ed61fcd9",
@@ -4694,6 +4658,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Auto-detect"
   },
   {
+    "id": "8a2ad0af6383e0d4",
+    "source": "cloud_dispatch_failed"
+  },
+  {
     "id": "8a58b690bf39ae5d",
     "source": "Budget API mensuel"
   },
@@ -4822,10 +4790,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "OpenAI's strongest mini — fast, cheap coding and subagents."
   },
   {
-    "id": "9029be319b20e046",
-    "source": "Search commands, chats…"
-  },
-  {
     "id": "902ceeb21a5f1f10",
     "source": "/projects"
   },
@@ -4876,10 +4840,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "91b9c8945cc9ce69",
     "source": "Apple Calendar"
-  },
-  {
-    "id": "91d631e150a39784",
-    "source": "Move to folder"
   },
   {
     "id": "91fe32b30bf6f588",
@@ -5594,10 +5554,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "lab"
   },
   {
-    "id": "a5134af0dafea86b",
-    "source": "Search (command palette)"
-  },
-  {
     "id": "a51d598fe3ddbf35",
     "source": "www.cnil.fr"
   },
@@ -5890,10 +5846,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Faster, cheaper Veo tier."
   },
   {
-    "id": "adc4c5775cdb440f",
-    "source": "Search (⌘K)"
-  },
-  {
     "id": "addb776b173a84f2",
     "source": "Try it now"
   },
@@ -6032,6 +5984,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b1a36d25d9633ed2",
     "source": "select"
+  },
+  {
+    "id": "b1ae268932dd9294",
+    "source": "Failed to start the cloud runner."
   },
   {
     "id": "b1ed18d341ca874e",
@@ -6426,10 +6382,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sign in"
   },
   {
-    "id": "c022b19a38a632d9",
-    "source": "Open command palette"
-  },
-  {
     "id": "c064fbca9d9de8dd",
     "source": "memory"
   },
@@ -6702,10 +6654,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "claude"
   },
   {
-    "id": "c8606e1f31a769cc",
-    "source": "Conversations inside it are kept — they just move out of the folder."
-  },
-  {
     "id": "c87d165a1f409b27",
     "source": "The model stopped at its token limit."
   },
@@ -6780,10 +6728,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ca627f500a393aba",
     "source": "Weekly status update"
-  },
-  {
-    "id": "ca98f4c7bf9dab8a",
-    "source": "No folder"
   },
   {
     "id": "cab57e8b35f6d96e",
@@ -6960,10 +6904,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cf1368a3d1f60767",
     "source": "Edit task"
-  },
-  {
-    "id": "cf28f49ec597a6ed",
-    "source": "New folder"
   },
   {
     "id": "cf385af901b3f203",
@@ -7410,6 +7350,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit prompt"
   },
   {
+    "id": "da22cb39366aa66b",
+    "source": "Start a chat or create a project to see it here."
+  },
+  {
     "id": "da371ee1e141c623",
     "source": "Revoke link"
   },
@@ -7750,10 +7694,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rename file"
   },
   {
-    "id": "e37afba745641c21",
-    "source": "Folder options"
-  },
-  {
     "id": "e38f590afdee2664",
     "source": "News link"
   },
@@ -7840,10 +7780,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e642ef9814965988",
     "source": "Review the active step and try again."
-  },
-  {
-    "id": "e65d5f4c063a65db",
-    "source": "Change the name of this folder."
   },
   {
     "id": "e66c0619f7db2e9c",
@@ -8042,6 +7978,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ByteDance flagship — multimodal references, native audio, up to 4K."
   },
   {
+    "id": "ec05b2e74a50753b",
+    "source": "cloud_runner_not_configured"
+  },
+  {
     "id": "ec153694483b2b7d",
     "source": "set up"
   },
@@ -8158,6 +8098,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Theme"
   },
   {
+    "id": "efc21e5384ad776c",
+    "source": "Search chats and projects"
+  },
+  {
     "id": "f02ee2fdfa040071",
     "source": "connection_busy"
   },
@@ -8232,10 +8176,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f31ca38a3538dc2e",
     "source": "Qwen Flash"
-  },
-  {
-    "id": "f322290c6ccaaae0",
-    "source": "Folder created."
   },
   {
     "id": "f34c2be0d1c5f562",
@@ -8660,10 +8600,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ff2fac8c7fcc39fc",
     "source": "Relaxed and conversational"
-  },
-  {
-    "id": "ff406cfe6b6c254e",
-    "source": "Commands and chats"
   },
   {
     "id": "ff6c468b6c0954c9",
