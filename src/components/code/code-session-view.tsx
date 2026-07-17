@@ -8,6 +8,7 @@ import { MessageList } from "@/components/chat/message-list";
 import { useApp } from "@/components/app/app-provider";
 import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeSessionStatus } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
+import { takePendingCodePrompt } from "@/lib/code-session-handoff";
 import { cn } from "@/lib/utils";
 import type { ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
 
@@ -213,6 +214,21 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const [draft, setDraft] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
+  // First prompt handed off from the New session screen (device sessions only —
+  // cloud sessions dispatch their task up front). Pre-fill the draft and arm a
+  // one-shot auto-dispatch that fires the moment the Mac is reachable; if it's
+  // offline the prompt simply waits, ready to send, nothing lost.
+  const [autoSendArmed, setAutoSendArmed] = React.useState(false);
+  React.useEffect(() => {
+    const pending = takePendingCodePrompt(conversation.id);
+    if (pending) {
+      setDraft(pending);
+      setAutoSendArmed(true);
+    }
+    // Once, on mount for this conversation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversation.id]);
+
   // Cloud sessions ignore device presence entirely — they run on a dispatched
   // machine, so the only gate is knowing the repo. Device sessions keep their
   // presence-based gating unchanged.
@@ -284,6 +300,20 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
 
   const composerDisabled = isCloud ? !cloudRepoFull : !canTarget || !workspacePath;
   const canSend = !!draft.trim() && canTarget && (isCloud || !!workspacePath) && !session.isBusy;
+
+  // Fire the handed-off first prompt as soon as the session can send. Cloud
+  // sessions were already dispatched on the New session screen, so this only
+  // covers device — it waits out presence resolution, then sends exactly once.
+  React.useEffect(() => {
+    if (!autoSendArmed) return;
+    if (isCloud) {
+      setAutoSendArmed(false);
+      return;
+    }
+    if (!canSend) return;
+    setAutoSendArmed(false);
+    void submit();
+  }, [autoSendArmed, canSend, isCloud, submit]);
 
   // MessageList's streaming label: "Writing" once prose lands, "Thinking" before.
   const listStatus: GenerationStatus =
