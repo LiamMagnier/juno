@@ -56,6 +56,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/components/app/app-provider";
+import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
 import { cn } from "@/lib/utils";
 import type { ClientFolder } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
@@ -93,6 +94,9 @@ type CodeTaskRow = {
 
 const CODE_EXPANDED_KEY = "juno:sidebar:code:expanded";
 const LEGACY_STARRED_KEY = "starredProjects";
+// Matches the session view's presence poll: frequent enough that a status dot
+// settles on its own, gentle enough to sit behind an idle Code tab all day.
+const CODE_POLL_MS = 30_000;
 // A failed task stays visible for a day; after that it's stale noise.
 const FAILED_TASK_TTL_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "awaiting_approval"]);
@@ -309,7 +313,13 @@ export function AppSidebar({
 
   const filtered = React.useMemo(() => {
     return conversations.filter(
-      (c) => (mode === "code" ? c.kind === "code" : c.kind !== "code") && (!folderFilter || c.folderId === folderFilter)
+      (c) =>
+        (mode === "code" ? c.kind === "code" : c.kind !== "code") &&
+        // Folder scoping is a Home-only concept: the chips that set and clear
+        // this filter render only in Home, and code sessions always have a null
+        // folderId. Applying it in Code mode emptied the list behind a filter
+        // the user had no visible control to clear ("No sessions yet").
+        (mode !== "home" || !folderFilter || c.folderId === folderFilter)
     );
   }, [conversations, folderFilter, mode]);
 
@@ -341,9 +351,24 @@ export function AppSidebar({
     }
   }, []);
 
+  // The sidebar mounts once in the persistent shell, so a single load on mode
+  // flip left status dots frozen ("Running" forever). Poll gently while Code
+  // mode is on screen and the tab is visible, refresh on refocus, and react
+  // immediately when a session hook reports a task start/finish.
   React.useEffect(() => {
     if (mode !== "code") return;
     void loadCode();
+    const tick = () => {
+      if (!document.hidden) void loadCode();
+    };
+    const interval = window.setInterval(tick, CODE_POLL_MS);
+    window.addEventListener(CODE_SYNC_EVENT, tick);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener(CODE_SYNC_EVENT, tick);
+      document.removeEventListener("visibilitychange", tick);
+    };
   }, [mode, loadCode]);
 
   // `id` is the group's stable identity: workspace key when synced, else path.
@@ -766,7 +791,6 @@ export function AppSidebar({
             {pinned.length > 0 && (
               <Section
                 label="Pinned"
-                count={pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
@@ -794,7 +818,6 @@ export function AppSidebar({
             {recents.length > 0 && (
               <Section
                 label="Sessions"
-                count={recents.length}
                 collapsible
                 isCollapsed={recentsCollapsed}
                 onToggleCollapse={toggleRecentsCollapsed}
@@ -837,7 +860,6 @@ export function AppSidebar({
             {(sidebarProjects.length > 0 || pinned.length > 0) && (
               <Section
                 label="Pinned"
-                count={sidebarProjects.length + pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
@@ -884,7 +906,6 @@ export function AppSidebar({
             {recents.length > 0 && (
               <Section
                 label="Recents"
-                count={recents.length}
                 collapsible
                 isCollapsed={recentsCollapsed}
                 onToggleCollapse={toggleRecentsCollapsed}
@@ -1162,12 +1183,6 @@ function RailIcon({
   );
 }
 
-/** Accent bar on the active row — scales/fades per row, so moving the active
- *  item reads as the old bar retracting while the new one grows in. */
-function ActiveIndicator({ active: _active }: { active?: boolean }) {
-  return null;
-}
-
 function NavRow({
   href,
   onClick,
@@ -1191,7 +1206,6 @@ function NavRow({
   );
   const inner = (
     <>
-      <ActiveIndicator active={active} />
       <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-110 group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
@@ -1212,7 +1226,6 @@ function NavRow({
 
 function Section({
   label,
-  count: _count,
   icon: Icon,
   children,
   collapsible,
@@ -1221,7 +1234,6 @@ function Section({
   action,
 }: {
   label: string;
-  count?: number;
   icon?: typeof Pin;
   children: React.ReactNode;
   collapsible?: boolean;
@@ -1597,7 +1609,6 @@ function ConversationRow({
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
-      <ActiveIndicator active={active} />
       <Link
         href={`/chat/${conversation.id}`}
         onClick={onNavigate}
@@ -1740,13 +1751,15 @@ function ProjectRow({
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
-      <ActiveIndicator active={active} />
       <Link
         href={`/projects/${project.id}`}
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-w-0 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
+          // flex-1 so the link fills the row it paints hover across: a
+          // content-width link next to a flex-1 spacer left the middle of the
+          // row looking clickable but doing nothing (as ConversationRow does).
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
           active && "font-semibold text-foreground"
         )}
         title={project.name}
@@ -1756,7 +1769,8 @@ function ProjectRow({
         </span>
         <span className="min-w-0 truncate">{project.name}</span>
       </Link>
-      {/* Claude-style disclosure: a small › hugging the name, rotating open. */}
+      {/* Disclosure ›, rotating open. Sits with the kebab at the row's trailing
+          edge: the project link owns the whole span it paints hover across. */}
       {hasChats && (
         <button
           type="button"
@@ -1771,7 +1785,6 @@ function ProjectRow({
           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
         </button>
       )}
-      <span className="min-w-0 flex-1" />
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

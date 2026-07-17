@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
+import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 
 export const runtime = "nodejs";
 
@@ -71,7 +72,7 @@ export async function POST(req: Request) {
     });
     if (!conversation) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
     // First prompt of a fresh session names it (never overrides a user rename).
-    if (conversation.titleSource === "default" && conversation.title === "New chat") {
+    if (conversation.titleSource === "default" && isDefaultCodeSessionTitle(conversation.title)) {
       sessionTitleUpdate = prompt.slice(0, 48);
     }
   }

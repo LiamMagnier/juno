@@ -47,9 +47,23 @@ const TERMINAL = new Set(["done", "failed", "cancelled"]);
 const RECONNECT_BASE_MS = 1_500;
 const RECONNECT_MAX_MS = 15_000;
 
+/** Fired when this session's task list meaningfully changes (a task starts, or
+ *  reaches a terminal state). The sidebar mounts once in the persistent shell
+ *  and cannot see this hook's state, so it listens for this instead of waiting
+ *  for its own poll to come round. */
+export const CODE_SYNC_EVENT = "juno:code-sync";
+const notifyCodeSync = () => {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CODE_SYNC_EVENT));
+};
+
 let tempCounter = 0;
 const tempId = () => `code-temp-${Date.now()}-${tempCounter++}`;
-const liveId = (taskId: string) => `code-live-${taskId}`;
+const LIVE_ID_PREFIX = "code-live-";
+const liveId = (taskId: string) => `${LIVE_ID_PREFIX}${taskId}`;
+/** True for an optimistic streaming bubble: a client-minted id with no
+ *  persisted Message row behind it, so server-side affordances (feedback and
+ *  anything else keyed by message id) must not be offered or POSTed for it. */
+export const isLiveId = (id: string) => id.startsWith(LIVE_ID_PREFIX);
 
 const str = (payload: RemoteEvent["payload"], key: string): string | null => {
   const value = payload?.[key];
@@ -289,6 +303,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       setStatus("idle");
       if (failed && errorText) toast.error(errorText);
       opts.onActivity?.();
+      notifyCodeSync(); // terminal: the sidebar's status dot is now stale
     },
     [opts]
   );
@@ -398,6 +413,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         setActiveTask(task);
         setStatus("queued");
         opts.onActivity?.();
+        notifyCodeSync(); // a new task exists — let the sidebar pick it up now
         void streamTask(task.id);
         return { accepted: true };
       } catch (err) {
@@ -461,12 +477,33 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   );
 
   const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
-    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)));
+    // A live bubble is a client-side id with no row behind it — POSTing would
+    // 404. The view hides feedback for these, so reaching here means a race
+    // (the run settled mid-click); drop it rather than fake success.
+    if (isLiveId(messageId)) return;
+    // Optimistic, but honest: capture the previous value while applying the
+    // new one, and roll back with a toast if the API doesn't accept it.
+    let previous: "UP" | "DOWN" | null = null;
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m;
+        previous = m.feedback ?? null;
+        return { ...m, feedback };
+      })
+    );
+    const rollback = () => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback: previous } : m)));
+      toast.error("Could not save your feedback.");
+    };
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback }),
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (!res.ok) rollback();
+      })
+      .catch(rollback);
   }, []);
 
   React.useEffect(() => () => abortRef.current?.abort(), []);

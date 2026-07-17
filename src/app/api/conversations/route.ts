@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { listConversations } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
 import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
+import { DEFAULT_CODE_SESSION_TITLE } from "@/lib/title-ownership";
 
 export async function GET(req: Request) {
   const user = await getCurrentUser();
@@ -44,6 +45,10 @@ export async function POST(req: Request) {
       kind,
       ...(kind === "code"
         ? {
+            // A code session isn't a chat: the schema's "New chat" default read
+            // wrong everywhere. titleSource stays "default", so the first
+            // prompt still renames it (see isDefaultCodeSessionTitle).
+            title: DEFAULT_CODE_SESSION_TITLE,
             codeWorkspaceName: d.codeWorkspaceName ?? null,
             codeWorkspacePath: d.codeWorkspacePath ?? null,
             codeWorkspaceKey: d.codeWorkspaceKey ?? null,

@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { AlertCircle, ExternalLink, GitPullRequest, GitPullRequestDraft, Plug, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -28,6 +29,7 @@ type LoadState =
   | { phase: "loading" }
   | { phase: "ready"; data: PullsPayload }
   | { phase: "unauthorized" }
+  | { phase: "disconnected" }
   | { phase: "error" };
 
 function groupByRepo(items: PullItem[]): [string, PullItem[]][] {
@@ -52,11 +54,21 @@ export function PullsList({ account }: { account: string | null }) {
         setState({ phase: "unauthorized" });
         return;
       }
+      // The connection is gone entirely — never made, or removed from another
+      // tab. That's a prompt to connect, not "GitHub is rate-limiting you".
+      if (res.status === 404) {
+        setState({ phase: "disconnected" });
+        return;
+      }
       if (!res.ok) throw new Error();
       const data = (await res.json()) as PullsPayload;
       setState({ phase: "ready", data });
     } catch {
-      setState((prev) => (prev.phase === "ready" ? prev : { phase: "error" }));
+      // Refresh only exists in the ready phase, so a failure there means we
+      // still have a list worth keeping — but stale data left on screen with no
+      // word reads as fresh, so say it out loud instead of failing silently.
+      if (isRefresh) toast.error("Couldn’t refresh — still showing the last results.");
+      else setState({ phase: "error" });
     } finally {
       setRefreshing(false);
     }
@@ -86,6 +98,25 @@ export function PullsList({ account }: { account: string | null }) {
         <Button asChild variant="outline" size="sm" className="gap-1.5">
           <Link href="/connections">
             <Plug className="h-3.5 w-3.5" /> Reconnect GitHub
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (state.phase === "disconnected") {
+    return (
+      <div className="mt-10 flex flex-col items-center gap-4 text-center">
+        <GitPullRequest className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
+        <div className="max-w-sm">
+          <p className="font-serif text-heading">Connect GitHub</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Link your GitHub account so Juno can list and track the pull requests your code sessions open.
+          </p>
+        </div>
+        <Button asChild className="gap-1.5">
+          <Link href="/connections">
+            <Plug className="h-4 w-4" /> Connect GitHub
           </Link>
         </Button>
       </div>

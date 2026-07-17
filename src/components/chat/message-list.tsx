@@ -19,6 +19,9 @@ interface MessageListProps {
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  /** Per-message feedback eligibility — see MessageItemProps.canFeedback.
+   *  Omit when every rendered message is backed by a persisted row. */
+  canFeedback?: (message: ChatMessage) => boolean;
   onFork?: (id: string) => void;
   onSpeak?: (id: string, text: string) => void;
   speakingId?: string | null;
@@ -117,6 +120,7 @@ export function MessageList(props: MessageListProps) {
               onContinue={props.onContinue}
               onEdit={props.onEdit}
               onFeedback={props.onFeedback}
+              canFeedback={props.canFeedback ? props.canFeedback(m) : undefined}
               onFork={props.onFork}
               onSpeak={props.onSpeak}
               speaking={props.speakingId === m.id}

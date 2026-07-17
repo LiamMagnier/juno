@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MessageList } from "@/components/chat/message-list";
 import { useApp } from "@/components/app/app-provider";
-import { useCodeSession, type CodeSessionStatus } from "@/hooks/use-code-session";
+import { useCodeSession, isLiveId, type CodeSessionStatus } from "@/hooks/use-code-session";
+import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { cn } from "@/lib/utils";
 import type { ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
 
@@ -171,9 +172,10 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     });
     if (accepted) {
       setDraft("");
-      // First prompt of a fresh session names it (server does the same).
+      // First prompt of a fresh session names it (server does the same — this
+      // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
       const current = conversations.find((c) => c.id === conversation.id);
-      if (current && current.titleSource === "default" && current.title === "New chat") {
+      if (current && current.titleSource === "default" && isDefaultCodeSessionTitle(current.title)) {
         updateConversation(conversation.id, { title: text.slice(0, 48) });
       }
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -329,6 +331,8 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             artifacts={[]}
             onOpenArtifact={() => {}}
             onFeedback={session.setFeedback}
+            // Live bubbles are client-side until the run's row comes back.
+            canFeedback={(m) => !isLiveId(m.id)}
           />
           <div className="w-full px-0 pb-1">{composer}</div>
           <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">

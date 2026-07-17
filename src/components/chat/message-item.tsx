@@ -196,6 +196,10 @@ interface MessageItemProps {
   onContinue?: () => void;
   onEdit?: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
+  /** False for a bubble with no persisted Message row behind it (code sessions
+   *  render optimistic ones): feedback is keyed by message id, so offering it
+   *  would POST an id the server has never seen. Defaults to true. */
+  canFeedback?: boolean;
   onFork?: (id: string) => void;
   onSpeak?: (id: string, text: string) => void;
   speaking?: boolean;
@@ -218,6 +222,7 @@ export function MessageItem({
   onContinue,
   onEdit,
   onFeedback,
+  canFeedback = true,
   onFork,
   onSpeak,
   speaking,
@@ -631,7 +636,7 @@ export function MessageItem({
                   <GitFork className="h-4 w-4" />
                 </IconAction>
               )}
-              {!privateMode && (
+              {!privateMode && canFeedback && (
                 <>
                   <IconAction label="Good response" onClick={() => onFeedback(message.id, message.feedback === "UP" ? null : "UP")} active={message.feedback === "UP"}>
                     <ThumbsUp className="h-4 w-4" />

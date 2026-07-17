@@ -5,17 +5,24 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
   ArrowRight,
+  Box,
+  CalendarClock,
   NotebookPen,
   Columns2,
+  GitPullRequest,
   Keyboard,
+  Library,
   Map as MapIcon,
   MessageSquare,
   Moon,
+  Plug,
   Plus,
   Search,
   Settings,
+  Shapes,
   Sparkles,
   Sun,
+  Terminal,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -115,8 +122,17 @@ export function CommandPalette() {
   const items = React.useMemo<Cmd[]>(() => {
     const base: Cmd[] = [
       { id: "new", group: "Actions", label: "New chat", hint: "⌘⇧O", icon: Plus, keywords: "start compose", run: () => go("/chat") },
+      { id: "new-code", group: "Actions", label: "New code session", icon: Terminal, keywords: "code start workspace session mac", run: () => go("/code/new") },
       { id: "shortcuts", group: "Actions", label: "Keyboard shortcuts", hint: "⌘/", icon: Keyboard, keywords: "keys help", run: () => { setOpen(false); setShortcutsOpen(true); } },
       { id: "compare", group: "Navigate", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
+      // Both modes' destinations: the palette is the one surface that reaches
+      // everywhere regardless of which sidebar mode is currently on screen.
+      { id: "pulls", group: "Navigate", label: "Pull requests", icon: GitPullRequest, keywords: "code github pr reviews", run: () => go("/code/pulls") },
+      { id: "library", group: "Navigate", label: "Library", icon: Library, keywords: "saved prompts snippets", run: () => go("/library") },
+      { id: "artifacts", group: "Navigate", label: "Artifacts", icon: Shapes, keywords: "documents canvas generated", run: () => go("/artifacts") },
+      { id: "projects", group: "Navigate", label: "Projects", icon: Box, keywords: "folders workspaces group", run: () => go("/projects") },
+      { id: "tasks", group: "Navigate", label: "Tasks", icon: CalendarClock, keywords: "scheduled recurring automation", run: () => go("/tasks") },
+      { id: "connections", group: "Navigate", label: "Connections", icon: Plug, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
       { id: "settings", group: "Navigate", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },
       { id: "memory", group: "Navigate", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "roadmap", group: "Navigate", label: "Roadmap & feature requests", icon: MapIcon, keywords: "feedback vote ideas", run: () => go("/roadmap") },
