@@ -1,8 +1,8 @@
 {
-  "version": "3.3.2",
-  "build": 39,
+  "version": "3.3.3",
+  "build": 40,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "5e1944e061887db6cdd563117f694fd02470688834547620217a9be3f2140e30",
-  "notes": "Juno Quick pill: fixed the washed-out text/buttons (content now sits crisply on the glass), Option+Space now closes the pill when it's already open, and the + menu plus a real model selector and thinking-effort slider bring full parity with the main composer \u2014 upload files, add photos, projects, web search, deep research, canvas, and memory.",
+  "sha256": "04ab08c9686c53674528fd95119ec21fe559f43f05a68df031378c934aacb4d8",
+  "notes": "Juno Quick pill: much clearer text (the glass now stays graphite over any background instead of washing out), and you can drag the pill anywhere on screen \u2014 it remembers where you put it, with Reset position in the + menu to recenter.",
   "minimumSystemVersion": "26.0"
 }
