@@ -142,7 +142,13 @@ export async function POST(req: Request) {
         }
       }
 
-      await tx.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: finalCreatedAt } });
+      // Ownership is already established above (findFirst scoped to the user, or
+      // a create with userId), but the filter has to be on the query itself for
+      // the ownership guard — and it costs nothing to re-assert it here.
+      await tx.conversation.update({
+        where: { id: conversation.id, userId: user.id },
+        data: { lastMessageAt: finalCreatedAt },
+      });
       await tx.voiceTranscriptSession.create({
         data: { userId: user.id, sessionId: input.sessionId, conversationId: conversation.id, messageIds },
       });
@@ -163,6 +169,9 @@ export async function POST(req: Request) {
     // key rolls one transaction back; return the winner's result to both callers.
     const raced = await serializeSavedSession(user.id, input.sessionId);
     if (raced) return NextResponse.json(raced);
+    // Anything reaching here is a genuine failure, not a race — log it rather
+    // than letting the generic 500 swallow the cause.
+    console.error("[voice/transcript] failed to save transcript", error);
     return NextResponse.json({ error: "Could not save the voice transcript." }, { status: 500 });
   }
 }

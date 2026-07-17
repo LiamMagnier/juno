@@ -23,6 +23,33 @@ const schema = z.object({
   emailWeeklyDigest: z.boolean().optional(),
 });
 
+/**
+ * The account's settings row, for the native app's pull-before-push hydration
+ * (BackendClient.fetchSettings). Field names mirror ClientSettingsDTO and the
+ * PATCH body above, so a client can round-trip what it reads. Serves
+ * server-side truth: `ensureUserDefaults` materialises the row first, so a
+ * brand-new account returns schema defaults rather than 404.
+ */
+export async function GET() {
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  await ensureUserDefaults(user.id);
+  const settings = await prisma.settings.findUnique({
+    where: { userId: user.id },
+    select: {
+      customInstructions: true,
+      responseLanguage: true,
+      memoryEnabled: true,
+      defaultModel: true,
+      favoriteModels: true,
+    },
+  });
+  if (!settings) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  return NextResponse.json({ settings });
+}
+
 export async function PATCH(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

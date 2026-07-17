@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { getConversationThread } from "@/lib/queries";
 import { serializeConversation } from "@/lib/serializers";
+import { codeWorkspaceAttributionShape } from "@/lib/code-workspaces";
 
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
@@ -23,9 +24,7 @@ const patchSchema = z.object({
   projectId: z.string().cuid().nullable().optional(),
   // The Juno app retro-marks synced Code sessions (+ their workspace).
   kind: z.enum(["chat", "code"]).optional(),
-  codeWorkspaceName: z.string().trim().min(1).max(300).nullable().optional(),
-  codeWorkspacePath: z.string().trim().min(1).max(1000).nullable().optional(),
-  codeWorkspaceKey: z.string().trim().min(1).max(200).nullable().optional(),
+  ...codeWorkspaceAttributionShape,
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

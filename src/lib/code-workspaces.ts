@@ -9,12 +9,50 @@
  * Matching precedence, per incoming item:
  *   1. (userId, key)  — when the item carries a key.
  *   2. (userId, path) — fallback, and the ONLY rule for pre-key clients.
- *      A keyed item that matches by path ADOPTS its key onto the row, so the
- *      first keyed sync upgrades existing rows in place instead of forking.
+ *      A keyed item may adopt a path-matched row ONLY when that row has no key
+ *      yet, so the first keyed sync upgrades pre-key rows in place instead of
+ *      forking.
+ *
+ * A row's key is IMMUTABLE once set: it is only ever written null -> value.
+ * That invariant is what keeps sessions attached. Two devices can hold the same
+ * absolute path while each mints its own key (same user, two machines, both
+ * with ~/code/app); adopting the incoming key onto a row that already carried a
+ * different one rewrote a live workspace's identity, so every session keyed to
+ * the old value was orphaned — and because each device re-adopted on its next
+ * heartbeat, the two ping-ponged the key and orphaned each other forever.
+ *
+ * "Different key, same path" therefore resolves as IDENTITY WINS: since W5 the
+ * key IS the workspace, so an item keyed K_b is simply not the row keyed K_a —
+ * it shares only a path string. The item forks its own row, and the unmatched
+ * row falls out through the mirror-replace rule below. This converges: the
+ * server becomes a pure function of the pushed snapshot, and re-pushing it is a
+ * no-op (the fork now matches by key). The alternative — dropping the incoming
+ * key and keeping K_a — leaves the row's key contradicting every client that
+ * pushed it, makes the result depend on sync history rather than the snapshot,
+ * and still orphans the pushing device's sessions. Neither can keep BOTH rows:
+ * (userId, path) is unique. Forking at least never mutates identity underneath
+ * a row that other devices still reference by key.
  *
  * Pure planning (no Prisma imports) so the hermetic test suite can exercise
  * the contract without a database; the route applies the plan transactionally.
  */
+
+import { z } from "zod";
+
+/**
+ * Code-session workspace attribution, shared by POST /api/conversations and
+ * PATCH /api/conversations/[id] so a session created with a given workspace
+ * accepts exactly what a retro-mark PATCH accepts. The caps are per-field and
+ * deliberately unequal: `path` matches the 1000 the mirror stores (clamping it
+ * to a shorter shared limit silently truncated long paths and broke the
+ * path-fallback grouping above), while `key` is a client-minted identity and
+ * `name` is display text.
+ */
+export const codeWorkspaceAttributionShape = {
+  codeWorkspaceName: z.string().trim().min(1).max(300).nullable().optional(),
+  codeWorkspacePath: z.string().trim().min(1).max(1000).nullable().optional(),
+  codeWorkspaceKey: z.string().trim().min(1).max(200).nullable().optional(),
+};
 
 export interface MirrorWorkspaceItem {
   id: string;
@@ -85,9 +123,14 @@ export function planWorkspaceMirror(existing: ExistingWorkspaceRow[], items: Mir
     let row = key != null ? byKey.get(key) : undefined;
     // 2. Path fallback (pre-key clients, or first keyed sync adopting a key).
     //    Never steal a row a previous item in this snapshot already claimed.
+    //    A keyed item only takes a path-matched row that has NO identity yet:
+    //    a row already carrying a different key is a different workspace that
+    //    merely shares a path, so this item forks its own row instead of
+    //    rewriting that row's key (see "identity wins" in the header).
     if (!row) {
       const pathRow = byPath.get(item.path);
-      if (pathRow && !claimed.has(pathRow.id) && !staleIds.has(pathRow.id)) row = pathRow;
+      const adoptable = pathRow && (key == null || pathRow.key == null);
+      if (adoptable && !claimed.has(pathRow.id) && !staleIds.has(pathRow.id)) row = pathRow;
     }
 
     if (row) {
@@ -105,8 +148,11 @@ export function planWorkspaceMirror(existing: ExistingWorkspaceRow[], items: Mir
           name: item.name,
           path: item.path,
           lastOpenedAt: openedAt(item),
-          // Adopt/confirm the identity key; NEVER clear one — a pre-key client
-          // omitting keys must not strip identity minted by a newer client.
+          // Adopt/confirm the identity key. Only ever null -> value or a
+          // no-op re-confirm: the matching rules above guarantee this row
+          // either already holds `key` or holds none. NEVER clears one — a
+          // pre-key client omitting keys must not strip identity minted by a
+          // newer client.
           ...(key != null ? { key } : {}),
         },
       });

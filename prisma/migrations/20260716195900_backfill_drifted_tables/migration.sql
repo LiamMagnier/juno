@@ -6,9 +6,27 @@
 
 -- triggers). Everything here is guarded, so databases that already carry the
 
--- tables (production) apply this as a no-op. Shapes match schema.prisma at
+-- tables (production) apply this as a no-op.
 
--- the time of writing; the later pending ALTERs are IF-NOT-EXISTS-guarded.
+--
+
+-- INVARIANT: shapes here must match what `db push` actually put on production
+
+-- at THIS point in the chain — NOT the current schema.prisma. On production
+
+-- every CREATE TABLE below no-ops (the table already exists), so any column a
+
+-- LATER pending migration adds must NOT be referenced here: the CREATE TABLE
+
+-- would not add it and a following statement (e.g. an index) would then fail
+
+-- against the real, older column set and wedge the deploy. Concretely,
+
+-- CodeTask."conversationId" (+ its index) belongs to 20260717090000 and
+
+-- CodeTask."workspaceKey" to 20260717130000; both are IF-NOT-EXISTS-guarded
+
+-- there, so fresh databases converge to the same final shape either way.
 
 
 
@@ -88,12 +106,10 @@ CREATE TABLE IF NOT EXISTS "CodeTask" (
     "deviceId" TEXT NOT NULL,
     "workspacePath" TEXT NOT NULL,
     "workspaceName" TEXT NOT NULL DEFAULT '',
-    "workspaceKey" TEXT,
     "title" TEXT NOT NULL,
     "prompt" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'queued',
     "lastSeq" INTEGER NOT NULL DEFAULT 0,
-    "conversationId" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -192,8 +208,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "CodeDevice_userId_name_key" ON "CodeDevice"("
 CREATE INDEX IF NOT EXISTS "CodeTask_userId_createdAt_idx" ON "CodeTask"("userId", "createdAt");
 
 CREATE INDEX IF NOT EXISTS "CodeTask_deviceId_status_idx" ON "CodeTask"("deviceId", "status");
-
-CREATE INDEX IF NOT EXISTS "CodeTask_conversationId_idx" ON "CodeTask"("conversationId");
 
 CREATE UNIQUE INDEX IF NOT EXISTS "CodeTaskEvent_taskId_seq_key" ON "CodeTaskEvent"("taskId", "seq");
 

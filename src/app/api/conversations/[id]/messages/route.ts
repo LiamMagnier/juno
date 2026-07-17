@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { encryptMessageText, decryptMessageTextSafe } from "@/lib/message-crypto";
 import { appendRequestSchema, appendTurnCreatedAt } from "@/lib/message-append";
+import { rateLimit } from "@/lib/rate-limit";
+import { isOwnerEmail } from "@/lib/owner";
 
 export const runtime = "nodejs";
 
@@ -22,6 +24,17 @@ const APPENDABLE_KINDS = new Set(["chat", "code"]);
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Generous by design — this is a sync path, and a client catching up after
+  // being offline legitimately pushes many batches back-to-back. The cap is
+  // here to bound the worst case (100 turns x 50k chars per call, each write
+  // amplified by the change-capture triggers), not to pace normal use.
+  if (!isOwnerEmail(user.email)) {
+    const limit = await rateLimit({ key: `messages-append:${user.id}`, limit: 60, windowSec: 60 });
+    if (!limit.success) {
+      return NextResponse.json({ error: "Too many message appends. Try again shortly." }, { status: 429 });
+    }
+  }
 
   const { id } = await params;
   const raw = await req.text();

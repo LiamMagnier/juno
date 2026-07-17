@@ -115,6 +115,67 @@ test("duplicate snapshot entries coalesce instead of double-claiming", () => {
   assert.equal(plan.creates[0].id, "n");
 });
 
+test("a different key on the same path forks instead of rewriting identity", () => {
+  // Two machines, same absolute path, each with its own minted key. Adopting
+  // wk-b onto wk-a's row would mutate a live workspace's identity and orphan
+  // every session keyed wk-a. Identity wins: the item forks its own row and
+  // the unmatched row is pruned by mirror-replace.
+  const existing = [row("a", "/Users/x/app", "wk-a")];
+  const plan = planWorkspaceMirror(existing, [{ id: "b", name: "App", path: "/Users/x/app", key: "wk-b" }]);
+
+  assert.equal(plan.updates.length, 0); // wk-a's row is never rewritten
+  assert.deepEqual(plan.deleteIds, ["a"]); // deleted BEFORE the create lands
+  assert.equal(plan.creates.length, 1);
+  assert.deepEqual(
+    { id: plan.creates[0].id, path: plan.creates[0].path, key: plan.creates[0].key },
+    { id: "b", path: "/Users/x/app", key: "wk-b" }
+  );
+});
+
+test("the forked snapshot converges: re-pushing it is a no-op key match", () => {
+  // Second heartbeat from the same device — the fork above now exists, so the
+  // item matches by key and nothing is created or pruned. Without this the two
+  // devices ping-pong the key on every sync.
+  const existing = [row("b", "/Users/x/app", "wk-b")];
+  const plan = planWorkspaceMirror(existing, [{ id: "b", name: "App", path: "/Users/x/app", key: "wk-b" }]);
+
+  assert.deepEqual(plan.deleteIds, []);
+  assert.equal(plan.creates.length, 0);
+  assert.equal(plan.updates.length, 1);
+  assert.equal(plan.updates[0].id, "b");
+  assert.equal(plan.updates[0].data.key, "wk-b");
+  assert.equal(plan.updates[0].pathChanged, false);
+});
+
+test("a keyed item never adopts a path row that already holds another key", () => {
+  // The keyed row is claimed by its own item, so the path fallback must not
+  // hand it to the second item as well; that item forks at its own path.
+  const existing = [row("a", "/x", "wk-a")];
+  const plan = planWorkspaceMirror(existing, [
+    { id: "a", name: "A", path: "/x", key: "wk-a" },
+    { id: "b", name: "B", path: "/y", key: "wk-b" },
+  ]);
+
+  assert.deepEqual(plan.deleteIds, []);
+  assert.equal(plan.updates.length, 1);
+  assert.equal(plan.updates[0].data.key, "wk-a");
+  assert.equal(plan.creates.length, 1);
+  assert.equal(plan.creates[0].key, "wk-b");
+});
+
+test("a pre-key client still path-matches a keyed row without touching its key", () => {
+  // The narrowed fallback must not regress pre-key clients: key-less items
+  // keep matching ANY path row, keyed or not.
+  const existing = [row("a", "/x", "wk-a")];
+  const plan = planWorkspaceMirror(existing, [{ id: "a", name: "Renamed", path: "/x" }]);
+
+  assert.equal(plan.updates.length, 1);
+  assert.equal(plan.updates[0].id, "a");
+  assert.ok(!("key" in plan.updates[0].data));
+  assert.deepEqual(plan.deleteIds, []);
+  assert.equal(plan.creates.length, 0);
+});
+
 test("keyed items never steal a row another item already claimed by path", () => {
   // Item 1 (key-less) claims /x by path; item 2's unknown key would create a
   // row on the SAME path — a malformed snapshot. First occurrence wins and
