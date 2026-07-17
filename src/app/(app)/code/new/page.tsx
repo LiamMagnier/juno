@@ -287,7 +287,7 @@ export default function NewCodeSessionPage() {
       : null;
 
   return (
-    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto">
+    <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto">
       {/* Back-to-chat control floats over the surface instead of taking a row, so
           the greeting + composer center in the FULL viewport rather than in the
           space left below a top bar. */}
