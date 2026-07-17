@@ -27,7 +27,9 @@ export const bashTool: ToolDefinition = {
     return new Promise((resolveResult) => {
       const child = spawn('/bin/bash', ['-c', command], {
         cwd: ctx.cwd,
-        env: process.env,
+        // Prefer the caller-provided (scrubbed) env; fall back to the driver's
+        // own env only when none was supplied.
+        env: ctx.env ?? process.env,
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       let out = '';

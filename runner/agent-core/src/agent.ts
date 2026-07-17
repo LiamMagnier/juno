@@ -36,6 +36,13 @@ export interface AgentOptions {
   callbacks: AgentCallbacks;
   /** When set, each turn reserves + records against the account plan. */
   usageReporter?: UsageReporter;
+  /**
+   * Environment for child processes spawned by tools (the bash tool). When
+   * omitted, children inherit the driver's `process.env`. The Cloud Code runner
+   * passes a SCRUBBED env so untrusted agent bash cannot reach the driver's
+   * secrets. See runner/agent-core/VENDORED.md (divergence #3).
+   */
+  env?: NodeJS.ProcessEnv;
 }
 
 function buildSystemPrompt(cwd: string, mode: PermissionMode): string {
@@ -75,6 +82,7 @@ export class AgentSession {
   private messages: ChatMessage[];
   private callbacks: AgentCallbacks;
   private usageReporter?: UsageReporter;
+  private childEnv?: NodeJS.ProcessEnv;
   private aborter: AbortController | null = null;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
@@ -90,6 +98,7 @@ export class AgentSession {
     this.messages = store.loadMessages();
     this.callbacks = opts.callbacks;
     this.usageReporter = opts.usageReporter;
+    this.childEnv = opts.env;
   }
 
   static create(opts: AgentOptions): AgentSession {
@@ -309,7 +318,7 @@ export class AgentSession {
       }
     }
 
-    const ctx: ToolContext = { cwd: this.cwd };
+    const ctx: ToolContext = { cwd: this.cwd, env: this.childEnv };
     for (const abs of tool.mutatedPaths?.(call.input, ctx) ?? []) {
       this.checkpoints.snapshot(turnIndex, abs);
     }

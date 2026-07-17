@@ -4,12 +4,15 @@ name: Cloud Code runner
 # job pulls the task's runner-context, clones the target repo, drives the
 # vendored agent core against the prompt, and opens a PR with the result.
 #
-# SECURITY: this job runs arbitrary agent-authored bash. It is given ONLY the
-# per-task bearer token and the callback origin — never .env, the DB URL,
-# AUTH_SECRET, or any provider key. Model calls proxy through Juno's /api/agent
-# using the task bearer. `permissions: contents: read` keeps the default
-# GITHUB_TOKEN from carrying write scope into the sandbox; the runner never uses
-# it (clone/push/PR go through the OAuth clone token from runner-context).
+# SECURITY: this job runs arbitrary agent-authored bash. It is given ONLY a
+# one-time exchange code and the callback origin — never .env, the DB URL,
+# AUTH_SECRET, or any provider key. The runner redeems the exchange code ONCE
+# (runner-context) for a real task token + clone token that live only in the
+# driver's memory; the exchange code is single-used server-side and inert
+# thereafter. Model calls proxy through Juno's /api/agent using the task token.
+# `permissions: contents: read` keeps the default GITHUB_TOKEN from carrying
+# write scope into the sandbox; the runner never uses it (clone/push/PR go
+# through the OAuth clone token from runner-context).
 
 on:
   workflow_dispatch:
@@ -18,8 +21,8 @@ on:
         description: Cloud Code task id
         required: true
         type: string
-      taskToken:
-        description: Dispatched per-task bearer (authenticates the first runner-context call only)
+      exchangeCode:
+        description: One-time exchange code (redeemed once at runner-context for the real task token)
         required: true
         type: string
       repoOwner:
@@ -50,15 +53,20 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
+    # A hard ceiling on the run. If the driver is hard-killed (OOM, cancel) before
+    # it can post its own terminal `failed` event, the task simply stays 'running'
+    # until this timeout reaps the job — we deliberately keep NO token on disk to
+    # reconstruct auth from. (A server-side stuck-task sweep is a documented
+    # follow-up.)
     timeout-minutes: 30
     steps:
-      # FIRST: register the task token as a masked secret so it can never
+      # FIRST: register the exchange code as a masked secret so it can never
       # surface in any later log line. Passed via env to avoid interpolating it
       # straight into the shell.
-      - name: Mask the task token
+      - name: Mask the exchange code
         env:
-          TASK_TOKEN: ${{ inputs.taskToken }}
-        run: echo "::add-mask::$TASK_TOKEN"
+          EXCHANGE_CODE: ${{ inputs.exchangeCode }}
+        run: echo "::add-mask::$EXCHANGE_CODE"
 
       - name: Checkout runner (LiamMagnier/juno)
         uses: actions/checkout@v4
@@ -76,17 +84,9 @@ jobs:
       - name: Run the Cloud Code task
         env:
           JUNO_TASK_ID: ${{ inputs.taskId }}
-          JUNO_TASK_TOKEN: ${{ inputs.taskToken }}
+          JUNO_EXCHANGE_CODE: ${{ inputs.exchangeCode }}
           JUNO_REPO_OWNER: ${{ inputs.repoOwner }}
           JUNO_REPO_NAME: ${{ inputs.repoName }}
           JUNO_BASE_REF: ${{ inputs.baseRef }}
           JUNO_CALLBACK_BASE: ${{ inputs.callbackBase }}
         run: node scripts/cloud-code-runner.mjs
-
-      # Backstop: if the driver was hard-killed (OOM, cancel, timeout) before it
-      # could post its own terminal status, mark the task failed using the auth
-      # handoff the driver wrote after fetching runner-context. No-ops safely if
-      # that handoff never existed.
-      - name: Report failure if the runner crashed
-        if: failure()
-        run: node scripts/cloud-code-fail.mjs

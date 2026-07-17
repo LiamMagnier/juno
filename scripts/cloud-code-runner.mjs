@@ -9,16 +9,30 @@
  * with the task prompt, streams progress back as task events, and opens a pull
  * request with whatever the agent changed.
  *
- * SECURITY — this process executes arbitrary agent-authored bash. It therefore
- * NEVER receives .env, the database URL, AUTH_SECRET, or any provider API key.
- * Its only secrets are (a) the per-task bearer token (auth for the Juno
- * callback + the /api/agent model proxy) and (b) a GitHub OAuth clone token
- * (clone + push + PR). Both are treated as write-only: they are redacted from
- * every log line and never placed in an event payload, a command line, or
- * .git/config (git auth flows through GIT_ASKPASS).
+ * SECURITY — this process executes arbitrary agent-authored bash as the SAME OS
+ * uid as this driver. It therefore NEVER receives .env, the database URL,
+ * AUTH_SECRET, or any provider API key. The credential design keeps the runner
+ * holding NOTHING the agent can weaponize during the agent phase:
  *
- * Provider calls do NOT use a provider key: they proxy through Juno's
- * /api/agent/<provider>, authenticated by the task bearer (see
+ *  - The only credential handed in via the (public) workflow input is a one-time
+ *    `ccx_` EXCHANGE code. It is redeemed ONCE, at start, for a real `cct_` task
+ *    token + a GitHub clone token (GET runner-context). runner-context single-
+ *    uses it, so after that the exchange code — the only Juno secret left in this
+ *    process's environment — is INERT: it can no longer fetch the clone token or
+ *    anything else.
+ *  - The live secrets (the `cct_` task token and the clone token) live ONLY in
+ *    this driver's JS memory. They are NEVER written to process.env, a file, a
+ *    command line, or .git/config. Git auth flows through a transient GIT_ASKPASS
+ *    helper that exists ONLY during clone/push and is deleted before any agent
+ *    bash runs.
+ *  - Before the agent phase we hand the agent a HARD-SCRUBBED env (allowlist
+ *    only) AND strip CI-runtime + secret-shaped vars from this driver's own
+ *    process.env, so even reading the driver's /proc/environ yields no usable
+ *    credential.
+ *
+ * The DRIVER (not the agent) streams events and proxies /api/agent using the
+ * `cct_` token from memory — provider calls proxy through Juno's
+ * /api/agent/<provider>, so no provider key ever touches this VM (see
  * runner/agent-core/src/providers/proxy.ts, the vendored `authorization` field).
  */
 
@@ -35,20 +49,23 @@ const execFileAsync = promisify(execFile);
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
 const TASK_ID = requireEnv("JUNO_TASK_ID");
-const DISPATCHED_TOKEN = requireEnv("JUNO_TASK_TOKEN"); // first runner-context call only
+const EXCHANGE_CODE = requireEnv("JUNO_EXCHANGE_CODE"); // one-time; redeemed at runner-context only
 const CALLBACK_BASE = requireEnv("JUNO_CALLBACK_BASE").replace(/\/+$/, ""); // origin, no /api
 const INPUT_REPO_OWNER = process.env.JUNO_REPO_OWNER ?? "";
 const INPUT_REPO_NAME = process.env.JUNO_REPO_NAME ?? "";
 const INPUT_BASE_REF = process.env.JUNO_BASE_REF ?? ""; // empty = repo default branch
 
 const RUNNER_TEMP = process.env.RUNNER_TEMP || os.tmpdir();
-const AUTH_HANDOFF_PATH = path.join(RUNNER_TEMP, "juno-runner-auth.json");
+/** Transient git askpass helper — written only around clone/push, deleted before
+ *  any agent bash runs so no credential material sits on the shared FS. */
+const ASKPASS_PATH = path.join(RUNNER_TEMP, "juno-askpass.sh");
 
 /** Secrets to scrub from every log line + event payload. Filled as we learn them. */
-const SECRETS = new Set([DISPATCHED_TOKEN]);
+const SECRETS = new Set([EXCHANGE_CODE]);
 
-/** The fresh per-task bearer (set once runner-context returns) — auth for every
- *  call after the first, including the fatal-handler's failure post. */
+/** The fresh per-task `cct_` bearer (set once runner-context returns) — auth for
+ *  every callback after the exchange, including the fatal-handler's failure post.
+ *  Held ONLY here in memory, never in process.env or on disk. */
 let FRESH_TOKEN = null;
 
 function requireEnv(name) {
@@ -101,7 +118,7 @@ async function junoFetch(pathname, token, init = {}) {
 }
 
 async function getRunnerContext() {
-  const res = await junoFetch(`/api/code/tasks/${TASK_ID}/runner-context`, DISPATCHED_TOKEN, {
+  const res = await junoFetch(`/api/code/tasks/${TASK_ID}/runner-context`, EXCHANGE_CODE, {
     method: "GET",
   });
   if (!res.ok) {
@@ -241,18 +258,36 @@ function chunkBySize(events, maxBytes) {
   return chunks;
 }
 
-// ─── Git plumbing (token-safe via GIT_ASKPASS) ───────────────────────────────
+// ─── Git plumbing (token-safe via a TRANSIENT GIT_ASKPASS) ───────────────────
 
 /**
  * Write a tiny askpass helper that echoes the token from an env var, so the
- * clone token never appears in argv, .git/config, or process listings.
+ * clone token never appears in argv, .git/config, or process listings. Written
+ * only around clone/push and removed before the agent runs (see removeAskpass).
  */
-function makeGitEnv(cloneToken) {
-  const askpass = path.join(RUNNER_TEMP, "juno-askpass.sh");
-  fs.writeFileSync(askpass, '#!/bin/sh\nprintf "%s" "$JUNO_GIT_TOKEN"\n', { mode: 0o700 });
+function writeAskpass() {
+  fs.writeFileSync(ASKPASS_PATH, '#!/bin/sh\nprintf "%s" "$JUNO_GIT_TOKEN"\n', { mode: 0o700 });
+}
+
+/** Delete the askpass helper so no git credential material is on the shared FS
+ *  while untrusted agent bash is running. */
+function removeAskpass() {
+  try {
+    fs.rmSync(ASKPASS_PATH, { force: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * A git env carrying the clone token via GIT_ASKPASS. The token lives ONLY in
+ * this returned object (passed to execFile), never in process.env — so it stays
+ * out of the driver's /proc/environ. Requires writeAskpass() to have run.
+ */
+function gitEnvWith(cloneToken) {
   return {
     ...process.env,
-    GIT_ASKPASS: askpass,
+    GIT_ASKPASS: ASKPASS_PATH,
     JUNO_GIT_TOKEN: cloneToken,
     GIT_TERMINAL_PROMPT: "0",
   };
@@ -303,7 +338,11 @@ function summarizeTool(name, input) {
 async function main() {
   log(`starting task ${TASK_ID}`);
 
-  // 1. Runner context (dispatched token). Everything after uses the FRESH token.
+  // 1. THE EXCHANGE (once): redeem the one-time ccx_ code for a real cct_ task
+  //    token + clone token. Both live ONLY in these JS variables from here on —
+  //    never written to process.env, a file, or a command line. runner-context
+  //    single-uses the exchange code, so the ccx_ still sitting in our env is now
+  //    inert (it can't be replayed to fetch the clone token again).
   const ctx = await getRunnerContext();
   const freshToken = String(ctx.taskToken ?? "");
   const cloneToken = String(ctx.cloneToken ?? "");
@@ -312,17 +351,6 @@ async function main() {
   FRESH_TOKEN = freshToken;
   SECRETS.add(freshToken);
   SECRETS.add(cloneToken);
-
-  // Auth handoff for the workflow's failure backstop (ephemeral, never logged).
-  try {
-    fs.writeFileSync(
-      AUTH_HANDOFF_PATH,
-      JSON.stringify({ taskId: TASK_ID, callbackBase: CALLBACK_BASE, taskToken: freshToken }),
-      { mode: 0o600 },
-    );
-  } catch (err) {
-    log("could not write auth handoff (non-fatal):", err);
-  }
 
   const prompt = String(ctx.prompt ?? "");
   const repoOwner = String(ctx.repoOwner || INPUT_REPO_OWNER);
@@ -347,42 +375,63 @@ async function main() {
   sink.push("text", { text: `Cloud Code run started on ${repoOwner}/${repoName} with ${chosen.label ?? chosen.model}.\n` });
   await sink.flush("running");
 
-  // 3. Clone the repo into ./workdir using askpass auth (token never in argv).
-  const gitEnv = makeGitEnv(cloneToken);
+  // 3. Clone the repo into ./workdir using a TRANSIENT askpass (token never in
+  //    argv or .git/config). We tear the askpass down immediately after, so no
+  //    git credential material is on disk during the agent phase.
+  writeAskpass();
+  const cloneGitEnv = gitEnvWith(cloneToken);
   const workdir = path.join(RUNNER_TEMP, "workdir"); // outside the runner checkout
   fs.rmSync(workdir, { recursive: true, force: true });
   const cloneUrl = `https://x-access-token@github.com/${repoOwner}/${repoName}.git`;
   const cloneArgs = ["clone", "--depth", "50"];
   if (baseRef) cloneArgs.push("--branch", baseRef);
   cloneArgs.push(cloneUrl, workdir);
-  const cloned = await git(cloneArgs, { env: gitEnv });
+  const cloned = await git(cloneArgs, { env: cloneGitEnv });
   if (!cloned.ok) throw new Error(`git clone failed: ${redact(cloned.stderr || cloned.message)}`);
 
-  await git(["config", "user.name", "Juno Code"], { cwd: workdir, env: gitEnv });
-  await git(["config", "user.email", "noreply@chat.liams.dev"], { cwd: workdir, env: gitEnv });
+  await git(["config", "user.name", "Juno Code"], { cwd: workdir, env: cloneGitEnv });
+  await git(["config", "user.email", "noreply@chat.liams.dev"], { cwd: workdir, env: cloneGitEnv });
 
   // Resolve the branch we based off (for the PR base when baseRef was empty).
-  const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workdir, env: gitEnv });
+  const head = await git(["rev-parse", "--abbrev-ref", "HEAD"], { cwd: workdir, env: cloneGitEnv });
   const baseBranch = baseRef || (head.ok ? head.stdout.trim() : "main");
 
-  // 4. Build the agent session against the backend proxy (task-bearer auth).
+  // TEAR DOWN git credential material before running any agent bash: delete the
+  // askpass helper and drop our reference to the clone-bearing env. From here
+  // until the agent finishes, the clone token exists ONLY in the `cloneToken`
+  // JS variable — nothing the agent's shell can read.
+  removeAskpass();
+
+  // 4. Build the agent session against the backend proxy (task-bearer auth). The
+  //    provider adapter is driven by THIS process (the driver), which is trusted
+  //    to hold the cct_ token; the agent's tool calls never see it.
   const junoHome = path.join(RUNNER_TEMP, "juno-home");
   fs.mkdirSync(junoHome, { recursive: true });
-  process.env.JUNO_HOME = junoHome;
+  process.env.JUNO_HOME = junoHome; // read by the driver's SessionStore (not a secret)
 
   const provider = createProxyProvider(
     { baseUrl: agentBaseUrl, cookie: "", authorization: `Bearer ${freshToken}`, models },
     `backend/${chosen.provider}`,
   );
 
+  // Harden the DRIVER's own env (defence in depth for /proc/environ) and build a
+  // minimal, secret-free env for agent-spawned shells. The agent needs zero Juno
+  // secrets — it only runs build/test tools in the workdir.
+  hardenDriverEnv();
+  const agentEnv = buildAgentEnv();
+
   const session = AgentSession.create({
     provider,
     cwd: workdir,
     model: chosen.model,
     mode: "full", // headless: the engine still hard-gates "sensitive" -> requestApproval
+    // The bash tool spawns children with THIS env, not process.env — so agent
+    // shell receives none of {exchange code, task token, clone token, JUNO_*,
+    // GIT_ASKPASS, ACTIONS_*}. See runner/agent-core/VENDORED.md (divergence #3).
+    env: agentEnv,
     callbacks: {
       onEvent: (event) => onAgentEvent(sink, event),
-      // No human is attached; auto-approve, but log an audit trail. The runner
+      // No human is attached; auto-approve, but log an audit trail. The agent
       // holds no secrets and runs on a throwaway VM, so this is safe here.
       requestApproval: async (request) => {
         sink.push("approval_request", {
@@ -395,14 +444,6 @@ async function main() {
       },
     },
   });
-
-  // Before executing ANY agent bash, strip secrets from process.env — the
-  // vendored bash tool spawns children with `env: process.env`, so the GitHub
-  // Actions runtime tokens (ACTIONS_*), the spent dispatched task token, and
-  // anything key/secret-shaped must not be reachable by agent-authored shell.
-  // The runner's live secrets (fresh task token, clone token) live only in
-  // memory + the git askpass env, never in process.env.
-  sanitizeEnvForAgent();
 
   // 5. Drive the agent, watching for a cancel control event.
   let finalStopReason = "end_turn";
@@ -426,7 +467,10 @@ async function main() {
     return;
   }
 
-  // 6. Stage changes; if none, finish cleanly with no PR.
+  // 6. The agent phase is over — re-establish git credentials from the in-memory
+  //    clone token for commit/push, then stage changes; if none, finish cleanly.
+  writeAskpass();
+  const gitEnv = gitEnvWith(cloneToken);
   await git(["add", "-A"], { cwd: workdir, env: gitEnv });
   const status = await git(["status", "--porcelain"], { cwd: workdir, env: gitEnv });
   if (status.ok && status.stdout.trim() === "") {
@@ -562,17 +606,59 @@ async function openPullRequest({ repoOwner, repoName, cloneToken, branch, baseBr
   return null;
 }
 
+/** Env var names safe to expose to agent-spawned shells: enough for build/test
+ *  tooling to work, nothing Juno- or CI-secret. */
+const AGENT_ENV_ALLOW = [
+  "PATH",
+  "HOME",
+  "JUNO_HOME", // agent-core session store dir (not a secret)
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "TERM",
+  "TMPDIR",
+  "SHELL",
+  "USER",
+  "LOGNAME",
+];
+
 /**
- * Delete secret-shaped and CI-runtime env vars so agent-authored bash (which
- * inherits process.env) cannot read them. Keeps JUNO_HOME (the agent core's
- * session store) and anything that isn't secret-shaped.
+ * Build the minimal, secret-free environment handed to agent-spawned shells via
+ * AgentSession's `env` option. An allowlist (not a denylist) so a
+ * newly-introduced secret-shaped var can never leak by omission: only the names
+ * above are copied through; everything else — the spent exchange code, JUNO_*,
+ * GIT_ASKPASS, ACTIONS_* — is simply absent.
  */
-function sanitizeEnvForAgent() {
-  const keep = new Set(["JUNO_HOME"]);
+function buildAgentEnv() {
+  const env = {};
+  for (const name of AGENT_ENV_ALLOW) {
+    if (process.env[name] != null) env[name] = process.env[name];
+  }
+  return env;
+}
+
+/**
+ * Defence in depth for the driver's OWN /proc/environ: strip CI-runtime and
+ * secret-shaped vars from process.env before the agent runs. The driver already
+ * captured everything it needs into module consts (TASK_ID, CALLBACK_BASE, …)
+ * and holds its live secrets (task token, clone token) only in JS memory, so
+ * this never breaks the driver — it just ensures an agent that reads the
+ * driver's environ finds no usable credential (the spent ccx_ is inert anyway).
+ */
+function hardenDriverEnv() {
+  const keep = new Set(AGENT_ENV_ALLOW).add("RUNNER_TEMP");
   const denyRe = /(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|APIKEY|API_KEY|_KEY|PRIVATE|SESSION)/i;
   for (const name of Object.keys(process.env)) {
     if (keep.has(name)) continue;
-    if (name === "JUNO_TASK_TOKEN" || name.startsWith("ACTIONS_") || denyRe.test(name)) {
+    if (
+      name === "JUNO_EXCHANGE_CODE" ||
+      name.startsWith("JUNO_") ||
+      name.startsWith("ACTIONS_") ||
+      name.startsWith("GIT") ||
+      name === "GITHUB_TOKEN" ||
+      denyRe.test(name)
+    ) {
       delete process.env[name];
     }
   }
@@ -590,15 +676,17 @@ function firstLine(text) {
 
 main()
   .then(() => {
-    cleanupAuthHandoff();
+    removeAskpass();
     process.exit(0);
   })
   .catch(async (err) => {
     log("FATAL:", err);
-    // Best-effort terminal failure — only possible once we hold the fresh token
-    // (the dispatched token authenticates runner-context alone). If we failed
-    // before that, the workflow's failure step has nothing to reconstruct from
-    // and the task is left for the server's own timeout to reap.
+    // The DRIVER posts its own terminal `failed` event here — it holds the cct_
+    // token in memory, so no on-disk auth handoff is needed. This covers every
+    // catchable error. For a HARD crash where this process dies before reaching
+    // here (OOM/kill/timeout) we deliberately leave NO token on disk: the task
+    // stays 'running' until the workflow's timeout-minutes reaps the job (a
+    // server-side stuck-task sweep is a documented follow-up).
     try {
       if (FRESH_TOKEN) {
         await fetch(apiUrl(`/api/code/tasks/${TASK_ID}/events`), {
@@ -614,14 +702,6 @@ main()
     } catch (postErr) {
       log("could not post failure status:", postErr);
     }
-    cleanupAuthHandoff();
+    removeAskpass();
     process.exit(1);
   });
-
-function cleanupAuthHandoff() {
-  try {
-    fs.rmSync(AUTH_HANDOFF_PATH, { force: true });
-  } catch {
-    /* ignore */
-  }
-}
