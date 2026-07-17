@@ -287,10 +287,11 @@ export default function NewCodeSessionPage() {
       : null;
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-y-auto">
-      {/* Top bar — back to chat + a quiet eyebrow, so the surface stays oriented
-          without competing with the greeting. */}
-      <div className="flex shrink-0 items-center gap-1.5 px-3 py-2.5 sm:px-4">
+    <div className="relative flex h-full min-h-0 w-full flex-col overflow-y-auto">
+      {/* Back-to-chat control floats over the surface instead of taking a row, so
+          the greeting + composer center in the FULL viewport rather than in the
+          space left below a top bar. */}
+      <div className="absolute left-2 top-2 z-10 sm:left-3 sm:top-3">
         <Button asChild variant="ghost" size="icon-sm" aria-label="Back to chat">
           <Link href="/chat">
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -299,8 +300,9 @@ export default function NewCodeSessionPage() {
       </div>
 
       {/* Greeting + composer, centered as one calm group and free to scroll on
-          short viewports. */}
-      <div className="flex flex-1 flex-col items-center justify-center px-4 py-6 sm:px-6">
+          short viewports. py accounts for the floating back button so a short
+          viewport never tucks the greeting under it. */}
+      <div className="flex flex-1 flex-col items-center justify-center px-4 py-14 sm:px-6">
         <div className="flex w-full max-w-[44rem] flex-col items-center gap-7 sm:gap-9">
           <CodeGreeting />
 
