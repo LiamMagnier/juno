@@ -1,8 +1,8 @@
 {
-  "version": "3.3.0",
-  "build": 37,
+  "version": "3.3.1",
+  "build": 38,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "7ca7b28afd1ae04b67ac0f6ad02554057af208ae21ff63ecbb4735c85e545c74",
-  "notes": "Juno Quick \u2014 a menu-bar composer to start a chat or code task from anywhere on your Mac, with a global shortcut and instant draft capture. Plus a batch of app\u2194web parity fixes so sessions, submissions, and settings stay in sync across every surface.",
+  "sha256": "a1830cb3083dda78956520496f0b4ac6696aa571ed423d32143e733cd723dd91",
+  "notes": "Juno Quick is now a slim single-line pill \u2014 press Option+Space and just start typing, like Spotlight. It unfolds into the full conversation only once Juno starts working. Model, attachments, web search, projects, and privacy now live in the pill's + menu.",
   "minimumSystemVersion": "26.0"
 }
