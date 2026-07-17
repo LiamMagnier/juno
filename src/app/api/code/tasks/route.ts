@@ -121,35 +121,49 @@ export async function POST(req: Request) {
     }
     // Abuse control 2 — concurrent-run cap. Refuse a new run when the user
     // already has CLOUD_TASK_CONCURRENCY_CAP cloud tasks in flight, so a runaway
-    // client can't hold open an unbounded fleet of runners.
-    const active = await prisma.codeTask.count({
-      where: { userId: user.id, target: "cloud", status: { in: ["queued", "running", "awaiting_approval"] } },
-    });
-    if (active >= CLOUD_TASK_CONCURRENCY_CAP) {
-      return NextResponse.json(
-        { error: `You already have ${active} cloud runs in progress. Let one finish first.` },
-        { status: 429 },
-      );
+    // client can't hold open an unbounded fleet of runners. The count and the
+    // create run under a per-user advisory lock so the cap can't be raced: a
+    // plain count()+create() is a TOCTOU (N parallel requests each read < cap
+    // and all create). The xact lock serializes creation per user and releases
+    // on commit; a hash collision only briefly serializes two unrelated users.
+    try {
+      task = await prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`cloud-cap:${user.id}`}))`;
+        const active = await tx.codeTask.count({
+          where: { userId: user.id, target: "cloud", status: { in: ["queued", "running", "awaiting_approval"] } },
+        });
+        if (active >= CLOUD_TASK_CONCURRENCY_CAP) {
+          throw Object.assign(new Error("cloud_cap_exceeded"), { activeCount: active });
+        }
+        return tx.codeTask.create({
+          data: {
+            userId: user.id,
+            deviceId: null, // cloud tasks have no registered device
+            target: "cloud",
+            repoOwner: repo.owner,
+            repoName: repo.name,
+            baseRef: baseRef ?? null,
+            // The repo IS the cloud workspace; keep these columns meaningful for
+            // the session view without inventing a device path.
+            workspacePath: `${repo.owner}/${repo.name}`,
+            workspaceName: workspaceName ?? repo.name,
+            workspaceKey: workspaceKey ?? null,
+            title: title ?? prompt.slice(0, 60),
+            prompt,
+            conversationId: conversationId ?? null,
+          },
+        });
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "cloud_cap_exceeded") {
+        const n = (err as Error & { activeCount?: number }).activeCount ?? CLOUD_TASK_CONCURRENCY_CAP;
+        return NextResponse.json(
+          { error: `You already have ${n} cloud runs in progress. Let one finish first.` },
+          { status: 429 },
+        );
+      }
+      throw err;
     }
-
-    task = await prisma.codeTask.create({
-      data: {
-        userId: user.id,
-        deviceId: null, // cloud tasks have no registered device
-        target: "cloud",
-        repoOwner: repo.owner,
-        repoName: repo.name,
-        baseRef: baseRef ?? null,
-        // The repo IS the cloud workspace; keep these columns meaningful for the
-        // session view without inventing a device path.
-        workspacePath: `${repo.owner}/${repo.name}`,
-        workspaceName: workspaceName ?? repo.name,
-        workspaceKey: workspaceKey ?? null,
-        title: title ?? prompt.slice(0, 60),
-        prompt,
-        conversationId: conversationId ?? null,
-      },
-    });
 
     // Dispatch BEFORE persisting the user message (below), so a dispatch failure
     // leaves nothing orphaned — no half-created session turn to reconcile, and a
