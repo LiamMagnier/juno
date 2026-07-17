@@ -1334,6 +1334,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sort by:"
   },
   {
+    "id": "27b80374e1151af6",
+    "source": "Reconnecting…"
+  },
+  {
     "id": "27d34f350e2436bd",
     "source": "Chats, memories, files, and your subscription — everything, immediately."
   },
@@ -3176,6 +3180,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5dcc6b2201a4282f",
     "source": "No provider"
+  },
+  {
+    "id": "5ddbcebc06a445eb",
+    "source": "reconnecting"
   },
   {
     "id": "5dfb834c832e5810",
@@ -6310,6 +6318,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Starting…"
   },
   {
+    "id": "bc227f1a10b0d174",
+    "source": "Could not save your feedback."
+  },
+  {
     "id": "bc2652e4e6eb3b66",
     "source": "PowerPoint deck (.pptx)"
   },
@@ -8632,6 +8644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ff2fac8c7fcc39fc",
     "source": "Relaxed and conversational"
+  },
+  {
+    "id": "ff406cfe6b6c254e",
+    "source": "Commands and chats"
   },
   {
     "id": "ff6c468b6c0954c9",
