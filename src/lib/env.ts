@@ -37,6 +37,13 @@ export const env = {
   // when absent, cloud task creation fails with 503 (never silently). This token
   // never leaves the server; it is not the user's connector token. Add to PROD_ENV.
   githubDispatchToken: process.env.GITHUB_DISPATCH_TOKEN,
+  // Cloud code runner: the repository whose GitHub Actions OIDC token is trusted
+  // to redeem runner-context. The runner proves its identity with a GitHub-signed
+  // OIDC JWT (audience "juno-cloud-code") — NO credential rides the workflow
+  // inputs — and the backend requires the token's `repository` claim AND its
+  // `job_workflow_ref` to be THIS repo's code-runner.yml. Optional — defaults to
+  // "LiamMagnier/juno"; override only in a fork. If set, add to PROD_ENV.
+  cloudCodeRepo: process.env.CLOUD_CODE_REPO ?? "LiamMagnier/juno",
 
   // Secret-at-rest encryption key rotation (optional). Without these, every
   // secret is sealed under a key derived from AUTH_SECRET (key id "auth"). To

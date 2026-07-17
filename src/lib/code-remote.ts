@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type { CodeDevice, CodeTask, CodeTaskEvent, Prisma } from "@prisma/client";
 import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
-import { readTaskToken, verifyExchangeCode, verifyTaskToken } from "@/lib/cloud-code-token";
+import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
+import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
 
 export const ONLINE_WINDOW_MS = 120_000;
@@ -45,10 +47,11 @@ export async function requireUser(): Promise<
 // prefix lets us route it to task-token auth instead of native-bearer auth,
 // which would otherwise 401 a perfectly valid task token.
 const CCT_BEARER_RE = /^Bearer (cct_[A-Za-z0-9._-]+)$/;
-// A one-time exchange code looks like `Bearer ccx_<payload>.<sig>`. Only the
-// runner-context handoff accepts it (and single-uses it); it never authenticates
-// any other surface.
-const CCX_BEARER_RE = /^Bearer (ccx_[A-Za-z0-9._-]+)$/;
+// The runner-context handoff authenticates with a GitHub Actions OIDC JWT carried
+// as a plain `Bearer <jwt>` (three dot-separated base64url segments). We hand the
+// raw token to the OIDC verifier, so any non-JWT bearer (including a cct_ token)
+// simply fails verification.
+const BEARER_RE = /^Bearer (.+)$/;
 
 export type TaskAuthResult =
   | { user: SessionUser; viaTaskToken: boolean; error: null }
@@ -116,14 +119,25 @@ export async function taskTokenAuth(
 }
 
 /**
- * Authorize the runner-context handoff against ONE task via its one-time
- * EXCHANGE code ("Authorization: Bearer ccx_…"). Distinct from requireTaskAuth
- * on purpose: runner-context is the SINGLE place the exchange code is redeemed,
- * and a full-power task token ("cct_…") must NOT be accepted here — only the
- * exchange code, whose audience must be EXACTLY this taskId. Resolves to the
- * task's owner (unguarded lookup) so the route's ownership-scoped queries work.
+ * Authorize the runner-context handoff for ONE task via a GitHub Actions OIDC
+ * token ("Authorization: Bearer <oidc-jwt>"). The runner proves its identity
+ * with a GitHub-SIGNED JWT it fetches at runtime (audience "juno-cloud-code") —
+ * NO credential rides the public workflow_dispatch inputs, so nothing sensitive
+ * is ever echoed into the public Actions log. verifyGithubActionsOidc checks the
+ * RS256 signature (GitHub JWKS), issuer, audience, expiry, the repository
+ * allowlist (env.cloudCodeRepo), and that the token was minted by OUR
+ * code-runner.yml workflow. The taskId comes from the request path; only the
+ * backend can workflow_dispatch a runner for a given taskId (GITHUB_DISPATCH_TOKEN),
+ * so binding the verified runner to that taskId is safe.
+ *
+ * Distinct from requireTaskAuth on purpose: runner-context is the SINGLE place
+ * the OIDC handoff is redeemed. A cct_ task token is NOT accepted here (it fails
+ * JWT verification). A browser user SESSION is refused with 403 — this endpoint's
+ * response carries the user's decrypted clone token, which must never reach a
+ * browser. Resolves to the task's owner (unguarded lookup) so the route's
+ * ownership-scoped queries work.
  */
-export async function requireExchangeAuth(
+export async function requireOidcRunnerAuth(
   taskId: string,
   req: Request,
 ): Promise<{ user: SessionUser; error: null } | { user: null; error: NextResponse }> {
@@ -132,9 +146,23 @@ export async function requireExchangeAuth(
     error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
   };
   const authorization = req.headers.get("authorization");
-  const match = authorization ? CCX_BEARER_RE.exec(authorization) : null;
-  if (!match) return unauthorized;
-  if (!verifyExchangeCode(match[1], taskId)) return unauthorized;
+  const match = authorization ? BEARER_RE.exec(authorization) : null;
+  if (!match) {
+    // No bearer. If the caller nonetheless holds a valid user session (a browser
+    // hitting this runner-only endpoint), refuse with 403 rather than 401 — the
+    // response would carry the user's decrypted clone token. Otherwise it's
+    // simply unauthenticated → 401.
+    const sessionUser = await getCurrentUser();
+    if (sessionUser) {
+      return { user: null, error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
+    }
+    return unauthorized;
+  }
+  const result = await verifyGithubActionsOidc(match[1], { repository: env.cloudCodeRepo });
+  if (!result.ok) {
+    console.warn(`[cloud-code] runner-context OIDC rejected: ${result.reason}`);
+    return unauthorized;
+  }
   const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
   if (!task) return unauthorized;
   return { user: { id: task.userId }, error: null };

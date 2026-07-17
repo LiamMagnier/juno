@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decryptSecret } from "@/lib/crypto";
-import { isTerminalTaskStatus, requireExchangeAuth } from "@/lib/code-remote";
+import { isTerminalTaskStatus, requireOidcRunnerAuth } from "@/lib/code-remote";
 import { mintTaskToken } from "@/lib/cloud-code-token";
 import { backendAgentCatalog, loadAvailableModels } from "@/lib/model-catalog-api";
 
@@ -12,12 +12,14 @@ export const runtime = "nodejs";
  * Everything the Cloud Code runner needs to execute a task — served AT MOST
  * ONCE, at the start of a run, to the GitHub Actions runner ONLY.
  *
- * Auth is EXCHANGE-CODE-only: the request must carry the one-time `ccx_` code
- * that rode the workflow_dispatch input (see requireExchangeAuth). A plain user
- * session is rejected — this response carries the user's decrypted GitHub
- * connector token (`cloneToken`), which must never reach a browser — and a
- * full-power `cct_` task token is ALSO rejected here, so the only thing that can
- * redeem this handoff is the short-lived, single-use exchange code.
+ * Auth is GitHub Actions OIDC-only: the request must carry a GitHub-signed OIDC
+ * JWT ("Authorization: Bearer <jwt>", audience "juno-cloud-code") that the runner
+ * fetches at runtime — see requireOidcRunnerAuth / src/lib/github-oidc.ts. NO
+ * credential rides the public workflow inputs, so nothing sensitive is ever
+ * echoed into the public Actions log. A browser user session is refused with 403
+ * (this response carries the user's decrypted GitHub connector token,
+ * `cloneToken`, which must never reach a browser); a `cct_` task token is not a
+ * valid JWT and is rejected too.
  *
  * Two gates make the handoff safe against a hostile runner:
  *   1. STATUS GATE — the task must be queued/running. A terminal task (a replay
@@ -25,9 +27,8 @@ export const runtime = "nodejs";
  *   2. SINGLE-USE — the first successful call atomically stamps `runnerClaimedAt`
  *      (updateMany guarded on runnerClaimedAt IS NULL). A second call finds it
  *      already set and is 409 `runner_context_consumed`. So the clone token +
- *      fresh task token are handed out AT MOST ONCE. After this, the spent
- *      exchange code in the runner's /proc is inert — it cannot re-fetch the
- *      clone token.
+ *      fresh task token are handed out AT MOST ONCE, even though the OIDC token is
+ *      valid for the life of the job.
  *
  *   GET → 200 {
  *     prompt, repoOwner, repoName, baseRef,
@@ -36,7 +37,8 @@ export const runtime = "nodejs";
  *     taskToken,                        // fresh cct_ for claim/events/respond/cancel
  *     models: BackendAgentModel[]       // agent-core proxy catalog
  *   }
- *         401 unauthenticated / not an exchange code
+ *         401 unauthenticated / invalid OIDC token
+ *         403 authenticated browser session (runner-only endpoint)
  *         404 gone / wrong target
  *         409 { error: "task_terminal" }             run already finished
  *         409 { error: "runner_context_consumed" }   handoff already redeemed
@@ -44,7 +46,7 @@ export const runtime = "nodejs";
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const { user, error } = await requireExchangeAuth(id, req);
+  const { user, error } = await requireOidcRunnerAuth(id, req);
   if (!user) return error;
 
   const task = await prisma.codeTask.findFirst({

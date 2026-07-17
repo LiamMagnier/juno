@@ -36,45 +36,64 @@ run** (Actions is non-interactive) rather than mid-run prompts.
 
 1. **Dispatch.** Web composer submits a cloud task: `POST /api/code/tasks` with a
    `target: "cloud"` + a real connector repo (`owner/name`, `baseRef`). The route
-   rate-limits + concurrency-caps the user (see Abuse controls), then mints a
-   **one-time exchange code** (`ccx_…`, signed, ~15 min TTL, audience = this taskId)
-   and `workflow_dispatch`es `.github/workflows/code-runner.yml` with
-   `{ taskId, exchangeCode, callbackBase, repo, baseRef }` as inputs; the code
-   rides as a masked input the workflow re-masks immediately. The exchange code is
-   **not** a usable bearer — it authenticates exactly one call (runner-context)
-   and is single-used server-side. The user message + task row persist only AFTER
+   rate-limits + concurrency-caps the user (see Abuse controls), then
+   `workflow_dispatch`es `.github/workflows/code-runner.yml` with
+   `{ taskId, repoOwner, repoName, baseRef, callbackBase }` as inputs. **None of
+   these inputs are secret** — no credential rides the workflow inputs, so there is
+   nothing sensitive for GitHub to echo into the public Actions log. Only this
+   server can dispatch the workflow (`GITHUB_DISPATCH_TOKEN`), so the taskId in the
+   inputs is a trustworthy binding. The user message + task row persist only AFTER
    a successful dispatch, so a dispatch failure leaves nothing orphaned.
-2. **Runner** (`code-runner.yml` + `scripts/cloud-code-runner.mjs`): checks out
-   the target repo (connector token), `npm i` the vendored agent-core, calls
+2. **Runner** (`code-runner.yml` + `scripts/cloud-code-runner.mjs`): the job runs
+   with `permissions: { contents: read, id-token: write }`. The driver first
+   **fetches a GitHub Actions OIDC JWT** at runtime (from the auto-provisioned
+   `ACTIONS_ID_TOKEN_REQUEST_URL` + `ACTIONS_ID_TOKEN_REQUEST_TOKEN`, audience
+   `juno-cloud-code`) and calls `GET /api/code/tasks/[id]/runner-context` with
+   `Authorization: Bearer <oidc-jwt>`. That returns the clone token + a fresh
+   `cct_` task token + the model catalog. It then checks out the target repo
+   (clone token), `npm i` the vendored agent-core, calls
    `POST /api/code/tasks/[id]/claim` (task-token auth) to flip to `running`,
    runs the agent against the prompt with the backend proxy pointed at
    `callbackUrl/api/agent` (so provider calls + billing go through Juno), streams
    each `AgentEvent` to `POST /api/code/tasks/[id]/events` (task-token auth,
    batched), and on completion commits the diff to a branch, opens a PR, and
-   posts a terminal `status` event carrying the PR URL.
-3. **Auth.** `src/lib/cloud-code-token.ts`: HMAC over `{ taskId, exp, kind }` with
-   a dedicated secret (`CLOUD_CODE_SECRET`, added to `PROD_ENV`; **never** shared
-   with the runner). Two credential **kinds**, non-interchangeable (the signed
-   `kind` is cross-checked on read):
-   - **Exchange code** (`ccx_…`, ~15 min): the only credential on the public
-     dispatch input. `GET /api/code/tasks/[id]/runner-context` accepts it — and
-     ONLY it — and is **single-use**: the first call atomically stamps
+   posts a terminal `status` event carrying the PR URL. The OIDC request token is
+   GitHub-auto-masked and the JWT is short-lived and never logged.
+3. **Auth.** The runner-context **handshake is credential-free on the wire**: the
+   runner proves its identity with a GitHub-signed OIDC token (never a secret in
+   the inputs), and the ONE Juno-minted credential (`cct_`) only ever crosses the
+   wire inside the runner-context response body.
+   - **OIDC handshake** (`src/lib/github-oidc.ts`): `GET runner-context` accepts a
+     GitHub Actions OIDC JWT (`Authorization: Bearer <jwt>`) and NOTHING else.
+     `verifyGithubActionsOidc` fetches + caches GitHub's JWKS from
+     `https://token.actions.githubusercontent.com/.well-known/jwks` (cached by
+     `kid`, refreshed on an unknown `kid`), verifies the **RS256 signature**, and
+     checks the claims: `iss = https://token.actions.githubusercontent.com`,
+     `aud = juno-cloud-code`, `exp`/`nbf` valid, `repository = CLOUD_CODE_REPO`
+     (env allowlist, default `LiamMagnier/juno`), and `job_workflow_ref` (or
+     `workflow_ref`) starts with `<repo>/.github/workflows/code-runner.yml@`. Any
+     other token — a browser session (→ **403**, so the clone token never reaches a
+     browser), a `cct_` task token, a forged/expired/wrong-claims JWT (→ **401**) —
+     is refused. The route is also **single-use**: the first call atomically stamps
      `runnerClaimedAt` (an additive nullable column) and hands back the clone
-     token + a fresh task token; a second call is `409 runner_context_consumed`.
-     The route also gates on status (queued/running; terminal → 409).
-   - **Task token** (`cct_…`, ~30 min): minted only inside the runner-context
-     response and used for the runner's later callbacks. `requireTaskAuth(taskId)`
-     accepts either a real user session **or** a valid task token for that exact
-     task, so claim/events/respond/cancel serve both the native host and the
-     cloud runner. Those routes (and the `/api/agent` proxy) reject a task-token
-     caller once the task is terminal (done/failed/cancelled → 409), so a runner
-     cannot act after its run ends.
+     token + a fresh task token; a second call is `409 runner_context_consumed`. It
+     gates on status too (queued/running; terminal → 409).
+   - **Task token** (`cct_…`, ~30 min, `src/lib/cloud-code-token.ts`): HMAC over
+     `{ taskId, exp, kind }` with a dedicated secret (`CLOUD_CODE_SECRET`, added to
+     `PROD_ENV`; **never** shared with the runner). Minted only inside the
+     runner-context response and used for the runner's later callbacks.
+     `requireTaskAuth(taskId)` accepts either a real user session **or** a valid
+     task token for that exact task, so claim/events/respond/cancel serve both the
+     native host and the cloud runner. Those routes (and the `/api/agent` proxy)
+     reject a task-token caller once the task is terminal (done/failed/cancelled →
+     409), so a runner cannot act after its run ends.
 
    The runner holds **no** credential the agent can reach during the agent phase:
-   the driver redeems the exchange code once, keeps the task + clone tokens in JS
+   the driver fetches its OIDC token once, keeps the task + clone tokens in JS
    memory only (never process.env, a file, or a command line), tears down the git
-   askpass before running the agent, and hands agent shells a hard-scrubbed env.
-   See `scripts/cloud-code-runner.mjs` and `runner/agent-core/VENDORED.md`
+   askpass before running the agent, and hands agent shells a hard-scrubbed env
+   (and strips `ACTIONS_*` + secret-shaped vars from its own environ). See
+   `scripts/cloud-code-runner.mjs` and `runner/agent-core/VENDORED.md`
    (divergence #3, the caller-provided child-process env).
 4. **UI.** Composer gains a target toggle (Device ⇄ Cloud) and a repo picker
    backed by `GET /api/code/github/repos` (real connector repos, honest
@@ -84,11 +103,30 @@ run** (Actions is non-interactive) rather than mid-run prompts.
 ## Hard rules
 
 - The runner never receives `.env`, the DB URL, `AUTH_SECRET`, or any provider
-  key — only a per-task token + the callback URL. Provider calls proxy through
-  Juno.
+  key — and **no credential rides the workflow inputs**. It authenticates the one
+  bootstrap call with a GitHub-signed OIDC token, then holds only a per-task
+  token + the callback URL. Provider calls proxy through Juno.
 - No fake data: the repo picker lists the user's actual repos; if GitHub is
   disconnected, the cloud target is disabled with an honest connect prompt.
 - Device-backed Code (native host) is unchanged and remains the default.
+
+## Configuration (env)
+
+All three live in the `PROD_ENV` secret (see `.github/workflows/deploy.yml`):
+
+- **`CLOUD_CODE_SECRET`** (required for cloud): HMAC key that signs the `cct_`
+  task token. Kept separate from `AUTH_SECRET`. Never shipped to the runner.
+- **`GITHUB_DISPATCH_TOKEN`** (optional): a GitHub token with `actions:write` on
+  `LiamMagnier/juno`, used ONLY to `workflow_dispatch` the runner. Absent →
+  cloud task creation returns `503`. Never leaves the server.
+- **`CLOUD_CODE_REPO`** (optional, default `LiamMagnier/juno`): the repository
+  whose GitHub Actions OIDC token is trusted to redeem runner-context. The
+  verifier requires the token's `repository` claim AND `job_workflow_ref` to be
+  this repo's `code-runner.yml`. Override only in a fork.
+
+The runner uses no configured secret at all: it fetches its OIDC token from the
+GitHub-provisioned `ACTIONS_ID_TOKEN_REQUEST_URL` / `ACTIONS_ID_TOKEN_REQUEST_TOKEN`
+(present because the job has `id-token: write`).
 
 ## Abuse controls
 

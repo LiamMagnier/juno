@@ -14,12 +14,14 @@
  * AUTH_SECRET, or any provider API key. The credential design keeps the runner
  * holding NOTHING the agent can weaponize during the agent phase:
  *
- *  - The only credential handed in via the (public) workflow input is a one-time
- *    `ccx_` EXCHANGE code. It is redeemed ONCE, at start, for a real `cct_` task
- *    token + a GitHub clone token (GET runner-context). runner-context single-
- *    uses it, so after that the exchange code — the only Juno secret left in this
- *    process's environment — is INERT: it can no longer fetch the clone token or
- *    anything else.
+ *  - NO credential rides the (public) workflow inputs. The driver instead fetches
+ *    a GitHub Actions OIDC JWT at runtime from the auto-provisioned token endpoint
+ *    (ACTIONS_ID_TOKEN_REQUEST_URL + ACTIONS_ID_TOKEN_REQUEST_TOKEN, audience
+ *    "juno-cloud-code") and presents it as `Authorization: Bearer <jwt>` on its
+ *    ONE bootstrap call, GET runner-context. GitHub signs the JWT; Juno verifies
+ *    the signature + repo + workflow claims and hands back a real `cct_` task token
+ *    + a GitHub clone token. The JWT is short-lived and never logged; the request
+ *    token GitHub auto-masks. No Juno secret ever appears in the public log.
  *  - The live secrets (the `cct_` task token and the clone token) live ONLY in
  *    this driver's JS memory. They are NEVER written to process.env, a file, a
  *    command line, or .git/config. Git auth flows through a transient GIT_ASKPASS
@@ -27,8 +29,8 @@
  *    bash runs.
  *  - Before the agent phase we hand the agent a HARD-SCRUBBED env (allowlist
  *    only) AND strip CI-runtime + secret-shaped vars from this driver's own
- *    process.env, so even reading the driver's /proc/environ yields no usable
- *    credential.
+ *    process.env (including ACTIONS_* and the OIDC request token), so even reading
+ *    the driver's /proc/environ yields no usable credential.
  *
  * The DRIVER (not the agent) streams events and proxies /api/agent using the
  * `cct_` token from memory — provider calls proxy through Juno's
@@ -49,8 +51,11 @@ const execFileAsync = promisify(execFile);
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
 const TASK_ID = requireEnv("JUNO_TASK_ID");
-const EXCHANGE_CODE = requireEnv("JUNO_EXCHANGE_CODE"); // one-time; redeemed at runner-context only
 const CALLBACK_BASE = requireEnv("JUNO_CALLBACK_BASE").replace(/\/+$/, ""); // origin, no /api
+
+/** Audience the runner requests in its OIDC token; the backend requires an exact
+ *  match (see src/lib/github-oidc.ts). */
+const OIDC_AUDIENCE = "juno-cloud-code";
 const INPUT_REPO_OWNER = process.env.JUNO_REPO_OWNER ?? "";
 const INPUT_REPO_NAME = process.env.JUNO_REPO_NAME ?? "";
 const INPUT_BASE_REF = process.env.JUNO_BASE_REF ?? ""; // empty = repo default branch
@@ -60,8 +65,9 @@ const RUNNER_TEMP = process.env.RUNNER_TEMP || os.tmpdir();
  *  any agent bash runs so no credential material sits on the shared FS. */
 const ASKPASS_PATH = path.join(RUNNER_TEMP, "juno-askpass.sh");
 
-/** Secrets to scrub from every log line + event payload. Filled as we learn them. */
-const SECRETS = new Set([EXCHANGE_CODE]);
+/** Secrets to scrub from every log line + event payload. Filled as we learn them
+ *  (the OIDC JWT, then the task + clone tokens). */
+const SECRETS = new Set();
 
 /** The fresh per-task `cct_` bearer (set once runner-context returns) — auth for
  *  every callback after the exchange, including the fatal-handler's failure post.
@@ -117,8 +123,34 @@ async function junoFetch(pathname, token, init = {}) {
   return res;
 }
 
-async function getRunnerContext() {
-  const res = await junoFetch(`/api/code/tasks/${TASK_ID}/runner-context`, EXCHANGE_CODE, {
+/**
+ * Fetch this job's GitHub Actions OIDC JWT. Available because the workflow grants
+ * `id-token: write`, which provisions ACTIONS_ID_TOKEN_REQUEST_URL and
+ * ACTIONS_ID_TOKEN_REQUEST_TOKEN. The request token is GitHub-issued + auto-masked;
+ * we never log it, and the returned JWT is added to SECRETS by the caller. NO
+ * credential rides the workflow inputs — this is the runner's sole authenticator.
+ */
+async function fetchOidcToken() {
+  const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+  const requestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+  if (!url || !requestToken) {
+    throw new Error("OIDC token endpoint unavailable (workflow needs permissions: id-token: write)");
+  }
+  const sep = url.includes("?") ? "&" : "?";
+  const res = await fetch(`${url}${sep}audience=${encodeURIComponent(OIDC_AUDIENCE)}`, {
+    headers: { Authorization: `Bearer ${requestToken}`, Accept: "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`OIDC token request failed: HTTP ${res.status}`);
+  }
+  const data = /** @type {any} */ (await res.json().catch(() => ({})));
+  const jwt = typeof data.value === "string" ? data.value : "";
+  if (!jwt) throw new Error("OIDC token response missing value");
+  return jwt;
+}
+
+async function getRunnerContext(oidcToken) {
+  const res = await junoFetch(`/api/code/tasks/${TASK_ID}/runner-context`, oidcToken, {
     method: "GET",
   });
   if (!res.ok) {
@@ -338,12 +370,16 @@ function summarizeTool(name, input) {
 async function main() {
   log(`starting task ${TASK_ID}`);
 
-  // 1. THE EXCHANGE (once): redeem the one-time ccx_ code for a real cct_ task
-  //    token + clone token. Both live ONLY in these JS variables from here on —
-  //    never written to process.env, a file, or a command line. runner-context
-  //    single-uses the exchange code, so the ccx_ still sitting in our env is now
-  //    inert (it can't be replayed to fetch the clone token again).
-  const ctx = await getRunnerContext();
+  // 1. THE HANDSHAKE (once): fetch a GitHub-signed OIDC JWT and present it to
+  //    runner-context, which verifies it (signature + repo + workflow claims) and
+  //    returns a real cct_ task token + clone token. NO credential rode the
+  //    workflow inputs; the JWT is short-lived and never logged. The task + clone
+  //    tokens live ONLY in these JS variables from here on — never written to
+  //    process.env, a file, or a command line. runner-context is single-use
+  //    server-side (runnerClaimedAt), so this handoff cannot be replayed.
+  const oidcToken = await fetchOidcToken();
+  SECRETS.add(oidcToken);
+  const ctx = await getRunnerContext(oidcToken);
   const freshToken = String(ctx.taskToken ?? "");
   const cloneToken = String(ctx.cloneToken ?? "");
   if (!freshToken) throw new Error("runner-context did not return a fresh taskToken");
@@ -641,10 +677,11 @@ function buildAgentEnv() {
 /**
  * Defence in depth for the driver's OWN /proc/environ: strip CI-runtime and
  * secret-shaped vars from process.env before the agent runs. The driver already
- * captured everything it needs into module consts (TASK_ID, CALLBACK_BASE, …)
- * and holds its live secrets (task token, clone token) only in JS memory, so
- * this never breaks the driver — it just ensures an agent that reads the
- * driver's environ finds no usable credential (the spent ccx_ is inert anyway).
+ * captured everything it needs into module consts (TASK_ID, CALLBACK_BASE, …),
+ * has already fetched + used its OIDC token, and holds its live secrets (task
+ * token, clone token) only in JS memory — so this never breaks the driver. It
+ * just ensures an agent that reads the driver's environ finds no usable
+ * credential (the ACTIONS_* OIDC request token is stripped here too).
  */
 function hardenDriverEnv() {
   const keep = new Set(AGENT_ENV_ALLOW).add("RUNNER_TEMP");
@@ -652,7 +689,6 @@ function hardenDriverEnv() {
   for (const name of Object.keys(process.env)) {
     if (keep.has(name)) continue;
     if (
-      name === "JUNO_EXCHANGE_CODE" ||
       name.startsWith("JUNO_") ||
       name.startsWith("ACTIONS_") ||
       name.startsWith("GIT") ||

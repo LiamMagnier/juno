@@ -4,25 +4,27 @@ name: Cloud Code runner
 # job pulls the task's runner-context, clones the target repo, drives the
 # vendored agent core against the prompt, and opens a PR with the result.
 #
-# SECURITY: this job runs arbitrary agent-authored bash. It is given ONLY a
-# one-time exchange code and the callback origin — never .env, the DB URL,
-# AUTH_SECRET, or any provider key. The runner redeems the exchange code ONCE
-# (runner-context) for a real task token + clone token that live only in the
-# driver's memory; the exchange code is single-used server-side and inert
-# thereafter. Model calls proxy through Juno's /api/agent using the task token.
-# `permissions: contents: read` keeps the default GITHUB_TOKEN from carrying
-# write scope into the sandbox; the runner never uses it (clone/push/PR go
-# through the OAuth clone token from runner-context).
+# SECURITY: this job runs arbitrary agent-authored bash. NO credential rides the
+# workflow inputs — every input below is non-secret and safe to appear in the
+# public Actions log. The runner authenticates its ONE bootstrap call
+# (runner-context) with a GitHub Actions OIDC token it fetches at runtime
+# (audience "juno-cloud-code"): GitHub signs it, the backend verifies the
+# signature + repo + workflow claims, and the JWT is never logged. runner-context
+# returns a real task token + clone token that live only in the driver's memory.
+# Model calls proxy through Juno's /api/agent using the task token.
+#
+# permissions:
+#   id-token: write  — REQUIRED so the driver can fetch the OIDC JWT
+#                      (provisions ACTIONS_ID_TOKEN_REQUEST_URL / _TOKEN).
+#   contents: read   — keeps the default GITHUB_TOKEN from carrying write scope
+#                      into the sandbox; the runner never uses it (clone/push/PR
+#                      go through the OAuth clone token from runner-context).
 
 on:
   workflow_dispatch:
     inputs:
       taskId:
         description: Cloud Code task id
-        required: true
-        type: string
-      exchangeCode:
-        description: One-time exchange code (redeemed once at runner-context for the real task token)
         required: true
         type: string
       repoOwner:
@@ -44,6 +46,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   # One runner per task; a duplicate dispatch queues rather than racing.
@@ -60,14 +63,6 @@ jobs:
     # follow-up.)
     timeout-minutes: 30
     steps:
-      # FIRST: register the exchange code as a masked secret so it can never
-      # surface in any later log line. Passed via env to avoid interpolating it
-      # straight into the shell.
-      - name: Mask the exchange code
-        env:
-          EXCHANGE_CODE: ${{ inputs.exchangeCode }}
-        run: echo "::add-mask::$EXCHANGE_CODE"
-
       - name: Checkout runner (LiamMagnier/juno)
         uses: actions/checkout@v4
 
@@ -82,9 +77,13 @@ jobs:
           npm run build
 
       - name: Run the Cloud Code task
+        # The driver fetches its OWN GitHub Actions OIDC JWT at runtime using the
+        # auto-provisioned ACTIONS_ID_TOKEN_REQUEST_URL / ACTIONS_ID_TOKEN_REQUEST_TOKEN
+        # env vars (present because this job has id-token: write). GitHub auto-masks
+        # the request token, and the driver never echoes it or the JWT. No secret is
+        # passed in via inputs, so none can reach the public log.
         env:
           JUNO_TASK_ID: ${{ inputs.taskId }}
-          JUNO_EXCHANGE_CODE: ${{ inputs.exchangeCode }}
           JUNO_REPO_OWNER: ${{ inputs.repoOwner }}
           JUNO_REPO_NAME: ${{ inputs.repoName }}
           JUNO_BASE_REF: ${{ inputs.baseRef }}

@@ -5,7 +5,6 @@ import { env } from "@/lib/env";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { serializeMessage } from "@/lib/serializers";
 import { requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
-import { mintExchangeCode } from "@/lib/cloud-code-token";
 import { dispatchCloudRunner } from "@/lib/cloud-code";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
@@ -167,14 +166,13 @@ export async function POST(req: Request) {
 
     // Dispatch BEFORE persisting the user message (below), so a dispatch failure
     // leaves nothing orphaned — no half-created session turn to reconcile, and a
-    // retry starts clean. The dispatch input is the one-time ccx_ EXCHANGE code
-    // (NOT a task token): the runner redeems it once at runner-context for a real
-    // cct_ token, so the only credential in the public workflow input is inert
-    // after that single exchange. The workflow re-masks it immediately.
+    // retry starts clean. NO credential rides the dispatch inputs: the runner
+    // authenticates runner-context with a GitHub Actions OIDC token it fetches at
+    // runtime (audience "juno-cloud-code"), which is never logged. The taskId
+    // binding is safe because only this server can dispatch the workflow.
     try {
       await dispatchCloudRunner({
         taskId: task.id,
-        exchangeCode: mintExchangeCode(task.id),
         repoOwner: task.repoOwner!,
         repoName: task.repoName!,
         baseRef: task.baseRef ?? "",
