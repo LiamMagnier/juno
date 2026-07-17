@@ -44,9 +44,13 @@ export const CLOUD_CODE_EXCHANGE_PREFIX = "ccx_";
  *  enough that a leaked token is a narrow, self-expiring window. Aligned with
  *  docs/cloud-code.md. */
 export const CLOUD_CODE_TOKEN_TTL_MS = 30 * 60_000;
-/** ~3 min: the exchange code is redeemed within seconds of the runner booting,
- *  so a tight TTL bounds how long an unspent, leaked code could be replayed. */
-export const CLOUD_CODE_EXCHANGE_TTL_MS = 3 * 60_000;
+/** ~15 min: the exchange code is redeemed only AFTER the runner cold-starts,
+ *  checks out, and `npm i` + builds the vendored agent core (code-runner.yml
+ *  builds before running the driver), which can take a few minutes on a slow
+ *  hosted runner — a 3-min TTL raced that and expired mid-boot. Security rests
+ *  on the code being single-use + kind-bound + masked in logs, not on a tight
+ *  TTL; 15 min covers the slowest boot while staying well under the 30-min job. */
+export const CLOUD_CODE_EXCHANGE_TTL_MS = 15 * 60_000;
 
 type TokenKind = "task" | "exchange";
 

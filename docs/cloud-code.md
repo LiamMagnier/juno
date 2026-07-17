@@ -37,7 +37,7 @@ run** (Actions is non-interactive) rather than mid-run prompts.
 1. **Dispatch.** Web composer submits a cloud task: `POST /api/code/tasks` with a
    `target: "cloud"` + a real connector repo (`owner/name`, `baseRef`). The route
    rate-limits + concurrency-caps the user (see Abuse controls), then mints a
-   **one-time exchange code** (`ccx_…`, signed, ~3 min TTL, audience = this taskId)
+   **one-time exchange code** (`ccx_…`, signed, ~15 min TTL, audience = this taskId)
    and `workflow_dispatch`es `.github/workflows/code-runner.yml` with
    `{ taskId, exchangeCode, callbackBase, repo, baseRef }` as inputs; the code
    rides as a masked input the workflow re-masks immediately. The exchange code is
@@ -56,7 +56,7 @@ run** (Actions is non-interactive) rather than mid-run prompts.
    a dedicated secret (`CLOUD_CODE_SECRET`, added to `PROD_ENV`; **never** shared
    with the runner). Two credential **kinds**, non-interchangeable (the signed
    `kind` is cross-checked on read):
-   - **Exchange code** (`ccx_…`, ~3 min): the only credential on the public
+   - **Exchange code** (`ccx_…`, ~15 min): the only credential on the public
      dispatch input. `GET /api/code/tasks/[id]/runner-context` accepts it — and
      ONLY it — and is **single-use**: the first call atomically stamps
      `runnerClaimedAt` (an additive nullable column) and hands back the clone
