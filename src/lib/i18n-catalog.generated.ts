@@ -274,6 +274,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reasoning mode enabled"
   },
   {
+    "id": "0596591336cd91b4",
+    "source": "Repository to run in the cloud"
+  },
+  {
     "id": "05a2d7332eb9d8bf",
     "source": "Deny"
   },
@@ -706,6 +710,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stopped to stay within your plan’s budget."
   },
   {
+    "id": "13e69fc3309b6237",
+    "source": "Couldn’t reach GitHub to load your repositories. Check your connection and try again."
+  },
+  {
     "id": "140bedbf9c3f6d56",
     "source": "none"
   },
@@ -762,6 +770,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen 3.6 Plus"
   },
   {
+    "id": "158727c99e454a7a",
+    "source": "View pull request"
+  },
+  {
     "id": "158d361f7fee7c27",
     "source": "Voice unavailable"
   },
@@ -816,6 +828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "16b355cd61ed2da2",
     "source": "Invalid image."
+  },
+  {
+    "id": "171227c038b37ed3",
+    "source": "Your GitHub connection expired or was revoked. Reconnect it so cloud runs can clone your repo and open a pull request."
   },
   {
     "id": "172eac21b886bc76",
@@ -1666,10 +1682,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "outside"
   },
   {
-    "id": "3124278e587fbd0f",
-    "source": "Sidebar mode"
-  },
-  {
     "id": "3126b62da873debc",
     "source": "Anthropic · Claude"
   },
@@ -2088,6 +2100,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3c5e24bfb773de2d",
     "source": "Quiz needs a question and at least two options."
+  },
+  {
+    "id": "3c8a1796ec7c4866",
+    "source": "— optional"
   },
   {
     "id": "3c9549f5f41358dd",
@@ -2686,10 +2702,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT-5.4 Mini"
   },
   {
-    "id": "4ea140588150773c",
-    "source": "home"
-  },
-  {
     "id": "4ee2c02184f0fe62",
     "source": "Check your inbox"
   },
@@ -2870,6 +2882,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Generation stopped before any output."
   },
   {
+    "id": "54e360599d15d718",
+    "source": "Base branch to run against"
+  },
+  {
     "id": "54e6289e14c7b0e7",
     "source": "transcript"
   },
@@ -2904,6 +2920,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "56651f34b548b001",
     "source": "Ask Juno to build a component, page, or diagram — it opens in the Canvas and collects here."
+  },
+  {
+    "id": "56681010b753e1ab",
+    "source": "cloud"
   },
   {
     "id": "567bbd43005ddd3a",
@@ -3150,6 +3170,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "CTA label"
   },
   {
+    "id": "5d3eb350af3b9a6f",
+    "source": "Could not start the cloud run. Check your connection and try again."
+  },
+  {
     "id": "5d435857281c9944",
     "source": "invalid_credentials"
   },
@@ -3176,6 +3200,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ddbcebc06a445eb",
     "source": "reconnecting"
+  },
+  {
+    "id": "5de0a523f2d8debf",
+    "source": "Connect GitHub in Connections before starting a cloud run."
   },
   {
     "id": "5dfb834c832e5810",
@@ -3646,6 +3674,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Restart"
   },
   {
+    "id": "6ba0bdeccb426d7b",
+    "source": "Device"
+  },
+  {
     "id": "6ba2ede6c6019b64",
     "source": "No matching files."
   },
@@ -3896,6 +3928,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "712a4823ccb996b0",
     "source": "Share link"
+  },
+  {
+    "id": "7146d8f5b6a238b8",
+    "source": "Start cloud run"
   },
   {
     "id": "715dc8493c36579a",
@@ -4762,6 +4798,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Medium"
   },
   {
+    "id": "8e808e7d97cf906f",
+    "source": "No repositories match “"
+  },
+  {
     "id": "8e920ae7d06bef0e",
     "source": "tool_calls"
   },
@@ -5098,6 +5138,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Research"
   },
   {
+    "id": "97ae30b11350f345",
+    "source": "Cloud runs clone one of your GitHub repositories on a fresh machine, make the change, and open a pull request. Connect GitHub to pick a repo."
+  },
+  {
     "id": "97afd5706463632d",
     "source": "In the picker today"
   },
@@ -5204,6 +5248,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9a71d40796c4b68a",
     "source": "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks."
+  },
+  {
+    "id": "9acbb9ebea637014",
+    "source": "Base branch"
   },
   {
     "id": "9aee6b1bcdf617d8",
@@ -5342,6 +5390,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Artifact placeholder"
   },
   {
+    "id": "9e4324ea2bcd7f8c",
+    "source": "Search your GitHub repositories"
+  },
+  {
     "id": "9e709348f582d44e",
     "source": "Create your account"
   },
@@ -5424,6 +5476,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a1352cf77ead1804",
     "source": "Ban lifted; strikes reset."
+  },
+  {
+    "id": "a13e6afc724bf9a2",
+    "source": "Runs in the cloud · opens a pull request"
   },
   {
     "id": "a14debcc6c822ee7",
@@ -5612,6 +5668,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a69ffddb5fe50245",
     "source": "Close dialog / stop streaming"
+  },
+  {
+    "id": "a6c7680f27a698de",
+    "source": "Pick a GitHub repository — the run happens in the cloud and opens a pull request."
   },
   {
     "id": "a6c7a84baa6750fc",
@@ -6106,6 +6166,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "layers."
   },
   {
+    "id": "b57c2d03a0eed406",
+    "source": "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
+  },
+  {
     "id": "b581e46042cbfbb0",
     "source": "CSS"
   },
@@ -6116,6 +6180,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b5c582d555b204b0",
     "source": "Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the same way."
+  },
+  {
+    "id": "b5f71af16655ae9d",
+    "source": "No repositories found on your GitHub account."
   },
   {
     "id": "b5ff8386a26706d6",
@@ -6178,6 +6246,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ask"
   },
   {
+    "id": "b8d31e852725afb1",
+    "source": "on"
+  },
+  {
     "id": "b8e1336cceb1d760",
     "source": "Writing artifact"
   },
@@ -6196,6 +6268,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b958ce8b871ab36b",
     "source": "Temperature"
+  },
+  {
+    "id": "b977b950c1ae31e5",
+    "source": "Cloud"
   },
   {
     "id": "b992594a70893fcc",
@@ -6576,6 +6652,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c6303d235594fce5",
     "source": "Open memory manager"
+  },
+  {
+    "id": "c63eb6720c6e8849",
+    "source": "Private"
   },
   {
     "id": "c6662c1865e52256",
@@ -7362,6 +7442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Usage alert"
   },
   {
+    "id": "dac6510b4552662d",
+    "source": "Search your repositories…"
+  },
+  {
     "id": "daee7606b339f3c3",
     "source": "Reset"
   },
@@ -7420,6 +7504,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dc2cc92d7bbe2dba",
     "source": "Tell us what would make Juno better. Others can vote it up."
+  },
+  {
+    "id": "dc2e316b70d148d2",
+    "source": "Runs on a fresh cloud machine and opens a pull request for you to review — nothing is pushed to"
   },
   {
     "id": "dc380888c4e2c776",
@@ -7750,6 +7838,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older Sonnet, 200K context."
   },
   {
+    "id": "e4df06976781be61",
+    "source": "Runs in the cloud and opens a pull request — review the changes before you merge them."
+  },
+  {
     "id": "e4e376233b59688d",
     "source": "exchange_failed"
   },
@@ -7884,6 +7976,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e989f0ea0a98347f",
     "source": "Open a project folder in the Juno app and it appears here, ready for a new session."
+  },
+  {
+    "id": "e9a0162aec3b8978",
+    "source": "directly."
   },
   {
     "id": "e9bef0b0f3c25e6e",
@@ -8030,6 +8126,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Link revoked — it no longer works."
   },
   {
+    "id": "ee09dfd974673f7b",
+    "source": "Cloud runs aren’t enabled on this server yet. Ask an admin to configure the cloud runner, or run this session on your Mac instead."
+  },
+  {
     "id": "ee0ecc7f0e1bcbed",
     "source": "MiniMax Highspeed"
   },
@@ -8112,6 +8212,14 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f08de9dbfcf3b027",
     "source": "Drag & drop"
+  },
+  {
+    "id": "f0a3bbeb4790d91e",
+    "source": "dispatch_failed"
+  },
+  {
+    "id": "f0de7f7a243c100a",
+    "source": "Queued — starting a cloud machine (this can take a moment)…"
   },
   {
     "id": "f0f9cb152ba772de",
@@ -8474,6 +8582,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Renamed."
   },
   {
+    "id": "fb338e9fa4a8cdcf",
+    "source": "Connect GitHub to run in the cloud"
+  },
+  {
     "id": "fb5f27d5457c4641",
     "source": "Detail"
   },
@@ -8552,6 +8664,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fdab556f67bf858e",
     "source": "Could not send your answer. Check your connection and try again."
+  },
+  {
+    "id": "fdc1b20887ff02a0",
+    "source": "Couldn’t start the cloud run. This is usually temporary — try again."
   },
   {
     "id": "fddb7f9c69fed4ad",

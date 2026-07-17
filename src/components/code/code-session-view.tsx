@@ -1,12 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, Folder, Loader2, ShieldAlert, Square } from "lucide-react";
+import { ArrowUp, ArrowUpRight, Cloud, Folder, GitPullRequest, Loader2, ShieldAlert, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { MessageList } from "@/components/chat/message-list";
 import { useApp } from "@/components/app/app-provider";
-import { useCodeSession, isLiveId, type CodeSessionStatus } from "@/hooks/use-code-session";
+import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeSessionStatus } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { cn } from "@/lib/utils";
 import type { ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
@@ -90,6 +90,71 @@ function useDevicePresence(workspaceKey: string | null, workspacePath: string | 
   return { presence, refresh };
 }
 
+type CodeTaskMeta = {
+  loaded: boolean;
+  isCloud: boolean;
+  repoOwner: string | null;
+  repoName: string | null;
+  baseRef: string | null;
+  prUrl: string | null;
+};
+
+type TaskMetaRow = {
+  target?: string | null;
+  repoOwner?: string | null;
+  repoName?: string | null;
+  baseRef?: string | null;
+  prUrl?: string | null;
+};
+
+/** Whether this session runs in the cloud, and its repo / PR — read from the
+ *  session's tasks (serializeTask carries target/repo/prUrl). The latest task
+ *  defines the surface; the PR link is the newest task that has one. Refreshes
+ *  on the code-sync signal so a completed run's PR appears without a reload. */
+function useCodeTaskMeta(conversationId: string): CodeTaskMeta & { refresh: () => void } {
+  const [meta, setMeta] = React.useState<CodeTaskMeta>({
+    loaded: false,
+    isCloud: false,
+    repoOwner: null,
+    repoName: null,
+    baseRef: null,
+    prUrl: null,
+  });
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const res = await fetch(`/api/code/tasks?conversationId=${encodeURIComponent(conversationId)}&limit=20`);
+      if (!res.ok) return;
+      const data = (await res.json()) as { tasks?: TaskMetaRow[] };
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+      const latest = tasks[0];
+      const withRepo = tasks.find((t) => t.repoOwner && t.repoName);
+      const prUrl = tasks.find((t) => typeof t.prUrl === "string" && t.prUrl)?.prUrl ?? null;
+      setMeta({
+        loaded: true,
+        isCloud: latest?.target === "cloud",
+        repoOwner: latest?.repoOwner ?? withRepo?.repoOwner ?? null,
+        repoName: latest?.repoName ?? withRepo?.repoName ?? null,
+        baseRef: latest?.baseRef ?? withRepo?.baseRef ?? null,
+        prUrl,
+      });
+    } catch {
+      // Keep the last reading; a device session simply stays non-cloud.
+    }
+  }, [conversationId]);
+
+  React.useEffect(() => {
+    void refresh();
+  }, [refresh]);
+  React.useEffect(() => {
+    const on = () => void refresh();
+    window.addEventListener(CODE_SYNC_EVENT, on);
+    return () => window.removeEventListener(CODE_SYNC_EVENT, on);
+  }, [refresh]);
+
+  return { ...meta, refresh };
+}
+
 const PRESENCE_META: Record<PresenceState, { label: string; dot: string }> = {
   checking: { label: "Checking your Mac…", dot: "bg-muted-foreground/40 motion-safe:animate-pulse" },
   online: { label: "Mac connected", dot: "bg-success" },
@@ -111,6 +176,9 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const workspacePath = conversation.codeWorkspacePath ?? null;
   const workspaceKey = conversation.codeWorkspaceKey ?? null;
   const { presence } = useDevicePresence(workspaceKey, workspacePath, conversation.codeWorkspaceName?.trim() || null);
+  const meta = useCodeTaskMeta(conversation.id);
+  const isCloud = meta.isCloud;
+  const cloudRepoFull = meta.repoOwner && meta.repoName ? `${meta.repoOwner}/${meta.repoName}` : null;
 
   const session = useCodeSession({
     conversationId: conversation.id,
@@ -145,9 +213,15 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const [draft, setDraft] = React.useState("");
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-  const canTarget = presence.device != null;
-  const sendBlockedReason =
-    presence.state === "none"
+  // Cloud sessions ignore device presence entirely — they run on a dispatched
+  // machine, so the only gate is knowing the repo. Device sessions keep their
+  // presence-based gating unchanged.
+  const canTarget = isCloud ? !!cloudRepoFull : presence.device != null;
+  const sendBlockedReason = isCloud
+    ? !cloudRepoFull
+      ? "Preparing this cloud session…"
+      : null
+    : presence.state === "none"
       ? "Open this project in the Juno app on your Mac so it can run sessions here."
       : presence.state === "error"
         ? "Can't reach the server to find your Mac — retrying."
@@ -157,9 +231,38 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             ? "This session isn't linked to a synced project folder."
             : null;
 
+  const nameSessionFromFirstPrompt = React.useCallback(
+    (text: string) => {
+      const current = conversations.find((c) => c.id === conversation.id);
+      if (current && current.titleSource === "default" && isDefaultCodeSessionTitle(current.title)) {
+        updateConversation(conversation.id, { title: text.slice(0, 48) });
+      }
+    },
+    [conversation.id, conversations, updateConversation],
+  );
+
   const submit = React.useCallback(async () => {
     const text = draft.trim();
-    if (!text || !presence.device || session.isBusy) return;
+    if (!text || session.isBusy) return;
+
+    if (isCloud) {
+      if (!meta.repoOwner || !meta.repoName) return;
+      const { accepted } = await session.send(text, {
+        mode: "cloud",
+        repo: { owner: meta.repoOwner, name: meta.repoName },
+        baseRef: meta.baseRef,
+        workspaceName: conversation.codeWorkspaceName,
+      });
+      if (accepted) {
+        setDraft("");
+        nameSessionFromFirstPrompt(text);
+        meta.refresh(); // a follow-up run may open a new PR — pick it up
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+      return;
+    }
+
+    if (!presence.device) return;
     // The device's workspace path is authoritative when the conversation only
     // carries a name (sessions created before the path was recorded).
     const path = workspacePath ?? null;
@@ -174,16 +277,13 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
       setDraft("");
       // First prompt of a fresh session names it (server does the same — this
       // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
-      const current = conversations.find((c) => c.id === conversation.id);
-      if (current && current.titleSource === "default" && isDefaultCodeSessionTitle(current.title)) {
-        updateConversation(conversation.id, { title: text.slice(0, 48) });
-      }
+      nameSessionFromFirstPrompt(text);
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
-  }, [conversation.codeWorkspaceName, conversation.id, conversations, draft, presence.device, session, updateConversation, workspaceKey, workspacePath]);
+  }, [conversation.codeWorkspaceName, draft, isCloud, meta, nameSessionFromFirstPrompt, presence.device, session, workspaceKey, workspacePath]);
 
-  const composerDisabled = !canTarget || !workspacePath;
-  const canSend = !!draft.trim() && canTarget && !!workspacePath && !session.isBusy;
+  const composerDisabled = isCloud ? !cloudRepoFull : !canTarget || !workspacePath;
+  const canSend = !!draft.trim() && canTarget && (isCloud || !!workspacePath) && !session.isBusy;
 
   // MessageList's streaming label: "Writing" once prose lands, "Thinking" before.
   const listStatus: GenerationStatus =
@@ -213,9 +313,11 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
       {session.status === "queued" && (
         <p role="status" className="mx-1 mb-2 flex items-center gap-2 rounded-xl border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground motion-safe:animate-rise-in">
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/50 motion-safe:animate-pulse" aria-hidden="true" />
-          {presence.state === "offline"
-            ? "Queued — runs when your Mac reconnects."
-            : "Queued — waiting for your Mac to pick this up."}
+          {isCloud
+            ? "Queued — starting a cloud machine (this can take a moment)…"
+            : presence.state === "offline"
+              ? "Queued — runs when your Mac reconnects."
+              : "Queued — waiting for your Mac to pick this up."}
         </p>
       )}
       <div className="relative flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-primary/30 focus-within:shadow-glass">
@@ -234,21 +336,24 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           placeholder={
             composerDisabled
               ? sendBlockedReason ?? "This session can't run tasks right now."
-              : presence.state === "offline"
-                ? "Describe the change — it queues until your Mac reconnects…"
-                : "Describe what to build or fix…"
+              : isCloud
+                ? `Describe the change to make in ${cloudRepoFull ?? "the repo"}…`
+                : presence.state === "offline"
+                  ? "Describe the change — it queues until your Mac reconnects…"
+                  : "Describe what to build or fix…"
           }
           aria-label="Prompt for this code session"
           className="max-h-[200px] min-h-[74px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4"
         />
         <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-0.5">
-          {/* Identity is the workspace NAME; the device-local path is honest
-              secondary metadata, offered on hover rather than as the label. */}
+          {/* Identity is the workspace NAME (device) or the repo (cloud); the
+              device-local path is honest secondary metadata, on hover. */}
           <span
-            title={workspacePath ?? undefined}
-            className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground"
+            title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
+            className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label uppercase text-muted-foreground"
           >
-            {workspaceName}
+            {isCloud && <Cloud className="h-3 w-3 shrink-0" aria-hidden="true" />}
+            <span className="min-w-0 truncate">{isCloud ? cloudRepoFull ?? workspaceName : workspaceName}</span>
           </span>
           {/* Send morphs into Stop while a task runs — same morph as chat. */}
           <Tooltip>
@@ -263,7 +368,9 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                     ? session.status === "stopping"
                       ? "Stopping task"
                       : "Stop this task"
-                    : "Send to your Mac"
+                    : isCloud
+                      ? "Start a cloud run"
+                      : "Send to your Mac"
                 }
                 className={cn(
                   "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
@@ -288,17 +395,31 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
 
   return (
     <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden">
-      {/* Session banner: which project, on which Mac, and whether it's reachable. */}
+      {/* Session banner. Device: which project, on which Mac, reachable or not.
+          Cloud: the repo + a calm "runs in the cloud, opens a PR" note (no
+          device-offline/queue copy), plus the PR link once the run opens one. */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border/60 bg-background/95 px-3 py-2 md:px-4">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
-          <Folder className="h-3 w-3 text-primary" aria-hidden="true" />
+          {isCloud ? (
+            <Cloud className="h-3 w-3 text-primary" aria-hidden="true" />
+          ) : (
+            <Folder className="h-3 w-3 text-primary" aria-hidden="true" />
+          )}
         </span>
-        <span className="min-w-0 truncate text-sm font-medium text-foreground">{workspaceName}</span>
-        {workspacePath && (
-          <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
-            {workspacePath}
-          </span>
-        )}
+        <span className="min-w-0 truncate text-sm font-medium text-foreground">
+          {isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
+        </span>
+        {isCloud
+          ? meta.baseRef && (
+              <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+                on {meta.baseRef}
+              </span>
+            )
+          : workspacePath && (
+              <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+                {workspacePath}
+              </span>
+            )}
         <span className="flex-1" />
         {taskChip && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground motion-safe:animate-fade-in">
@@ -312,14 +433,37 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             {taskChip}
           </span>
         )}
-        <span
-          role="status"
-          title={presence.device?.name}
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
-        >
-          <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", presenceMeta.dot)} aria-hidden="true" />
-          <span className="min-w-0 truncate">{presenceMeta.label}</span>
-        </span>
+        {isCloud ? (
+          meta.prUrl ? (
+            <a
+              href={meta.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="pressable inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary transition-colors duration-fast hover:bg-primary/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background motion-safe:animate-fade-in"
+            >
+              <GitPullRequest className="h-3.5 w-3.5" aria-hidden="true" />
+              View pull request
+              <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+            </a>
+          ) : (
+            <span
+              role="status"
+              className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
+            >
+              <Cloud className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">Runs in the cloud · opens a pull request</span>
+            </span>
+          )
+        ) : (
+          <span
+            role="status"
+            title={presence.device?.name}
+            className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 text-xs text-muted-foreground"
+          >
+            <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", presenceMeta.dot)} aria-hidden="true" />
+            <span className="min-w-0 truncate">{presenceMeta.label}</span>
+          </span>
+        )}
       </div>
 
       {hasMessages ? (
@@ -336,7 +480,9 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           />
           <div className="w-full px-0 pb-1">{composer}</div>
           <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
-            Runs with Juno Code on your Mac — review the changes before you ship them.
+            {isCloud
+              ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
+              : "Runs with Juno Code on your Mac — review the changes before you ship them."}
           </p>
         </div>
       ) : (
@@ -344,16 +490,20 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
             <div className="mb-5 flex w-full flex-col items-center text-center sm:mb-6">
               <h1 className="font-serif text-3xl font-normal tracking-tight text-foreground sm:text-display">
-                {workspaceName}
+                {isCloud ? cloudRepoFull ?? workspaceName : workspaceName}
               </h1>
               <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
-                Describe what to build or fix — Juno Code runs it on your Mac and streams the work here.
+                {isCloud
+                  ? "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
+                  : "Describe what to build or fix — Juno Code runs it on your Mac and streams the work here."}
               </p>
             </div>
             <div className="z-10 w-full max-w-[44rem]">{composer}</div>
           </div>
           <p className="shrink-0 select-none pb-2 text-center text-caption text-muted-foreground">
-            Runs with Juno Code on your Mac — review the changes before you ship them.
+            {isCloud
+              ? "Runs in the cloud and opens a pull request — review the changes before you merge them."
+              : "Runs with Juno Code on your Mac — review the changes before you ship them."}
           </p>
         </div>
       )}

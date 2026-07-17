@@ -28,13 +28,38 @@ export interface CodePendingApproval {
   detail: string | null;
 }
 
-export interface CodeSendTarget {
-  deviceId: string;
-  /** Required — the executing device resolves this local folder. */
-  workspacePath: string;
-  workspaceName?: string | null;
-  /** Stable workspace identity (CodeWorkspace.key), when the session has one. */
-  workspaceKey?: string | null;
+/** Where a prompt runs. Device (default) names a registered host + local path;
+ *  cloud names a GitHub repo and runs on a dispatched Actions machine. */
+export type CodeSendTarget =
+  | {
+      mode?: "device";
+      deviceId: string;
+      /** Required — the executing device resolves this local folder. */
+      workspacePath: string;
+      workspaceName?: string | null;
+      /** Stable workspace identity (CodeWorkspace.key), when the session has one. */
+      workspaceKey?: string | null;
+    }
+  | {
+      mode: "cloud";
+      repo: { owner: string; name: string };
+      /** Base branch to run against; the repo's default when omitted. */
+      baseRef?: string | null;
+      workspaceName?: string | null;
+    };
+
+/** Turn the API's machine error codes into calm, human copy (device + cloud). */
+function friendlyTaskError(code: string | undefined): string {
+  switch (code) {
+    case "github_not_connected":
+      return "Connect GitHub in Connections to run in the cloud.";
+    case "cloud_runner_not_configured":
+      return "Cloud runs aren’t enabled on this server yet.";
+    case "cloud_dispatch_failed":
+      return "Couldn’t start the cloud run. Please try again.";
+    default:
+      return code ?? "Could not start the task.";
+  }
 }
 
 type RemoteTask = { id: string; status: string; conversationId?: string | null };
@@ -384,25 +409,37 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       setMessages((prev) => [...prev, userMsg]);
 
       try {
+        const body =
+          target.mode === "cloud"
+            ? {
+                target: "cloud" as const,
+                repo: target.repo,
+                baseRef: target.baseRef || undefined,
+                workspaceName: target.workspaceName || undefined,
+                title: trimmed.slice(0, 60),
+                prompt: trimmed,
+                conversationId: opts.conversationId,
+              }
+            : {
+                deviceId: target.deviceId,
+                workspacePath: target.workspacePath,
+                workspaceName: target.workspaceName || undefined,
+                workspaceKey: target.workspaceKey || undefined,
+                title: trimmed.slice(0, 60),
+                prompt: trimmed,
+                conversationId: opts.conversationId,
+              };
         const res = await fetch("/api/code/tasks", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId: target.deviceId,
-            workspacePath: target.workspacePath,
-            workspaceName: target.workspaceName || undefined,
-            workspaceKey: target.workspaceKey || undefined,
-            title: trimmed.slice(0, 60),
-            prompt: trimmed,
-            conversationId: opts.conversationId,
-          }),
+          body: JSON.stringify(body),
         });
         const data = (await res.json().catch(() => ({}))) as {
           task?: RemoteTask;
           userMessage?: ClientMessage;
           error?: string;
         };
-        if (!res.ok || !data.task) throw new Error(data.error ?? "Could not start the task.");
+        if (!res.ok || !data.task) throw new Error(friendlyTaskError(data.error));
 
         const task = data.task;
         setMessages((prev) =>

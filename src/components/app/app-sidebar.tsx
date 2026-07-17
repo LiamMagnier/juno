@@ -55,6 +55,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
 import { cn } from "@/lib/utils";
@@ -885,21 +886,10 @@ export function AppSidebar({
   );
 }
 
-/** Home/Code switch. Radiogroup semantics (selection follows focus, arrow keys
- *  move it) rather than tabs — the two "panels" are whole sidebar layouts, not
- *  addressable tabpanels.
- *
- *  Depth follows the product's lighting model (globals.css "Depth kit"): the track
- *  is a well (`--well-inset`) and the selection is a raised thumb wearing the same
- *  top sheen + `--shadow-pop` as a `secondary` Button, so the live mode reads as a
- *  key standing proud of its slot rather than a tinted rectangle.
- *
- *  One thumb glides between the segments — the command palette's sliding-highlight
- *  idiom (measured geometry, no new dependency) — so the switch says "these two sit
- *  side by side and you moved between them" instead of cross-fading two fills. It
- *  travels on whichever axis the group is laid out on, since the collapsed rail
- *  stacks it vertically.
- */
+/** Home/Code switch. A thin wrapper over the shared SegmentedControl: same
+ *  depth idiom (well track + raised thumb) and radiogroup semantics, laid out
+ *  vertically (icon-only) in the collapsed rail. The segment icons keep the
+ *  sidebar's hover micro-motion. */
 function ModeToggle({
   mode,
   onChange,
@@ -909,106 +899,21 @@ function ModeToggle({
   onChange: (mode: "home" | "code") => void;
   compact?: boolean;
 }) {
-  const refs = React.useRef<Partial<Record<"home" | "code", HTMLButtonElement | null>>>({});
-  const trackRef = React.useRef<HTMLDivElement>(null);
-  const thumbRef = React.useRef<HTMLSpanElement>(null);
-  // The thumb is placed from measured pixels, so it must snap (not glide) into its
-  // first position and after a track resize — gliding there would animate from a
-  // place the user never selected.
-  const hasPlaced = React.useRef(false);
-
-  const place = React.useCallback(
-    (animate: boolean) => {
-      const thumb = thumbRef.current;
-      const el = refs.current[mode];
-      if (!thumb || !el) return;
-      if (!animate) thumb.style.transition = "none";
-      thumb.style.transform = `translate3d(${el.offsetLeft}px, ${el.offsetTop}px, 0)`;
-      thumb.style.width = `${el.offsetWidth}px`;
-      thumb.style.height = `${el.offsetHeight}px`;
-      if (!animate) {
-        void thumb.offsetHeight; // flush the jump before the class transition returns
-        thumb.style.transition = "";
-      }
-    },
-    [mode],
-  );
-
-  React.useLayoutEffect(() => {
-    place(hasPlaced.current);
-    hasPlaced.current = true;
-  }, [place, compact]);
-
-  // The sidebar is user-resizable and the segments are fluid, so measured geometry
-  // goes stale without this.
-  React.useEffect(() => {
-    const track = trackRef.current;
-    if (!track || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => place(false));
-    ro.observe(track);
-    return () => ro.disconnect();
-  }, [place]);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
-    e.preventDefault();
-    const next = mode === "home" ? "code" : "home";
-    onChange(next);
-    refs.current[next]?.focus();
-  };
-
+  const iconCls =
+    "h-3.5 w-3.5 transition-transform duration-fast ease-out-soft group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100";
   return (
-    <div
-      ref={trackRef}
-      role="radiogroup"
-      aria-label="Sidebar mode"
-      className={cn(
-        // The track is a shadow cast into the sidebar, so it darkens its parent in
-        // both themes. It can't use --muted: that token is identical to --sidebar in
-        // light (invisible) and lighter than it in dark (which would read raised,
-        // inverting the lighting model the thumb depends on).
-        // No border: the thumb is positioned from offsetLeft/offsetTop, which agree
-        // with `left-0/top-0` only while the padding edge and border edge coincide.
-        "field-well relative gap-0.5 rounded-[10px] bg-black/[0.055] p-0.5 dark:bg-black/25",
-        compact ? "flex flex-col items-center" : "grid grid-cols-2",
-      )}
-    >
-      <span
-        ref={thumbRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 z-0 rounded-[8px] bg-card transition-[transform,width,height] duration-base ease-spring [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] motion-reduce:transition-none"
-      />
-      {(["home", "code"] as const).map((value) => (
-        <button
-          key={value}
-          ref={(el) => {
-            refs.current[value] = el;
-          }}
-          type="button"
-          role="radio"
-          aria-checked={mode === value}
-          aria-label={compact ? (value === "home" ? "Home" : "Code") : undefined}
-          title={compact ? (value === "home" ? "Home" : "Code") : undefined}
-          tabIndex={mode === value ? 0 : -1}
-          onClick={() => onChange(value)}
-          onKeyDown={handleKeyDown}
-          className={cn(
-            // Press dips the label/icon (the fill under them is the thumb), matching
-            // the Button component's active:scale language.
-            "group relative z-10 flex items-center justify-center rounded-[8px] font-medium transition-[color,transform] duration-fast ease-out-soft active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-sidebar motion-reduce:transition-none motion-reduce:active:scale-100",
-            compact ? "h-8 w-8" : "gap-1.5 px-3 py-1 text-[13px]",
-            mode === value ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {value === "home" ? (
-            <Home className="h-3.5 w-3.5 transition-transform duration-fast ease-out-soft group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100" />
-          ) : (
-            <Code className="h-3.5 w-3.5 transition-transform duration-fast ease-out-soft group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100" />
-          )}
-          {!compact && (value === "home" ? "Home" : "Code")}
-        </button>
-      ))}
-    </div>
+    <SegmentedControl
+      value={mode}
+      onChange={onChange}
+      ariaLabel="Sidebar mode"
+      orientation={compact ? "vertical" : "horizontal"}
+      labelHidden={compact}
+      ringOffsetClassName="focus-visible:ring-offset-sidebar"
+      options={[
+        { value: "home", label: "Home", icon: <Home className={iconCls} /> },
+        { value: "code", label: "Code", icon: <Code className={iconCls} /> },
+      ]}
+    />
   );
 }
 
