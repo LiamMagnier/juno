@@ -1,8 +1,8 @@
 {
-  "version": "3.0.4",
-  "build": 32,
+  "version": "3.0.5",
+  "build": 33,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "499373950299d86f400d123dae6475026775a392a7cebc85ba27bdee1c86ac7c",
-  "notes": "Juno 3.0.4 \u2014 your Code projects now appear on the website: the app mirrors its project folders (and new sessions) to your account, so the web Code tab shows the same Projects as the app. Star becomes pin everywhere.",
+  "sha256": "8b180a143053e2970af6010585b1a77dfaa6bbb771b9b7361c2930615543bad3",
+  "notes": "Juno 3.0.5 \u2014 voice mode is rebuilt: pick your voice model mid-conversation, watch live captions and cost, tap the orb to interrupt, and get honest connection states with one-tap recovery. Plus the on-device fallback stays a click away.",
   "minimumSystemVersion": "26.0"
 }
