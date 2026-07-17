@@ -121,7 +121,10 @@ export function SegmentedControl<T extends string>({
         // model the thumb depends on). No border: the thumb is positioned from
         // offsetLeft/offsetTop, which agree with left-0/top-0 only while the
         // padding edge and border edge coincide.
-        "field-well relative gap-0.5 rounded-[10px] bg-black/[0.055] p-0.5 dark:bg-black/25",
+        // Concentric corners: the track's outer radius = the thumb's inner
+        // radius + the padding that separates them (12 = 8 + 4), and the padding
+        // is uniform (p-1) so the thumb's inset is identical on all four sides.
+        "field-well relative gap-1 rounded-[12px] bg-black/[0.055] p-1 dark:bg-black/25",
         orientation === "vertical" ? "flex flex-col items-center" : "grid",
         className,
       )}

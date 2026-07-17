@@ -130,6 +130,7 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["glm"], metric: metric(0.6, 2.2, 200_000, 6, 5) },
   ],
   moonshot: [
+    { hints: ["k3"], metric: metric(3, 15, 1_000_000, 4, 8) }, // flagship 2.5T reasoner, 1M ctx — tops the lineup (no AA/arena index yet)
     { hints: ["highspeed"], metric: metric(2.4, 10, 262_144, 9, 7) }, // premium ~180-260 tok/s serving of K2.7 Code
     { hints: ["k2.7"], metric: official(0.95, 4, 262_144, 2, 7) }, // II 41.9 (coding) · 45 tok/s
     { hints: ["k2.6"], metric: official(0.95, 4, 262_144, 2, 7) }, // II 44.2 · 41.5 tok/s — slowest in the lineup
