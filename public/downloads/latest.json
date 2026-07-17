@@ -1,8 +1,8 @@
 {
-  "version": "3.0.3",
-  "build": 31,
+  "version": "3.0.4",
+  "build": 32,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "7f0b0ea08a4d30275de3981aaa68100f8c5aab732fdbc0c683033573e85be13b",
-  "notes": "Juno 3.0.3 \u2014 voice and dictation are rebuilt (no more crashes when your audio devices change, and the assistant can no longer hear itself), Settings gets a calm redesign with smooth section transitions, the whole shell gains consistent motion, star becomes pin everywhere, and your Code sessions now sync to the website grouped by project.",
+  "sha256": "499373950299d86f400d123dae6475026775a392a7cebc85ba27bdee1c86ac7c",
+  "notes": "Juno 3.0.4 \u2014 your Code projects now appear on the website: the app mirrors its project folders (and new sessions) to your account, so the web Code tab shows the same Projects as the app. Star becomes pin everywhere.",
   "minimumSystemVersion": "26.0"
 }
