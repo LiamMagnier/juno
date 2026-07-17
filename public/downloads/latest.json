@@ -1,8 +1,8 @@
 {
-  "version": "3.1.0",
-  "build": 35,
+  "version": "3.2.0",
+  "build": 36,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "5bf0e9a1ace846fa5f55ae1e92beb3318b5767e46538253b18680608a4a7bca9",
-  "notes": "Rebuilt across the board: Juno Voice is now a compact dock above the composer that keeps your conversation visible and saves every turn to your history. Code mode gains real Pull requests, Scheduled and Plugins panels, a collapsed icon rail, and live run status. Your work now syncs reliably \u2014 edits and deletes survive being offline, attachments and images finally reach the web, and Code session transcripts show up on the website. Plus a unified look between Chat and Code, and a lot of accessibility work.",
+  "sha256": "d8b9834ebfe99ad36977e810b7aed720fbe2faffed8f425f8714a66cc9254c69",
+  "notes": "Deep Research mode \u2014 Juno can now run multi-step web research from the composer, showing its research \u2192 think \u2192 write phases as it works. Plus the Cloud Code proxy parity and workspace-identity sync from the last cycle.",
   "minimumSystemVersion": "26.0"
 }
