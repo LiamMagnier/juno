@@ -5,14 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  AlertCircle,
   Box,
   CalendarClock,
   Check,
   ChevronDown,
   ChevronRight,
   Code,
-  Command,
   Folder,
+  GitPullRequest,
   Home,
   Library,
   MessageCircle,
@@ -21,6 +22,7 @@ import {
   PanelLeft,
   Pencil,
   Plug,
+  RefreshCw,
   Search,
   Shapes,
   Plus,
@@ -54,7 +56,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Label } from "@/components/ui/label";
 import { useApp } from "@/components/app/app-provider";
-import { dateGroup, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import type { ClientFolder } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
@@ -62,11 +65,32 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
 type SidebarProject = {
   id: string;
   name: string;
+  starred: boolean;
   updatedAt: string;
   conversationCount: number;
   fileCount?: number;
   coverUrl?: string | null;
 };
+
+type CodeWorkspace = { id: string; name: string; path: string; lastOpenedAt: string };
+
+/** Remote Juno Code task (from /api/code/tasks) — status rides on these rows.
+ *  CodeTask carries no conversationId, so a task can be attributed to a
+ *  workspace (by path) with certainty, but never to a specific session. */
+type CodeTaskRow = {
+  id: string;
+  workspacePath: string;
+  workspaceName: string;
+  title: string;
+  status: string;
+  createdAt: string;
+};
+
+const CODE_EXPANDED_KEY = "juno:sidebar:code:expanded";
+const LEGACY_STARRED_KEY = "starredProjects";
+// A failed task stays visible for a day; after that it's stale noise.
+const FAILED_TASK_TTL_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_TASK_STATUSES = new Set(["queued", "running", "awaiting_approval"]);
 
 export function AppSidebar({
   collapsed,
@@ -86,7 +110,6 @@ export function AppSidebar({
     activeConversationId,
     setSidebarOpen,
   } = useApp();
-  const [query, setQuery] = React.useState("");
   const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmState>(null);
@@ -94,48 +117,80 @@ export function AppSidebar({
   // list to after mount to keep SSR and the first client render in agreement.
   const [mounted, setMounted] = React.useState(false);
   const [projects, setProjects] = React.useState<SidebarProject[]>([]);
-  const [starredProjectIds, setStarredProjectIds] = React.useState<string[]>([]);
+  const [projectsError, setProjectsError] = React.useState(false);
   const [starredCollapsed, setStarredCollapsed] = React.useState(false);
   const [recentsCollapsed, setRecentsCollapsed] = React.useState(false);
   // Home shows web + app chats; Code shows Juno Code sessions synced from the
   // app (conversations with kind "code"). Persisted like the collapse prefs.
   const [mode, setMode] = React.useState<"home" | "code">("home");
   // Code mode data: the app's workspaces (project folders) mirrored from
-  // /api/code/workspaces, and scheduled tasks for the Tasks section.
-  const [codeWorkspaces, setCodeWorkspaces] = React.useState<
-    { id: string; name: string; path: string; lastOpenedAt: string }[]
-  >([]);
-  const [codeTasks, setCodeTasks] = React.useState<{ id: string; name: string }[]>([]);
+  // /api/code/workspaces, and remote code tasks for status rows.
+  const [codeWorkspaces, setCodeWorkspaces] = React.useState<CodeWorkspace[]>([]);
+  const [codeTasks, setCodeTasks] = React.useState<CodeTaskRow[]>([]);
+  const [codeLoaded, setCodeLoaded] = React.useState(false);
+  const [codeError, setCodeError] = React.useState(false);
+  // Per-workspace disclosure, persisted; unlisted paths default to open.
+  const [codeExpanded, setCodeExpanded] = React.useState<Record<string, boolean>>({});
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
+  const [newFolderOpen, setNewFolderOpen] = React.useState(false);
+  const [newFolderDraft, setNewFolderDraft] = React.useState("");
+  const [creatingFolder, setCreatingFolder] = React.useState(false);
+  const [renameFolderTarget, setRenameFolderTarget] = React.useState<ClientFolder | null>(null);
+  const [renameFolderDraft, setRenameFolderDraft] = React.useState("");
+  const [renamingFolder, setRenamingFolder] = React.useState(false);
+
+  // One-shot migration guard: legacy localStorage stars are pushed to the
+  // server on the first successful projects load, then the key is dropped.
+  const migratedLegacyStars = React.useRef(false);
 
   const loadProjects = React.useCallback(async () => {
+    setProjectsError(false);
     try {
       const res = await fetch("/api/projects");
-      if (res.ok) {
-        const data = await res.json();
-        const nextProjects = Array.isArray(data.projects) ? data.projects : [];
-        React.startTransition(() => setProjects(nextProjects));
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const nextProjects: SidebarProject[] = Array.isArray(data.projects) ? data.projects : [];
+      if (!migratedLegacyStars.current) {
+        migratedLegacyStars.current = true;
+        try {
+          const raw = JSON.parse(localStorage.getItem(LEGACY_STARRED_KEY) || "[]");
+          const legacy: string[] = Array.isArray(raw) ? raw.filter((v): v is string => typeof v === "string") : [];
+          if (legacy.length > 0) {
+            const toStar = nextProjects.filter((p) => legacy.includes(p.id) && !p.starred);
+            const results = await Promise.all(
+              toStar.map((p) =>
+                fetch(`/api/projects/${p.id}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ starred: true }),
+                })
+                  .then((r) => r.ok)
+                  .catch(() => false)
+              )
+            );
+            toStar.forEach((p, i) => {
+              if (results[i]) p.starred = true;
+            });
+            // Only drop the legacy key once every star made it to the server.
+            if (results.every(Boolean)) localStorage.removeItem(LEGACY_STARRED_KEY);
+          } else {
+            localStorage.removeItem(LEGACY_STARRED_KEY);
+          }
+        } catch {
+          /* storage unavailable — server state stands */
+        }
       }
-    } catch {}
-  }, []);
-
-  const loadStarred = React.useCallback(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const starred = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-        setStarredProjectIds(Array.isArray(starred) ? starred : []);
-      } catch {
-        setStarredProjectIds([]);
-      }
+      React.startTransition(() => setProjects(nextProjects));
+    } catch {
+      setProjectsError(true);
     }
   }, []);
 
   React.useEffect(() => {
     setMounted(true);
     loadProjects();
-    loadStarred();
 
     try {
       const starred = localStorage.getItem("juno:sidebar:starred:collapsed");
@@ -144,11 +199,12 @@ export function AppSidebar({
       if (recents) setRecentsCollapsed(JSON.parse(recents));
       const modePref = localStorage.getItem("juno:sidebar:mode");
       if (modePref === "code") setMode("code");
+      const expanded = JSON.parse(localStorage.getItem(CODE_EXPANDED_KEY) || "{}");
+      if (expanded && typeof expanded === "object") setCodeExpanded(expanded);
     } catch {}
 
     const handleSync = () => {
       loadProjects();
-      loadStarred();
     };
 
     window.addEventListener("projects:sync", handleSync);
@@ -157,7 +213,7 @@ export function AppSidebar({
       window.removeEventListener("projects:sync", handleSync);
       window.removeEventListener("starred:sync", handleSync);
     };
-  }, [loadProjects, loadStarred]);
+  }, [loadProjects]);
 
   const toggleStarredCollapsed = () => {
     const next = !starredCollapsed;
@@ -178,20 +234,25 @@ export function AppSidebar({
   // Only starred projects appear in the sidebar, most-recently-updated first.
   const sidebarProjects = React.useMemo(() => {
     return [...projects]
-      .filter((p) => starredProjectIds.includes(p.id))
+      .filter((p) => p.starred)
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  }, [projects, starredProjectIds]);
+  }, [projects]);
 
-  const toggleProjectStar = (id: string) => {
-    try {
-      const raw = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-      const starred: string[] = Array.isArray(raw) ? raw : [];
-      const isStarred = starred.includes(id);
-      const nextStarred = isStarred ? starred.filter((pId) => pId !== id) : [...starred, id];
-      localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
-      toast.success(isStarred ? "Project unpinned." : "Project pinned!");
-      window.dispatchEvent(new CustomEvent("starred:sync"));
-    } catch {}
+  const toggleProjectStar = async (project: SidebarProject) => {
+    const next = !project.starred;
+    setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, starred: next } : p)));
+    const r = await fetch(`/api/projects/${project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ starred: next }),
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, starred: !next } : p)));
+      toast.error("Could not update the project.");
+      return;
+    }
+    toast.success(next ? "Project pinned!" : "Project unpinned.");
+    window.dispatchEvent(new CustomEvent("starred:sync"));
   };
 
   const renameProject = async () => {
@@ -228,11 +289,6 @@ export function AppSidebar({
           return;
         }
         toast.success("Project deleted.");
-        try {
-          const raw = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-          const starred: string[] = Array.isArray(raw) ? raw : [];
-          localStorage.setItem("starredProjects", JSON.stringify(starred.filter((pId) => pId !== project.id)));
-        } catch {}
         window.dispatchEvent(new CustomEvent("projects:sync"));
         if (pathname === `/projects/${project.id}`) router.push("/projects");
       },
@@ -247,46 +303,57 @@ export function AppSidebar({
   }, []);
 
   const filtered = React.useMemo(() => {
-    const q = query.trim().toLowerCase();
     return conversations.filter(
-      (c) =>
-        (mode === "code" ? c.kind === "code" : c.kind !== "code") &&
-        (!q || c.title.toLowerCase().includes(q)) &&
-        (!folderFilter || c.folderId === folderFilter)
+      (c) => (mode === "code" ? c.kind === "code" : c.kind !== "code") && (!folderFilter || c.folderId === folderFilter)
     );
-  }, [conversations, query, folderFilter, mode]);
+  }, [conversations, folderFilter, mode]);
+
+  const loadCode = React.useCallback(async () => {
+    setCodeError(false);
+    try {
+      const [w, t] = await Promise.all([fetch("/api/code/workspaces"), fetch("/api/code/tasks?limit=100")]);
+      if (!w.ok || !t.ok) throw new Error();
+      const wd = await w.json();
+      const td = await t.json();
+      setCodeWorkspaces(Array.isArray(wd.workspaces) ? wd.workspaces : []);
+      setCodeTasks(
+        (Array.isArray(td.tasks) ? td.tasks : []).map(
+          (x: Record<string, unknown>): CodeTaskRow => ({
+            id: String(x.id ?? ""),
+            workspacePath: String(x.workspacePath ?? ""),
+            workspaceName: String(x.workspaceName ?? ""),
+            title: String(x.title ?? ""),
+            status: String(x.status ?? ""),
+            createdAt: String(x.createdAt ?? ""),
+          })
+        )
+      );
+      setCodeLoaded(true);
+    } catch {
+      setCodeError(true);
+    }
+  }, []);
 
   React.useEffect(() => {
     if (mode !== "code") return;
-    let cancelled = false;
-    (async () => {
+    void loadCode();
+  }, [mode, loadCode]);
+
+  const toggleWorkspaceExpanded = (path: string) => {
+    setCodeExpanded((prev) => {
+      const next = { ...prev, [path]: !(prev[path] ?? true) };
       try {
-        const [w, t] = await Promise.all([fetch("/api/code/workspaces"), fetch("/api/tasks")]);
-        if (w.ok) {
-          const data = await w.json();
-          if (!cancelled) setCodeWorkspaces(Array.isArray(data.workspaces) ? data.workspaces : []);
-        }
-        if (t.ok) {
-          const data = await t.json();
-          if (!cancelled)
-            setCodeTasks(
-              (Array.isArray(data.tasks) ? data.tasks : [])
-                .map((x: { id?: string; name?: string }) => ({ id: String(x.id ?? ""), name: String(x.name ?? "") }))
-                .filter((x: { id: string; name: string }) => x.id && x.name)
-            );
-        }
+        localStorage.setItem(CODE_EXPANDED_KEY, JSON.stringify(next));
       } catch {}
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [mode]);
+      return next;
+    });
+  };
 
   // Code mode: group synced Juno Code sessions by their app-side workspace
   // (project folder), mirroring the app's own sidebar. Sessions without a
   // workspace fall through to the flat Sessions list below.
   const codeProjects = React.useMemo(() => {
-    if (mode !== "code") return [] as { name: string; sessions: ClientConversation[] }[];
+    if (mode !== "code") return [] as { name: string; path: string; sessions: ClientConversation[] }[];
     const sessionsFor = (w: { name: string; path: string }) =>
       filtered.filter(
         (c) => c.codeWorkspacePath === w.path || (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name)
@@ -306,17 +373,47 @@ export function AppSidebar({
     return [...projects, ...[...orphans.entries()].map(([name, sessions]) => ({ name, path: name, sessions }))];
   }, [filtered, mode, codeWorkspaces]);
 
+  // A grouped session lives ONLY in its workspace group — never duplicated in
+  // Pinned or the flat Sessions list (pinning still floats it inside its group,
+  // since the server sorts pinned-first).
+  const groupedSessionIds = React.useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of codeProjects) for (const c of p.sessions) ids.add(c.id);
+    return ids;
+  }, [codeProjects]);
 
-  const pinned = React.useMemo(() => filtered.filter((c) => c.pinned), [filtered]);
-  const groups = React.useMemo(() => {
-    const map = new Map<string, ClientConversation[]>();
-    for (const c of filtered.filter((c) => !c.pinned)) {
-      const g = dateGroup(c.lastMessageAt);
-      if (!map.has(g)) map.set(g, []);
-      map.get(g)!.push(c);
+  // Active/recent-failed remote tasks per workspace path AND name, so orphan
+  // groups (path unknown, name only) still pick up their tasks.
+  const codeTasksByWorkspace = React.useMemo(() => {
+    const byPath = new Map<string, CodeTaskRow[]>();
+    const byName = new Map<string, CodeTaskRow[]>();
+    const now = Date.now();
+    for (const t of codeTasks) {
+      const active =
+        ACTIVE_TASK_STATUSES.has(t.status) ||
+        (t.status === "failed" && now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
+      if (!active) continue;
+      if (t.workspacePath) {
+        if (!byPath.has(t.workspacePath)) byPath.set(t.workspacePath, []);
+        byPath.get(t.workspacePath)!.push(t);
+      }
+      const name = t.workspaceName.trim();
+      if (name) {
+        if (!byName.has(name)) byName.set(name, []);
+        byName.get(name)!.push(t);
+      }
     }
-    return Array.from(map.entries());
-  }, [filtered]);
+    return { byPath, byName };
+  }, [codeTasks]);
+
+  const pinned = React.useMemo(
+    () => filtered.filter((c) => c.pinned && !(mode === "code" && groupedSessionIds.has(c.id))),
+    [filtered, mode, groupedSessionIds]
+  );
+  const recents = React.useMemo(
+    () => filtered.filter((c) => !c.pinned && !(mode === "code" && groupedSessionIds.has(c.id))),
+    [filtered, mode, groupedSessionIds]
+  );
 
   const newChat = () => {
     router.push("/chat");
@@ -326,6 +423,56 @@ export function AppSidebar({
     setSidebarOpen(false);
   };
 
+  const newCodeSession = () => {
+    // W2b's new-session flow listens for this; the page is the fallback UI.
+    window.dispatchEvent(new CustomEvent("juno:code-new-session"));
+    router.push("/code/new");
+    setSidebarOpen(false);
+  };
+
+  const createFolder = async () => {
+    const name = newFolderDraft.trim();
+    if (!name || creatingFolder) return;
+    setCreatingFolder(true);
+    try {
+      const res = await fetch("/api/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFolders([...folders, { id: data.folder.id, name: data.folder.name }]);
+      toast.success("Folder created.");
+      setNewFolderOpen(false);
+      setNewFolderDraft("");
+    } catch {
+      toast.error("Could not create folder.");
+    } finally {
+      setCreatingFolder(false);
+    }
+  };
+
+  const renameFolder = async () => {
+    if (!renameFolderTarget || !renameFolderDraft.trim() || renamingFolder) return;
+    setRenamingFolder(true);
+    try {
+      const res = await fetch(`/api/folders/${renameFolderTarget.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: renameFolderDraft.trim() }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFolders(folders.map((f) => (f.id === data.folder.id ? { ...f, name: data.folder.name } : f)));
+      toast.success("Folder renamed.");
+      setRenameFolderTarget(null);
+    } catch {
+      toast.error("Could not rename folder.");
+    } finally {
+      setRenamingFolder(false);
+    }
+  };
 
   const deleteFolder = (id: string) => {
     setConfirm({
@@ -356,17 +503,35 @@ export function AppSidebar({
         >
           <PanelLeft className="h-[18px] w-[18px] text-muted-foreground transition-transform duration-fast group-hover:scale-110" />
         </button>
+        <div className="mt-3">
+          <ModeToggle mode={mode} onChange={switchMode} compact />
+        </div>
         <div className="mt-3 flex flex-col items-center gap-1">
-          <RailIcon onClick={newChat} label="New chat">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
-              <Plus className="h-4 w-4" />
-            </span>
-          </RailIcon>
-          <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-          <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-          <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-          <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-          <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+          {mode === "code" ? (
+            <>
+              <RailIcon onClick={newCodeSession} label="New session">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
+                  <Plus className="h-4 w-4" />
+                </span>
+              </RailIcon>
+              <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><GitPullRequest className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/connections" active={pathname === "/connections"} label="Plugins"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+            </>
+          ) : (
+            <>
+              <RailIcon onClick={newChat} label="New chat">
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
+                  <Plus className="h-4 w-4" />
+                </span>
+              </RailIcon>
+              <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+            </>
+          )}
           <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))} label="Search (⌘K)">
             <Search className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" />
           </RailIcon>
@@ -422,51 +587,45 @@ export function AppSidebar({
       {/* Home / Code — the same two surfaces as the Juno app. Code lists the
           Juno Code sessions synced from the Mac app. */}
       <div className="px-3 pb-2 pt-1">
-        <div className="grid grid-cols-2 gap-0.5 rounded-[10px] bg-muted/50 p-0.5" role="tablist" aria-label="Sidebar mode">
-          {(["home", "code"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              role="tab"
-              aria-selected={mode === value}
-              onClick={() => switchMode(value)}
-              className={cn(
-                "group flex items-center justify-center gap-1.5 rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors duration-base ease-out-soft",
-                mode === value
-                  ? "bg-sidebar-accent text-foreground"
-                  : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
-              )}
-            >
-              {value === "home" ? (
-                <Home className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
-              ) : (
-                <Code className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
-              )}
-              {value === "home" ? "Home" : "Code"}
-            </button>
-          ))}
-        </div>
+        <ModeToggle mode={mode} onChange={switchMode} />
       </div>
 
-      {/* Primary nav (Claude-style rows) — the same full set in Home and Code,
-          like the reference sidebars; only the session list below differs. */}
+      {/* Primary destinations — Home keeps the full chat nav; Code gets its own
+          compact set (only surfaces with a real data path behind them). */}
       <nav className="space-y-0.5 px-2 pt-1">
-        <NavRow
-          onClick={newChat}
-          icon={
-            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
-              <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
-            </span>
-          }
-          label="New chat"
-        />
-        <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
-        <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
-        <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
-        {mode === "home" && (
-          <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
+        {mode === "code" ? (
+          <>
+            <NavRow
+              onClick={newCodeSession}
+              icon={
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
+                  <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
+                </span>
+              }
+              label="New session"
+            />
+            <NavRow href="/code/pulls" active={pathname === "/code/pulls"} onClick={() => setSidebarOpen(false)} icon={<GitPullRequest className="h-[18px] w-[18px]" />} label="Pull requests" />
+            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Scheduled" />
+            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Plugins" />
+          </>
+        ) : (
+          <>
+            <NavRow
+              onClick={newChat}
+              icon={
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
+                  <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
+                </span>
+              }
+              label="New chat"
+            />
+            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
+            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
+            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
+            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
+            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
+          </>
         )}
-        <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
       </nav>
 
       <div className="pt-2" />
@@ -479,11 +638,24 @@ export function AppSidebar({
               key={f.id}
               active={folderFilter === f.id}
               onClick={() => setFolderFilter(f.id)}
+              onRename={() => {
+                setRenameFolderDraft(f.name);
+                setRenameFolderTarget(f);
+              }}
               onDelete={() => deleteFolder(f.id)}
             >
               {f.name}
             </FolderChip>
           ))}
+          <button
+            type="button"
+            onClick={() => setNewFolderOpen(true)}
+            aria-label="New folder"
+            title="New folder"
+            className="pressable inline-flex items-center rounded-full border px-2 py-1 text-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
+          >
+            <Plus className="h-3 w-3" />
+          </button>
         </div>
       )}
 
@@ -494,78 +666,137 @@ export function AppSidebar({
               <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
-            {query ? (
-              <>No {mode === "code" ? "code sessions" : "chats"} match “{query}”.</>
-            ) : mode === "code" ? (
-              <>No Juno Code sessions yet.<br />They sync here from the Juno app.</>
-            ) : (
-              <>No conversations yet.<br />Start one above.</>
-            )}
-          </p>
-        ) : (
+        ) : mode === "code" ? (
           <>
-            {mode === "code" && (
-              <Section label="Projects">
-                {codeProjects.length === 0 && (
-                  <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground/60">
-                    Your Juno Code projects appear here once the app syncs them.
-                  </p>
-                )}
-                {codeProjects.map((p) => (
-                  <div key={"path" in p ? (p as { path: string }).path : p.name}>
-                    <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground">
-                      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-transform duration-fast group-hover:scale-110">
-                        <Folder className="h-[16px] w-[16px]" />
-                      </span>
-                      <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      {p.sessions.map((c) => (
-                        <Link
-                          key={c.id}
-                          href={`/chat/${c.id}`}
-                          onClick={() => setSidebarOpen(false)}
-                          aria-current={pathname === `/chat/${c.id}` ? "page" : undefined}
-                          title={c.title}
-                          className={cn(
-                            "flex items-center rounded-md py-1 pl-11 pr-2 text-[13px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
-                            pathname === `/chat/${c.id}`
-                              ? "font-medium text-foreground"
-                              : "text-sidebar-foreground/70 hover:text-foreground"
-                          )}
-                        >
-                          <span className="min-w-0 flex-1 truncate">{c.title || "New session"}</span>
-                        </Link>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </Section>
-            )}
-            {((mode === "home" && sidebarProjects.length > 0) || pinned.length > 0) && (
+            {/* Projects always renders in Code mode — a mirror with zero
+                sessions still has workspaces worth showing (commit 4364b90). */}
+            <Section label="Projects">
+              {codeError ? (
+                <InlineErrorRow message="Couldn’t load your Code projects." onRetry={loadCode} />
+              ) : !codeLoaded ? (
+                <div className="space-y-1 px-1 pt-1">
+                  {[...Array(3)].map((_, i) => (
+                    <div key={i} className="skeleton h-8 rounded-lg" style={{ animationDelay: `${i * 60}ms` }} />
+                  ))}
+                </div>
+              ) : codeProjects.length === 0 ? (
+                <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground/60">
+                  Your Juno Code projects appear here once the app syncs them.
+                </p>
+              ) : (
+                codeProjects.map((p) => (
+                  <CodeWorkspaceGroup
+                    key={p.path}
+                    name={p.name}
+                    sessions={p.sessions}
+                    tasks={
+                      codeTasksByWorkspace.byPath.get(p.path) ?? codeTasksByWorkspace.byName.get(p.name) ?? []
+                    }
+                    expanded={codeExpanded[p.path] ?? true}
+                    onToggle={() => toggleWorkspaceExpanded(p.path)}
+                    activeConversationId={activeConversationId}
+                    activePath={pathname}
+                    renamingId={renamingId}
+                    setRenaming={setRenamingId}
+                    onUpdate={updateConversation}
+                    onRemove={removeConversation}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onRequestConfirm={setConfirm}
+                  />
+                ))
+              )}
+            </Section>
+            {pinned.length > 0 && (
               <Section
                 label="Pinned"
-                count={(mode === "home" ? sidebarProjects.length : 0) + pinned.length}
+                count={pinned.length}
                 collapsible
                 isCollapsed={starredCollapsed}
                 onToggleCollapse={toggleStarredCollapsed}
               >
-                {(mode === "home" ? sidebarProjects : []).map((p) => (
+                {pinned.map((c) => (
+                  <ConversationRow
+                    key={c.id}
+                    conversation={c}
+                    variant="code"
+                    active={c.id === activeConversationId}
+                    renaming={renamingId === c.id}
+                    setRenaming={setRenamingId}
+                    projects={projects}
+                    folders={folders}
+                    onNewFolder={() => setNewFolderOpen(true)}
+                    onUpdate={updateConversation}
+                    onRemove={removeConversation}
+                    onNavigate={() => setSidebarOpen(false)}
+                    onRequestConfirm={setConfirm}
+                  />
+                ))}
+              </Section>
+            )}
+            {recents.length > 0 && (
+              <Section
+                label="Sessions"
+                count={recents.length}
+                collapsible
+                isCollapsed={recentsCollapsed}
+                onToggleCollapse={toggleRecentsCollapsed}
+              >
+                {/* One flat list, newest first — sessions the app hasn't tied
+                    to a workspace. */}
+                <div className="mt-1 space-y-0.5">
+                  {recents.map((c) => (
+                    <ConversationRow
+                      key={c.id}
+                      conversation={c}
+                      variant="code"
+                      active={c.id === activeConversationId}
+                      renaming={renamingId === c.id}
+                      setRenaming={setRenamingId}
+                      projects={projects}
+                      folders={folders}
+                      onNewFolder={() => setNewFolderOpen(true)}
+                      onUpdate={updateConversation}
+                      onRemove={removeConversation}
+                      onNavigate={() => setSidebarOpen(false)}
+                      onRequestConfirm={setConfirm}
+                    />
+                  ))}
+                </div>
+              </Section>
+            )}
+          </>
+        ) : filtered.length === 0 && sidebarProjects.length === 0 ? (
+          <>
+            {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
+            <p className="px-3 py-8 text-center text-sm text-muted-foreground" aria-live="polite">
+              No conversations yet.<br />Start one above.
+            </p>
+          </>
+        ) : (
+          <>
+            {projectsError && <InlineErrorRow message="Couldn’t load your projects." onRetry={loadProjects} />}
+            {(sidebarProjects.length > 0 || pinned.length > 0) && (
+              <Section
+                label="Pinned"
+                count={sidebarProjects.length + pinned.length}
+                collapsible
+                isCollapsed={starredCollapsed}
+                onToggleCollapse={toggleStarredCollapsed}
+              >
+                {sidebarProjects.map((p) => (
                   <ProjectRow
                     key={p.id}
                     project={p}
                     chats={conversations.filter((c) => c.projectId === p.id)}
                     active={pathname === `/projects/${p.id}`}
                     activePath={pathname}
-                    starred={starredProjectIds.includes(p.id)}
+                    starred={p.starred}
                     onNavigate={() => setSidebarOpen(false)}
                     onNewChat={() => {
                       router.push(`/chat?project=${p.id}`);
                       setSidebarOpen(false);
                     }}
-                    onToggleStar={() => toggleProjectStar(p.id)}
+                    onToggleStar={() => toggleProjectStar(p)}
                     onRename={() => {
                       setRenameDraft(p.name);
                       setRenameTarget(p);
@@ -581,6 +812,8 @@ export function AppSidebar({
                     renaming={renamingId === c.id}
                     setRenaming={setRenamingId}
                     projects={projects}
+                    folders={folders}
+                    onNewFolder={() => setNewFolderOpen(true)}
                     onUpdate={updateConversation}
                     onRemove={removeConversation}
                     onNavigate={() => setSidebarOpen(false)}
@@ -589,49 +822,33 @@ export function AppSidebar({
                 ))}
               </Section>
             )}
-            {filtered.filter((c) => !c.pinned).length > 0 && (
+            {recents.length > 0 && (
               <Section
-                label={mode === "code" ? "Sessions" : "Recents"}
-                count={filtered.filter((c) => !c.pinned).length}
+                label="Recents"
+                count={recents.length}
                 collapsible
                 isCollapsed={recentsCollapsed}
                 onToggleCollapse={toggleRecentsCollapsed}
               >
                 {/* One flat list, newest first — no date-group headers. */}
                 <div className="mt-1 space-y-0.5">
-                    {groups
-                      .flatMap(([, items]) => items)
-                      .filter((c) => mode !== "code" || !c.codeWorkspaceName?.trim())
-                      .map((c) => (
-                      <ConversationRow
-                        key={c.id}
-                        conversation={c}
-                        active={c.id === activeConversationId}
-                        renaming={renamingId === c.id}
-                        setRenaming={setRenamingId}
-                        projects={projects}
-                        onUpdate={updateConversation}
-                        onRemove={removeConversation}
-                        onNavigate={() => setSidebarOpen(false)}
-                        onRequestConfirm={setConfirm}
-                      />
-                    ))}
+                  {recents.map((c) => (
+                    <ConversationRow
+                      key={c.id}
+                      conversation={c}
+                      active={c.id === activeConversationId}
+                      renaming={renamingId === c.id}
+                      setRenaming={setRenamingId}
+                      projects={projects}
+                      folders={folders}
+                      onNewFolder={() => setNewFolderOpen(true)}
+                      onUpdate={updateConversation}
+                      onRemove={removeConversation}
+                      onNavigate={() => setSidebarOpen(false)}
+                      onRequestConfirm={setConfirm}
+                    />
+                  ))}
                 </div>
-              </Section>
-            )}
-            {mode === "code" && codeTasks.length > 0 && (
-              <Section label="Tasks">
-                {codeTasks.slice(0, 6).map((t) => (
-                  <Link
-                    key={t.id}
-                    href="/tasks"
-                    onClick={() => setSidebarOpen(false)}
-                    title={t.name}
-                    className="flex items-center rounded-md px-2.5 py-1 text-[13px] text-sidebar-foreground/70 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{t.name}</span>
-                  </Link>
-                ))}
               </Section>
             )}
           </>
@@ -643,6 +860,74 @@ export function AppSidebar({
       </div>
 
       {/* New-folder dialog (replaces window.prompt) */}
+      <Dialog
+        open={newFolderOpen}
+        onOpenChange={(o) => {
+          setNewFolderOpen(o);
+          if (!o) setNewFolderDraft("");
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-serif">New folder</DialogTitle>
+            <DialogDescription>Folders group conversations — filter by one from the sidebar.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="sidebar-new-folder">Folder name</Label>
+            <Input
+              id="sidebar-new-folder"
+              value={newFolderDraft}
+              onChange={(e) => setNewFolderDraft(e.target.value)}
+              placeholder="e.g. Research"
+              autoFocus
+              maxLength={60}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") createFolder();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNewFolderOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={createFolder} disabled={creatingFolder || !newFolderDraft.trim()}>
+              {creatingFolder ? "Creating…" : "Create folder"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Folder rename dialog */}
+      <Dialog open={renameFolderTarget !== null} onOpenChange={(o) => !o && setRenameFolderTarget(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-serif">Rename folder</DialogTitle>
+            <DialogDescription>Change the name of this folder.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="sidebar-rename-folder">Folder name</Label>
+            <Input
+              id="sidebar-rename-folder"
+              value={renameFolderDraft}
+              onChange={(e) => setRenameFolderDraft(e.target.value)}
+              placeholder="New folder name"
+              autoFocus
+              maxLength={60}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") renameFolder();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameFolderTarget(null)}>
+              Cancel
+            </Button>
+            <Button onClick={renameFolder} disabled={renamingFolder || !renameFolderDraft.trim()}>
+              {renamingFolder ? "Renaming…" : "Rename folder"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm dialog (replaces window.confirm) */}
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
@@ -702,6 +987,89 @@ export function AppSidebar({
   );
 }
 
+/** Home/Code switch. Radiogroup semantics (selection follows focus, arrow keys
+ *  move it) rather than tabs — the two "panels" are whole sidebar layouts, not
+ *  addressable tabpanels. */
+function ModeToggle({
+  mode,
+  onChange,
+  compact,
+}: {
+  mode: "home" | "code";
+  onChange: (mode: "home" | "code") => void;
+  compact?: boolean;
+}) {
+  const refs = React.useRef<Partial<Record<"home" | "code", HTMLButtonElement | null>>>({});
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
+    e.preventDefault();
+    const next = mode === "home" ? "code" : "home";
+    onChange(next);
+    refs.current[next]?.focus();
+  };
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Sidebar mode"
+      className={cn(
+        "gap-0.5 rounded-[10px] bg-muted/50 p-0.5",
+        compact ? "flex flex-col items-center" : "grid grid-cols-2"
+      )}
+    >
+      {(["home", "code"] as const).map((value) => (
+        <button
+          key={value}
+          ref={(el) => {
+            refs.current[value] = el;
+          }}
+          type="button"
+          role="radio"
+          aria-checked={mode === value}
+          aria-label={compact ? (value === "home" ? "Home" : "Code") : undefined}
+          title={compact ? (value === "home" ? "Home" : "Code") : undefined}
+          tabIndex={mode === value ? 0 : -1}
+          onClick={() => onChange(value)}
+          onKeyDown={handleKeyDown}
+          className={cn(
+            "group flex items-center justify-center rounded-[8px] font-medium transition-colors duration-base ease-out-soft",
+            compact ? "h-8 w-8" : "gap-1.5 px-3 py-1 text-[13px]",
+            mode === value
+              ? "bg-sidebar-accent text-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
+          )}
+        >
+          {value === "home" ? (
+            <Home className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
+          ) : (
+            <Code className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
+          )}
+          {!compact && (value === "home" ? "Home" : "Code")}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Compact in-list failure row + retry — the sidebar-density version of the
+ *  tasks page's error card, so a failed fetch never masquerades as empty. */
+function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="mx-0.5 my-1 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-2 text-[12.5px] text-destructive">
+      <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1">{message}</span>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="pressable flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors duration-fast hover:bg-destructive/10"
+      >
+        <RefreshCw className="h-3 w-3" aria-hidden="true" /> Retry
+      </button>
+    </div>
+  );
+}
+
 function RailIcon({
   href,
   onClick,
@@ -737,7 +1105,7 @@ function RailIcon({
 
 /** Accent bar on the active row — scales/fades per row, so moving the active
  *  item reads as the old bar retracting while the new one grows in. */
-function ActiveIndicator({ active }: { active?: boolean }) {
+function ActiveIndicator({ active: _active }: { active?: boolean }) {
   return null;
 }
 
@@ -785,7 +1153,7 @@ function NavRow({
 
 function Section({
   label,
-  count,
+  count: _count,
   icon: Icon,
   children,
   collapsible,
@@ -863,21 +1231,62 @@ function Section({
 function FolderChip({
   active,
   onClick,
+  onRename,
   onDelete,
   children,
 }: {
   active: boolean;
   onClick: () => void;
+  onRename?: () => void;
   onDelete?: () => void;
   children: React.ReactNode;
 }) {
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const hasMenu = !!(onRename || onDelete);
+
   return (
     <span
+      // Right-click (or the keyboard context-menu key on the focused chip)
+      // opens rename/delete. The menu anchors to a hidden trigger so the
+      // chip's own filter button keeps plain click/Enter behavior.
+      onContextMenu={
+        hasMenu
+          ? (e) => {
+              e.preventDefault();
+              setMenuOpen(true);
+            }
+          : undefined
+      }
       className={cn(
-        "group/chip pressable inline-flex items-center rounded-full border text-xs",
+        "group/chip pressable relative inline-flex items-center rounded-full border text-xs",
         active ? "border-primary/40 bg-primary/10 text-primary" : "hover:bg-sidebar-accent"
       )}
     >
+      {hasMenu && (
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <span aria-hidden tabIndex={-1} className="pointer-events-none absolute left-0 top-full h-0 w-0" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-44 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+            {onRename && (
+              <DropdownMenuItem onSelect={onRename}>
+                <Pencil className="h-4 w-4" /> Rename
+              </DropdownMenuItem>
+            )}
+            {onDelete && (
+              <>
+                {onRename && <DropdownMenuSeparator />}
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
       <button onClick={onClick} aria-pressed={active} className={cn("inline-flex items-center gap-1 py-1 pl-2.5", onDelete ? "pr-1" : "pr-2.5")}>
         <Folder className="h-3 w-3" /> {children}
       </button>
@@ -897,26 +1306,141 @@ function FolderChip({
   );
 }
 
-function ConversationRow({
-  conversation,
-  active,
-  renaming,
+/** A Code-mode workspace (project folder) with its sessions and any remote
+ *  tasks nested under a real disclosure. */
+function CodeWorkspaceGroup({
+  name,
+  sessions,
+  tasks,
+  expanded,
+  onToggle,
+  activeConversationId,
+  activePath,
+  renamingId,
   setRenaming,
-  projects,
   onUpdate,
   onRemove,
   onNavigate,
   onRequestConfirm,
 }: {
-  conversation: ClientConversation;
-  active: boolean;
-  renaming: boolean;
+  name: string;
+  sessions: ClientConversation[];
+  tasks: CodeTaskRow[];
+  expanded: boolean;
+  onToggle: () => void;
+  activeConversationId: string | null;
+  activePath: string;
+  renamingId: string | null;
   setRenaming: (id: string | null) => void;
-  projects: { id: string; name: string }[];
   onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
   onRemove: (id: string) => void;
   onNavigate: () => void;
   onRequestConfirm: (c: ConfirmState) => void;
+}) {
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
+        className="group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
+      >
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-transform duration-fast group-hover:scale-110">
+          <Folder className="h-[16px] w-[16px]" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-fast ease-out-soft",
+            expanded && "rotate-90"
+          )}
+        />
+      </button>
+      {expanded && (
+        <div className="mt-0.5 flex flex-col gap-0.5">
+          {sessions.length === 0 && tasks.length === 0 && (
+            <p className="py-1 pl-6 pr-2 text-[12.5px] leading-5 text-muted-foreground/60">No sessions yet.</p>
+          )}
+          {sessions.map((c) => (
+            <ConversationRow
+              key={c.id}
+              conversation={c}
+              variant="code"
+              nested
+              active={c.id === activeConversationId || activePath === `/chat/${c.id}`}
+              renaming={renamingId === c.id}
+              setRenaming={setRenaming}
+              onUpdate={onUpdate}
+              onRemove={onRemove}
+              onNavigate={onNavigate}
+              onRequestConfirm={onRequestConfirm}
+            />
+          ))}
+          {tasks.map((t) => (
+            <CodeTaskStatusRow key={t.id} task={t} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
+  queued: { label: "Queued", dot: "bg-muted-foreground/50" },
+  running: { label: "Running", dot: "bg-success motion-safe:animate-pulse" },
+  awaiting_approval: { label: "Approval", dot: "bg-warning" },
+  failed: { label: "Failed", dot: "bg-destructive" },
+};
+
+/** A remote Juno Code task, shown as a plain status readout. CodeTask has no
+ *  conversationId, so these can't deep-link to a session — a row that went
+ *  nowhere would be a dead button, so it's deliberately non-interactive. */
+function CodeTaskStatusRow({ task }: { task: CodeTaskRow }) {
+  const meta = TASK_STATUS_META[task.status];
+  if (!meta) return null;
+  return (
+    <div className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
+      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
+      <span className="min-w-0 flex-1 truncate">{task.title}</span>
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+        {meta.label}
+      </span>
+    </div>
+  );
+}
+
+function ConversationRow({
+  conversation,
+  active,
+  renaming,
+  setRenaming,
+  projects = [],
+  folders = [],
+  onNewFolder,
+  onUpdate,
+  onRemove,
+  onNavigate,
+  onRequestConfirm,
+  variant = "chat",
+  nested,
+}: {
+  conversation: ClientConversation;
+  active: boolean;
+  renaming: boolean;
+  setRenaming: (id: string | null) => void;
+  /** Only read by the "chat" variant's move submenus. */
+  projects?: { id: string; name: string }[];
+  folders?: ClientFolder[];
+  onNewFolder?: () => void;
+  onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
+  onRemove: (id: string) => void;
+  onNavigate: () => void;
+  onRequestConfirm: (c: ConfirmState) => void;
+  /** "code" trims the menu to session actions (no project/folder moves). */
+  variant?: "chat" | "code";
+  /** Indented under a parent row (Code workspace groups). */
+  nested?: boolean;
 }) {
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
@@ -940,9 +1464,9 @@ function ConversationRow({
 
   const remove = () => {
     onRequestConfirm({
-      title: "Delete this conversation?",
+      title: variant === "code" ? "Delete this session?" : "Delete this conversation?",
       description: "This permanently removes the conversation and its messages. This can't be undone.",
-      confirmLabel: "Delete chat",
+      confirmLabel: variant === "code" ? "Delete session" : "Delete chat",
       onConfirm: async () => {
         onRemove(conversation.id);
         const res = await fetch(`/api/conversations/${conversation.id}`, { method: "DELETE" });
@@ -962,7 +1486,7 @@ function ConversationRow({
 
   if (renaming) {
     return (
-      <div className="flex items-center gap-1 pl-2 pr-1 py-1">
+      <div className={cn("flex items-center gap-1 pl-2 pr-1 py-1", nested && "pl-6")}>
         <Input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -985,6 +1509,7 @@ function ConversationRow({
     <div
       className={cn(
         "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
+        nested && "pl-6",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
@@ -994,22 +1519,23 @@ function ConversationRow({
         onClick={onNavigate}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 hover:text-foreground",
+          "flex min-w-0 flex-1 items-center gap-2.5 py-1.5 font-medium text-sidebar-foreground/90 hover:text-foreground",
+          nested ? "text-[13px]" : "text-[14px]",
           active && "font-semibold text-foreground"
         )}
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-[color,transform] duration-fast group-hover:scale-110 group-hover:text-foreground">
-          <MessageCircle className="h-[15px] w-[15px]" />
+          <MessageCircle className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
-        <AnimatedTitle title={conversation.title} className="min-w-0 flex-1" />
+        <AnimatedTitle title={conversation.title || (variant === "code" ? "New session" : "New chat")} className="min-w-0 flex-1" />
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
-            aria-label="Conversation options"
+            aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
             <MoreVertical className="h-4 w-4 transition-transform duration-fast group-hover/kebab:scale-110" />
           </button>
@@ -1027,27 +1553,51 @@ function ConversationRow({
           >
             <Pencil className="h-4 w-4" /> Rename
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Box className="h-4 w-4" /> Add to project
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
-              <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
-                {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
-              </DropdownMenuItem>
-              {projects.map((p) => (
-                <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                  {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
-                  <span className="truncate">{p.name}</span>
-                </DropdownMenuItem>
-              ))}
+          {variant === "chat" && (
+            <>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => router.push("/projects")}>
-                <Plus className="h-4 w-4" /> New project…
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Box className="h-4 w-4" /> Add to project
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+                  <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
+                    {conversation.projectId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No project
+                  </DropdownMenuItem>
+                  {projects.map((p) => (
+                    <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
+                      {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
+                      <span className="truncate">{p.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={() => router.push("/projects")}>
+                    <Plus className="h-4 w-4" /> New project…
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger>
+                  <Folder className="h-4 w-4" /> Move to folder
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
+                  <DropdownMenuItem onSelect={() => patch({ folderId: null })}>
+                    {conversation.folderId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No folder
+                  </DropdownMenuItem>
+                  {folders.map((f) => (
+                    <DropdownMenuItem key={f.id} onSelect={() => patch({ folderId: f.id })}>
+                      {conversation.folderId === f.id ? <Check className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
+                      <span className="truncate">{f.name}</span>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onSelect={onNewFolder}>
+                    <Plus className="h-4 w-4" /> New folder…
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            </>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onSelect={remove}

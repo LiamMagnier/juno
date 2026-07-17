@@ -347,6 +347,9 @@ model Project {
   name         String   @default("Untitled project")
   nameSource   String   @default("default")
   instructions String   @default("") @db.Text
+  // Starred projects surface in the sidebar's Pinned section. Server-side so
+  // stars follow the account across devices (was localStorage-only).
+  starred      Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 

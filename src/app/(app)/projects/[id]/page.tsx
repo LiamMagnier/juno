@@ -54,7 +54,7 @@ import type { ReasoningEffort } from "@/types/chat";
 const INSTRUCTIONS_LIMIT = 20_000;
 
 interface Detail {
-  project: { id: string; name: string; instructions: string; updatedAt: string };
+  project: { id: string; name: string; instructions: string; starred: boolean; updatedAt: string };
   conversations: { id: string; title: string; lastMessageAt: string; pinned: boolean }[];
   files: { id: string; fileName: string; mimeType: string; size: number; url: string; kind: string }[];
 }
@@ -84,7 +84,7 @@ export default function ProjectDetailPage() {
   const [dragging, setDragging] = React.useState(false);
   const dragDepth = React.useRef(0);
 
-  // Mocks / client-side project star
+  // Server-backed project star (Project.starred), toggled optimistically.
   const [isStarred, setIsStarred] = React.useState(false);
   // User memories state
   const [memories, setMemories] = React.useState<{ id: string; content: string }[]>([]);
@@ -148,26 +148,25 @@ export default function ProjectDetailPage() {
   }, [load]);
 
   React.useEffect(() => {
-    if (data?.project.id) {
-      const starred = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-      setIsStarred(starred.includes(data.project.id));
-    }
-  }, [data?.project.id]);
+    if (data?.project.id) setIsStarred(data.project.starred);
+  }, [data?.project.id, data?.project.starred]);
 
-  const toggleProjectStar = () => {
+  const toggleProjectStar = async () => {
     if (!data?.project.id) return;
-    const starred = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-    let nextStarred;
-    if (starred.includes(data.project.id)) {
-      nextStarred = starred.filter((pId: string) => pId !== data.project.id);
-      setIsStarred(false);
-      toast.success("Project unstarred.");
-    } else {
-      nextStarred = [...starred, data.project.id];
-      setIsStarred(true);
-      toast.success("Project starred!");
+    const next = !isStarred;
+    setIsStarred(next);
+    const r = await fetch(`/api/projects/${data.project.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ starred: next }),
+    }).catch(() => null);
+    if (!r || !r.ok) {
+      setIsStarred(!next);
+      toast.error("Could not update the project.");
+      return;
     }
-    localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
+    setData((cur) => (cur ? { ...cur, project: { ...cur.project, starred: next } } : cur));
+    toast.success(next ? "Project starred!" : "Project unstarred.");
     window.dispatchEvent(new CustomEvent("starred:sync"));
   };
 
@@ -361,9 +360,6 @@ export default function ProjectDetailPage() {
   const deleteProject = async () => {
     const r = await fetch(`/api/projects/${id}`, { method: "DELETE" });
     if (r.ok) {
-      const starred = JSON.parse(localStorage.getItem("starredProjects") || "[]");
-      const nextStarred = starred.filter((pId: string) => pId !== id);
-      localStorage.setItem("starredProjects", JSON.stringify(nextStarred));
       window.dispatchEvent(new CustomEvent("projects:sync"));
       router.push("/projects");
     }

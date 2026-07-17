@@ -28,6 +28,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       id: project.id,
       name: project.name,
       instructions: project.instructions,
+      starred: project.starred,
       updatedAt: project.updatedAt.toISOString(),
     },
     conversations: project.conversations.map((c) => ({
@@ -43,6 +44,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   instructions: z.string().max(20_000).optional(),
+  starred: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -29,6 +29,7 @@ export async function GET() {
         id: p.id,
         name: p.name,
         instructions: p.instructions,
+        starred: p.starred,
         updatedAt: p.updatedAt.toISOString(),
         conversationCount: p._count.conversations,
         fileCount: p._count.files,
