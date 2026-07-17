@@ -216,13 +216,17 @@ const config: Config = {
           "100%": { opacity: "0", transform: "translateY(-4px) scale(0.985)" },
         },
         // Overlay enter/exit pair — sized for Radix data-[state=open/closed].
+        // --pop-shift makes the 4px drift origin-aware: .origin-popper layers
+        // flip it per data-side (globals.css) so a menu always emerges from its
+        // trigger — a bottom-anchored menu rises 4px, a top-anchored one settles
+        // 4px down. Non-popper users of animate-pop-in keep the 4px-rise default.
         "pop-in": {
-          from: { opacity: "0", transform: "translateY(4px) scale(0.96)" },
+          from: { opacity: "0", transform: "translateY(var(--pop-shift, 4px)) scale(0.96)" },
           to: { opacity: "1", transform: "translateY(0) scale(1)" },
         },
         "pop-out": {
           from: { opacity: "1", transform: "translateY(0) scale(1)" },
-          to: { opacity: "0", transform: "translateY(4px) scale(0.96)" },
+          to: { opacity: "0", transform: "translateY(var(--pop-shift, 4px)) scale(0.96)" },
         },
         "fade-out": {
           from: { opacity: "1" },
@@ -298,7 +302,9 @@ const config: Config = {
         "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",
         // Floating layers: data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out
         // (pair with .origin-popper on Radix popper content so scale anchors to the trigger).
-        "pop-in": "pop-in 180ms cubic-bezier(0.16, 1, 0.3, 1) both",
+        // Enter on ease-out-soft — out-expo front-loaded so hard here that the
+        // pop read as an instant snap; exit reverses faster, as leaving should.
+        "pop-in": "pop-in 180ms cubic-bezier(0.33, 1, 0.68, 1) both",
         "pop-out": "pop-out 120ms cubic-bezier(0.33, 1, 0.68, 1) both",
         // Route changes (page-transition.tsx). Reuses the opacity-only `fade-in`
         // keyframe on purpose — a transform here would create a containing block

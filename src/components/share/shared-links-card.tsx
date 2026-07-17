@@ -124,7 +124,7 @@ export function SharedLinksCard() {
                 size="sm"
                 onClick={() => revoke(share)}
                 disabled={revokingId === share.id}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                className="text-destructive danger-hover"
               >
                 {revokingId === share.id ? "Revoking…" : "Revoke"}
               </Button>

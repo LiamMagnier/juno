@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  ArrowUpRight,
   Code2,
   Eye,
   FileCode2,
@@ -140,6 +141,9 @@ function RuntimePreview({
   );
 }
 
+/** One geometry for every control in the header's segmented group. */
+const SEGMENT_CLASS = "h-7 gap-1.5 rounded-[10px] px-2.5 text-xs font-medium active:scale-[0.97] [&_svg]:size-3.5";
+
 export function ArtifactInlineCard({
   title,
   type,
@@ -160,21 +164,13 @@ export function ArtifactInlineCard({
   const resolvedContent = content ?? "";
   const hasContent = resolvedContent.trim().length > 0;
   const inlinePreview = hasContent && (rt.mode !== "none" || type === "MARKDOWN");
-  // Sandbox previews render on a white browser canvas → frame them as a window.
+  // Sandbox previews render on a white browser canvas; markdown stays on ours.
   const isSandboxPreview = type !== "MARKDOWN";
   const hasConsole = rt.mode === "web";
   const [view, setView] = React.useState<ArtifactView>(inlinePreview ? "preview" : "code");
   const [runNonce, setRunNonce] = React.useState(0);
   const [consoleEntries, setConsoleEntries] = React.useState<ConsoleEntry[]>([]);
   const [runStatus, setRunStatus] = React.useState<RunStatus>("idle");
-  const statusTone =
-    runStatus === "error"
-      ? "text-destructive"
-      : runStatus === "done"
-        ? "text-success"
-        : runStatus === "running" || runStatus === "loading"
-          ? "text-source"
-          : "text-muted-foreground";
 
   React.useEffect(() => {
     setRunStatus("idle");
@@ -193,54 +189,116 @@ export function ArtifactInlineCard({
   const showPreview = inlinePreview && view === "preview";
   const showConsole = hasConsole && view === "console";
   const sourceLanguage = rt.lang || language || type.toLowerCase();
+  const lineCount = React.useMemo(
+    () => (hasContent ? resolvedContent.replace(/\n$/, "").split("\n").length : 0),
+    [hasContent, resolvedContent]
+  );
+
+  // One quiet status word, cross-faded on change (the span re-mounts via key).
+  // "Writing" while the model streams; then whatever the sandbox reports.
+  const status: { label: string; tone: string; live?: boolean } | null = streaming
+    ? { label: "Writing", tone: "text-primary", live: true }
+    : runStatus === "error"
+      ? { label: "Error", tone: "text-destructive" }
+      : runStatus === "running" || runStatus === "loading"
+        ? { label: runStatus === "running" ? "Running" : "Loading", tone: "text-source", live: true }
+        : runStatus === "done"
+          ? { label: rt.mode === "console" ? "Done" : "Live", tone: "text-success" }
+          : null;
 
   const handleConsole = React.useCallback((entry: ConsoleEntry) => {
     setConsoleEntries((prev) => (prev.length > 150 ? [...prev.slice(-120), entry] : [...prev, entry]));
   }, []);
+
+  // Identity block: icon tile + title + quiet metadata. When the canvas is
+  // available the whole block is a button (a second, larger open target) and an
+  // arrow hint rises in on hover as the open affordance.
+  const identity = (
+    <>
+      <span
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-primary/15 bg-primary/10 text-primary shadow-soft",
+          "transition-transform duration-base ease-out-soft",
+          onOpen && "group-hover/art:scale-105"
+        )}
+      >
+        <Icon className={cn("size-4", streaming && "motion-safe:animate-icon-breathe")} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-semibold leading-5">{title || "Untitled artifact"}</span>
+          {onOpen && (
+            <ArrowUpRight
+              aria-hidden
+              className={cn(
+                "size-3.5 shrink-0 text-primary opacity-0 transition-all duration-base ease-out-soft",
+                "translate-y-0.5 group-hover/art:translate-y-0 group-hover/art:opacity-100 group-focus-within/art:translate-y-0 group-focus-within/art:opacity-100"
+              )}
+            />
+          )}
+        </span>
+        <span className="flex min-w-0 items-center gap-2 pt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <span className="truncate">{rt.label}</span>
+          {lineCount > 0 && (
+            <>
+              <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+              <span className="shrink-0 normal-case tracking-normal tabular-nums">{lineCount} lines</span>
+            </>
+          )}
+          {status && (
+            <>
+              <span aria-hidden className="size-1 shrink-0 rounded-full bg-border" />
+              <span
+                key={status.label}
+                className={cn("inline-flex shrink-0 items-center gap-1 motion-safe:animate-fade-in", status.tone)}
+              >
+                <span aria-hidden className={cn("size-1.5 rounded-full bg-current", status.live && "motion-safe:animate-pulse")} />
+                {status.label}
+              </span>
+            </>
+          )}
+        </span>
+      </span>
+    </>
+  );
 
   return (
     <article
       aria-busy={streaming || undefined}
       className={cn(
         "group/art my-5 w-full max-w-[820px] overflow-hidden rounded-[22px] border border-border/60 bg-card/55 shadow-soft",
+        "transition-[border-color,box-shadow,transform] duration-base ease-out-soft",
+        "hover:border-primary/30 hover:shadow-float motion-safe:hover:-translate-y-0.5",
         "motion-safe:animate-rise-in [animation-fill-mode:backwards]"
       )}
     >
-      <header className="flex flex-col gap-3 border-b border-border/60 bg-card/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
-        <span className="flex min-w-0 flex-1 items-center gap-2.5">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-[12px] border border-primary/15 bg-primary/10 text-primary shadow-soft">
-            <Icon className="size-4" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold leading-5">{title || "Untitled artifact"}</span>
-            <span className="flex items-center gap-2 pt-0.5 text-[11px] text-muted-foreground">
-              <span className="font-mono uppercase">{rt.label}</span>
-              <span aria-hidden className="size-1 rounded-full bg-border" />
-              <span className={cn("inline-flex items-center gap-1", statusTone)}>
-                <span
-                  aria-hidden
-                  className={cn(
-                    "size-1.5 rounded-full bg-current",
-                    (runStatus === "running" || runStatus === "loading" || streaming) && "motion-safe:animate-pulse"
-                  )}
-                />
-                {streaming ? "writing" : showPreview && runStatus !== "idle" ? runStatus : view}
-              </span>
-            </span>
-          </span>
-        </span>
-        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5 self-end sm:self-auto">
+      <header className="flex flex-col gap-3 bg-card/70 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+        {onOpen ? (
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-label={`Open ${title || "artifact"} in canvas`}
+            className="-m-1.5 flex min-w-0 flex-1 items-center gap-2.5 rounded-[14px] p-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            {identity}
+          </button>
+        ) : (
+          <span className="flex min-w-0 flex-1 items-center gap-2.5">{identity}</span>
+        )}
+
+        {/* Views + Open share one segmented group so every control has the same geometry. */}
+        <div className="field-well flex shrink-0 items-center self-end rounded-[14px] bg-muted/60 p-1 sm:self-auto">
           <Tabs value={view} onValueChange={(value) => setView(value as ArtifactView)}>
-            <TabsList className="h-9 rounded-[12px] bg-muted/60 p-1">
+            <TabsList className="h-7 gap-0.5 rounded-none bg-transparent p-0 shadow-none">
               {inlinePreview && (
-                <TabsTrigger value="preview" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
-                  <Eye className="size-4" aria-hidden />
+                <TabsTrigger value="preview" className={SEGMENT_CLASS}>
+                  <Eye aria-hidden />
                   Preview
                 </TabsTrigger>
               )}
               {hasConsole && (
-                <TabsTrigger value="console" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
-                  <Terminal className="size-4" aria-hidden />
+                <TabsTrigger value="console" className={SEGMENT_CLASS}>
+                  <Terminal aria-hidden />
                   Console
                   {consoleEntries.length > 0 && (
                     <span className="ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[9px] text-muted-foreground">
@@ -249,46 +307,51 @@ export function ArtifactInlineCard({
                   )}
                 </TabsTrigger>
               )}
-              <TabsTrigger value="code" className="h-7 gap-1.5 rounded-[9px] px-2.5 text-xs">
-                <Code2 className="size-4" aria-hidden />
+              <TabsTrigger value="code" className={SEGMENT_CLASS}>
+                <Code2 aria-hidden />
                 Code
               </TabsTrigger>
             </TabsList>
           </Tabs>
+          <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-border/70" />
           <button
             type="button"
             onClick={onOpen}
             disabled={!onOpen}
             aria-label="Open in canvas"
             className={cn(
-              "group/open inline-flex h-9 items-center gap-1.5 rounded-[12px] border border-border/70 bg-card px-3 text-xs font-medium text-foreground/85 shadow-soft",
-              "transition-all duration-base ease-out-soft hover:-translate-y-px hover:border-primary/40 hover:text-foreground hover:shadow-[0_4px_14px_-6px_hsl(var(--primary)/0.5)]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1 focus-visible:ring-offset-background",
+              "pressable inline-flex shrink-0 items-center justify-center whitespace-nowrap text-muted-foreground",
+              SEGMENT_CLASS,
+              "hover:bg-card hover:text-primary hover:shadow-pop group-hover/art:text-primary",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
               "disabled:pointer-events-none disabled:opacity-40"
             )}
           >
-            <PanelRightOpen
-              className="size-4 text-muted-foreground transition-colors duration-base ease-out-soft group-hover/open:text-primary"
-              aria-hidden
-            />
+            <PanelRightOpen aria-hidden />
             Open
           </button>
         </div>
       </header>
 
+      {/* Hairline divider doubles as the progress track: a soft primary band
+          sweeps across it while the source streams in. */}
+      <div aria-hidden className="relative h-px overflow-hidden bg-border/60">
+        {streaming && (
+          <span className="absolute inset-y-0 left-0 hidden w-1/3 bg-gradient-to-r from-transparent via-primary to-transparent motion-safe:block motion-safe:animate-gen-sweep" />
+        )}
+      </div>
+
       {hasContent ? (
         showPreview ? (
           <div className="bg-[hsl(var(--muted)/0.3)] p-2.5 sm:p-3">
-            {/* Live preview framed as a window so the white canvas reads intentional. */}
-            <div className="relative overflow-hidden rounded-[11px] border border-border/70 shadow-[0_2px_10px_-3px_hsl(var(--foreground)/0.14)]">
-              {isSandboxPreview && (
-                <div className="flex items-center gap-1.5 border-b border-black/[0.06] bg-[#f7f7f8] px-3 py-2">
-                  <span className="size-2.5 rounded-full bg-[#ff5f57]" />
-                  <span className="size-2.5 rounded-full bg-[#febc2e]" />
-                  <span className="size-2.5 rounded-full bg-[#28c840]" />
-                  <span className="ml-1.5 truncate font-mono text-[11px] tracking-tight text-black/40">{rt.label.toLowerCase()} preview</span>
-                </div>
+            {/* Live preview on a simple hairline-framed pane — the muted mat
+                around it makes the white sandbox canvas read intentional. */}
+            <div
+              className={cn(
+                "overflow-hidden rounded-[12px] border border-border/70 shadow-[0_2px_10px_-3px_hsl(var(--foreground)/0.14)]",
+                isSandboxPreview ? "bg-white" : "bg-background/70"
               )}
+            >
               <div className="h-[min(44vh,360px)] min-h-[240px] overflow-hidden">
                 <RuntimePreview
                   type={type}

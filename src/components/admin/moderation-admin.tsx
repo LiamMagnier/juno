@@ -332,7 +332,7 @@ export function ModerationAdmin() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-8 gap-1.5 text-destructive hover:text-destructive"
+                                className="h-8 gap-1.5 text-destructive danger-hover"
                                 onClick={() => {
                                   setBanReason(`${f.category}: ${f.detail}`.slice(0, 500));
                                   setBanTarget(f);

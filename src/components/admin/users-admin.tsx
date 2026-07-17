@@ -367,7 +367,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                                 </DropdownMenuItem>
                               ) : (
                                 <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
+                                  className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
                                   onSelect={() => {
                                     setBanReason("");
                                     setBanTarget(u);
@@ -379,7 +379,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                className="text-destructive focus:text-destructive"
+                                className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
                                 onSelect={() => {
                                   setDeleteConfirm("");
                                   setDeleteTarget(u);

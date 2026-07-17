@@ -680,7 +680,7 @@ export function AnnouncementsAdmin() {
                             <Edit3 className="h-3.5 w-3.5" />
                             Edit
                           </Button>
-                          <Button variant="ghost" size="sm" className="gap-1.5 text-destructive" onClick={() => setDeleteTarget(item)}>
+                          <Button variant="ghost" size="sm" className="gap-1.5 text-destructive danger-hover" onClick={() => setDeleteTarget(item)}>
                             <Trash2 className="h-3.5 w-3.5" />
                             Delete
                           </Button>

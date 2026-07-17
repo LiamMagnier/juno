@@ -351,23 +351,23 @@ export function AppSidebar({
           onClick={onToggleCollapse}
           title="Expand sidebar"
           aria-label="Expand sidebar"
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast hover:scale-105 active:scale-95 hover:bg-sidebar-accent"
+          className="group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast active:scale-95 hover:bg-sidebar-accent"
         >
-          <PanelLeft className="h-[18px] w-[18px] text-muted-foreground" />
+          <PanelLeft className="h-[18px] w-[18px] text-muted-foreground transition-transform duration-fast group-hover:scale-110" />
         </button>
         <div className="mt-3 flex flex-col items-center gap-1">
           <RailIcon onClick={newChat} label="New chat">
-            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast hover:scale-105 active:scale-95">
+            <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
               <Plus className="h-4 w-4" />
             </span>
           </RailIcon>
-          <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
-          <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
-          <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
-          <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
-          <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast hover:scale-110" /></RailIcon>
+          <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+          <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+          <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+          <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+          <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
           <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))} label="Search (⌘K)">
-            <Search className="h-[18px] w-[18px]" />
+            <Search className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" />
           </RailIcon>
         </div>
         <div className="mt-auto">
@@ -378,7 +378,9 @@ export function AppSidebar({
   }
 
   return (
-    <div key="expanded" className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground motion-safe:animate-fade-in md:w-[280px]">
+    // Desktop width rides the shell's --juno-sidebar-width (user-resizable);
+    // keeping it on the inner column preserves the collapse clip-reveal.
+    <div key="expanded" className="flex h-full w-full flex-col bg-sidebar text-sidebar-foreground motion-safe:animate-fade-in md:w-[var(--juno-sidebar-width,280px)]">
       {/* pb-2 (+ the nav's pt-1) = 12px to the first row. This was pb-7, which
           left a ~32px void between the wordmark and "New chat" and read as a
           layout gap rather than a deliberate break. */}
@@ -392,24 +394,25 @@ export function AppSidebar({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="group"
             onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
             aria-label="Search — command palette (⌘K)"
           >
-            <Search className="h-4 w-4" />
+            <Search className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
           </Button>
           {onToggleCollapse && (
             <Button
               variant="ghost"
               size="icon-sm"
-              className="hidden md:inline-flex"
+              className="group hidden md:inline-flex"
               onClick={onToggleCollapse}
               aria-label="Collapse sidebar"
             >
-              <PanelLeftClose className="h-4 w-4" />
+              <PanelLeftClose className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
             </Button>
           )}
-          <Button variant="ghost" size="icon-sm" className="md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
-            <X className="h-4 w-4" />
+          <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
+            <X className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
           </Button>
         </div>
       </div>
@@ -426,13 +429,17 @@ export function AppSidebar({
               aria-selected={mode === value}
               onClick={() => switchMode(value)}
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors duration-base ease-out-soft",
+                "group flex items-center justify-center gap-1.5 rounded-[8px] px-3 py-1 text-[13px] font-medium transition-colors duration-base ease-out-soft",
                 mode === value
                   ? "bg-sidebar-accent text-foreground"
                   : "text-muted-foreground hover:bg-sidebar-accent/40 hover:text-foreground"
               )}
             >
-              {value === "home" ? <Home className="h-3.5 w-3.5" /> : <Code className="h-3.5 w-3.5" />}
+              {value === "home" ? (
+                <Home className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
+              ) : (
+                <Code className="h-3.5 w-3.5 transition-transform duration-fast group-hover:scale-110" />
+              )}
               {value === "home" ? "Home" : "Code"}
             </button>
           ))}
@@ -445,7 +452,7 @@ export function AppSidebar({
         <NavRow
           onClick={newChat}
           icon={
-            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-105">
+            <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
               <Plus className="h-3.5 w-3.5" />
             </span>
           }
@@ -507,7 +514,7 @@ export function AppSidebar({
                 {codeProjects.map((p) => (
                   <div key={"path" in p ? (p as { path: string }).path : p.name}>
                     <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground">
-                      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70">
+                      <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-transform duration-fast group-hover:scale-110">
                         <Folder className="h-[16px] w-[16px]" />
                       </span>
                       <span className="min-w-0 flex-1 truncate">{p.name}</span>
@@ -706,8 +713,10 @@ function RailIcon({
   active?: boolean;
   children: React.ReactNode;
 }) {
+  // Icon micro-motion is carried by the icon itself (group-hover:scale-110 at
+  // the call sites), matching the expanded rows — the button only presses.
   const cls = cn(
-    "flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
+    "group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast ease-out-soft active:scale-95",
     active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
   );
   if (href) {
@@ -754,7 +763,7 @@ function NavRow({
   const inner = (
     <>
       <ActiveIndicator active={active} />
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">{icon}</span>
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-110 group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
   );
@@ -989,7 +998,7 @@ function ConversationRow({
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-colors duration-fast group-hover:text-foreground">
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-[color,transform] duration-fast group-hover:scale-110 group-hover:text-foreground">
           <MessageCircle className="h-[15px] w-[15px]" />
         </span>
         <AnimatedTitle title={conversation.title} className="min-w-0 flex-1" />
@@ -997,10 +1006,10 @@ function ConversationRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label="Conversation options"
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreVertical className="h-4 w-4 transition-transform duration-fast group-hover/kebab:scale-110" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
@@ -1100,7 +1109,7 @@ function ProjectRow({
         )}
         title={project.name}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-105 group-hover:text-foreground">
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-110 group-hover:text-foreground">
           <Box className="h-[18px] w-[18px]" />
         </span>
         <span className="min-w-0 truncate">{project.name}</span>
@@ -1124,10 +1133,10 @@ function ProjectRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label="Project options"
           >
-            <MoreVertical className="h-4 w-4" />
+            <MoreVertical className="h-4 w-4 transition-transform duration-fast group-hover/kebab:scale-110" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
@@ -1167,7 +1176,7 @@ function ProjectRow({
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
-            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/pc:text-foreground" />
+            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-fast group-hover/pc:scale-110 group-hover/pc:text-foreground" />
             <span className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}

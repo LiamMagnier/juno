@@ -58,9 +58,13 @@ function Tile({
   children: React.ReactNode;
 }) {
   return (
+    // One container system for every section: same radius, same border (the
+    // Card default border-border/70), same padding, same eyebrow margin.
+    // flex-col + h-full so side-by-side tiles stretch to equal height and
+    // internals can pin footers with mt-auto.
     <Card
       style={{ animationDelay: `${i * 55}ms` }}
-      className={cn("p-5 rounded-[28px] motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
+      className={cn("flex h-full flex-col rounded-[20px] p-5 motion-safe:animate-rise-in [animation-fill-mode:backwards]", span && "sm:col-span-2", className)}
     >
       <CardEyebrow className="mb-3">{eyebrow}</CardEyebrow>
       {children}
@@ -356,9 +360,9 @@ export default function SettingsPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {/* Usage dashboard */}
           <Tile eyebrow="Usage" i={0} span>
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-5 items-stretch mt-1">
+            <div className="grid grid-cols-1 items-stretch gap-4 md:grid-cols-5">
               {/* Plan info (Left) */}
-              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-[18px] bg-accent/40 border border-border/50 p-4">
+              <div className="field-well md:col-span-2 flex flex-col justify-between rounded-[12px] bg-accent/40 border border-border/50 p-4">
                 <div>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-serif text-heading font-semibold tracking-tight">
@@ -372,11 +376,11 @@ export default function SettingsPage() {
                   <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
                     {plan.tagline}
                   </p>
-                  
+
                   {/* Plan Features */}
                   <ul className="mt-4 space-y-1.5">
                     {plan.features.slice(0, 3).map((feat, idx) => (
-                      <li key={idx} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <li key={idx} className="flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Check className="h-3 w-3 text-primary shrink-0" />
                         <span className="truncate">{feat}</span>
                       </li>
@@ -385,7 +389,7 @@ export default function SettingsPage() {
                 </div>
                 
                 <div className="mt-4 flex items-center justify-between gap-2 pt-3 border-t border-border/40">
-                  <span className="text-caption text-muted-foreground uppercase tracking-wider font-mono">
+                  <span className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
                     {plan.price > 0 ? `${plan.price} € HT/mo` : "Active tier"}
                   </span>
                   {quota.plan === "FREE" && features.billing && (
@@ -397,7 +401,7 @@ export default function SettingsPage() {
               </div>
 
               {/* Usage windows (Right) — rolling session + weekly, percentages only */}
-              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-[18px] border border-border/50 p-4 bg-card">
+              <div className="field-well md:col-span-3 flex flex-col justify-center rounded-[12px] border border-border/50 p-4 bg-card">
                 {unlimited ? (
                   <div>
                     <div className="flex items-center gap-[3.5px] py-1.5" aria-hidden>
@@ -409,13 +413,13 @@ export default function SettingsPage() {
                         />
                       ))}
                     </div>
-                    <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
                       No usage limits on this plan.
                     </p>
                   </div>
                 ) : quota.plan === "FREE" ? (
                   <div className="flex flex-col items-start gap-3">
-                    <p className="text-[11px] leading-relaxed text-muted-foreground">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
                       Free is a browse-only tier. Upgrade to Pro to start using models.
                     </p>
                     {features.billing && (
@@ -428,7 +432,7 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-4">
                     <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
                     <div className="border-t border-border/40" />
-                    <span className="font-mono text-[10px] text-label uppercase text-muted-foreground/80 tracking-widest block">
+                    <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
                       Weekly limits
                     </span>
                     <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />
@@ -446,7 +450,7 @@ export default function SettingsPage() {
 
           {/* Appearance */}
           <Tile eyebrow="Appearance" i={1} span>
-            <div className="grid gap-6 sm:grid-cols-2 sm:gap-12">
+            <div className="grid gap-6 sm:grid-cols-2">
               <div>
                 <Label className="mb-2 block text-xs text-muted-foreground">Theme</Label>
                 <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
@@ -705,21 +709,25 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
-          {/* Memory */}
-          <Tile eyebrow="Memory" i={8} className="self-start">
+          {/* Memory — pairs with Account below; both tiles stretch to the same
+              height (grid stretch + Tile's flex-col), buttons pinned to the
+              bottom edge with mt-auto so the pair reads as one system. */}
+          <Tile eyebrow="Memory" i={8}>
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <NotebookPen className="h-5 w-5 text-primary" />
                 <div>
                   <p className="text-sm font-medium">Reference saved memories</p>
-                  <p className="text-xs text-muted-foreground">Manage what Juno remembers</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">Manage what Juno remembers</p>
                 </div>
               </div>
               <Switch checked={settings.memoryEnabled} onCheckedChange={(v) => save({ memoryEnabled: v })} aria-label="Toggle memory" />
             </div>
-            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
-              <Link href="/memory">Open memory manager</Link>
-            </Button>
+            <div className="mt-auto pt-4">
+              <Button asChild variant="outline" size="sm" className="w-full">
+                <Link href="/memory">Open memory manager</Link>
+              </Button>
+            </div>
           </Tile>
 
           {/* Account */}
@@ -735,6 +743,8 @@ export default function SettingsPage() {
                   <span className="font-medium">{formatDate(renewsAtMs)}</span>
                 </div>
               )}
+            </div>
+            <div className="mt-auto space-y-2 pt-4">
               {features.billing && quota.plan !== "FREE" && (
                 <Button variant="outline" size="sm" onClick={openPortal} disabled={portalLoading} className="w-full">
                   {portalLoading ? "Opening…" : "Manage subscription"}
@@ -790,8 +800,10 @@ export default function SettingsPage() {
             </div>
           </Tile>
 
-          {/* Danger zone */}
-          <Tile eyebrow="Danger zone" i={11} span className="border-destructive/30">
+          {/* Danger zone — same calm container as every other section; the
+              danger lives in the buttons (destructive-outline fills red on
+              hover), not in a shouting border. */}
+          <Tile eyebrow="Danger zone" i={11} span className="border-destructive/20">
             <div className="space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-border/40">
                 <div>
@@ -800,7 +812,7 @@ export default function SettingsPage() {
                     Permanently delete all your chat history.
                   </p>
                 </div>
-                <Button variant="destructive" size="sm" onClick={() => setDeleteChatsOpen(true)} className="gap-2 shrink-0">
+                <Button variant="destructive-outline" size="sm" onClick={() => setDeleteChatsOpen(true)} className="gap-2 shrink-0">
                   <Trash2 className="h-4 w-4" /> Delete all chats
                 </Button>
               </div>
@@ -812,7 +824,7 @@ export default function SettingsPage() {
                     Permanently delete your account, conversations, and memories.
                   </p>
                 </div>
-                <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)} className="gap-2 shrink-0">
+                <Button variant="destructive-outline" size="sm" onClick={() => setDeleteOpen(true)} className="gap-2 shrink-0">
                   <Trash2 className="h-4 w-4" /> Delete account
                 </Button>
               </div>

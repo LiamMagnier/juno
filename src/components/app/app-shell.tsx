@@ -16,13 +16,39 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "juno:sidebar-collapsed";
+const WIDTH_KEY = "juno:sidebar:width";
+const SIDEBAR_MIN = 240;
+const SIDEBAR_MAX = 400;
+const SIDEBAR_DEFAULT = 280;
 const PREFETCH_ROUTES = ["/chat", "/library", "/artifacts", "/projects", "/memory", "/settings", "/roadmap", "/upgrade"];
+
+function clampWidth(w: number) {
+  return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarOpen, setSidebarOpen, activeConversationId, conversations } = useApp();
   const router = useRouter();
   const [collapsed, setCollapsed] = React.useState(false);
+  // Resizable sidebar (desktop). Width lives in state + a CSS var on the aside;
+  // the ref mirrors it so pointermove handlers never read a stale closure.
+  const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
+  const [resizing, setResizing] = React.useState(false);
+  const widthRef = React.useRef(SIDEBAR_DEFAULT);
   const activeTitle = activeConversationId ? conversations.find((c) => c.id === activeConversationId)?.title : null;
+
+  const applyWidth = React.useCallback((w: number) => {
+    widthRef.current = w;
+    setSidebarWidth(w);
+  }, []);
+
+  const persistWidth = React.useCallback((w: number) => {
+    try {
+      localStorage.setItem(WIDTH_KEY, String(w));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   React.useEffect(() => {
     try {
@@ -31,6 +57,53 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       /* ignore */
     }
   }, []);
+
+  // Restore the stored width before paint so the sidebar doesn't visibly jump
+  // from the default on load.
+  React.useLayoutEffect(() => {
+    try {
+      const stored = Number(localStorage.getItem(WIDTH_KEY));
+      if (Number.isFinite(stored) && stored > 0) applyWidth(clampWidth(stored));
+    } catch {
+      /* ignore */
+    }
+  }, [applyWidth]);
+
+  const startResize = React.useCallback(
+    (e: React.PointerEvent) => {
+      // Left button / primary touch only.
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = widthRef.current;
+      setResizing(true);
+      // Keep the resize cursor (and kill text selection) even when the pointer
+      // outruns the 6px handle mid-drag.
+      const prevCursor = document.body.style.cursor;
+      const prevSelect = document.body.style.userSelect;
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+      const onMove = (ev: PointerEvent) => applyWidth(clampWidth(startWidth + (ev.clientX - startX)));
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        document.body.style.cursor = prevCursor;
+        document.body.style.userSelect = prevSelect;
+        setResizing(false);
+        persistWidth(widthRef.current);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    },
+    [applyWidth, persistWidth]
+  );
+
+  const resetWidth = React.useCallback(() => {
+    applyWidth(SIDEBAR_DEFAULT);
+    persistWidth(SIDEBAR_DEFAULT);
+  }, [applyWidth, persistWidth]);
 
   React.useEffect(() => {
     const collapseSidebar = () => {
@@ -71,14 +144,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
 
       {/* overflow-hidden + fixed-width sidebar layouts: the width sweep reveals/clips
-          the content instead of reflowing it mid-animation. */}
+          the content instead of reflowing it mid-animation. The expanded width is
+          user-resizable (drag handle below); --juno-sidebar-width carries it to the
+          sidebar's inner column, which must NOT track the aside mid-collapse. The
+          width transition is dropped while dragging so resize follows the pointer
+          1:1 instead of lagging through the ease. */}
       <aside
         className={cn(
-          "hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar transition-[width] duration-base ease-out-soft md:block",
-          collapsed ? "w-[64px]" : "w-[280px]"
+          "relative hidden shrink-0 overflow-hidden border-r border-sidebar-border bg-sidebar md:block",
+          !resizing && "transition-[width] duration-base ease-out-soft"
         )}
+        style={
+          {
+            width: collapsed ? 64 : sidebarWidth,
+            "--juno-sidebar-width": `${sidebarWidth}px`,
+          } as React.CSSProperties
+        }
       >
         <AppSidebar collapsed={collapsed} onToggleCollapse={toggleCollapse} />
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            aria-valuemin={SIDEBAR_MIN}
+            aria-valuemax={SIDEBAR_MAX}
+            aria-valuenow={sidebarWidth}
+            tabIndex={0}
+            title="Drag to resize · double-click to reset"
+            onPointerDown={startResize}
+            onDoubleClick={resetWidth}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+                e.preventDefault();
+                const next = clampWidth(widthRef.current + (e.key === "ArrowLeft" ? -16 : 16));
+                applyWidth(next);
+                persistWidth(next);
+              } else if (e.key === "Enter") {
+                resetWidth();
+              }
+            }}
+            className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none"
+          >
+            {/* Invisible until engaged: a hairline highlight on hover/drag/focus. */}
+            <span
+              aria-hidden
+              className={cn(
+                "absolute inset-y-0 right-0 w-[2px] bg-primary/60 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
+                resizing && "opacity-100"
+              )}
+            />
+          </div>
+        )}
       </aside>
 
       {/* Mobile drawer — Radix-backed Sheet (focus trap, Escape, scroll lock). */}
@@ -90,7 +207,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main
         className="flex min-w-0 flex-1 flex-col"
-        style={{ "--juno-sidebar-width": collapsed ? "64px" : "280px" } as React.CSSProperties}
+        style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >
         <div className="flex shrink-0 items-center gap-2 border-b bg-background/90 px-2 py-2 backdrop-blur md:hidden">
           <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open menu">

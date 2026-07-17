@@ -63,7 +63,7 @@ function ItemAction({ icon: Icon, label, onClick, tone }: { icon: typeof Pencil;
         e.stopPropagation();
         onClick();
       }}
-      className={cn("text-muted-foreground", tone === "danger" ? "hover:text-destructive" : "hover:text-foreground")}
+      className={cn("text-muted-foreground", tone === "danger" ? "danger-hover" : "hover:text-foreground")}
     >
       <Icon className="h-3.5 w-3.5" />
     </Button>
@@ -221,9 +221,9 @@ export default function LibraryPage() {
                 </Button>
               )}
               <Button
-                variant="outline"
+                variant="destructive-outline"
                 size="sm"
-                className="gap-1.5 text-destructive hover:text-destructive"
+                className="gap-1.5"
                 onClick={() => setDeleteTargets(selectedItems)}
               >
                 <Trash2 className="h-3.5 w-3.5" /> Delete

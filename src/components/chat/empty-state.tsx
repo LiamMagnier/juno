@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, Columns2, Compass, Hammer, PenLine } from "lucide-react";
 import { useApp } from "@/components/app/app-provider";
+import { JunoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
 
 type StarterCategory = "write" | "learn" | "build" | "decide";
@@ -120,6 +121,18 @@ export function EmptyGreeting() {
             the name lands a touch later, so the line reads as addressed to you
             instead of stamped in. */}
         <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
+          {/* The bare Juno mark, sized to the line's cap height and sitting on
+              the baseline. Playful like Claude's: a springy tilt+grow on hover
+              and a quick squash on press that releases back through the same
+              spring. All transform-only and motion-safe gated. */}
+          <JunoMark
+            className={cn(
+              "mr-[0.4em] inline-block h-[0.9em] w-[0.9em] align-baseline",
+              "transition-transform duration-base ease-spring motion-reduce:transition-none",
+              "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
+              "motion-safe:active:duration-75 motion-safe:active:rotate-0 motion-safe:active:scale-x-110 motion-safe:active:scale-y-75"
+            )}
+          />
           {phrase}
           {firstName ? "," : null}
         </span>

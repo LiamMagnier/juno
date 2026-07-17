@@ -1258,7 +1258,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             type="button"
             onClick={discardFailedVoiceSave}
             aria-label="Discard unsaved voice transcript"
-            className="pressable inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            className="pressable danger-hover inline-flex size-9 items-center justify-center rounded-lg text-muted-foreground"
           >
             <Trash2 className="size-3.5" />
           </button>

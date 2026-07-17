@@ -302,7 +302,7 @@ export function PromptLibraryDialog({ open, onOpenChange, onInsert }: PromptLibr
                                 variant="ghost"
                                 size="icon-sm"
                                 aria-label={`Delete ${p.title}`}
-                                className="text-destructive hover:text-destructive"
+                                className="text-destructive danger-hover"
                                 onClick={() => setConfirmingId(p.id)}
                               >
                                 {busy ? (

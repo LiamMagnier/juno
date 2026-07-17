@@ -263,8 +263,8 @@ function RailButton({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
-        active ? "bg-primary/20 ring-2 ring-primary/50 shadow-sm" : "hover:bg-accent",
+        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition-all duration-fast ease-out-soft hover:scale-105 active:scale-95",
+        active ? "bg-primary/10 ring-1 ring-primary/40" : "hover:bg-accent",
         dimmed && "opacity-30 hover:scale-100 active:scale-100"
       )}
     >
@@ -348,11 +348,11 @@ export function ModelSelector({
         onMouseEnter={() => setHoveredId(m.id)}
         onFocus={() => setHoveredId(m.id)}
         className={cn(
-          "group relative flex flex-col justify-between rounded-xl border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
+          "group relative flex flex-col justify-between rounded-[10px] border p-3 transition-all duration-base ease-out-soft animate-rise-in [animation-fill-mode:backwards]",
           soon
             ? "border-border/60 bg-card/40 opacity-60"
             : "active:scale-[0.99] " + (active
-              ? "border-primary bg-primary/5 ring-1 ring-primary shadow-sm"
+              ? "border-primary bg-primary/5 shadow-sm"
               : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none")
         )}
       >
@@ -450,14 +450,14 @@ export function ModelSelector({
           {/* Pane 1: rail + list — one full-width swipe page on mobile, side panes on desktop. */}
           <div className="flex w-full shrink-0 snap-start md:w-auto md:flex-1 md:shrink">
           {/* Rail */}
-          <div className="flex w-16 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r bg-muted/30 py-3">
+          <div className="flex w-14 shrink-0 flex-col items-center gap-2 overflow-y-auto border-r bg-muted/30 py-3">
             <RailButton active={filter === "all"} title="All models" onClick={() => setFilter("all")}>
               <LayoutGrid className={cn("h-5 w-5", filter === "all" ? "text-primary" : "text-muted-foreground")} />
             </RailButton>
             <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
             {PROVIDER_LIST.map((p) => (
               <RailButton key={p} active={filter === p} dimmed={!features.providers.includes(p)} title={PROVIDERS[p].label} onClick={() => setFilter(p)}>
-                <ProviderLogo provider={p} className="h-7 w-7" />
+                <ProviderLogo provider={p} className="h-6 w-6" />
               </RailButton>
             ))}
           </div>
@@ -466,7 +466,13 @@ export function ModelSelector({
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="relative border-b p-2">
               <Search className="pointer-events-none absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search models…" className="h-8 pl-10" autoFocus />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search models…"
+                className="h-8 rounded-[10px] pl-8 focus-visible:ring-1 focus-visible:ring-ring/30"
+                autoFocus
+              />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-2">
               {providerFilter && !filterConfigured ? (
@@ -489,7 +495,7 @@ export function ModelSelector({
 
                   return (
                     <div key={g.key} className="mb-4">
-                      <div className="flex items-center gap-1.5 px-2 pb-2 pt-1">
+                      <div className="flex items-center gap-1.5 px-3 pb-2 pt-1">
                         <g.icon className="h-3.5 w-3.5 text-muted-foreground/75" />
                         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">{g.label}</span>
                       </div>
@@ -503,7 +509,7 @@ export function ModelSelector({
                       {legacyItems.length > 0 && (
                         <div className="mt-2.5">
                           {/* Auto-expand while searching so legacy matches are visible. */}
-                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-xl border border-border/40 bg-muted/10 overflow-hidden">
+                          <details key={q ? "open" : "closed"} open={!!q} className="group/legacy rounded-[10px] border border-border/40 bg-muted/10 overflow-hidden">
                             <summary className="cursor-pointer flex items-center justify-between px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 transition-colors duration-fast ease-out-soft">
                               <span>Legacy Models ({legacyItems.length})</span>
                               <ChevronDown className="h-3.5 w-3.5 transition-transform duration-200 group-open/legacy:rotate-180" />

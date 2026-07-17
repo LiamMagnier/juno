@@ -164,7 +164,7 @@ export function ShareDialog({
                 size="sm"
                 onClick={revoke}
                 disabled={revoking}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                className="text-destructive danger-hover"
               >
                 {revoking ? "Revoking…" : "Revoke link"}
               </Button>

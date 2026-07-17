@@ -253,7 +253,7 @@ export function ComposioCatalog({ configured }: { configured: boolean }) {
                       disabled={busy}
                       aria-label={`Disconnect ${label}`}
                       aria-haspopup="dialog"
-                      className="pressable inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50 coarse:size-11"
+                      className="pressable danger-hover inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] text-muted-foreground disabled:opacity-50 coarse:size-11"
                     >
                       {busy ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
                     </button>

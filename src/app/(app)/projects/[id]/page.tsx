@@ -667,7 +667,7 @@ export default function ProjectDetailPage() {
                               size="icon-sm"
                               onClick={() => setChatToDelete({ id: c.id, title: c.title })}
                               aria-label="Delete chat"
-                              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                              className="h-7 w-7 text-muted-foreground danger-hover"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -847,7 +847,7 @@ export default function ProjectDetailPage() {
                                 size="icon-sm"
                                 onClick={() => deleteFile(f.id)}
                                 aria-label={`Remove ${f.fileName}`}
-                                className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast pointer-events-none hover:text-destructive group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
+                                className="danger-hover h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover/file:pointer-events-auto group-hover/file:opacity-100 group-focus-within/file:pointer-events-auto group-focus-within/file:opacity-100 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
@@ -1273,7 +1273,7 @@ function WorkspaceFileRow({
         size="icon-sm"
         onClick={onDelete}
         aria-label={`Remove ${file.fileName}`}
-        className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-fast pointer-events-none hover:text-destructive group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:h-11 coarse:w-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
+        className="danger-hover h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-[opacity,color,background-color] duration-fast pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 coarse:h-11 coarse:w-11 coarse:pointer-events-auto coarse:opacity-100 motion-reduce:transition-none"
       >
         <Trash2 className="h-3.5 w-3.5" />
       </Button>

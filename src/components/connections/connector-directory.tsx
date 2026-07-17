@@ -284,7 +284,7 @@ function ConnectorTile({
             onClick={onDisconnect}
             disabled={busy}
             aria-haspopup="dialog"
-            className="gap-1.5 px-2.5 text-muted-foreground hover:text-destructive"
+            className="gap-1.5 px-2.5 text-muted-foreground danger-hover"
           >
             {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Unplug className="size-3.5" />}
             Disconnect

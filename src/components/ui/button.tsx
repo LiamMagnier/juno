@@ -14,6 +14,10 @@ const buttonVariants = cva(
         // sheen that sweeps across on hover.
         default: "sheen-sweep btn-glossy halo-primary bg-primary text-primary-foreground hover:brightness-[1.06] active:brightness-[0.97]",
         destructive: "btn-glossy bg-destructive text-destructive-foreground shadow-pop hover:brightness-[1.06] active:brightness-[0.97]",
+        // Destructive hover language: calm at rest (outline + red text), fills
+        // destructive red on hover via .danger-hover (globals.css) — the one
+        // opt-in for delete/disconnect/remove controls that shouldn't shout.
+        "destructive-outline": "danger-hover border border-border/70 bg-background/50 text-destructive shadow-pop",
         outline: "border border-border/70 bg-background/50 shadow-pop hover:bg-accent hover:border-border hover:text-accent-foreground",
         secondary: "bg-secondary text-secondary-foreground shadow-pop [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)] hover:brightness-[0.97]",
         ghost: "hover:bg-accent hover:text-accent-foreground",

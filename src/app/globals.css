@@ -238,6 +238,29 @@
     transform: scale(0.97);
   }
 
+  /* Destructive hover language — every dangerous control (delete, disconnect,
+     remove, revoke) speaks the same way on hover: the background fills
+     destructive red, text and icon go white, and the icon lifts a touch.
+     Composable with any Button variant, menu item, or bare .pressable control —
+     the host element's own transition animates the fill; this class only adds
+     the hover state and the icon motion. The selector is doubled so the hover
+     state (0,3,0) outranks variant hover utilities (e.g. ghost's hover:bg-accent). */
+  .danger-hover.danger-hover:hover {
+    border-color: hsl(var(--destructive));
+    background-color: hsl(var(--destructive));
+    color: hsl(var(--destructive-foreground));
+  }
+  .danger-hover svg {
+    transition: transform 180ms var(--ease-out-soft);
+  }
+  .danger-hover:hover svg {
+    transform: scale(1.08);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .danger-hover svg { transition: none; }
+    .danger-hover:hover svg { transform: none; }
+  }
+
   /* ---- Depth kit (Awwwards-lean) --------------------------------------------
      Small, composable primitives so every surface shares one lighting model:
      a light source above the element (top sheen + inner top-hairline) and a
@@ -392,8 +415,14 @@
   }
   .text-balance { text-wrap: balance; }
   /* Anchor pop-in/pop-out scaling to the trigger side on Radix popper content
-     (dropdown/popover/tooltip/select). */
+     (dropdown/popover/tooltip/select). --pop-shift flips the keyframes' entry
+     drift to match, so the layer always emerges FROM its trigger: content
+     below a trigger drops in from -4px, content above rises in from +4px. */
   .origin-popper { transform-origin: var(--radix-popper-transform-origin); }
+  .origin-popper[data-side="bottom"] { --pop-shift: -4px; }
+  .origin-popper[data-side="top"] { --pop-shift: 4px; }
+  .origin-popper[data-side="left"],
+  .origin-popper[data-side="right"] { --pop-shift: 0px; }
 
   /* Mono-eyebrow shimmer — a narrow primary band sweeps across currentColor text.
      The band parks off-canvas between sweeps and at the static (reduced-motion)

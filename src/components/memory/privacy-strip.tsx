@@ -67,7 +67,7 @@ export function PrivacyStrip({ paused, onPausedChange, onExport, onReset, resett
               ref={resetRef}
               variant="ghost"
               size="sm"
-              className="gap-1.5 text-destructive hover:text-destructive"
+              className="gap-1.5 text-destructive danger-hover"
               onClick={() => setConfirming(true)}
               disabled={empty || resetting}
             >
