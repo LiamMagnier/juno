@@ -42,3 +42,7 @@ relay/dist
 
 # Agent worktrees and local Claude state
 .claude/
+
+# vendored agent core for the Cloud Code runner (built in CI)
+runner/agent-core/node_modules
+runner/agent-core/dist

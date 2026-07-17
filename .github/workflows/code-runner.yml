@@ -1,0 +1,92 @@
+name: Cloud Code runner
+
+# Dispatched by the Juno backend (CC1) for a single "Cloud Juno Code" task. The
+# job pulls the task's runner-context, clones the target repo, drives the
+# vendored agent core against the prompt, and opens a PR with the result.
+#
+# SECURITY: this job runs arbitrary agent-authored bash. It is given ONLY the
+# per-task bearer token and the callback origin — never .env, the DB URL,
+# AUTH_SECRET, or any provider key. Model calls proxy through Juno's /api/agent
+# using the task bearer. `permissions: contents: read` keeps the default
+# GITHUB_TOKEN from carrying write scope into the sandbox; the runner never uses
+# it (clone/push/PR go through the OAuth clone token from runner-context).
+
+on:
+  workflow_dispatch:
+    inputs:
+      taskId:
+        description: Cloud Code task id
+        required: true
+        type: string
+      taskToken:
+        description: Dispatched per-task bearer (authenticates the first runner-context call only)
+        required: true
+        type: string
+      repoOwner:
+        description: Target repository owner
+        required: true
+        type: string
+      repoName:
+        description: Target repository name
+        required: true
+        type: string
+      baseRef:
+        description: Base branch to work from (empty = repository default)
+        required: false
+        type: string
+      callbackBase:
+        description: Juno origin (no /api), e.g. https://chat.liams.dev
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # One runner per task; a duplicate dispatch queues rather than racing.
+  group: cloud-code-${{ inputs.taskId }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # FIRST: register the task token as a masked secret so it can never
+      # surface in any later log line. Passed via env to avoid interpolating it
+      # straight into the shell.
+      - name: Mask the task token
+        env:
+          TASK_TOKEN: ${{ inputs.taskToken }}
+        run: echo "::add-mask::$TASK_TOKEN"
+
+      - name: Checkout runner (LiamMagnier/juno)
+        uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the vendored agent core
+        working-directory: runner/agent-core
+        run: |
+          npm i
+          npm run build
+
+      - name: Run the Cloud Code task
+        env:
+          JUNO_TASK_ID: ${{ inputs.taskId }}
+          JUNO_TASK_TOKEN: ${{ inputs.taskToken }}
+          JUNO_REPO_OWNER: ${{ inputs.repoOwner }}
+          JUNO_REPO_NAME: ${{ inputs.repoName }}
+          JUNO_BASE_REF: ${{ inputs.baseRef }}
+          JUNO_CALLBACK_BASE: ${{ inputs.callbackBase }}
+        run: node scripts/cloud-code-runner.mjs
+
+      # Backstop: if the driver was hard-killed (OOM, cancel, timeout) before it
+      # could post its own terminal status, mark the task failed using the auth
+      # handoff the driver wrote after fetching runner-context. No-ops safely if
+      # that handoff never existed.
+      - name: Report failure if the runner crashed
+        if: failure()
+        run: node scripts/cloud-code-fail.mjs
