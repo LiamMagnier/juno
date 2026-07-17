@@ -497,8 +497,13 @@ export function AppSidebar({
           </p>
         ) : (
           <>
-            {mode === "code" && codeProjects.length > 0 && (
+            {mode === "code" && (
               <Section label="Projects">
+                {codeProjects.length === 0 && (
+                  <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground/60">
+                    Your Juno Code projects appear here once the app syncs them.
+                  </p>
+                )}
                 {codeProjects.map((p) => (
                   <div key={"path" in p ? (p as { path: string }).path : p.name}>
                     <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium text-sidebar-foreground/90 transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground">
