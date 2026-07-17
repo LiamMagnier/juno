@@ -295,12 +295,27 @@ export function AppSidebar({
     });
   };
 
-  const switchMode = React.useCallback((next: "home" | "code") => {
-    setMode(next);
-    try {
-      localStorage.setItem("juno:sidebar:mode", next);
-    } catch {}
-  }, []);
+  const switchMode = React.useCallback(
+    (next: "home" | "code") => {
+      setMode(next);
+      try {
+        localStorage.setItem("juno:sidebar:mode", next);
+      } catch {}
+      // Switching the toggle should change the MAIN view too, not just the
+      // sidebar — otherwise the composer only updates after a separate New
+      // chat / New session click. Land on the mode's home composer directly.
+      if (next === "code") {
+        router.push("/code/new");
+      } else {
+        router.push("/chat");
+        // A no-op push when already on /chat won't remount, so also reset any
+        // stale chat state (mirrors newChat()).
+        window.dispatchEvent(new CustomEvent("juno:new-chat"));
+      }
+      setSidebarOpen(false);
+    },
+    [router, setSidebarOpen],
+  );
 
   const filtered = React.useMemo(() => {
     // Home shows every web/app chat; Code shows the synced Juno Code sessions.
