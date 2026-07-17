@@ -1,8 +1,8 @@
 {
-  "version": "3.0.5",
-  "build": 33,
+  "version": "3.0.6",
+  "build": 34,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "8b180a143053e2970af6010585b1a77dfaa6bbb771b9b7361c2930615543bad3",
-  "notes": "Juno 3.0.5 \u2014 voice mode is rebuilt: pick your voice model mid-conversation, watch live captions and cost, tap the orb to interrupt, and get honest connection states with one-tap recovery. Plus the on-device fallback stays a click away.",
+  "sha256": "29b790e700bec2c7a68539bacf9a8b58368152b464852a0bb37106346be588f0",
+  "notes": "Juno 3.0.6 \u2014 fixes a crash when opening the thinking slider from the composer.",
   "minimumSystemVersion": "26.0"
 }
