@@ -21,7 +21,7 @@ import { env, isStorageConfigured } from "@/lib/env";
 
 const LOCAL_DIR = path.join(process.cwd(), ".uploads");
 
-function useLocal(): boolean {
+function usesLocalDisk(): boolean {
   return !isStorageConfigured();
 }
 
@@ -56,7 +56,7 @@ export async function putObject(
   contentType: string,
   contentDisposition?: string
 ): Promise<void> {
-  if (useLocal()) {
+  if (usesLocalDisk()) {
     const p = localPath(key);
     await fs.mkdir(path.dirname(p), { recursive: true });
     await fs.writeFile(p, body);
@@ -74,7 +74,7 @@ export async function putObject(
 }
 
 export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; contentType: string }> {
-  if (useLocal()) {
+  if (usesLocalDisk()) {
     const bytes = new Uint8Array(await fs.readFile(localPath(key)));
     return { bytes, contentType: "application/octet-stream" };
   }
@@ -84,7 +84,7 @@ export async function getObjectBytes(key: string): Promise<{ bytes: Uint8Array; 
 }
 
 export async function deleteObject(key: string): Promise<void> {
-  if (useLocal()) {
+  if (usesLocalDisk()) {
     await fs.unlink(localPath(key)).catch(() => {});
     return;
   }
@@ -93,7 +93,7 @@ export async function deleteObject(key: string): Promise<void> {
 
 /** URL the browser uses to view/download an object. */
 export async function getViewUrl(key: string): Promise<string> {
-  if (useLocal()) return `/api/files/${key}`;
+  if (usesLocalDisk()) return `/api/files/${key}`;
   if (env.s3.publicUrl) return `${env.s3.publicUrl.replace(/\/$/, "")}/${key}`;
   return getSignedUrl(s3(), new GetObjectCommand({ Bucket: env.s3.bucket!, Key: key }), { expiresIn: 3600 });
 }

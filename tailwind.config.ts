@@ -1,5 +1,6 @@
 import type { Config } from "tailwindcss";
 import plugin from "tailwindcss/plugin";
+import animate from "tailwindcss-animate";
 
 /*
  * Juno design tokens (Slice 0 — Foundation)
@@ -330,7 +331,7 @@ const config: Config = {
     },
   },
   plugins: [
-    require("tailwindcss-animate"),
+    animate,
     // `coarse:` → touch devices, for 44px hit areas (WCAG AA).
     plugin(({ addVariant, addUtilities }) => {
       addVariant("coarse", "@media (pointer: coarse)");

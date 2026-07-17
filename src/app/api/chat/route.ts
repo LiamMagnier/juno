@@ -868,7 +868,7 @@ async function handleChat(req: Request) {
   // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
   // collect the sources it returns from the stream below — no third-party search.
   const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
-  let webSources: ClientSource[] = [];
+  const webSources: ClientSource[] = [];
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
   const baseSystem = buildSystemPrompt({

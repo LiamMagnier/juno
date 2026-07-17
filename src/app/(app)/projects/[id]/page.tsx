@@ -579,7 +579,7 @@ export default function ProjectDetailPage() {
                 <div className="mb-8">
                   <Composer
                     conversationId={null}
-                    model={selectedModel as any}
+                    model={selectedModel}
                     onModelChange={(m) => setSelectedModel(m)}
                     onSend={(text, _attachments, options) => handleSend(text, options)}
                     isBusy={false}

@@ -302,7 +302,7 @@ function withChrome(doc: string): string {
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
   const chrome = SANDBOX_SHIM + CONSOLE_BRIDGE;
-  let out = head !== -1 ? doc.slice(0, head) + chrome + doc.slice(head) : chrome + doc;
+  const out = head !== -1 ? doc.slice(0, head) + chrome + doc.slice(head) : chrome + doc;
   const body = out.lastIndexOf("</body>");
   return body !== -1 ? out.slice(0, body) + INSPECTOR_SCRIPT + out.slice(body) : out + INSPECTOR_SCRIPT;
 }

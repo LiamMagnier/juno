@@ -41,11 +41,14 @@ loadEnvFile(join(ROOT, ".env.local"));
 
 // Force the utility-LLM walk to find NO configured provider, so moderateText's
 // fail-open path is exercised deterministically regardless of this machine's env.
-for (const key of Object.keys(process.env)) {
-  if (/_API_KEY$/.test(key) || /^(ANTHROPIC|OPENAI|GOOGLE|GEMINI|XAI|GROQ|MISTRAL|DEEPSEEK|OPENROUTER)_/.test(key)) {
-    delete process.env[key];
+function scrubProviderKeys(): void {
+  for (const key of Object.keys(process.env)) {
+    if (/_API_KEY$/.test(key) || /^(ANTHROPIC|OPENAI|GOOGLE|GEMINI|XAI|GROQ|MISTRAL|DEEPSEEK|OPENROUTER)_/.test(key)) {
+      delete process.env[key];
+    }
   }
 }
+scrubProviderKeys();
 
 const failures: string[] = [];
 function check(name: string, cond: boolean, detail?: string) {
@@ -58,6 +61,10 @@ function check(name: string, cond: boolean, detail?: string) {
 
 async function main() {
   const { quickScreen, moderateText, MODERATION_CATEGORIES } = await import("../src/lib/moderation-ai");
+  // @prisma/client (pulled in by the lib import chain) re-loads .env into
+  // process.env at import time, undoing the scrub above — scrub again so the
+  // walk stays keyless and this suite never touches the network.
+  scrubProviderKeys();
 
   // ------------------------------------------------------------------
   console.log("\n1. quickScreen — benign input returns null");

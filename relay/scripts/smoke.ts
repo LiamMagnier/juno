@@ -63,7 +63,7 @@ async function main() {
   let audioBytes = 0;
   let assistantText = "";
   let ready = false;
-  let errors: string[] = [];
+  const errors: string[] = [];
 
   ws.on("message", (data, isBinary) => {
     if (isBinary) {

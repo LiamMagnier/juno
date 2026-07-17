@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -1694,9 +1695,9 @@ export function Composer({
                           ) : projects.length === 0 ? (
                             <div className="px-2 py-4 text-center">
                               <p className="text-caption text-muted-foreground">No projects yet.</p>
-                              <a href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
+                              <Link href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
                                 Create one →
-                              </a>
+                              </Link>
                             </div>
                           ) : (
                             projects.map((project) => {
