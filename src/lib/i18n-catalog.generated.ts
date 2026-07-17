@@ -682,6 +682,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "connected"
   },
   {
+    "id": "12dcffaff86edbcc",
+    "source": "Too many message appends. Try again shortly."
+  },
+  {
     "id": "12e3ac0ddf410f08",
     "source": "plan_locked"
   },
@@ -4026,10 +4030,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pioneer Gemini image model."
   },
   {
-    "id": "751540bcaa51c183",
-    "source": "Juno Code needs your approval"
-  },
-  {
     "id": "754db3f6dc2907e0",
     "source": "Make Juno yours"
   },
@@ -4272,6 +4272,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7d7cc21948c9596a",
     "source": "That's not a .zip — upload the export archive exactly as ChatGPT or Claude gave it to you."
+  },
+  {
+    "id": "7d815fe95a43e38f",
+    "source": "New code session"
   },
   {
     "id": "7d8bf6d1b1792552",
@@ -6330,6 +6334,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT-5.4"
   },
   {
+    "id": "bc6316faf7208d1d",
+    "source": "Couldn’t refresh — still showing the last results."
+  },
+  {
     "id": "bcda257cf2693ac6",
     "source": "Les présentes sont soumises au"
   },
@@ -6508,6 +6516,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c372fee9b4566b85",
     "source": "Speed"
+  },
+  {
+    "id": "c37e50b29e6e2b84",
+    "source": "Juno Code approval request"
   },
   {
     "id": "c3812fc4acb861d5",
@@ -7736,6 +7748,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e3526ab6a67aaf9f",
     "source": "Rename file"
+  },
+  {
+    "id": "e37afba745641c21",
+    "source": "Folder options"
   },
   {
     "id": "e38f590afdee2664",
