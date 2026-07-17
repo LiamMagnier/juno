@@ -2,9 +2,8 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, ArrowUp, ChevronDown, Cloud, Loader2 } from "lucide-react";
+import { ArrowUp, ChevronDown, Cloud, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -288,17 +287,6 @@ export default function NewCodeSessionPage() {
 
   return (
     <div className="relative flex h-full min-h-full w-full flex-col overflow-y-auto">
-      {/* Back-to-chat control floats over the surface instead of taking a row, so
-          the greeting + composer center in the FULL viewport rather than in the
-          space left below a top bar. */}
-      <div className="absolute left-2 top-2 z-10 sm:left-3 sm:top-3">
-        <Button asChild variant="ghost" size="icon-sm" aria-label="Back to chat">
-          <Link href="/chat">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          </Link>
-        </Button>
-      </div>
-
       {/* Greeting + composer, centered as one calm group and free to scroll on
           short viewports. py accounts for the floating back button so a short
           viewport never tucks the greeting under it. */}
