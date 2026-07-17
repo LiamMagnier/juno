@@ -55,13 +55,11 @@ export interface ComposerPrefs {
   reasoningEffort: ReasoningEffort;
   webSearch: boolean;
   canvas: boolean;
-  // Voice input (speech-to-text) model id, or null = auto (server ASR when available).
-  voiceInput: string | null;
 }
 
 // webSearch defaults ON — it's only ever applied to models that actually support
 // native web search, so leaving it on gives up-to-date answers by default.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, voiceInput: null };
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true };
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
@@ -79,7 +77,6 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   }
   if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;
   if (typeof o.canvas === "boolean") out.canvas = o.canvas;
-  if (o.voiceInput === null || typeof o.voiceInput === "string") out.voiceInput = o.voiceInput as string | null;
   return out;
 }
 

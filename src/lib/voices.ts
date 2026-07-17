@@ -40,8 +40,8 @@ export interface Voice {
 }
 
 export const VOICES: readonly Voice[] = [
-  // alloy / nova / onyx keep the wording the voice-mode picker already ships for
-  // them ("Clear" / "Warm" / "Deep"), so the same voice isn't described two ways.
+  // alloy / nova / onyx keep the wording the voice settings picker already
+  // ships ("Clear" / "Warm" / "Deep"), so the same voice isn't described two ways.
   { id: "alloy", label: "Alloy", description: "Neutral and crisp" },
   { id: "echo", label: "Echo", description: "Even and measured" },
   { id: "fable", label: "Fable", description: "Bright and expressive" },

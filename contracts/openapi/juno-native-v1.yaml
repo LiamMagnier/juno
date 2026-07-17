@@ -130,8 +130,39 @@ paths:
         - { in: query, name: after, schema: { type: string, pattern: '^(0|[1-9][0-9]*)$' } }
       responses:
         '200':
-          description: SSE wakeup stream. Clients fetch authoritative pages after cursor events.
+          description: >-
+            Long-lived SSE wakeup stream (~55s, then `done` so clients reconnect):
+            `ready` on connect, a `cursor` event per cursor advance, heartbeat
+            comments every ~15s. An explicit `after` emits an immediate catch-up
+            cursor event when the account is already ahead of it; omitting it
+            baselines to the current cursor so only new changes wake the client.
+            Clients fetch authoritative pages after cursor events.
           content: { text/event-stream: { schema: { type: string } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /entities:
+    get:
+      operationId: getEntities
+      parameters:
+        - in: query
+          name: type
+          required: true
+          schema: { type: string }
+          description: A change-feed entityType (exactly the strings /changes emits).
+        - in: query
+          name: ids
+          required: true
+          schema: { type: string }
+          description: Comma-separated entity ids, at most 100 per request.
+      responses:
+        '200':
+          description: >-
+            Current owner-scoped state for each requested entity, in request order.
+            Tombstoned entities carry deletedAt with data null; ids unknown to the
+            account are omitted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/EntitiesResponse' } } }
+        '400':
+          description: Unknown entity type or malformed id batch.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /mutations:
     post:
@@ -273,7 +304,25 @@ components:
           properties:
             type:
               type: string
-              enum: [conversation.create, conversation.rename, conversation.update, conversation.delete, project.create, project.update, project.delete, memory.create, memory.update, memory.delete, settings.update]
+              enum: [conversation.create, conversation.rename, conversation.update, conversation.archive, conversation.delete, folder.create, folder.rename, folder.delete, project.create, project.update, project.delete, memory.create, memory.update, memory.delete, settings.update]
+    EntityEnvelope:
+      type: object
+      additionalProperties: false
+      required: [type, id, revision, deletedAt, data]
+      properties:
+        type: { type: string }
+        id: { type: string }
+        revision: { type: integer, minimum: 0 }
+        deletedAt: { type: [string, 'null'], format: date-time }
+        data:
+          type: [object, 'null']
+          additionalProperties: true
+    EntitiesResponse:
+      type: object
+      additionalProperties: false
+      required: [entities]
+      properties:
+        entities: { type: array, items: { $ref: '#/components/schemas/EntityEnvelope' } }
     ErrorEnvelope:
       type: object
       required: [error]

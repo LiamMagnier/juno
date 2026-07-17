@@ -1,15 +1,54 @@
 import { NextResponse } from "next/server";
+import { prismaUnguarded } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/session";
 import { getObjectBytes } from "@/lib/storage";
 import { sniffImageMime, sniffVideoMime } from "@/lib/uploads";
 
 export const runtime = "nodejs";
 
-// Serves locally-stored uploads (dev fallback). Object keys contain a random
-// UUID so they're effectively unguessable, matching the signed-URL model.
+/**
+ * True when the signed-in user may read the object behind `key`. Three real
+ * consumers exist (public share pages snapshot text only and never link here,
+ * so there is deliberately no anonymous path):
+ *  - chat/project/library attachments — owner only;
+ *  - avatars (`User.image` stores `/api/files/<key>`) — any signed-in user,
+ *    since profiles render beyond the owner's own session (admin surfaces);
+ *  - announcement media (owner-uploaded, broadcast to every signed-in user).
+ */
+async function canReadObject(userId: string, key: string): Promise<boolean> {
+  // storageKey is the lookup key, so the query cannot be userId-scoped —
+  // ownership is the explicit check on the row instead.
+  const attachment = await prismaUnguarded.attachment.findFirst({
+    where: { storageKey: key },
+    select: { userId: true },
+  });
+  if (attachment) return attachment.userId === userId;
+
+  const url = `/api/files/${key}`;
+  const avatar = await prismaUnguarded.user.findFirst({ where: { image: url }, select: { id: true } });
+  if (avatar) return true;
+  const announcement = await prismaUnguarded.announcement.findFirst({
+    where: { OR: [{ imageUrl: url }, { videoUrl: url }] },
+    select: { id: true },
+  });
+  return Boolean(announcement);
+}
+
+// Serves stored uploads (local-disk dev fallback for attachments; avatars and
+// announcement media in every mode). Object keys contain a random UUID, but
+// unguessability is not access control: the requester must be signed in and
+// the object must resolve to something they may read.
 export async function GET(req: Request, { params }: { params: Promise<{ key: string[] }> }) {
+  const user = await getCurrentUser();
+  if (!user) return new NextResponse("Unauthorized", { status: 401 });
+
   const { key } = await params;
   const k = (key ?? []).join("/");
   if (!k.startsWith("uploads/") || k.includes("..")) {
+    return new NextResponse("Not found", { status: 404 });
+  }
+  // Objects the user cannot read 404 (not 403): no existence oracle.
+  if (!(await canReadObject(user.id, k))) {
     return new NextResponse("Not found", { status: 404 });
   }
 

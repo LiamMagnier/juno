@@ -42,10 +42,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "account.apple.com"
   },
   {
-    "id": "0080bd29669b2628",
-    "source": "Instant, private, on-device recognition. Chrome & Edge only."
-  },
-  {
     "id": "0096d7c74dfc8673",
     "source": "Semantic Coordinate Vector ("
   },
@@ -76,10 +72,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "00c8dccc82ec6dd8",
     "source": "out — at today&rsquo;s list prices."
-  },
-  {
-    "id": "00cd58f655daed8a",
-    "source": "Type a message"
   },
   {
     "id": "00d60e31a4e6b834",
@@ -874,10 +866,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The voice Juno reads answers aloud in. Press play to hear one."
   },
   {
-    "id": "18d2a1927942b40d",
-    "source": "That voice option uses on-device recognition."
-  },
-  {
     "id": "18e73c8905f839a9",
     "source": "9. Contact"
   },
@@ -1618,10 +1606,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t reach Apple Music to verify the authorization. Please try again."
   },
   {
-    "id": "2edc3af7ccf4e2fa",
-    "source": "GLM-ASR"
-  },
-  {
     "id": "2ef42ec21d9300dd",
     "source": "Published"
   },
@@ -1700,10 +1684,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "316d43c021472bb1",
     "source": "Cadence"
-  },
-  {
-    "id": "316f24288be59c83",
-    "source": "Warm"
   },
   {
     "id": "3175d86c9be1a155",
@@ -2562,10 +2542,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "match"
   },
   {
-    "id": "494ca78f7374e46f",
-    "source": "Custom"
-  },
-  {
     "id": "49774d1b090e3fe6",
     "source": "task_limit"
   },
@@ -3166,6 +3142,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Uploading…"
   },
   {
+    "id": "5d00e62dbab80d27",
+    "source": "Invalid cursor"
+  },
+  {
     "id": "5d0df353b35b5d42",
     "source": "Believe this is a mistake? Reply to your account email to appeal."
   },
@@ -3330,10 +3310,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "E.g. I'm a product manager. Keep answers concise and use bullet points."
   },
   {
-    "id": "619742a53cee9ccd",
-    "source": "Voice recognition"
-  },
-  {
     "id": "619e3be216f367ad",
     "source": "Delete account…"
   },
@@ -3484,10 +3460,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6640c204c9955408",
     "source": "This removes the popup and every user dismissal record for it."
-  },
-  {
-    "id": "66876b7703af2afd",
-    "source": "Assistant voice"
   },
   {
     "id": "6725e7bbcd28f3a8",
@@ -3946,10 +3918,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Building the visual explanation..."
   },
   {
-    "id": "71b71bcf2818c869",
-    "source": "Switch to"
-  },
-  {
     "id": "71d3848b3f3ea07a",
     "source": "Could not delete the task."
   },
@@ -4102,10 +4070,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Popular"
   },
   {
-    "id": "764612959d42ce18",
-    "source": "On-device voice input isn't supported in this browser."
-  },
-  {
     "id": "7674021617159190",
     "source": "Ada Lovelace"
   },
@@ -4234,6 +4198,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A Music-User-Token is required."
   },
   {
+    "id": "7ae40d0b45c3803b",
+    "source": "Duplicate clientId in batch."
+  },
+  {
     "id": "7b0a3d74494a4f50",
     "source": "Add photos"
   },
@@ -4316,6 +4284,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7df5b60e984acb99",
     "source": "Previous-generation Opus."
+  },
+  {
+    "id": "7dfe163d1db9c272",
+    "source": "USER turns cannot carry model or token metadata."
   },
   {
     "id": "7e1b0d5641f2640c",
@@ -4430,10 +4402,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "mentions légales"
   },
   {
-    "id": "8038989b1628f463",
-    "source": "· not configured"
-  },
-  {
     "id": "8053f9c1e94c2741",
     "source": "Marin"
   },
@@ -4540,10 +4508,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8340d833ab72d332",
     "source": "Concise"
-  },
-  {
-    "id": "834bc9f12a7857f5",
-    "source": "above for server recognition, or just type below."
   },
   {
     "id": "836b6b9bf46c1ebf",
@@ -4774,20 +4738,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Xiaomi MiMo's reasoning, coding and agentic flagship."
   },
   {
-    "id": "8c81665426465c2a",
-    "source": "You're talking too fast — give it a second."
-  },
-  {
     "id": "8ca4362886961e2d",
     "source": "confirmEmail is required."
   },
   {
     "id": "8cd2c7deefc5d6e0",
     "source": "Malformed Step Lab data."
-  },
-  {
-    "id": "8ce5deda43cd9c12",
-    "source": "Close voice mode"
   },
   {
     "id": "8d525e5f158b9afe",
@@ -4820,10 +4776,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8e2c7ac508139a02",
     "source": "offline"
-  },
-  {
-    "id": "8e473151dfac41a6",
-    "source": "Zhipu server-side speech recognition — multilingual, high accuracy."
   },
   {
     "id": "8e588cd187741f1c",
@@ -5130,10 +5082,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Developer tools"
   },
   {
-    "id": "96f1d84eb0027931",
-    "source": "Voice orb — tap to talk or interrupt"
-  },
-  {
     "id": "970b7b1658ce9142",
     "source": "Profile, settings, conversations, memories, projects, and file metadata."
   },
@@ -5374,10 +5322,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ministral"
   },
   {
-    "id": "9d1470a9662aa72a",
-    "source": "That clip is too long — keep it under ~25 MB."
-  },
-  {
     "id": "9d347963c9d012e3",
     "source": "Apple ID"
   },
@@ -5458,10 +5402,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every frontier model, one honest subscription. Operated from France."
   },
   {
-    "id": "a02f1cea3c1d6c6e",
-    "source": "Thinking…"
-  },
-  {
     "id": "a03681e52bc073ba",
     "source": "Previous affordable frontier tier."
   },
@@ -5504,6 +5444,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a10a36fa109818be",
     "source": "Search apps"
+  },
+  {
+    "id": "a13383aa22588d5f",
+    "source": "The cursor predates the compaction floor — resync from scratch."
   },
   {
     "id": "a1352cf77ead1804",
@@ -5862,10 +5806,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "message"
   },
   {
-    "id": "ab827e3fe17da220",
-    "source": "Something went wrong"
-  },
-  {
     "id": "ab8de2701145fabe",
     "source": "Message UID (from search_messages)."
   },
@@ -6008,10 +5948,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "afd25fdf17c7f534",
     "source": "Forgot your password?"
-  },
-  {
-    "id": "afec2b22114c05f1",
-    "source": "Playback speed"
   },
   {
     "id": "aff0766a5290e117",
@@ -6630,10 +6566,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "tokens"
   },
   {
-    "id": "c54e3625467b4fde",
-    "source": "Deep"
-  },
-  {
     "id": "c5781a9f97126734",
     "source": "Rebuild the summary from your chats and projects"
   },
@@ -6660,10 +6592,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c5d0453e23e49add",
     "source": "Start building"
-  },
-  {
-    "id": "c5ecc45b6068eb68",
-    "source": "Browser (on-device)"
   },
   {
     "id": "c5fd95376298d09b",
@@ -6732,6 +6660,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c8177798c2e1cbdc",
     "source": "Meituan · LongCat"
+  },
+  {
+    "id": "c82f5e6ea2eef76d",
+    "source": "Invalid cursor or limit"
   },
   {
     "id": "c8455b911baef784",
@@ -7346,10 +7278,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reasoning"
   },
   {
-    "id": "d83dd7aa75c06690",
-    "source": "Juno Voice"
-  },
-  {
     "id": "d86f0341dfafd39d",
     "source": "Could not start the task."
   },
@@ -7416,10 +7344,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d93e9a7a0dc19066",
     "source": "(voir les"
-  },
-  {
-    "id": "d946e0a4fa8d965d",
-    "source": "GLM-ASR-2512"
   },
   {
     "id": "d94eaf69438863a8",
@@ -7958,10 +7882,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Try a chat title, or a command like “settings”."
   },
   {
-    "id": "e86dd1c94dc8c000",
-    "source": "Speaking…"
-  },
-  {
     "id": "e87ba7a0b779d8b7",
     "source": "ended"
   },
@@ -8152,10 +8072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ee3c716130546a45",
     "source": "Unpin"
-  },
-  {
-    "id": "ee40cdb8207bb35e",
-    "source": "No audio was provided."
   },
   {
     "id": "ee5c88bf416d1e2f",

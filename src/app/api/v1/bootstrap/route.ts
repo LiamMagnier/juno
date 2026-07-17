@@ -1,6 +1,7 @@
 import { apiV1Error, apiV1Json, CONTRACT_VERSION } from "@/lib/api-v1";
 import { requireNativeRequest } from "@/lib/native-request";
 import { prisma } from "@/lib/prisma";
+import { getCompactionFloor } from "@/lib/sync-feed";
 import { loadAvailableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 
 export const runtime = "nodejs";
@@ -9,11 +10,12 @@ export async function GET(request: Request) {
   try {
     const current = await requireNativeRequest(request);
     const period = new Date().toISOString().slice(0, 7);
-    const [settings, subscription, usage, latest, modelCatalog] = await Promise.all([
+    const [settings, subscription, usage, latest, compactionFloor, modelCatalog] = await Promise.all([
       prisma.settings.findUnique({ where: { userId: current.user.id } }),
       prisma.subscription.findUnique({ where: { userId: current.user.id } }),
       prisma.usage.findUnique({ where: { userId_period: { userId: current.user.id, period } } }),
       prisma.accountChange.findFirst({ where: { accountId: current.user.id }, orderBy: { cursor: "desc" }, select: { cursor: true } }),
+      getCompactionFloor(),
       loadAvailableModels().then(nativeModelCatalog),
     ]);
     return apiV1Json({
@@ -30,7 +32,7 @@ export async function GET(request: Request) {
       settings,
       featureFlags: {},
       currentChangeCursor: (latest?.cursor ?? 0n).toString(),
-      compactionFloorCursor: "0",
+      compactionFloorCursor: compactionFloor.toString(),
       modelManifestVersion: modelCatalog.manifestVersion,
       contractVersion: CONTRACT_VERSION,
       minimumClientVersions: { macOS: "3.0.0" },

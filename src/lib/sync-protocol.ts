@@ -1,5 +1,24 @@
 export const MAX_CHANGE_PAGE_SIZE = 500;
 
+/**
+ * Thrown when a client's cursor predates the compaction floor: changes in
+ * (cursor, floor] may have been pruned, so an incremental catch-up would
+ * silently lose data. Routes translate this into 410 — the client must
+ * resync from bootstrap.
+ */
+export class CursorCompactedError extends Error {
+  constructor(public readonly floor: bigint) {
+    super("cursor_compacted");
+    this.name = "CursorCompactedError";
+  }
+}
+
+/** A cursor exactly at the floor has consumed everything the pruner deleted;
+ *  anything below it may have missed pruned changes. */
+export function ensureCursorAboveFloor(after: bigint, floor: bigint): void {
+  if (after < floor) throw new CursorCompactedError(floor);
+}
+
 export function parseCursor(value: string | null): bigint {
   if (value === null || value === "") return 0n;
   if (!/^(0|[1-9][0-9]{0,30})$/.test(value)) throw new Error("invalid_cursor");

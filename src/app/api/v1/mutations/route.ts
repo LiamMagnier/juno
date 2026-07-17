@@ -1,39 +1,12 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { ApiV1Error, apiV1Error, apiV1Json } from "@/lib/api-v1";
 import { requireNativeRequest } from "@/lib/native-request";
 import { prismaUnguarded } from "@/lib/prisma";
+import { isModelId } from "@/lib/models";
+import { mutationRequestSchema, type MutationOperation } from "@/lib/sync-mutations";
 
 export const runtime = "nodejs";
-
-const operation = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("conversation.create"), clientEntityId: z.string().uuid().optional(), title: z.string().trim().min(1).max(200).optional() }).strict(),
-  z.object({ type: z.literal("conversation.rename"), entityId: z.string().min(1).max(200), title: z.string().trim().min(1).max(200) }).strict(),
-  z.object({ type: z.literal("conversation.update"), entityId: z.string().min(1).max(200), patch: z.object({
-    title: z.string().trim().min(1).max(200).optional(), pinned: z.boolean().optional(),
-    projectId: z.string().min(1).max(200).nullable().optional(), folderId: z.string().min(1).max(200).nullable().optional(),
-  }).strict() }).strict(),
-  z.object({ type: z.literal("conversation.delete"), entityId: z.string().min(1).max(200) }).strict(),
-  z.object({ type: z.literal("project.create"), clientEntityId: z.string().uuid().optional(), name: z.string().trim().min(1).max(160), instructions: z.string().max(50_000).default("") }).strict(),
-  z.object({ type: z.literal("project.update"), entityId: z.string().min(1).max(200), name: z.string().trim().min(1).max(160).optional(), instructions: z.string().max(50_000).optional() }).strict(),
-  z.object({ type: z.literal("project.delete"), entityId: z.string().min(1).max(200) }).strict(),
-  z.object({ type: z.literal("memory.create"), clientEntityId: z.string().uuid().optional(), content: z.string().trim().min(1).max(20_000) }).strict(),
-  z.object({ type: z.literal("memory.update"), entityId: z.string().min(1).max(200), content: z.string().trim().min(1).max(20_000) }).strict(),
-  z.object({ type: z.literal("memory.delete"), entityId: z.string().min(1).max(200) }).strict(),
-  z.object({ type: z.literal("settings.update"), patch: z.object({
-    theme: z.enum(["LIGHT", "DARK", "SYSTEM"]).optional(), accent: z.string().min(1).max(40).optional(),
-    defaultModel: z.string().min(1).max(200).optional(), customInstructions: z.string().max(50_000).optional(),
-    responseLanguage: z.string().min(1).max(80).optional(), uiLocale: z.string().min(1).max(40).optional(),
-    personality: z.string().min(1).max(80).optional(), memoryEnabled: z.boolean().optional(),
-    voiceId: z.string().max(200).nullable().optional(), favoriteModels: z.array(z.string().max(200)).max(100).optional(),
-  }).strict() }).strict(),
-]);
-const requestSchema = z.object({
-  clientMutationId: z.string().uuid(),
-  baseRevision: z.number().int().min(0),
-  operation,
-}).strict();
 
 const hashRequest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
@@ -46,7 +19,7 @@ export async function POST(request: Request) {
   } | null = null;
   try {
     const current = await requireNativeRequest(request);
-    const body = requestSchema.parse(await request.json());
+    const body = mutationRequestSchema.parse(await request.json());
     const requestHash = hashRequest(body);
     receiptLookup = {
       accountId: current.user.id,
@@ -92,7 +65,7 @@ export async function POST(request: Request) {
 }
 
 type Tx = Prisma.TransactionClient;
-type Operation = z.infer<typeof operation>;
+type Operation = MutationOperation;
 
 async function requireRevision(tx: Tx, accountId: string, entityType: string, entityId: string, baseRevision: number) {
   const state = await tx.entityRevision.findUnique({ where: { accountId_entityType_entityId: { accountId, entityType, entityId } } });
@@ -109,7 +82,18 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
   switch (op.type) {
     case "conversation.create": {
       if (baseRevision !== 0) throw new ApiV1Error("invalid_request", 400, "Create mutations must start at revision zero.");
-      const row = await tx.conversation.create({ data: { userId: accountId, ...(op.title ? { title: op.title, titleSource: "user" } : {}) } });
+      if (op.model !== undefined && !isModelId(op.model)) throw new ApiV1Error("invalid_request", 400, "The model is unknown.");
+      if (op.projectId) {
+        const project = await tx.project.findFirst({ where: { id: op.projectId, userId: accountId }, select: { id: true } });
+        if (!project) throw new ApiV1Error("not_found", 404, "The project was not found.");
+      }
+      const row = await tx.conversation.create({ data: {
+        userId: accountId,
+        ...(op.title ? { title: op.title, titleSource: "user" } : {}),
+        ...(op.kind ? { kind: op.kind } : {}),
+        ...(op.model ? { model: op.model } : {}),
+        ...(op.projectId ? { projectId: op.projectId } : {}),
+      } });
       return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "conversation", row.id) } };
     }
     case "conversation.rename": {
@@ -128,11 +112,41 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
       if (!updated.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
     }
+    case "conversation.archive": {
+      await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
+      const existing = await tx.conversation.findFirst({ where: { id: op.entityId, userId: accountId }, select: { id: true } });
+      if (!existing) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
+      if (op.archived) {
+        // Stamp archivedAt only on the null→now transition so re-archiving
+        // never resets "when" (same semantics as the web PATCH).
+        await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId, archivedAt: null }, data: { archivedAt: new Date() } });
+      } else {
+        await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId, archivedAt: { not: null } }, data: { archivedAt: null } });
+      }
+      return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId) } };
+    }
     case "conversation.delete": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
       const deleted = await tx.conversation.deleteMany({ where: { id: op.entityId, userId: accountId } });
       if (!deleted.count) throw new ApiV1Error("not_found", 404, "The conversation was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "conversation", op.entityId), deleted: true } };
+    }
+    case "folder.create": {
+      if (baseRevision !== 0) throw new ApiV1Error("invalid_request", 400, "Create mutations must start at revision zero.");
+      const row = await tx.folder.create({ data: { userId: accountId, name: op.name } });
+      return { entityMappings: op.clientEntityId ? { [op.clientEntityId]: row.id } : {}, entity: { id: row.id, revision: await nextRevision(tx, accountId, "folder", row.id) } };
+    }
+    case "folder.rename": {
+      await requireRevision(tx, accountId, "folder", op.entityId, baseRevision);
+      const updated = await tx.folder.updateMany({ where: { id: op.entityId, userId: accountId }, data: { name: op.name } });
+      if (!updated.count) throw new ApiV1Error("not_found", 404, "The folder was not found.");
+      return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "folder", op.entityId) } };
+    }
+    case "folder.delete": {
+      await requireRevision(tx, accountId, "folder", op.entityId, baseRevision);
+      const deleted = await tx.folder.deleteMany({ where: { id: op.entityId, userId: accountId } });
+      if (!deleted.count) throw new ApiV1Error("not_found", 404, "The folder was not found.");
+      return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "folder", op.entityId), deleted: true } };
     }
     case "project.create": {
       if (baseRevision !== 0) throw new ApiV1Error("invalid_request", 400, "Create mutations must start at revision zero.");

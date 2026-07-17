@@ -5,8 +5,8 @@ import * as React from "react";
 /** Speak text via the server TTS endpoint, falling back to the browser.
  *
  *  `speak(text, voiceId)` takes the voice per call rather than reading settings
- *  itself: voice-mode passes the live picker value, chat read-aloud passes the
- *  saved `settings.voiceId`, and the hook stays free of app context. */
+ *  itself: chat read-aloud passes the saved `settings.voiceId`, and the hook
+ *  stays free of app context. */
 export function useTts() {
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   // Playback rate applied to every speak; the TTS route only takes { text, voiceId },

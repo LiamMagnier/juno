@@ -215,6 +215,16 @@ model EntityRevision {
   @@index([accountId, entityType])
 }
 
+/// Change-log compaction state — a single "global" row recording the highest
+/// AccountChange cursor the retention pruner has deleted. bootstrap/changes
+/// serve it as compactionFloorCursor; a client whose cursor predates it may
+/// have missed pruned changes and must resync from bootstrap (410).
+model SyncCompaction {
+  id          String   @id
+  floorCursor BigInt   @default(0)
+  prunedAt    DateTime @default(now())
+}
+
 model MutationReceipt {
   id                    String   @id @default(cuid())
   accountId             String
@@ -363,6 +373,11 @@ model Project {
 model Message {
   id               String    @id @default(cuid())
   conversationId   String
+  // Client-generated idempotency key for native transcript pushes
+  // (POST /api/conversations/[id]/messages). Unique per conversation, so a
+  // retried batch can never duplicate a turn. NULL for every message written
+  // by the web pipeline, which has no client-side retry surface.
+  clientId         String?
   role             Role
   content          String    @db.Text
   reasoning        String?   @db.Text // visible chain-of-thought when a thinking model is used
@@ -386,6 +401,7 @@ model Message {
   artifacts    Artifact[]
   versions     MessageVersion[]
 
+  @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
 }
 

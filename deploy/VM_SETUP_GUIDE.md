@@ -252,3 +252,23 @@ If you prefer standard subdomains (e.g., frontend on `app.yourdomain.com` and ba
 2. In both Vercel and VM env configs, set:
    - `COOKIE_DOMAIN=".yourdomain.com"` (Note the leading dot! This allows subdomains to read/write the cookie).
 3. NextAuth will automatically share the session token. NextAuth requests will go to `api.yourdomain.com/api/auth` or local endpoints and validate the user.
+
+---
+
+## Maintenance: sync log retention
+
+The device-sync change log (`AccountChange`) and mutation idempotency ledger (`MutationReceipt`) grow forever unless pruned. Run the pruner periodically (weekly is plenty):
+
+```bash
+npm run sync:prune              # delete rows older than 30 days, advance the compaction floor
+npm run sync:prune -- --dry     # preview only
+npm run sync:prune -- --days 90 # custom retention window
+```
+
+Suggested cron entry on the VM (Sundays at 04:00):
+
+```cron
+0 4 * * 0 cd /home/ubuntu/juno && npm run sync:prune >> logs/prune-sync.log 2>&1
+```
+
+Pruning advances the compaction floor served by `/api/v1/bootstrap` and `/api/v1/changes`; clients whose cursor predates the floor receive `410` and resync from bootstrap — that is the protocol working as intended, not an error.
