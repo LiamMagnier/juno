@@ -67,6 +67,7 @@ model User {
   entityRevisions          EntityRevision[]
   mutationReceipts         MutationReceipt[]
   codeWorkspaces           CodeWorkspace[]
+  chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
 }
 
 // ----------------------------------------------------------------------------
@@ -414,6 +415,35 @@ model Message {
 
   @@unique([conversationId, clientId])
   @@index([conversationId, createdAt])
+}
+
+// Durable idempotency receipt for the first saved native/Quick submission.
+// The request hash binds every generation-affecting client field to one
+// canonical server generation id. State is a string (rather than a PostgreSQL
+// enum) so future receipt states remain an additive deployment.
+model ChatFirstSubmissionReceipt {
+  id                String    @id @default(cuid())
+  userId            String
+  clientRequestId   String
+  clientMessageId   String
+  requestHash       String
+  generationId      String    @unique
+  state             String    @default("accepted") // claimed | accepted | running | completed | failed
+  conversationId    String
+  userMessageId     String
+  assistantMessageId String?
+  finishReason      String?
+  failureCode       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  completedAt       DateTime?
+  leaseExpiresAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, clientRequestId])
+  @@unique([userId, clientMessageId])
+  @@index([conversationId])
 }
 
 // Idempotency ledger for saving a realtime voice session. A browser may retry

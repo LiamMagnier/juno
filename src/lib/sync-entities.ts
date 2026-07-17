@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
+import { coerceChatOrigin } from "@/lib/chat-origin";
 import { getViewUrl } from "@/lib/storage";
 
 /*
@@ -84,7 +85,7 @@ const loaders: Record<string, EntityLoader> = {
           title: row.title,
           titleSource: row.titleSource,
           model: row.model,
-          origin: row.origin,
+          origin: coerceChatOrigin(row.origin),
           kind: row.kind,
           codeWorkspaceName: row.codeWorkspaceName,
           codeWorkspacePath: row.codeWorkspacePath,

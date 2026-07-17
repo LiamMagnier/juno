@@ -185,7 +185,15 @@ export interface GenerateEditPayload {
 
 // ---- Streaming protocol (server -> client over SSE) ----
 export type StreamChunk =
-  | { type: "meta"; conversationId: string; userMessageId: string | null; title: string; titleSource?: TitleSource; generationId?: string }
+  | {
+      type: "meta";
+      conversationId: string;
+      userMessageId: string | null;
+      title: string;
+      titleSource?: TitleSource;
+      generationId?: string;
+      receiptState?: "running";
+    }
   | { type: "title"; conversationId: string; title: string; titleSource?: TitleSource }
   | { type: "activity"; event: ClientActivityEvent }
   | { type: "sources"; sources: ClientSource[] }
@@ -205,7 +213,19 @@ export type StreamChunk =
       projectId?: string | null;
       projectName?: string | null;
     }
-  | { type: "error"; message: string; quota?: ClientQuota; finishReason?: ChatFinishReason; preservePartial?: boolean }
+  | {
+      type: "error";
+      message: string;
+      quota?: ClientQuota;
+      finishReason?: ChatFinishReason;
+      preservePartial?: boolean;
+      /** Durable first-submission terminal metadata (absent for legacy/private calls). */
+      conversationId?: string;
+      userMessageId?: string;
+      generationId?: string;
+      receiptState?: "failed";
+      failureCode?: string;
+    }
   // Heartbeat: keeps bytes flowing through proxies while a model thinks
   // silently (hidden reasoning) — the client simply ignores it.
   | { type: "ping" };
@@ -223,4 +243,11 @@ export interface ChatRequestBody {
   deepResearch?: boolean;
   reasoningEffort?: ReasoningEffort;
   generationId?: string;
+  /** Durable creation surface for a newly saved conversation. */
+  origin?: ChatOrigin;
+  /** Paired idempotency keys, valid only on the first saved submission. */
+  clientRequestId?: string;
+  clientMessageId?: string;
+  /** Optional legacy spend-ledger override; native origins default to app. */
+  client?: "web" | "app";
 }

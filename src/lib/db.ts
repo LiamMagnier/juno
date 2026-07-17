@@ -36,6 +36,7 @@ const GUARDED_MODELS = new Set([
   "CodeDevice",
   "CodeTask",
   "ApiSpend",
+  "ChatFirstSubmissionReceipt",
   "FeatureVote",
   "AnnouncementDismissal",
 ]);

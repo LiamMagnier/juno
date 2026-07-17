@@ -21,6 +21,7 @@ import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { resolveModel } from "@/lib/models";
 import { estimateCostUsd } from "@/lib/pricing";
+import { coerceChatOrigin } from "@/lib/chat-origin";
 
 const ACTIVITY_KINDS = new Set<ClientActivityEvent["kind"]>([
   "context",
@@ -151,7 +152,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     title: conv.title,
     titleSource: coerceTitleSource(conv.titleSource),
     model: conv.model,
-    origin: (conv.origin as ClientConversation["origin"]) ?? null,
+    origin: coerceChatOrigin(conv.origin),
     kind: conv.kind === "code" ? "code" : "chat",
     codeWorkspaceName: conv.codeWorkspaceName ?? null,
     codeWorkspacePath: conv.codeWorkspacePath ?? null,

@@ -918,6 +918,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "How your messages split across configured labs."
   },
   {
+    "id": "1a796c1932077792",
+    "source": "attachment_claim_failed"
+  },
+  {
     "id": "1aa4cb0bcca76e92",
     "source": "Image"
   },
@@ -1412,6 +1416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2876b50057a6b393",
     "source": "Try Juno"
+  },
+  {
+    "id": "288d4af73ded34c1",
+    "source": "new saved Quick submissions require clientRequestId and clientMessageId"
   },
   {
     "id": "28d03596d24eeb4e",
@@ -2474,6 +2482,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit"
   },
   {
+    "id": "46750dd0a942d9a8",
+    "source": "idempotency_key_reused"
+  },
+  {
     "id": "4695a9fcf8e5266f",
     "source": "/memory"
   },
@@ -3522,6 +3534,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This removes the popup and every user dismissal record for it."
   },
   {
+    "id": "669d59cd2d84b327",
+    "source": "Attachments are not available in private chat."
+  },
+  {
     "id": "6725e7bbcd28f3a8",
     "source": "System"
   },
@@ -3882,6 +3898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Weekdays"
   },
   {
+    "id": "6f4fb24ea2a2e419",
+    "source": "request_already_submitted"
+  },
+  {
     "id": "6f541e1b25319db5",
     "source": "Create task"
   },
@@ -3980,6 +4000,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "71883a61ed39bb0a",
     "source": "Building the visual explanation..."
+  },
+  {
+    "id": "71b99d22644e131c",
+    "source": "idempotent first-submission keys are only valid for a new saved conversation"
   },
   {
     "id": "71d3848b3f3ea07a",
@@ -4104,6 +4128,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "75e9966382de9612",
     "source": "/voice"
+  },
+  {
+    "id": "75fbdbab6890b76e",
+    "source": "clientRequestId and clientMessageId must be provided together"
   },
   {
     "id": "7607faf951a8688a",
@@ -5830,6 +5858,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Max tier"
   },
   {
+    "id": "aa62e5da889a9ce7",
+    "source": "This message was already accepted. Open the existing conversation instead of submitting it again."
+  },
+  {
     "id": "aa63925edf225e26",
     "source": "warn"
   },
@@ -6128,6 +6160,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b28437ba8920e088",
     "source": "user_stopped"
+  },
+  {
+    "id": "b2a3be6212bb90dc",
+    "source": "private_attachments_unsupported"
   },
   {
     "id": "b2b0be02e26c90d2",
@@ -7306,6 +7342,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No matches."
   },
   {
+    "id": "d68d3ff6f7eb51d4",
+    "source": "asc"
+  },
+  {
     "id": "d691f404f4b23df1",
     "source": "Previous fast vision-language model, superseded by Qwen3.6 Flash."
   },
@@ -7584,6 +7624,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dcd1d5223f73b3a9",
     "source": "Name"
+  },
+  {
+    "id": "dcd6e88eb356031d",
+    "source": "This clientRequestId is already bound to a different first message."
   },
   {
     "id": "dce083a2c47ffdc4",

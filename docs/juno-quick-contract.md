@@ -55,8 +55,9 @@ hidden -> ready -> clarifying? -> submitting -> streaming -> complete
   the display's visible work area.
 - Showing Quick stores the previously focused application/window. Escape or a
   click outside dismisses the panel and restores focus where the OS permits.
-- Escape first closes transient UI such as a picker, clarification, or expanded
-  result before it dismisses the panel.
+- During active generation or dictation, Escape stops that work first. Otherwise
+  it closes transient UI such as a picker, clarification, or expanded result
+  before it dismisses the panel.
 - Reduced motion removes nonessential transitions. Increased contrast, forced
   colors, and reduced transparency must retain legible boundaries and focus.
 
@@ -66,8 +67,9 @@ hidden -> ready -> clarifying? -> submitting -> streaming -> complete
   never implements a parallel token store or refresh loop.
 - A draft is keyed by account identity, encrypted with the platform credential
   store, and never synchronized as a conversation before submission.
-- Sign-out clears the visible draft and prevents drafts from another account
-  being displayed. Switching accounts reloads only the matching draft.
+- Sign-out and account switch clear both the departing account's visible draft
+  and its protected persisted copy. Returning to a previous account must not
+  automatically reload that account's old draft.
 - `Open in Juno` opens or reveals the main app and navigates to the canonical
   conversation identity. It must also work after every main window was closed.
 
@@ -82,6 +84,65 @@ routes while the equivalent versioned contract is introduced:
 - `POST /api/upload` and attachment retrieval routes
 - conversation, model, project, artifact, usage, and sync routes already used by
   the main clients
+
+For the compatibility `POST /api/chat` route, a first saved submission sends
+`origin`, `clientRequestId`, and `clientMessageId`. Both identifiers are opaque,
+log-safe strings of 8–120 ASCII letters, digits, `.`, `_`, `:`, or `-`; they must
+be generated once and reused unchanged for every transport retry. The two keys
+must be supplied together and are not valid with `conversationId`, regeneration,
+private mode, or an in-conversation clarification reply.
+
+The bridge enforces these outcomes before a second generation can start:
+
+- the same request/message pair returns `409 REQUEST_ALREADY_SUBMITTED` with the
+  canonical conversation, user-message, server generation, and receipt state;
+- reuse of either key with another key or a generation-affecting request body
+  returns `409 IDEMPOTENCY_KEY_REUSED`;
+- attachment IDs are claimed atomically with the user message, and a partial,
+  cross-account, or concurrent claim returns `409 ATTACHMENT_CLAIM_FAILED`;
+- persistent attachment IDs in private mode return
+  `400 PRIVATE_ATTACHMENTS_UNSUPPORTED`.
+
+Exact committed retries are recovered before rate limiting. On first acceptance,
+quota consumption, conversation creation, the user message, every attachment
+claim, and the durable receipt commit in one transaction. The receipt hashes the
+full first-turn generation envelope and owns a server-generated `generationId`;
+a caller-provided process identifier is never treated as the canonical ID.
+If a rollout-era conversation already has a first message but no receipt, the
+server fails closed with `IDEMPOTENCY_KEY_REUSED`: it cannot prove the historical
+body hash. A truly empty rollout orphan may be completed only under a row lock
+inside the normal atomic acceptance transaction.
+
+Receipt states are `accepted`, `running`, `completed`, and `failed`. A matching
+pre-acceptance `claimed` receipt, if observed during a compatibility transition,
+returns retryable `409 REQUEST_IN_PROGRESS`, never an accepted response. Terminal
+zero-output stream errors carry the canonical `generationId`, `receiptState:
+"failed"`, stable `conversationId`/`userMessageId`, and a stable `failureCode`.
+Receipts survive conversation deletion for the account lifetime, so deleting a
+chat cannot make an old idempotency key reusable.
+
+Native clients refresh a receipt with authenticated `GET /api/chat/receipt`,
+supplying exactly one of `clientRequestId` or canonical `generationId`. The route
+returns only `conversationId`, `userMessageId`, `generationId`, `receiptState`,
+`finishReason`, and `failureCode`; prompts, hashes, and attachment data are never
+returned. This lookup also covers submission/cancel races before the stream's
+first canonical `meta` event.
+
+An accepted/running receipt holds a five-minute server lease. A live generation
+refreshes it every 60 seconds; replay and status lookup atomically turn an expired
+lease into terminal `failed` with `failureCode: GENERATION_LEASE_EXPIRED`. A client
+must not start replacement work until the server reports a terminal failed state;
+receipt status, not elapsed client time, is the authority to regenerate.
+
+When the legacy `client` spend tag is omitted, `web` origin is accounted as
+`web` and every main/Quick native origin is accounted as `app`. An explicitly
+supplied legacy tag keeps its historical behavior.
+
+The receipt and canonical `generationId` are durable, but the byte stream and
+cancellation controller remain process-local and are not yet resumable/shared
+across processes. Clients
+recover an accepted retry from the receipt state and canonical conversation
+rather than expecting the original stream to resume.
 
 The target native contract is a versioned generation resource with:
 

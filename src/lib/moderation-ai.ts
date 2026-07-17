@@ -1,5 +1,6 @@
 import { recordFlag, type FlagSeverity } from "@/lib/moderation";
 import { runUtilityPrompt } from "@/lib/memory";
+import { moderationMessagePreview } from "@/lib/chat-moderation";
 
 /*
  * Automatic content moderation — DETECT only. This module classifies a user's
@@ -198,22 +199,48 @@ export async function moderateText(text: string): Promise<ModerationHit | null> 
  * message and, on a hit, records the flag (which applies the ban policy).
  * Swallows every error — moderation must never break or delay a reply.
  */
-export async function moderateUserMessage({ userId, text }: { userId: string; text: string }): Promise<void> {
+export async function moderateUserMessages({
+  userId,
+  texts,
+  redactPreview = false,
+}: {
+  userId: string;
+  texts: string[];
+  redactPreview?: boolean;
+}): Promise<void> {
   try {
-    const hit = await moderateText(text);
-    if (!hit) return;
-    await recordFlag({
-      userId,
-      severity: hit.severity,
-      category: hit.category,
-      detail: hit.detail,
-      source: "auto",
-      messagePreview: text.slice(0, 240),
-    });
+    // One request produces at most one moderation record/strike even when a
+    // private context contains several user turns.
+    for (const text of texts) {
+      const hit = await moderateText(text);
+      if (!hit) continue;
+      await recordFlag({
+        userId,
+        severity: hit.severity,
+        category: hit.category,
+        detail: hit.detail,
+        source: "auto",
+        messagePreview: moderationMessagePreview(text, redactPreview),
+      });
+      return;
+    }
   } catch (err) {
-    console.error("[moderation] moderateUserMessage failed", {
+    console.error("[moderation] moderateUserMessages failed", {
       userId,
       message: err instanceof Error ? err.message : String(err),
     });
   }
+}
+
+/** Backwards-compatible single-message entry point. */
+export async function moderateUserMessage({
+  userId,
+  text,
+  redactPreview = false,
+}: {
+  userId: string;
+  text: string;
+  redactPreview?: boolean;
+}): Promise<void> {
+  return moderateUserMessages({ userId, texts: [text], redactPreview });
 }

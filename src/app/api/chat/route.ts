@@ -32,19 +32,31 @@ import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerT
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
-import { truncate, formatUsd } from "@/lib/utils";
+import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
-import { quickScreen, moderateUserMessage } from "@/lib/moderation-ai";
+import { quickScreen, moderateUserMessages } from "@/lib/moderation-ai";
 import { recordFlag } from "@/lib/moderation";
+import { effectiveModerationTexts, moderationMessagePreview } from "@/lib/chat-moderation";
+import {
+  classifyFirstSubmissionRecovery,
+  classifyReceiptlessFirstSubmission,
+  FIRST_SUBMISSION_RECEIPT_HEARTBEAT_MS,
+  firstSubmissionLeaseHeartbeatOwnsReceipt,
+  firstSubmissionLeaseExpiresAt,
+  hashFirstSubmission,
+  type FirstSubmissionRecovery,
+} from "@/lib/chat-first-submission";
+import { findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
 import {
   chatOriginSchema,
   clientIdempotencyKeySchema,
   clientSubmissionMetadataIssue,
+  legacyChatClientForOrigin,
 } from "@/lib/chat-origin";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
@@ -147,7 +159,15 @@ const bodySchema = z
       .optional(),
   })
   .superRefine((input, ctx) => {
-    const issue = clientSubmissionMetadataIssue(input);
+    const issue = clientSubmissionMetadataIssue({
+      origin: input.origin,
+      conversationId: input.conversationId,
+      regenerate: input.regenerate,
+      privateMode: input.privateMode,
+      clarificationReply: input.clarification !== undefined,
+      clientRequestId: input.clientRequestId,
+      clientMessageId: input.clientMessageId,
+    });
     if (issue) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -219,6 +239,21 @@ function classifyErrorFinishReason(err: unknown): ChatFinishReason {
   return "error";
 }
 
+function generationFailureCode(reason: ChatFinishReason): string {
+  switch (reason) {
+    case "user_stopped":
+      return "GENERATION_STOPPED_BEFORE_OUTPUT";
+    case "network_error":
+      return "GENERATION_NETWORK_ERROR";
+    case "model_context_window_exceeded":
+      return "GENERATION_CONTEXT_LIMIT";
+    case "sensitive":
+      return "GENERATION_SENSITIVE_CONTENT";
+    default:
+      return "GENERATION_FAILED";
+  }
+}
+
 function appendFinishWarning(
   reason: ChatFinishReason,
   sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent
@@ -234,7 +269,10 @@ function appendFinishWarning(
 function alreadySubmittedResponse(input: {
   conversationId: string;
   userMessageId: string;
-  generationId?: string;
+  generationId: string;
+  receiptState: "accepted" | "running" | "completed" | "failed";
+  finishReason: string | null;
+  failureCode: string | null;
 }) {
   return NextResponse.json(
     {
@@ -243,16 +281,144 @@ function alreadySubmittedResponse(input: {
       message: "This message was already accepted. Open the existing conversation instead of submitting it again.",
       conversationId: input.conversationId,
       userMessageId: input.userMessageId,
-      generationId: input.generationId ?? null,
+      generationId: input.generationId,
+      receiptState: input.receiptState,
+      finishReason: input.finishReason,
+      failureCode: input.failureCode,
       retryable: false,
     },
     { status: 409 }
   );
 }
 
+function firstSubmissionInProgressResponse(input: { generationId: string }) {
+  return NextResponse.json(
+    {
+      error: "request_in_progress",
+      code: "REQUEST_IN_PROGRESS",
+      message: "This first submission is still being accepted. Retry with the same identifiers.",
+      generationId: input.generationId,
+      receiptState: "claimed",
+      retryable: true,
+    },
+    { status: 409 }
+  );
+}
+
+function firstSubmissionRecoveryResponse(recovery: FirstSubmissionRecovery) {
+  if (recovery.kind === "conflict") return idempotencyKeyConflictResponse(recovery.conversationId);
+  if (recovery.kind === "in_progress") {
+    return firstSubmissionInProgressResponse({ generationId: recovery.generationId });
+  }
+  return alreadySubmittedResponse({
+    conversationId: recovery.conversationId,
+    userMessageId: recovery.userMessageId,
+    generationId: recovery.generationId,
+    receiptState: recovery.state,
+    finishReason: recovery.finishReason,
+    failureCode: recovery.failureCode,
+  });
+}
+
+function idempotencyKeyConflictResponse(conversationId: string, legacyReceiptMissing = false) {
+  return NextResponse.json(
+    {
+      error: "idempotency_key_reused",
+      code: "IDEMPOTENCY_KEY_REUSED",
+      message: legacyReceiptMissing
+        ? "This request predates durable body receipts, so the server cannot prove that the retry body is identical. Use a new submission identifier."
+        : "This idempotency key is already bound to a different first submission.",
+      conversationId,
+      retryable: false,
+    },
+    { status: 409 }
+  );
+}
+
+class AttachmentClaimError extends Error {
+  constructor() {
+    super("One or more attachments are unavailable or already belong to another message.");
+    this.name = "AttachmentClaimError";
+  }
+}
+
+class DurableFirstSubmissionStartError extends Error {
+  readonly generationId: string;
+  readonly conversationId: string;
+  readonly userMessageId: string;
+  readonly failureCode = "GENERATION_START_FAILED";
+
+  constructor(
+    cause: unknown,
+    ids: { generationId: string; conversationId: string; userMessageId: string }
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause));
+    this.name = "DurableFirstSubmissionStartError";
+    this.generationId = ids.generationId;
+    this.conversationId = ids.conversationId;
+    this.userMessageId = ids.userMessageId;
+    this.cause = cause;
+  }
+}
+
+class DurableReceiptLeaseLostError extends Error {
+  constructor() {
+    super("The durable generation lease is no longer owned by this process.");
+    this.name = "DurableReceiptLeaseLostError";
+  }
+}
+
 async function handleChat(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Parse the body once. Valid durable retries are recovered below before rate
+  // limiting; invalid/legacy requests preserve the historical rate-limit order.
+  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+  let firstSubmissionHash: string | null = null;
+  let legacyOrphanConversationId: string | null = null;
+  if (parsed.success && parsed.data.clientRequestId && parsed.data.clientMessageId) {
+    const durableInput = parsed.data;
+    const clientRequestId = durableInput.clientRequestId!;
+    const clientMessageId = durableInput.clientMessageId!;
+    firstSubmissionHash = hashFirstSubmission(durableInput);
+    const existingReceipt = await findFirstSubmissionReceipt(user.id, { clientRequestId });
+    if (existingReceipt) {
+      return firstSubmissionRecoveryResponse(
+        classifyFirstSubmissionRecovery(existingReceipt, clientMessageId, firstSubmissionHash)
+      );
+    }
+    const reusedMessageKey = await prisma.chatFirstSubmissionReceipt.findUnique({
+      where: {
+        userId_clientMessageId: {
+          userId: user.id,
+          clientMessageId,
+        },
+      },
+      select: { conversationId: true },
+    });
+    if (reusedMessageKey) return idempotencyKeyConflictResponse(reusedMessageKey.conversationId);
+
+    // Compatibility for a narrow rollout window where Conversation/Message
+    // keys were written before durable receipts existed. Completed rows are
+    // adopted into the ledger before rate limiting; a conversation with no
+    // first message is finished later by the atomic acceptance transaction.
+    const legacyConversation = await prisma.conversation.findFirst({
+      where: { userId: user.id, clientRequestId },
+      select: { id: true },
+    });
+    if (legacyConversation) {
+      const firstMessage = await prisma.message.findFirst({
+        where: { conversationId: legacyConversation.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, clientId: true },
+      });
+      if (classifyReceiptlessFirstSubmission(firstMessage) === "ambiguous") {
+        return idempotencyKeyConflictResponse(legacyConversation.id, true);
+      }
+      legacyOrphanConversationId = legacyConversation.id;
+    }
+  }
 
   if (!isOwnerEmail(user.email)) {
     const limit = await rateLimit({ key: `chat:${user.id}`, limit: 30, windowSec: 60 });
@@ -261,37 +427,84 @@ async function handleChat(req: Request) {
     }
   }
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   const input = parsed.data;
+  const legacyClient = legacyChatClientForOrigin(input);
+
+  // Uploads use the persistent account attachment store. Until an explicitly
+  // ephemeral upload path exists, accepting them in private mode would make the
+  // no-history promise misleading even though the chat branch ignores the IDs.
+  if (input.privateMode && (input.attachmentIds?.length ?? 0) > 0) {
+    return NextResponse.json(
+      {
+        error: "private_attachments_unsupported",
+        code: "PRIVATE_ATTACHMENTS_UNSUPPORTED",
+        message: "Attachments are not available in private chat.",
+      },
+      { status: 400 }
+    );
+  }
 
   if (!input.regenerate && !input.message?.trim() && !input.clarification && (input.attachmentIds?.length ?? 0) === 0) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
 
-  // Plaintext of the incoming message (before it is encrypted for storage). Used
-  // for automatic moderation. Owners are never moderated.
-  const moderationText = input.regenerate ? "" : input.message?.trim() ?? "";
-  const moderate = !isOwnerEmail(user.email) && moderationText.length > 0;
+  // Build private model history once, before moderation, so the policy screen
+  // sees the exact user turns the provider will receive (including preflight
+  // clarification content replacing the last private user turn).
+  const privateHistory: MessageForModel[] = input.privateMode
+    ? (input.privateHistory ?? [])
+        .filter((message) => message.content.trim())
+        .slice(-HISTORY_LIMIT)
+        .map((message) => ({ role: message.role, content: message.content.trim(), attachments: [] }))
+    : [];
+  if (input.privateMode && (input.clarification || input.preflightClarification)) {
+    let lastUserIndex = -1;
+    for (let i = privateHistory.length - 1; i >= 0; i--) {
+      if (privateHistory[i].role === "USER") {
+        lastUserIndex = i;
+        break;
+      }
+    }
+    if (lastUserIndex >= 0) {
+      privateHistory[lastUserIndex] = {
+        ...privateHistory[lastUserIndex],
+        content: input.clarification
+          ? formatClarificationModelMessage(input.clarification)
+          : formatPreflightClarificationModelMessage(input.preflightClarification!),
+      };
+    }
+  }
+
+  const moderationTexts = effectiveModerationTexts({
+    message: input.message,
+    preflightClarification: input.preflightClarification,
+    privateHistory,
+    privateMode: input.privateMode,
+    regenerate: input.regenerate,
+  });
+  const moderate = !isOwnerEmail(user.email) && moderationTexts.length > 0;
 
   // Synchronous pre-filter for the worst, unambiguous content: catch and ban it
   // BEFORE generating any reply. Subtler cases are handled fire-and-forget after
   // the response so moderation never adds latency.
   if (moderate) {
-    const urgent = quickScreen(moderationText);
-    if (urgent && (urgent.severity === "high" || urgent.severity === "critical")) {
-      await recordFlag({
-        userId: user.id,
-        severity: urgent.severity,
-        category: urgent.category,
-        detail: urgent.detail,
-        source: "auto",
-        messagePreview: moderationText.slice(0, 240),
-      });
-      return NextResponse.json(
-        { error: "policy_violation", message: "This request violates our Acceptable Use policy." },
-        { status: 403 }
-      );
+    for (const moderationText of moderationTexts) {
+      const urgent = quickScreen(moderationText);
+      if (urgent && (urgent.severity === "high" || urgent.severity === "critical")) {
+        await recordFlag({
+          userId: user.id,
+          severity: urgent.severity,
+          category: urgent.category,
+          detail: urgent.detail,
+          source: "auto",
+          messagePreview: moderationMessagePreview(moderationText, !!input.privateMode),
+        });
+        return NextResponse.json(
+          { error: "policy_violation", message: "This request violates our Acceptable Use policy." },
+          { status: 403 }
+        );
+      }
     }
   }
 
@@ -332,40 +545,6 @@ async function handleChat(req: Request) {
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
       return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
-    }
-
-    const privateHistory: MessageForModel[] = (input.privateHistory ?? [])
-      .filter((m) => m.content.trim())
-      .slice(-HISTORY_LIMIT)
-      .map((m) => ({ role: m.role, content: m.content.trim(), attachments: [] }));
-    if (input.clarification) {
-      let lastUserIndex = -1;
-      for (let i = privateHistory.length - 1; i >= 0; i--) {
-        if (privateHistory[i].role === "USER") {
-          lastUserIndex = i;
-          break;
-        }
-      }
-      if (lastUserIndex >= 0) {
-        privateHistory[lastUserIndex] = {
-          ...privateHistory[lastUserIndex],
-          content: formatClarificationModelMessage(input.clarification),
-        };
-      }
-    } else if (input.preflightClarification) {
-      let lastUserIndex = -1;
-      for (let i = privateHistory.length - 1; i >= 0; i--) {
-        if (privateHistory[i].role === "USER") {
-          lastUserIndex = i;
-          break;
-        }
-      }
-      if (lastUserIndex >= 0) {
-        privateHistory[lastUserIndex] = {
-          ...privateHistory[lastUserIndex],
-          content: formatPreflightClarificationModelMessage(input.preflightClarification),
-        };
-      }
     }
 
     const consumed = await consumeMessage(user.id, plan);
@@ -598,7 +777,7 @@ async function handleChat(req: Request) {
             userId: user.id,
             model: modelId,
             kind: "chat",
-            source: input.client === "app" ? "app" : "web",
+            source: legacyClient,
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
             costUsd: usage.cost || undefined,
@@ -663,7 +842,7 @@ async function handleChat(req: Request) {
                 userId: user.id,
                 model: modelId,
                 kind: "chat",
-                source: input.client === "app" ? "app" : "web",
+                source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,
@@ -703,7 +882,7 @@ async function handleChat(req: Request) {
     // Fire-and-forget moderation of the private message (never stored, but the
     // policy still applies). Runs after the response settles so it adds no latency.
     if (moderate) {
-      after(() => moderateUserMessage({ userId: user.id, text: moderationText }));
+      after(() => moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }));
     }
 
     return new Response(stream, { headers: SSE_HEADERS });
@@ -714,16 +893,32 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
   }
 
-  // Load or create the conversation (ownership enforced). A new native/Quick
-  // request can be replayed after a lost connection: its account-scoped request
-  // key recovers the original conversation instead of creating a second one.
-  let recoveredIdempotentConversation = false;
+  const durableFirstSubmission = !!(
+    input.clientRequestId &&
+    input.clientMessageId &&
+    firstSubmissionHash
+  );
+  const connectorSelection = input.connectors === undefined ? undefined : [...new Set(input.connectors)];
+  const preflightVisibleContent = input.preflightClarification
+    ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
+    : null;
+
+  // Project ownership is resolved before acceptance. A deletion racing the
+  // transaction is still enforced by the Conversation foreign key.
+  let newConversationProjectId: string | null = null;
+  if (!input.conversationId && input.projectId) {
+    const project = await prisma.project.findFirst({
+      where: { id: input.projectId, userId: user.id },
+      select: { id: true },
+    });
+    newConversationProjectId = project?.id ?? null;
+  }
+
   let conversation = input.conversationId
     ? await prisma.conversation.findFirst({ where: { id: input.conversationId, userId: user.id } })
-    : input.clientRequestId
-      ? await prisma.conversation.findFirst({ where: { userId: user.id, clientRequestId: input.clientRequestId } })
+    : legacyOrphanConversationId
+      ? await prisma.conversation.findFirst({ where: { id: legacyOrphanConversationId, userId: user.id } })
       : null;
-  recoveredIdempotentConversation = !input.conversationId && !!input.clientRequestId && !!conversation;
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
@@ -737,84 +932,225 @@ async function handleChat(req: Request) {
       { status: 409 }
     );
   }
-  // Connector toggles the user has on for this chat. Persisted on the
-  // conversation so they stay active for every later prompt (and after the chat
-  // remounts/reopens) without re-toggling. `undefined` means the client didn't
-  // send the field, so we leave whatever was stored untouched.
-  const connectorSelection = input.connectors === undefined ? undefined : [...new Set(input.connectors)];
-  if (!conversation) {
-    // If starting a chat inside a project, attach it (ownership-checked).
-    let projectId: string | null = null;
-    if (input.projectId) {
-      const proj = await prisma.project.findFirst({ where: { id: input.projectId, userId: user.id }, select: { id: true } });
-      projectId = proj?.id ?? null;
-    }
-    try {
-      conversation = await prisma.conversation.create({
-        data: {
-          userId: user.id,
-          origin: input.origin ?? null,
-          clientRequestId: input.clientRequestId ?? null,
-          model: modelId,
-          title: truncate(input.message ?? "New chat", 48),
-          titleSource: "default",
-          projectId,
-          activeConnectors: connectorSelection ?? [],
-        },
-      });
-    } catch (error) {
-      // Two identical first submissions can race past the read. The unique
-      // account/request index chooses one conversation; the loser continues
-      // against that winner and the message-level key below resolves the turn.
-      if (
-        input.clientRequestId &&
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        conversation = await prisma.conversation.findFirst({
-          where: { userId: user.id, clientRequestId: input.clientRequestId },
-        });
-        if (!conversation) throw error;
-        recoveredIdempotentConversation = true;
-      } else {
-        throw error;
-      }
-    }
-  } else if (
-    !recoveredIdempotentConversation &&
-    connectorSelection !== undefined &&
-    (conversation.activeConnectors.length !== connectorSelection.length ||
-      !conversation.activeConnectors.every((c) => connectorSelection.includes(c)))
-  ) {
-    await prisma.conversation.updateMany({
-      where: { id: conversation.id, userId: user.id },
-      data: { activeConnectors: connectorSelection },
-    });
-    conversation = { ...conversation, activeConnectors: connectorSelection };
-  }
-
   let userMessageId: string | null = null;
   let staleAssistantId: string | null = null;
   let clarificationModelContent: string | null = null;
   let clarificationVisibleContent: string | null = null;
   let clarificationAssistantRollback: { id: string; content: string } | null = null;
   let preflightClarificationModelContent: string | null = null;
+  let durableGenerationId: string | null = null;
+  let consumed: Awaited<ReturnType<typeof consumeMessage>> | null = null;
 
-  // A completed or in-flight replay must never consume quota or create another
-  // assistant generation. Return the canonical identifiers so native clients
-  // can hand off to the already accepted conversation.
-  if (input.clientMessageId) {
-    const existingMessage = await prisma.message.findFirst({
-      where: { conversationId: conversation.id, clientId: input.clientMessageId },
-      select: { id: true },
-    });
-    if (existingMessage) {
-      return alreadySubmittedResponse({
-        conversationId: conversation.id,
-        userMessageId: existingMessage.id,
-        generationId: input.generationId,
+  if (durableFirstSubmission) {
+    const clientRequestId = input.clientRequestId!;
+    const clientMessageId = input.clientMessageId!;
+    const requestHash = firstSubmissionHash!;
+    const proposedGenerationId = crypto.randomUUID();
+    try {
+      const acceptance = await prisma.$transaction(async (tx) => {
+        let acceptedConversation = conversation;
+
+        // A pre-receipt deployment could have committed the Conversation but
+        // not its first Message. Lock and finish that orphan using the same
+        // atomic acceptance boundary as a brand-new request.
+        if (acceptedConversation) {
+          const locked = await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT "id"
+            FROM "Conversation"
+            WHERE "id" = ${acceptedConversation.id}
+              AND "userId" = ${user.id}
+              AND "clientRequestId" = ${clientRequestId}
+            FOR UPDATE
+          `;
+          if (locked.length !== 1) return { kind: "missing" as const };
+
+          const receipt = await tx.chatFirstSubmissionReceipt.findUnique({
+            where: { userId_clientRequestId: { userId: user.id, clientRequestId } },
+          });
+          if (receipt) {
+            return {
+              kind: "recovery" as const,
+              recovery: classifyFirstSubmissionRecovery(receipt, clientMessageId, requestHash),
+            };
+          }
+
+          const firstMessage = await tx.message.findFirst({
+            where: { conversationId: acceptedConversation.id },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+            select: { id: true, clientId: true },
+          });
+          if (classifyReceiptlessFirstSubmission(firstMessage) === "ambiguous") {
+            return { kind: "legacy_ambiguous" as const, conversationId: acceptedConversation.id };
+          }
+        }
+
+        const period = currentPeriod();
+        const monthlyLimit = PLANS[plan].monthlyMessages;
+        await tx.usage.upsert({
+          where: { userId_period: { userId: user.id, period } },
+          create: { userId: user.id, period, messageCount: 0 },
+          update: {},
+        });
+        let quota: Awaited<ReturnType<typeof consumeMessage>>;
+        if (monthlyLimit == null) {
+          const updated = await tx.usage.update({
+            where: { userId_period: { userId: user.id, period } },
+            data: { messageCount: { increment: 1 } },
+          });
+          quota = {
+            allowed: true,
+            quota: { plan, used: updated.messageCount, limit: null, remaining: null },
+          };
+        } else {
+          const incremented = await tx.usage.updateMany({
+            where: { userId: user.id, period, messageCount: { lt: monthlyLimit } },
+            data: { messageCount: { increment: 1 } },
+          });
+          const row = await tx.usage.findUnique({
+            where: { userId_period: { userId: user.id, period } },
+          });
+          const used = row?.messageCount ?? monthlyLimit;
+          quota = incremented.count === 0
+            ? { allowed: false, quota: { plan, used, limit: monthlyLimit, remaining: 0 } }
+            : {
+                allowed: true,
+                quota: { plan, used, limit: monthlyLimit, remaining: Math.max(0, monthlyLimit - used) },
+              };
+        }
+        if (!quota.allowed) return { kind: "quota" as const, quota: quota.quota };
+
+        if (!acceptedConversation) {
+          acceptedConversation = await tx.conversation.create({
+            data: {
+              userId: user.id,
+              origin: input.origin ?? null,
+              clientRequestId,
+              model: modelId,
+              title: truncate(input.message ?? "New chat", 48),
+              titleSource: "default",
+              projectId: newConversationProjectId,
+              activeConnectors: connectorSelection ?? [],
+            },
+          });
+        }
+
+        const message = await tx.message.create({
+          data: {
+            conversationId: acceptedConversation.id,
+            clientId: clientMessageId,
+            role: "USER",
+            content: encryptMessageText(preflightVisibleContent ?? input.message?.trim() ?? ""),
+          },
+        });
+
+        const attachmentIds = [...new Set(input.attachmentIds ?? [])];
+        if (attachmentIds.length > 0) {
+          const claimed = await tx.attachment.updateMany({
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            data: { messageId: message.id, conversationId: acceptedConversation.id },
+          });
+          if (claimed.count !== attachmentIds.length) throw new AttachmentClaimError();
+        }
+
+        const receipt = await tx.chatFirstSubmissionReceipt.create({
+          data: {
+            userId: user.id,
+            clientRequestId,
+            clientMessageId,
+            requestHash,
+            generationId: proposedGenerationId,
+            state: "accepted",
+            conversationId: acceptedConversation.id,
+            userMessageId: message.id,
+            leaseExpiresAt: firstSubmissionLeaseExpiresAt(),
+          },
+        });
+
+        return {
+          kind: "accepted" as const,
+          conversation: acceptedConversation,
+          message,
+          receipt,
+          consumed: quota,
+        };
       });
+
+      if (acceptance.kind === "quota") {
+        return NextResponse.json(
+          { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
+          { status: 402 }
+        );
+      }
+      if (acceptance.kind === "missing") {
+        return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+      }
+      if (acceptance.kind === "legacy_ambiguous") {
+        return idempotencyKeyConflictResponse(acceptance.conversationId, true);
+      }
+      if (acceptance.kind === "recovery") {
+        return firstSubmissionRecoveryResponse(acceptance.recovery);
+      }
+
+      conversation = acceptance.conversation;
+      userMessageId = acceptance.message.id;
+      durableGenerationId = acceptance.receipt.generationId;
+      consumed = acceptance.consumed;
+      if (input.preflightClarification) {
+        preflightClarificationModelContent = formatPreflightClarificationModelMessage(input.preflightClarification);
+      }
+    } catch (error) {
+      if (error instanceof AttachmentClaimError) {
+        return NextResponse.json(
+          {
+            error: "attachment_claim_failed",
+            code: "ATTACHMENT_CLAIM_FAILED",
+            message: error.message,
+          },
+          { status: 409 }
+        );
+      }
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const winner = await findFirstSubmissionReceipt(user.id, { clientRequestId });
+        if (winner) {
+          return firstSubmissionRecoveryResponse(
+            classifyFirstSubmissionRecovery(winner, clientMessageId, requestHash)
+          );
+        }
+        const reusedMessageKey = await prisma.chatFirstSubmissionReceipt.findUnique({
+          where: { userId_clientMessageId: { userId: user.id, clientMessageId } },
+          select: { conversationId: true },
+        });
+        if (reusedMessageKey) return idempotencyKeyConflictResponse(reusedMessageKey.conversationId);
+      }
+      throw error;
     }
+  }
+
+  // Legacy and in-conversation callers retain their existing creation path.
+  if (!conversation) {
+    conversation = await prisma.conversation.create({
+      data: {
+        userId: user.id,
+        origin: input.origin ?? null,
+        clientRequestId: null,
+        model: modelId,
+        title: truncate(input.message ?? "New chat", 48),
+        titleSource: "default",
+        projectId: newConversationProjectId,
+        activeConnectors: connectorSelection ?? [],
+      },
+    });
+  } else if (
+    !durableFirstSubmission &&
+    connectorSelection !== undefined &&
+    (conversation.activeConnectors.length !== connectorSelection.length ||
+      !conversation.activeConnectors.every((connector) => connectorSelection.includes(connector)))
+  ) {
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
+      data: { activeConnectors: connectorSelection },
+    });
+    conversation = { ...conversation, activeConnectors: connectorSelection };
   }
 
   if (input.regenerate) {
@@ -826,7 +1162,7 @@ async function handleChat(req: Request) {
       orderBy: { createdAt: "desc" },
     });
     if (last?.role === "ASSISTANT") staleAssistantId = last.id;
-  } else {
+  } else if (!durableFirstSubmission) {
     if (input.clarification) {
       const assistantMessage = await prisma.message.findFirst({
         where: { id: input.clarification.messageId, conversationId: conversation.id, role: "ASSISTANT" },
@@ -869,41 +1205,51 @@ async function handleChat(req: Request) {
     // preflight clarification answers exist, persist them appended to the
     // original message so they survive regenerate/reload/follow-up turns —
     // the model-directed format below is transient (one generation only).
-    const preflightVisibleContent = input.preflightClarification
-      ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
-      : null;
     let created;
     try {
-      created = await prisma.message.create({
-        data: {
-          conversationId: conversation.id,
-          clientId: input.clientMessageId ?? null,
-          role: "USER",
-          content: encryptMessageText(
-            clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? ""
-          ),
-        },
+      created = await prisma.$transaction(async (tx) => {
+        const message = await tx.message.create({
+          data: {
+            conversationId: conversation.id,
+            clientId: null,
+            role: "USER",
+            content: encryptMessageText(
+              clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? ""
+            ),
+          },
+        });
+
+        const attachmentIds = [...new Set(input.attachmentIds ?? [])];
+        if (attachmentIds.length > 0) {
+          const claimed = await tx.attachment.updateMany({
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            data: { messageId: message.id, conversationId: conversation.id },
+          });
+          // Invalid, cross-account, or concurrently claimed IDs must fail the
+          // whole submission rather than silently disappearing from the prompt.
+          if (claimed.count !== attachmentIds.length) throw new AttachmentClaimError();
+        }
+
+        return message;
       });
     } catch (error) {
-      // The request/message pair can race on a double invocation. The unique
-      // message key makes one request the winner; return its stable identities
-      // without consuming a second quota unit or starting a second generation.
-      if (
-        input.clientMessageId &&
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === "P2002"
-      ) {
-        const existingMessage = await prisma.message.findFirst({
-          where: { conversationId: conversation.id, clientId: input.clientMessageId },
-          select: { id: true },
-        });
-        if (existingMessage) {
-          return alreadySubmittedResponse({
-            conversationId: conversation.id,
-            userMessageId: existingMessage.id,
-            generationId: input.generationId,
-          });
+      if (error instanceof AttachmentClaimError) {
+        if (clarificationAssistantRollback) {
+          await prisma.message
+            .update({
+              where: { id: clarificationAssistantRollback.id },
+              data: { content: encryptMessageText(clarificationAssistantRollback.content) },
+            })
+            .catch(() => {});
         }
+        return NextResponse.json(
+          {
+            error: "attachment_claim_failed",
+            code: "ATTACHMENT_CLAIM_FAILED",
+            message: error.message,
+          },
+          { status: 409 }
+        );
       }
       throw error;
     }
@@ -912,32 +1258,30 @@ async function handleChat(req: Request) {
       preflightClarificationModelContent = formatPreflightClarificationModelMessage(input.preflightClarification);
     }
 
-    if (input.attachmentIds && input.attachmentIds.length > 0) {
-      await prisma.attachment.updateMany({
-        where: { id: { in: input.attachmentIds }, userId: user.id, messageId: null },
-        data: { messageId: created.id, conversationId: conversation.id },
-      });
+  }
+
+  // Durable first submissions consumed quota inside their acceptance
+  // transaction. Every legacy caller retains the existing quota path.
+  if (!consumed) {
+    consumed = await consumeMessage(user.id, plan);
+    if (!consumed.allowed) {
+      if (userMessageId) await prisma.message.delete({ where: { id: userMessageId } }).catch(() => {});
+      if (clarificationAssistantRollback) {
+        await prisma.message
+          .update({
+            where: { id: clarificationAssistantRollback.id },
+            data: { content: encryptMessageText(clarificationAssistantRollback.content) },
+          })
+          .catch(() => {});
+      }
+      return NextResponse.json(
+        { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
+        { status: 402 }
+      );
     }
   }
 
-  // Enforce the monthly quota (counts every generation).
-  const consumed = await consumeMessage(user.id, plan);
-  if (!consumed.allowed) {
-    if (userMessageId) await prisma.message.delete({ where: { id: userMessageId } }).catch(() => {});
-    if (clarificationAssistantRollback) {
-      await prisma.message
-        .update({
-          where: { id: clarificationAssistantRollback.id },
-          data: { content: encryptMessageText(clarificationAssistantRollback.content) },
-        })
-        .catch(() => {});
-    }
-    return NextResponse.json(
-      { error: "You've reached your monthly message limit. Upgrade your plan to keep chatting.", code: "QUOTA_EXCEEDED" },
-      { status: 402 }
-    );
-  }
-
+  try {
   // Build context from the most recent messages, excluding the answer being
   // regenerated. The window start is anchored to HISTORY_STEP blocks (see
   // HISTORY_STEP above) so the prompt prefix stays cache-stable across turns;
@@ -1015,7 +1359,27 @@ async function handleChat(req: Request) {
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
-  const generationId = input.generationId ?? crypto.randomUUID();
+  const generationId = durableGenerationId ?? input.generationId ?? crypto.randomUUID();
+  if (durableGenerationId) {
+    const now = new Date();
+    const markedRunning = await prisma.chatFirstSubmissionReceipt.updateMany({
+      where: {
+        userId: user.id,
+        generationId: durableGenerationId,
+        state: "accepted",
+        leaseExpiresAt: { gt: now },
+      },
+      data: {
+        state: "running",
+        failureCode: null,
+        finishReason: null,
+        leaseExpiresAt: firstSubmissionLeaseExpiresAt(),
+      },
+    });
+    if (markedRunning.count !== 1) {
+      throw new Error("Durable first-submission receipt could not enter the running state.");
+    }
+  }
   const generationController = new AbortController();
   const unregisterGeneration = registerGeneration(generationId, {
     userId: user.id,
@@ -1023,6 +1387,87 @@ async function handleChat(req: Request) {
     model: modelId,
     conversationId,
   });
+  let durableReceiptLeaseLost = false;
+  const renewDurableReceiptLease = async (): Promise<boolean> => {
+    if (!durableGenerationId) return true;
+    const now = new Date();
+    try {
+      const renewed = await prisma.chatFirstSubmissionReceipt.updateMany({
+        where: {
+          userId: user.id,
+          generationId: durableGenerationId,
+          state: "running",
+          leaseExpiresAt: { gt: now },
+        },
+        data: { leaseExpiresAt: firstSubmissionLeaseExpiresAt(now.getTime()) },
+      });
+      const ownsReceipt = firstSubmissionLeaseHeartbeatOwnsReceipt(renewed.count);
+      if (!ownsReceipt) durableReceiptLeaseLost = true;
+      return ownsReceipt;
+    } catch (error) {
+      durableReceiptLeaseLost = true;
+      console.error("[chat] durable receipt lease renewal failed", {
+        generationId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  };
+  const markDurableReceiptCompleted = async (assistantMessageId: string, finishReason: ChatFinishReason) => {
+    if (!durableGenerationId) return true;
+    const now = new Date();
+    try {
+      const updated = await prisma.chatFirstSubmissionReceipt.updateMany({
+        where: {
+          userId: user.id,
+          generationId: durableGenerationId,
+          state: "running",
+          leaseExpiresAt: { gt: now },
+        },
+        data: {
+          state: "completed",
+          assistantMessageId,
+          finishReason,
+          failureCode: null,
+          completedAt: new Date(),
+          leaseExpiresAt: null,
+        },
+      });
+      return firstSubmissionLeaseHeartbeatOwnsReceipt(updated.count);
+    } catch (error) {
+      console.error("[chat] durable receipt completion failed", {
+        generationId,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return false;
+    }
+  };
+  const markDurableReceiptFailed = async (finishReason: ChatFinishReason, failureCode: string) => {
+    if (!durableGenerationId) return;
+    try {
+      const updated = await prisma.chatFirstSubmissionReceipt.updateMany({
+        where: {
+          userId: user.id,
+          generationId: durableGenerationId,
+          state: { in: ["accepted", "running"] },
+        },
+        data: {
+          state: "failed",
+          finishReason,
+          failureCode,
+          completedAt: new Date(),
+          leaseExpiresAt: null,
+        },
+      });
+      if (updated.count !== 1) console.error("[chat] durable receipt failure row missing", { generationId });
+    } catch (error) {
+      console.error("[chat] durable receipt failure update failed", {
+        generationId,
+        failureCode,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
   let assistantFull = ""; // captured for background memory extraction
   // Background memory work runs on the same speed-ranked utility models the
   // rest of the app uses, not on whichever FREE model happens to be listed first.
@@ -1032,6 +1477,8 @@ async function handleChat(req: Request) {
   // Generation + persistence is detached from the request lifecycle: we do not
   // pass req.signal to the model, so navigating away can drop the browser stream
   // without losing the saved answer. The explicit cancel endpoint aborts it.
+  let generationHeartbeat: ReturnType<typeof setInterval> | null = null;
+  let lastReceiptLeaseHeartbeat = Date.now();
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
@@ -1163,10 +1610,47 @@ async function handleChat(req: Request) {
         });
       };
 
-      send({ type: "meta", conversationId, userMessageId, title: convoTitle, titleSource: convoTitleSource, generationId });
+      send({
+        type: "meta",
+        conversationId,
+        userMessageId,
+        title: convoTitle,
+        titleSource: convoTitleSource,
+        generationId,
+        ...(durableGenerationId ? { receiptState: "running" as const } : {}),
+      });
       // Heartbeat: models with hidden reasoning can stream nothing for minutes;
       // periodic pings keep proxies from dropping the idle SSE connection.
-      const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
+      generationHeartbeat = setInterval(() => {
+        send({ type: "ping" });
+        const now = Date.now();
+        if (!durableGenerationId || now - lastReceiptLeaseHeartbeat < FIRST_SUBMISSION_RECEIPT_HEARTBEAT_MS) return;
+        lastReceiptLeaseHeartbeat = now;
+        void prisma.chatFirstSubmissionReceipt
+          .updateMany({
+            where: {
+              userId: user.id,
+              generationId: durableGenerationId,
+              state: "running",
+              leaseExpiresAt: { gt: new Date(now) },
+            },
+            data: { leaseExpiresAt: firstSubmissionLeaseExpiresAt(now) },
+          })
+          .then((updated) => {
+            // A status lookup may have expired the lease while this process was
+            // suspended. Do not keep spending against a terminal receipt.
+            if (!firstSubmissionLeaseHeartbeatOwnsReceipt(updated.count)) {
+              durableReceiptLeaseLost = true;
+              generationController.abort();
+            }
+          })
+          .catch((error) => {
+            console.error("[chat] durable receipt lease heartbeat failed", {
+              generationId,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          });
+      }, 15_000);
 
       const attachmentCount = modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0);
       const contextDetails = [plural(modelHistory.length, "message")];
@@ -1228,7 +1712,7 @@ async function handleChat(req: Request) {
           userId: user.id,
           prompt: researchPrompt,
           selectedModel: modelInfo,
-          client: input.client === "app" ? "app" : "web",
+          client: legacyClient,
           signal: generationController.signal,
           sendActivity,
         });
@@ -1343,6 +1827,7 @@ async function handleChat(req: Request) {
         // version-and-overwrite the answer being regenerated (see the helper).
         // promptTokens stores the full prompt size (cache included) so the
         // reloaded cost estimate lines up with the stream.
+        if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
         const assistant = await persistAssistantTurn({
           content: full,
           reasoning,
@@ -1387,6 +1872,10 @@ async function handleChat(req: Request) {
             versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
           },
         });
+        if (!(await markDurableReceiptCompleted(assistant.id, finishReason))) {
+          durableReceiptLeaseLost = true;
+          throw new DurableReceiptLeaseLostError();
+        }
 
         send({
           type: "done",
@@ -1403,7 +1892,7 @@ async function handleChat(req: Request) {
           userId: user.id,
           model: modelId,
           kind: "chat",
-          source: input.client === "app" ? "app" : "web",
+          source: legacyClient,
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
           costUsd: usage.cost || undefined,
@@ -1429,6 +1918,10 @@ async function handleChat(req: Request) {
           : wasGenerationStopped(generationId)
             ? "user_stopped"
             : classifyErrorFinishReason(err);
+        const terminalFailureCode =
+          durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError
+            ? "GENERATION_LEASE_EXPIRED"
+            : generationFailureCode(reason);
         console.error("[chat] generation error", {
           generationId,
           conversationId,
@@ -1444,6 +1937,7 @@ async function handleChat(req: Request) {
             const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
+            if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
             const assistant = await persistAssistantTurn({
               content: full,
               reasoning,
@@ -1462,6 +1956,10 @@ async function handleChat(req: Request) {
               },
             });
             assistantFull = full;
+            if (!(await markDurableReceiptCompleted(assistant.id, reason))) {
+              durableReceiptLeaseLost = true;
+              throw new DurableReceiptLeaseLostError();
+            }
             send({
               type: "done",
               message: { ...(await serializeMessage(assistantWithActivity)), finishReason: reason, costUsd: partialUsage.cost + researchCostUsd || undefined },
@@ -1477,7 +1975,7 @@ async function handleChat(req: Request) {
                 userId: user.id,
                 model: modelId,
                 kind: "chat",
-                source: input.client === "app" ? "app" : "web",
+                source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,
@@ -1500,7 +1998,26 @@ async function handleChat(req: Request) {
               message: persistErr instanceof Error ? persistErr.message : String(persistErr),
             });
             const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
-            send({ type: "error", message: providerErrorMessage(persistErr, PROVIDERS[modelInfo.provider].label), quota, finishReason: "error" });
+            const failureCode =
+              durableReceiptLeaseLost || persistErr instanceof DurableReceiptLeaseLostError
+                ? "GENERATION_LEASE_EXPIRED"
+                : "GENERATION_PERSISTENCE_FAILED";
+            await markDurableReceiptFailed("error", failureCode);
+            send({
+              type: "error",
+              message: providerErrorMessage(persistErr, PROVIDERS[modelInfo.provider].label),
+              quota,
+              finishReason: "error",
+              ...(durableGenerationId
+                ? {
+                    conversationId,
+                    userMessageId: userMessageId!,
+                    generationId,
+                    receiptState: "failed" as const,
+                    failureCode,
+                  }
+                : {}),
+            });
           }
         } else {
           // Generation failed before useful output, so refund the consumed message
@@ -1512,10 +2029,27 @@ async function handleChat(req: Request) {
             title: finishReasonTitle(reason),
             detail: message,
           });
-          send({ type: "error", message, quota, finishReason: reason });
+          const failureCode = terminalFailureCode;
+          await markDurableReceiptFailed(reason, failureCode);
+          send({
+            type: "error",
+            message,
+            quota,
+            finishReason: reason,
+            ...(durableGenerationId
+              ? {
+                  conversationId,
+                  userMessageId: userMessageId!,
+                  generationId,
+                  receiptState: "failed" as const,
+                  failureCode,
+                }
+              : {}),
+          });
         }
       } finally {
-        clearInterval(heartbeat);
+        if (generationHeartbeat) clearInterval(generationHeartbeat);
+        generationHeartbeat = null;
         unregisterGeneration();
         try {
           controller.close();
@@ -1530,7 +2064,44 @@ async function handleChat(req: Request) {
   let genPromise: Promise<void> | null = null;
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      genPromise = generate(controller);
+      genPromise = generate(controller).catch(async (error) => {
+        if (generationHeartbeat) clearInterval(generationHeartbeat);
+        generationHeartbeat = null;
+        const finishReason = classifyErrorFinishReason(error);
+        const failureCode = durableReceiptLeaseLost
+          ? "GENERATION_LEASE_EXPIRED"
+          : "GENERATION_INTERNAL_ERROR";
+        await markDurableReceiptFailed(finishReason, failureCode);
+        const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
+        const message = providerErrorMessage(error, PROVIDERS[modelInfo.provider].label);
+        try {
+          controller.enqueue(
+            encodeChunk({
+              type: "error",
+              message,
+              quota,
+              finishReason,
+              ...(durableGenerationId
+                ? {
+                    conversationId,
+                    userMessageId: userMessageId!,
+                    generationId,
+                    receiptState: "failed" as const,
+                    failureCode,
+                  }
+                : {}),
+            })
+          );
+        } catch {
+          /* client disconnected */
+        }
+        unregisterGeneration();
+        try {
+          controller.close();
+        } catch {
+          /* already closed */
+        }
+      });
     },
   });
 
@@ -1542,7 +2113,7 @@ async function handleChat(req: Request) {
     // a violation must be caught even if the model errored. Fire-and-forget so it
     // never delays the reply.
     if (moderate) {
-      await moderateUserMessage({ userId: user.id, text: moderationText }).catch(() => {});
+      await moderateUserMessages({ userId: user.id, texts: moderationTexts }).catch(() => {});
     }
 
     await genPromise?.catch(() => {});
@@ -1558,6 +2129,32 @@ async function handleChat(req: Request) {
   });
 
   return new Response(stream, { headers: SSE_HEADERS });
+  } catch (error) {
+    if (!durableGenerationId || !userMessageId || !conversation) throw error;
+    const failureCode = "GENERATION_START_FAILED";
+    await prisma.chatFirstSubmissionReceipt
+      .updateMany({
+        where: {
+          userId: user.id,
+          generationId: durableGenerationId,
+          state: { in: ["accepted", "running"] },
+        },
+        data: {
+          state: "failed",
+          finishReason: "error",
+          failureCode,
+          completedAt: new Date(),
+          leaseExpiresAt: null,
+        },
+      })
+      .catch(() => {});
+    await refundMessage(user.id, plan).catch(() => {});
+    throw new DurableFirstSubmissionStartError(error, {
+      generationId: durableGenerationId,
+      conversationId: conversation.id,
+      userMessageId,
+    });
+  }
 }
 
 export async function POST(req: Request) {
@@ -1571,6 +2168,21 @@ export async function POST(req: Request) {
   } catch (err) {
     const detail = err instanceof Error ? err.message : "Unexpected server error.";
     console.error("[chat] request failed before streaming", { message: detail, stack: err instanceof Error ? err.stack : undefined });
+    if (err instanceof DurableFirstSubmissionStartError) {
+      return NextResponse.json(
+        {
+          error: `Couldn't start the chat: ${detail}`,
+          code: err.failureCode,
+          generationId: err.generationId,
+          conversationId: err.conversationId,
+          userMessageId: err.userMessageId,
+          receiptState: "failed",
+          failureCode: err.failureCode,
+          retryable: false,
+        },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ error: `Couldn't start the chat: ${detail}` }, { status: 500 });
   }
 }
