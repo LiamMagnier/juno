@@ -16,6 +16,10 @@ const config = [
       "relay/node_modules/**",
       "relay/dist/**",
       "deploy/**",
+      // Transient agent worktrees and the vendored Cloud Code runner (its own
+      // build/lint story lives in CI) are not part of the app's lint surface.
+      ".claude/**",
+      "runner/**",
       "next-env.d.ts",
       "src/lib/i18n-catalog.generated.ts",
     ],

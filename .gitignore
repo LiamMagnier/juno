@@ -39,3 +39,6 @@ yarn-error.log*
 # voice relay service
 relay/node_modules
 relay/dist
+
+# Agent worktrees and local Claude state
+.claude/
