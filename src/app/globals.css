@@ -41,6 +41,10 @@
     --success-foreground: 0 0% 100%;
 
     --warning: 40 57% 51%;
+    /* --warning is a FILL (dots, borders, tinted chips). As text on --background
+       it only reaches 2.4:1, so warning *text* uses this darker value instead:
+       5.2:1 on --background and 4.8:1 on a bg-warning/10 chip. */
+    --warning-foreground: 40 57% 33%;
     --source: 187 62% 34%;
     /* Deepest-thinking ("Max") accent — the one place violet is allowed, to mark
        the tier that is materially slower and pricier. Kept as tokens so the
@@ -117,6 +121,10 @@
     --success-foreground: 28 9% 9%;
 
     --warning: 40 60% 58%;
+    /* On the near-black background the fill value is already 8.2:1 as text
+       (6.9:1 on a bg-warning/10 chip), so dark needs no separate ramp — the
+       token exists per theme so call sites never have to know which is which. */
+    --warning-foreground: 40 60% 58%;
     --source: 187 58% 49%;
     /* Lifted a touch on dark so violet keeps contrast against the near-black. */
     --ultra: 258 92% 74%;

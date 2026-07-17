@@ -246,7 +246,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
               secondary metadata, offered on hover rather than as the label. */}
           <span
             title={workspacePath ?? undefined}
-            className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground/60"
+            className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground"
           >
             {workspaceName}
           </span>
@@ -295,7 +295,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         </span>
         <span className="min-w-0 truncate text-sm font-medium text-foreground">{workspaceName}</span>
         {workspacePath && (
-          <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground/60 sm:inline">
+          <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
             {workspacePath}
           </span>
         )}
@@ -377,11 +377,24 @@ function ApprovalCard({
   onRespond: (approve: boolean) => void;
 }) {
   return (
+    // Not a dialog: this card appears inline in the transcript, never takes
+    // focus and traps nothing, so role="alertdialog" promised modal behavior no
+    // AT could act on. A labelled group is what it actually is — paired with a
+    // polite live announcement so the request isn't silent for screen readers.
     <div
-      role="alertdialog"
-      aria-label="Juno Code needs your approval"
+      role="group"
+      aria-label="Juno Code approval request"
       className="mx-1 mb-2 space-y-2.5 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-3 text-sm motion-safe:animate-rise-in"
     >
+      <span role="status" className="sr-only">
+        {`Juno Code needs your approval to: ${summary}.${
+          risk === "destructive"
+            ? " This is a destructive action."
+            : risk === "outside"
+              ? " This affects files outside the workspace."
+              : ""
+        } Allow or Deny below.`}
+      </span>
       <div className="flex items-start gap-2.5">
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
         <div className="min-w-0 flex-1">
@@ -401,7 +414,7 @@ function ApprovalCard({
               "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em]",
               risk === "destructive"
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
-                : "border-warning/40 bg-warning/10 text-warning"
+                : "border-warning/40 bg-warning/10 text-warning-foreground"
             )}
           >
             {risk === "destructive" ? "Destructive" : "Outside workspace"}

@@ -113,12 +113,14 @@ export default function NewCodeSessionPage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-2" role="list">
+          // No list semantics: an explicit role REPLACES the implicit one, so
+          // role="list"/"listitem" here stripped these of being buttons. A
+          // stack of buttons needs no list wrapper to be understood.
+          <div className="space-y-2">
             {workspaces.map((w) => (
               <button
                 key={w.key ?? w.path}
                 type="button"
-                role="listitem"
                 onClick={() => start(w)}
                 disabled={creatingPath !== null}
                 className="group flex w-full items-center gap-3 rounded-2xl border border-border/60 bg-card/60 px-4 py-3 text-left shadow-soft transition-all duration-fast ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.995] disabled:pointer-events-none disabled:opacity-60"
@@ -132,9 +134,9 @@ export default function NewCodeSessionPage() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-foreground">{w.name}</span>
-                  <span className="block truncate font-mono text-[11px] text-muted-foreground/70">{w.path}</span>
+                  <span className="block truncate font-mono text-[11px] text-muted-foreground">{w.path}</span>
                 </span>
-                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                   {creatingPath === w.path ? "Starting…" : `Opened ${timeAgo(w.lastOpenedAt)}`}
                 </span>
               </button>

@@ -230,7 +230,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium text-foreground">{pr.title}</span>
-                      <span className="block truncate font-mono text-[11px] text-muted-foreground/70">
+                      <span className="block truncate font-mono text-[11px] text-muted-foreground">
                         #{pr.number}
                         {pr.headRef ? ` · ${pr.headRef}` : ""}
                         {pr.draft ? " · draft" : ""}
@@ -238,7 +238,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {pr.updatedAt && (
-                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
                           {timeAgo(pr.updatedAt)}
                         </span>
                       )}

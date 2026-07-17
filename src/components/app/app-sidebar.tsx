@@ -756,7 +756,7 @@ export function AppSidebar({
                   ))}
                 </div>
               ) : codeProjects.length === 0 ? (
-                <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground/60">
+                <p className="px-2.5 py-1 text-[12.5px] leading-5 text-muted-foreground">
                   Your Juno Code projects appear here once the app syncs them.
                 </p>
               ) : (
@@ -1136,13 +1136,20 @@ function ModeToggle({
  *  tasks page's error card, so a failed fetch never masquerades as empty. */
 function InlineErrorRow({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
-    <div className="mx-0.5 my-1 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-2 text-[12.5px] text-destructive">
+    // role="alert": these replace a section's contents when a fetch fails, so
+    // without it the section just reads as empty to a screen reader.
+    <div
+      role="alert"
+      className="mx-0.5 my-1 flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-2.5 py-2 text-[12.5px] text-destructive"
+    >
       <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       <span className="min-w-0 flex-1">{message}</span>
       <button
         type="button"
         onClick={onRetry}
-        className="pressable flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors duration-fast hover:bg-destructive/10"
+        // coarse: pad the ~20px target out to 44px without changing the row's
+        // density on pointer devices (negative margins absorb the extra box).
+        className="pressable flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium transition-colors duration-fast hover:bg-destructive/10 coarse:-my-2.5 coarse:min-h-[44px] coarse:px-3 coarse:py-2.5"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" /> Retry
       </button>
@@ -1317,9 +1324,9 @@ function FolderChip({
 
   return (
     <span
-      // Right-click (or the keyboard context-menu key on the focused chip)
-      // opens rename/delete. The menu anchors to a hidden trigger so the
-      // chip's own filter button keeps plain click/Enter behavior.
+      // Right-click opens rename/delete as a BONUS accelerator — it is no
+      // longer the only way in (see the kebab below), because iOS fires no
+      // contextmenu event and a Mac keyboard cannot reach one.
       onContextMenu={
         hasMenu
           ? (e) => {
@@ -1333,10 +1340,23 @@ function FolderChip({
         active ? "border-primary/40 bg-primary/10 text-primary" : "hover:bg-sidebar-accent"
       )}
     >
+      <button onClick={onClick} aria-pressed={active} className={cn("inline-flex items-center gap-1 py-1 pl-2.5", hasMenu ? "pr-1" : "pr-2.5")}>
+        <Folder className="h-3 w-3" /> {children}
+      </button>
       {hasMenu && (
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          {/* A real, focusable trigger — the menu used to anchor to an
+              aria-hidden tabIndex={-1} span, which made rename/delete
+              unreachable by keyboard and on touch. Same hover/coarse reveal
+              as ConversationRow's kebab. */}
           <DropdownMenuTrigger asChild>
-            <span aria-hidden tabIndex={-1} className="pointer-events-none absolute left-0 top-full h-0 w-0" />
+            <button
+              type="button"
+              aria-label="Folder options"
+              className="pressable group/kebab shrink-0 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100 coarse:-my-3 coarse:flex coarse:h-11 coarse:w-11 coarse:items-center coarse:justify-center coarse:p-0 coarse:opacity-100"
+            >
+              <MoreVertical className="h-3 w-3" />
+            </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-44 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
             {onRename && (
@@ -1358,9 +1378,6 @@ function FolderChip({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      <button onClick={onClick} aria-pressed={active} className={cn("inline-flex items-center gap-1 py-1 pl-2.5", onDelete ? "pr-1" : "pr-2.5")}>
-        <Folder className="h-3 w-3" /> {children}
-      </button>
       {onDelete && (
         <button
           onClick={(e) => {
@@ -1368,7 +1385,10 @@ function FolderChip({
             onDelete();
           }}
           aria-label="Delete folder"
-          className="mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-destructive focus-visible:opacity-100 group-hover/chip:opacity-100 coarse:opacity-100"
+          // coarse:opacity-100 makes this the touch delete path, so it has to
+          // be a real touch target: 16px grows to 44px on coarse pointers,
+          // absorbed by negative margins so the chip keeps its shape.
+          className="mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-destructive focus-visible:opacity-100 group-hover/chip:opacity-100 coarse:-my-3 coarse:mr-0 coarse:flex coarse:h-11 coarse:w-11 coarse:items-center coarse:justify-center coarse:p-0 coarse:opacity-100"
         >
           <X className="h-3 w-3" />
         </button>
@@ -1434,7 +1454,7 @@ function CodeWorkspaceGroup({
       {expanded && (
         <div className="mt-0.5 flex flex-col gap-0.5">
           {sessions.length === 0 && tasks.length === 0 && (
-            <p className="py-1 pl-6 pr-2 text-[12.5px] leading-5 text-muted-foreground/60">No sessions yet.</p>
+            <p className="py-1 pl-6 pr-2 text-[12.5px] leading-5 text-muted-foreground">No sessions yet.</p>
           )}
           {sessions.map((c) => (
             <ConversationRow
@@ -1479,7 +1499,7 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
     <>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{task.title}</span>
-      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
         {meta.label}
       </span>
     </>
@@ -1780,7 +1800,9 @@ function ProjectRow({
           }}
           aria-label={expanded ? `Collapse ${project.name}` : `Expand ${project.name}`}
           aria-expanded={expanded}
-          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/50 transition-colors hover:text-foreground"
+          // 20px is well under the 44px touch minimum — widen on coarse
+          // pointers only, with negative margins so row height is unchanged.
+          className="ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/50 transition-colors hover:text-foreground coarse:-my-3 coarse:h-11 coarse:w-11"
         >
           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform duration-fast ease-out-soft", expanded && "rotate-90")} />
         </button>

@@ -76,6 +76,8 @@ const config: Config = {
         },
         warning: {
           DEFAULT: "hsl(var(--warning) / <alpha-value>)",
+          // Text on a light surface — see the note in globals.css.
+          foreground: "hsl(var(--warning-foreground) / <alpha-value>)",
         },
         source: {
           DEFAULT: "hsl(var(--source) / <alpha-value>)",
