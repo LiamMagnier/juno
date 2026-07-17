@@ -84,6 +84,7 @@ const loaders: Record<string, EntityLoader> = {
           title: row.title,
           titleSource: row.titleSource,
           model: row.model,
+          origin: row.origin,
           kind: row.kind,
           codeWorkspaceName: row.codeWorkspaceName,
           codeWorkspacePath: row.codeWorkspacePath,

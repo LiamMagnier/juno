@@ -41,6 +41,11 @@ import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessage } from "@/lib/moderation-ai";
 import { recordFlag } from "@/lib/moderation";
+import {
+  chatOriginSchema,
+  clientIdempotencyKeySchema,
+  clientSubmissionMetadataIssue,
+} from "@/lib/chat-origin";
 import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -94,45 +99,63 @@ const preflightClarificationSchema = z.object({
   skipped: z.boolean().optional(),
 });
 
-const bodySchema = z.object({
-  conversationId: z.string().cuid().optional(),
-  projectId: z.string().cuid().optional(),
-  message: z.string().max(50_000).optional(),
-  clarification: clarificationSchema.optional(),
-  preflightClarification: preflightClarificationSchema.optional(),
-  attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
-  model: z.string().optional(),
-  regenerate: z.boolean().optional(),
-  voiceMode: z.boolean().optional(),
-  canvasEnabled: z.boolean().optional(),
-  webSearch: z.boolean().optional(),
-  // Deep research mode: plan → search → read → cited report (saved chats only;
-  // ignored in private mode, where the toggle is hidden client-side).
-  deepResearch: z.boolean().optional(),
-  // Built from REASONING_TIERS, never repeated literals: this enum listed only
-  // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
-  // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,
-  // every Claude Opus 4.7+/Sonnet, grok multi-agent, glm-5.2) — 26 models whose
-  // top tier 400'd here, inside Juno, before any provider was called. Per-model
-  // support is NOT this schema's job; it is enforced by effectiveReasoningEffort
-  // -> clampReasoningEffort below, which coerces to what the model accepts.
-  reasoningEffort: z.enum(REASONING_TIERS).optional(),
-  connectors: z.array(z.string()).max(5).optional(),
-  generationId: z.string().trim().min(8).max(120).optional(),
-  privateMode: z.boolean().optional(),
-  // Which surface sent the request — tags the spend ledger so admin can split
-  // website vs native-app spending. Defaults to "web".
-  client: z.enum(["web", "app"]).optional(),
-  privateHistory: z
-    .array(
-      z.object({
-        role: z.enum(["USER", "ASSISTANT"]),
-        content: z.string().max(50_000),
-      })
-    )
-    .max(HISTORY_LIMIT)
-    .optional(),
-});
+const bodySchema = z
+  .object({
+    conversationId: z.string().cuid().optional(),
+    projectId: z.string().cuid().optional(),
+    message: z.string().max(50_000).optional(),
+    clarification: clarificationSchema.optional(),
+    preflightClarification: preflightClarificationSchema.optional(),
+    attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
+    model: z.string().optional(),
+    regenerate: z.boolean().optional(),
+    voiceMode: z.boolean().optional(),
+    canvasEnabled: z.boolean().optional(),
+    webSearch: z.boolean().optional(),
+    // Durable creation metadata used by native clients and Juno Quick. The
+    // legacy `client` field below remains for spend-ledger compatibility.
+    origin: chatOriginSchema.optional(),
+    // These keys are paired intentionally: the request key deduplicates a new
+    // conversation while the message key deduplicates its first persisted turn.
+    clientRequestId: clientIdempotencyKeySchema.optional(),
+    clientMessageId: clientIdempotencyKeySchema.optional(),
+    // Deep research mode: plan → search → read → cited report (saved chats only;
+    // ignored in private mode, where the toggle is hidden client-side).
+    deepResearch: z.boolean().optional(),
+    // Built from REASONING_TIERS, never repeated literals: this enum listed only
+    // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
+    // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,
+    // every Claude Opus 4.7+/Sonnet, grok multi-agent, glm-5.2) — 26 models whose
+    // top tier 400'd here, inside Juno, before any provider was called. Per-model
+    // support is NOT this schema's job; it is enforced by effectiveReasoningEffort
+    // -> clampReasoningEffort below, which coerces to what the model accepts.
+    reasoningEffort: z.enum(REASONING_TIERS).optional(),
+    connectors: z.array(z.string()).max(5).optional(),
+    generationId: z.string().trim().min(8).max(120).optional(),
+    privateMode: z.boolean().optional(),
+    // Which surface sent the request — tags the spend ledger so admin can split
+    // website vs native-app spending. Defaults to "web".
+    client: z.enum(["web", "app"]).optional(),
+    privateHistory: z
+      .array(
+        z.object({
+          role: z.enum(["USER", "ASSISTANT"]),
+          content: z.string().max(50_000),
+        })
+      )
+      .max(HISTORY_LIMIT)
+      .optional(),
+  })
+  .superRefine((input, ctx) => {
+    const issue = clientSubmissionMetadataIssue(input);
+    if (issue) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [issue.path],
+        message: issue.message,
+      });
+    }
+  });
 
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
@@ -206,6 +229,25 @@ function appendFinishWarning(
     title: finishReasonTitle(reason),
     detail: finishReasonDetail(reason),
   });
+}
+
+function alreadySubmittedResponse(input: {
+  conversationId: string;
+  userMessageId: string;
+  generationId?: string;
+}) {
+  return NextResponse.json(
+    {
+      error: "request_already_submitted",
+      code: "REQUEST_ALREADY_SUBMITTED",
+      message: "This message was already accepted. Open the existing conversation instead of submitting it again.",
+      conversationId: input.conversationId,
+      userMessageId: input.userMessageId,
+      generationId: input.generationId ?? null,
+      retryable: false,
+    },
+    { status: 409 }
+  );
 }
 
 async function handleChat(req: Request) {
@@ -672,10 +714,16 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: "budget_exceeded", message: budgetExceededMessage(plan, budget.resetsAtMs) }, { status: 402 });
   }
 
-  // Load or create the conversation (ownership enforced).
+  // Load or create the conversation (ownership enforced). A new native/Quick
+  // request can be replayed after a lost connection: its account-scoped request
+  // key recovers the original conversation instead of creating a second one.
+  let recoveredIdempotentConversation = false;
   let conversation = input.conversationId
     ? await prisma.conversation.findFirst({ where: { id: input.conversationId, userId: user.id } })
-    : null;
+    : input.clientRequestId
+      ? await prisma.conversation.findFirst({ where: { userId: user.id, clientRequestId: input.clientRequestId } })
+      : null;
+  recoveredIdempotentConversation = !input.conversationId && !!input.clientRequestId && !!conversation;
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
@@ -701,17 +749,39 @@ async function handleChat(req: Request) {
       const proj = await prisma.project.findFirst({ where: { id: input.projectId, userId: user.id }, select: { id: true } });
       projectId = proj?.id ?? null;
     }
-    conversation = await prisma.conversation.create({
-      data: {
-        userId: user.id,
-        model: modelId,
-        title: truncate(input.message ?? "New chat", 48),
-        titleSource: "default",
-        projectId,
-        activeConnectors: connectorSelection ?? [],
-      },
-    });
+    try {
+      conversation = await prisma.conversation.create({
+        data: {
+          userId: user.id,
+          origin: input.origin ?? null,
+          clientRequestId: input.clientRequestId ?? null,
+          model: modelId,
+          title: truncate(input.message ?? "New chat", 48),
+          titleSource: "default",
+          projectId,
+          activeConnectors: connectorSelection ?? [],
+        },
+      });
+    } catch (error) {
+      // Two identical first submissions can race past the read. The unique
+      // account/request index chooses one conversation; the loser continues
+      // against that winner and the message-level key below resolves the turn.
+      if (
+        input.clientRequestId &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        conversation = await prisma.conversation.findFirst({
+          where: { userId: user.id, clientRequestId: input.clientRequestId },
+        });
+        if (!conversation) throw error;
+        recoveredIdempotentConversation = true;
+      } else {
+        throw error;
+      }
+    }
   } else if (
+    !recoveredIdempotentConversation &&
     connectorSelection !== undefined &&
     (conversation.activeConnectors.length !== connectorSelection.length ||
       !conversation.activeConnectors.every((c) => connectorSelection.includes(c)))
@@ -729,6 +799,23 @@ async function handleChat(req: Request) {
   let clarificationVisibleContent: string | null = null;
   let clarificationAssistantRollback: { id: string; content: string } | null = null;
   let preflightClarificationModelContent: string | null = null;
+
+  // A completed or in-flight replay must never consume quota or create another
+  // assistant generation. Return the canonical identifiers so native clients
+  // can hand off to the already accepted conversation.
+  if (input.clientMessageId) {
+    const existingMessage = await prisma.message.findFirst({
+      where: { conversationId: conversation.id, clientId: input.clientMessageId },
+      select: { id: true },
+    });
+    if (existingMessage) {
+      return alreadySubmittedResponse({
+        conversationId: conversation.id,
+        userMessageId: existingMessage.id,
+        generationId: input.generationId,
+      });
+    }
+  }
 
   if (input.regenerate) {
     // Identify the trailing assistant message to replace — but DON'T delete it yet.
@@ -785,13 +872,41 @@ async function handleChat(req: Request) {
     const preflightVisibleContent = input.preflightClarification
       ? formatPreflightClarificationVisibleMessage(input.preflightClarification)
       : null;
-    const created = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        role: "USER",
-        content: encryptMessageText(clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? ""),
-      },
-    });
+    let created;
+    try {
+      created = await prisma.message.create({
+        data: {
+          conversationId: conversation.id,
+          clientId: input.clientMessageId ?? null,
+          role: "USER",
+          content: encryptMessageText(
+            clarificationVisibleContent ?? preflightVisibleContent ?? input.message?.trim() ?? ""
+          ),
+        },
+      });
+    } catch (error) {
+      // The request/message pair can race on a double invocation. The unique
+      // message key makes one request the winner; return its stable identities
+      // without consuming a second quota unit or starting a second generation.
+      if (
+        input.clientMessageId &&
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2002"
+      ) {
+        const existingMessage = await prisma.message.findFirst({
+          where: { conversationId: conversation.id, clientId: input.clientMessageId },
+          select: { id: true },
+        });
+        if (existingMessage) {
+          return alreadySubmittedResponse({
+            conversationId: conversation.id,
+            userMessageId: existingMessage.id,
+            generationId: input.generationId,
+          });
+        }
+      }
+      throw error;
+    }
     userMessageId = created.id;
     if (input.preflightClarification) {
       preflightClarificationModelContent = formatPreflightClarificationModelMessage(input.preflightClarification);

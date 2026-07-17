@@ -151,6 +151,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     title: conv.title,
     titleSource: coerceTitleSource(conv.titleSource),
     model: conv.model,
+    origin: (conv.origin as ClientConversation["origin"]) ?? null,
     kind: conv.kind === "code" ? "code" : "chat",
     codeWorkspaceName: conv.codeWorkspaceName ?? null,
     codeWorkspacePath: conv.codeWorkspacePath ?? null,

@@ -310,6 +310,12 @@ model Folder {
 model Conversation {
   id               String    @id @default(cuid())
   userId           String
+  // Durable creation surface. NULL means the conversation predates precise
+  // origin metadata or arrived through a legacy caller that only sent web|app.
+  origin           String?
+  // Idempotency key for creation + the first saved Quick/native submission.
+  // Scoped to the account so retries cannot create parallel conversations.
+  clientRequestId  String?
   title            String    @default("New chat")
   titleSource      String    @default("default")
   model            String    @default("claude-opus-4-8")
@@ -353,6 +359,7 @@ model Conversation {
   @@index([userId, lastMessageAt])
   @@index([userId, pinned])
   @@index([projectId])
+  @@unique([userId, clientRequestId])
 }
 
 model Project {

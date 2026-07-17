@@ -1,4 +1,5 @@
 import type { ArtifactType } from "@/lib/message-content";
+import type { ChatOrigin } from "@/lib/chat-origin";
 
 export type MessageRole = "USER" | "ASSISTANT" | "SYSTEM";
 export type FeedbackValue = "UP" | "DOWN" | null;
@@ -142,6 +143,8 @@ export interface ClientConversation {
   title: string;
   titleSource: TitleSource;
   model: string;
+  /** Surface that originally created this saved conversation. Null on legacy rows. */
+  origin?: ChatOrigin | null;
   /** Which surface owns this conversation: web/app chat, or a Juno Code session. */
   kind: "chat" | "code";
   /** For code sessions: the app-side workspace (project folder) they belong to.
