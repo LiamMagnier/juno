@@ -847,7 +847,9 @@ model CodeDevice {
 model CodeTask {
   id            String   @id @default(cuid())
   userId        String
-  deviceId      String
+  // Null for cloud tasks (target = "cloud"), which run on a GitHub Actions
+  // runner with no registered device. Device tasks still carry their device.
+  deviceId      String?
   workspacePath String
   workspaceName String   @default("")
   // Stable workspace identity (CodeWorkspace.key) when the submitting client
@@ -862,11 +864,19 @@ model CodeTask {
   // session view can join history/status. Plain pointer, not a relation —
   // the conversation may be deleted independently of the task record.
   conversationId String?
+  // Cloud Juno Code (GitHub Actions runner). target: "device" (default) |
+  // "cloud". For cloud tasks, repoOwner/repoName/baseRef pin the repo the
+  // runner clones + branches from, and prUrl records the PR it opens.
+  target        String   @default("device")
+  repoOwner     String?
+  repoName      String?
+  baseRef       String?
+  prUrl         String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  device CodeDevice      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  device CodeDevice?     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
   events CodeTaskEvent[]
 
   @@index([userId, createdAt])

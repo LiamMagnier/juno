@@ -3,6 +3,7 @@ import type { CodeDevice, CodeTask, CodeTaskEvent, Prisma } from "@prisma/client
 import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
+import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import type { ClientActivityEvent } from "@/types/chat";
 
 export const ONLINE_WINDOW_MS = 120_000;
@@ -40,6 +41,69 @@ export async function requireUser(): Promise<
   return { user, error: null };
 }
 
+// A cloud-code task bearer looks like `Bearer cct_<payload>.<sig>`. Matching the
+// prefix lets us route it to task-token auth instead of native-bearer auth,
+// which would otherwise 401 a perfectly valid task token.
+const CCT_BEARER_RE = /^Bearer (cct_[A-Za-z0-9._-]+)$/;
+
+export type TaskAuthResult =
+  | { user: SessionUser; viaTaskToken: boolean; error: null }
+  | { user: null; viaTaskToken: false; error: NextResponse };
+
+/**
+ * Authorize a request against ONE specific task. Succeeds either:
+ *  - via a normal user session / native bearer (requireUser — UNCHANGED), or
+ *  - via a valid Cloud Code task bearer ("Authorization: Bearer cct_…") whose
+ *    audience is EXACTLY this taskId — so the GitHub Actions runner can drive
+ *    the task it was dispatched for and nothing else.
+ *
+ * Task-token requests resolve to the task's owner (loaded from the DB) so the
+ * routes' existing ownership-scoped queries (`where: { id, userId }`) keep
+ * working untouched. The cct_ branch is tried first: a task bearer must never
+ * fall through to native-bearer auth. `viaTaskToken` lets a route tighten
+ * behavior (e.g. runner-context is task-token-ONLY).
+ */
+export async function requireTaskAuth(taskId: string, req: Request): Promise<TaskAuthResult> {
+  const authorization = req.headers.get("authorization");
+  const match = authorization ? CCT_BEARER_RE.exec(authorization) : null;
+  if (match) {
+    const unauthorized = {
+      user: null,
+      viaTaskToken: false as const,
+      error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
+    if (!verifyTaskToken(match[1], taskId)) return unauthorized;
+    // Intentional cross-user lookup: the verified task token IS the authorization,
+    // so we resolve the owner by bare id (the ownership guard requires a userId
+    // filter it can't have here) via the unguarded client.
+    const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
+    if (!task) return unauthorized;
+    return { user: { id: task.userId }, viaTaskToken: true, error: null };
+  }
+  const { user, error } = await requireUser();
+  if (!user) return { user: null, viaTaskToken: false, error };
+  return { user, viaTaskToken: false, error: null };
+}
+
+/**
+ * Resolve a Cloud Code task bearer to its task's owner WITHOUT binding to a
+ * known taskId — for surfaces that have no taskId in their path (the provider
+ * proxy). Returns null when the Authorization header is absent, not a task
+ * token, or invalid/expired. The token's own embedded audience selects the
+ * task, so it can only ever resolve to that one task's owner.
+ */
+export async function taskTokenUser(req: Request): Promise<SessionUser | null> {
+  const authorization = req.headers.get("authorization");
+  const match = authorization ? CCT_BEARER_RE.exec(authorization) : null;
+  if (!match) return null;
+  const taskId = readTaskToken(match[1]);
+  if (!taskId) return null;
+  // Unguarded by design — the token's verified audience selects the task and
+  // authorizes resolving its owner (see requireTaskAuth).
+  const task = await prismaUnguarded.codeTask.findUnique({ where: { id: taskId }, select: { userId: true } });
+  return task ? { id: task.userId } : null;
+}
+
 export function serializeDevice(device: CodeDevice, online?: boolean) {
   const base = {
     id: device.id,
@@ -63,6 +127,13 @@ export function serializeTask(task: CodeTask) {
     status: task.status,
     lastSeq: task.lastSeq,
     conversationId: task.conversationId,
+    // Cloud Juno Code: "device" (default) runs on a registered host; "cloud"
+    // runs on a GitHub Actions runner against repoOwner/repoName and opens a PR.
+    target: task.target,
+    repoOwner: task.repoOwner,
+    repoName: task.repoName,
+    baseRef: task.baseRef,
+    prUrl: task.prUrl,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };

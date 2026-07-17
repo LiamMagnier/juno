@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import {
   appendTaskEvents,
   persistCodeTaskOutcome,
-  requireUser,
+  requireTaskAuth,
   serializeTask,
   type TaskEventInput,
 } from "@/lib/code-remote";
@@ -11,10 +11,10 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { user, error } = await requireUser();
+  const { id } = await params;
+  const { user, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
-  const { id } = await params;
   const task = await prisma.codeTask.findFirst({ where: { id, userId: user.id }, select: { id: true, status: true } });
   if (!task) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

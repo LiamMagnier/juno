@@ -24,6 +24,20 @@ export const env = {
     return required("AUTH_SECRET");
   },
 
+  // Cloud code runner (GitHub Actions): HMAC secret used to mint the per-task
+  // bearer ("cct_…") handed to the runner so it can call back into Juno for the
+  // exact task it was dispatched for. Kept SEPARATE from AUTH_SECRET so this
+  // runner-facing surface is isolated (compromising one never yields the other).
+  // MUST be added to the PROD_ENV secret (see .github/workflows/deploy.yml).
+  get cloudCodeSecret() {
+    return required("CLOUD_CODE_SECRET");
+  },
+  // Cloud code runner: a GitHub PAT/app token with `actions:write` on
+  // LiamMagnier/juno, used ONLY to workflow_dispatch code-runner.yml. Optional —
+  // when absent, cloud task creation fails with 503 (never silently). This token
+  // never leaves the server; it is not the user's connector token. Add to PROD_ENV.
+  githubDispatchToken: process.env.GITHUB_DISPATCH_TOKEN,
+
   // Secret-at-rest encryption key rotation (optional). Without these, every
   // secret is sealed under a key derived from AUTH_SECRET (key id "auth"). To
   // rotate — including to decouple from AUTH_SECRET so it can itself be rotated

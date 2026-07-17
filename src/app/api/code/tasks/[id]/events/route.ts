@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { codeTaskMessageId, appendTaskEvents, EVENT_KINDS, isTerminalTaskStatus, persistCodeTaskOutcome, requireUser, serializeTask, serializeTaskEvent, TASK_STATUSES } from "@/lib/code-remote";
+import { codeTaskMessageId, appendTaskEvents, EVENT_KINDS, isTerminalTaskStatus, persistCodeTaskOutcome, requireTaskAuth, requireUser, serializeTask, serializeTaskEvent, TASK_STATUSES } from "@/lib/code-remote";
 import { serializeMessage } from "@/lib/serializers";
 
 export const runtime = "nodejs";
@@ -26,10 +26,12 @@ const schema = z.object({
 });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { user, error } = await requireUser();
+  const { id } = await params;
+  // POST accepts the cloud runner's task token (to stream its own task's events)
+  // as well as the session/native host. The GET stream below stays session-only.
+  const { user, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
-  const { id } = await params;
   const raw = await req.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_BODY_BYTES) {
     return NextResponse.json({ error: "Payload too large" }, { status: 413 });

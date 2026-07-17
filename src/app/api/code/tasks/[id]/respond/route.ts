@@ -1,17 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { appendTaskEvents, requireUser, type TaskEventInput } from "@/lib/code-remote";
+import { appendTaskEvents, requireTaskAuth, type TaskEventInput } from "@/lib/code-remote";
 
 export const runtime = "nodejs";
 
 const schema = z.object({ requestId: z.string().min(1).max(200), approve: z.boolean() });
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const { user, error } = await requireUser();
+  const { id } = await params;
+  const { user, error } = await requireTaskAuth(id, req);
   if (!user) return error;
 
-  const { id } = await params;
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 

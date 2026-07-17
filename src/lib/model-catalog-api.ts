@@ -14,6 +14,47 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
 }
 
+/**
+ * The backend model catalog in the shape `@juno/agent-core`'s proxy provider
+ * expects (BackendConfig.models — see runner/agent-core/src/providers/proxy.ts).
+ * Built from the SAME server source the Mac app consumes (loadAvailableModels),
+ * so the cloud runner and the native host bill/route identically.
+ *
+ * `provider` is the path segment under /api/agent; `model` is the id sent to the
+ * provider API. Chat models only, and never Responses-only entries (the proxy
+ * provider speaks /chat/completions or /v1/messages, not the Responses API).
+ */
+export interface BackendAgentModel {
+  provider: string;
+  providerName: string;
+  kind: "anthropic" | "openai";
+  model: string;
+  label: string;
+  available: boolean;
+  vision: boolean;
+  contextWindow: number;
+}
+
+export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
+  return models
+    .filter((model) => model.modality === "chat" && model.api !== "responses" && !model.comingSoon)
+    .map((model) => {
+      const metrics = getModelMetrics(model);
+      return {
+        provider: model.provider,
+        providerName: PROVIDERS[model.provider].label,
+        kind: PROVIDERS[model.provider].kind,
+        model: model.providerModel,
+        label: model.name,
+        // loadAvailableModels only returns models from configured providers, so
+        // every chat entry here is callable through the proxy.
+        available: true,
+        vision: model.vision,
+        contextWindow: model.contextWindow ?? metrics.contextTokens,
+      };
+    });
+}
+
 export function nativeModelCatalog(models: ModelInfo[]) {
   const payload = models.map((model) => {
     const metrics = getModelMetrics(model);

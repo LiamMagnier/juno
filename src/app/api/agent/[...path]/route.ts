@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
+import { taskTokenUser } from "@/lib/code-remote";
 import { PROVIDERS, providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
 import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan } from "@/lib/usage";
@@ -33,7 +34,14 @@ export async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ path: string[] }> },
 ) {
-  const user = await getCurrentUser();
+  // The Cloud Code runner authenticates with its per-task bearer ("cct_…") — it
+  // has no session cookie. Resolve that to the task's owner so plan budget still
+  // applies (no free provider calls); everyone else uses the normal session /
+  // native-bearer path, unchanged.
+  const authorization = req.headers.get("authorization");
+  const user = authorization?.startsWith("Bearer cct_")
+    ? await taskTokenUser(req)
+    : await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // This proxy carries real provider spend (Juno Code agent loops, voice and
