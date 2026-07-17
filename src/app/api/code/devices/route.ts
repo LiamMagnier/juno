@@ -8,7 +8,9 @@ export const runtime = "nodejs";
 const postSchema = z.object({
   deviceId: z.string().min(1).optional(),
   name: z.string().trim().min(1).max(200),
-  platform: z.literal("macos"),
+  // Hosts that can run local code sessions. Widened from the original
+  // macOS-only literal when the Windows desktop client shipped.
+  platform: z.enum(["macos", "windows"]),
   workspaces: z
     .array(
       z.object({
