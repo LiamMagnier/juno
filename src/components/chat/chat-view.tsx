@@ -222,7 +222,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const voiceUnloadPayloadRef = React.useRef<string | null>(null);
   const voiceSaveDetachedRef = React.useRef(false);
   const [shareOpen, setShareOpen] = React.useState(false);
-  const [dictating, setDictating] = React.useState(false);
   // Sticky composer toggles live in AppProvider so they survive ChatView remounts
   // (e.g. the new-chat → /chat/[id] navigation after the first reply) and refreshes.
   const canvasEnabled = composerPrefs.canvas;
@@ -1311,7 +1310,6 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       selectedProjectId={activeProjectId}
       onPickProject={handlePickProject}
       hideDisclaimer={true}
-      onDictatingChange={setDictating}
     />
   );
 

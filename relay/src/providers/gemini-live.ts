@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed, TranscriptEntry } from "./types.js";
+import type { ProviderEvents, VoiceProviderSession, VoiceSessionSeed } from "./types.js";
 import { requiredEnv } from "./types.js";
 
 const LIVE_URL =

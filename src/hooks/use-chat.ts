@@ -863,12 +863,29 @@ export function useChat(opts: UseChatOptions) {
   }, []);
 
   const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
-    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)));
+    // Optimistic, but honest: capture the previous value while applying the
+    // new one, and roll back with a toast if the API doesn't accept it.
+    let previous: "UP" | "DOWN" | null = null;
+    setMessages((prev) =>
+      prev.map((m) => {
+        if (m.id !== messageId) return m;
+        previous = m.feedback ?? null;
+        return { ...m, feedback };
+      })
+    );
+    const rollback = () => {
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback: previous } : m)));
+      toast.error("Could not save your feedback.");
+    };
     fetch(`/api/messages/${messageId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback }),
-    }).catch(() => {});
+    })
+      .then((res) => {
+        if (!res.ok) rollback();
+      })
+      .catch(rollback);
   }, []);
 
   const continueResponse = React.useCallback(() => {

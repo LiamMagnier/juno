@@ -45,32 +45,32 @@ and `.dark`. **Never hardcode hex in components.** Values are exact.
 
 | Token | Light | Dark | Role |
 |---|---|---|---|
-| `--background` | `48 33% 97%` | `40 6% 10%` | Page — warm paper / warm charcoal |
+| `--background` | `48 33% 97%` | `28 9% 9%` | Page — warm paper / warm charcoal |
 | `--foreground` | `30 3% 12%` | `45 24% 93%` | Default text |
-| `--card` | `0 0% 100%` | `40 4% 13%` | Card / surface fill |
+| `--card` | `0 0% 100%` | `28 7% 12.5%` | Card / surface fill |
 | `--card-foreground` | `30 3% 12%` | `45 24% 93%` | Text on cards |
-| `--popover` | `0 0% 100%` | `40 3% 19%` | Menu / popover fill |
+| `--popover` | `0 0% 100%` | `28 6% 18%` | Menu / popover fill |
 | `--popover-foreground` | `30 3% 12%` | `45 24% 93%` | Text in popovers |
 | `--primary` | `15 54% 51%` | `15 54% 51%` | **Coral** — the accent (see §1.2) |
 | `--primary-foreground` | `0 0% 100%` | `0 0% 100%` | Text on coral (white) |
-| `--secondary` | `50 23% 95%` | `45 5% 16%` | Secondary fills |
+| `--secondary` | `50 23% 95%` | `30 7% 15%` | Secondary fills |
 | `--secondary-foreground` | `30 3% 18%` | `45 22% 90%` | Text on secondary |
-| `--muted` | `50 23% 95%` | `45 5% 16%` | Muted bg (skeleton, disabled) |
+| `--muted` | `50 23% 95%` | `30 7% 15%` | Muted bg (skeleton, disabled) |
 | `--muted-foreground` | `40 4% 40%` | `37 7% 63%` | Secondary labels, help text |
-| `--accent` | `48 28% 92%` | `40 3% 19%` | Accent bg (hover/highlight) |
+| `--accent` | `48 28% 92%` | `28 6% 18%` | Accent bg (hover/highlight) |
 | `--accent-foreground` | `30 3% 18%` | `45 22% 90%` | Text on accent |
 | `--destructive` | `11 51% 50%` | `11 51% 56%` | Error / destructive |
 | `--destructive-foreground` | `0 0% 100%` | `0 0% 100%` | Text on destructive |
 | `--success` | `140 33% 46%` | `140 33% 53%` | Success (green) |
 | `--warning` | `40 57% 51%` | `40 60% 58%` | Warning (amber) |
 | `--source` | `187 62% 34%` | `187 58% 49%` | Source / info (teal) |
-| `--border` | `43 23% 88%` | `36 5% 21%` | Default borders |
-| `--input` | `43 23% 85%` | `36 5% 24%` | Input fill |
+| `--border` | `43 23% 88%` | `30 6% 21%` | Default borders |
+| `--input` | `43 23% 85%` | `30 6% 24%` | Input fill |
 | `--ring` | `15 54% 51%` | `15 54% 51%` | Focus ring (= accent) |
-| `--sidebar` | `50 23% 95%` | `40 6% 10%` | Sidebar bg |
+| `--sidebar` | `50 23% 95%` | `28 10% 7.5%` | Sidebar bg |
 | `--sidebar-foreground` | `40 4% 30%` | `37 7% 70%` | Sidebar text |
-| `--sidebar-border` | `43 23% 88%` | `36 5% 18%` | Sidebar border |
-| `--sidebar-accent` | `48 28% 91%` | `45 5% 16%` | Sidebar active/hover |
+| `--sidebar-border` | `43 23% 88%` | `28 7% 16%` | Sidebar border |
+| `--sidebar-accent` | `48 28% 91%` | `30 8% 14%` | Sidebar active/hover |
 
 **Swappable accent** (set at runtime via `[data-accent]` on `<html>`; drives
 `--primary` + `--ring`). Coral is the default. When an accent value is the same

@@ -294,7 +294,8 @@ export function ModerationAdmin() {
                               onClick={() =>
                                 setExpanded((s) => {
                                   const next = new Set(s);
-                                  next.has(f.id) ? next.delete(f.id) : next.add(f.id);
+                                  if (next.has(f.id)) next.delete(f.id);
+                                  else next.add(f.id);
                                   return next;
                                 })
                               }

@@ -8,7 +8,7 @@ import { ArrowLeft, PartyPopper, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { DottedDivider } from "@/components/signature/dotted-divider";
-import { RequestCard, StatusBadge, timeAgo } from "@/components/roadmap/roadmap-ui";
+import { RequestCard, timeAgo } from "@/components/roadmap/roadmap-ui";
 import { SubmitDialog } from "@/components/roadmap/submit-dialog";
 import {
   BOARD_COLUMNS,

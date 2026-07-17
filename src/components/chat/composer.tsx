@@ -368,7 +368,9 @@ export function Composer({
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(privateMode ? null : conversationId);
-  const sendAttachments = privateMode ? [] : readyAttachments;
+  // Memoized: a fresh `[]` every private-mode render would churn every hook
+  // that lists sendAttachments as a dependency.
+  const sendAttachments = React.useMemo(() => (privateMode ? [] : readyAttachments), [privateMode, readyAttachments]);
   const uploading = privateMode ? false : isUploading;
 
   const addComposerFiles = React.useCallback(
@@ -575,7 +577,7 @@ export function Composer({
         requestAnimationFrame(autoresize);
       })();
     },
-    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize]
+    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize, setDictating]
   );
 
   // ——— Composer palette: "/" for commands, "@" for tools + connectors ———
@@ -1041,7 +1043,7 @@ export function Composer({
     clear();
     setDictating(false);
     requestAnimationFrame(autoresize);
-  }, [autoresize, clear]);
+  }, [autoresize, clear, setDictating]);
 
   const submitClarification = React.useCallback(
     async (answers: PreflightClarificationAnswer[]) => {

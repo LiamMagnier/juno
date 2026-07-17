@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { ensureUserDefaults } from "@/lib/auth";
 import { isModelId } from "@/lib/models";
-import { ACCENT_IDS } from "@/lib/accents";
 import { PERSONALITY_IDS } from "@/lib/personalities";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
 

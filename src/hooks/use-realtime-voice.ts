@@ -27,7 +27,34 @@ function normalizeRelayUrl(raw: string): string {
   return url;
 }
 
-export type RealtimeVoiceStatus = "idle" | "connecting" | "live" | "ended" | "error";
+export type RealtimeVoiceStatus = "idle" | "connecting" | "reconnecting" | "live" | "ended" | "error";
+
+/** Automatic reconnect after an unexpected transport drop: bounded attempts
+ * with exponential backoff (600ms, 1.2s, 2.4s), reset on every ready session. */
+const RECONNECT_MAX_ATTEMPTS = 3;
+const RECONNECT_BASE_DELAY_MS = 600;
+
+/** Errors that retrying cannot fix — surface them immediately instead. */
+function isPermanentStartError(err: unknown): boolean {
+  return (
+    err instanceof DOMException &&
+    (err.name === "NotAllowedError" || err.name === "SecurityError" || err.name === "NotFoundError")
+  );
+}
+
+/** Turn a start failure into a message the user can act on. getUserMedia
+ * rejections otherwise surface as an opaque "Permission denied". */
+function describeStartError(err: unknown): string {
+  if (err instanceof DOMException) {
+    if (err.name === "NotAllowedError" || err.name === "SecurityError")
+      return "Microphone access is blocked. Allow the microphone for this site in your browser settings, then restart voice.";
+    if (err.name === "NotFoundError" || err.name === "OverconstrainedError")
+      return "No microphone was found. Connect or enable one, then restart voice.";
+    if (err.name === "NotReadableError")
+      return "Your microphone is busy in another app. Close it, then restart voice.";
+  }
+  return err instanceof Error && err.message ? err.message : "Couldn't start voice mode.";
+}
 
 export interface RealtimeTranscriptLine {
   id: number;
@@ -146,6 +173,10 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
   const historyRef = React.useRef<VoiceHistoryEntry[]>([]);
   const clientTranscriptActiveRef = React.useRef(false);
   const speechRestartTimerRef = React.useRef<number | null>(null);
+  const reconnectAttemptsRef = React.useRef(0);
+  const reconnectTimerRef = React.useRef<number | null>(null);
+  // Reconnects re-enter `start` from inside its own socket handlers.
+  const startRef = React.useRef<((initialProvider?: VoiceProviderId, history?: VoiceHistoryEntry[]) => Promise<void>) | null>(null);
 
   React.useEffect(() => {
     statusRef.current = status;
@@ -317,6 +348,32 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     setAssistantSpeaking(false);
   }, [flushPlayback, stopScreenShare]);
 
+  const clearReconnectTimer = React.useCallback(() => {
+    if (reconnectTimerRef.current != null) window.clearTimeout(reconnectTimerRef.current);
+    reconnectTimerRef.current = null;
+  }, []);
+
+  /** Tear down the dropped session and schedule a bounded, backed-off retry.
+   * Returns false once the retry budget is spent so callers fall through to
+   * their terminal error/ended handling. The transcript is kept — `start`
+   * replays it as history, so the conversation survives the reconnect. */
+  const scheduleReconnect = React.useCallback(() => {
+    const attempt = reconnectAttemptsRef.current + 1;
+    if (attempt > RECONNECT_MAX_ATTEMPTS) return false;
+    reconnectAttemptsRef.current = attempt;
+    sealTranscript();
+    releaseResources();
+    statusRef.current = "reconnecting";
+    setStatus("reconnecting");
+    setError(null);
+    clearReconnectTimer();
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null;
+      void startRef.current?.();
+    }, RECONNECT_BASE_DELAY_MS * 2 ** (attempt - 1));
+    return true;
+  }, [clearReconnectTimer, releaseResources, sealTranscript]);
+
   const playPcm = React.useCallback((data: ArrayBuffer) => {
     const ctx = playCtxRef.current;
     if (!ctx || data.byteLength < 2) return;
@@ -441,6 +498,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
           statusRef.current = "live";
           setStatus("live");
           setError(null);
+          reconnectAttemptsRef.current = 0; // a healthy session restores the retry budget
           clientTranscriptActiveRef.current = msg.capabilities.needsClientTranscript && !mutedRef.current;
           if (clientTranscriptActiveRef.current) speechRef.current.start();
           else speechRef.current.stop();
@@ -502,10 +560,15 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     async (initialProvider?: VoiceProviderId, history?: VoiceHistoryEntry[]) => {
       const generation = ++generationRef.current;
       providerEpochRef.current += 1;
+      // Re-entry from the reconnect timer keeps the visible "reconnecting"
+      // state; a fresh/manual start resets the retry budget.
+      const isReconnect = statusRef.current === "reconnecting" && reconnectAttemptsRef.current > 0;
+      if (!isReconnect) reconnectAttemptsRef.current = 0;
+      clearReconnectTimer();
       releaseResources();
       if (history) historyRef.current = boundVoiceHistory(history);
-      statusRef.current = "connecting";
-      setStatus("connecting");
+      statusRef.current = isReconnect ? "reconnecting" : "connecting";
+      setStatus(statusRef.current);
       setError(null);
       setClosedReason(null);
       setCapabilities(null);
@@ -572,8 +635,11 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
             }
           }
         };
+        // Unexpected transport drops (a deliberate end/session.closed detaches
+        // these handlers first) auto-reconnect while the retry budget lasts.
         ws.onclose = () => {
           if (generationRef.current !== generation || wsRef.current !== ws) return;
+          if ((statusRef.current === "live" || statusRef.current === "reconnecting") && scheduleReconnect()) return;
           sealTranscript();
           releaseResources();
           setStatus((cur) => {
@@ -584,6 +650,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         };
         ws.onerror = () => {
           if (generationRef.current !== generation || wsRef.current !== ws) return;
+          if ((statusRef.current === "live" || statusRef.current === "reconnecting") && scheduleReconnect()) return;
           statusRef.current = "error";
           setStatus("error");
           setError((cur) => cur ?? "Connection to the voice relay failed.");
@@ -592,13 +659,17 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
         if (generationRef.current !== generation) return;
         releaseResources();
         if (err instanceof DOMException && err.name === "AbortError") return;
+        // Mid-reconnect failures (token fetch, socket setup) retry on the same
+        // budget — unless retrying can't help (revoked mic permission, no mic).
+        if (isReconnect && !isPermanentStartError(err) && scheduleReconnect()) return;
         statusRef.current = "error";
         setStatus("error");
-        setError(err instanceof Error ? err.message : "Couldn't start voice mode.");
+        setError(describeStartError(err));
       }
     },
-    [handleServerMessage, playPcm, provider, releaseResources, sealTranscript, startMic]
+    [clearReconnectTimer, handleServerMessage, playPcm, provider, releaseResources, scheduleReconnect, sealTranscript, startMic]
   );
+  startRef.current = start;
 
   const switchProvider = React.useCallback(
     (next: VoiceProviderId) => {
@@ -776,6 +847,8 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
 
   const end = React.useCallback(() => {
     generationRef.current += 1;
+    clearReconnectTimer();
+    reconnectAttemptsRef.current = 0;
     sealTranscript();
     releaseResources();
     statusRef.current = "idle";
@@ -784,7 +857,7 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
     capsRef.current = null;
     setMuted(false);
     mutedRef.current = false;
-  }, [releaseResources, sealTranscript]);
+  }, [clearReconnectTimer, releaseResources, sealTranscript]);
 
   // Teardown on unmount.
   React.useEffect(() => () => end(), [end]);

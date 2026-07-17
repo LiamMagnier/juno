@@ -50,6 +50,9 @@ export function CommandPalette() {
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [active, setActive] = React.useState(0);
+  const baseId = React.useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = React.useCallback((cmdId: string) => `${baseId}-opt-${cmdId}`, [baseId]);
   const listRef = React.useRef<HTMLDivElement>(null);
   const highlightRef = React.useRef<HTMLDivElement>(null);
   // True when `active` last changed via the keyboard, so we only auto-scroll then
@@ -199,6 +202,12 @@ export function CommandPalette() {
               placeholder="Search commands, chats…"
               className="w-full bg-transparent py-4 text-[15px] outline-none placeholder:text-muted-foreground/60"
               aria-label="Command palette search"
+              role="combobox"
+              aria-expanded="true"
+              aria-haspopup="listbox"
+              aria-controls={listboxId}
+              aria-autocomplete="list"
+              aria-activedescendant={items[active] ? optionId(items[active].id) : undefined}
             />
             {query && (
               <button
@@ -212,8 +221,14 @@ export function CommandPalette() {
             )}
           </div>
 
+          {/* Combobox popup: focus stays on the input; aria-activedescendant
+              tracks the highlighted option, so rows are role=option and out of
+              the tab order. Group headers are visual-only (aria-hidden). */}
           <div
             ref={listRef}
+            id={listboxId}
+            role="listbox"
+            aria-label="Commands and chats"
             className="relative max-h-[min(56svh,calc(100dvh-10rem))] overflow-y-auto overscroll-contain scroll-fade-y p-1.5"
           >
             {/* One highlight that glides between rows. `transform` is animated
@@ -240,6 +255,7 @@ export function CommandPalette() {
                       // `first:` variant here would never match — key the tighter top
                       // padding off the index instead.
                       <div
+                        aria-hidden="true"
                         className={cn(
                           "px-2.5 pb-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/55",
                           i === 0 ? "pt-1.5" : "pt-3"
@@ -250,6 +266,9 @@ export function CommandPalette() {
                     )}
                     <button
                       type="button"
+                      id={optionId(c.id)}
+                      role="option"
+                      tabIndex={-1}
                       data-index={i}
                       onMouseMove={() => setActive(i)}
                       onClick={() => c.run()}

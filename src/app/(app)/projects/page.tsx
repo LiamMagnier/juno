@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ArrowLeft, Box, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, FileText, MessageSquare, Plus, Search, MoreVertical, Trash2, Pencil, SlidersHorizontal, Pin, PinOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -298,6 +298,7 @@ export default function ProjectsPage() {
                             <Button
                               variant="ghost"
                               size="icon-sm"
+                              aria-label="Project actions"
                               className="h-6 w-6 rounded-md text-muted-foreground hover:text-foreground shrink-0"
                             >
                               <MoreVertical className="h-3.5 w-3.5" />

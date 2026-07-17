@@ -41,7 +41,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
   const orbStatus: OrbStatus =
     voice.status === "error"
       ? "error"
-      : voice.status === "connecting"
+      : voice.status === "connecting" || voice.status === "reconnecting"
         ? "thinking"
         : voice.status !== "live" || voice.muted
           ? "idle"
@@ -52,15 +52,17 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
   const statusLabel =
     voice.status === "connecting"
       ? "Connecting"
-      : voice.status === "error"
-        ? "Voice unavailable"
-        : voice.status === "ended"
-          ? "Session ended"
-          : voice.assistantSpeaking
-            ? "Juno is speaking"
-            : voice.muted
-              ? "Microphone off"
-              : "Listening";
+      : voice.status === "reconnecting"
+        ? "Reconnecting…"
+        : voice.status === "error"
+          ? "Voice unavailable"
+          : voice.status === "ended"
+            ? "Session ended"
+            : voice.assistantSpeaking
+              ? "Juno is speaking"
+              : voice.muted
+                ? "Microphone off"
+                : "Listening";
 
   const restartable = voice.status === "ended" || voice.status === "error";
 
@@ -75,8 +77,18 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
   return (
     <section
       aria-label="Voice conversation controls"
-      className="relative z-20 mx-auto mb-2 flex w-full justify-center px-2 motion-safe:animate-rise-in sm:px-0"
+      className="relative z-20 mx-auto mb-2 flex w-full flex-col items-center gap-1.5 px-2 motion-safe:animate-rise-in sm:px-0"
     >
+      {/* Failures speak, they don't hide in a tooltip: the message names the
+          fix, and the restart control sits right below it. */}
+      {voice.status === "error" && voice.error && (
+        <p
+          role="alert"
+          className="max-w-md rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-1.5 text-center text-xs leading-snug text-foreground shadow-soft"
+        >
+          {voice.error}
+        </p>
+      )}
       <div className="flex max-w-full items-center gap-0.5 rounded-full border border-border bg-popover/95 p-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.1),0_10px_28px_-20px_hsl(var(--foreground)/0.55)] backdrop-blur-lg supports-[backdrop-filter]:bg-popover/88">
         <div className="flex min-w-0 items-center gap-2 pl-0.5 pr-1.5">
           <VoiceOrb status={orbStatus} levelRef={voice.levelRef} className="size-9" />

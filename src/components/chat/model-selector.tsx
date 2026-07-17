@@ -123,7 +123,6 @@ function ModelDetailPanel({
   const accent = providerAccent(model.provider);
   const effectiveEffort: ReasoningEffort = preview ? preview.effort : reasoningEffort;
   const metrics = applyReasoning(getModelMetrics(model), effectiveEffort, model.reasoning);
-  const thinking = model.reasoning && !!effectiveEffort;
   // Only the thinking modes this model actually supports (real per-model data).
   const options = reasoningOptions(model);
   const free = metrics.inputUsdPerMTok === 0 && metrics.outputUsdPerMTok === 0;

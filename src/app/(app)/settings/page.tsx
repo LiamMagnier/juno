@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
-import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, Palette, CalendarClock } from "lucide-react";
+import { ArrowLeft, NotebookPen, Check, Download, Loader2, Monitor, Moon, Play, Square, Sun, Trash2, Plus, CalendarClock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
