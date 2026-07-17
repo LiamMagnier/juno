@@ -19,7 +19,7 @@ export interface ModelBenchmark {
 }
 
 /** ISO timestamp of the last successful fetch (null = never fetched). */
-export const BENCHMARK_STAMP: string | null = "2026-07-16T06:33:50.432Z";
+export const BENCHMARK_STAMP: string | null = "2026-07-17T06:30:03.934Z";
 
 /** Canonical Juno model id → live leaderboard data. */
 export const BENCHMARKS: Record<string, ModelBenchmark> = {
@@ -42,14 +42,15 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "google:gemini-3.5-flash": { priceInPerMTok: 1.5, priceOutPerMTok: 9, source: "openrouter", slug: "google/gemini-3.5-flash" },
   "mimo:mimo-v2.5-pro": { priceInPerMTok: 0.435, priceOutPerMTok: 0.87, source: "openrouter", slug: "xiaomi/mimo-v2.5-pro" },
   "minimax:MiniMax-M2.5": { priceInPerMTok: 0.15, priceOutPerMTok: 0.8999999999999999, source: "openrouter", slug: "minimax/minimax-m2.5" },
-  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "minimax/minimax-m2.7" },
+  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.25, priceOutPerMTok: 1, source: "openrouter", slug: "minimax/minimax-m2.7" },
   "minimax:MiniMax-M3": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "minimax/minimax-m3" },
   "mistral:devstral-2512": { priceInPerMTok: 0.39999999999999997, priceOutPerMTok: 2, source: "openrouter", slug: "mistralai/devstral-2512" },
   "mistral:mistral-large-latest": { priceInPerMTok: 2, priceOutPerMTok: 6, source: "openrouter", slug: "mistralai/mistral-large" },
   "mistral:mistral-medium-latest": { priceInPerMTok: 1.5, priceOutPerMTok: 7.5, source: "openrouter", slug: "mistralai/mistral-medium-3-5" },
   "moonshot:kimi-k2.5": { priceInPerMTok: 0.5700000000000001, priceOutPerMTok: 2.8499999999999996, source: "openrouter", slug: "moonshotai/kimi-k2.5" },
-  "moonshot:kimi-k2.6": { priceInPerMTok: 0.66, priceOutPerMTok: 3.41, source: "openrouter", slug: "moonshotai/kimi-k2.6" },
-  "moonshot:kimi-k2.7-code": { priceInPerMTok: 0.719, priceOutPerMTok: 3.49, source: "openrouter", slug: "moonshotai/kimi-k2.7-code" },
+  "moonshot:kimi-k2.6": { priceInPerMTok: 0.95, priceOutPerMTok: 4, source: "openrouter", slug: "moonshotai/kimi-k2.6" },
+  "moonshot:kimi-k2.7-code": { priceInPerMTok: 0.75, priceOutPerMTok: 3.5, source: "openrouter", slug: "moonshotai/kimi-k2.7-code" },
+  "moonshot:kimi-k3": { priceInPerMTok: 3, priceOutPerMTok: 15, source: "openrouter", slug: "moonshotai/kimi-k3" },
   "openai:gpt-3.5-turbo": { priceInPerMTok: 0.5, priceOutPerMTok: 1.5, source: "openrouter", slug: "openai/gpt-3.5-turbo" },
   "openai:gpt-4-turbo": { priceInPerMTok: 10, priceOutPerMTok: 30, source: "openrouter", slug: "openai/gpt-4-turbo" },
   "openai:gpt-4o": { priceInPerMTok: 2.5, priceOutPerMTok: 10, source: "openrouter", slug: "openai/gpt-4o" },
@@ -96,6 +97,6 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "zhipu:glm-5": { priceInPerMTok: 0.95, priceOutPerMTok: 3.15, source: "openrouter", slug: "z-ai/glm-5" },
   "zhipu:glm-5-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5-turbo" },
   "zhipu:glm-5.1": { priceInPerMTok: 0.966, priceOutPerMTok: 3.036, source: "openrouter", slug: "z-ai/glm-5.1" },
-  "zhipu:glm-5.2": { priceInPerMTok: 0.9702000000000001, priceOutPerMTok: 3.0492, source: "openrouter", slug: "z-ai/glm-5.2" },
+  "zhipu:glm-5.2": { priceInPerMTok: 0.9324, priceOutPerMTok: 2.9304, source: "openrouter", slug: "z-ai/glm-5.2" },
   "zhipu:glm-5v-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5v-turbo" },
 };
