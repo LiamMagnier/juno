@@ -21,9 +21,9 @@ All JSON, under `/api/code`:
 
 | Endpoint | Purpose |
 | --- | --- |
-| `POST /devices` | `{deviceId?, name, platform:"macos", workspaces:[{name,path}]}` — upsert + heartbeat. Returns `{device:{id,name,platform,workspaces,lastSeenAt}}`. |
+| `POST /devices` | `{deviceId?, name, platform, workspaces:[{name,path,key?}]}` — upsert + heartbeat. `key` is the stable workspace identity (see below); key-less entries keep the original contract. Returns `{device:{id,name,platform,workspaces,lastSeenAt}}`. |
 | `GET /devices` | `{devices:[{id,name,platform,workspaces,lastSeenAt,online}]}` — `online` = seen within 120s. |
-| `POST /tasks` | `{deviceId, workspacePath, workspaceName?, title?, prompt}` — creates `queued`; `title` defaults to the prompt truncated to 60 chars. Returns `{task}`. |
+| `POST /tasks` | `{deviceId, workspacePath, workspaceName?, workspaceKey?, title?, prompt}` — creates `queued`; `title` defaults to the prompt truncated to 60 chars. `workspacePath` stays REQUIRED (the executing device resolves its own local folder); `workspaceKey` is optional attribution that survives folder moves. Returns `{task}`. |
 | `GET /tasks?deviceId=&status=&limit=30` | `{tasks}` newest-first. |
 | `GET /tasks/[id]?afterSeq=N` | `{task, events:[{seq,kind,payload,createdAt}]}` — events with `seq > N`, ascending, capped at 500. |
 | `POST /tasks/[id]/claim` | `{deviceId}` — `queued -> running` or `409 {error:"not_queued"}`. Returns `{task}`. |
@@ -32,7 +32,18 @@ All JSON, under `/api/code`:
 | `POST /tasks/[id]/cancel` | Appends `cancel_request`; cancels immediately only if still `queued`. Returns `{task}`. |
 | `GET /queue?deviceId=` | Long-poll (≤25s) for the oldest `queued` task on the device. Returns `{task\|null}`. |
 
-Task shape: `{id, deviceId, workspacePath, workspaceName, title, prompt, status, lastSeq, createdAt, updatedAt}`.
+Task shape: `{id, deviceId, workspacePath, workspaceName, workspaceKey, title, prompt, status, lastSeq, conversationId, createdAt, updatedAt}`.
+
+## Workspace identity (`key`)
+
+Absolute local paths are device metadata, not identity — a folder can move (or differ per device) without becoming a different workspace. The stable identity is a client-minted `key` (unique per user, `CodeWorkspace.key`), carried additively everywhere paths already flow:
+
+- `PUT /api/code/workspaces` — each mirrored workspace may carry `key`. Upsert matches `(userId, key)` FIRST; a keyed item that only matches by path adopts its key onto the row. Key-less clients keep exact path matching, and never clear keys minted by newer clients. `GET`/`PUT` responses include `key` on every workspace.
+- `POST /api/code/devices` — `workspaces[].key` is accepted and echoed back verbatim.
+- `POST /api/code/tasks` — optional `workspaceKey`, persisted and serialized on the task.
+- `POST/PATCH /api/conversations` — kind:"code" sessions may carry `codeWorkspaceKey` next to `codeWorkspaceName`/`codeWorkspacePath`.
+
+Web surfaces attribute sessions/tasks to workspaces by key when both sides have one, falling back to path, then name.
 
 ## Event kinds
 

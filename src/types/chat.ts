@@ -144,9 +144,12 @@ export interface ClientConversation {
   model: string;
   /** Which surface owns this conversation: web/app chat, or a Juno Code session. */
   kind: "chat" | "code";
-  /** For code sessions: the app-side workspace (project folder) they belong to. */
+  /** For code sessions: the app-side workspace (project folder) they belong to.
+   *  `codeWorkspaceKey` is the stable identity (matches workspaces/tasks by
+   *  key); name is display, path is device-specific metadata. */
   codeWorkspaceName?: string | null;
   codeWorkspacePath?: string | null;
+  codeWorkspaceKey?: string | null;
   pinned: boolean;
   folderId: string | null;
   projectId: string | null;

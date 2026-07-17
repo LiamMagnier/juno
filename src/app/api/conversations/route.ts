@@ -21,10 +21,13 @@ export async function POST(req: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // The Juno app marks Code sessions (and their workspace) at create.
+  // codeWorkspaceKey is the stable workspace identity (CodeWorkspace.key) when
+  // the client knows it; name/path stay as display + device metadata.
   const body = (await req.json().catch(() => ({}))) as {
     kind?: unknown;
     codeWorkspaceName?: unknown;
     codeWorkspacePath?: unknown;
+    codeWorkspaceKey?: unknown;
   };
   const kind = body.kind === "code" ? "code" : "chat";
   const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim().slice(0, 300) : null);
@@ -34,7 +37,11 @@ export async function POST(req: Request) {
       titleSource: "default",
       kind,
       ...(kind === "code"
-        ? { codeWorkspaceName: str(body.codeWorkspaceName), codeWorkspacePath: str(body.codeWorkspacePath) }
+        ? {
+            codeWorkspaceName: str(body.codeWorkspaceName),
+            codeWorkspacePath: str(body.codeWorkspacePath),
+            codeWorkspaceKey: str(body.codeWorkspaceKey),
+          }
         : {}),
     },
   });

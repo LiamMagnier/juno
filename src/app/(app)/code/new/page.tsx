@@ -11,7 +11,7 @@ import { useApp } from "@/components/app/app-provider";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import type { ClientConversation } from "@/types/chat";
 
-type Workspace = { id: string; name: string; path: string; lastOpenedAt: string };
+type Workspace = { id: string; name: string; path: string; key?: string | null; lastOpenedAt: string };
 
 export default function NewCodeSessionPage() {
   const router = useRouter();
@@ -43,7 +43,14 @@ export default function NewCodeSessionPage() {
       const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: "code", codeWorkspaceName: w.name, codeWorkspacePath: w.path }),
+        body: JSON.stringify({
+          kind: "code",
+          codeWorkspaceName: w.name,
+          codeWorkspacePath: w.path,
+          // Stable identity when the mirror has one — sessions then follow the
+          // workspace even if the folder moves on disk.
+          codeWorkspaceKey: w.key ?? undefined,
+        }),
       });
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { conversation: ClientConversation };
@@ -109,7 +116,7 @@ export default function NewCodeSessionPage() {
           <div className="space-y-2" role="list">
             {workspaces.map((w) => (
               <button
-                key={w.path}
+                key={w.key ?? w.path}
                 type="button"
                 role="listitem"
                 onClick={() => start(w)}

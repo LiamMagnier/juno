@@ -10,7 +10,7 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
  * history + the live remote task running on the user's Mac.
  *
  * Transport, matching the server contract exactly:
- *   POST /api/code/tasks                  { deviceId, workspacePath, workspaceName?, title?, prompt, conversationId }
+ *   POST /api/code/tasks                  { deviceId, workspacePath, workspaceName?, workspaceKey?, title?, prompt, conversationId }
  *                                         → { task, userMessage }
  *   GET  /api/code/tasks/[id]/events?afterSeq=N   (SSE)
  *        { type: "snapshot" | "events", task, events } … { type: "done", task, message }
@@ -30,8 +30,11 @@ export interface CodePendingApproval {
 
 export interface CodeSendTarget {
   deviceId: string;
+  /** Required — the executing device resolves this local folder. */
   workspacePath: string;
   workspaceName?: string | null;
+  /** Stable workspace identity (CodeWorkspace.key), when the session has one. */
+  workspaceKey?: string | null;
 }
 
 type RemoteTask = { id: string; status: string; conversationId?: string | null };
@@ -373,6 +376,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
             deviceId: target.deviceId,
             workspacePath: target.workspacePath,
             workspaceName: target.workspaceName || undefined,
+            workspaceKey: target.workspaceKey || undefined,
             title: trimmed.slice(0, 60),
             prompt: trimmed,
             conversationId: opts.conversationId,

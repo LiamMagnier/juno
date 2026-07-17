@@ -154,6 +154,7 @@ export function serializeConversation(conv: Conversation): ClientConversation {
     kind: conv.kind === "code" ? "code" : "chat",
     codeWorkspaceName: conv.codeWorkspaceName ?? null,
     codeWorkspacePath: conv.codeWorkspacePath ?? null,
+    codeWorkspaceKey: conv.codeWorkspaceKey ?? null,
     pinned: conv.pinned,
     folderId: conv.folderId,
     projectId: conv.projectId,

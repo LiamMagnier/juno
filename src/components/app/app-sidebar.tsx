@@ -72,7 +72,9 @@ type SidebarProject = {
   coverUrl?: string | null;
 };
 
-type CodeWorkspace = { id: string; name: string; path: string; lastOpenedAt: string };
+/** `key` is the stable server-synced workspace identity (nullable for rows
+ *  mirrored by pre-key clients); `path` is device metadata. */
+type CodeWorkspace = { id: string; name: string; path: string; key?: string | null; lastOpenedAt: string };
 
 /** Remote Juno Code task (from /api/code/tasks) — status rides on these rows.
  *  Tasks started from a web session carry its conversationId and show as a
@@ -83,6 +85,7 @@ type CodeTaskRow = {
   conversationId: string | null;
   workspacePath: string;
   workspaceName: string;
+  workspaceKey: string | null;
   title: string;
   status: string;
   createdAt: string;
@@ -325,6 +328,7 @@ export function AppSidebar({
             conversationId: typeof x.conversationId === "string" && x.conversationId ? x.conversationId : null,
             workspacePath: String(x.workspacePath ?? ""),
             workspaceName: String(x.workspaceName ?? ""),
+            workspaceKey: typeof x.workspaceKey === "string" && x.workspaceKey ? x.workspaceKey : null,
             title: String(x.title ?? ""),
             status: String(x.status ?? ""),
             createdAt: String(x.createdAt ?? ""),
@@ -342,9 +346,12 @@ export function AppSidebar({
     void loadCode();
   }, [mode, loadCode]);
 
-  const toggleWorkspaceExpanded = (path: string) => {
+  // `id` is the group's stable identity: workspace key when synced, else path.
+  // `current` is the resolved on-screen state (includes the legacy path-keyed
+  // fallback), so the first toggle after an id migration still flips visibly.
+  const toggleWorkspaceExpanded = (id: string, current: boolean) => {
     setCodeExpanded((prev) => {
-      const next = { ...prev, [path]: !(prev[path] ?? true) };
+      const next = { ...prev, [id]: !current };
       try {
         localStorage.setItem(CODE_EXPANDED_KEY, JSON.stringify(next));
       } catch {}
@@ -353,27 +360,40 @@ export function AppSidebar({
   };
 
   // Code mode: group synced Juno Code sessions by their app-side workspace
-  // (project folder), mirroring the app's own sidebar. Sessions without a
-  // workspace fall through to the flat Sessions list below.
+  // (project folder), mirroring the app's own sidebar. Attribution is by the
+  // stable workspace key when both sides carry one (a moved folder keeps its
+  // sessions grouped); path, then name, remain the fallback for pre-key rows.
+  // Sessions without a workspace fall through to the flat Sessions list below.
   const codeProjects = React.useMemo(() => {
-    if (mode !== "code") return [] as { name: string; path: string; sessions: ClientConversation[] }[];
-    const sessionsFor = (w: { name: string; path: string }) =>
-      filtered.filter(
-        (c) => c.codeWorkspacePath === w.path || (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name)
-      );
-    const projects = codeWorkspaces.map((w) => ({ name: w.name, path: w.path, sessions: sessionsFor(w) }));
+    if (mode !== "code")
+      return [] as { id: string; key: string | null; name: string; path: string; sessions: ClientConversation[] }[];
+    const sessionsFor = (w: { key: string | null; name: string; path: string }) =>
+      filtered.filter((c) => {
+        // Both sides keyed → identity decides, path/name are just metadata.
+        if (c.codeWorkspaceKey && w.key) return c.codeWorkspaceKey === w.key;
+        return c.codeWorkspacePath === w.path || (!c.codeWorkspacePath && c.codeWorkspaceName?.trim() === w.name);
+      });
+    const projects = codeWorkspaces.map((w) => {
+      const key = w.key ?? null;
+      return { id: key ?? w.path, key, name: w.name, path: w.path, sessions: sessionsFor({ key, name: w.name, path: w.path }) };
+    });
     // Sessions naming a workspace the mirror doesn't know yet still group.
+    const knownKeys = new Set(projects.map((p) => p.key).filter((k): k is string => k != null));
     const known = new Set(projects.map((p) => p.path));
     const knownNames = new Set(projects.map((p) => p.name));
     const orphans = new Map<string, ClientConversation[]>();
     for (const c of filtered) {
       const name = c.codeWorkspaceName?.trim();
       if (!name || knownNames.has(name)) continue;
+      if (c.codeWorkspaceKey && knownKeys.has(c.codeWorkspaceKey)) continue;
       if (c.codeWorkspacePath && known.has(c.codeWorkspacePath)) continue;
       if (!orphans.has(name)) orphans.set(name, []);
       orphans.get(name)!.push(c);
     }
-    return [...projects, ...[...orphans.entries()].map(([name, sessions]) => ({ name, path: name, sessions }))];
+    return [
+      ...projects,
+      ...[...orphans.entries()].map(([name, sessions]) => ({ id: name, key: null, name, path: name, sessions })),
+    ];
   }, [filtered, mode, codeWorkspaces]);
 
   // A grouped session lives ONLY in its workspace group — never duplicated in
@@ -407,9 +427,11 @@ export function AppSidebar({
     return map;
   }, [codeTasks]);
 
-  // Active/recent-failed remote tasks per workspace path AND name, so orphan
-  // groups (path unknown, name only) still pick up their tasks.
+  // Active/recent-failed remote tasks per workspace key, path AND name — key
+  // wins when present (survives folder moves); orphan groups (name only)
+  // still pick up their tasks.
   const codeTasksByWorkspace = React.useMemo(() => {
+    const byKey = new Map<string, CodeTaskRow[]>();
     const byPath = new Map<string, CodeTaskRow[]>();
     const byName = new Map<string, CodeTaskRow[]>();
     const now = Date.now();
@@ -420,6 +442,10 @@ export function AppSidebar({
       if (!active) continue;
       // Attributed to a listed session — its row carries the dot instead.
       if (t.conversationId && codeSessionIds.has(t.conversationId)) continue;
+      if (t.workspaceKey) {
+        if (!byKey.has(t.workspaceKey)) byKey.set(t.workspaceKey, []);
+        byKey.get(t.workspaceKey)!.push(t);
+      }
       if (t.workspacePath) {
         if (!byPath.has(t.workspacePath)) byPath.set(t.workspacePath, []);
         byPath.get(t.workspacePath)!.push(t);
@@ -430,7 +456,7 @@ export function AppSidebar({
         byName.get(name)!.push(t);
       }
     }
-    return { byPath, byName };
+    return { byKey, byPath, byName };
   }, [codeTasks, codeSessionIds]);
 
   const pinned = React.useMemo(
@@ -711,15 +737,20 @@ export function AppSidebar({
               ) : (
                 codeProjects.map((p) => (
                   <CodeWorkspaceGroup
-                    key={p.path}
+                    key={p.id}
                     name={p.name}
                     sessions={p.sessions}
                     tasks={
-                      codeTasksByWorkspace.byPath.get(p.path) ?? codeTasksByWorkspace.byName.get(p.name) ?? []
+                      (p.key ? codeTasksByWorkspace.byKey.get(p.key) : undefined) ??
+                      codeTasksByWorkspace.byPath.get(p.path) ??
+                      codeTasksByWorkspace.byName.get(p.name) ??
+                      []
                     }
                     taskStatusFor={(id) => taskByConversation.get(id)?.status}
-                    expanded={codeExpanded[p.path] ?? true}
-                    onToggle={() => toggleWorkspaceExpanded(p.path)}
+                    // Legacy prefs were keyed by path; fall back so an upgrade
+                    // (path → key ids) doesn't reset anyone's disclosure state.
+                    expanded={codeExpanded[p.id] ?? codeExpanded[p.path] ?? true}
+                    onToggle={() => toggleWorkspaceExpanded(p.id, codeExpanded[p.id] ?? codeExpanded[p.path] ?? true)}
                     activeConversationId={activeConversationId}
                     activePath={pathname}
                     renamingId={renamingId}

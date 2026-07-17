@@ -16,6 +16,10 @@ const postSchema = z.object({
       z.object({
         name: z.string().trim().min(1).max(200),
         path: z.string().trim().min(1).max(1000),
+        // Stable workspace identity (CodeWorkspace.key) when the host knows
+        // it. Optional and passed through as-is — key-less clients keep the
+        // path-based contract unchanged.
+        key: z.string().trim().min(1).max(200).optional(),
       }),
     )
     .max(100),

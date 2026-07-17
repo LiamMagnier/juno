@@ -57,6 +57,7 @@ export function serializeTask(task: CodeTask) {
     deviceId: task.deviceId,
     workspacePath: task.workspacePath,
     workspaceName: task.workspaceName,
+    workspaceKey: task.workspaceKey,
     title: task.title,
     prompt: task.prompt,
     status: task.status,

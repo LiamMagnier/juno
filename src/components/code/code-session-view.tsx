@@ -35,16 +35,19 @@ type DeviceRow = {
 
 const PRESENCE_POLL_MS = 30_000;
 
-function deviceOffersWorkspace(device: DeviceRow, path: string | null, name: string | null): boolean {
+function deviceOffersWorkspace(device: DeviceRow, key: string | null, path: string | null, name: string | null): boolean {
   if (!Array.isArray(device.workspaces)) return false;
-  return (device.workspaces as { name?: unknown; path?: unknown }[]).some((w) =>
-    path ? w?.path === path : name != null && w?.name === name
-  );
+  return (device.workspaces as { name?: unknown; path?: unknown; key?: unknown }[]).some((w) => {
+    // Stable identity first — a host that re-registered the folder from a new
+    // location still owns this session's workspace.
+    if (key != null && w?.key === key) return true;
+    return path ? w?.path === path : name != null && w?.name === name;
+  });
 }
 
 /** The Mac that owns this session's workspace, and whether it's reachable.
  *  Gentle poll while the tab is visible; refreshes immediately on refocus. */
-function useDevicePresence(workspacePath: string | null, workspaceName: string | null) {
+function useDevicePresence(workspaceKey: string | null, workspacePath: string | null, workspaceName: string | null) {
   const [presence, setPresence] = React.useState<Presence>({ state: "checking", device: null });
 
   const refresh = React.useCallback(async () => {
@@ -53,7 +56,7 @@ function useDevicePresence(workspacePath: string | null, workspaceName: string |
       if (!res.ok) throw new Error();
       const data = (await res.json()) as { devices?: DeviceRow[] };
       const candidates = (Array.isArray(data.devices) ? data.devices : [])
-        .filter((d) => deviceOffersWorkspace(d, workspacePath, workspaceName))
+        .filter((d) => deviceOffersWorkspace(d, workspaceKey, workspacePath, workspaceName))
         .sort((a, b) => {
           if (!!a.online !== !!b.online) return a.online ? -1 : 1;
           return new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime();
@@ -68,7 +71,7 @@ function useDevicePresence(workspacePath: string | null, workspaceName: string |
       // Keep the last honest reading if we had one; otherwise say we don't know.
       setPresence((prev) => (prev.state === "checking" ? { state: "error", device: null } : prev));
     }
-  }, [workspacePath, workspaceName]);
+  }, [workspaceKey, workspacePath, workspaceName]);
 
   React.useEffect(() => {
     void refresh();
@@ -105,7 +108,8 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const { setActiveConversationId, updateConversation, conversations } = useApp();
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
-  const { presence } = useDevicePresence(workspacePath, conversation.codeWorkspaceName?.trim() || null);
+  const workspaceKey = conversation.codeWorkspaceKey ?? null;
+  const { presence } = useDevicePresence(workspaceKey, workspacePath, conversation.codeWorkspaceName?.trim() || null);
 
   const session = useCodeSession({
     conversationId: conversation.id,
@@ -163,6 +167,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
       deviceId: presence.device.id,
       workspacePath: path,
       workspaceName: conversation.codeWorkspaceName,
+      workspaceKey,
     });
     if (accepted) {
       setDraft("");
@@ -173,7 +178,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
       }
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
-  }, [conversation.codeWorkspaceName, conversation.id, conversations, draft, presence.device, session, updateConversation, workspacePath]);
+  }, [conversation.codeWorkspaceName, conversation.id, conversations, draft, presence.device, session, updateConversation, workspaceKey, workspacePath]);
 
   const composerDisabled = !canTarget || !workspacePath;
   const canSend = !!draft.trim() && canTarget && !!workspacePath && !session.isBusy;
@@ -235,8 +240,13 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
           className="max-h-[200px] min-h-[74px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4"
         />
         <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-0.5">
-          <span className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground/60">
-            {workspacePath ?? workspaceName}
+          {/* Identity is the workspace NAME; the device-local path is honest
+              secondary metadata, offered on hover rather than as the label. */}
+          <span
+            title={workspacePath ?? undefined}
+            className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground/60"
+          >
+            {workspaceName}
           </span>
           {/* Send morphs into Stop while a task runs — same morph as chat. */}
           <Tooltip>

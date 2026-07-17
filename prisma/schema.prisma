@@ -318,8 +318,12 @@ model Conversation {
   kind             String    @default("chat")
   // For kind "code": the app-side workspace (project folder) the session
   // belongs to, so the website can group sessions the way the app does.
+  // codeWorkspaceKey is the stable identity (CodeWorkspace.key) when known;
+  // name/path are display + device metadata that can change without forking
+  // the session's workspace attribution.
   codeWorkspaceName String?
   codeWorkspacePath String?
+  codeWorkspaceKey  String?
   pinned           Boolean   @default(false)
   // Archived chats stay fully readable and searchable but leave the sidebar's
   // Recent list. Nullable timestamp rather than a boolean so "when" is kept.
@@ -846,6 +850,10 @@ model CodeTask {
   deviceId      String
   workspacePath String
   workspaceName String   @default("")
+  // Stable workspace identity (CodeWorkspace.key) when the submitting client
+  // knows it. Plain string, not a relation — the executing device resolves
+  // its own local path, and the workspace row may be re-mirrored freely.
+  workspaceKey  String?
   title         String
   prompt        String   @db.Text
   status        String   @default("queued")
@@ -998,6 +1006,15 @@ model CodeWorkspace {
   userId       String
   name         String
   path         String
+  // Stable workspace identity, minted by the client that owns the folder.
+  // When present, mirror-sync matches on (userId, key) FIRST, so a moved
+  // folder (new path) keeps the same server row — path is device metadata,
+  // not identity. Nullable for rows synced by pre-key clients.
+  // Uniqueness is enforced by a PARTIAL unique index (userId, key) WHERE key
+  // IS NOT NULL — hand-written in migration 20260717130000 because Prisma
+  // cannot express filtered indexes (and a schema-level @@unique would tempt
+  // ON CONFLICT upserts that a partial index cannot arbitrate).
+  key          String?
   lastOpenedAt DateTime @default(now())
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

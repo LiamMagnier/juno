@@ -11,6 +11,10 @@ const postSchema = z.object({
   deviceId: z.string().min(1).max(200),
   workspacePath: z.string().trim().min(1).max(1000),
   workspaceName: z.string().trim().max(200).optional(),
+  // Stable workspace identity (CodeWorkspace.key). Optional — path stays
+  // required and authoritative for execution (the device resolves its own
+  // local folder); the key rides along for attribution that survives moves.
+  workspaceKey: z.string().trim().min(1).max(200).optional(),
   title: z.string().trim().min(1).max(200).optional(),
   prompt: z.string().trim().min(1).max(100_000),
   // The kind:"code" Conversation this task runs in (website sessions). Native
@@ -52,7 +56,7 @@ export async function POST(req: Request) {
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { deviceId, workspacePath, workspaceName, title, prompt, conversationId } = parsed.data;
+  const { deviceId, workspacePath, workspaceName, workspaceKey, title, prompt, conversationId } = parsed.data;
   const device = await prisma.codeDevice.findFirst({
     where: { id: deviceId, userId: user.id },
     select: { id: true },
@@ -78,6 +82,7 @@ export async function POST(req: Request) {
       deviceId,
       workspacePath,
       workspaceName: workspaceName ?? "",
+      workspaceKey: workspaceKey ?? null,
       title: title ?? prompt.slice(0, 60),
       prompt,
       conversationId: conversationId ?? null,
