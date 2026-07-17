@@ -222,8 +222,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             variant="ghost"
             size="icon"
             className="ml-auto"
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
-            aria-label="Search (command palette)"
+            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+            aria-label="Search chats and projects"
           >
             <Search className="h-5 w-5" />
           </Button>

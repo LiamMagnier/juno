@@ -58,7 +58,6 @@ import { Label } from "@/components/ui/label";
 import { useApp } from "@/components/app/app-provider";
 import { CODE_SYNC_EVENT } from "@/hooks/use-code-session";
 import { cn } from "@/lib/utils";
-import type { ClientFolder } from "@/types/app";
 import type { ClientConversation } from "@/types/chat";
 
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
@@ -112,14 +111,11 @@ export function AppSidebar({
   const pathname = usePathname();
   const {
     conversations,
-    folders,
-    setFolders,
     updateConversation,
     removeConversation,
     activeConversationId,
     setSidebarOpen,
   } = useApp();
-  const [folderFilter, setFolderFilter] = React.useState<string | null>(null);
   const [renamingId, setRenamingId] = React.useState<string | null>(null);
   const [confirm, setConfirm] = React.useState<ConfirmState>(null);
   // Date grouping (Today/Yesterday/…) depends on the local clock, so defer the
@@ -143,12 +139,6 @@ export function AppSidebar({
   const [renameTarget, setRenameTarget] = React.useState<SidebarProject | null>(null);
   const [renameDraft, setRenameDraft] = React.useState("");
   const [renamingProject, setRenamingProject] = React.useState(false);
-  const [newFolderOpen, setNewFolderOpen] = React.useState(false);
-  const [newFolderDraft, setNewFolderDraft] = React.useState("");
-  const [creatingFolder, setCreatingFolder] = React.useState(false);
-  const [renameFolderTarget, setRenameFolderTarget] = React.useState<ClientFolder | null>(null);
-  const [renameFolderDraft, setRenameFolderDraft] = React.useState("");
-  const [renamingFolder, setRenamingFolder] = React.useState(false);
 
   // One-shot migration guard: legacy localStorage stars are pushed to the
   // server on the first successful projects load, then the key is dropped.
@@ -312,16 +302,10 @@ export function AppSidebar({
   }, []);
 
   const filtered = React.useMemo(() => {
-    return conversations.filter(
-      (c) =>
-        (mode === "code" ? c.kind === "code" : c.kind !== "code") &&
-        // Folder scoping is a Home-only concept: the chips that set and clear
-        // this filter render only in Home, and code sessions always have a null
-        // folderId. Applying it in Code mode emptied the list behind a filter
-        // the user had no visible control to clear ("No sessions yet").
-        (mode !== "home" || !folderFilter || c.folderId === folderFilter)
-    );
-  }, [conversations, folderFilter, mode]);
+    // Home shows every web/app chat; Code shows the synced Juno Code sessions.
+    // Grouping now lives in Projects, so there's no folder scoping here.
+    return conversations.filter((c) => (mode === "code" ? c.kind === "code" : c.kind !== "code"));
+  }, [conversations, mode]);
 
   const loadCode = React.useCallback(async () => {
     setCodeError(false);
@@ -506,65 +490,6 @@ export function AppSidebar({
     setSidebarOpen(false);
   };
 
-  const createFolder = async () => {
-    const name = newFolderDraft.trim();
-    if (!name || creatingFolder) return;
-    setCreatingFolder(true);
-    try {
-      const res = await fetch("/api/folders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setFolders([...folders, { id: data.folder.id, name: data.folder.name }]);
-      toast.success("Folder created.");
-      setNewFolderOpen(false);
-      setNewFolderDraft("");
-    } catch {
-      toast.error("Could not create folder.");
-    } finally {
-      setCreatingFolder(false);
-    }
-  };
-
-  const renameFolder = async () => {
-    if (!renameFolderTarget || !renameFolderDraft.trim() || renamingFolder) return;
-    setRenamingFolder(true);
-    try {
-      const res = await fetch(`/api/folders/${renameFolderTarget.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: renameFolderDraft.trim() }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      setFolders(folders.map((f) => (f.id === data.folder.id ? { ...f, name: data.folder.name } : f)));
-      toast.success("Folder renamed.");
-      setRenameFolderTarget(null);
-    } catch {
-      toast.error("Could not rename folder.");
-    } finally {
-      setRenamingFolder(false);
-    }
-  };
-
-  const deleteFolder = (id: string) => {
-    setConfirm({
-      title: "Delete this folder?",
-      description: "Conversations inside it are kept — they just move out of the folder.",
-      confirmLabel: "Delete folder",
-      onConfirm: async () => {
-        setFolders(folders.filter((f) => f.id !== id));
-        if (folderFilter === id) setFolderFilter(null);
-        for (const c of conversations) if (c.folderId === id) updateConversation(c.id, { folderId: null });
-        const res = await fetch(`/api/folders/${id}`, { method: "DELETE" });
-        if (!res.ok) toast.error("Could not delete folder.");
-      },
-    });
-  };
-
   // Collapsed icon rail (desktop only). Fixed width + keyed fade-in so the
   // content doesn't reflow while the shell animates the aside's width, and the
   // layout swap reads as a cross-fade instead of a pop.
@@ -608,7 +533,7 @@ export function AppSidebar({
               <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
             </>
           )}
-          <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))} label="Search (⌘K)">
+          <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))} label="Search chats and projects">
             <Search className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" />
           </RailIcon>
         </div>
@@ -638,8 +563,8 @@ export function AppSidebar({
             variant="ghost"
             size="icon-sm"
             className="group"
-            onClick={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
-            aria-label="Search — command palette (⌘K)"
+            onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+            aria-label="Search chats and projects"
           >
             <Search className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
           </Button>
@@ -705,35 +630,6 @@ export function AppSidebar({
       </nav>
 
       <div className="pt-2" />
-
-      {mode === "home" && folders.length > 0 && (
-        <div className="flex flex-wrap gap-1 px-3 pb-2">
-          <FolderChip active={folderFilter === null} onClick={() => setFolderFilter(null)}>All</FolderChip>
-          {folders.map((f) => (
-            <FolderChip
-              key={f.id}
-              active={folderFilter === f.id}
-              onClick={() => setFolderFilter(f.id)}
-              onRename={() => {
-                setRenameFolderDraft(f.name);
-                setRenameFolderTarget(f);
-              }}
-              onDelete={() => deleteFolder(f.id)}
-            >
-              {f.name}
-            </FolderChip>
-          ))}
-          <button
-            type="button"
-            onClick={() => setNewFolderOpen(true)}
-            aria-label="New folder"
-            title="New folder"
-            className="pressable inline-flex items-center rounded-full border px-2 py-1 text-xs text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
-          >
-            <Plus className="h-3 w-3" />
-          </button>
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         {!mounted ? (
@@ -805,8 +701,6 @@ export function AppSidebar({
                     renaming={renamingId === c.id}
                     setRenaming={setRenamingId}
                     projects={projects}
-                    folders={folders}
-                    onNewFolder={() => setNewFolderOpen(true)}
                     onUpdate={updateConversation}
                     onRemove={removeConversation}
                     onNavigate={() => setSidebarOpen(false)}
@@ -835,8 +729,6 @@ export function AppSidebar({
                       renaming={renamingId === c.id}
                       setRenaming={setRenamingId}
                       projects={projects}
-                      folders={folders}
-                      onNewFolder={() => setNewFolderOpen(true)}
                       onUpdate={updateConversation}
                       onRemove={removeConversation}
                       onNavigate={() => setSidebarOpen(false)}
@@ -893,8 +785,6 @@ export function AppSidebar({
                     renaming={renamingId === c.id}
                     setRenaming={setRenamingId}
                     projects={projects}
-                    folders={folders}
-                    onNewFolder={() => setNewFolderOpen(true)}
                     onUpdate={updateConversation}
                     onRemove={removeConversation}
                     onNavigate={() => setSidebarOpen(false)}
@@ -920,8 +810,6 @@ export function AppSidebar({
                       renaming={renamingId === c.id}
                       setRenaming={setRenamingId}
                       projects={projects}
-                      folders={folders}
-                      onNewFolder={() => setNewFolderOpen(true)}
                       onUpdate={updateConversation}
                       onRemove={removeConversation}
                       onNavigate={() => setSidebarOpen(false)}
@@ -938,76 +826,6 @@ export function AppSidebar({
       <div className="border-t border-sidebar-border p-2">
         <UserMenu />
       </div>
-
-      {/* New-folder dialog (replaces window.prompt) */}
-      <Dialog
-        open={newFolderOpen}
-        onOpenChange={(o) => {
-          setNewFolderOpen(o);
-          if (!o) setNewFolderDraft("");
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-serif">New folder</DialogTitle>
-            <DialogDescription>Folders group conversations — filter by one from the sidebar.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="sidebar-new-folder">Folder name</Label>
-            <Input
-              id="sidebar-new-folder"
-              value={newFolderDraft}
-              onChange={(e) => setNewFolderDraft(e.target.value)}
-              placeholder="e.g. Research"
-              autoFocus
-              maxLength={60}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") createFolder();
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setNewFolderOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={createFolder} disabled={creatingFolder || !newFolderDraft.trim()}>
-              {creatingFolder ? "Creating…" : "Create folder"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Folder rename dialog */}
-      <Dialog open={renameFolderTarget !== null} onOpenChange={(o) => !o && setRenameFolderTarget(null)}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="font-serif">Rename folder</DialogTitle>
-            <DialogDescription>Change the name of this folder.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="sidebar-rename-folder">Folder name</Label>
-            <Input
-              id="sidebar-rename-folder"
-              value={renameFolderDraft}
-              onChange={(e) => setRenameFolderDraft(e.target.value)}
-              placeholder="New folder name"
-              autoFocus
-              maxLength={60}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") renameFolder();
-              }}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenameFolderTarget(null)}>
-              Cancel
-            </Button>
-            <Button onClick={renameFolder} disabled={renamingFolder || !renameFolderDraft.trim()}>
-              {renamingFolder ? "Renaming…" : "Rename folder"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Confirm dialog (replaces window.confirm) */}
       <Dialog open={!!confirm} onOpenChange={(o) => !o && setConfirm(null)}>
@@ -1368,97 +1186,6 @@ function Section({
   );
 }
 
-function FolderChip({
-  active,
-  onClick,
-  onRename,
-  onDelete,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  onRename?: () => void;
-  onDelete?: () => void;
-  children: React.ReactNode;
-}) {
-  const [menuOpen, setMenuOpen] = React.useState(false);
-  const hasMenu = !!(onRename || onDelete);
-
-  return (
-    <span
-      // Right-click opens rename/delete as a BONUS accelerator — it is no
-      // longer the only way in (see the kebab below), because iOS fires no
-      // contextmenu event and a Mac keyboard cannot reach one.
-      onContextMenu={
-        hasMenu
-          ? (e) => {
-              e.preventDefault();
-              setMenuOpen(true);
-            }
-          : undefined
-      }
-      className={cn(
-        "group/chip pressable relative inline-flex items-center rounded-full border text-xs",
-        active ? "border-primary/40 bg-primary/10 text-primary" : "hover:bg-sidebar-accent"
-      )}
-    >
-      <button onClick={onClick} aria-pressed={active} className={cn("inline-flex items-center gap-1 py-1 pl-2.5", hasMenu ? "pr-1" : "pr-2.5")}>
-        <Folder className="h-3 w-3" /> {children}
-      </button>
-      {hasMenu && (
-        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-          {/* A real, focusable trigger — the menu used to anchor to an
-              aria-hidden tabIndex={-1} span, which made rename/delete
-              unreachable by keyboard and on touch. Same hover/coarse reveal
-              as ConversationRow's kebab. */}
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              aria-label="Folder options"
-              className="pressable group/kebab shrink-0 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-foreground focus-visible:opacity-100 group-hover/chip:opacity-100 data-[state=open]:opacity-100 coarse:-my-3 coarse:flex coarse:h-11 coarse:w-11 coarse:items-center coarse:justify-center coarse:p-0 coarse:opacity-100"
-            >
-              <MoreVertical className="h-3 w-3" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-44 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
-            {onRename && (
-              <DropdownMenuItem onSelect={onRename}>
-                <Pencil className="h-4 w-4" /> Rename
-              </DropdownMenuItem>
-            )}
-            {onDelete && (
-              <>
-                {onRename && <DropdownMenuSeparator />}
-                <DropdownMenuItem
-                  onSelect={onDelete}
-                  className="text-destructive focus:bg-destructive focus:text-destructive-foreground"
-                >
-                  <Trash2 className="h-4 w-4" /> Delete
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-      {onDelete && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          aria-label="Delete folder"
-          // coarse:opacity-100 makes this the touch delete path, so it has to
-          // be a real touch target: 16px grows to 44px on coarse pointers,
-          // absorbed by negative margins so the chip keeps its shape.
-          className="mr-1 rounded-full p-0.5 text-muted-foreground opacity-0 transition-opacity duration-fast ease-out-soft hover:text-destructive focus-visible:opacity-100 group-hover/chip:opacity-100 coarse:-my-3 coarse:mr-0 coarse:flex coarse:h-11 coarse:w-11 coarse:items-center coarse:justify-center coarse:p-0 coarse:opacity-100"
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </span>
-  );
-}
-
 /** A Code-mode workspace (project folder) with its sessions and any remote
  *  tasks nested under a real disclosure. */
 function CodeWorkspaceGroup({
@@ -1591,8 +1318,6 @@ function ConversationRow({
   renaming,
   setRenaming,
   projects = [],
-  folders = [],
-  onNewFolder,
   onUpdate,
   onRemove,
   onNavigate,
@@ -1605,10 +1330,8 @@ function ConversationRow({
   active: boolean;
   renaming: boolean;
   setRenaming: (id: string | null) => void;
-  /** Only read by the "chat" variant's move submenus. */
+  /** Only read by the "chat" variant's "Add to project" submenu. */
   projects?: { id: string; name: string }[];
-  folders?: ClientFolder[];
-  onNewFolder?: () => void;
   onUpdate: (id: string, patch: Partial<ClientConversation>) => void;
   onRemove: (id: string) => void;
   onNavigate: () => void;
@@ -1623,7 +1346,7 @@ function ConversationRow({
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
 
-  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "folderId" | "projectId">>) => {
+  const patch = async (data: Partial<Pick<ClientConversation, "title" | "titleSource" | "pinned" | "projectId">>) => {
     const optimistic = data.title != null ? { ...data, titleSource: "manual" as const } : data;
     onUpdate(conversation.id, optimistic);
     const res = await fetch(`/api/conversations/${conversation.id}`, {
@@ -1756,26 +1479,6 @@ function ConversationRow({
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onSelect={() => router.push("/projects")}>
                     <Plus className="h-4 w-4" /> New project…
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>
-                  <Folder className="h-4 w-4" /> Move to folder
-                </DropdownMenuSubTrigger>
-                <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
-                  <DropdownMenuItem onSelect={() => patch({ folderId: null })}>
-                    {conversation.folderId == null ? <Check className="h-4 w-4" /> : <span className="h-4 w-4" />} No folder
-                  </DropdownMenuItem>
-                  {folders.map((f) => (
-                    <DropdownMenuItem key={f.id} onSelect={() => patch({ folderId: f.id })}>
-                      {conversation.folderId === f.id ? <Check className="h-4 w-4" /> : <Folder className="h-4 w-4" />}
-                      <span className="truncate">{f.name}</span>
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={onNewFolder}>
-                    <Plus className="h-4 w-4" /> New folder…
                   </DropdownMenuItem>
                 </DropdownMenuSubContent>
               </DropdownMenuSub>

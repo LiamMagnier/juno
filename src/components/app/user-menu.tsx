@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { signOutToSignIn } from "@/lib/sign-out";
-import { NotebookPen, Command, Keyboard, LogOut, Map as MapIcon, Settings, Shield, Sparkles, User } from "lucide-react";
+import { NotebookPen, Command, Keyboard, LogOut, Map as MapIcon, Search, Settings, Shield, Sparkles, User } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -160,9 +160,14 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
 
         {/* Keyboard */}
         <MenuRow
+          onSelect={() => window.dispatchEvent(new CustomEvent("juno:search"))}
+          icon={<Search className="h-4 w-4" />}
+          label="Search chats and projects"
+        />
+        <MenuRow
           onSelect={() => window.dispatchEvent(new CustomEvent("juno:command-palette"))}
           icon={<Command className="h-4 w-4" />}
-          label="Command palette"
+          label="Command menu"
           shortcut="⌘K"
         />
         <MenuRow
