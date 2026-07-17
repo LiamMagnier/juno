@@ -16,6 +16,7 @@ import { SourcesPill } from "@/components/chat/sources-pill";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { JunoMark } from "@/components/brand/logo";
 import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
@@ -31,6 +32,7 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
   const label = status === "writing" ? "Writing" : status === "checking" ? "Checking" : "Thinking";
   return (
     <div className="flex items-center gap-2.5 py-1 motion-safe:animate-fade-in">
+      <JunoMark className="h-4 w-4 shrink-0 motion-safe:animate-icon-breathe" />
       <ThinkingDots className="text-primary/90" />
       <span
         key={label}
@@ -385,7 +387,9 @@ export function MessageItem({
                   if (e.target === e.currentTarget && e.propertyName === "max-height" && expanded) setHeightCapped(false);
                 }}
                 className={cn(
-                  "relative w-full whitespace-pre-wrap rounded-2xl rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]",
+                  // break-words: pre-wrap alone only wraps at whitespace, so a
+                  // pasted URL/token longer than the bubble overflows on phones.
+                  "relative w-full whitespace-pre-wrap break-words rounded-2xl rounded-br-md border border-border/50 bg-secondary px-4 py-2.5 text-body leading-relaxed [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-soft)]",
                   isLong && heightCapped && "overflow-hidden transition-[max-height] duration-slow ease-out-expo",
                   isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
                 )}

@@ -42,7 +42,7 @@ function SelectCheck({ checked, onClick, className }: { checked: boolean; onClic
       aria-pressed={checked}
       aria-label={checked ? "Deselect" : "Select"}
       className={cn(
-        "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border bg-background/80 backdrop-blur transition-colors",
+        "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border bg-background/80 backdrop-blur transition-colors coarse:h-9 coarse:w-9",
         checked ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent hover:border-primary/70",
         className
       )}
@@ -275,12 +275,13 @@ export default function LibraryPage() {
                             {i.fileName}
                           </span>
                         </a>
+                        {/* Touch has no hover — keep the controls visible on coarse pointers. */}
                         <SelectCheck
                           checked={isSel}
                           onClick={() => toggleSelect(i.id)}
-                          className={cn("absolute left-2 top-2 z-10", !isSel && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+                          className={cn("absolute left-2 top-2 z-10", !isSel && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 coarse:opacity-100")}
                         />
-                        <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                        <div className="absolute right-2 top-2 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
                           <ItemAction icon={Pencil} label="Rename" onClick={() => openRename(i)} />
                           <ItemAction icon={Trash2} label="Delete" tone="danger" onClick={() => setDeleteTargets([i])} />
                         </div>

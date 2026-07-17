@@ -1379,7 +1379,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             the canvas panel, and a root-anchored pill would strand itself over
             the canvas on the breakpoint where this column is hidden. */}
         {activeProjectId && !privateMode && currentConversationId && (
-          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
+          // Below sm the pill also has to leave room for the top-right action
+          // cluster (share / params / incognito ≈ 9rem incl. coarse targets)
+          // sharing the same row — 18rem alone overlaps it under ~450px.
+          <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
             <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-card/70 py-1 pl-1 pr-1 shadow-soft backdrop-blur-md motion-safe:animate-fade-in">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
                 <Box className="h-3 w-3 text-primary" />

@@ -567,8 +567,11 @@ export function CanvasPanel({
         fullscreen && "fixed inset-0 z-50 motion-safe:animate-[fade-in-up_220ms_var(--ease-out-soft)_both]"
       )}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 border-b border-border/60 bg-card/50 px-3 py-2 backdrop-blur-md">
+      {/* Header — flex-wrap: below lg the canvas is full-bleed on a phone, and
+          the action cluster (up to ~10 icon buttons, 40px each on coarse) is
+          wider than the row; without wrapping the trailing buttons — including
+          Close — get clipped off-screen. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-card/50 px-3 py-2 backdrop-blur-md">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary shadow-soft ring-1 ring-primary/10">
           <TypeIcon className="h-4 w-4" />
         </span>
@@ -620,7 +623,7 @@ export function CanvasPanel({
           </Select>
         )}
 
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center justify-end gap-0.5">
           {/* Run / Reload */}
           {rt.mode !== "none" && !historyOpen && (
             <Tooltip>

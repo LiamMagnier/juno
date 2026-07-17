@@ -164,8 +164,10 @@ export default function ProjectsPage() {
   return (
     <div className="h-full overflow-y-auto">
       <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6">
-        {/* Header Block */}
-        <div className="flex items-center justify-between gap-3 mb-6">
+        {/* Header Block — flex-wrap: the sort + new-project cluster (~270px) plus
+            the title can't share one 360px row; below ~560px the actions drop to
+            their own line instead of overflowing the container. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat" className="hover:bg-accent/40 rounded-md">
               <ArrowLeft className="h-4 w-4" />

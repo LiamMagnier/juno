@@ -99,7 +99,9 @@ function TokenHeatmap({ daily }: { daily: Stats["daily"] }) {
 function AvailabilityBars({ ratio, color, dots = 24 }: { ratio: number; color: string; dots?: number }) {
   const filled = Math.round(Math.max(0, Math.min(1, ratio)) * dots);
   return (
-    <div className="flex min-w-[150px] justify-end gap-1" aria-hidden>
+    // 24 fixed-width dots ≈ 284px — wider than a phone row. Decorative
+    // (aria-hidden), so it yields below sm instead of overflowing the card.
+    <div className="hidden min-w-[150px] justify-end gap-1 sm:flex" aria-hidden>
       {Array.from({ length: dots }).map((_, i) => (
         <span
           key={i}
@@ -127,7 +129,9 @@ function ModelRow({ info, planLevel, count }: { info: ModelInfo; planLevel: numb
   const lockPlan = effectiveMinPlan(info.minPlan);
   const locked = planLevel < planRank(lockPlan);
   return (
-    <li className="flex items-center gap-2.5 py-1.5">
+    // flex-wrap: with released date + status + plan badges all shrink-0, the
+    // worst case outgrows a 360px row — let badges wrap under the name instead.
+    <li className="flex flex-wrap items-center gap-x-2.5 gap-y-1 py-1.5">
       <ProviderLogo provider={info.provider} className="h-5 w-5 shrink-0" />
       <span className="min-w-0 truncate text-sm">{info.name}</span>
       <span className="shrink-0 font-mono text-caption text-muted-foreground">{info.released ?? "—"}</span>

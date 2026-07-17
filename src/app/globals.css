@@ -281,7 +281,24 @@
     background-image: linear-gradient(180deg, hsl(0 0% 100% / 0.17), hsl(0 0% 100% / 0) 52%);
   }
   .halo-primary {
-    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22), var(--glow-primary);
+    /* Rim highlight only — the ambient --glow-primary halo read as a smudge on
+       hover and is retired product-wide. */
+    box-shadow: inset 0 1px 0 hsl(0 0% 100% / 0.22);
+  }
+
+  /* The Juno mark's press: a quick spring pop (dip, overshoot with a tilt,
+     settle). Toggled per click; reduced motion sees nothing. */
+  @keyframes juno-mark-pop {
+    0% { transform: scale(1) rotate(0deg); }
+    30% { transform: scale(0.82) rotate(-10deg); }
+    62% { transform: scale(1.12) rotate(4deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+  .juno-mark-popping {
+    animation: juno-mark-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .juno-mark-popping { animation: none; }
   }
 
   /* Recessed field — a subtle inset so inputs read as wells you type into. */
@@ -358,6 +375,11 @@
   .prose-juno pre code { font-family: var(--font-mono); background: transparent; }
   .prose-juno table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
   .prose-juno th, .prose-juno td { border: 1px solid hsl(var(--border)); padding: 0.45em 0.7em; text-align: left; }
+  /* Cell content must not force break-word mid-token inside the scroll wrapper —
+     the wrapper (markdown.tsx) scrolls instead, keeping columns readable. */
+  .prose-juno th, .prose-juno td { word-break: normal; }
+  /* Display math can be arbitrarily wide (long equations); scroll it in place. */
+  .prose-juno .katex-display { overflow-x: auto; overflow-y: hidden; padding-bottom: 2px; }
   .prose-juno hr { border: none; border-top: 1px solid hsl(var(--border)); }
 
   /* Inline educational visuals own their internal layout; keep prose defaults

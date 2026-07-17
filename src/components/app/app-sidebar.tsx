@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
+import { JunoMark } from "@/components/brand/logo";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -386,8 +387,9 @@ export function AppSidebar({
           layout gap rather than a deliberate break. */}
       <div className="flex items-center justify-between px-3 pb-2 pt-3">
         <Link href="/chat" onClick={() => setSidebarOpen(false)} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
-          <span className="font-serif text-2xl font-normal tracking-normal text-foreground pl-1">
-            Juno
+          <span className="flex items-center gap-2 pl-1">
+            <JunoMark className="h-[22px] w-[22px] transition-transform duration-base ease-out-soft group-hover/brand:-rotate-6 group-hover/brand:scale-105" />
+            <span className="font-serif text-2xl font-normal tracking-normal text-foreground">Juno</span>
           </span>
         </Link>
         <div className="flex items-center gap-0.5">
@@ -453,7 +455,7 @@ export function AppSidebar({
           onClick={newChat}
           icon={
             <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
             </span>
           }
           label="New chat"

@@ -319,6 +319,13 @@ const MarkdownBlock = React.memo(function MarkdownBlock({
   const components = React.useMemo<Components>(
     () => ({
       pre: ({ children }) => <CodeBlock streaming={streaming}>{children}</CodeBlock>,
+      // Wide tables scroll inside their own container instead of stretching the
+      // message column past the viewport on phones.
+      table: ({ node: _node, ...props }) => (
+        <div className="overflow-x-auto">
+          <table {...props} />
+        </div>
+      ),
       a: ({ children, node: _node, ...props }) => (
         <a {...props} target="_blank" rel="noopener noreferrer">
           {children}

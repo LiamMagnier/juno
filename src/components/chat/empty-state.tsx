@@ -111,38 +111,45 @@ export function EmptyGreeting() {
   const [phrase, setPhrase] = React.useState(() => pickGreeting(false));
   React.useEffect(() => setPhrase(pickGreeting(true)), []);
 
+  // The mark's press animation: retrigger the spring-pop keyframe per click.
+  const [popping, setPopping] = React.useState(false);
+
   return (
     <div className="flex flex-col items-center text-center">
       <h1
-        className="font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        className="flex items-center justify-center gap-[0.38em] font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
-        {/* The greeting and the name rise as two beats rather than one block —
-            the name lands a touch later, so the line reads as addressed to you
-            instead of stamped in. */}
-        <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
-          {/* The bare Juno mark, sized to the line's cap height and sitting on
-              the baseline. Playful like Claude's: a springy tilt+grow on hover
-              and a quick squash on press that releases back through the same
-              spring. All transform-only and motion-safe gated. */}
+        {/* The bare Juno mark, optically centered on the line (flex, not
+            baseline hacks). Springy tilt+grow on hover; a keyframed spring pop
+            on click — like Claude's mark. Transform-only, motion-safe gated. */}
+        <button
+          type="button"
+          aria-label="Juno"
+          onClick={() => setPopping(true)}
+          onAnimationEnd={() => setPopping(false)}
+          className={cn(
+            "shrink-0 outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
+            popping && "juno-mark-popping"
+          )}
+        >
           <JunoMark
             className={cn(
-              "mr-[0.4em] inline-block h-[0.9em] w-[0.9em] align-baseline",
+              "h-[0.78em] w-[0.78em] translate-y-[0.02em]",
               "transition-transform duration-base ease-spring motion-reduce:transition-none",
-              "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
-              "motion-safe:active:duration-75 motion-safe:active:rotate-0 motion-safe:active:scale-x-110 motion-safe:active:scale-y-75"
+              !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110"
             )}
           />
+        </button>
+        {/* The greeting and the name rise as two beats rather than one block. */}
+        <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
           {phrase}
           {firstName ? "," : null}
         </span>
         {firstName ? (
-          <>
-            {" "}
-            <span className="inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
-              {firstName}
-            </span>
-          </>
+          <span className="inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+            {firstName}
+          </span>
         ) : null}
       </h1>
     </div>

@@ -111,7 +111,9 @@ export default function TasksPage() {
           </Button>
           <span className="font-mono text-label uppercase text-muted-foreground">Tasks</span>
         </div>
-        <div className="flex items-end justify-between gap-3">
+        {/* flex-wrap: at ~360px the count + button drop under the title instead
+            of squeezing the display h1 into a forced two-line wrap. */}
+        <div className="flex flex-wrap items-end justify-between gap-3">
           <h1 className="font-serif text-display font-medium tracking-tight">Scheduled tasks</h1>
           {!loading && !locked && !empty && (
             <div className="flex items-center gap-2.5 pb-1.5">
