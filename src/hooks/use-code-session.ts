@@ -1,0 +1,483 @@
+"use client";
+
+import * as React from "react";
+import { toast } from "sonner";
+import type { ChatMessage } from "@/hooks/use-chat";
+import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
+
+/*
+ * State for one Juno Code session (a kind:"code" conversation): persisted
+ * history + the live remote task running on the user's Mac.
+ *
+ * Transport, matching the server contract exactly:
+ *   POST /api/code/tasks                  { deviceId, workspacePath, workspaceName?, title?, prompt, conversationId }
+ *                                         → { task, userMessage }
+ *   GET  /api/code/tasks/[id]/events?afterSeq=N   (SSE)
+ *        { type: "snapshot" | "events", task, events } … { type: "done", task, message }
+ *   POST /api/code/tasks/[id]/respond     { requestId, approve }
+ *   POST /api/code/tasks/[id]/cancel
+ */
+
+export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
+
+export interface CodePendingApproval {
+  requestId: string;
+  summary: string;
+  /** "neutral" | "destructive" | "outside" — mirrors the Mac host's risk labels. */
+  risk: string;
+  detail: string | null;
+}
+
+export interface CodeSendTarget {
+  deviceId: string;
+  workspacePath: string;
+  workspaceName?: string | null;
+}
+
+type RemoteTask = { id: string; status: string; conversationId?: string | null };
+type RemoteEvent = { seq: number; kind: string; payload: Record<string, unknown> | null; createdAt: string };
+type StreamFrame =
+  | { type: "snapshot" | "events"; task: RemoteTask; events: RemoteEvent[] }
+  | { type: "done"; task: RemoteTask; message: ClientMessage | null };
+
+const TERMINAL = new Set(["done", "failed", "cancelled"]);
+const RECONNECT_BASE_MS = 1_500;
+const RECONNECT_MAX_MS = 15_000;
+
+let tempCounter = 0;
+const tempId = () => `code-temp-${Date.now()}-${tempCounter++}`;
+const liveId = (taskId: string) => `code-live-${taskId}`;
+
+const str = (payload: RemoteEvent["payload"], key: string): string | null => {
+  const value = payload?.[key];
+  return typeof value === "string" ? value : null;
+};
+const num = (payload: RemoteEvent["payload"], key: string): number | null => {
+  const value = payload?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+const bool = (payload: RemoteEvent["payload"], key: string): boolean | null => {
+  const value = payload?.[key];
+  return typeof value === "boolean" ? value : null;
+};
+
+/** Minimal SSE reader for the task event stream (data: JSON frames only). */
+async function readSseFrames(body: ReadableStream<Uint8Array>, onFrame: (frame: StreamFrame) => void): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const frame = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 2);
+      if (!frame.startsWith("data:")) continue; // ": ping" heartbeats
+      try {
+        onFrame(JSON.parse(frame.slice(5).trim()) as StreamFrame);
+      } catch {
+        // malformed frame — skip
+      }
+    }
+  }
+}
+
+interface UseCodeSessionOptions {
+  conversationId: string;
+  initialMessages: ClientMessage[];
+  /** Bumps the sidebar's lastMessageAt so the session floats up while used. */
+  onActivity?: () => void;
+}
+
+export function useCodeSession(opts: UseCodeSessionOptions) {
+  const [messages, setMessages] = React.useState<ChatMessage[]>(opts.initialMessages);
+  const [status, setStatus] = React.useState<CodeSessionStatus>("idle");
+  const [pendingApproval, setPendingApproval] = React.useState<CodePendingApproval | null>(null);
+  const [activeTask, setActiveTask] = React.useState<RemoteTask | null>(null);
+  const [responding, setResponding] = React.useState(false);
+
+  const abortRef = React.useRef<AbortController | null>(null);
+  const lastSeqRef = React.useRef(0);
+  // The live assistant turn, folded from stream events. Kept in refs (the SSE
+  // read loop parses many frames synchronously) and mirrored into `messages`.
+  const liveRef = React.useRef<{
+    taskId: string;
+    content: string;
+    activity: ClientActivityEvent[];
+    errorMessage: string | null;
+    bubbleShown: boolean;
+  } | null>(null);
+  const statusRef = React.useRef(status);
+  statusRef.current = status;
+
+  React.useEffect(() => {
+    setMessages(opts.initialMessages);
+    setStatus("idle");
+    setPendingApproval(null);
+    setActiveTask(null);
+    lastSeqRef.current = 0;
+    liveRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts.conversationId]);
+
+  const syncLiveBubble = React.useCallback((streaming: boolean) => {
+    const live = liveRef.current;
+    if (!live || !live.bubbleShown) return;
+    const id = liveId(live.taskId);
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === id
+          ? { ...m, content: live.content, activity: [...live.activity], streaming, errorMessage: live.errorMessage }
+          : m
+      )
+    );
+  }, []);
+
+  const showLiveBubble = React.useCallback(() => {
+    const live = liveRef.current;
+    if (!live || live.bubbleShown) return;
+    live.bubbleShown = true;
+    const bubble: ChatMessage = {
+      id: liveId(live.taskId),
+      role: "ASSISTANT",
+      content: live.content,
+      createdAt: new Date().toISOString(),
+      attachments: [],
+      activity: [...live.activity],
+      streaming: true,
+    };
+    setMessages((prev) => (prev.some((m) => m.id === bubble.id) ? prev : [...prev, bubble]));
+  }, []);
+
+  const applyEvents = React.useCallback(
+    (events: RemoteEvent[]) => {
+      const live = liveRef.current;
+      if (!live) return;
+      for (const event of events) {
+        if (event.seq <= lastSeqRef.current) continue;
+        lastSeqRef.current = event.seq;
+        switch (event.kind) {
+          case "text": {
+            live.content += str(event.payload, "text") ?? "";
+            break;
+          }
+          case "tool": {
+            const title = str(event.payload, "summary") ?? str(event.payload, "name");
+            if (title)
+              live.activity.push({
+                id: `evt-${event.seq}`,
+                kind: "tool",
+                title,
+                detail: str(event.payload, "detail") ?? undefined,
+                createdAt: event.createdAt,
+              });
+            break;
+          }
+          case "file_change": {
+            const path = str(event.payload, "path");
+            if (!path) break;
+            const added = num(event.payload, "added") ?? 0;
+            const removed = num(event.payload, "removed") ?? 0;
+            live.activity.push({
+              id: `evt-${event.seq}`,
+              kind: "write",
+              title: `${str(event.payload, "changeKind") ?? "edit"} ${path}`,
+              detail: `+${added} −${removed}`,
+              createdAt: event.createdAt,
+            });
+            break;
+          }
+          case "approval_request": {
+            const requestId = str(event.payload, "requestId");
+            const summary = str(event.payload, "summary");
+            if (requestId && summary) {
+              setPendingApproval({
+                requestId,
+                summary,
+                risk: str(event.payload, "risk") ?? "neutral",
+                detail: str(event.payload, "detail"),
+              });
+              live.activity.push({
+                id: `evt-${event.seq}`,
+                kind: "warning",
+                title: "Approval requested",
+                detail: summary,
+                createdAt: event.createdAt,
+              });
+            }
+            break;
+          }
+          case "approval_response": {
+            const requestId = str(event.payload, "requestId");
+            const approve = bool(event.payload, "approve");
+            setPendingApproval((cur) => (cur && cur.requestId === requestId ? null : cur));
+            if (requestId != null && approve != null) {
+              live.activity.push({
+                id: `evt-${event.seq}`,
+                kind: approve ? "done" : "warning",
+                title: approve ? "Approved" : "Denied",
+                createdAt: event.createdAt,
+              });
+            }
+            break;
+          }
+          case "error": {
+            live.errorMessage = str(event.payload, "message") ?? live.errorMessage;
+            break;
+          }
+          default:
+            break; // status/user/done/cancel_request carry no transcript content here
+        }
+      }
+    },
+    []
+  );
+
+  const finishTask = React.useCallback(
+    (task: RemoteTask, persisted: ClientMessage | null) => {
+      const live = liveRef.current;
+      const bubbleId = live ? liveId(live.taskId) : null;
+      const failed = task.status === "failed";
+      const cancelled = task.status === "cancelled";
+      const errorText = live?.errorMessage ?? "The task failed on your Mac.";
+
+      setMessages((prev) => {
+        const withoutBubble = bubbleId && persisted ? prev.filter((m) => m.id !== bubbleId) : prev;
+        if (persisted) {
+          const decorated: ChatMessage = {
+            ...persisted,
+            streaming: false,
+            ...(failed
+              ? {
+                  error: true,
+                  finishReason: "error" as const,
+                  errorMessage: errorText,
+                  content: persisted.content || errorText,
+                }
+              : cancelled
+                ? { finishReason: "user_stopped" as const }
+                : {}),
+          };
+          return withoutBubble.some((m) => m.id === decorated.id)
+            ? withoutBubble.map((m) => (m.id === decorated.id ? decorated : m))
+            : [...withoutBubble, decorated];
+        }
+        // No persisted row came back — settle the live bubble honestly in place.
+        if (!bubbleId) return prev;
+        return prev.map((m) =>
+          m.id === bubbleId
+            ? {
+                ...m,
+                streaming: false,
+                ...(failed
+                  ? { error: true, finishReason: "error" as const, errorMessage: errorText, content: m.content || errorText }
+                  : cancelled
+                    ? { finishReason: "user_stopped" as const }
+                    : {}),
+              }
+            : m
+        );
+      });
+      liveRef.current = null;
+      setPendingApproval(null);
+      setActiveTask(null);
+      setStatus("idle");
+      if (failed && errorText) toast.error(errorText);
+      opts.onActivity?.();
+    },
+    [opts]
+  );
+
+  /** Attach to a task's SSE stream, reconnecting from the seq cursor on drops. */
+  const streamTask = React.useCallback(
+    async (taskId: string) => {
+      const controller = new AbortController();
+      abortRef.current?.abort();
+      abortRef.current = controller;
+      let attempt = 0;
+      let finished = false;
+
+      const handleFrame = (frame: StreamFrame) => {
+        attempt = 0;
+        if (frame.type === "done") {
+          finished = true;
+          finishTask(frame.task, frame.message);
+          return;
+        }
+        applyEvents(frame.events);
+        const taskStatus = frame.task.status;
+        if (taskStatus === "queued") {
+          setStatus((cur) => (cur === "stopping" ? cur : "queued"));
+        } else if (!TERMINAL.has(taskStatus)) {
+          // Claimed: the run is live — surface the streaming bubble now.
+          showLiveBubble();
+          setStatus((cur) =>
+            cur === "stopping" ? cur : taskStatus === "awaiting_approval" ? "awaiting_approval" : "running"
+          );
+        }
+        setActiveTask(frame.task);
+        syncLiveBubble(true);
+      };
+
+      while (!controller.signal.aborted && !finished) {
+        try {
+          const res = await fetch(`/api/code/tasks/${taskId}/events?afterSeq=${lastSeqRef.current}`, {
+            signal: controller.signal,
+            headers: { Accept: "text/event-stream" },
+          });
+          if (res.status === 404) {
+            // Task deleted underneath the stream — nothing left to follow.
+            finishTask({ id: taskId, status: "failed" }, null);
+            return;
+          }
+          if (res.status === 401) return; // signed out — reconnecting can't help
+          if (!res.ok || !res.body) throw new Error("stream unavailable");
+          await readSseFrames(res.body, handleFrame);
+        } catch {
+          if (controller.signal.aborted) return;
+        }
+        if (finished || controller.signal.aborted) return;
+        // Stream window elapsed or connection dropped — reconnect from cursor.
+        attempt += 1;
+        await new Promise((r) => setTimeout(r, Math.min(RECONNECT_BASE_MS * attempt, RECONNECT_MAX_MS)));
+      }
+    },
+    [applyEvents, finishTask, showLiveBubble, syncLiveBubble]
+  );
+
+  const send = React.useCallback(
+    async (text: string, target: CodeSendTarget): Promise<{ accepted: boolean }> => {
+      if (statusRef.current !== "idle") return { accepted: false };
+      const trimmed = text.trim();
+      if (!trimmed) return { accepted: false };
+
+      setStatus("submitting");
+      const userTempId = tempId();
+      const userMsg: ChatMessage = {
+        id: userTempId,
+        role: "USER",
+        content: trimmed,
+        createdAt: new Date().toISOString(),
+        attachments: [],
+        pending: true,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+
+      try {
+        const res = await fetch("/api/code/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: target.deviceId,
+            workspacePath: target.workspacePath,
+            workspaceName: target.workspaceName || undefined,
+            title: trimmed.slice(0, 60),
+            prompt: trimmed,
+            conversationId: opts.conversationId,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          task?: RemoteTask;
+          userMessage?: ClientMessage;
+          error?: string;
+        };
+        if (!res.ok || !data.task) throw new Error(data.error ?? "Could not start the task.");
+
+        const task = data.task;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userTempId && data.userMessage ? { ...data.userMessage, pending: false } : m))
+        );
+        lastSeqRef.current = 0;
+        liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+        setActiveTask(task);
+        setStatus("queued");
+        opts.onActivity?.();
+        void streamTask(task.id);
+        return { accepted: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Could not start the task.";
+        setMessages((prev) => prev.filter((m) => m.id !== userTempId));
+        setStatus("idle");
+        toast.error(message);
+        return { accepted: false };
+      }
+    },
+    [opts, streamTask]
+  );
+
+  /** Re-attach to a task that was already running when the page loaded. */
+  const resume = React.useCallback(
+    (task: RemoteTask) => {
+      if (TERMINAL.has(task.status)) return;
+      lastSeqRef.current = 0;
+      liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+      setActiveTask(task);
+      setStatus(task.status === "queued" ? "queued" : task.status === "awaiting_approval" ? "awaiting_approval" : "running");
+      void streamTask(task.id);
+    },
+    [streamTask]
+  );
+
+  const cancel = React.useCallback(async () => {
+    const task = activeTask;
+    if (!task || statusRef.current === "stopping") return;
+    setStatus("stopping");
+    try {
+      const res = await fetch(`/api/code/tasks/${task.id}/cancel`, { method: "POST" });
+      if (!res.ok) throw new Error();
+      // Terminal state (and the persisted outcome) arrives through the stream.
+    } catch {
+      setStatus(task.status === "queued" ? "queued" : "running");
+      toast.error("Could not cancel the task. Check your connection and try again.");
+    }
+  }, [activeTask]);
+
+  const respond = React.useCallback(
+    async (requestId: string, approve: boolean) => {
+      const task = activeTask;
+      if (!task || responding) return;
+      setResponding(true);
+      try {
+        const res = await fetch(`/api/code/tasks/${task.id}/respond`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requestId, approve }),
+        });
+        if (!res.ok) throw new Error();
+        setPendingApproval((cur) => (cur && cur.requestId === requestId ? null : cur));
+      } catch {
+        toast.error("Could not send your answer. Check your connection and try again.");
+      } finally {
+        setResponding(false);
+      }
+    },
+    [activeTask, responding]
+  );
+
+  const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, feedback } : m)));
+    fetch(`/api/messages/${messageId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feedback }),
+    }).catch(() => {});
+  }, []);
+
+  React.useEffect(() => () => abortRef.current?.abort(), []);
+
+  return {
+    messages,
+    status,
+    activeTask,
+    pendingApproval,
+    responding,
+    isBusy: status !== "idle",
+    send,
+    resume,
+    cancel,
+    respond,
+    setFeedback,
+  };
+}

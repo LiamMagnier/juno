@@ -1,11 +1,19 @@
 import { NextResponse } from "next/server";
 import type { CodeDevice, CodeTask, CodeTaskEvent, Prisma } from "@prisma/client";
-import { prismaUnguarded } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
+import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser, type SessionUser } from "@/lib/session";
+import type { ClientActivityEvent } from "@/types/chat";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
 export const TASK_STATUSES = ["queued", "running", "awaiting_approval", "done", "failed", "cancelled"] as const;
+
+export const TERMINAL_TASK_STATUSES = ["done", "failed", "cancelled"] as const;
+
+export function isTerminalTaskStatus(status: string): boolean {
+  return (TERMINAL_TASK_STATUSES as readonly string[]).includes(status);
+}
 
 export const EVENT_KINDS = [
   "status",
@@ -53,6 +61,7 @@ export function serializeTask(task: CodeTask) {
     prompt: task.prompt,
     status: task.status,
     lastSeq: task.lastSeq,
+    conversationId: task.conversationId,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };
@@ -68,6 +77,123 @@ export function serializeTaskEvent(event: CodeTaskEvent) {
 }
 
 export type TaskEventInput = { kind: string; payload: Prisma.InputJsonValue };
+
+/** Deterministic Message id for the assistant turn a linked task produced —
+ *  one task, one message, so repeated terminal posts upsert instead of piling
+ *  up duplicates, and the web client can address the row without a join. */
+export function codeTaskMessageId(taskId: string): string {
+  return `codetask_${taskId}`;
+}
+
+type EventPayload = Record<string, unknown>;
+
+const payloadStr = (payload: Prisma.JsonValue, key: string): string | null => {
+  const value = (payload as EventPayload | null)?.[key];
+  return typeof value === "string" ? value : null;
+};
+const payloadNum = (payload: Prisma.JsonValue, key: string): number | null => {
+  const value = (payload as EventPayload | null)?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+};
+
+/**
+ * Persist the outcome of a conversation-linked task as a normal ASSISTANT
+ * Message, so the code session's history reloads exactly like chat history.
+ * Idempotent (deterministic id + upsert) and a no-op for unlinked tasks or
+ * tasks that are still running. Call after any status write that can be
+ * terminal; failures must never break the host's event ack, so callers wrap
+ * this in try/catch (it also swallows a vanished conversation itself).
+ */
+export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
+  if (!task.conversationId || !isTerminalTaskStatus(task.status)) return;
+  const conversation = await prisma.conversation.findFirst({
+    where: { id: task.conversationId, userId: task.userId },
+    select: { id: true },
+  });
+  if (!conversation) return; // deleted independently of the task — nothing to write to
+
+  const events = await prisma.codeTaskEvent.findMany({
+    where: { taskId: task.id },
+    orderBy: { seq: "asc" },
+  });
+
+  const textParts: string[] = [];
+  const activity: ClientActivityEvent[] = [];
+  let promptTokens: number | null = null;
+  let completionTokens: number | null = null;
+  let errorMessage: string | null = null;
+  const push = (event: CodeTaskEvent, entry: Omit<ClientActivityEvent, "id" | "createdAt">) =>
+    activity.push({ id: `evt-${event.seq}`, createdAt: event.createdAt.toISOString(), ...entry });
+
+  for (const event of events) {
+    switch (event.kind) {
+      case "text": {
+        const text = payloadStr(event.payload, "text");
+        if (text) textParts.push(text);
+        break;
+      }
+      case "tool": {
+        const summary = payloadStr(event.payload, "summary") ?? payloadStr(event.payload, "name");
+        if (summary) push(event, { kind: "tool", title: summary, detail: payloadStr(event.payload, "detail") ?? undefined });
+        break;
+      }
+      case "file_change": {
+        const path = payloadStr(event.payload, "path");
+        if (!path) break;
+        const changeKind = payloadStr(event.payload, "changeKind") ?? "edit";
+        const added = payloadNum(event.payload, "added") ?? 0;
+        const removed = payloadNum(event.payload, "removed") ?? 0;
+        push(event, { kind: "write", title: `${changeKind} ${path}`, detail: `+${added} −${removed}` });
+        break;
+      }
+      case "approval_request": {
+        const summary = payloadStr(event.payload, "summary");
+        if (summary) push(event, { kind: "warning", title: "Approval requested", detail: summary });
+        break;
+      }
+      case "error": {
+        errorMessage = payloadStr(event.payload, "message") ?? errorMessage;
+        break;
+      }
+      case "done": {
+        promptTokens = payloadNum(event.payload, "promptTokens") ?? promptTokens;
+        completionTokens = payloadNum(event.payload, "completionTokens") ?? completionTokens;
+        break;
+      }
+      default:
+        break; // status/user/approval_response/cancel_request carry no transcript content
+    }
+  }
+
+  if (task.status === "failed") {
+    activity.push({
+      id: "evt-outcome",
+      kind: "warning",
+      title: "Task failed",
+      detail: errorMessage ?? undefined,
+      createdAt: task.updatedAt.toISOString(),
+    });
+  } else if (task.status === "cancelled") {
+    activity.push({ id: "evt-outcome", kind: "warning", title: "Stopped by user", createdAt: task.updatedAt.toISOString() });
+  }
+
+  const base = {
+    content: encryptMessageText(textParts.join("")),
+    model: null,
+    promptTokens,
+    completionTokens,
+    activity: activity as unknown as Prisma.InputJsonValue,
+  };
+  await prisma.message.upsert({
+    where: { id: codeTaskMessageId(task.id) },
+    create: { id: codeTaskMessageId(task.id), conversationId: conversation.id, role: "ASSISTANT", ...base },
+    update: base,
+  });
+  await prisma.conversation.updateMany({
+    where: { id: conversation.id, userId: task.userId },
+    data: { lastMessageAt: new Date() },
+  });
+}
 
 /** Callers MUST have ownership-checked `taskId` (findFirst with userId) before
  *  calling — the transaction below updates the task by bare id, so it uses the

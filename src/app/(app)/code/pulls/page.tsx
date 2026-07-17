@@ -3,6 +3,7 @@ import { ArrowLeft, GitPullRequest, Plug } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { Button } from "@/components/ui/button";
+import { PullsList } from "@/components/code/pulls-list";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +31,7 @@ export default async function CodePullsPage() {
         </p>
 
         {github ? (
-          <div className="mt-10 flex flex-col items-center gap-4 text-center">
-            <GitPullRequest className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />
-            <div className="max-w-sm">
-              <p className="font-serif text-heading">GitHub is connected</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {github.accountLabel ? <>Signed in as {github.accountLabel}. </> : null}
-                The pull-request list is on its way — until it lands, review PRs on GitHub.
-              </p>
-            </div>
-          </div>
+          <PullsList account={github.accountLabel} />
         ) : (
           <div className="mt-10 flex flex-col items-center gap-4 text-center">
             <GitPullRequest className="h-8 w-8 text-muted-foreground/50" aria-hidden="true" />

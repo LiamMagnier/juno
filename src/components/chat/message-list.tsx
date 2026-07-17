@@ -13,9 +13,11 @@ interface MessageListProps {
   status?: GenerationStatus;
   artifacts: ClientArtifact[];
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
-  onRegenerate: () => void;
-  onContinue: () => void;
-  onEdit: (id: string, content: string) => void;
+  /** Chat-only turn actions — optional so non-chat surfaces (code sessions)
+   *  reuse the rendering without dead buttons. See MessageItemProps. */
+  onRegenerate?: () => void;
+  onContinue?: () => void;
+  onEdit?: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   onFork?: (id: string) => void;
   onSpeak?: (id: string, text: string) => void;

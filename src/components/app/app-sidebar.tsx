@@ -75,10 +75,12 @@ type SidebarProject = {
 type CodeWorkspace = { id: string; name: string; path: string; lastOpenedAt: string };
 
 /** Remote Juno Code task (from /api/code/tasks) — status rides on these rows.
- *  CodeTask carries no conversationId, so a task can be attributed to a
- *  workspace (by path) with certainty, but never to a specific session. */
+ *  Tasks started from a web session carry its conversationId and show as a
+ *  status dot on that session's row; unlinked tasks (started from the app)
+ *  attach to their workspace group as plain status rows. */
 type CodeTaskRow = {
   id: string;
+  conversationId: string | null;
   workspacePath: string;
   workspaceName: string;
   title: string;
@@ -320,6 +322,7 @@ export function AppSidebar({
         (Array.isArray(td.tasks) ? td.tasks : []).map(
           (x: Record<string, unknown>): CodeTaskRow => ({
             id: String(x.id ?? ""),
+            conversationId: typeof x.conversationId === "string" && x.conversationId ? x.conversationId : null,
             workspacePath: String(x.workspacePath ?? ""),
             workspaceName: String(x.workspaceName ?? ""),
             title: String(x.title ?? ""),
@@ -382,6 +385,28 @@ export function AppSidebar({
     return ids;
   }, [codeProjects]);
 
+  // Session ids currently listed in Code mode — a task linked to one of these
+  // shows as a status dot ON the session row, never as a duplicate status row.
+  const codeSessionIds = React.useMemo(() => new Set(filtered.map((c) => c.id)), [filtered]);
+
+  // The latest still-relevant task per linked session, for the row status dots.
+  const taskByConversation = React.useMemo(() => {
+    const map = new Map<string, CodeTaskRow>();
+    const now = Date.now();
+    for (const t of codeTasks) {
+      if (!t.conversationId) continue;
+      const relevant =
+        ACTIVE_TASK_STATUSES.has(t.status) ||
+        (t.status === "failed" && now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
+      if (!relevant) continue;
+      const existing = map.get(t.conversationId);
+      if (!existing || new Date(t.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+        map.set(t.conversationId, t);
+      }
+    }
+    return map;
+  }, [codeTasks]);
+
   // Active/recent-failed remote tasks per workspace path AND name, so orphan
   // groups (path unknown, name only) still pick up their tasks.
   const codeTasksByWorkspace = React.useMemo(() => {
@@ -393,6 +418,8 @@ export function AppSidebar({
         ACTIVE_TASK_STATUSES.has(t.status) ||
         (t.status === "failed" && now - new Date(t.createdAt).getTime() < FAILED_TASK_TTL_MS);
       if (!active) continue;
+      // Attributed to a listed session — its row carries the dot instead.
+      if (t.conversationId && codeSessionIds.has(t.conversationId)) continue;
       if (t.workspacePath) {
         if (!byPath.has(t.workspacePath)) byPath.set(t.workspacePath, []);
         byPath.get(t.workspacePath)!.push(t);
@@ -404,7 +431,7 @@ export function AppSidebar({
       }
     }
     return { byPath, byName };
-  }, [codeTasks]);
+  }, [codeTasks, codeSessionIds]);
 
   const pinned = React.useMemo(
     () => filtered.filter((c) => c.pinned && !(mode === "code" && groupedSessionIds.has(c.id))),
@@ -424,8 +451,6 @@ export function AppSidebar({
   };
 
   const newCodeSession = () => {
-    // W2b's new-session flow listens for this; the page is the fallback UI.
-    window.dispatchEvent(new CustomEvent("juno:code-new-session"));
     router.push("/code/new");
     setSidebarOpen(false);
   };
@@ -692,6 +717,7 @@ export function AppSidebar({
                     tasks={
                       codeTasksByWorkspace.byPath.get(p.path) ?? codeTasksByWorkspace.byName.get(p.name) ?? []
                     }
+                    taskStatusFor={(id) => taskByConversation.get(id)?.status}
                     expanded={codeExpanded[p.path] ?? true}
                     onToggle={() => toggleWorkspaceExpanded(p.path)}
                     activeConversationId={activeConversationId}
@@ -719,6 +745,7 @@ export function AppSidebar({
                     key={c.id}
                     conversation={c}
                     variant="code"
+                    taskStatus={taskByConversation.get(c.id)?.status}
                     active={c.id === activeConversationId}
                     renaming={renamingId === c.id}
                     setRenaming={setRenamingId}
@@ -749,6 +776,7 @@ export function AppSidebar({
                       key={c.id}
                       conversation={c}
                       variant="code"
+                      taskStatus={taskByConversation.get(c.id)?.status}
                       active={c.id === activeConversationId}
                       renaming={renamingId === c.id}
                       setRenaming={setRenamingId}
@@ -1312,6 +1340,7 @@ function CodeWorkspaceGroup({
   name,
   sessions,
   tasks,
+  taskStatusFor,
   expanded,
   onToggle,
   activeConversationId,
@@ -1326,6 +1355,8 @@ function CodeWorkspaceGroup({
   name: string;
   sessions: ClientConversation[];
   tasks: CodeTaskRow[];
+  /** Latest relevant remote-task status for a session id (row status dot). */
+  taskStatusFor: (id: string) => string | undefined;
   expanded: boolean;
   onToggle: () => void;
   activeConversationId: string | null;
@@ -1368,6 +1399,7 @@ function CodeWorkspaceGroup({
               conversation={c}
               variant="code"
               nested
+              taskStatus={taskStatusFor(c.id)}
               active={c.id === activeConversationId || activePath === `/chat/${c.id}`}
               renaming={renamingId === c.id}
               setRenaming={setRenaming}
@@ -1378,7 +1410,7 @@ function CodeWorkspaceGroup({
             />
           ))}
           {tasks.map((t) => (
-            <CodeTaskStatusRow key={t.id} task={t} />
+            <CodeTaskStatusRow key={t.id} task={t} onNavigate={onNavigate} />
           ))}
         </div>
       )}
@@ -1393,19 +1425,37 @@ const TASK_STATUS_META: Record<string, { label: string; dot: string }> = {
   failed: { label: "Failed", dot: "bg-destructive" },
 };
 
-/** A remote Juno Code task, shown as a plain status readout. CodeTask has no
- *  conversationId, so these can't deep-link to a session — a row that went
- *  nowhere would be a dead button, so it's deliberately non-interactive. */
-function CodeTaskStatusRow({ task }: { task: CodeTaskRow }) {
+/** A remote Juno Code task shown standalone (its session row, if any, isn't in
+ *  the list). Linked tasks deep-link to their session; app-started tasks have
+ *  no session to open, so their row stays a plain, non-interactive readout —
+ *  a row that went nowhere would be a dead button. */
+function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate?: () => void }) {
   const meta = TASK_STATUS_META[task.status];
   if (!meta) return null;
-  return (
-    <div className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
+  const inner = (
+    <>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{task.title}</span>
       <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
         {meta.label}
       </span>
+    </>
+  );
+  if (task.conversationId) {
+    return (
+      <Link
+        href={`/chat/${task.conversationId}`}
+        onClick={onNavigate}
+        title={task.title}
+        className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-md py-1 pl-6 pr-2 text-[12.5px] text-sidebar-foreground/70" title={task.title}>
+      {inner}
     </div>
   );
 }
@@ -1424,6 +1474,7 @@ function ConversationRow({
   onRequestConfirm,
   variant = "chat",
   nested,
+  taskStatus,
 }: {
   conversation: ClientConversation;
   active: boolean;
@@ -1441,6 +1492,8 @@ function ConversationRow({
   variant?: "chat" | "code";
   /** Indented under a parent row (Code workspace groups). */
   nested?: boolean;
+  /** Latest remote-task status for this session — rendered as a status dot. */
+  taskStatus?: string;
 }) {
   const router = useRouter();
   const [draft, setDraft] = React.useState(conversation.title);
@@ -1530,6 +1583,12 @@ function ConversationRow({
           <MessageCircle className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
         <AnimatedTitle title={conversation.title || (variant === "code" ? "New session" : "New chat")} className="min-w-0 flex-1" />
+        {taskStatus && TASK_STATUS_META[taskStatus] && (
+          <span className="flex shrink-0 items-center pl-1" title={TASK_STATUS_META[taskStatus].label}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
+            <span className="sr-only">{TASK_STATUS_META[taskStatus].label}</span>
+          </span>
+        )}
       </Link>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

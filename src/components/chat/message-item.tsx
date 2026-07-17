@@ -189,9 +189,12 @@ interface MessageItemProps {
   animateIn?: boolean;
   artifactsByIdentifier: Map<string, ClientArtifact>;
   onOpenArtifact: (identifier: string, opts?: { fullscreen?: boolean }) => void;
-  onRegenerate: () => void;
-  onContinue: () => void;
-  onEdit: (id: string, content: string) => void;
+  /** Chat-only turn actions. Omitted on surfaces without a chat pipeline
+   *  (code sessions), which hides the corresponding buttons entirely —
+   *  an action that cannot run must not render. */
+  onRegenerate?: () => void;
+  onContinue?: () => void;
+  onEdit?: (id: string, content: string) => void;
   onFeedback: (id: string, value: "UP" | "DOWN" | null) => void;
   onFork?: (id: string) => void;
   onSpeak?: (id: string, text: string) => void;
@@ -370,7 +373,7 @@ export function MessageItem({
               <Button
                 size="sm"
                 onClick={() => {
-                  if (draft.trim() && draft.trim() !== message.content) onEdit(message.id, draft.trim());
+                  if (draft.trim() && draft.trim() !== message.content) onEdit?.(message.id, draft.trim());
                   setEditing(false);
                 }}
               >
@@ -425,7 +428,7 @@ export function MessageItem({
               <IconAction label="Copy" onClick={copy}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </IconAction>
-              {!busy && !privateMode && (
+              {onEdit && !busy && !privateMode && (
                 // Prefill from the DISPLAYED version, so paging back and editing
                 // is a one-step "resend an earlier wording".
                 <IconAction label="Edit" onClick={() => { setDraft(view.content); setEditing(true); }}>
@@ -451,7 +454,7 @@ export function MessageItem({
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
   // Finish state comes from `view`: paging back to an older version hides the
   // current answer's continue/finish chrome (it doesn't describe that version).
-  const canContinue = isLast && !busy && (view.finishReason === "length" || view.finishReason === "network_error");
+  const canContinue = !!onContinue && isLast && !busy && (view.finishReason === "length" || view.finishReason === "network_error");
   // Which model produced the DISPLAYED answer — matters after mid-thread model
   // switches and when paging across regenerations made with different models.
   const modelName = view.model ? resolveModel(view.model)?.name ?? view.model : null;
@@ -486,7 +489,7 @@ export function MessageItem({
         ) : message.error && !hasPartialWithError ? (
           <div className="space-y-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
             <p>{message.content}</p>
-            {isLast && !busy && (
+            {onRegenerate && isLast && !busy && (
               <Button
                 variant="outline"
                 size="sm"
@@ -613,7 +616,7 @@ export function MessageItem({
               <IconAction label="Copy" onClick={copy}>
                 {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </IconAction>
-              {isLast && !busy && !privateMode && (
+              {onRegenerate && isLast && !busy && !privateMode && (
                 <IconAction label="Regenerate" onClick={onRegenerate}>
                   <RefreshCw className="h-4 w-4" />
                 </IconAction>

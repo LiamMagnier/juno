@@ -834,6 +834,10 @@ model CodeTask {
   prompt        String   @db.Text
   status        String   @default("queued")
   lastSeq       Int      @default(0)
+  // The kind:"code" Conversation this task ran in, so the website's code
+  // session view can join history/status. Plain pointer, not a relation —
+  // the conversation may be deleted independently of the task record.
+  conversationId String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -843,6 +847,7 @@ model CodeTask {
 
   @@index([userId, createdAt])
   @@index([deviceId, status])
+  @@index([conversationId])
 }
 
 model CodeTaskEvent {

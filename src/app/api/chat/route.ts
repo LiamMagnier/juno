@@ -679,6 +679,16 @@ async function handleChat(req: Request) {
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
+  // Juno Code sessions never run through the chat pipeline: their prompts are
+  // remote tasks executed on the user's Mac (POST /api/code/tasks + the task
+  // event stream). Refuse here so no client path can ever bill a code session
+  // against chat models or append chat-generated messages to it.
+  if (conversation?.kind === "code") {
+    return NextResponse.json(
+      { error: "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat." },
+      { status: 409 }
+    );
+  }
   // Connector toggles the user has on for this chat. Persisted on the
   // conversation so they stay active for every later prompt (and after the chat
   // remounts/reopens) without re-toggling. `undefined` means the client didn't
@@ -706,10 +716,11 @@ async function handleChat(req: Request) {
     (conversation.activeConnectors.length !== connectorSelection.length ||
       !conversation.activeConnectors.every((c) => connectorSelection.includes(c)))
   ) {
-    conversation = await prisma.conversation.update({
-      where: { id: conversation.id },
+    await prisma.conversation.updateMany({
+      where: { id: conversation.id, userId: user.id },
       data: { activeConnectors: connectorSelection },
     });
+    conversation = { ...conversation, activeConnectors: connectorSelection };
   }
 
   let userMessageId: string | null = null;
@@ -1234,8 +1245,8 @@ async function handleChat(req: Request) {
         }
 
         // Touch the conversation after the assistant message has been persisted.
-        await prisma.conversation.update({
-          where: { id: conversationId },
+        await prisma.conversation.updateMany({
+          where: { id: conversationId, userId: user.id },
           data: {
             lastMessageAt: new Date(),
             model: modelId,
@@ -1326,7 +1337,7 @@ async function handleChat(req: Request) {
               completionTokens: partialUsage.output || completionTokens || null,
             });
             const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
-            await prisma.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(), model: modelId } });
+            await prisma.conversation.updateMany({ where: { id: conversationId, userId: user.id }, data: { lastMessageAt: new Date(), model: modelId } });
             const assistantWithActivity = await prisma.message.update({
               where: { id: assistant.id },
               data: { activity: activityLog as unknown as Prisma.InputJsonValue },
