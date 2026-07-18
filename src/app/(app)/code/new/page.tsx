@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Library,
   Loader2,
+  Mic,
   Paperclip,
   Plus,
   X,
@@ -34,6 +35,7 @@ import {
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { JunoMark } from "@/components/brand/logo";
 import {
   CodeTargetPicker,
@@ -43,6 +45,7 @@ import {
 } from "@/components/code/code-target-picker";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { resolveModel, DEFAULT_MODEL, type ModelId } from "@/lib/models";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
@@ -148,6 +151,7 @@ export default function NewCodeSessionPage() {
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
+  const [dictating, setDictating] = React.useState(false);
   const [model, setModel] = React.useState<ModelId>(
     () => resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL,
   );
@@ -165,6 +169,7 @@ export default function NewCodeSessionPage() {
   const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
   const canFastMode = !!resolved && supportsFastMode(resolved);
   const canAttach = features.storage;
+  const { supported: speechSupported } = useSpeechRecognition();
   const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
   // Switching models drops a thinking tier the new model can't do — same guard
@@ -315,37 +320,72 @@ export default function NewCodeSessionPage() {
     [clear, model, router, upsertConversation],
   );
 
-  const submit = React.useCallback(async () => {
-    const text = prompt.trim();
-    const attachments = readyAttachments;
-    if ((!text && attachments.length === 0) || submitting || isUploading) return;
-    if (target === "device" ? !selectedWorkspace : !selectedRepo) return;
+  const submit = React.useCallback(
+    async (overrideText?: string) => {
+      const text = (overrideText ?? prompt).trim();
+      const attachments = readyAttachments;
+      if ((!text && attachments.length === 0) || submitting || isUploading) return;
+      if (target === "device" ? !selectedWorkspace : !selectedRepo) return;
 
-    setSubmitting(true);
-    setCloudStartError(null);
-    try {
-      if (target === "device" && selectedWorkspace) {
-        await startDevice(selectedWorkspace, text, attachments);
-      } else if (target === "cloud" && selectedRepo) {
-        await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
+      setSubmitting(true);
+      setCloudStartError(null);
+      try {
+        if (target === "device" && selectedWorkspace) {
+          await startDevice(selectedWorkspace, text, attachments);
+        } else if (target === "cloud" && selectedRepo) {
+          await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
+        }
+      } catch {
+        toast.error("Could not start the session. Check your connection and try again.");
+      } finally {
+        setSubmitting(false);
       }
-    } catch {
-      toast.error("Could not start the session. Check your connection and try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [
-    prompt,
-    readyAttachments,
-    submitting,
-    isUploading,
-    target,
-    selectedWorkspace,
-    selectedRepo,
-    baseRef,
-    startDevice,
-    startCloud,
-  ]);
+    },
+    [
+      prompt,
+      readyAttachments,
+      submitting,
+      isUploading,
+      target,
+      selectedWorkspace,
+      selectedRepo,
+      baseRef,
+      startDevice,
+      startCloud,
+    ],
+  );
+
+  const closeDictation = React.useCallback(
+    (transcript: string, sendNow: boolean) => {
+      setDictating(false);
+      const merged = [prompt.trim(), transcript.trim()].filter(Boolean).join(" ");
+      if (!sendNow) {
+        setPrompt(merged);
+        requestAnimationFrame(() => {
+          autoresize();
+          textareaRef.current?.focus();
+        });
+        return;
+      }
+      if (!merged && readyAttachments.length === 0) {
+        setPrompt("");
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      // Gate the same way the send button does — if target is missing, park the
+      // words in the field so the user can finish setup without losing them.
+      if (!(target === "device" ? selectedWorkspace : selectedRepo)) {
+        setPrompt(merged);
+        requestAnimationFrame(() => {
+          autoresize();
+          textareaRef.current?.focus();
+        });
+        return;
+      }
+      void submit(merged);
+    },
+    [autoresize, prompt, readyAttachments.length, selectedRepo, selectedWorkspace, submit, target],
+  );
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -372,8 +412,31 @@ export default function NewCodeSessionPage() {
 
           <div className="w-full">
             <div
+              className={cn(
+                "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+                dictating ? "min-h-[170px]" : "min-h-[68px]",
+              )}
+            >
+              <div
+                className={cn(
+                  "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+                  dictating
+                    ? "translate-y-0 scale-100 opacity-100"
+                    : "pointer-events-none translate-y-1 scale-95 opacity-0",
+                )}
+              >
+                {dictating && (
+                  <ComposerDictation
+                    onCancel={() => setDictating(false)}
+                    onStop={(t) => closeDictation(t, false)}
+                    onSend={(t) => closeDictation(t, true)}
+                  />
+                )}
+              </div>
+
+            <div
               onDragOver={(e) => {
-                if (!canAttach || submitting) return;
+                if (!canAttach || submitting || dictating) return;
                 e.preventDefault();
                 setDragging(true);
               }}
@@ -381,11 +444,16 @@ export default function NewCodeSessionPage() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragging(false);
-                if (canAttach && !submitting && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+                if (canAttach && !submitting && !dictating && e.dataTransfer.files.length) {
+                  addFiles(e.dataTransfer.files);
+                }
               }}
               className={cn(
-                "composer-surface relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
-                "transition-[border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+                "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+                "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+                dictating
+                  ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0"
+                  : "translate-y-0 scale-100 opacity-100",
                 "border-border/65 focus-within:border-foreground/15",
                 dragging && "border-primary/55 ring-2 ring-primary/20",
               )}
@@ -609,6 +677,28 @@ export default function NewCodeSessionPage() {
                 </div>
 
                 <div className="ml-auto flex shrink-0 items-center gap-1">
+                  {speechSupported && (
+                    <>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => setDictating(true)}
+                            disabled={submitting || dictating}
+                            aria-label="Dictate"
+                            aria-pressed={dictating}
+                            className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                          >
+                            <Mic className="composer-mic-icon h-4 w-4" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Dictate</TooltipContent>
+                      </Tooltip>
+                      <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+                    </>
+                  )}
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -667,6 +757,7 @@ export default function NewCodeSessionPage() {
                   existingCount={uploads.length}
                 />
               )}
+            </div>
             </div>
 
             {/* Inline task-dispatch failures (cloud only). */}

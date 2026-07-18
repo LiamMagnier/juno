@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Library,
   Loader2,
+  Mic,
   Paperclip,
   Plus,
   ShieldAlert,
@@ -34,8 +35,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { MessageList } from "@/components/chat/message-list";
 import { LibraryPicker } from "@/components/chat/library-picker";
+import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeSessionStatus } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
@@ -247,6 +250,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   const [plusOpen, setPlusOpen] = React.useState(false);
   const [libraryOpen, setLibraryOpen] = React.useState(false);
   const [removingIds, setRemovingIds] = React.useState<string[]>([]);
+  const [dictating, setDictating] = React.useState(false);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const imageInputRef = React.useRef<HTMLInputElement>(null);
@@ -254,6 +258,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     conversation.id,
   );
   const canAttach = features.storage;
+  const { supported: speechSupported } = useSpeechRecognition();
 
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
@@ -326,70 +331,122 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     [remove],
   );
 
-  const submit = React.useCallback(async () => {
-    const text = draft.trim();
-    const attachments = readyAttachments;
-    if ((!text && attachments.length === 0) || session.isBusy || isUploading) return;
+  /** Optional override lets dictate-and-send ship the transcript without
+   * waiting a render for draft state. */
+  const submit = React.useCallback(
+    async (overrideText?: string) => {
+      const text = (overrideText ?? draft).trim();
+      const attachments = readyAttachments;
+      if ((!text && attachments.length === 0) || session.isBusy || isUploading) return;
 
-    if (isCloud) {
-      if (!meta.repoOwner || !meta.repoName) return;
+      if (isCloud) {
+        if (!meta.repoOwner || !meta.repoName) return;
+        const { accepted } = await session.send(
+          text,
+          {
+            mode: "cloud",
+            repo: { owner: meta.repoOwner, name: meta.repoName },
+            baseRef: meta.baseRef,
+            workspaceName: conversation.codeWorkspaceName,
+          },
+          attachments,
+        );
+        if (accepted) {
+          setDraft("");
+          clear();
+          nameSessionFromFirstPrompt(text, attachments);
+          meta.refresh(); // a follow-up run may open a new PR — pick it up
+          requestAnimationFrame(() => textareaRef.current?.focus());
+        }
+        return;
+      }
+
+      if (!presence.device) return;
+      // The device's workspace path is authoritative when the conversation only
+      // carries a name (sessions created before the path was recorded).
+      const path = workspacePath ?? null;
+      if (!path) return;
       const { accepted } = await session.send(
         text,
         {
-          mode: "cloud",
-          repo: { owner: meta.repoOwner, name: meta.repoName },
-          baseRef: meta.baseRef,
+          deviceId: presence.device.id,
+          workspacePath: path,
           workspaceName: conversation.codeWorkspaceName,
+          workspaceKey,
         },
         attachments,
       );
       if (accepted) {
         setDraft("");
         clear();
+        // First prompt of a fresh session names it (server does the same — this
+        // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
         nameSessionFromFirstPrompt(text, attachments);
-        meta.refresh(); // a follow-up run may open a new PR — pick it up
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
-      return;
-    }
+    },
+    [
+      clear,
+      conversation.codeWorkspaceName,
+      draft,
+      isCloud,
+      isUploading,
+      meta,
+      nameSessionFromFirstPrompt,
+      presence.device,
+      readyAttachments,
+      session,
+      workspaceKey,
+      workspacePath,
+    ],
+  );
 
-    if (!presence.device) return;
-    // The device's workspace path is authoritative when the conversation only
-    // carries a name (sessions created before the path was recorded).
-    const path = workspacePath ?? null;
-    if (!path) return;
-    const { accepted } = await session.send(
-      text,
-      {
-        deviceId: presence.device.id,
-        workspacePath: path,
-        workspaceName: conversation.codeWorkspaceName,
-        workspaceKey,
-      },
-      attachments,
-    );
-    if (accepted) {
-      setDraft("");
-      clear();
-      // First prompt of a fresh session names it (server does the same — this
-      // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
-      nameSessionFromFirstPrompt(text, attachments);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-    }
-  }, [
-    clear,
-    conversation.codeWorkspaceName,
-    draft,
-    isCloud,
-    isUploading,
-    meta,
-    nameSessionFromFirstPrompt,
-    presence.device,
-    readyAttachments,
-    session,
-    workspaceKey,
-    workspacePath,
-  ]);
+  // Dictate: drop the transcript into the draft, or merge + send immediately.
+  // Same append semantics as chat — existing typed text is preserved. If the
+  // session can't run yet (Mac offline / no repo), park the words for edit.
+  const closeDictation = React.useCallback(
+    (transcript: string, sendNow: boolean) => {
+      setDictating(false);
+      const merged = [draft.trim(), transcript.trim()].filter(Boolean).join(" ");
+      const park = () => {
+        setDraft(merged);
+        requestAnimationFrame(() => {
+          autoresize();
+          textareaRef.current?.focus();
+        });
+      };
+      if (!sendNow) {
+        park();
+        return;
+      }
+      if (!merged && readyAttachments.length === 0) {
+        setDraft("");
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      const canFire =
+        (isCloud ? !!cloudRepoFull : !!presence.device && !!workspacePath) &&
+        !session.isBusy &&
+        !isUploading;
+      if (!canFire) {
+        park();
+        return;
+      }
+      void submit(merged);
+    },
+    [
+      autoresize,
+      cloudRepoFull,
+      draft,
+      isCloud,
+      isUploading,
+      presence.device,
+      readyAttachments.length,
+      session.isBusy,
+      submit,
+      workspacePath,
+    ],
+  );
 
   const composerDisabled = isCloud ? !cloudRepoFull : !canTarget || !workspacePath;
   const hasPayload = !!draft.trim() || readyAttachments.length > 0;
@@ -450,9 +507,32 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
               : "Queued — waiting for your Mac to pick this up."}
         </p>
       )}
+      {/* Composer ⇄ Dictation share one grid cell and cross-fade — same pattern
+          as the home chat composer (no voice mode here, only dictate). */}
+      <div
+        className={cn(
+          "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
+          dictating ? "min-h-[170px]" : "min-h-[68px]",
+        )}
+      >
+        <div
+          className={cn(
+            "col-start-1 row-start-1 z-30 flex w-full justify-center transition-[opacity,transform] duration-base ease-spring motion-reduce:transition-none",
+            dictating ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-1 scale-95 opacity-0",
+          )}
+        >
+          {dictating && (
+            <ComposerDictation
+              onCancel={() => setDictating(false)}
+              onStop={(t) => closeDictation(t, false)}
+              onSend={(t) => closeDictation(t, true)}
+            />
+          )}
+        </div>
+
       <div
         onDragOver={(e) => {
-          if (!canAttach || composerDisabled) return;
+          if (!canAttach || composerDisabled || dictating) return;
           e.preventDefault();
           setDragging(true);
         }}
@@ -460,11 +540,12 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          if (canAttach && !composerDisabled && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+          if (canAttach && !composerDisabled && !dictating && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
         }}
         className={cn(
-          "composer-surface relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
-          "transition-[border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+          "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+          "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+          dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
           "border-border/65 focus-within:border-foreground/15",
           dragging && "border-primary/55 ring-2 ring-primary/20",
         )}
@@ -608,41 +689,66 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             </span>
           </div>
 
-          {/* Send morphs into Stop while a task runs — same morph as chat. */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                size="icon"
-                onClick={session.isBusy ? () => void session.cancel() : () => void submit()}
-                disabled={session.isBusy ? session.status === "stopping" || session.status === "submitting" : !canSend}
-                aria-label={
-                  session.isBusy
-                    ? session.status === "stopping"
-                      ? "Stopping task"
-                      : "Stop this task"
-                    : isCloud
-                      ? "Start a cloud run"
-                      : "Send to your Mac"
-                }
-                className={cn(
-                  "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                  session.isBusy && session.status !== "submitting"
-                    ? "w-11 rounded-[11px] ring-2 ring-primary/15"
-                    : "rounded-[13px]",
-                )}
-              >
-                {session.status === "submitting" ? (
-                  <Loader2 key="submitting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
-                ) : session.isBusy ? (
-                  <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
-                ) : (
-                  <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{session.isBusy ? "Stop" : "Send"}</TooltipContent>
-          </Tooltip>
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {speechSupported && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={() => setDictating(true)}
+                      disabled={composerDisabled || session.isBusy || dictating}
+                      aria-label="Dictate"
+                      aria-pressed={dictating}
+                      className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
+                    >
+                      <Mic className="composer-mic-icon h-4 w-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Dictate</TooltipContent>
+                </Tooltip>
+                <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+              </>
+            )}
+
+            {/* Send morphs into Stop while a task runs — same morph as chat. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  onClick={session.isBusy ? () => void session.cancel() : () => void submit()}
+                  disabled={session.isBusy ? session.status === "stopping" || session.status === "submitting" : !canSend}
+                  aria-label={
+                    session.isBusy
+                      ? session.status === "stopping"
+                        ? "Stopping task"
+                        : "Stop this task"
+                      : isCloud
+                        ? "Start a cloud run"
+                        : "Send to your Mac"
+                  }
+                  className={cn(
+                    "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    session.isBusy && session.status !== "submitting"
+                      ? "w-11 rounded-[11px] ring-2 ring-primary/15"
+                      : "rounded-[13px]",
+                  )}
+                >
+                  {session.status === "submitting" ? (
+                    <Loader2 key="submitting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
+                  ) : session.isBusy ? (
+                    <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                  ) : (
+                    <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{session.isBusy ? "Stop" : "Send"}</TooltipContent>
+            </Tooltip>
+          </div>
         </div>
 
         <input
@@ -675,6 +781,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             existingCount={uploads.length}
           />
         )}
+      </div>
       </div>
     </div>
   );
