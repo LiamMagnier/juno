@@ -10,7 +10,13 @@ import type { Plan } from "@prisma/client";
 import { canUseModel } from "@/lib/plans";
 import { MODEL_LIST, type ModelId, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
-import { averageRequestCostMicroUsd, getModelMetrics } from "@/lib/model-metrics";
+import {
+  averageRequestCostMicroUsd,
+  clampReasoningEffort,
+  getModelMetrics,
+  reasoningCaps,
+  type ReasoningEffort,
+} from "@/lib/model-metrics";
 
 /** Sentinel id shown in the model selector; never sent to a provider API. */
 export const AUTO_MODEL_ID: ModelId = "juno:auto";
@@ -43,6 +49,11 @@ export interface AutoPickInput {
 export interface AutoPickResult {
   model: ModelInfo;
   complexity: PromptComplexityResult;
+  /**
+   * Thinking effort chosen for this prompt on the picked model.
+   * `null` = Instant / no extra reasoning (when the model allows disabling).
+   */
+  reasoningEffort: ReasoningEffort;
   /** Models considered, cheapest-first among eligible (for logging). */
   candidatesConsidered: number;
 }
@@ -161,8 +172,43 @@ function isEligibleChatModel(m: ModelInfo, plan: Plan, needsVision: boolean, nee
 }
 
 /**
+ * Map prompt complexity → a target thinking tier, then clamp to what the
+ * chosen model actually supports (Instant / on-off / multi-tier).
+ */
+export function pickAutoReasoningEffort(
+  model: ModelInfo,
+  complexity: PromptComplexityResult
+): ReasoningEffort {
+  if (!model.reasoning) return null;
+
+  const caps = reasoningCaps(model);
+  // On/off models: only "think" for hard+ work.
+  if (caps.onOff) {
+    return complexity.level === "simple" || complexity.level === "medium" ? null : "high";
+  }
+
+  // Target by complexity (cheapest thinking that still matches the ask).
+  const target: ReasoningEffort =
+    complexity.level === "simple"
+      ? null // Instant when the model allows it
+      : complexity.level === "medium"
+        ? "low"
+        : complexity.level === "hard"
+          ? "high"
+          : "max"; // expert
+
+  // Always-on models with no Instant: null → default to their lowest tier.
+  if (target == null && !caps.canDisable && caps.tiers.length > 0) {
+    return clampReasoningEffort(model, caps.tiers[0]);
+  }
+
+  return clampReasoningEffort(model, target);
+}
+
+/**
  * Among models the user can call, pick the cheapest that clears the intelligence
  * floor for this prompt. Prefer `current` over legacy when prices are close.
+ * Also chooses thinking effort for that model from the same complexity score.
  */
 export function pickAutoModel(input: AutoPickInput): AutoPickResult {
   const complexity = classifyPromptComplexity(input.message);
@@ -212,9 +258,12 @@ export function pickAutoModel(input: AutoPickInput): AutoPickResult {
     throw new Error("No chat model is available for Auto routing.");
   }
 
+  const reasoningEffort = pickAutoReasoningEffort(fallback, complexity);
+
   return {
     model: fallback,
     complexity,
+    reasoningEffort,
     candidatesConsidered: ranked.length || pool.length,
   };
 }
@@ -222,10 +271,10 @@ export function pickAutoModel(input: AutoPickInput): AutoPickResult {
 /** Lightweight ModelInfo used only for UI when Auto is selected. */
 export const AUTO_MODEL_INFO: ModelInfo = {
   id: AUTO_MODEL_ID,
-  provider: "anthropic", // logo fallback; UI special-cases Auto
+  provider: "anthropic", // logo fallback; UI special-cases Auto with Juno mark
   providerModel: "auto",
   name: "Auto",
-  description: "Picks the cheapest model that can handle each prompt.",
+  description: "Picks the cheapest model and thinking depth that can handle each prompt.",
   minPlan: "FREE",
   vision: true,
   reasoning: true,

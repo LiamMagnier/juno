@@ -563,7 +563,7 @@ export function resolveModel(id: string): ModelInfo | null {
       provider: "anthropic",
       providerModel: "auto",
       name: "Auto",
-      description: "Picks the cheapest model that can handle each prompt.",
+      description: "Picks the cheapest model and thinking depth that can handle each prompt.",
       minPlan: "FREE",
       vision: true,
       reasoning: true,

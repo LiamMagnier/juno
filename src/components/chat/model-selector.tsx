@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, Sparkles, TriangleAlert, Video, Zap } from "lucide-react";
+import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
+import { JunoMark } from "@/components/brand/logo";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
@@ -126,20 +127,19 @@ function ModelDetailPanel({
       <div className="flex w-full shrink-0 snap-start flex-col overflow-y-auto border-l bg-card/85 p-5 shadow-soft backdrop-blur-xl md:w-60">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-lg font-semibold leading-tight tracking-tight">Auto</h3>
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
-            <Sparkles className="size-4" />
-          </span>
+          <JunoMark className="size-7 shrink-0 rounded-lg" />
         </div>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Routes each message to the <span className="font-medium text-foreground">cheapest model</span> that can handle it — based on length, code, multi-step work, and how hard the ask looks.
+          Routes each message to the <span className="font-medium text-foreground">cheapest model</span> and{" "}
+          <span className="font-medium text-foreground">thinking depth</span> that can handle it — based on length, code, multi-step work, and how hard the ask looks.
         </p>
         <ul className="mt-4 space-y-2 text-[12px] leading-snug text-muted-foreground">
-          <li className="flex gap-2"><span className="font-mono text-primary">1</span> Short / simple → budget models</li>
-          <li className="flex gap-2"><span className="font-mono text-primary">2</span> Coding & analysis → mid tier</li>
-          <li className="flex gap-2"><span className="font-mono text-primary">3</span> Hard reasoning → flagship</li>
+          <li className="flex gap-2"><span className="font-mono text-primary">1</span> Short / simple → budget models · Instant</li>
+          <li className="flex gap-2"><span className="font-mono text-primary">2</span> Coding & analysis → mid tier · light thinking</li>
+          <li className="flex gap-2"><span className="font-mono text-primary">3</span> Hard reasoning → flagship · deep thinking</li>
         </ul>
         <p className="mt-4 text-[11px] leading-snug text-muted-foreground/80">
-          Respects your plan, vision needs (images), and web search. The model used for each answer still shows on the receipt.
+          Respects your plan, vision needs (images), and web search. Model and thinking for each answer still show on the receipt.
         </p>
       </div>
     );
@@ -454,7 +454,7 @@ export function ModelSelector({
           className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-[10px] px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
         >
           {autoSelected ? (
-            <Sparkles className="size-3.5 shrink-0 text-primary transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+            <JunoMark className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : current ? (
             <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : null}
@@ -560,8 +560,8 @@ export function ModelSelector({
                             )}
                           >
                             <button type="button" onClick={() => select(AUTO_MODEL_INFO)} className="flex w-full items-start gap-2.5 text-left">
-                              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                                <Sparkles className="size-4" />
+                              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/80 ring-1 ring-border/60">
+                                <JunoMark className="size-5" />
                               </span>
                               <span className="min-w-0 flex-1">
                                 <span className="flex items-center gap-1.5">
@@ -571,7 +571,7 @@ export function ModelSelector({
                                   </span>
                                 </span>
                                 <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
-                                  Cheapest model that can handle this prompt
+                                  Cheapest model + thinking depth for this prompt
                                 </span>
                               </span>
                               {autoSelected ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}

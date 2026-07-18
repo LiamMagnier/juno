@@ -58,6 +58,7 @@ import { ReasoningSlider } from "@/components/chat/reasoning-slider";
 import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
+import { isAutoModelId } from "@/lib/auto-model";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
@@ -305,18 +306,31 @@ export function Composer({
 }: ComposerProps) {
   const { features, settings, setSettings, quota, models } = useApp();
   const resolved = resolveModel(model);
+  const isAuto = isAutoModelId(model);
   // Only the thinking tiers this specific model actually supports (real data).
-  const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
+  // Auto picks thinking server-side — no manual slider.
+  const effortOptions = React.useMemo(
+    () => (isAuto || !resolved ? [] : reasoningOptions(resolved)),
+    [isAuto, resolved]
+  );
   // Fast mode (premium speed) is only offered on the handful of models that
   // actually support it — see supportsFastMode(). The toggle hides otherwise.
-  const canFastMode = React.useMemo(() => !!resolved && supportsFastMode(resolved), [resolved]);
+  const canFastMode = React.useMemo(
+    () => !isAuto && !!resolved && supportsFastMode(resolved),
+    [isAuto, resolved]
+  );
   const modality = resolved?.modality ?? "chat";
 
   // Switching models: drop a thinking effort the new model can't do (e.g. "max"
   // when moving to Gemini) so we never show — or send — an unsupported tier.
+  // Auto: clear effort (server chooses per message).
   const changeModel = React.useCallback(
     (m: ModelId) => {
       onModelChange(m);
+      if (isAutoModelId(m)) {
+        onReasoningChange(null);
+        return;
+      }
       const next = resolveModel(m);
       if (next) {
         const opts = reasoningOptions(next);
@@ -2010,7 +2024,24 @@ export function Composer({
               <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
             </div>
 
-            {effortOptions.length > 0 && (() => {
+            {isAuto && (
+              <>
+                <span className="mx-0.5 hidden h-4 w-px shrink-0 bg-border/60 min-[380px]:block" aria-hidden="true" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span
+                      className="inline-flex h-8 shrink-0 items-center gap-1 rounded-[10px] px-2 font-mono text-[12px] text-muted-foreground min-[480px]:text-[13px]"
+                      aria-label="Thinking effort: Auto — chosen per prompt"
+                    >
+                      <span className="truncate">Auto</span>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>Thinking depth is chosen automatically with the model</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+
+            {!isAuto && effortOptions.length > 0 && (() => {
               const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
               // Keep the mobile label short enough to fit in a fixed footprint.
               // The full wording remains in the accessible label and returns on

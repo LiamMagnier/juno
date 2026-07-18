@@ -642,6 +642,8 @@ async function handleChat(req: Request) {
         : DEFAULT_MODEL;
 
   let modelInfo: ModelInfo | undefined;
+  /** When Auto routes, override the client's thinking slider with the pick. */
+  let autoReasoningEffort: import("@/types/chat").ReasoningEffort | null | undefined;
   if (isAutoModelId(requestedId)) {
     const routingMessage =
       input.preflightClarification
@@ -668,11 +670,13 @@ async function handleChat(req: Request) {
         wantsWebSearch: !!input.webSearch,
       });
       modelInfo = pick.model;
+      autoReasoningEffort = pick.reasoningEffort;
       console.info("[chat:auto]", {
         level: pick.complexity.level,
         minIntelligence: pick.complexity.minIntelligence,
         reasons: pick.complexity.reasons,
         picked: modelInfo.id,
+        reasoning: pick.reasoningEffort ?? "instant",
         candidates: pick.candidatesConsidered,
       });
     } catch (err) {
@@ -831,12 +835,21 @@ async function handleChat(req: Request) {
             detail: activeConnectors.map((c) => c.label).join(" · "),
           });
         }
-        const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
+        const reasoningEffort = effectiveReasoningEffort(
+          modelInfo,
+          autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+        );
         if (reasoningEffort) {
           sendActivity({
             kind: "reasoning",
-            title: "Reasoning mode enabled",
+            title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
             detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
+          });
+        } else if (isAutoModelId(requestedId)) {
+          sendActivity({
+            kind: "reasoning",
+            title: "Auto thinking",
+            detail: "Instant — no extra reasoning for this prompt",
           });
         }
         if (useWebSearch) {
@@ -1998,12 +2011,21 @@ async function handleChat(req: Request) {
           detail: activeConnectors.map((c) => c.label).join(" · "),
         });
       }
-      const reasoningEffort = effectiveReasoningEffort(modelInfo, input.reasoningEffort);
+      const reasoningEffort = effectiveReasoningEffort(
+        modelInfo,
+        autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+      );
       if (reasoningEffort) {
         sendActivity({
           kind: "reasoning",
-          title: "Reasoning mode enabled",
+          title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
           detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
+        });
+      } else if (isAutoModelId(requestedId)) {
+        sendActivity({
+          kind: "reasoning",
+          title: "Auto thinking",
+          detail: "Instant — no extra reasoning for this prompt",
         });
       }
       if (useWebSearch) {
