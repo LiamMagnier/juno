@@ -46,10 +46,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "account.apple.com"
   },
   {
-    "id": "0096d7c74dfc8673",
-    "source": "Semantic Coordinate Vector ("
-  },
-  {
     "id": "00a05fce19732187",
     "source": "Notices"
   },
@@ -78,6 +74,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "out — at today&rsquo;s list prices."
   },
   {
+    "id": "00d5d4c526261ec3",
+    "source": "process-timeline · ML training cycle"
+  },
+  {
     "id": "00d60e31a4e6b834",
     "source": "Run"
   },
@@ -86,8 +86,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Upload failed — check your connection and try again."
   },
   {
-    "id": "01039d1cfca1c4e2",
-    "source": "Attention Block"
+    "id": "00efcee9cb2a3a1f",
+    "source": "approximate"
   },
   {
     "id": "01128901e75fc6f1",
@@ -112,10 +112,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "01bed311e7d0c963",
     "source": "All apps"
-  },
-  {
-    "id": "01c803fa78e51762",
-    "source": "Auto-play"
   },
   {
     "id": "01d7ce2a2542c79e",
@@ -240,10 +236,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "050be7950a638d06",
     "source": "You're offline"
-  },
-  {
-    "id": "053946f7f1f2b597",
-    "source": "Restart Step Lab"
   },
   {
     "id": "0542aa73af67e55a",
@@ -404,10 +396,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "08b041935798fbf6",
     "source": "You"
-  },
-  {
-    "id": "08d11c80c6fbd4b3",
-    "source": "Skip Connection"
   },
   {
     "id": "08e09f354d96f855",
@@ -654,6 +642,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Model:"
   },
   {
+    "id": "11f097892217a11a",
+    "source": "Parser returned no blocks — check the sample."
+  },
+  {
     "id": "11fa5fea8a1819e6",
     "source": "Deep research isn't available on this plan right now."
   },
@@ -834,10 +826,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Calm and level"
   },
   {
-    "id": "16ab9562b08c2d29",
-    "source": "Append \""
-  },
-  {
     "id": "16b355cd61ed2da2",
     "source": "Invalid image."
   },
@@ -852,6 +840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "177b7cb0686749af",
     "source": "esc"
+  },
+  {
+    "id": "17b616cbd090309d",
+    "source": "deep-dive · collapsed detail"
   },
   {
     "id": "17c2449c645884bd",
@@ -880,6 +872,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "189a3bafd629dd95",
     "source": "The voice Juno reads answers aloud in. Press play to hear one."
+  },
+  {
+    "id": "18e34b4d1889a236",
+    "source": "More detail"
   },
   {
     "id": "18e73c8905f839a9",
@@ -1042,6 +1038,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Selected Region"
   },
   {
+    "id": "1db803a6c757c35a",
+    "source": "quiz · standalone"
+  },
+  {
+    "id": "1de3df70ddf4faab",
+    "source": "Steps"
+  },
+  {
     "id": "1e1347962f5539d4",
     "source": "Distilling your past chats into memory —"
   },
@@ -1062,16 +1066,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "2. Directeur de la publication"
   },
   {
-    "id": "1e9b08b36996b7f4",
-    "source": "to query relevant preceding context, building a rich representation."
-  },
-  {
     "id": "1ede5daf0729ae79",
     "source": "New to Juno?"
   },
   {
     "id": "1ee535089627156c",
     "source": "Text-, image-, and video-to-video generation."
+  },
+  {
+    "id": "1ee99cc9d4d992f5",
+    "source": "Next-token candidates"
   },
   {
     "id": "1efc968f9a05ab56",
@@ -1418,10 +1422,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t start the cloud run — this is usually temporary."
   },
   {
-    "id": "28720365c5e7476a",
-    "source": "top"
-  },
-  {
     "id": "2876b50057a6b393",
     "source": "Try Juno"
   },
@@ -1440,6 +1440,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "28f9078f7bac5868",
     "source": ", qui héberge l'application et la base de données (conversations chiffrées au repos)."
+  },
+  {
+    "id": "28ff62fd5d96e039",
+    "source": "· &ldquo;"
   },
   {
     "id": "29285b1f7d5010b1",
@@ -1536,10 +1540,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c0884ff51c78fdb",
     "source": "Precise and detail-loving, with the mechanism behind the answer."
-  },
-  {
-    "id": "2c17b40e7302e8da",
-    "source": "Attention Flow"
   },
   {
     "id": "2c21600ed133de4b",
@@ -1658,10 +1658,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Published"
   },
   {
-    "id": "2f10ebebed58e5b8",
-    "source": "T_"
-  },
-  {
     "id": "2f22bec09531bcfb",
     "source": "Create your Juno account and start chatting with the best AI models in seconds."
   },
@@ -1754,6 +1750,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Time of day"
   },
   {
+    "id": "319df65da9a3f2ff",
+    "source": "Fast mode on — faster output, premium rate"
+  },
+  {
     "id": "31a46d0b3b80b114",
     "source": "Best speed-to-intelligence balance — near-Opus quality for everyday work."
   },
@@ -1778,10 +1778,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "High-volume, low-latency, cost-sensitive tier."
   },
   {
-    "id": "32189c892ea93c06",
-    "source": "Check understanding"
-  },
-  {
     "id": "32464b0e7bbe2c37",
     "source": "One message, priced"
   },
@@ -1796,6 +1792,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "329b3c4622ceca56",
     "source": "Project management"
+  },
+  {
+    "id": "32cbbc7070fe4fa2",
+    "source": "&rdquo; → &ldquo;"
   },
   {
     "id": "32e83e92d45d71f6",
@@ -2054,10 +2054,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Clarification saved"
   },
   {
-    "id": "39db15dcd0925b90",
-    "source": "choices"
-  },
-  {
     "id": "39e15e2c9d48cbdb",
     "source": "uploading"
   },
@@ -2130,10 +2126,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Clear search"
   },
   {
-    "id": "3b853352e6b2784d",
-    "source": "Tokens exchange semantic information in parallel. For example,"
-  },
-  {
     "id": "3baf554784839bd7",
     "source": "Delete task"
   },
@@ -2156,10 +2148,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3c8a1796ec7c4866",
     "source": "— optional"
-  },
-  {
-    "id": "3c9549f5f41358dd",
-    "source": "Tokenized Input"
   },
   {
     "id": "3cb4e49f44d4899d",
@@ -2218,16 +2206,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ", par mois ; la TVA applicable est ajoutée au moment du paiement. Chaque plan inclut un budget mensuel de consommation des API des modèles ; au-delà, l'accès aux modèles peut être suspendu jusqu'au cycle suivant."
   },
   {
-    "id": "3e64cc41cf8e07b4",
-    "source": "step"
-  },
-  {
     "id": "3e992276b2298a1f",
     "source": "New task"
-  },
-  {
-    "id": "3ea36adcd1e02c94",
-    "source": "ID:"
   },
   {
     "id": "3ec769983e05c017",
@@ -2248,10 +2228,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3f00927a719345ed",
     "source": "Write"
-  },
-  {
-    "id": "3f02dd51aae47ced",
-    "source": "inspecting"
   },
   {
     "id": "3f23c66c25b1f3dd",
@@ -2382,12 +2358,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "About you"
   },
   {
-    "id": "42b81ba629b1cab6",
-    "source": "Vocabulary Index"
-  },
-  {
     "id": "42d2b070f0e5a2ef",
     "source": "Pull requests you open — including the ones Juno Code pushes from your sessions — show up here."
+  },
+  {
+    "id": "42d30f53b81e3382",
+    "source": "— not the top pick"
   },
   {
     "id": "43100289640d4b79",
@@ -2642,6 +2618,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "to the server’s"
   },
   {
+    "id": "4a36f89dafb0a101",
+    "source": "Verdict"
+  },
+  {
     "id": "4a50e4c0c4ffa965",
     "source": "Session ended"
   },
@@ -2688,6 +2668,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4b87271b6b8170d4",
     "source": "All projects"
+  },
+  {
+    "id": "4b9278338ee79dd3",
+    "source": "&rdquo; · vocab id"
   },
   {
     "id": "4bb47f186df233e4",
@@ -2854,10 +2838,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ban"
   },
   {
-    "id": "5221db21729227a0",
-    "source": "attends to"
-  },
-  {
     "id": "52259861e95c7584",
     "source": "Frontier coding and agentic work — 1M context, multimodal input."
   },
@@ -3006,10 +2986,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
   {
-    "id": "571527339d0e3e34",
-    "source": "Comparison"
-  },
-  {
     "id": "577ab4cc4c99b95d",
     "source": "4. Destinataires et sous-traitants"
   },
@@ -3052,10 +3028,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "58363fd94240d677",
     "source": "Delete user"
-  },
-  {
-    "id": "585b9d5302bd9b6c",
-    "source": "Query Token:"
   },
   {
     "id": "587649f20a5dc3fa",
@@ -3174,6 +3146,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t generate a summary right now — try again in a moment."
   },
   {
+    "id": "5b295a95cc232740",
+    "source": "Lab complete"
+  },
+  {
     "id": "5b4336a49fb1d097",
     "source": "MiniMax text/image-to-video with strong motion."
   },
@@ -3210,16 +3186,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Moderate"
   },
   {
-    "id": "5c7ee2074b65853f",
-    "source": "fallback"
-  },
-  {
     "id": "5ce44dd77dae789f",
     "source": "Uploading…"
   },
   {
     "id": "5d00e62dbab80d27",
     "source": "Invalid cursor"
+  },
+  {
+    "id": "5d026d14cd555394",
+    "source": "‹ Previous"
   },
   {
     "id": "5d0df353b35b5d42",
@@ -3306,6 +3282,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "heading"
   },
   {
+    "id": "5e787ec04ffe4c5b",
+    "source": "&rdquo; joins the prompt; the whole forward pass runs again for the next token."
+  },
+  {
     "id": "5e9f98120dbe5682",
     "source": "Severity"
   },
@@ -3316,10 +3296,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ef5ef0364b6939c",
     "source": "all"
-  },
-  {
-    "id": "5f3f469019d6a516",
-    "source": ". The correct answer is"
   },
   {
     "id": "5f5c5baf8fbc063d",
@@ -3344,10 +3320,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ffca88c15550745",
     "source": "Bad response"
-  },
-  {
-    "id": "6040d4e031f28b5b",
-    "source": "Each token's vector goes through deep linear layers. This accesses the model's factual knowledge base, updating the token representation based on database facts."
   },
   {
     "id": "6044aaad224c6ef3",
@@ -3510,6 +3482,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Le responsable du traitement est"
   },
   {
+    "id": "65659145569b894b",
+    "source": "Notice"
+  },
+  {
     "id": "656b4440cd4a6208",
     "source": "Shimmer"
   },
@@ -3520,6 +3496,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "658034c150a5bda2",
     "source": "Qwen Turbo"
+  },
+  {
+    "id": "65a424c212da03f2",
+    "source": "Moonshot's flagship — 2.5T-parameter reasoner with 1M context, selectable thinking effort (low/high/max), and image/video input."
   },
   {
     "id": "65b2bbff8730527e",
@@ -3754,10 +3734,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit popup"
   },
   {
-    "id": "6b983a81e5e8099e",
-    "source": "Restart"
-  },
-  {
     "id": "6ba0bdeccb426d7b",
     "source": "Device"
   },
@@ -3800,10 +3776,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6c96809a27538f9d",
     "source": "not_queued"
-  },
-  {
-    "id": "6c9b1ea577f6b9cb",
-    "source": "Prediction Terminal"
   },
   {
     "id": "6cb8d3b4bdb37d02",
@@ -4046,10 +4018,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Clear filters"
   },
   {
-    "id": "71883a61ed39bb0a",
-    "source": "Building the visual explanation..."
-  },
-  {
     "id": "71b99d22644e131c",
     "source": "idempotent first-submission keys are only valid for a new saved conversation"
   },
@@ -4060,6 +4028,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "71ded17d44ad1683",
     "source": "Saving voice transcript…"
+  },
+  {
+    "id": "71ebacb6bbdbf010",
+    "source": "Autoregression"
   },
   {
     "id": "71fe31ccd37c3268",
@@ -4082,10 +4054,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Read-only"
   },
   {
-    "id": "72c8fd6941967179",
-    "source": "Ranked Candidates"
-  },
-  {
     "id": "72d1ed20b733ecd6",
     "source": "Too many catalog requests. Try again shortly."
   },
@@ -4104,10 +4072,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "73562ef0b3bc9a95",
     "source": ", dont le siège est situé"
-  },
-  {
-    "id": "73618075d1f7a1da",
-    "source": "guest@juno:~$"
   },
   {
     "id": "73912999faf42cb3",
@@ -4214,12 +4178,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Back"
   },
   {
-    "id": "76a7bcc18f1d320d",
-    "source": "(no key)"
+    "id": "76a2171c057b730f",
+    "source": "Matrix"
   },
   {
-    "id": "77032085e5ae49a1",
-    "source": "from \""
+    "id": "76a7bcc18f1d320d",
+    "source": "(no key)"
   },
   {
     "id": "7711faa74a10416c",
@@ -4294,10 +4258,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Drag a marquee region directly on the canvas to isolate a change, or describe instructions to regenerate the whole image."
   },
   {
-    "id": "79b88e777f4cc1f1",
-    "source": "-Dim Vector"
-  },
-  {
     "id": "79cf0d1cce07593f",
     "source": "Juno puts Claude, GPT, Gemini and a dozen more labs in one calm workspace — voice, artifacts, projects and a coding agent included — with the real cost of every answer on the receipt."
   },
@@ -4310,8 +4270,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This first submission is still being accepted. Retry with the same identifiers."
   },
   {
-    "id": "7a6d7fcaace695aa",
-    "source": "Active sequence:"
+    "id": "7a665072dc2b2399",
+    "source": "sampled"
   },
   {
     "id": "7a77a0aba43afb5f",
@@ -4364,10 +4324,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7b8e819ce4f6702f",
     "source": "Connected tools ready"
-  },
-  {
-    "id": "7bd68037ab4b956b",
-    "source": "Building visual explanation..."
   },
   {
     "id": "7c86a0b2f9420e5d",
@@ -4722,12 +4678,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Read your design files, frames, and components."
   },
   {
-    "id": "858e4ba7a29fd38b",
-    "source": "Pause"
-  },
-  {
     "id": "85a39ab345d672ff",
     "source": "Yes"
+  },
+  {
+    "id": "85be5074985781bd",
+    "source": "step-lab · full pipeline (compact)"
   },
   {
     "id": "85be99c92549ca81",
@@ -4770,6 +4726,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Invalid Step Lab schema."
   },
   {
+    "id": "868d16703db4cee3",
+    "source": "Next ›"
+  },
+  {
     "id": "86932b3627a7e147",
     "source": "Branched from"
   },
@@ -4780,6 +4740,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8702b1d433cf3689",
     "source": "Billing is not configured."
+  },
+  {
+    "id": "8783b2704f792ad1",
+    "source": "% likely"
   },
   {
     "id": "87a8811758bb4dbd",
@@ -4796,6 +4760,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "87bf2bc08589f0bd",
     "source": "Voice"
+  },
+  {
+    "id": "87c5912f2cefdf9d",
+    "source": "Building"
   },
   {
     "id": "87d2f3386f90d631",
@@ -4830,6 +4798,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "You're submitting a lot of requests — try again later."
   },
   {
+    "id": "8963a42c9bb2121d",
+    "source": "enriched representations ↓"
+  },
+  {
     "id": "89713b9c9c1b8f65",
     "source": "Accept"
   },
@@ -4856,6 +4828,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8abbab6eaa00edcd",
     "source": "models ·"
+  },
+  {
+    "id": "8acc50300334ba9c",
+    "source": "well spotted."
   },
   {
     "id": "8ad6c4a2331aa928",
@@ -5098,6 +5074,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Every app connects separately. Juno only receives access to the apps you choose."
   },
   {
+    "id": "93558eb71ce07abf",
+    "source": "Dev gallery"
+  },
+  {
     "id": "9372c470eeadd5ec",
     "source": "model"
   },
@@ -5198,12 +5178,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Neutral and crisp"
   },
   {
+    "id": "957530d8900bd761",
+    "source": "Correct —"
+  },
+  {
     "id": "957b0b874524d09a",
     "source": "Pro"
   },
   {
     "id": "95908a854f38b6c8",
     "source": "Calendar name; defaults to the first calendar."
+  },
+  {
+    "id": "95a2f1edb08a7612",
+    "source": "Sample"
   },
   {
     "id": "95a5713ec007d323",
@@ -5272,6 +5260,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9766de2b628352e7",
     "source": "Paste the results here"
+  },
+  {
+    "id": "977703be9d76ad8f",
+    "source": "&rdquo; —"
   },
   {
     "id": "977f3b2676a91a7f",
@@ -5446,10 +5438,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "turn"
   },
   {
-    "id": "9b756e7bc46d1a62",
-    "source": "Moonshot's flagship — 2.5T-parameter reasoner with 1M context, always-on thinking, and image/video input."
-  },
-  {
     "id": "9bc6a53f7ec49024",
     "source": "Rebuilding your chats with their original titles and dates."
   },
@@ -5490,10 +5478,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete…"
   },
   {
-    "id": "9ceb1c5eb8b8f85b",
-    "source": "\"AI\""
-  },
-  {
     "id": "9cf6bc7c6562a019",
     "source": "Ministral"
   },
@@ -5516,6 +5500,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9d513d0beae65365",
     "source": "messages ·"
+  },
+  {
+    "id": "9d60841e0a7891df",
+    "source": "Check"
   },
   {
     "id": "9d98ce221dd52ecc",
@@ -5572,6 +5560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9f1e8ab9c9961541",
     "source": "Projects & memory"
+  },
+  {
+    "id": "9f5bf09105de1245",
+    "source": "step-lab · generic process (comfortable)"
   },
   {
     "id": "9f6c9933490bde2e",
@@ -5830,6 +5822,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add catalog songs to one of the user's playlists."
   },
   {
+    "id": "a63815e721e1939c",
+    "source": "&rdquo; attends most to &ldquo;"
+  },
+  {
     "id": "a68cace66ecd0578",
     "source": "Add to memory"
   },
@@ -5840,10 +5836,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a69ffddb5fe50245",
     "source": "Close dialog / stop streaming"
-  },
-  {
-    "id": "a6c7a84baa6750fc",
-    "source": "Finish"
   },
   {
     "id": "a6df11e706c514f1",
@@ -5868,6 +5860,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a76af460bf1b954f",
     "source": "Claude Mythos"
+  },
+  {
+    "id": "a7b4cf9f7e429771",
+    "source": "Hint"
   },
   {
     "id": "a82231884afa3cd8",
@@ -5934,10 +5930,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "to enable these models."
   },
   {
-    "id": "aa214ea38326805d",
-    "source": "transform"
-  },
-  {
     "id": "aa2772880f19734e",
     "source": "Max tier"
   },
@@ -5982,10 +5974,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GLM Vision"
   },
   {
-    "id": "ab3128911b66e72e",
-    "source": "llm --predict"
-  },
-  {
     "id": "ab48fcf706cb01d3",
     "source": "Accounting"
   },
@@ -6026,12 +6014,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ASSISTANT"
   },
   {
-    "id": "ac37fbecd199b00e",
-    "source": "Juno · Conditions"
+    "id": "ac27142b35c730d9",
+    "source": "Transformer stages"
   },
   {
-    "id": "aca01a1a3a27d35c",
-    "source": "Correct"
+    "id": "ac37fbecd199b00e",
+    "source": "Juno · Conditions"
   },
   {
     "id": "acb320d7f3e39b16",
@@ -6250,16 +6238,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "private_attachments_unsupported"
   },
   {
-    "id": "b2b0be02e26c90d2",
-    "source": "Softmax Probabilities"
-  },
-  {
     "id": "b2dd7c85efa74854",
     "source": "Close thought process"
-  },
-  {
-    "id": "b2fa884bd05000a2",
-    "source": "click to view"
   },
   {
     "id": "b31cd9d9a130907d",
@@ -6330,10 +6310,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "User"
   },
   {
-    "id": "b56e20431d7292b5",
-    "source": "layers."
-  },
-  {
     "id": "b57c2d03a0eed406",
     "source": "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
   },
@@ -6394,10 +6370,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search and read mail in your iCloud mailboxes."
   },
   {
-    "id": "b7d8c59d99187d30",
-    "source": "Softmax logit scores"
-  },
-  {
     "id": "b847ffdd0a1bfe55",
     "source": "Selection actions"
   },
@@ -6432,10 +6404,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b9202fd8ee975989",
     "source": "Create popup"
-  },
-  {
-    "id": "b9393a3068a5198c",
-    "source": "Step progress"
   },
   {
     "id": "b958ce8b871ab36b",
@@ -6554,10 +6522,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Too many follow-up requests."
   },
   {
-    "id": "bd80b3bd91efabcf",
-    "source": "\"can\""
-  },
-  {
     "id": "bda30c75cd3afd7e",
     "source": "2. Données collectées"
   },
@@ -6628,6 +6592,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bf712d9d280a1d8f",
     "source": "/library"
+  },
+  {
+    "id": "bf7f944a0059ca01",
+    "source": "Not quite —"
   },
   {
     "id": "bfd402b2f6f38125",
@@ -6886,10 +6854,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "No projects synced yet"
   },
   {
-    "id": "c7ff6dcd94d7161e",
-    "source": "stage"
-  },
-  {
     "id": "c81624a18f80771b",
     "source": "@memory"
   },
@@ -6926,8 +6890,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open-weight multimodal model — very cheap, but benchmarks below Medium 3.5."
   },
   {
+    "id": "c8dae6371b33b8d6",
+    "source": "Replay"
+  },
+  {
     "id": "c8e4c62c5c4c535c",
     "source": "Delete this account?"
+  },
+  {
+    "id": "c90dcaa2fdc30be0",
+    "source": "Rendered through the real parser + renderer path at chat width (720px). Resize for mobile; toggle dark mode from the OS."
   },
   {
     "id": "c90fdb72b871a34f",
@@ -6940,14 +6912,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c96bfc47eba70b32",
     "source": "Everything Juno built with you, newest first."
-  },
-  {
-    "id": "c96c6d5be8d08a12",
-    "source": "input"
-  },
-  {
-    "id": "c99651782beefcfd",
-    "source": "The chosen token is appended back to the input prompt, and the entire transformer forward pass runs again to predict the subsequent token (autoregression loop)."
   },
   {
     "id": "c9a8dc336964db7f",
@@ -7050,6 +7014,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Low-latency GLM FlashX variant for high-throughput chat."
   },
   {
+    "id": "cbfe3ae4838bfb5f",
+    "source": "Fast mode — faster output at a premium rate"
+  },
+  {
     "id": "cc7a45e8556287a6",
     "source": "Données de facturation"
   },
@@ -7072,10 +7040,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ccd5765d436e243d",
     "source": "Not set up on this server"
-  },
-  {
-    "id": "ccd6f3b0f01dcf53",
-    "source": "Feed Forward Network"
   },
   {
     "id": "cce1c7ec7ca2593f",
@@ -7298,10 +7262,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "&rdquo;"
   },
   {
-    "id": "d2089be672953d11",
-    "source": "Token"
-  },
-  {
     "id": "d20e012176257ba9",
     "source": "Politique de confidentialité de Juno (chat.liams.dev) : données collectées, finalités, bases légales, durées de conservation, sous-traitants et droits RGPD (accès, rectification, effacement, portabilité, réclamation CNIL)."
   },
@@ -7368,6 +7328,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d37e1e9321dd2c3d",
     "source": "- Prefers concise answers - Building a chatbot called Juno - Based in France"
+  },
+  {
+    "id": "d39b7198351ad5ed",
+    "source": "Query token"
   },
   {
     "id": "d3b637f2bbb309f0",
@@ -7626,6 +7590,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit prompt"
   },
   {
+    "id": "da1357f535bcbfbb",
+    "source": "&rdquo; ·"
+  },
+  {
     "id": "da22cb39366aa66b",
     "source": "Start a chat or create a project to see it here."
   },
@@ -7656,10 +7624,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "db77be4d900afff4",
     "source": "News label"
-  },
-  {
-    "id": "db7c800c03fa02e0",
-    "source": "· id"
   },
   {
     "id": "db91d1287668a746",
@@ -7786,6 +7750,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Choose a new password for your Juno account."
   },
   {
+    "id": "de60b524aebfb005",
+    "source": "learning-card · four tones"
+  },
+  {
     "id": "de610abc2de865d9",
     "source": "2. Description du Service"
   },
@@ -7858,10 +7826,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Artifact"
   },
   {
-    "id": "e083bd83e9d3e97e",
-    "source": "Process"
-  },
-  {
     "id": "e0ae591d2fd803d5",
     "source": "Every frontier model."
   },
@@ -7900,10 +7864,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e0e12b58c94422f6",
     "source": "GLM Turbo"
-  },
-  {
-    "id": "e0ee8bb50685e05f",
-    "source": "output"
   },
   {
     "id": "e1252f4bf852ae03",
@@ -8018,6 +7978,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "receipt_not_found"
   },
   {
+    "id": "e43bd6db30b8aa29",
+    "source": "&rdquo; · d"
+  },
+  {
     "id": "e46ee9fc0d6f038f",
     "source": "Retiring — deprecated by the provider."
   },
@@ -8068,10 +8032,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e5f15e5edd196b18",
     "source": "validation_failed"
-  },
-  {
-    "id": "e642ef9814965988",
-    "source": "Review the active step and try again."
   },
   {
     "id": "e66c0619f7db2e9c",
@@ -8486,6 +8446,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Memory summary"
   },
   {
+    "id": "f2f05e106c408b00",
+    "source": "Inline learning blocks"
+  },
+  {
     "id": "f31ca38a3538dc2e",
     "source": "Qwen Flash"
   },
@@ -8568,10 +8532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f59ab8d1331b7b16",
     "source": "Untitled"
-  },
-  {
-    "id": "f59ad166a5e8d19f",
-    "source": "Learn more details"
   },
   {
     "id": "f5c9bd131486e793",
@@ -8670,6 +8630,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Interrupt Juno"
   },
   {
+    "id": "f89c1848386898d8",
+    "source": "comparison · SQL vs NoSQL vs NewSQL"
+  },
+  {
     "id": "f89ea27036ac1d31",
     "source": "Versions"
   },
@@ -8748,10 +8712,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f9eb8c8412e51a4e",
     "source": "Monthly tasks need a day of the month."
-  },
-  {
-    "id": "f9f7bbf379d79350",
-    "source": "Inputs bypass blocks using residual connections to prevent vanishing gradients. Layer Normalization standardizes activations to ensure stable training through all"
   },
   {
     "id": "fa13817a56bc64b2",
@@ -8854,10 +8814,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Grok Build"
   },
   {
-    "id": "fd682cdc1fc56418",
-    "source": "Not quite"
-  },
-  {
     "id": "fd77fdf589d91cb5",
     "source": "No memories saved yet. Juno builds memories across conversations."
   },
@@ -8900,10 +8856,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fe77095cf5784278",
     "source": "[forme juridique — ex. entrepreneur individuel / SAS au capital de X €]"
-  },
-  {
-    "id": "feac542d04b80cc7",
-    "source": "d_"
   },
   {
     "id": "feb6cc887de676cc",

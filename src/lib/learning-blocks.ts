@@ -77,6 +77,8 @@ export interface QuizData {
   question: string;
   options: QuizOption[];
   explanation?: string;
+  /** Optional on-demand hint revealed before answering. */
+  hint?: string;
 }
 
 export interface DeepDiveData {
@@ -238,7 +240,12 @@ function parseQuiz(raw: Record<string, unknown>): { payload: LearningBlockPayloa
   return {
     payload: {
       kind: "quiz",
-      quiz: { question, options, explanation: cleanText(raw.explanation, 800) || undefined },
+      quiz: {
+        question,
+        options,
+        explanation: cleanText(raw.explanation, 800) || undefined,
+        hint: cleanText(raw.hint, 400) || undefined,
+      },
     },
   };
 }

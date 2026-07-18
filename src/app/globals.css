@@ -36,9 +36,13 @@
 
     --destructive: 11 51% 50%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 11 55% 41%;
 
     --success: 140 33% 46%;
     --success-foreground: 0 0% 100%;
+    /* Like --warning-foreground: -ink is the AA text ramp on --background
+       (the fill tones only reach ~3:1 as small light-mode text). */
+    --success-ink: 140 38% 33%;
 
     --warning: 40 57% 51%;
     /* --warning is a FILL (dots, borders, tinted chips). As text on --background
@@ -116,9 +120,12 @@
 
     --destructive: 11 51% 56%;
     --destructive-foreground: 0 0% 100%;
+    --destructive-ink: 11 51% 56%;
 
     --success: 140 33% 53%;
     --success-foreground: 28 9% 9%;
+    /* Dark fills already pass as text (see --warning-foreground note). */
+    --success-ink: 140 33% 53%;
 
     --warning: 40 60% 58%;
     /* On the near-black background the fill value is already 8.2:1 as text

@@ -78,17 +78,19 @@ content: A model is like a machine with many tiny knobs. Training adjusts those 
 :::
 (tone: insight | tip | warning | note)
 
-2. \`:::step-lab\` — a guided interactive walkthrough (the richest block; use for multi-step processes). Prefer 3 to 6 steps. Every step needs id, title, summary, detail, visualType, and meaningful data. visualType values: tokenization, embedding, attention, transformer-processing, probability-distribution, next-token-selection, generic-process. Set \`density: compact\` for chat-friendly sizing.
+2. \`:::step-lab\` — a guided interactive walkthrough (the richest block; use for multi-step processes). Prefer 3 to 6 steps. Every step needs id, title, summary, detail, visualType, and meaningful data. visualType values: tokenization, embedding, attention, transformer-processing, probability-distribution, next-token-selection, generic-process. Set \`density: compact\` for chat-friendly sizing. Strongly recommended: give each step a one-sentence \`notice:\` telling the learner exactly what to look at in the visual, and give the lab a closing \`takeaway:\` (one sentence) shown when the learner completes it.
 :::step-lab
 title: The Next-Token Prediction Pipeline
 label: Step Lab
 description: How a language model turns text into the next token.
 density: compact
+takeaway: Everything a model writes is one next-token guess at a time, each conditioned on all the tokens before it.
 steps:
 - id: tokenize
   title: Tokenization
   summary: Text is split into tokens.
   detail: The model maps each token to a numerical ID from its vocabulary.
+  notice: Click each token — rare words split into several pieces, so token counts differ from word counts.
   visualType: tokenization
   data:
     input: "The model predicts the next word"
@@ -134,7 +136,7 @@ rows:
 verdict: Choose by data shape, not fashion.
 :::
 
-5. \`:::quiz\` — one local check-your-understanding question (answered in place, never sends a message).
+5. \`:::quiz\` — one local check-your-understanding question (answered in place, never sends a message). An optional \`hint:\` is revealed only when the learner asks for it — write one that scaffolds without giving the answer away.
 :::quiz
 question: What does the model update during training?
 options:
@@ -142,6 +144,7 @@ options:
 - Its internal weights
 - The user's keyboard
 answer: Its internal weights
+hint: Think about which part of the system is numerical and adjustable.
 explanation: Training adjusts the model's internal numerical parameters, called weights.
 :::
 

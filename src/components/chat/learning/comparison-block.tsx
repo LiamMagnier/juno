@@ -1,57 +1,78 @@
 "use client";
 
 import * as React from "react";
-import { BlockShell, LessonKicker, Microcap } from "@/components/chat/learning/block-shell";
+import { BlockHeader, BlockShell, Microcap } from "@/components/chat/learning/block-shell";
 import { cn } from "@/lib/utils";
 import type { ComparisonData } from "@/lib/learning-blocks";
 
-const COLUMN_TONES = ["text-primary", "text-source", "text-warning", "text-success"];
-
 /**
- * Side-by-side comparison. Quiet, ruled rows — reads like a table dropped into
- * the transcript, not a stack of tinted cards.
+ * A book table: ruled rows, single-ink headers (the differences live in the
+ * values, so the header rainbow is gone), and one reading aid — click a column
+ * header to focus it. Focusing dims the other columns so a wall of cells can
+ * be read as serial single-column passes; clicking again clears. Ends with a
+ * labeled verdict — the table's conclusion.
  */
 export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) {
   const { columns, rows } = comparison;
+  const [focused, setFocused] = React.useState<number | null>(null);
   const gridTemplate: React.CSSProperties = {
-    gridTemplateColumns: `minmax(8rem, 0.72fr) repeat(${columns.length}, minmax(0, 1fr))`,
+    gridTemplateColumns: `minmax(7.5rem, 0.7fr) repeat(${columns.length}, minmax(0, 1fr))`,
   };
+
+  const cellTone = (colIndex: number) =>
+    focused == null || focused === colIndex ? "opacity-100" : "opacity-50";
 
   return (
     <BlockShell aria-label={comparison.title ? `${comparison.title} comparison` : "Comparison"}>
-      <header className="px-5 pb-3.5 pt-4">
-        <LessonKicker className="text-primary">Comparison</LessonKicker>
-        {comparison.title && (
-          <h4 className="pt-1.5 font-serif text-[19px] font-semibold leading-tight">{comparison.title}</h4>
-        )}
-      </header>
+      <BlockHeader kicker="Comparison" kickerClassName="text-primary" title={comparison.title} />
 
-      {/* Desktop: ruled rows */}
-      <div className="hidden px-5 pb-5 sm:block">
-        <div className="grid items-center border-b border-border/50 pb-2" style={gridTemplate}>
-          <Microcap className="px-3">Focus</Microcap>
-          {columns.map((column, colIndex) => (
-            <span
-              key={colIndex}
-              className={cn("min-w-0 truncate px-3 text-[13px] font-semibold", COLUMN_TONES[colIndex % COLUMN_TONES.length])}
-            >
-              {column}
-            </span>
-          ))}
+      {/* Desktop: ruled rows with focusable column headers. */}
+      <div className="hidden pt-3 sm:block">
+        <div className="grid items-end border-b border-border/60 pb-2" style={gridTemplate} role="row">
+          <Microcap className="px-2">Focus</Microcap>
+          {columns.map((column, colIndex) => {
+            const isFocused = focused === colIndex;
+            return (
+              <button
+                key={colIndex}
+                type="button"
+                aria-pressed={isFocused}
+                onClick={() => setFocused((current) => (current === colIndex ? null : colIndex))}
+                className={cn(
+                  "group/col min-w-0 rounded-[8px] px-2 py-1 text-left outline-none transition-colors duration-fast",
+                  "hover:bg-accent/40 focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
+                  cellTone(colIndex)
+                )}
+              >
+                <span className="block truncate text-[13px] font-semibold text-foreground">{column}</span>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "mt-1 block h-0.5 w-8 origin-left rounded-full bg-primary transition-transform duration-base ease-out-expo",
+                    isFocused ? "scale-x-100" : "scale-x-0"
+                  )}
+                />
+              </button>
+            );
+          })}
         </div>
         {rows.map((row, rowIndex) => (
           <div
             key={rowIndex}
-            className="grid items-baseline border-b border-border/30 py-3 last:border-b-0 motion-safe:animate-rise-in [animation-fill-mode:backwards]"
-            style={{ ...gridTemplate, animationDelay: `${rowIndex * 35}ms` }}
+            className="grid items-baseline border-b border-border/30 py-3 last:border-b-0"
+            style={gridTemplate}
           >
-            <span className="px-3 text-sm font-semibold leading-6">{row.label}</span>
+            <span className="px-2 text-sm font-semibold leading-6">{row.label}</span>
             {columns.map((_, colIndex) => {
               const value = row.values[colIndex];
               return (
                 <span
                   key={colIndex}
-                  className={cn("min-w-0 break-words px-3 text-sm leading-6", value ? "text-muted-foreground" : "text-muted-foreground/40")}
+                  className={cn(
+                    "min-w-0 break-words px-2 text-sm leading-6 transition-opacity duration-base ease-out-soft",
+                    value ? "text-muted-foreground" : "text-muted-foreground/40",
+                    cellTone(colIndex)
+                  )}
                 >
                   {value ?? "—"}
                 </span>
@@ -61,20 +82,20 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
         ))}
       </div>
 
-      {/* Mobile: stacked */}
-      <div className="flex flex-col px-5 pb-4 sm:hidden">
+      {/* Mobile: stacked definition lists — the comparison stays side-readable. */}
+      <div className="flex flex-col pt-2 sm:hidden">
         {rows.map((row, rowIndex) => (
-          <div key={rowIndex} className="border-t border-border/50 py-3 first:border-t-0">
+          <div key={rowIndex} className="border-t border-border/40 py-3 first:border-t-0">
             <p className="text-sm font-semibold leading-5">{row.label}</p>
-            <dl className="grid gap-2 pt-2">
+            <dl className="grid gap-1.5 pt-2">
               {columns.map((column, colIndex) => {
                 const value = row.values[colIndex];
                 return (
                   <div key={colIndex} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
-                    <dt className={cn("min-w-0 truncate font-mono text-[11px] uppercase", COLUMN_TONES[colIndex % COLUMN_TONES.length])}>
+                    <dt className="min-w-0 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
                       {column}
                     </dt>
-                    <dd className={cn("min-w-0 break-words text-sm leading-5", value ? "text-muted-foreground" : "text-muted-foreground/40")}>
+                    <dd className={cn("min-w-0 break-words text-sm leading-5", value ? "text-foreground/80" : "text-muted-foreground/40")}>
                       {value ?? "—"}
                     </dd>
                   </div>
@@ -86,9 +107,12 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
       </div>
 
       {comparison.verdict && (
-        <div className="border-t border-border/50 px-5 py-3.5">
-          <p className="border-l-2 border-primary pl-3 text-[15px] leading-7 text-foreground/80">{comparison.verdict}</p>
-        </div>
+        <footer className="mt-3 flex flex-col gap-1.5 border-t border-border/50 pt-3">
+          <Microcap className="text-primary">Verdict</Microcap>
+          <p className="border-l-2 border-primary/70 pl-4 font-serif text-[15px] italic leading-7 text-foreground/85">
+            {comparison.verdict}
+          </p>
+        </footer>
       )}
     </BlockShell>
   );

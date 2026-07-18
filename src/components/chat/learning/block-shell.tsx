@@ -2,7 +2,14 @@
 
 /**
  * Shared chrome for the inline learning blocks (learning-card, process
- * timeline, comparison, quiz, deep dive). Purely presentational.
+ * timeline, comparison, quiz, deep dive, step lab). Purely presentational.
+ *
+ * The shell is a RULE-BOUNDED FIGURE, not a card: two horizontal hairlines and
+ * the transcript's own paper. No background fill, no radius, no side borders,
+ * no shadow — blocks read as figures set into a printed article, which is what
+ * keeps them calm inside the flat transcript (design.md §1.7). Structure comes
+ * from typography (serif titles, one mono marginalia voice) and whitespace,
+ * never from nested boxes.
  *
  * Layout note: these render inside `.juno-visual`, whose prose reset
  * (globals.css) zeroes margins on p/h3/h4/ol/ul/li with higher specificity
@@ -13,18 +20,13 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-/**
- * Consistent outer frame for learning objects. Deliberately flat and quiet — a
- * hairline-bordered panel that reads as an inserted note in the transcript, not
- * a floating, textured "card". Restraint is the point: type and spacing carry it.
- */
+/** Rule-bounded figure frame — the ONLY outer chrome any learning block gets. */
 export function BlockShell({ className, children, ...props }: React.ComponentPropsWithoutRef<"section">) {
   return (
     <section
       className={cn(
-        "relative my-4 overflow-hidden rounded-[14px] border border-border/60 bg-card/35 text-foreground",
-        "transition-colors duration-base ease-out-soft",
-        "motion-safe:animate-rise-in [animation-fill-mode:backwards]",
+        "relative my-6 border-y border-border/60 py-5 text-foreground",
+        "motion-safe:animate-rise-in",
         className
       )}
       {...props}
@@ -37,7 +39,7 @@ export function BlockShell({ className, children, ...props }: React.ComponentPro
 /** Mono microcap label — "PROCESS", "QUICK CHECK", … */
 export function Microcap({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("font-mono text-[11px] font-semibold uppercase text-muted-foreground", className)}>
+    <span className={cn("font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground", className)}>
       {children}
     </span>
   );
@@ -60,6 +62,120 @@ export function LessonKicker({
   );
 }
 
+/** Kicker row + serif title + optional description — the shell's fixed anatomy.
+ *  `meta` is the single optional right-hand mono slot (step rail, nothing else). */
+export function BlockHeader({
+  kicker,
+  kickerClassName,
+  kickerAccent,
+  title,
+  description,
+  meta,
+  className,
+}: {
+  kicker: React.ReactNode;
+  kickerClassName?: string;
+  kickerAccent?: string;
+  title?: React.ReactNode;
+  description?: React.ReactNode;
+  meta?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <header className={cn("flex flex-col gap-1.5", className)}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+        <LessonKicker accent={kickerAccent} className={kickerClassName}>
+          {kicker}
+        </LessonKicker>
+        {meta}
+      </div>
+      {title && (
+        <h4 className="font-serif text-[20px] font-medium leading-tight tracking-[-0.01em]">{title}</h4>
+      )}
+      {description && <p className="text-[15px] leading-7 text-muted-foreground">{description}</p>}
+    </header>
+  );
+}
+
+/**
+ * The figure's single mono readout line. Interactive visuals report the
+ * learner's current selection here ("T2 · \"powerful\" · vocab id 5271");
+ * before any interaction it carries the visual's action prompt. Height is
+ * reserved so content swaps never shift layout, and swaps announce politely.
+ */
+export function CaptionLine({
+  prompt,
+  contentKey,
+  children,
+  className,
+}: {
+  /** Shown (italic, full-contrast) until the learner interacts. */
+  prompt: string;
+  /** Primitive key for the current readout — drives the swap fade between two
+   *  successive readouts (JSX children can't key themselves). */
+  contentKey?: string | number;
+  /** The current readout; falsy → the prompt shows. */
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      aria-live="polite"
+      className={cn(
+        "min-h-5 font-mono text-[11px] leading-5 tabular-nums text-muted-foreground",
+        className
+      )}
+    >
+      <span key={children ? (contentKey ?? "content") : "prompt"} className="inline-block motion-safe:animate-fade-in">
+        {/* Prompt stays at full muted-foreground (AA); italics mark it as an
+            instruction rather than a reading. */}
+        {children ?? <span className="italic">{prompt}</span>}
+      </span>
+    </p>
+  );
+}
+
+/** Quiet text-only disclosure control — mono microcap + a rotating `+` glyph. */
+export function TextToggle({
+  open,
+  onToggle,
+  label,
+  controls,
+  className,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  label: string;
+  controls?: string;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+      className={cn(
+        "group/toggle inline-flex items-center gap-1.5 self-start rounded-[8px] py-1 pr-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none",
+        "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
+        "coarse:min-h-11",
+        className
+      )}
+    >
+      {label}
+      <span
+        aria-hidden
+        className={cn(
+          "inline-block font-mono text-[13px] leading-none transition-transform duration-base ease-spring",
+          open && "rotate-45"
+        )}
+      >
+        +
+      </span>
+    </button>
+  );
+}
+
 /** Height-animated reveal via the grid-rows 0fr -> 1fr trick. */
 export function Reveal({
   open,
@@ -74,8 +190,12 @@ export function Reveal({
   return (
     <div
       aria-hidden={!open}
+      // inert removes the closed subtree from the tab order AND the a11y tree —
+      // without it, collapsed content (e.g. the attention matrix's ~49 cell
+      // buttons) stays keyboard-focusable while invisible.
+      inert={!open}
       className={cn(
-        "grid motion-safe:transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+        "grid motion-safe:transition-[grid-template-rows,opacity] duration-base ease-out-soft",
         open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
         className
       )}

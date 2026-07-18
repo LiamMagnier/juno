@@ -53,6 +53,7 @@ const config: Config = {
         destructive: {
           DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
           foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
+          ink: "hsl(var(--destructive-ink) / <alpha-value>)",
         },
         muted: {
           DEFAULT: "hsl(var(--muted) / <alpha-value>)",
@@ -73,6 +74,8 @@ const config: Config = {
         success: {
           DEFAULT: "hsl(var(--success) / <alpha-value>)",
           foreground: "hsl(var(--success-foreground) / <alpha-value>)",
+          // AA text ramp on --background (fills only reach ~3:1 in light mode).
+          ink: "hsl(var(--success-ink) / <alpha-value>)",
         },
         warning: {
           DEFAULT: "hsl(var(--warning) / <alpha-value>)",
@@ -210,6 +213,25 @@ const config: Config = {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
+        // Learning blocks (step-lab-block.tsx + quiz-block.tsx). One parametrized
+        // keyframe covers both navigation directions: the caller sets --stage-dx
+        // to 12px (forward) or -12px (back) on the keyed stage element.
+        "stage-in": {
+          from: { opacity: "0", transform: "translateX(var(--stage-dx, 12px))" },
+          to: { opacity: "1", transform: "none" },
+        },
+        // Wrong-answer feedback — a one-shot 3px sideways nudge, then still.
+        nudge: {
+          "0%, 100%": { transform: "translateX(0)" },
+          "35%": { transform: "translateX(-3px)" },
+          "70%": { transform: "translateX(2px)" },
+        },
+        // Draws an SVG path once (next-token autoregression return arc). The
+        // caller sets stroke-dasharray and --draw-len to the path length.
+        "stroke-draw": {
+          from: { strokeDashoffset: "var(--draw-len, 120)" },
+          to: { strokeDashoffset: "0" },
+        },
         "title-in": {
           "0%": { opacity: "0", transform: "translateY(4px) scale(0.985)", backgroundColor: "hsl(var(--primary) / 0.12)" },
           "100%": { opacity: "1", transform: "translateY(0) scale(1)", backgroundColor: "transparent" },
@@ -291,10 +313,20 @@ const config: Config = {
         "fade-in": "fade-in 0.2s ease-out",
         "fade-in-up": "fade-in-up 0.25s ease-out",
         "pulse-ring": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+        // One-shot variant (quiz correct-answer flourish) — the arbitrary
+        // [animation-iteration-count:1] override does NOT work on animate-*
+        // utilities (the shorthand re-declares iteration-count later in the
+        // stylesheet at equal specificity), so a named one-shot is required.
+        "pulse-ring-once": "pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) 1 both",
         shimmer: "shimmer 1.5s infinite",
         blink: "blink 1.1s steps(1) infinite",
         drift: "drift 18s ease-in-out infinite",
         "rise-in": "rise-in 0.32s cubic-bezier(0.32,0.72,0,1)",
+        // Learning blocks: direction-aware step navigation (spring), one-shot
+        // wrong-answer nudge (soft), one-shot SVG path draw (expo).
+        "stage-in": "stage-in 220ms cubic-bezier(0.32, 0.72, 0, 1) both",
+        nudge: "nudge 240ms cubic-bezier(0.33, 1, 0.68, 1)",
+        "stroke-draw": "stroke-draw 360ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "dot-wave": "dot-wave 1.2s ease-in-out infinite",
         // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
         "dot-think": "dot-think 2.1s ease-in-out infinite",

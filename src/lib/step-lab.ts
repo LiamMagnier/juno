@@ -12,6 +12,8 @@ export interface StepLabStep {
   title: string;
   summary: string;
   detail?: string;
+  /** One sentence of what to look at in this step's visual ("NOTICE" line). */
+  notice?: string;
   visualType: StepLabVisualType;
   data?: unknown;
 }
@@ -25,6 +27,8 @@ export interface StepLabQuizOption {
 export interface StepLabQuiz {
   question: string;
   options: StepLabQuizOption[];
+  /** Optional on-demand hint revealed before answering. */
+  hint?: string;
 }
 
 export interface StepLab {
@@ -37,6 +41,8 @@ export interface StepLab {
   steps: StepLabStep[];
   submitLabel?: string;
   quiz?: StepLabQuiz;
+  /** One-sentence closing summary shown in the completion state. */
+  takeaway?: string;
 }
 
 export interface ParsedStepLabBlock {
@@ -267,15 +273,35 @@ export function stableId(source: string, prefix = "step-lab"): string {
 function normalizeQuiz(value: unknown): StepLabQuiz | undefined {
   if (!isRecord(value)) return undefined;
   const question = cleanString(value.question);
-  const options = arrayOfRecords(value.options)
-    .map((option) => ({
-      label: cleanString(option.label ?? option.title ?? option.text),
-      correct: option.correct === true,
-      explanation: cleanString(option.explanation) || undefined,
-    }))
-    .filter((option) => option.label)
-    .slice(0, MAX_OPTIONS);
-  return question && options.length ? { question, options } : undefined;
+  // Mirror parseQuiz (learning-blocks.ts): the model may mark correctness with
+  // `correct: true` OR the standalone-quiz `answer:` key, and options may be
+  // plain strings. Accepting only the former made answer-keyed labs silently
+  // un-completable.
+  const answerText = cleanString(value.answer).toLowerCase();
+  const rawOptions = Array.isArray(value.options) ? value.options : [];
+  const options = rawOptions
+    .map((option): StepLabQuizOption | null => {
+      if (typeof option === "string" || typeof option === "number") {
+        const label = cleanString(option);
+        if (!label) return null;
+        return { label, correct: !!answerText && label.toLowerCase() === answerText };
+      }
+      if (!isRecord(option)) return null;
+      const label = cleanString(option.label ?? option.title ?? option.text);
+      if (!label) return null;
+      return {
+        label,
+        correct: option.correct === true || (!!answerText && label.toLowerCase() === answerText),
+        explanation: cleanString(option.explanation) || undefined,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, MAX_OPTIONS) as StepLabQuizOption[];
+  if (!question || options.length < 2) return undefined;
+  // A quiz no one can answer correctly would leave the lab un-completable —
+  // drop it instead (a lab without a quiz completes normally).
+  if (!options.some((option) => option.correct)) return undefined;
+  return { question, options, hint: cleanString(value.hint) || undefined };
 }
 
 function makeFallbackLab(raw: string, error: string, seed: string): StepLab {
@@ -334,17 +360,23 @@ export function parseStepLab(source: string, seed = ""): { block: StepLab; error
     });
   }
   const rawSteps = arrayOfRecords(raw.steps);
+  // Model-authored ids are used as React keys (rail + keyed stage remount), so
+  // duplicates would leak interaction state between steps — dedupe with a suffix.
+  const seenIds = new Set<string>();
   const steps = rawSteps
     .map((step, index): StepLabStep | null => {
       const title = cleanString(step.title, `Step ${index + 1}`);
       const summary = cleanString(step.summary ?? step.body ?? step.description);
       if (!title || !summary) return null;
-      const id = cleanString(step.id, `step_${index + 1}`).replace(/[^\w-]/g, "_").slice(0, 80);
+      let id = cleanString(step.id, `step_${index + 1}`).replace(/[^\w-]/g, "_").slice(0, 80);
+      while (seenIds.has(id)) id = `${id}_${index + 1}`;
+      seenIds.add(id);
       return {
         id,
         title,
         summary,
         detail: cleanString(step.detail ?? step.details) || undefined,
+        notice: cleanString(step.notice ?? step.note) || undefined,
         visualType: normalizeVisualType(step.visualType ?? step.type, step),
         data: step.data,
       };
@@ -370,6 +402,7 @@ export function parseStepLab(source: string, seed = ""): { block: StepLab; error
       steps,
       submitLabel: cleanString(raw.submitLabel, "Finish"),
       quiz: normalizeQuiz(raw.quiz),
+      takeaway: cleanString(raw.takeaway ?? raw.recap) || undefined,
     },
   });
 }
@@ -443,12 +476,16 @@ export function stepLabFromLegacySteps(input: {
   label?: string;
   steps: Array<{ title?: string; label?: string; body?: string; text?: string; detail?: string; value?: string }>;
 }): StepLab {
+  const seenIds = new Set<string>();
   const steps = input.steps.map((step, index) => {
     const title = cleanString(step.title ?? step.label, `Step ${index + 1}`);
     const summary = cleanString(step.body ?? step.text ?? step.detail ?? step.value, "Explore this stage of the process.");
     const visualType = normalizeVisualType(undefined, { title, summary, id: step.label ?? title });
+    let id = cleanString(step.label, `step_${index + 1}`).replace(/[^\w-]/g, "_");
+    while (seenIds.has(id)) id = `${id}_${index + 1}`;
+    seenIds.add(id);
     return {
-      id: cleanString(step.label, `step_${index + 1}`).replace(/[^\w-]/g, "_"),
+      id,
       title,
       summary,
       detail: cleanString(step.detail && step.detail !== summary ? step.detail : "") || undefined,
