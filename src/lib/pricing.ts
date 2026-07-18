@@ -59,17 +59,13 @@ export interface ToolUsageExtras {
 export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
   const input = Math.max(0, u.input ?? 0);
   const cacheRead = Math.max(0, u.cacheRead ?? 0);
-  let cacheWrite5m = Math.max(0, u.cacheWrite5m ?? 0);
-  let cacheWrite1h = Math.max(0, u.cacheWrite1h ?? 0);
-  let cacheWrite = Math.max(0, u.cacheWrite ?? 0);
-
-  // If only the aggregate write is set, treat it as unspecified TTL.
-  if (!cacheWrite5m && !cacheWrite1h && cacheWrite > 0) {
-    // leave cacheWrite as-is; cost path picks default write rate
-  } else if (cacheWrite5m || cacheWrite1h) {
-    // Prefer the split; keep aggregate as sum for display.
-    cacheWrite = cacheWrite5m + cacheWrite1h;
-  }
+  const cacheWrite5m = Math.max(0, u.cacheWrite5m ?? 0);
+  const cacheWrite1h = Math.max(0, u.cacheWrite1h ?? 0);
+  // Prefer TTL split when present; else use the aggregate write counter.
+  const cacheWrite =
+    cacheWrite5m > 0 || cacheWrite1h > 0
+      ? cacheWrite5m + cacheWrite1h
+      : Math.max(0, u.cacheWrite ?? 0);
 
   const output = Math.max(0, u.output ?? 0);
   if (provider === "anthropic") {
