@@ -1328,7 +1328,7 @@ export function Composer({
             "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
             "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
             dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
-            clarificationOpen ? "p-4 gap-4" : "",
+            clarificationOpen ? "gap-3 p-3 sm:gap-3.5 sm:p-3.5" : "",
             privateMode
               ? "border-dashed border-foreground/25"
               : "border-border/65 focus-within:border-foreground/15",
@@ -1360,9 +1360,10 @@ export function Composer({
           // is the top edge the room above it must be measured from.
           ref={paletteAnchorRef}
           className={cn(
-            "flex flex-col w-full relative transition-[opacity,transform] duration-base ease-out-soft",
+            "relative flex w-full flex-col transition-[opacity,transform] duration-base ease-out-soft",
+            // Keep the free-text path calm under a clarification — no second heavy card.
             clarificationOpen
-              ? "rounded-xl border border-border bg-background/50 p-4 shadow-inner"
+              ? "rounded-[16px] border border-border/45 bg-background/35 px-3 py-2.5 sm:rounded-[18px] sm:px-3.5 sm:py-3"
               : ""
           )}
         >
@@ -1598,7 +1599,9 @@ export function Composer({
           }
           className={cn(
             "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
-            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[64px] text-[1rem]"
+            clarificationOpen
+              ? "max-h-[72px] min-h-[40px] text-[0.9375rem] leading-snug placeholder:text-muted-foreground/70"
+              : "max-h-[200px] min-h-[64px] text-[1rem]"
           )}
         />
 

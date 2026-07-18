@@ -1478,10 +1478,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Question"
   },
   {
-    "id": "28d03596d24eeb4e",
-    "source": "Skip"
-  },
-  {
     "id": "28e70663be7527fe",
     "source": "Generate edit"
   },
@@ -2430,6 +2426,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search the Apple Music catalog for songs, albums, artists, or playlists."
   },
   {
+    "id": "4337404944f8d2f4",
+    "source": "Or write your own"
+  },
+  {
     "id": "435760070a20227c",
     "source": "Go to chat"
   },
@@ -2692,10 +2692,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4a82ef7ea3be7140",
     "source": "New project name"
-  },
-  {
-    "id": "4a90aec448485a09",
-    "source": "Quick options"
   },
   {
     "id": "4abdef514fb15d09",
@@ -3370,6 +3366,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stop and edit"
   },
   {
+    "id": "5ed5854e252b567c",
+    "source": "One quick question"
+  },
+  {
     "id": "5eed7e9fc8f3cd68",
     "source": "Start over"
   },
@@ -3632,10 +3632,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6725e7bbcd28f3a8",
     "source": "System"
-  },
-  {
-    "id": "6731258b9952c318",
-    "source": "Tune answer"
   },
   {
     "id": "67413bd2e4045285",
@@ -4646,10 +4642,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Marin"
   },
   {
-    "id": "807bc8cd37324d90",
-    "source": "Clarification progress"
-  },
-  {
     "id": "807d0fbcae7c4b20",
     "source": "flag"
   },
@@ -4752,6 +4744,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8340d833ab72d332",
     "source": "Concise"
+  },
+  {
+    "id": "8367cd66fdd136bb",
+    "source": "card"
   },
   {
     "id": "836b6b9bf46c1ebf",
@@ -7446,6 +7442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Pick the plan that"
   },
   {
+    "id": "d0db8b5e364b6989",
+    "source": "Options"
+  },
+  {
     "id": "d0db9b66dfc93724",
     "source": "Import your history"
   },
@@ -9108,10 +9108,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fddb7f9c69fed4ad",
     "source": "Export my data"
-  },
-  {
-    "id": "fde6973405067b65",
-    "source": "Quick question"
   },
   {
     "id": "fe02680f247961a1",

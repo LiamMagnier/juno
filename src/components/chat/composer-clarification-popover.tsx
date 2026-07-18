@@ -1,10 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ChevronLeft, ChevronRight, HelpCircle, X } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -50,6 +48,13 @@ function activeAnswer(question: PreflightClarificationQuestion, answer: Prefligh
   return true;
 }
 
+/**
+ * Pre-answer clarification surface.
+ *
+ * Editorial, calm, content-first: serif question, quiet mono progress, soft
+ * option rows (not pill spam), deliberate motion. `inline` lives inside the
+ * composer shell; `card` floats above it with a caret.
+ */
 export function ComposerClarificationPopover({
   pending,
   disabled,
@@ -62,32 +67,51 @@ export function ComposerClarificationPopover({
   const questions = pending.result.questions;
   const [index, setIndex] = React.useState(0);
   const [answers, setAnswers] = React.useState<AnswerMap>({});
+  const [stepKey, setStepKey] = React.useState(0);
   const active = questions[Math.min(index, Math.max(0, questions.length - 1))];
   const currentAnswer = answers[active.id];
   const isFinal = index === questions.length - 1;
   const canContinue = activeAnswer(active, currentAnswer);
   const customValue = currentAnswer?.source === "else" ? valueAsString(currentAnswer.value) : "";
   const customIsLong = active.type === "text-long";
+  const multi = questions.length > 1;
 
   React.useEffect(() => {
     setIndex(0);
     setAnswers({});
+    setStepKey((k) => k + 1);
   }, [pending.id]);
 
   React.useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
-      // CLAIM THE KEY, IN CAPTURE. This popover is the topmost transient layer,
-      // and other window-level Escape listeners now stand down on
-      // defaultPrevented (see the thought dock in chat-view). Capture runs before
-      // every bubble-phase listener regardless of which mounted first, so the
-      // claim lands deterministically instead of racing registration order.
       event.preventDefault();
       onClose();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [onClose]);
+
+  // Number keys 1–9 select options when not typing in a field.
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (disabled) return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
+      const n = Number(event.key);
+      if (!Number.isInteger(n) || n < 1 || n > 9) return;
+      const option = active.options[n - 1];
+      if (!option) return;
+      event.preventDefault();
+      selectOption(option);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // selectOption closes over active; rebind when the step changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, currentAnswer, disabled]);
 
   const saveAnswer = React.useCallback((question: PreflightClarificationQuestion, answer: PreflightClarificationAnswer | null) => {
     setAnswers((prev) => {
@@ -139,10 +163,15 @@ export function ComposerClarificationPopover({
     onAnswersChange?.(collectAnswers());
   }, [answers, collectAnswers, onAnswersChange]);
 
+  const goTo = (nextIndex: number) => {
+    setIndex(nextIndex);
+    setStepKey((k) => k + 1);
+  };
+
   const continueOrSubmit = async () => {
     if (disabled || !canContinue) return;
     if (!isFinal) {
-      setIndex((current) => Math.min(questions.length - 1, current + 1));
+      goTo(Math.min(questions.length - 1, index + 1));
       return;
     }
     await onSubmit(collectAnswers());
@@ -160,225 +189,183 @@ export function ComposerClarificationPopover({
     }
   };
 
-  if (variant === "inline") {
-    return (
-      <div
-        role="dialog"
-        aria-label={pending.result.title}
-        className="relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/60 bg-background/72 text-foreground shadow-soft motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 duration-base ease-out-expo"
-      >
-        <div className="flex flex-row items-start gap-3 space-y-0 p-4 pb-3">
-          <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-primary/15 bg-primary/10 text-primary">
-            <HelpCircle className="size-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.15em] text-primary">Quick question</span>
-              <span className="font-mono text-label uppercase text-muted-foreground">
-                {index + 1} of {questions.length}
-              </span>
-            </div>
-            <h3 className="mt-1 text-base font-semibold leading-tight">{pending.result.title}</h3>
-            {pending.result.description && <p className="mt-1 text-sm leading-5 text-muted-foreground">{pending.result.description}</p>}
-          </div>
-          <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} disabled={disabled} aria-label="Cancel clarification">
-            <X data-icon="inline-start" />
-          </Button>
-        </div>
+  const shellClass =
+    variant === "inline"
+      ? "relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/55 bg-card/40 text-foreground sm:rounded-[20px]"
+      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-[22px] border border-border/60 bg-card/95 text-foreground shadow-float backdrop-blur-xl sm:rounded-[24px]";
 
-        {questions.length > 1 && (
-          <div className="mx-4 flex h-1 gap-1 overflow-hidden rounded-full bg-muted" aria-label={`Question ${index + 1} of ${questions.length}`}>
-            {questions.map((item, itemIndex) => (
+  return (
+    <div
+      role="dialog"
+      aria-label={pending.result.title || "Quick question"}
+      aria-describedby="clarification-question"
+      className={cn(
+        shellClass,
+        "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-slow motion-safe:ease-out-expo motion-reduce:animate-none"
+      )}
+    >
+      {/* Subtle top sheen — depth without chrome noise */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-[hsl(var(--sheen)/0.55)] to-transparent"
+      />
+
+      {/* Header */}
+      <header className="relative flex items-start gap-3 px-3.5 pb-0 pt-3.5 sm:gap-3.5 sm:px-5 sm:pt-4">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              {multi ? `Question ${index + 1} of ${questions.length}` : "One quick question"}
+            </span>
+            {pending.result.title ? (
+              <>
+                <span aria-hidden className="text-border">
+                  ·
+                </span>
+                <span className="truncate text-[13px] font-medium tracking-[-0.01em] text-foreground/85">
+                  {pending.result.title}
+                </span>
+              </>
+            ) : null}
+          </div>
+          {pending.result.description ? (
+            <p className="mt-1 max-w-prose text-[13px] leading-relaxed text-muted-foreground">
+              {pending.result.description}
+            </p>
+          ) : null}
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onClose}
+          disabled={disabled}
+          aria-label="Cancel clarification"
+          className="shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-4" />
+        </Button>
+      </header>
+
+      {/* Progress — only when multi-step; hairline segments, not a loud bar */}
+      {multi ? (
+        <div
+          className="relative mx-3.5 mt-3 flex gap-1 sm:mx-5"
+          aria-label={`Question ${index + 1} of ${questions.length}`}
+        >
+          {questions.map((item, itemIndex) => {
+            const filled = itemIndex <= index;
+            const answered = valuePresent(answers[item.id]?.value);
+            return (
               <button
                 key={item.id}
                 type="button"
                 disabled={disabled}
-                onClick={() => setIndex(itemIndex)}
-                aria-label={`Go to question ${itemIndex + 1}`}
-                className={cn("h-full flex-1 rounded-full transition-colors duration-base", itemIndex <= index ? "bg-primary" : "bg-transparent")}
+                onClick={() => goTo(itemIndex)}
+                aria-label={`Go to question ${itemIndex + 1}${answered ? ", answered" : ""}`}
+                aria-current={itemIndex === index ? "step" : undefined}
+                className={cn(
+                  "h-1 flex-1 rounded-full transition-[background-color,transform] duration-base ease-out-soft",
+                  filled ? "bg-foreground/70" : "bg-foreground/10",
+                  itemIndex === index && "ring-1 ring-foreground/15 ring-offset-1 ring-offset-card"
+                )}
               />
-            ))}
-          </div>
-        )}
-
-        <div className="flex flex-col gap-3 p-4 pt-3">
-          <div>
-            <h4 className="text-lg font-semibold leading-snug">{active.question}</h4>
-          </div>
-
-          {active.options.length > 0 && (
-            <div className="flex flex-col gap-2" aria-label="Quick options">
-              {active.options.map((option, optionIndex) => {
-                const selected = optionSelected(currentAnswer, option);
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => selectOption(option)}
-                    className={cn(
-                      "flex min-h-11 w-full items-center gap-3 rounded-[13px] border bg-card/55 px-3 py-2.5 text-left text-sm transition-all duration-base hover:border-primary/40 hover:bg-accent/40 disabled:opacity-60",
-                      selected && "border-primary/55 bg-primary/10 shadow-soft"
-                    )}
-                    aria-pressed={selected}
-                  >
-                    <span
-                      className={cn(
-                        "flex size-6 shrink-0 items-center justify-center rounded-[8px] border bg-background font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast",
-                        selected && "border-primary/45 bg-primary text-primary-foreground"
-                      )}
-                    >
-                      {selected ? <Check className="size-3.5" /> : optionIndex + 1}
-                    </span>
-                    <span className="min-w-0 flex-1 font-medium leading-5">{option}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
-          {active.allowElse && (
-            <label
-              className={cn(
-                "flex flex-col gap-1.5 rounded-[13px] border bg-muted/20 p-3 transition-colors duration-base",
-                currentAnswer?.source === "else" && "border-primary/55 bg-primary/10"
-              )}
-            >
-              <span className="font-mono text-label uppercase text-muted-foreground">{active.elseLabel}</span>
-              {customIsLong ? (
-                <Textarea
-                  value={customValue}
-                  onChange={(event) => setCustom(event.target.value)}
-                  onKeyDown={onCustomKeyDown}
-                  disabled={disabled}
-                  placeholder={active.elsePlaceholder}
-                  maxLength={1000}
-                  rows={3}
-                  className="min-h-20 resize-none bg-background/80 rounded-[10px]"
-                />
-              ) : (
-                <Input
-                  value={customValue}
-                  onChange={(event) => setCustom(event.target.value)}
-                  onKeyDown={onCustomKeyDown}
-                  disabled={disabled}
-                  placeholder={active.elsePlaceholder}
-                  maxLength={1000}
-                  className="bg-background/80 rounded-[10px]"
-                />
-              )}
-            </label>
-          )}
+            );
+          })}
         </div>
+      ) : null}
 
-        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/55 bg-muted/15 p-3">
-          <div className="flex w-full flex-wrap justify-end gap-2 sm:w-auto">
-            <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={disabled}>
-              Use your judgment
-            </Button>
-            {questions.length > 1 && (
-              <Button type="button" variant="outline" size="sm" onClick={() => setIndex((current) => Math.max(0, current - 1))} disabled={disabled || index === 0}>
-                <ChevronLeft data-icon="inline-start" />
-                Previous
-              </Button>
-            )}
-            <Button type="button" size="sm" onClick={() => void continueOrSubmit()} disabled={disabled || !canContinue}>
-              {isFinal ? "Continue" : "Next"}
-              <ChevronRight data-icon="inline-end" />
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+      {/* Body — keyed so each step rises in cleanly */}
+      <div
+        key={`${pending.id}-${active.id}-${stepKey}`}
+        className="relative flex flex-col gap-3.5 px-3.5 py-3.5 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-1 motion-safe:duration-base motion-safe:ease-out-soft motion-reduce:animate-none sm:gap-4 sm:px-5 sm:py-4"
+      >
+        <h3
+          id="clarification-question"
+          className="font-serif text-[1.125rem] font-medium leading-snug tracking-[-0.02em] text-foreground sm:text-[1.25rem] sm:leading-snug"
+        >
+          {active.question}
+        </h3>
 
-  return (
-    <Card
-      variant="elevated"
-      role="dialog"
-      aria-label={pending.result.title}
-      className="relative mb-2 overflow-hidden rounded-[18px] border-border/70 bg-card/95 shadow-float backdrop-blur motion-safe:animate-rise-in"
-    >
-      <span
-        aria-hidden="true"
-        className="absolute -bottom-1 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r bg-card"
-      />
-      <CardHeader className="flex-row items-start gap-3 space-y-0 p-3 pb-2">
-        <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg border bg-primary/10 text-primary shadow-soft">
-          <HelpCircle className="size-4" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="secondary" className="rounded-md font-mono text-label uppercase">
-              Tune answer
-            </Badge>
-            <span className="font-mono text-label uppercase text-muted-foreground">
-              {index + 1} of {questions.length}
-            </span>
-          </div>
-          <h3 className="mt-1 text-base font-semibold leading-tight">{pending.result.title}</h3>
-          {pending.result.description && <p className="mt-1 text-sm leading-5 text-muted-foreground">{pending.result.description}</p>}
-        </div>
-        <Button type="button" variant="ghost" size="icon-sm" onClick={onClose} disabled={disabled} aria-label="Cancel clarification">
-          <X data-icon="inline-start" />
-        </Button>
-      </CardHeader>
-
-      <CardContent className="flex flex-col gap-3 p-3 pt-2">
-        <div>
-          <p className="font-mono text-label uppercase text-muted-foreground">{active.id.replace(/_/g, " ")}</p>
-          <h4 className="mt-1 text-lg font-semibold leading-tight">{active.question}</h4>
-        </div>
-
-        {active.options.length > 0 && (
-          <div className="flex flex-col gap-2" aria-label="Quick options">
+        {active.options.length > 0 ? (
+          <ul className="flex flex-col gap-1.5 sm:gap-2" aria-label="Options" role="listbox" aria-multiselectable={active.type === "multi-choice"}>
             {active.options.map((option, optionIndex) => {
               const selected = optionSelected(currentAnswer, option);
               return (
-                <button
+                <li
                   key={option}
-                  type="button"
-                  disabled={disabled}
-                  onClick={() => selectOption(option)}
-                  className={cn(
-                    "flex min-h-11 w-full items-center gap-3 rounded-full border bg-background/70 pl-2.5 pr-5 py-2.5 text-left text-sm transition-all duration-base hover:-translate-y-0.5 hover:border-primary/45 hover:bg-accent/35 disabled:opacity-60",
-                    selected && "border-primary/60 bg-primary/10 shadow-soft"
-                  )}
-                  aria-pressed={selected}
+                  className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 motion-safe:fill-mode-both motion-reduce:animate-none"
+                  style={{ animationDelay: `${Math.min(optionIndex, 8) * 35}ms` }}
                 >
-                  <span
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    disabled={disabled}
+                    onClick={() => selectOption(option)}
                     className={cn(
-                      "flex size-6 shrink-0 items-center justify-center rounded-full border bg-card font-mono text-caption font-semibold text-muted-foreground transition-colors duration-fast",
-                      selected && "border-primary/45 bg-primary/20 text-primary"
+                      "group/opt flex min-h-11 w-full items-start gap-3 rounded-[14px] border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow,transform,color] duration-base ease-out-soft",
+                      "sm:min-h-12 sm:items-center sm:rounded-[15px] sm:px-3.5 sm:py-3",
+                      "active:scale-[0.99] motion-reduce:active:scale-100",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      "disabled:pointer-events-none disabled:opacity-55",
+                      selected
+                        ? "border-foreground/20 bg-foreground/[0.04] shadow-soft dark:border-foreground/18 dark:bg-foreground/[0.06]"
+                        : "border-border/60 bg-background/40 hover:border-border hover:bg-accent/40"
                     )}
                   >
-                    {optionIndex + 1}
-                  </span>
-                  <span className="min-w-0 flex-1 font-medium leading-5">{option}</span>
-                </button>
+                    <span
+                      className={cn(
+                        "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-medium tabular-nums transition-[background-color,border-color,color,transform] duration-base ease-out-soft sm:mt-0 sm:size-7",
+                        selected
+                          ? "border-foreground bg-foreground text-background scale-100"
+                          : "border-border/70 bg-card text-muted-foreground group-hover/opt:border-foreground/25"
+                      )}
+                      aria-hidden
+                    >
+                      {selected ? (
+                        <Check className="size-3.5 motion-safe:animate-in motion-safe:zoom-in-75 motion-safe:duration-fast" strokeWidth={2.5} />
+                      ) : (
+                        optionIndex + 1
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        "min-w-0 flex-1 text-[0.9375rem] leading-snug tracking-[-0.01em] transition-colors duration-fast",
+                        selected ? "font-medium text-foreground" : "text-foreground/90"
+                      )}
+                    >
+                      {option}
+                    </span>
+                  </button>
+                </li>
               );
             })}
-          </div>
-        )}
+          </ul>
+        ) : null}
 
-        {active.allowElse && (
+        {active.allowElse ? (
           <label
             className={cn(
-              "flex flex-col gap-1.5 rounded-[16px] border bg-muted/25 p-3 transition-colors duration-base",
-              currentAnswer?.source === "else" && "border-primary/55 bg-primary/10"
+              "flex flex-col gap-2 rounded-[14px] border px-3 py-2.5 transition-[border-color,background-color] duration-base ease-out-soft sm:rounded-[15px] sm:px-3.5 sm:py-3",
+              currentAnswer?.source === "else"
+                ? "border-foreground/20 bg-foreground/[0.03]"
+                : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"
             )}
           >
-            <span className="font-mono text-label uppercase text-muted-foreground">{active.elseLabel}</span>
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              {active.elseLabel || "Or write your own"}
+            </span>
             {customIsLong ? (
               <Textarea
                 value={customValue}
                 onChange={(event) => setCustom(event.target.value)}
                 onKeyDown={onCustomKeyDown}
                 disabled={disabled}
-                placeholder={active.elsePlaceholder}
+                placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
                 rows={3}
-                className="min-h-20 resize-none bg-background/80 rounded-[10px]"
+                className="min-h-[4.5rem] resize-none border-0 bg-transparent p-0 text-[0.9375rem] shadow-none focus-visible:ring-0"
               />
             ) : (
               <Input
@@ -386,44 +373,63 @@ export function ComposerClarificationPopover({
                 onChange={(event) => setCustom(event.target.value)}
                 onKeyDown={onCustomKeyDown}
                 disabled={disabled}
-                placeholder={active.elsePlaceholder}
+                placeholder={active.elsePlaceholder || "Type your answer…"}
                 maxLength={1000}
-                className="bg-background/80 rounded-[10px]"
+                className="h-auto border-0 bg-transparent p-0 text-[0.9375rem] shadow-none focus-visible:ring-0"
               />
             )}
           </label>
-        )}
-      </CardContent>
+        ) : null}
+      </div>
 
-      <CardFooter className="flex flex-col gap-2 border-t border-border/70 p-3 sm:flex-row sm:items-center sm:justify-between">
-        {questions.length > 1 && (
-          <div className="flex items-center gap-1.5" aria-label="Clarification progress">
-            {questions.map((item, itemIndex) => (
-              <button
-                key={item.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => setIndex(itemIndex)}
-                aria-label={`Go to question ${itemIndex + 1}`}
-                className={cn("size-2 rounded-full bg-muted transition-all duration-base", itemIndex === index && "w-5 bg-primary")}
-              />
-            ))}
-          </div>
-        )}
-        <div className={cn("flex w-full flex-wrap justify-end gap-2 sm:w-auto", questions.length <= 1 && "ml-auto")}>
-          <Button type="button" variant="ghost" size="sm" onClick={skip} disabled={disabled}>
-            Skip
-          </Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => setIndex((current) => Math.max(0, current - 1))} disabled={disabled || index === 0}>
-            <ChevronLeft data-icon="inline-start" />
-            Previous
-          </Button>
-          <Button type="button" size="sm" onClick={() => void continueOrSubmit()} disabled={disabled || !canContinue}>
+      {/* Footer actions */}
+      <footer className="relative flex flex-col gap-2 border-t border-border/50 px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+        <button
+          type="button"
+          onClick={() => void skip()}
+          disabled={disabled}
+          className="order-2 self-start rounded-lg px-1 py-1.5 text-left text-[13px] text-muted-foreground transition-colors duration-fast hover:text-foreground disabled:opacity-50 sm:order-1"
+        >
+          Use your judgment
+        </button>
+
+        <div className="order-1 flex w-full items-center justify-end gap-2 sm:order-2 sm:w-auto">
+          {multi ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => goTo(Math.max(0, index - 1))}
+              disabled={disabled || index === 0}
+              className="rounded-full px-3"
+            >
+              <ChevronLeft className="size-4" />
+              <span className="sr-only sm:not-sr-only">Back</span>
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void continueOrSubmit()}
+            disabled={disabled || !canContinue}
+            className={cn(
+              "min-w-[7.5rem] rounded-full px-4 shadow-none transition-[transform,opacity,background-color] duration-base ease-out-soft",
+              "active:scale-[0.98] motion-reduce:active:scale-100"
+            )}
+          >
             {isFinal ? "Continue" : "Next"}
-            <ChevronRight data-icon="inline-end" />
+            <ChevronRight className="size-4" />
           </Button>
         </div>
-      </CardFooter>
-    </Card>
+      </footer>
+
+      {/* Card caret only when floating above the composer */}
+      {variant === "card" ? (
+        <span
+          aria-hidden
+          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-card"
+        />
+      ) : null}
+    </div>
   );
 }
