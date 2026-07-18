@@ -2,7 +2,6 @@ import {
   CalendarClock,
   Code2,
   Folder,
-  FolderKanban,
   FolderOpen,
   GitPullRequest,
   Home,
@@ -42,17 +41,18 @@ export type SidebarMotionIconKind =
  * One optically consistent icon set for the entire app shell. Lucide supplies
  * the resting geometry; CSS in globals.css articulates the meaningful part of
  * each mark on hover (except overflow ⋯, which stays static).
+ *
+ * Kinds with a closed → open morph (`folder`, `projects`) stack a second glyph
+ * and crossfade under CSS — see `.sidebar-motion-icon__glyph--alternate`.
  */
 const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   new: Plus,
   home: Home,
   code: Code2,
-  // Bookshelf spines — clearer “library of files” than an open book.
   library: Library,
   artifacts: Layers3,
   connections: Plug,
-  // Folder + kanban bars — reads as a project container, not a package.
-  projects: FolderKanban,
+  projects: Folder,
   tasks: CalendarClock,
   pulls: GitPullRequest,
   search: Search,
@@ -64,6 +64,8 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   more: MoreVertical,
 };
 
+const OPENS_ON_HOVER: ReadonlySet<SidebarMotionIconKind> = new Set(["folder", "projects"]);
+
 export function SidebarMotionIcon({
   kind,
   className,
@@ -72,6 +74,7 @@ export function SidebarMotionIcon({
   className?: string;
 }) {
   const Icon = ICONS[kind];
+  const opens = OPENS_ON_HOVER.has(kind);
 
   return (
     <span
@@ -84,7 +87,7 @@ export function SidebarMotionIcon({
         className="sidebar-motion-icon__glyph h-full w-full"
       />
 
-      {kind === "folder" ? (
+      {opens ? (
         <FolderOpen
           focusable="false"
           strokeWidth={1.75}

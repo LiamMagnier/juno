@@ -370,8 +370,9 @@
   }
 
   @media (hover: hover) {
-    /* Quiet lift — not for overflow menus. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon:not(.sidebar-motion-icon--more) {
+    /* Quiet lift — not for overflow menus, and not for folder morphs (they
+       own their own base-hinged transform language). */
+    .group:is(:hover, :focus-visible) .sidebar-motion-icon:not(.sidebar-motion-icon--more):not(.sidebar-motion-icon--projects):not(.sidebar-motion-icon--folder) {
       transform: translateY(-0.5px);
       transition: color var(--dur-fast) var(--ease-out-soft), transform var(--dur-base) var(--ease-out-soft);
     }
@@ -395,37 +396,37 @@
     }
 
     /*
-     * Library — Lucide `Library` (bookshelf spines):
-     *   1 slanted volume (right)
+     * Library — Lucide `Library` (bookshelf spines, left → right):
+     *   1 slanted volume (rightmost)
      *   2 center upright
      *   3 mid upright
      *   4 tall left upright
-     * Hover: shelf fans open and the leaning volume is pulled slightly — as if
-     * you chose a book. Tiny staggered delays read as weight, not bounce.
+     *
+     * Hover narrative: the row compresses left to free a gap, then the leaning
+     * volume is drawn up and tipped off the shelf — one continuous “pick a book”
+     * gesture with spring easing and staggered weight.
      */
     .sidebar-motion-icon--library .sidebar-motion-icon__glyph > * {
-      transition:
-        transform 320ms var(--ease-out-soft),
-        opacity var(--dur-base) var(--ease-out-soft);
+      transition: transform 400ms var(--ease-spring);
     }
     .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(1) {
-      transform-origin: 18px 20px; /* base of the leaning spine */
+      transform-origin: 17px 20px; /* foot of the leaning spine */
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(4) {
-      transform: translateX(-0.55px);
+      transform: translateX(-0.85px);
       transition-delay: 0ms;
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(3) {
-      transform: translateX(-0.25px);
-      transition-delay: 25ms;
+      transform: translateX(-0.45px);
+      transition-delay: 30ms;
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(2) {
-      transform: translateY(-0.65px);
-      transition-delay: 45ms;
+      transform: translate(-0.15px, -0.4px);
+      transition-delay: 55ms;
     }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--library .sidebar-motion-icon__glyph > :nth-child(1) {
-      transform: translate(0.7px, -1.1px) rotate(5deg);
-      transition-delay: 55ms;
+      transform: translate(1.15px, -1.65px) rotate(7deg) scale(1.04);
+      transition-delay: 70ms;
     }
 
     /* Artifacts: stack fans one pixel per layer. */
@@ -444,43 +445,39 @@
     }
 
     /*
-     * Projects — Lucide `FolderKanban`:
-     *   1 folder shell
-     *   2 short bar  (x=8)
-     *   3 mid bar    (x=12)
-     *   4 tall bar   (x=16)
-     * Hover: bars grow from their feet (active board) while the folder settles
-     * a hair — work inside the project, not a lid stunt.
+     * Projects (and workspace folders) — closed Folder → FolderOpen.
+     * Hinge at the base so the open state unfolds upward; closed recedes with
+     * a tighter scale while open settles in on a spring. Deliberately no
+     * kanban bars — just the container, opening.
      */
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > * {
+    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph,
+    .sidebar-motion-icon--folder .sidebar-motion-icon__glyph {
+      transform-origin: 50% 92%;
       transition:
-        transform 340ms var(--ease-out-soft),
-        opacity var(--dur-base) var(--ease-out-soft);
+        opacity 200ms var(--ease-out-soft),
+        transform 440ms var(--ease-spring);
     }
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(2) {
-      transform-origin: 8px 14px;
+    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
+    .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
+      opacity: 0;
+      transform: scale(0.9) translateY(1.25px) rotate(-2.5deg);
+      pointer-events: none;
     }
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(3) {
-      transform-origin: 12px 12px;
+    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate),
+    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate) {
+      opacity: 0;
+      transform: scale(0.93) translateY(0.6px);
+      transition:
+        opacity 160ms var(--ease-out-soft),
+        transform 360ms var(--ease-spring);
     }
-    .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(4) {
-      transform-origin: 16px 16px;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(1) {
-      transform: translateY(0.35px);
-      transition-delay: 0ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(2) {
-      transform: scaleY(1.42);
-      transition-delay: 30ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(3) {
-      transform: scaleY(1.95);
-      transition-delay: 55ms;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph > :nth-child(4) {
-      transform: scaleY(1.12);
-      transition-delay: 80ms;
+    .group:is(:hover, :focus-visible) .sidebar-motion-icon--projects .sidebar-motion-icon__glyph--alternate,
+    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
+      opacity: 1;
+      transform: scale(1) translateY(0) rotate(0deg);
+      transition:
+        opacity 220ms var(--ease-out-soft) 45ms,
+        transform 500ms var(--ease-spring) 25ms;
     }
 
     /* Tasks: clock hand advances; face stays still. */
@@ -510,14 +507,6 @@
     .sidebar-motion-icon--close .sidebar-motion-icon__glyph > * { transform-origin: 12px 12px; }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--close .sidebar-motion-icon__glyph > :first-child { transform: rotate(8deg) scale(.92); }
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--close .sidebar-motion-icon__glyph > :nth-child(2) { transform: rotate(-8deg) scale(.92); }
-
-    /* Folder: closed → open crossfade, no bounce. */
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph:not(.sidebar-motion-icon__glyph--alternate) {
-      opacity: 0;
-    }
-    .group:is(:hover, :focus-visible) .sidebar-motion-icon--folder .sidebar-motion-icon__glyph--alternate {
-      opacity: 1;
-    }
 
     /* Conversation (MessageCircle): single path — a calm, 1px lift. No typing dots. */
     .group:is(:hover, :focus-visible) .sidebar-motion-icon--conversation .sidebar-motion-icon__glyph {
@@ -1135,20 +1124,6 @@
     transform: translateX(-50%);
   }
 
-  .generation-placeholder__wait-note {
-    position: absolute;
-    right: .75rem;
-    bottom: .25rem;
-    left: .75rem;
-    margin: 0;
-    color: hsl(var(--muted-foreground) / .72);
-    font-family: var(--font-mono), ui-monospace, monospace;
-    font-size: .58rem;
-    line-height: 1.25;
-    text-align: center;
-    animation: generation-stage-in 280ms var(--ease-out-soft) both;
-  }
-
   .generation-placeholder__footer {
     position: relative;
     z-index: 3;
@@ -1297,8 +1272,7 @@
     .generation-video-playhead,
     .generation-progress__indeterminate,
     .generation-placeholder__stage-previous,
-    .generation-placeholder__stage-current--entering,
-    .generation-placeholder__wait-note {
+    .generation-placeholder__stage-current--entering {
       animation: none;
     }
     .generation-image-scan,
