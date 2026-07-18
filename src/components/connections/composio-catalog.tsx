@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Plug, Search, Unplug } from "lucide-react";
+import { Check, Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -253,13 +253,28 @@ export function ComposioCatalog({ configured }: { configured: boolean }) {
                       disabled={busy}
                       aria-label={`Disconnect ${label}`}
                       aria-haspopup="dialog"
-                      className="pressable danger-hover inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] text-muted-foreground disabled:opacity-50 coarse:size-11"
+                      className="group/disconnect pressable danger-hover inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] text-muted-foreground disabled:opacity-50 coarse:size-11"
                     >
-                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
+                      {busy ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <Link2Off className="size-4 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+                      )}
                     </button>
                   ) : (
-                    <Button size="sm" variant="outline" disabled={busy} onClick={() => connect(item)} className="h-8 shrink-0 rounded-[10px] px-2.5 text-xs">
-                      {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => connect(item)}
+                      className="group/connect h-8 shrink-0 gap-1.5 rounded-[10px] px-2.5 text-xs"
+                    >
+                      {busy ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Link2 className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/connect:-rotate-6 group-hover/connect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+                      )}
+                      Connect
                     </Button>
                   )}
                 </article>
@@ -295,8 +310,17 @@ export function ComposioCatalog({ configured }: { configured: boolean }) {
             <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={!!action}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={() => void disconnect()} disabled={!!action}>
-              {action ? <Loader2 className="size-4 animate-spin" /> : <Unplug className="size-4" />}
+            <Button
+              variant="destructive"
+              onClick={() => void disconnect()}
+              disabled={!!action}
+              className="group/disconnect gap-1.5"
+            >
+              {action ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Link2Off className="size-4 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+              )}
               {action ? "Disconnecting…" : "Disconnect"}
             </Button>
           </DialogFooter>

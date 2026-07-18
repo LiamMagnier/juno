@@ -1770,10 +1770,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Time of day"
   },
   {
-    "id": "319df65da9a3f2ff",
-    "source": "Fast mode on — faster output, premium rate"
-  },
-  {
     "id": "31a46d0b3b80b114",
     "source": "Best speed-to-intelligence balance — near-Opus quality for everyday work."
   },
@@ -2992,6 +2988,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "56ce55050e7ddc1c",
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
+  },
+  {
+    "id": "5730a714375bbce5",
+    "source": "Turn on Flash for faster output"
   },
   {
     "id": "577ab4cc4c99b95d",
@@ -6650,6 +6650,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Confirm new password"
   },
   {
+    "id": "bf2e8b29e9f34609",
+    "source": "X-high"
+  },
+  {
     "id": "bf43ea62bebd8c45",
     "source": "Les abonnements sont payables mensuellement, d'avance, par carte bancaire via notre prestataire de paiement"
   },
@@ -7088,10 +7092,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cbd7c7ed9db74e88",
     "source": "Low-latency GLM FlashX variant for high-throughput chat."
-  },
-  {
-    "id": "cbfe3ae4838bfb5f",
-    "source": "Fast mode — faster output at a premium rate"
   },
   {
     "id": "cc7a45e8556287a6",
@@ -8692,6 +8692,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f7c8a66f66908f89",
     "source": "— this model cannot view images"
+  },
+  {
+    "id": "f7ec6b67d97eee89",
+    "source": "Flash is on — faster output at a premium rate"
   },
   {
     "id": "f81ab834de5f8491",

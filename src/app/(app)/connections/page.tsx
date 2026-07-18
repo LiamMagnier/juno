@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft } from "lucide-react";
+import { AlertCircle, ArrowLeft, Link2Off, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { type ConnectorStatus } from "@/components/connections/types";
@@ -248,7 +248,17 @@ export default function ConnectionsPage() {
             <Button variant="ghost" onClick={() => setDisconnectTarget(null)} disabled={busy}>
               Cancel
             </Button>
-            <Button variant="destructive" onClick={disconnect} disabled={busy}>
+            <Button
+              variant="destructive"
+              onClick={disconnect}
+              disabled={busy}
+              className="group/disconnect gap-1.5"
+            >
+              {busy ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Link2Off className="size-4 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+              )}
               {busy ? "Disconnecting…" : "Disconnect"}
             </Button>
           </DialogFooter>

@@ -26,6 +26,7 @@ import {
   Mic,
   Paperclip,
   Plug,
+  Plus,
   Search,
   Square,
   SquareDashedMousePointer,
@@ -33,7 +34,6 @@ import {
   Telescope,
   TextQuote,
   X,
-  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -1332,7 +1332,7 @@ export function Composer({
             clarificationOpen ? "p-4 gap-4" : "",
             privateMode
               ? "border-dashed border-foreground/25"
-              : "border-border/65 focus-within:border-primary/25",
+              : "border-border/65 focus-within:border-foreground/15",
             dragging && "border-primary/55 ring-2 ring-primary/20"
           )}
         >
@@ -1614,12 +1614,13 @@ export function Composer({
                   size="icon-sm"
                   aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
                   disabled={controlsLocked}
-                  className={cn("composer-add-button rounded-[11px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
+                  className={cn("composer-add-button group rounded-[11px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
                 >
-                  <svg className="composer-add-icon h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-                    <path className="composer-add-icon__plus" d="M10 5.5v9M5.5 10h9" />
-                    <path className="composer-add-icon__spark" d="M10 1.8v1.1M10 17.1v1.1M1.8 10h1.1M17.1 10h1.1" opacity="0" />
-                  </svg>
+                  <Plus
+                    aria-hidden="true"
+                    strokeWidth={1.75}
+                    className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                  />
                   {researchArmed && (
                     <span
                       aria-hidden
@@ -1900,6 +1901,11 @@ export function Composer({
 
             {effortOptions.length > 0 && (() => {
               const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
+              // Keep the mobile label short enough to fit in a fixed footprint.
+              // The full wording remains in the accessible label and returns on
+              // wider screens. Crucially, neither footprint changes by tier, so
+              // Medium -> Extra high -> Max cannot reflow the toolbar.
+              const compactEffortLabel = currentEffort.label === "Extra high" ? "X-high" : currentEffort.label;
               const atTopTier =
                 effortOptions.length > 1 && currentEffort.value === effortOptions[effortOptions.length - 1].value;
               return (
@@ -1916,13 +1922,18 @@ export function Composer({
                             variant="ghost"
                             size="sm"
                             disabled={controlsLocked}
-                            aria-label={`Thinking effort: ${currentEffort.label}`}
+                            aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}`}
                             className={cn(
-                              "group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground",
+                              "group h-8 w-[5.5rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:w-[6.5rem] min-[480px]:text-[13px]",
                               atTopTier ? "text-ultra" : "text-foreground/80"
                             )}
                           >
-                            {currentEffort.label}
+                            <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
+                              {compactEffortLabel}
+                            </span>
+                            <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
+                              {currentEffort.label}
+                            </span>
                             <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
                           </Button>
                         </TooltipTrigger>
@@ -1932,6 +1943,9 @@ export function Composer({
                           options={effortOptions}
                           value={reasoningEffort}
                           onChange={onReasoningChange}
+                          disabled={controlsLocked}
+                          fastMode={fastMode}
+                          onFastModeChange={canFastMode && onToggleFastMode ? onToggleFastMode : undefined}
                         />
                       </PopoverContent>
                     </Popover>
@@ -1940,36 +1954,6 @@ export function Composer({
                 </>
               );
             })()}
-
-            {/* Fast mode — a flash toggle that sits with the thinking control.
-                Independent of thinking depth (High + Fast is valid) and only
-                shown on models that support it. Coral-on when active signals the
-                premium rate, which the per-message cost line then reflects. */}
-            {canFastMode && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={controlsLocked}
-                    aria-label={fastMode ? "Fast mode on (premium rate)" : "Fast mode off"}
-                    aria-pressed={fastMode}
-                    onClick={() => onToggleFastMode?.(!fastMode)}
-                    className={cn(
-                      "group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0",
-                      fastMode ? "bg-primary/10 text-primary hover:text-primary" : "text-foreground/80 hover:text-foreground"
-                    )}
-                  >
-                    <Zap className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-base ease-spring", fastMode ? "fill-current" : "group-hover:scale-110")} />
-                    <span className="hidden min-[420px]:inline">Fast</span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {fastMode ? "Fast mode on — faster output, premium rate" : "Fast mode — faster output at a premium rate"}
-                </TooltipContent>
-              </Tooltip>
-            )}
 
           </div>
 

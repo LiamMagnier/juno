@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Loader2, Plug, Search, Sparkles, Unplug } from "lucide-react";
+import { ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -284,9 +284,13 @@ function ConnectorTile({
             onClick={onDisconnect}
             disabled={busy}
             aria-haspopup="dialog"
-            className="gap-1.5 px-2.5 text-muted-foreground danger-hover"
+            className="group/disconnect gap-1.5 px-2.5 text-muted-foreground danger-hover"
           >
-            {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Unplug className="size-3.5" />}
+            {busy ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Link2Off className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/disconnect:rotate-6 group-hover/disconnect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+            )}
             Disconnect
           </Button>
         </div>
@@ -315,9 +319,14 @@ function ConnectorTile({
           variant="outline"
           disabled={busy || unavailable}
           onClick={onConnect}
-          className="w-full"
+          className="group/connect w-full gap-1.5"
         >
-          {busy ? <Loader2 className="size-3.5 animate-spin" /> : "Connect"}
+          {busy ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <Link2 className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/connect:-rotate-6 group-hover/connect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+          )}
+          Connect
         </Button>
       )}
     </article>

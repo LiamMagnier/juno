@@ -199,6 +199,13 @@
     text-rendering: optimizeLegibility;
   }
 
+  /* One optical weight for interface glyphs. Product/connector marks use their
+     own SVGs and are intentionally outside this Lucide-only rule. */
+  svg.lucide {
+    stroke-width: 1.75;
+    shape-rendering: geometricPrecision;
+  }
+
   /* App-wide film grain (2–3%), quiet and non-interactive. */
   body::after {
     content: "";
@@ -241,6 +248,13 @@
 }
 
 @layer components {
+  /* Buttons supply a sensible icon default without overriding deliberate
+     `size-*`, `h-*`, or `w-*` choices at compact touchpoints. */
+  .ui-button svg:not([class*="size-"]):not([class*="h-"]):not([class*="w-"]) {
+    width: 1rem;
+    height: 1rem;
+  }
+
   /* Tactile press feedback for buttons/chips/cards — not large surfaces. Covers the
      common transition properties itself, so drop `transition-colors` when adding it
      (a later transition-* utility would override this shorthand and un-animate the press). */
@@ -323,6 +337,11 @@
     width: 1.125rem;
     height: 1.125rem;
     overflow: visible;
+    transform-origin: center;
+    transition: transform var(--dur-base) var(--ease-spring), color var(--dur-fast) var(--ease-out-soft);
+  }
+  .group:hover .sidebar-motion-icon {
+    transform: translateY(-1px) scale(1.045);
   }
   .sidebar-motion-icon * {
     transform-box: view-box;
@@ -552,8 +571,8 @@
   }
 
   /* Composer: close, precise elevation instead of a broad floating-card smudge.
-     Focus adds a low-opacity ambient ring and one-pixel lift; the surface stays
-     calm when idle. */
+     Focus stays neutral and still, so entering the field never flashes an accent
+     halo or nudges the layout. */
   .composer-surface {
     background-image: linear-gradient(180deg, hsl(var(--sheen) / .62), transparent 28%);
     box-shadow:
@@ -562,12 +581,28 @@
       0 9px 24px -20px hsl(var(--foreground) / .32);
   }
   .composer-surface:focus-within {
-    transform: translateY(-1px);
+    transform: none;
     box-shadow:
       inset 0 1px 0 hsl(var(--sheen)),
       0 1px 2px hsl(var(--foreground) / .05),
-      0 12px 28px -22px hsl(var(--foreground) / .38),
-      0 0 0 3px hsl(var(--primary) / .055);
+      0 10px 24px -21px hsl(var(--foreground) / .34);
+  }
+
+  .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
+    animation: reasoning-fast-charge 480ms var(--ease-spring) both;
+  }
+  /* The animated carriers intentionally span a full lane before translating.
+     Clip their invisible overflow while retaining enough margin for the thumb's
+     shadow and landing spring, so effort changes can never widen the viewport. */
+  .reasoning-slider-track {
+    overflow: clip;
+    overflow-clip-margin: 0.5rem;
+  }
+  @keyframes reasoning-fast-charge {
+    0% { transform: rotate(0) scale(1); }
+    38% { transform: rotate(-12deg) scale(.82); }
+    72% { transform: rotate(5deg) scale(1.18); }
+    100% { transform: rotate(0) scale(1); }
   }
 
   .composer-add-icon__plus {
@@ -691,6 +726,7 @@
   }
   @media (prefers-reduced-motion: reduce) {
     .composer-surface:focus-within { transform: none; }
+    .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon,
     .composer-add-button:hover .composer-add-icon__plus,
     .composer-add-button:hover .composer-add-icon__spark,
     .composer-mic-button:hover .composer-mic-icon,
@@ -698,6 +734,7 @@
     .composer-primary-action:hover .composer-voice-wave > span,
     .composer-primary-action:hover .composer-send-icon,
     .composer-primary-action:hover .composer-stop-icon { animation: none; }
+    .group:hover .sidebar-motion-icon { transform: none; }
   }
 
   /* Empty-state intents use the same semantic motion language as the sidebar:

@@ -1,8 +1,10 @@
 "use client";
 
 import * as React from "react";
+import { Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ReasoningOption } from "@/lib/model-metrics";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 /**
  * Thinking-effort slider — one discrete stop per tier the model actually
@@ -171,12 +173,16 @@ export function ReasoningSlider({
   onChange,
   disabled,
   className,
+  fastMode = false,
+  onFastModeChange,
 }: {
   options: ReasoningOption[];
   value: ReasoningOption["value"];
   onChange: (v: ReasoningOption["value"]) => void;
   disabled?: boolean;
   className?: string;
+  fastMode?: boolean;
+  onFastModeChange?: (value: boolean) => void;
 }) {
   const count = options.length;
   // findIndex is exact: Instant's value is null, and null === null, so an
@@ -240,8 +246,8 @@ export function ReasoningSlider({
 
   return (
     <div className={cn("select-none", className)}>
-      <div className="mb-2 flex items-baseline justify-between gap-3">
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Thinking</span>
+      <div className="mb-2 flex min-h-7 items-center gap-2">
+        <span className="mr-auto font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Thinking</span>
         <span
           className="font-mono text-[11px] font-medium tracking-tight transition-colors duration-base ease-out-soft"
           style={isTop ? { color: ULTRA } : undefined}
@@ -249,11 +255,43 @@ export function ReasoningSlider({
         >
           {current.label}
         </span>
+        {onFastModeChange && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                disabled={disabled}
+                aria-pressed={fastMode}
+                aria-label={fastMode ? "Flash mode on; turn off" : "Flash mode off; turn on"}
+                onClick={() => onFastModeChange(!fastMode)}
+                className={cn(
+                  "reasoning-fast-toggle group relative inline-flex size-7 shrink-0 items-center justify-center rounded-full border transition-[color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-90 disabled:pointer-events-none disabled:opacity-45 motion-reduce:transition-none",
+                  fastMode
+                    ? "border-foreground bg-foreground text-background shadow-pop"
+                    : "border-border/70 bg-background/70 text-muted-foreground shadow-soft hover:border-foreground/20 hover:bg-accent hover:text-foreground"
+                )}
+              >
+                <Zap
+                  aria-hidden="true"
+                  strokeWidth={1.75}
+                  className={cn(
+                    "reasoning-fast-icon size-3.5 transition-transform duration-base ease-spring group-hover:-rotate-6 group-hover:scale-110 motion-reduce:transform-none motion-reduce:transition-none",
+                    fastMode && "fill-current"
+                  )}
+                />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {fastMode ? "Flash is on — faster output at a premium rate" : "Turn on Flash for faster output"}
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
 
       <div
         className={cn(
-          "relative h-9 w-full rounded-full bg-muted/70 transition-opacity duration-base ease-out-soft",
+          "reasoning-slider-track relative h-9 w-full rounded-full bg-muted/70 transition-[opacity,box-shadow] duration-base ease-out-soft focus-within:ring-2 focus-within:ring-foreground/15 focus-within:ring-offset-2 focus-within:ring-offset-background",
           disabled && "pointer-events-none opacity-50"
         )}
       >

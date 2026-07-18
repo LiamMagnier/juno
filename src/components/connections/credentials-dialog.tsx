@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, ExternalLink, KeyRound, Music2 } from "lucide-react";
+import { AlertCircle, ExternalLink, KeyRound, Link2, Loader2, Music2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -217,7 +217,16 @@ export function CredentialsDialog({
               <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={busy || !appleId.trim() || !appPassword.trim()}>
+              <Button
+                type="submit"
+                disabled={busy || !appleId.trim() || !appPassword.trim()}
+                className="group/connect gap-1.5"
+              >
+                {busy ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Link2 className="size-4 transition-transform duration-fast ease-out-soft group-hover/connect:-rotate-6 group-hover/connect:scale-105 motion-reduce:transform-none motion-reduce:transition-none" />
+                )}
                 {busy ? "Verifying…" : "Connect"}
               </Button>
             </DialogFooter>

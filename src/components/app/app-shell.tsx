@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { Menu, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { AnimatedTitle } from "@/components/app/animated-title";
@@ -210,27 +211,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className="flex min-w-0 flex-1 flex-col"
         style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >
-        <div className="flex shrink-0 items-center gap-2 border-b bg-background/90 px-2 py-2 backdrop-blur md:hidden">
-          <Button variant="ghost" size="icon" className="group" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
-            <SidebarMotionIcon kind="panel-open" className="h-5 w-5" />
+        {/* Mobile navigation stays out of a full-width toolbar. Each action is a
+            self-contained circular surface, so the page background can continue
+            through the top of the screen without sacrificing hit-area contrast. */}
+        <div className="relative z-40 flex shrink-0 items-center gap-2 px-3 pb-2 pt-[calc(0.75rem+env(safe-area-inset-top))] md:hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="group h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu className="h-5 w-5" />
           </Button>
           <AnimatedTitle
             title={activeTitle || "Juno"}
             animate={activeConversation?.titleSource === "ai"}
-            className="min-w-0 flex-1"
-            textClassName="font-serif text-xl font-semibold tracking-tight text-foreground"
+            className="min-w-0 flex-1 px-1"
+            textClassName="font-serif text-lg font-semibold tracking-tight text-foreground"
           />
           <Button
             variant="ghost"
             size="icon"
-            className="group ml-auto"
+            className="group ml-auto h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             aria-label="Search chats and projects"
           >
             <SidebarMotionIcon kind="search" className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" className="group" onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }} aria-label="New chat">
-            <SidebarMotionIcon kind="new" className="h-5 w-5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="group h-10 w-10 shrink-0 rounded-full border border-border/65 bg-card/80 shadow-soft backdrop-blur-xl hover:bg-card coarse:h-11 coarse:w-11"
+            onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }}
+            aria-label="New chat"
+          >
+            <Plus className="h-5 w-5" />
           </Button>
         </div>
         <div className="min-h-0 flex-1">
