@@ -48,6 +48,17 @@ const tempId = () => `temp-${Date.now()}-${tempCounter++}`;
 // that value, plus a persistence margin for the final DB write.
 const RECOVERY_WINDOW_MS = 3_600_000 + 60_000;
 
+// Reopening a conversation whose latest turn is a still-unanswered user message
+// means a generation dropped its browser stream but is (very likely) still
+// running server-side — and, unlike the live drop path, nothing is polling for
+// it once you navigate away. Auto-resume the recovery poll on reopen, but only
+// for a turn this fresh; an older dangling user turn is treated as settled.
+const RESUME_MAX_AGE_MS = 5 * 60_000;
+// How long the resumed poll waits for the persisted answer before giving up.
+// Generous enough for long generations, bounded so a genuinely failed turn
+// (which saves no assistant row) can't poll indefinitely.
+const RESUME_POLL_WINDOW_MS = 15 * 60_000;
+
 interface UseChatOptions {
   conversationId: string | null;
   initialMessages: ClientMessage[];
@@ -134,7 +145,7 @@ export function useChat(opts: UseChatOptions) {
    * generation window has passed.
    */
   const recoverDroppedStream = React.useCallback(
-    async (assistantTempId: string, userMessageId: string | null, seq: number) => {
+    async (assistantTempId: string, userMessageId: string | null, seq: number, deadlineMs?: number) => {
       const convoId = convoIdRef.current;
       if (!convoId) return;
       // The recovered answer is whichever ASSISTANT message we have never seen.
@@ -162,7 +173,7 @@ export function useChat(opts: UseChatOptions) {
           )
         );
 
-      const deadline = Date.now() + RECOVERY_WINDOW_MS;
+      const deadline = deadlineMs ?? Date.now() + RECOVERY_WINDOW_MS;
       let attempt = 0;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, attempt < 8 ? 5000 : 15000));
@@ -215,6 +226,36 @@ export function useChat(opts: UseChatOptions) {
     },
     [mergeArtifacts, opts]
   );
+
+  // Resume recovery when reopening a conversation whose latest turn is a recent,
+  // still-unanswered user message. The live drop path stops polling the moment
+  // you navigate away (the conversation-switch reset bumps the seq), so without
+  // this the persisted answer only surfaces on a manual reload. Runs after the
+  // reset effect above on the same render, so it sees the fresh seq + messages.
+  React.useEffect(() => {
+    if (opts.privateMode || !opts.conversationId) return;
+    const msgs = opts.initialMessages;
+    const last = msgs[msgs.length - 1];
+    if (!last || last.role !== "USER") return;
+    const age = Date.now() - new Date(last.createdAt).getTime();
+    if (!(age >= 0 && age < RESUME_MAX_AGE_MS)) return;
+    const seq = generationSeqRef.current;
+    const placeholderId = tempId();
+    const placeholder: ChatMessage = {
+      id: placeholderId,
+      role: "ASSISTANT",
+      content: "",
+      createdAt: new Date().toISOString(),
+      attachments: [],
+      activity: [],
+      streaming: false,
+      errorMessage: "Reconnecting — Juno kept working in the background. The answer will appear here when it's ready.",
+    };
+    // Guard against a race with a send that already appended its own bubble.
+    setMessages((prev) => (prev[prev.length - 1]?.id === last.id ? [...prev, placeholder] : prev));
+    void recoverDroppedStream(placeholderId, last.id, seq, Date.now() + RESUME_POLL_WINDOW_MS);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [opts.conversationId]);
 
   const runGeneration = React.useCallback(
     async (body: Record<string, unknown>, assistantTempId: string, path = "/api/chat") => {
