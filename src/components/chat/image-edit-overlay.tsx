@@ -1,8 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { ImageOff, Info, Wand2, TriangleAlert } from "lucide-react";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Crop, ImageIcon, ImageOff, Info, MousePointer2, TriangleAlert, Wand2, X } from "lucide-react";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
@@ -66,6 +66,7 @@ export function ImageEditOverlay({
   const [prompt, setPrompt] = React.useState("");
   const [imgReady, setImgReady] = React.useState(false);
   const [imgFailed, setImgFailed] = React.useState(false);
+  const selectionHelpId = React.useId();
 
   const editModel = React.useMemo(() => pickEditModel(currentModelId, sourceModelId), [currentModelId, sourceModelId]);
   const support = editModel ? imageEditSupport(editModel.provider) : "none";
@@ -118,6 +119,13 @@ export function ImageEditOverlay({
     setRegion((r) => (r && r.w >= MIN_REGION && r.h >= MIN_REGION ? r : null));
   };
 
+  const handleCanvasKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key !== "Escape" || !region) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setRegion(null);
+  };
+
   /** Opaque-black canvas at the natural size with the region cleared to
    * transparent. No cross-origin pixels are ever drawn, so toDataURL is safe. */
   const buildMask = (): string | undefined => {
@@ -166,205 +174,244 @@ export function ImageEditOverlay({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl gap-0 overflow-hidden border border-border bg-card p-0 shadow-glass rounded-panel md:h-[580px] max-h-[85vh]">
-        <div className="grid h-full w-full grid-cols-1 md:grid-cols-[1.35fr_1fr]">
-          {/* Left Column: Canvas Workspace */}
-          <div className="relative flex max-h-[45vh] flex-col items-center justify-center overflow-hidden border-b border-border/60 bg-muted/20 p-10 md:max-h-none md:border-b-0 md:border-r md:rounded-l-panel">
-            <div
-              ref={frameRef}
-              className="relative max-h-[440px] max-w-full select-none overflow-hidden rounded-2xl border border-border/80 bg-background/50 shadow-soft"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                ref={imgRef}
-                src={attachment.url}
-                alt={attachment.fileName}
-                draggable={false}
-                onLoad={() => setImgReady(true)}
-                onError={() => setImgFailed(true)}
-                className="block max-h-[420px] w-auto max-w-full object-contain rounded-2xl"
-              />
+      <DialogContent
+        hideClose
+        className="h-[min(92dvh,46rem)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-[68rem] gap-0 overflow-hidden rounded-[24px] border border-border/70 bg-background p-0 shadow-float sm:w-[calc(100%-2rem)] md:h-[min(86dvh,43rem)]"
+      >
+        <DialogClose
+          className="group/close absolute right-3 top-3 z-50 flex size-9 items-center justify-center rounded-full border border-border/60 bg-background/90 text-muted-foreground shadow-soft backdrop-blur-sm transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none motion-reduce:active:scale-100 sm:right-4 sm:top-4"
+        >
+          <X className="size-4 transition-transform duration-fast ease-out-soft group-hover/close:rotate-90 motion-reduce:transition-none motion-reduce:group-hover/close:rotate-0" aria-hidden="true" />
+          <span className="sr-only">Close image editor</span>
+        </DialogClose>
 
-              {imgFailed && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
-                  <ImageOff className="h-5 w-5" aria-hidden="true" />
-                  <span className="text-caption">Couldn&apos;t load this image.</span>
-                </div>
-              )}
+        <div className="grid h-full min-h-0 w-full grid-rows-[minmax(15rem,42%)_minmax(0,1fr)] md:grid-cols-[minmax(0,1.45fr)_minmax(20rem,0.85fr)] md:grid-rows-1">
+          {/* Canvas workspace */}
+          <section className="relative flex min-h-0 flex-col overflow-hidden border-b border-border/60 bg-muted/20 md:border-b-0 md:border-r" aria-label="Image canvas">
+            <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border/50 px-4 pr-14 sm:px-5 sm:pr-16">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-[10px] border border-border/60 bg-background text-muted-foreground shadow-soft">
+                <ImageIcon className="size-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium text-foreground">{attachment.fileName}</p>
+                <p className="text-[11px] text-muted-foreground">Edit canvas</p>
+              </div>
+              <span className="ml-auto hidden shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background px-2.5 py-1 text-[11px] text-muted-foreground shadow-soft sm:inline-flex">
+                {region ? <Crop className="size-3" aria-hidden="true" /> : <ImageIcon className="size-3" aria-hidden="true" />}
+                {region ? "Selected area" : "Whole image"}
+              </span>
+            </header>
 
-              {/* Pointer-capture layer */}
+            <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6 lg:p-8">
               <div
-                aria-hidden="true"
-                className="absolute inset-0 z-10 cursor-crosshair"
-                style={{ touchAction: "none" }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-              />
-
-              {/* Whole-image mode: quiet dashed frame */}
-              {region == null && !imgFailed && support !== "none" && (
-                <div
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 z-20 rounded-2xl outline-dashed outline-1 -outline-offset-4 outline-primary/30"
+                ref={frameRef}
+                role="group"
+                aria-label="Image selection canvas"
+                aria-describedby={selectionHelpId}
+                aria-keyshortcuts="Escape"
+                tabIndex={support === "none" || imgFailed ? -1 : 0}
+                onKeyDown={handleCanvasKeyDown}
+                className="relative max-h-full max-w-full select-none overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={imgRef}
+                  src={attachment.url}
+                  alt={attachment.fileName}
+                  draggable={false}
+                  onLoad={() => setImgReady(true)}
+                  onError={() => setImgFailed(true)}
+                  className="block max-h-[calc(42dvh-5.5rem)] w-auto max-w-full rounded-[13px] object-contain md:max-h-[calc(min(86dvh,43rem)-8rem)]"
                 />
-              )}
 
-              {/* Region marquee: crop frame */}
-              {region && (
+                {imgFailed && (
+                  <div className="absolute inset-0 flex min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40">
+                      <ImageOff className="size-4" aria-hidden="true" />
+                    </span>
+                    <span className="text-xs">Couldn&apos;t load this image.</span>
+                  </div>
+                )}
+
+                {/* Pointer-capture layer */}
                 <div
                   aria-hidden="true"
-                  className={cn(
-                    "pointer-events-none absolute z-20 bg-primary/[0.02] outline outline-1 outline-primary/70 rounded-[2px]",
-                    "shadow-[0_0_0_9999px_hsl(var(--foreground)/0.55)] dark:shadow-[0_0_0_9999px_hsl(var(--background)/0.72)]",
-                    dragging ? "transition-none" : "transition-[left,top,width,height] duration-fast ease-out-soft"
-                  )}
-                  style={{
-                    left: `${region.x * 100}%`,
-                    top: `${region.y * 100}%`,
-                    width: `${region.w * 100}%`,
-                    height: `${region.h * 100}%`,
+                  className="absolute inset-0 z-10 cursor-crosshair"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(e) => {
+                    frameRef.current?.focus({ preventScroll: true });
+                    onPointerDown(e);
                   }}
-                >
-                  {(["tl", "tr", "bl", "br"] as const).map((c) => (
-                    <React.Fragment key={c}>
-                      <span
-                        className={cn(
-                          "absolute h-px w-2.5 bg-primary",
-                          c[0] === "t" ? "top-0" : "bottom-0",
-                          c[1] === "l" ? "left-0" : "right-0"
-                        )}
-                      />
-                      <span
-                        className={cn(
-                          "absolute h-2.5 w-px bg-primary",
-                          c[0] === "t" ? "top-0" : "bottom-0",
-                          c[1] === "l" ? "left-0" : "right-0"
-                        )}
-                      />
-                    </React.Fragment>
-                  ))}
-                  <span
+                  onPointerMove={onPointerMove}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                />
+
+                {region == null && !imgFailed && support !== "none" && (
+                  <div aria-hidden="true" className="pointer-events-none absolute inset-1.5 z-20 rounded-[10px] border border-dashed border-white/60 mix-blend-difference" />
+                )}
+
+                {region && (
+                  <div
+                    aria-hidden="true"
                     className={cn(
-                      "absolute left-0 rounded-sm border border-border/70 bg-background/90 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider tabular-nums text-foreground shadow-soft",
-                      captionBelow ? "-bottom-2 translate-y-full" : "-top-2 -translate-y-full"
+                      "pointer-events-none absolute z-20 rounded-[3px] border border-white/90",
+                      "shadow-[0_0_0_9999px_hsl(0_0%_0%/0.58),0_0_0_1px_hsl(0_0%_0%/0.34)]",
+                      dragging ? "transition-none" : "transition-[left,top,width,height] duration-fast ease-out-soft motion-reduce:transition-none"
                     )}
+                    style={{
+                      left: `${region.x * 100}%`,
+                      top: `${region.y * 100}%`,
+                      width: `${region.w * 100}%`,
+                      height: `${region.h * 100}%`,
+                    }}
                   >
-                    {Math.round(region.w * 100)}% × {Math.round(region.h * 100)}%
-                  </span>
-                </div>
+                    {(["tl", "tr", "bl", "br"] as const).map((c) => (
+                      <span
+                        key={c}
+                        className={cn(
+                          "absolute size-2.5 rounded-[2px] border border-black/30 bg-white shadow-sm",
+                          c[0] === "t" ? "-top-1.5" : "-bottom-1.5",
+                          c[1] === "l" ? "-left-1.5" : "-right-1.5"
+                        )}
+                      />
+                    ))}
+                    <span
+                      className={cn(
+                        "absolute left-0 whitespace-nowrap rounded-[6px] border border-white/20 bg-black/75 px-2 py-1 font-mono text-[10px] tabular-nums text-white shadow-soft backdrop-blur-sm",
+                        captionBelow ? "-bottom-2 translate-y-full" : "-top-2 -translate-y-full"
+                      )}
+                    >
+                      {Math.round(region.w * 100)}% × {Math.round(region.h * 100)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-t border-border/50 px-4 text-[11px] text-muted-foreground sm:px-5">
+              <p id={selectionHelpId} className="flex min-w-0 items-center gap-2">
+                <MousePointer2 className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">Drag over the image to target an area.</span>
+              </p>
+              {region && (
+                <button
+                  type="button"
+                  onClick={() => setRegion(null)}
+                  className="shrink-0 rounded-[7px] px-2 py-1 font-medium text-foreground outline-none transition-colors duration-fast hover:bg-background focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none"
+                >
+                  Clear selection
+                </button>
               )}
             </div>
-          </div>
+          </section>
 
-          {/* Right Column: Control Panel */}
-          <div className="flex flex-col justify-between p-8 h-full bg-card">
-            {/* Top: Header */}
-            <div>
-              <p className="text-[10px] font-bold tracking-widest text-primary uppercase font-sans">Canvas Editor</p>
-              <DialogTitle className="mt-1 font-serif text-title font-normal text-foreground">Edit Image</DialogTitle>
-              <DialogDescription className="mt-2 text-xs leading-relaxed text-muted-foreground/95">
-                Drag a marquee region directly on the canvas to isolate a change, or describe instructions to regenerate the whole image.
-              </DialogDescription>
-            </div>
-
-            {/* Middle: Selection Settings & Info */}
-            <div className="flex flex-col gap-5 my-5">
-              <div className="flex flex-col gap-2">
-                <label className="text-[10px] font-semibold tracking-wider text-muted-foreground/60 uppercase">Scope</label>
-                <div className="flex items-center gap-1 rounded-full border border-border/60 bg-muted/30 p-1 w-fit">
-                  <button
-                    type="button"
-                    onClick={() => setRegion(null)}
-                    className={cn(
-                      "rounded-full px-4 py-1.5 text-xs font-medium transition-all",
-                      region == null
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    Whole Image
-                  </button>
-                  <button
-                    type="button"
-                    disabled={region == null}
-                    className={cn(
-                      "rounded-full px-4 py-1.5 text-xs font-medium transition-all disabled:opacity-40",
-                      region != null
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    Selected Region
-                  </button>
-                </div>
+          {/* Edit controls */}
+          <aside className="min-h-0 overflow-y-auto bg-card" aria-label="Image edit controls">
+            <form onSubmit={handleSubmit} className="flex min-h-full flex-col p-5 pt-6 sm:p-6 md:p-7">
+              <div className="pr-9">
+                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Image editor</p>
+                <DialogTitle className="mt-2 font-serif text-[26px] font-normal leading-tight tracking-[-0.02em] text-foreground">Edit image</DialogTitle>
+                <DialogDescription className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
+                  Describe the result you want, then apply it to the whole image or one precise area.
+                </DialogDescription>
               </div>
 
-              {region && (
-                <div className="text-[11px] text-muted-foreground/90 font-mono flex items-center gap-1.5">
-                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
-                  <span>Region bounds: {Math.round(region.w * 100)}% × {Math.round(region.h * 100)}%</span>
+              <fieldset className="mt-6">
+                <legend className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Edit area</legend>
+                <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-border/60 bg-muted/40 p-1" role="group" aria-label="Edit area">
+                  <button
+                    type="button"
+                    aria-pressed={region == null}
+                    onClick={() => setRegion(null)}
+                    className={cn(
+                      "flex h-9 items-center justify-center gap-2 rounded-[8px] px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region == null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <ImageIcon className="size-3.5" aria-hidden="true" />
+                    Whole image
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={region != null}
+                    onClick={() => frameRef.current?.focus({ preventScroll: true })}
+                    className={cn(
+                      "flex h-9 items-center justify-center gap-2 rounded-[8px] px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
+                      region != null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Crop className="size-3.5" aria-hidden="true" />
+                    {region ? "Selected area" : "Select area"}
+                  </button>
                 </div>
-              )}
-
-              {editModel && (
-                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 w-fit px-3 py-1.5 font-mono text-[11px] text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span>Model: {editModel.name}</span>
-                </div>
-              )}
+                <p className="mt-2 min-h-4 text-[11px] leading-relaxed text-muted-foreground" aria-live="polite">
+                  {region
+                    ? `${Math.round(region.w * 100)}% × ${Math.round(region.h * 100)}% of the image will be targeted.`
+                    : "No selection — changes apply across the full image."}
+                </p>
+              </fieldset>
 
               {support === "none" && (
-                <div
-                  role="status"
-                  className="flex items-start gap-2 rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-3 text-xs leading-relaxed text-destructive"
-                >
-                  <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <div role="status" className="mt-4 flex items-start gap-2.5 rounded-[12px] border border-destructive/25 bg-destructive/[0.045] px-3.5 py-3 text-[12px] leading-relaxed text-destructive">
+                  <TriangleAlert className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
                   <span>
                     {editModel
-                      ? `${editModel.name} does not support editing — switch to GPT Image, Nano Banana, or Grok Imagine.`
-                      : "Pick an image model in the composer to edit here."}
+                      ? `${editModel.name} does not support editing. Switch to GPT Image, Nano Banana, or Grok Imagine.`
+                      : "Choose an image model in the composer to edit this image."}
                   </span>
                 </div>
               )}
 
               {support === "prompt" && editModel && (
-                <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/25 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span>
-                    {editModel.name} blends changes based on regional weights. Details near the boundary may adjust.
-                  </span>
+                <div className="mt-4 flex items-start gap-2.5 rounded-[12px] border border-border/60 bg-muted/25 px-3.5 py-3 text-[11px] leading-relaxed text-muted-foreground">
+                  <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <span>{editModel.name} uses the selected area as guidance, so nearby details may also adjust.</span>
                 </div>
               )}
-            </div>
 
-            <div className="h-px w-full bg-border/60 my-1" />
-
-            {/* Bottom: Instructions Input & Submit Form */}
-            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-semibold tracking-wider text-muted-foreground/60 uppercase">Instructions</label>
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe what to add, remove, or replace in this area..."
-                  aria-label="Describe changes"
-                  disabled={support === "none"}
-                  autoFocus
-                  className="field-well h-28 w-full p-3 resize-none border border-border/80 rounded-xl bg-muted/10 text-xs focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/50 leading-relaxed text-foreground transition-all placeholder:text-muted-foreground/60 disabled:opacity-50"
-                />
+              <div className="mt-5">
+                <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                  Instructions
+                </label>
+                <div className="mt-2 overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.035)] transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.06)]">
+                  <textarea
+                    id={`${selectionHelpId}-prompt`}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    placeholder={region ? "Describe what should change inside the selection…" : "Describe how the image should change…"}
+                    aria-label="Describe changes"
+                    disabled={support === "none"}
+                    autoFocus
+                    className="h-28 w-full resize-none bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-50 md:h-32"
+                  />
+                  <div className="flex min-h-9 items-center justify-between gap-3 border-t border-border/50 px-3 text-[10px] text-muted-foreground">
+                    <span className="truncate">{region ? "Editing selected area" : "Editing whole image"}</span>
+                    {editModel && <span className="shrink-0 font-mono">{editModel.name}</span>}
+                  </div>
+                </div>
               </div>
-              <button
-                type="submit"
-                disabled={!canSubmit}
-                className="sheen-sweep btn-glossy halo-primary inline-flex h-11 w-full items-center justify-center gap-2.5 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:brightness-[1.06] active:scale-[0.98] active:brightness-[0.97] transition-all duration-fast disabled:opacity-40 disabled:pointer-events-none"
-              >
-                <Wand2 className="h-[15px] w-[15px]" aria-hidden="true" />
-                <span>Apply Changes</span>
-              </button>
+
+              <div className="mt-auto flex items-center justify-end gap-2 pt-6">
+                <DialogClose asChild>
+                  <button
+                    type="button"
+                    className="h-10 rounded-full px-4 text-[13px] font-medium text-muted-foreground outline-none transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none motion-reduce:active:scale-100"
+                  >
+                    Cancel
+                  </button>
+                </DialogClose>
+                <button
+                  type="submit"
+                  disabled={!canSubmit}
+                  className="group/apply inline-flex h-10 min-w-36 items-center justify-center gap-2 rounded-full bg-foreground px-5 text-[13px] font-semibold text-background outline-none transition-[opacity,transform] duration-fast ease-out-soft hover:opacity-90 active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/20 focus-visible:ring-offset-2 focus-visible:ring-offset-card disabled:pointer-events-none disabled:opacity-35 motion-reduce:transition-none motion-reduce:active:scale-100"
+                >
+                  <Wand2 className="size-3.5 transition-transform duration-base ease-out-soft group-hover/apply:-translate-y-0.5 group-hover/apply:rotate-[-8deg] motion-reduce:transition-none motion-reduce:group-hover/apply:translate-y-0 motion-reduce:group-hover/apply:rotate-0" aria-hidden="true" />
+                  <span>Generate edit</span>
+                </button>
+              </div>
             </form>
-          </div>
+          </aside>
         </div>
       </DialogContent>
     </Dialog>

@@ -12,6 +12,8 @@ import {
   FileText,
   FolderOpen,
   ImageIcon,
+  LayoutGrid,
+  List as ListIcon,
   MessageCircle,
   MoreHorizontal,
   Pencil,
@@ -52,6 +54,9 @@ interface LibItem {
 }
 
 type LibraryFilter = "all" | LibItem["kind"];
+type LibraryView = "list" | "grid";
+
+const LIBRARY_VIEW_STORAGE_KEY = "juno-library-view";
 
 const TABS: { key: LibraryFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -70,6 +75,45 @@ function typeLabel(item: LibItem) {
 
 function countFor(items: LibItem[], filter: LibraryFilter) {
   return filter === "all" ? items.length : items.filter((item) => item.kind === filter).length;
+}
+
+function ViewSelector({ view, onChange }: { view: LibraryView; onChange: (view: LibraryView) => void }) {
+  const options = [
+    { value: "list" as const, label: "List", icon: ListIcon },
+    { value: "grid" as const, label: "Grid", icon: LayoutGrid },
+  ];
+
+  return (
+    <div
+      role="group"
+      aria-label="File view"
+      className="flex h-9 shrink-0 items-center rounded-[10px] border border-border/60 bg-background/70 p-0.5"
+    >
+      {options.map((option) => {
+        const active = view === option.value;
+        const Icon = option.icon;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => onChange(option.value)}
+            aria-pressed={active}
+            aria-label={`${option.label} view`}
+            title={`${option.label} view`}
+            className={cn(
+              "group/view flex h-7 min-w-7 items-center justify-center gap-1.5 rounded-[7px] px-1.5 text-[11px] font-medium transition-[color,background-color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-95 motion-reduce:transition-none motion-reduce:active:scale-100 lg:px-2.5",
+              active
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+            )}
+          >
+            <Icon className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/view:scale-105 motion-reduce:transition-none" />
+            <span className="hidden lg:inline">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function SelectCheck({
@@ -207,10 +251,12 @@ function MobileItemMenu({
   item,
   onRename,
   onDelete,
+  triggerClassName,
 }: {
   item: LibItem;
   onRename: () => void;
   onDelete: () => void;
+  triggerClassName?: string;
 }) {
   return (
     <DropdownMenu>
@@ -219,7 +265,7 @@ function MobileItemMenu({
           variant="ghost"
           size="icon-sm"
           aria-label={`Actions for ${item.fileName}`}
-          className="text-muted-foreground sm:hidden"
+          className={cn("text-muted-foreground", triggerClassName ?? "sm:hidden")}
         >
           <MoreHorizontal className="size-4" />
         </Button>
@@ -249,7 +295,135 @@ function MobileItemMenu({
   );
 }
 
-function LoadingBrowser() {
+function GridItemPreview({ item }: { item: LibItem }) {
+  const [failed, setFailed] = React.useState(false);
+  const isImage = item.kind === "IMAGE";
+
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${item.fileName}`}
+      className="group/preview block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      {isImage && !failed ? (
+        <Image
+          src={item.url}
+          alt=""
+          fill
+          sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
+          className="object-cover transition-transform duration-slow ease-out-soft group-hover/preview:scale-[1.025] motion-reduce:transition-none"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <span className="flex size-full flex-col items-center justify-center gap-3 bg-muted/25 px-4 text-center text-muted-foreground">
+          {isImage ? (
+            <ImageIcon className="size-7 transition-transform duration-base ease-out-soft group-hover/preview:-translate-y-0.5 motion-reduce:transition-none" strokeWidth={1.45} />
+          ) : (
+            <FileText className="size-7 transition-transform duration-base ease-out-soft group-hover/preview:-translate-y-0.5 motion-reduce:transition-none" strokeWidth={1.45} />
+          )}
+          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/70">
+            {typeLabel(item)}
+          </span>
+        </span>
+      )}
+    </a>
+  );
+}
+
+function LibraryGridItem({
+  item,
+  selected,
+  onToggleSelect,
+  onRename,
+  onDelete,
+}: {
+  item: LibItem;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <article role="listitem" aria-label={item.fileName} className="group/card min-w-0">
+      <div
+        className={cn(
+          "relative aspect-square overflow-hidden rounded-[14px] border border-border/60 bg-background transition-[border-color,transform,box-shadow] duration-base ease-out-soft group-hover/card:-translate-y-0.5 group-hover/card:border-foreground/20 motion-reduce:transition-none motion-reduce:group-hover/card:translate-y-0",
+          selected && "border-foreground/40 ring-1 ring-foreground/35 ring-offset-2 ring-offset-background"
+        )}
+      >
+        <GridItemPreview item={item} />
+        <SelectCheck
+          checked={selected}
+          onClick={onToggleSelect}
+          label={selected ? `Deselect ${item.fileName}` : `Select ${item.fileName}`}
+          className={cn(
+            "absolute left-2 top-2 z-10 shadow-pop transition-opacity duration-fast focus-visible:opacity-100 coarse:size-8 coarse:opacity-100",
+            !selected && "opacity-0 group-focus-within/card:opacity-100 group-hover/card:opacity-100"
+          )}
+        />
+        <MobileItemMenu
+          item={item}
+          onRename={onRename}
+          onDelete={onDelete}
+          triggerClassName="absolute right-2 top-2 z-10 bg-background/90 text-foreground opacity-0 shadow-pop backdrop-blur-sm transition-opacity duration-fast hover:bg-background group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 coarse:opacity-100"
+        />
+      </div>
+
+      <div className="flex min-w-0 items-start gap-2 px-1 pb-1 pt-2.5">
+        <div className="min-w-0 flex-1">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={item.fileName}
+            className="block truncate text-[13px] font-medium underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {item.fileName}
+          </a>
+          <p className="mt-0.5 truncate text-[11px] tabular-nums text-muted-foreground">
+            {formatBytes(item.size)} · {timeAgo(item.createdAt)}
+          </p>
+        </div>
+        {item.conversationId && (
+          <Link
+            href={`/chat/${item.conversationId}`}
+            aria-label={`Open source chat for ${item.fileName}`}
+            title="Open source chat"
+            className="group/source flex size-8 shrink-0 items-center justify-center rounded-[9px] text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:size-10"
+          >
+            <MessageCircle className="size-3.5 transition-transform duration-fast ease-out-soft group-hover/source:-translate-y-0.5 motion-reduce:transition-none" />
+          </Link>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function LoadingBrowser({ view }: { view: LibraryView }) {
+  if (view === "grid") {
+    return (
+      <div
+        className="mt-5 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 sm:gap-x-4 lg:grid-cols-4"
+        aria-label="Loading files"
+      >
+        {[...Array(8)].map((_, index) => (
+          <div key={index}>
+            <div
+              className="skeleton aspect-square rounded-[14px]"
+              style={{ animationDelay: `${index * 45}ms` }}
+            />
+            <div className="px-1 pt-2.5">
+              <span className="skeleton block h-3 w-3/4 rounded" />
+              <span className="skeleton mt-2 block h-2.5 w-1/2 rounded" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mt-5 overflow-hidden rounded-[18px] border border-border/60" aria-label="Loading files">
       <div className={cn(browserGrid, "h-10 border-b border-border/50 bg-muted/20 px-3 sm:px-4")}>
@@ -281,6 +455,7 @@ export default function LibraryPage() {
   const [error, setError] = React.useState(false);
   const [tab, setTab] = React.useState<LibraryFilter>("all");
   const [query, setQuery] = React.useState("");
+  const [view, setView] = React.useState<LibraryView>("list");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [renameTarget, setRenameTarget] = React.useState<LibItem | null>(null);
   const [renameValue, setRenameValue] = React.useState("");
@@ -302,6 +477,15 @@ export default function LibraryPage() {
   React.useEffect(() => {
     load();
   }, [load]);
+
+  React.useEffect(() => {
+    try {
+      const savedView = window.localStorage.getItem(LIBRARY_VIEW_STORAGE_KEY);
+      if (savedView === "list" || savedView === "grid") setView(savedView);
+    } catch {
+      // Storage can be unavailable in hardened browsing modes; list remains the safe default.
+    }
+  }, []);
 
   const libraryItems = items ?? [];
   const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -342,6 +526,15 @@ export default function LibraryPage() {
   const clearFilters = () => {
     setTab("all");
     setQuery("");
+  };
+
+  const changeView = (nextView: LibraryView) => {
+    setView(nextView);
+    try {
+      window.localStorage.setItem(LIBRARY_VIEW_STORAGE_KEY, nextView);
+    } catch {
+      // The in-memory preference still works when local storage is unavailable.
+    }
   };
 
   const openRename = (item: LibItem) => {
@@ -497,12 +690,13 @@ export default function LibraryPage() {
                     </button>
                   )}
                 </div>
+                <ViewSelector view={view} onChange={changeView} />
                 {!loading && filtered.length > 0 && (
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={toggleSelectAll}
-                    className="shrink-0 text-muted-foreground sm:hidden"
+                    className={cn("shrink-0 text-muted-foreground", view === "list" && "sm:hidden")}
                   >
                     {allSelected ? "Clear visible" : "Select"}
                   </Button>
@@ -558,7 +752,7 @@ export default function LibraryPage() {
             </Button>
           </div>
         ) : loading ? (
-          <LoadingBrowser />
+          <LoadingBrowser view={view} />
         ) : libraryEmpty ? (
           <div className="mt-6 flex min-h-72 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
             <FolderOpen className="size-6 text-muted-foreground/70" strokeWidth={1.5} />
@@ -579,6 +773,25 @@ export default function LibraryPage() {
               Clear filters
             </Button>
           </div>
+        ) : view === "grid" ? (
+          <section className="mt-5 motion-safe:animate-fade-in" aria-label="Files grid">
+            <div
+              role="list"
+              aria-label={`${filtered.length} visible ${filtered.length === 1 ? "file" : "files"}`}
+              className="grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 sm:gap-x-4 sm:gap-y-6 lg:grid-cols-4"
+            >
+              {filtered.map((item) => (
+                <LibraryGridItem
+                  key={item.id}
+                  item={item}
+                  selected={selected.has(item.id)}
+                  onToggleSelect={() => toggleSelect(item.id)}
+                  onRename={() => openRename(item)}
+                  onDelete={() => setDeleteTargets([item])}
+                />
+              ))}
+            </div>
+          </section>
         ) : (
           <section className="mt-5 overflow-hidden rounded-[18px] border border-border/60 bg-background/45" aria-label="Files">
             <div

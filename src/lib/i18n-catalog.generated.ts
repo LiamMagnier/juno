@@ -490,6 +490,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Mistral"
   },
   {
+    "id": "0ce1f2874e4562c1",
+    "source": "prompt_or_attachments_required"
+  },
+  {
     "id": "0cea5f24ba9642d3",
     "source": "Couldn't load this image."
   },
@@ -506,6 +510,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Turn on the full app directory"
   },
   {
+    "id": "0d7d12ac624c66e6",
+    "source": "Grid"
+  },
+  {
     "id": "0d83b98bebfb5add",
     "source": "Redirecting…"
   },
@@ -516,6 +524,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0db94a78a1732532",
     "source": "Users will see the newest active popup until they dismiss it."
+  },
+  {
+    "id": "0db9b194f30d5c25",
+    "source": "1 attachment"
   },
   {
     "id": "0dcc1111e409913c",
@@ -560,6 +572,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0f082e133791d7da",
     "source": "Mermaid diagram"
+  },
+  {
+    "id": "0f2a693e93e2ed70",
+    "source": "grid"
   },
   {
     "id": "0f50505ce224077f",
@@ -3942,6 +3958,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Previous-generation Sonnet, superseded by Sonnet 5."
   },
   {
+    "id": "6f202f54a7b2d8fe",
+    "source": "List"
+  },
+  {
     "id": "6f2a13583fbb80d0",
     "source": "Voice model"
   },
@@ -4920,6 +4940,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8b9431b08229c9c6",
     "source": "Fast, very cheap default — near-Pro reasoning at a third of the cost."
+  },
+  {
+    "id": "8bd021449c73da5f",
+    "source": "One of the attached files is no longer available. Remove it and try again."
   },
   {
     "id": "8bf20ce6124d442c",
@@ -5902,6 +5926,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "an image"
   },
   {
+    "id": "a5e1129f3ad29ffa",
+    "source": "Files grid"
+  },
+  {
     "id": "a629ed606a7bde71",
     "source": "Or type your own answer…"
   },
@@ -5960,6 +5988,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a8283ade31856f71",
     "source": "Undo"
+  },
+  {
+    "id": "a85da3bd808dcce9",
+    "source": "File view"
   },
   {
     "id": "a88455c896394127",
@@ -6634,6 +6666,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Ash"
   },
   {
+    "id": "bdb691f5dcd8cd29",
+    "source": "Clear visible"
+  },
+  {
     "id": "bdc090ec61e3fcfc",
     "source": "Reload"
   },
@@ -7136,6 +7172,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cc7f5c3dc31250a5",
     "source": "Untitled artifact"
+  },
+  {
+    "id": "ccca181757536587",
+    "source": "Conversation"
   },
   {
     "id": "cccaa32bc8899230",

@@ -1,13 +1,13 @@
 import {
-  Box,
-  BookOpen,
   CalendarClock,
   Code2,
   Folder,
+  FolderKanban,
   FolderOpen,
   GitPullRequest,
   Home,
   Layers3,
+  Library,
   MessageCircle,
   MoreVertical,
   PanelLeft,
@@ -39,18 +39,20 @@ export type SidebarMotionIconKind =
   | "more";
 
 /**
- * One optically consistent icon set for the entire app shell. Keeping this
- * adapter means sidebar call sites share the same size and motion language,
- * while Lucide supplies production-tested geometry instead of bespoke paths.
+ * One optically consistent icon set for the entire app shell. Lucide supplies
+ * the resting geometry; CSS in globals.css articulates the meaningful part of
+ * each mark on hover (except overflow ⋯, which stays static).
  */
 const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   new: Plus,
   home: Home,
   code: Code2,
-  library: BookOpen,
+  // Bookshelf spines — clearer “library of files” than an open book.
+  library: Library,
   artifacts: Layers3,
   connections: Plug,
-  projects: Box,
+  // Folder + kanban bars — reads as a project container, not a package.
+  projects: FolderKanban,
   tasks: CalendarClock,
   pulls: GitPullRequest,
   search: Search,
@@ -88,14 +90,6 @@ export function SidebarMotionIcon({
           strokeWidth={1.75}
           className="sidebar-motion-icon__glyph sidebar-motion-icon__glyph--alternate absolute inset-0 h-full w-full"
         />
-      ) : null}
-
-      {kind === "conversation" ? (
-        <span className="sidebar-motion-icon__chat-dots" aria-hidden="true">
-          <span />
-          <span />
-          <span />
-        </span>
       ) : null}
     </span>
   );

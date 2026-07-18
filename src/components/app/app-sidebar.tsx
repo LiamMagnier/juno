@@ -1481,7 +1481,7 @@ function ProjectRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable group group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label="Project options"
           >
             <SidebarMotionIcon kind="more" className="h-4 w-4" />
