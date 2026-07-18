@@ -3,7 +3,8 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Box, GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, X } from "lucide-react";
+import { GitFork, GripVertical, Loader2, RefreshCw, Share, Trash2, X } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useChat, type ChatMessage } from "@/hooks/use-chat";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
@@ -1414,7 +1415,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           <div className="pointer-events-none absolute left-3 top-3 z-20 flex max-w-[min(18rem,calc(100%-10rem))] sm:max-w-[min(18rem,calc(100%-1.5rem))] md:left-4 md:top-4">
             <div className="pointer-events-auto flex min-w-0 items-center gap-2 rounded-full border border-border/60 bg-card/70 py-1 pl-1 pr-1 shadow-soft backdrop-blur-md motion-safe:animate-fade-in">
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
-                <Box className="h-3 w-3 text-primary" />
+                <AppIcons.projects className="h-3 w-3 text-primary" />
               </span>
               <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
                 Project

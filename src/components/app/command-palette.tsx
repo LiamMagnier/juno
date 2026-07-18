@@ -4,28 +4,21 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
 import {
-  Box,
-  CalendarClock,
-  Code,
   Columns2,
   Keyboard,
-  Library,
   Map as MapIcon,
   MessageSquare,
   Moon,
   NotebookPen,
-  Plug,
-  Plus,
   Search,
   Settings,
-  Shapes,
   Sparkles,
   Sun,
-  Terminal,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
+import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 /** One row in either palette. `run` fires on click / Enter; `meta` is the muted
@@ -393,7 +386,7 @@ function SearchPalette() {
       group: "Projects",
       label: p.name || "Untitled project",
       meta: "Project",
-      icon: Box,
+      icon: AppIcons.projects,
       run: () => go("/projects/" + p.id),
     }));
 
@@ -521,7 +514,7 @@ function CommandMenu() {
         group: "Quick actions",
         label: "New chat",
         hint: "⌘⇧O",
-        icon: Plus,
+        icon: AppIcons.new,
         keywords: "start compose message",
         run: () => {
           go("/chat");
@@ -532,7 +525,7 @@ function CommandMenu() {
         id: "new-code",
         group: "Quick actions",
         label: "New code session",
-        icon: Terminal,
+        icon: AppIcons.code,
         keywords: "code start workspace session mac",
         run: () => go("/code/new"),
       },
@@ -540,7 +533,7 @@ function CommandMenu() {
         id: "new-task",
         group: "Quick actions",
         label: "New scheduled task",
-        icon: CalendarClock,
+        icon: AppIcons.tasks,
         keywords: "schedule recurring automation cron reminder",
         run: () => go("/tasks"),
       },
@@ -577,12 +570,12 @@ function CommandMenu() {
     }
 
     const actions: PaletteItem[] = [
-      { id: "projects", group: "Actions", label: "Projects", icon: Box, keywords: "workspaces group", run: () => go("/projects") },
-      { id: "code", group: "Actions", label: "Code", icon: Code, keywords: "sessions pull requests github reviews juno code", run: () => go("/code/pulls") },
-      { id: "artifacts", group: "Actions", label: "Artifacts", icon: Shapes, keywords: "documents canvas generated", run: () => go("/artifacts") },
-      { id: "library", group: "Actions", label: "Library", icon: Library, keywords: "saved prompts snippets", run: () => go("/library") },
-      { id: "connections", group: "Actions", label: "Connections", icon: Plug, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
-      { id: "tasks", group: "Actions", label: "Tasks", icon: CalendarClock, keywords: "scheduled recurring automation", run: () => go("/tasks") },
+      { id: "projects", group: "Actions", label: "Projects", icon: AppIcons.projects, keywords: "workspaces group", run: () => go("/projects") },
+      { id: "code", group: "Actions", label: "Code", icon: AppIcons.code, keywords: "sessions pull requests github reviews juno code", run: () => go("/code/pulls") },
+      { id: "artifacts", group: "Actions", label: "Artifacts", icon: AppIcons.artifacts, keywords: "documents canvas generated", run: () => go("/artifacts") },
+      { id: "library", group: "Actions", label: "Library", icon: AppIcons.library, keywords: "saved prompts snippets", run: () => go("/library") },
+      { id: "connections", group: "Actions", label: "Connections", icon: AppIcons.connections, keywords: "plugins integrations github mcp connectors", run: () => go("/connections") },
+      { id: "tasks", group: "Actions", label: "Tasks", icon: AppIcons.tasks, keywords: "scheduled recurring automation", run: () => go("/tasks") },
       { id: "compare", group: "Actions", label: "Compare models", icon: Columns2, keywords: "side by side race versus models", run: () => go("/compare") },
       { id: "memory", group: "Actions", label: "Memory", icon: NotebookPen, keywords: "remember facts", run: () => go("/memory") },
       { id: "settings", group: "Actions", label: "Settings", icon: Settings, keywords: "preferences account theme", run: () => go("/settings") },

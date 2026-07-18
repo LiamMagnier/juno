@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertCircle,
-  Box,
   Check,
   ChevronDown,
   ChevronRight,
@@ -16,6 +15,7 @@ import {
   Trash2,
   Pin,
 } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
@@ -1371,7 +1371,7 @@ function ConversationRow({
               <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
-                  <Box className="h-4 w-4" /> Add to project
+                  <AppIcons.projects className="h-4 w-4" /> Add to project
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="w-56 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
                   <DropdownMenuItem onSelect={() => patch({ projectId: null })}>
@@ -1379,7 +1379,7 @@ function ConversationRow({
                   </DropdownMenuItem>
                   {projects.map((p) => (
                     <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
-                      {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <Box className="h-4 w-4" />}
+                      {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <AppIcons.projects className="h-4 w-4" />}
                       <span className="truncate">{p.name}</span>
                     </DropdownMenuItem>
                   ))}

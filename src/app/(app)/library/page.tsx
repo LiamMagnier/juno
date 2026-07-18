@@ -10,7 +10,6 @@ import {
   Check,
   Download,
   FileText,
-  FolderOpen,
   ImageIcon,
   LayoutGrid,
   List as ListIcon,
@@ -23,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppIcons } from "@/lib/app-icons";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -614,7 +614,10 @@ export default function LibraryPage() {
               >
                 <ArrowLeft className="size-4 transition-transform duration-fast ease-out-soft group-hover/back:-translate-x-0.5 motion-reduce:transition-none" />
               </Button>
-              <span className="font-mono text-label uppercase tracking-[0.2em] text-muted-foreground">Library</span>
+              <span className="inline-flex items-center gap-1.5 font-mono text-label uppercase tracking-[0.2em] text-muted-foreground">
+                <AppIcons.library className="size-3.5" strokeWidth={1.75} aria-hidden />
+                Library
+              </span>
             </div>
             {!loading && !error && (
               <p className="hidden items-center gap-2 text-xs tabular-nums text-muted-foreground sm:flex">
@@ -755,7 +758,7 @@ export default function LibraryPage() {
           <LoadingBrowser view={view} />
         ) : libraryEmpty ? (
           <div className="mt-6 flex min-h-72 flex-col items-center justify-center border-y border-border/60 px-5 py-16 text-center">
-            <FolderOpen className="size-6 text-muted-foreground/70" strokeWidth={1.5} />
+            <AppIcons.library className="size-6 text-muted-foreground/70" strokeWidth={1.5} />
             <p className="mt-4 font-serif text-xl font-medium">Your library is empty</p>
             <p className="mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
               Files and images you share with Juno will appear here automatically.

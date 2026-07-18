@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { AppIcons } from "@/lib/app-icons";
 import {
   Dialog,
   DialogContent,
@@ -236,7 +237,10 @@ export default function ArtifactsPage() {
           <span className="font-mono text-label uppercase text-muted-foreground">Canvas</span>
         </div>
         <div className="flex items-baseline justify-between gap-4">
-          <h1 className="font-serif text-display font-medium tracking-tight">Artifacts</h1>
+          <h1 className="flex items-center gap-2.5 font-serif text-display font-medium tracking-tight">
+            <AppIcons.artifacts className="size-[0.85em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
+            Artifacts
+          </h1>
           {!loading && !empty && !error && (
             <span className="shrink-0 font-mono text-caption text-muted-foreground tabular-nums">
               {items.length} {items.length === 1 ? "artifact" : "artifacts"}

@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 import { readStarredProjects, removeStarredProject, toggleStarredProject } from "@/lib/starred-projects";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
@@ -172,7 +173,10 @@ export default function ProjectsPage() {
             <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat" className="hover:bg-accent/40 rounded-md">
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <h1 className="font-serif text-3xl font-medium tracking-tight">Projects</h1>
+            <h1 className="flex items-center gap-2.5 font-serif text-3xl font-medium tracking-tight">
+              <AppIcons.projects className="size-[0.9em] shrink-0 text-muted-foreground/80" strokeWidth={1.6} aria-hidden />
+              Projects
+            </h1>
           </div>
           
           <div className="flex items-center gap-2">
@@ -244,6 +248,7 @@ export default function ProjectsPage() {
           </div>
         ) : empty ? (
           <div className="mt-10 flex flex-col items-center gap-4 text-center">
+            <AppIcons.projects className="size-7 text-muted-foreground/70" strokeWidth={1.5} />
             <div>
               <p className="font-serif text-heading">No projects yet.</p>
               <p className="mt-1 text-sm text-muted-foreground">Create one to keep a topic’s chats, instructions, and files together.</p>

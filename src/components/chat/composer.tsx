@@ -8,7 +8,6 @@ import {
   ArrowUp,
   AudioLines,
   Blocks,
-  Box,
   NotebookPen,
   Check,
   ChevronDown,
@@ -20,7 +19,6 @@ import {
   GraduationCap,
   ImagePlus,
   LayoutTemplate,
-  Library,
   Loader2,
   MessageSquarePlus,
   Mic,
@@ -37,6 +35,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
+import { AppIcons } from "@/lib/app-icons";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -681,8 +680,8 @@ export function Composer({
             },
           ]
         : []),
-      { id: "projects", key: "projects", label: "/projects", hint: "Open your projects", group: "navigate", icon: Box, run: () => router.push("/projects") },
-      { id: "library", key: "library", label: "/library", hint: "Open your library", group: "navigate", icon: Library, run: () => router.push("/library") },
+      { id: "projects", key: "projects", label: "/projects", hint: "Open your projects", group: "navigate", icon: AppIcons.projects, run: () => router.push("/projects") },
+      { id: "library", key: "library", label: "/library", hint: "Open your library", group: "navigate", icon: AppIcons.library, run: () => router.push("/library") },
       { id: "memory", key: "memory", label: "/memory", hint: "Open memory", group: "navigate", icon: NotebookPen, run: () => router.push("/memory") },
     ],
     [webSearchEnabled, onToggleWebSearch, researchAvailable, planAllowsResearch, research, onOpenVoiceMode, router]
@@ -1264,7 +1263,7 @@ export function Composer({
       {selectedProject && !privateMode && !conversationId && (
         <div className="mb-2 flex">
           <span className="inline-flex items-center gap-1.5 rounded-full border bg-card/80 px-2.5 py-1 text-caption text-muted-foreground shadow-soft">
-            <Box className="h-3 w-3 text-primary" />
+            <AppIcons.projects className="h-3 w-3 text-primary" />
             <span>
               {"New chat in "}
               <span className="font-medium text-foreground">{selectedProject.name}</span>
@@ -1690,7 +1689,7 @@ export function Composer({
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
-                          <Library className="text-muted-foreground" />
+                          <AppIcons.library className="text-muted-foreground" />
                           <span className="flex-1">From your library</span>
                         </DropdownMenuItem>
                       </DropdownMenuSubContent>
@@ -1703,14 +1702,14 @@ export function Composer({
 
                     {privateMode ? (
                       <DropdownMenuItem disabled>
-                        <Box className="text-muted-foreground" />
+                        <AppIcons.projects className="text-muted-foreground" />
                         <span className="flex-1">Add to project</span>
                         <span className="text-caption text-muted-foreground/60">private</span>
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
-                          <Box className="text-muted-foreground" />
+                          <AppIcons.projects className="text-muted-foreground" />
                           <span className="flex-1">Add to project</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
@@ -1730,7 +1729,7 @@ export function Composer({
                               const active = selectedProjectId === project.id;
                               return (
                                 <DropdownMenuItem key={project.id} onSelect={() => pickProject(active ? null : project.id)}>
-                                  <Box className={cn(active ? "text-primary" : "text-muted-foreground")} />
+                                  <AppIcons.projects className={cn(active ? "text-primary" : "text-muted-foreground")} />
                                   <span className="flex-1 truncate">{project.name}</span>
                                   {active ? (
                                     <Check className="!size-3.5 text-primary" />

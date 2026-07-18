@@ -1,22 +1,13 @@
 import {
-  CalendarClock,
-  Code2,
   Folder,
   FolderOpen,
-  GitPullRequest,
-  Home,
-  Layers3,
-  Library,
-  MessageCircle,
   MoreVertical,
   PanelLeft,
   PanelLeftClose,
-  Plug,
-  Plus,
-  Search,
   X,
   type LucideIcon,
 } from "lucide-react";
+import { AppIcons } from "@/lib/app-icons";
 import { cn } from "@/lib/utils";
 
 export type SidebarMotionIconKind =
@@ -38,29 +29,29 @@ export type SidebarMotionIconKind =
   | "more";
 
 /**
- * One optically consistent icon set for the entire app shell. Lucide supplies
- * the resting geometry; CSS in globals.css articulates the meaningful part of
- * each mark on hover (except overflow ⋯, which stays static).
+ * One optically consistent icon set for the entire app shell. Destination marks
+ * come from AppIcons so menus / palette / pages never drift; CSS in globals.css
+ * articulates the meaningful part of each mark on hover (except overflow ⋯).
  *
  * Kinds with a closed → open morph (`folder`, `projects`) stack a second glyph
  * and crossfade under CSS — see `.sidebar-motion-icon__glyph--alternate`.
  */
 const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
-  new: Plus,
-  home: Home,
-  code: Code2,
-  library: Library,
-  artifacts: Layers3,
-  connections: Plug,
-  projects: Folder,
-  tasks: CalendarClock,
-  pulls: GitPullRequest,
-  search: Search,
+  new: AppIcons.new,
+  home: AppIcons.home,
+  code: AppIcons.code,
+  library: AppIcons.library,
+  artifacts: AppIcons.artifacts,
+  connections: AppIcons.connections,
+  projects: AppIcons.projects,
+  tasks: AppIcons.tasks,
+  pulls: AppIcons.pulls,
+  search: AppIcons.search,
   "panel-open": PanelLeft,
   "panel-close": PanelLeftClose,
   close: X,
   folder: Folder,
-  conversation: MessageCircle,
+  conversation: AppIcons.conversation,
   more: MoreVertical,
 };
 
