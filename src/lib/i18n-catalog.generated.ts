@@ -206,10 +206,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search name or email"
   },
   {
-    "id": "04c5fea8f4213d68",
-    "source": "This plan or model cannot use native web search."
-  },
-  {
     "id": "04cdab843683e65d",
     "source": "Provider availability"
   },
@@ -2444,10 +2440,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "44e89712166e22b3",
     "source": "8. Sécurité"
-  },
-  {
-    "id": "44f48b512ff241a9",
-    "source": "Web search was skipped"
   },
   {
     "id": "44f5e3fbec57be75",

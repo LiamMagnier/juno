@@ -694,12 +694,6 @@ async function handleChat(req: Request) {
             title: "Preparing web search",
             detail: searchToolLabel(modelInfo.provider),
           });
-        } else if (input.webSearch) {
-          sendActivity({
-            kind: "warning",
-            title: "Web search was skipped",
-            detail: "This plan or model cannot use native web search.",
-          });
         }
 
         // Hard mid-stream budget ceiling: the instant the running cost of THIS
@@ -1788,12 +1782,6 @@ async function handleChat(req: Request) {
           kind: "search",
           title: "Preparing web search",
           detail: searchToolLabel(modelInfo.provider),
-        });
-      } else if (input.webSearch && !researchActive) {
-        sendActivity({
-          kind: "warning",
-          title: "Web search was skipped",
-          detail: "This plan or model cannot use native web search.",
         });
       }
 
