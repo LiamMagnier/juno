@@ -73,12 +73,19 @@ export interface QuizOption {
   explanation?: string;
 }
 
-export interface QuizData {
+export interface QuizQuestion {
   question: string;
   options: QuizOption[];
   explanation?: string;
   /** Optional on-demand hint revealed before answering. */
   hint?: string;
+}
+
+export interface QuizData {
+  /** Optional heading for a multi-question quiz. */
+  title?: string;
+  /** One or more questions, walked through in order with a recap at the end. */
+  questions: QuizQuestion[];
 }
 
 export interface DeepDiveData {
@@ -117,6 +124,7 @@ const MAX_TIMELINE_STEPS = 10;
 const MAX_COMPARISON_ROWS = 8;
 const MAX_COMPARISON_COLS = 4;
 const MAX_QUIZ_OPTIONS = 6;
+const MAX_QUIZ_QUESTIONS = 8;
 
 export const LEARNING_BLOCK_LABELS: Record<LearningBlockKind, string> = {
   "step-lab": "Step Lab",
@@ -211,8 +219,10 @@ function parseComparison(raw: Record<string, unknown>): { payload: LearningBlock
   };
 }
 
-function parseQuiz(raw: Record<string, unknown>): { payload: LearningBlockPayload | null; error?: string } {
-  const question = cleanText(raw.question ?? raw.title, 500);
+/** Parse one question block (shared by the single- and multi-question shapes).
+ *  Returns null when it lacks a question, <2 options, or any correct answer. */
+function parseQuizQuestion(raw: Record<string, unknown>): QuizQuestion | null {
+  const question = cleanText(raw.question ?? raw.title ?? raw.q, 500);
   const answerText = cleanString(raw.answer).toLowerCase();
   const rawOptions = Array.isArray(raw.options) ? raw.options : [];
   const options = rawOptions
@@ -233,18 +243,34 @@ function parseQuiz(raw: Record<string, unknown>): { payload: LearningBlockPayloa
     })
     .filter(Boolean)
     .slice(0, MAX_QUIZ_OPTIONS) as QuizOption[];
-  if (!question || options.length < 2) return { payload: null, error: "Quiz needs a question and at least two options." };
-  if (!options.some((option) => option.correct)) {
-    return { payload: null, error: "Quiz has no correct answer — set `answer:` to one option or mark `correct: true`." };
+  if (!question || options.length < 2) return null;
+  if (!options.some((option) => option.correct)) return null;
+  return {
+    question,
+    options,
+    explanation: cleanText(raw.explanation, 800) || undefined,
+    hint: cleanText(raw.hint, 400) || undefined,
+  };
+}
+
+function parseQuiz(raw: Record<string, unknown>): { payload: LearningBlockPayload | null; error?: string } {
+  // Multi-question shape (`questions:` list) OR the legacy single-question shape
+  // (question/options at the top level). Both normalize to a questions array.
+  const list = Array.isArray(raw.questions) ? raw.questions : null;
+  const questions = (list ? list.filter(isRecord).map(parseQuizQuestion) : [parseQuizQuestion(raw)])
+    .filter(Boolean)
+    .slice(0, MAX_QUIZ_QUESTIONS) as QuizQuestion[];
+  if (!questions.length) {
+    return { payload: null, error: "Quiz needs a question with 2+ options and a correct answer." };
   }
   return {
     payload: {
       kind: "quiz",
       quiz: {
-        question,
-        options,
-        explanation: cleanText(raw.explanation, 800) || undefined,
-        hint: cleanText(raw.hint, 400) || undefined,
+        // A quiz-level title only makes sense in multi-question mode; in the
+        // legacy single shape `title` was an alias for the question itself.
+        title: list ? cleanString(raw.title) || undefined : undefined,
+        questions,
       },
     },
   };

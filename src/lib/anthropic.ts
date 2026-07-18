@@ -136,17 +136,27 @@ rows:
 verdict: Choose by data shape, not fashion.
 :::
 
-5. \`:::quiz\` — one local check-your-understanding question (answered in place, never sends a message). An optional \`hint:\` is revealed only when the learner asks for it — write one that scaffolds without giving the answer away.
+5. \`:::quiz\` — a local check-your-understanding quiz (answered in place, never sends a message). PREFER 2-4 questions via a \`questions:\` list: the block walks through them one at a time and shows a scored recap at the end. Each question has \`options\`, marks the right one (\`correct: true\` on the option OR an \`answer:\` line naming it), and may carry an optional \`hint:\` (revealed only on request — scaffold, don't spoil) and an \`explanation:\`.
 :::quiz
-question: What does the model update during training?
-options:
-- The browser CSS
-- Its internal weights
-- The user's keyboard
-answer: Its internal weights
-hint: Think about which part of the system is numerical and adjustable.
-explanation: Training adjusts the model's internal numerical parameters, called weights.
+title: Check your understanding
+questions:
+- question: What does the model update during training?
+  options:
+  - The browser CSS
+  - Its internal weights
+  - The user's keyboard
+  answer: Its internal weights
+  hint: Think about which part of the system is numerical and adjustable.
+  explanation: Training adjusts the model's internal numerical parameters, called weights.
+- question: Why can one word become several tokens?
+  options:
+  - The vocabulary is fixed, so rare words are split into sub-word pieces
+  - The model saves memory by cutting long words
+  - Every syllable is always its own token
+  answer: The vocabulary is fixed, so rare words are split into sub-word pieces
+  explanation: A finite vocabulary covers any text by composing rare words from frequent fragments.
 :::
+(A single quick check can still be written flat — \`question:\` and \`options:\` at the top level, no \`questions:\` list.)
 
 6. \`:::deep-dive\` — collapsed optional detail for curious readers.
 :::deep-dive

@@ -91,14 +91,29 @@ steps:
     prompt: "Swift is powerful"
     selectedToken: "and"
 quiz:
-  question: Why can a single word become several tokens?
-  hint: The vocabulary has a fixed size, but text is unlimited.
-  options:
-  - label: The vocabulary is fixed, so rare words are split into sub-word pieces.
-    correct: true
-    explanation: Tokenizers cover any text with a finite vocabulary by composing rare words from frequent fragments.
-  - label: The model randomly cuts long words to save memory.
-  - label: Every syllable always becomes its own token.
+  questions:
+  - question: Why can a single word become several tokens?
+    hint: The vocabulary has a fixed size, but text is unlimited.
+    options:
+    - label: The vocabulary is fixed, so rare words are split into sub-word pieces.
+      correct: true
+      explanation: Tokenizers cover any text with a finite vocabulary by composing rare words from frequent fragments.
+    - label: The model randomly cuts long words to save memory.
+    - label: Every syllable always becomes its own token.
+  - question: What does the attention step let a token do?
+    options:
+    - label: Pull in information from other relevant tokens
+      correct: true
+      explanation: Attention scores how much each token should draw from every other token.
+    - label: Change its own spelling
+    - label: Skip the rest of the network
+  - question: What is the model's final output at each step?
+    options:
+    - label: A probability for every possible next token
+      correct: true
+      explanation: The final layer scores the whole vocabulary, then softmax turns it into probabilities.
+    - label: The single correct answer, always
+    - label: A rewritten version of the prompt
 :::`,
   },
   {
@@ -190,17 +205,46 @@ verdict: Choose by data shape and consistency needs, not fashion.
 :::`,
   },
   {
-    label: "quiz · standalone",
+    label: "quiz · multi-question + recap",
     source: `:::quiz
-question: What does the model update during training?
+title: Check your understanding
+questions:
+- question: What does the model update during training?
+  options:
+  - The browser CSS
+  - Its internal weights
+  - The user's keyboard
+  - The dataset labels
+  answer: Its internal weights
+  hint: Think about which part of the system is numerical and adjustable.
+  explanation: Training adjusts the model's internal numerical parameters — the weights — to reduce prediction error.
+- question: What is a loss function for?
+  options:
+  - Measuring how wrong a prediction is
+  - Storing the training data
+  - Rendering the user interface
+  answer: Measuring how wrong a prediction is
+  explanation: The loss quantifies the gap between prediction and target, and training minimizes it.
+- question: What does backpropagation do?
+  options:
+  - Assigns blame for the error to each weight
+  - Downloads a new model
+  - Deletes incorrect examples
+  answer: Assigns blame for the error to each weight
+  hint: It works backwards from the loss.
+  explanation: Backprop computes each weight's contribution to the error so it can be nudged the right way.
+:::`,
+  },
+  {
+    label: "quiz · single question (degrades cleanly)",
+    source: `:::quiz
+question: How many tokens does the word "unbelievable" usually become?
 options:
-- The browser CSS
-- Its internal weights
-- The user's keyboard
-- The dataset labels
-answer: Its internal weights
-hint: Think about which part of the system is numerical and adjustable.
-explanation: Training adjusts the model's internal numerical parameters — the weights — to reduce prediction error.
+- Several sub-word tokens
+- Exactly one token, always
+- One token per letter
+answer: Several sub-word tokens
+explanation: Longer or rarer words are split into multiple sub-word pieces.
 :::`,
   },
   {

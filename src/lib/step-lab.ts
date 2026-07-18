@@ -24,11 +24,17 @@ export interface StepLabQuizOption {
   explanation?: string;
 }
 
-export interface StepLabQuiz {
+export interface StepLabQuizQuestion {
   question: string;
   options: StepLabQuizOption[];
+  explanation?: string;
   /** Optional on-demand hint revealed before answering. */
   hint?: string;
+}
+
+export interface StepLabQuiz {
+  /** One or more questions, walked in order with a recap at the end. */
+  questions: StepLabQuizQuestion[];
 }
 
 export interface StepLab {
@@ -270,13 +276,12 @@ export function stableId(source: string, prefix = "step-lab"): string {
   return prefix + "-" + h.toString(36);
 }
 
-function normalizeQuiz(value: unknown): StepLabQuiz | undefined {
-  if (!isRecord(value)) return undefined;
-  const question = cleanString(value.question);
-  // Mirror parseQuiz (learning-blocks.ts): the model may mark correctness with
-  // `correct: true` OR the standalone-quiz `answer:` key, and options may be
-  // plain strings. Accepting only the former made answer-keyed labs silently
-  // un-completable.
+/** One question. Mirrors parseQuiz (learning-blocks.ts): correctness may be
+ *  `correct: true` OR the `answer:` key, and options may be plain strings.
+ *  Returns null unless it has a question, 2+ options, and a correct answer. */
+function normalizeQuizQuestion(value: unknown): StepLabQuizQuestion | null {
+  if (!isRecord(value)) return null;
+  const question = cleanString(value.question ?? value.title);
   const answerText = cleanString(value.answer).toLowerCase();
   const rawOptions = Array.isArray(value.options) ? value.options : [];
   const options = rawOptions
@@ -297,11 +302,19 @@ function normalizeQuiz(value: unknown): StepLabQuiz | undefined {
     })
     .filter(Boolean)
     .slice(0, MAX_OPTIONS) as StepLabQuizOption[];
-  if (!question || options.length < 2) return undefined;
-  // A quiz no one can answer correctly would leave the lab un-completable —
-  // drop it instead (a lab without a quiz completes normally).
-  if (!options.some((option) => option.correct)) return undefined;
-  return { question, options, hint: cleanString(value.hint) || undefined };
+  if (!question || options.length < 2) return null;
+  if (!options.some((option) => option.correct)) return null;
+  return { question, options, explanation: cleanString(value.explanation) || undefined, hint: cleanString(value.hint) || undefined };
+}
+
+function normalizeQuiz(value: unknown): StepLabQuiz | undefined {
+  if (!isRecord(value)) return undefined;
+  // Multi-question (`questions:` list) or the legacy single-question shape.
+  const list = Array.isArray(value.questions) ? value.questions : null;
+  const questions = (list ? list.map(normalizeQuizQuestion) : [normalizeQuizQuestion(value)])
+    .filter(Boolean)
+    .slice(0, MAX_STEPS) as StepLabQuizQuestion[];
+  return questions.length ? { questions } : undefined;
 }
 
 function makeFallbackLab(raw: string, error: string, seed: string): StepLab {

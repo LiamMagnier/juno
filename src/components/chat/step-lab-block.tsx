@@ -805,7 +805,9 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
   const compact = lab.density === "compact";
   const [active, setActive] = React.useState(0);
   const [detailOpen, setDetailOpen] = React.useState(false);
-  const [quizCorrect, setQuizCorrect] = React.useState(false);
+  // The quiz reports "done" when its run finishes (all questions answered /
+  // recap reached) — completing the lab regardless of score.
+  const [quizDone, setQuizDone] = React.useState(false);
   const dirRef = React.useRef(1);
   const detailId = React.useId();
   const selected = steps[Math.min(active, steps.length - 1)];
@@ -816,10 +818,10 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
   const completable = steps.length > 1 || !!lab.quiz;
   // Completion is sticky: once earned, the rail stays lit even navigating back.
   const [completedOnce, setCompletedOnce] = React.useState(false);
-  const completed = completedOnce || (completable && onLast && (!lab.quiz || quizCorrect));
+  const completed = completedOnce || (completable && onLast && (!lab.quiz || quizDone));
   React.useEffect(() => {
-    if (completable && onLast && (!lab.quiz || quizCorrect)) setCompletedOnce(true);
-  }, [completable, onLast, lab.quiz, quizCorrect]);
+    if (completable && onLast && (!lab.quiz || quizDone)) setCompletedOnce(true);
+  }, [completable, onLast, lab.quiz, quizDone]);
 
   React.useEffect(() => setDetailOpen(false), [active]);
 
@@ -944,19 +946,19 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
           </div>
         )}
 
-        {/* The check — shared with the standalone quiz, so the two never drift. */}
+        {/* The check — shared with the standalone quiz, so the two never drift.
+            QuizInteraction renders the question(s), progress, and recap itself. */}
         {lab.quiz && onLast && (
-          <div className="flex flex-col gap-1 border-t border-border/50 pt-3">
+          <div className="flex flex-col gap-2 border-t border-border/50 pt-3">
             <Microcap className="text-primary">Check</Microcap>
-            <p className="pb-1 font-serif text-[15px] font-medium leading-6">{lab.quiz.question}</p>
             <QuizInteraction
-              quiz={{
-                options: lab.quiz.options.map((option) => ({ label: option.label, correct: option.correct === true, explanation: option.explanation })),
-                hint: lab.quiz.hint,
-              }}
-              onAnswered={(correct) => {
-                if (correct) setQuizCorrect(true);
-              }}
+              questions={lab.quiz.questions.map((question) => ({
+                question: question.question,
+                options: question.options.map((option) => ({ label: option.label, correct: option.correct === true, explanation: option.explanation })),
+                explanation: question.explanation,
+                hint: question.hint,
+              }))}
+              onComplete={() => setQuizDone(true)}
             />
           </div>
         )}

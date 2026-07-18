@@ -150,6 +150,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open in canvas"
   },
   {
+    "id": "027db80973d5786e",
+    "source": "You got"
+  },
+  {
     "id": "0286249762f7c943",
     "source": "Auto"
   },
@@ -376,6 +380,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "07ebe6b3175dfcdc",
     "source": "Upgrade to keep chatting"
+  },
+  {
+    "id": "081aa84db6332fcd",
+    "source": "quiz · single question (degrades cleanly)"
   },
   {
     "id": "083e1b1493cdf3a0",
@@ -926,6 +934,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "attachment_claim_failed"
   },
   {
+    "id": "1a92e97be0741789",
+    "source": "Quiz needs a question with 2+ options and a correct answer."
+  },
+  {
     "id": "1aa4cb0bcca76e92",
     "source": "Image"
   },
@@ -1036,10 +1048,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1da7e47c96330ab9",
     "source": "Selected Region"
-  },
-  {
-    "id": "1db803a6c757c35a",
-    "source": "quiz · standalone"
   },
   {
     "id": "1de3df70ddf4faab",
@@ -1334,6 +1342,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Thinking effort"
   },
   {
+    "id": "264ec3cda37fa95f",
+    "source": "quiz · multi-question + recap"
+  },
+  {
     "id": "266f6915bcfdae10",
     "source": "Suggested follow-ups"
   },
@@ -1430,6 +1442,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "new saved Quick submissions require clientRequestId and clientMessageId"
   },
   {
+    "id": "289aff12b04274cb",
+    "source": "Question"
+  },
+  {
     "id": "28d03596d24eeb4e",
     "source": "Skip"
   },
@@ -1516,10 +1532,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2b291cd5cd2fb9bc",
     "source": "Account recovery"
-  },
-  {
-    "id": "2b7fda0090a9acf7",
-    "source": "Quiz has no correct answer — set `answer:` to one option or mark `correct: true`."
   },
   {
     "id": "2b85b462382101fb",
@@ -1712,6 +1724,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "30fddb9fe4315e8f",
     "source": "Decide"
+  },
+  {
+    "id": "31056c37942fe322",
+    "source": "Recap"
   },
   {
     "id": "310ff200149b44a3",
@@ -2140,10 +2156,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3c229f983516a163",
     "source": "Fine-grained text-to-image with reference support."
-  },
-  {
-    "id": "3c5e24bfb773de2d",
-    "source": "Quiz needs a question and at least two options."
   },
   {
     "id": "3c8a1796ec7c4866",
@@ -3294,6 +3306,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stop and edit"
   },
   {
+    "id": "5eed7e9fc8f3cd68",
+    "source": "Start over"
+  },
+  {
     "id": "5ef5ef0364b6939c",
     "source": "all"
   },
@@ -3476,6 +3492,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "64f50c62e4ebdc54",
     "source": "L'éditeur peut faire évoluer les présentes conditions. Les modifications substantielles sont notifiées dans le Service ou par e-mail au moins 15 jours avant leur entrée en vigueur ; la poursuite de l'utilisation vaut acceptation."
+  },
+  {
+    "id": "64f89cf423ee1a16",
+    "source": "Answer:"
   },
   {
     "id": "6515ecd1c23f0d82",
@@ -5918,6 +5938,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Scheduled task"
   },
   {
+    "id": "aa0a618a2a19334c",
+    "source": "Next question →"
+  },
+  {
     "id": "aa160b9387141810",
     "source": "Add a comment…"
   },
@@ -8218,6 +8242,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Grok 4.5"
   },
   {
+    "id": "eba74bf05c456af5",
+    "source": "— nothing missed."
+  },
+  {
     "id": "ebc95f30f86dae2e",
     "source": "View v"
   },
@@ -8724,6 +8752,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fa367116cad5260e",
     "source": "Used for new conversations."
+  },
+  {
+    "id": "fa3ba25abdf4d6ab",
+    "source": "See results →"
   },
   {
     "id": "fa3dad237def9259",
