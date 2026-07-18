@@ -576,6 +576,10 @@ model ArtifactVersion {
   artifactId String
   version    Int
   content    String   @db.Text
+  // How this version came to be: "generated" (model output), "edit" (manual
+  // user edit), "restore" (user restored an older version). Null on rows
+  // written before the column existed — the UI renders those without a badge.
+  origin     String?
   createdAt  DateTime @default(now())
 
   artifact Artifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)

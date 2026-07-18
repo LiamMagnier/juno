@@ -128,6 +128,11 @@ export async function serializeMessage(
   };
 }
 
+/** Clamp the free-text DB column to the union the client understands. */
+function normalizeVersionOrigin(raw: string | null): "generated" | "edit" | "restore" | null {
+  return raw === "generated" || raw === "edit" || raw === "restore" ? raw : null;
+}
+
 export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] }): ClientArtifact {
   const sorted = [...art.versions].sort((a, b) => a.version - b.version);
   const latest = sorted[sorted.length - 1];
@@ -139,7 +144,7 @@ export function serializeArtifact(art: Artifact & { versions: ArtifactVersion[] 
     language: art.language,
     currentVersion: art.currentVersion,
     content: latest?.content ?? "",
-    versions: sorted.map((v) => ({ version: v.version, content: v.content, createdAt: v.createdAt.toISOString() })),
+    versions: sorted.map((v) => ({ version: v.version, content: v.content, origin: normalizeVersionOrigin(v.origin), createdAt: v.createdAt.toISOString() })),
     messageId: art.messageId,
     createdAt: art.createdAt.toISOString(),
     updatedAt: art.updatedAt.toISOString(),

@@ -118,9 +118,13 @@ export interface ClientActivityEvent {
   createdAt: string;
 }
 
+/** How an artifact version came to be. Null on rows older than the column. */
+export type ArtifactVersionOrigin = "generated" | "edit" | "restore" | null;
+
 export interface ClientArtifactVersion {
   version: number;
   content: string;
+  origin?: ArtifactVersionOrigin;
   createdAt: string;
 }
 

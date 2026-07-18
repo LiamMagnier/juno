@@ -21,6 +21,7 @@ export async function GET() {
       language: true,
       currentVersion: true,
       conversationId: true,
+      createdAt: true,
       updatedAt: true,
       conversation: { select: { title: true } },
     },
@@ -36,6 +37,7 @@ export async function GET() {
       version: a.currentVersion,
       conversationId: a.conversationId,
       conversationTitle: a.conversation.title,
+      createdAt: a.createdAt.toISOString(),
       updatedAt: a.updatedAt.toISOString(),
     })),
   });

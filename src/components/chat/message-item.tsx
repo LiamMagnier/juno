@@ -357,6 +357,7 @@ export function MessageItem({
     [isUser, view.content, sources],
   );
 
+
   const copy = async () => {
     await navigator.clipboard.writeText(view.content).catch(() => {});
     setCopied(true);
@@ -560,6 +561,8 @@ export function MessageItem({
                       type={artifact?.type ?? part.artifactType ?? "CODE"}
                       language={artifact?.language ?? part.language}
                       content={artifact?.content ?? part.content}
+                      version={artifact?.currentVersion}
+                      updated={!!artifact && artifact.messageId != null && artifact.messageId !== message.id}
                       onOpen={part.identifier && artifact ? () => onOpenArtifact(part.identifier, { fullscreen: false }) : undefined}
                     />
                   );

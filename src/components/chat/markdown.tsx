@@ -163,17 +163,12 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
     }
   };
 
+  // Sparse chrome, per the flat-transcript law: a hairline frame, the language
+  // in the mono metadata voice, one action. No window dots, no gloss.
   return (
-    <div className="group/code my-4 overflow-hidden rounded-[18px] border border-border/70 bg-card/90 shadow-pop">
-      <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-[linear-gradient(180deg,hsl(var(--sheen)),transparent)] py-2 pl-3 pr-2">
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="flex items-center gap-1.5" aria-hidden>
-            <span className="size-2.5 rounded-full bg-destructive/75 ring-1 ring-black/5" />
-            <span className="size-2.5 rounded-full bg-warning/75 ring-1 ring-black/5" />
-            <span className="size-2.5 rounded-full bg-success/75 ring-1 ring-black/5" />
-          </span>
-          <span className="truncate font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{lang || "code"}</span>
-        </span>
+    <div className="group/code my-4 overflow-hidden rounded-xl border border-border/60 bg-background/35">
+      <div className="flex items-center justify-between gap-2 border-b border-border/50 py-1 pl-3 pr-1">
+        <span className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{lang || "code"}</span>
         {isMermaid ? (
           <span className="px-2 py-1 font-mono text-caption text-muted-foreground/80">Diagram renders when complete…</span>
         ) : (
@@ -181,14 +176,14 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
             type="button"
             onClick={copy}
             aria-label={copied ? "Copied" : "Copy code"}
-            className="pressable inline-flex items-center gap-1.5 rounded-[10px] border border-transparent px-2 py-1 font-mono text-caption text-muted-foreground hover:border-border/60 hover:bg-background/55 hover:text-foreground coarse:px-2.5 coarse:py-2"
+            className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 font-mono text-caption text-muted-foreground opacity-0 transition-[opacity,background-color,color,transform] duration-base ease-out-soft active:scale-[0.97] hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/code:opacity-100 coarse:px-2.5 coarse:py-2 coarse:opacity-100"
           >
             {copied ? <Check className="h-3.5 w-3.5 text-success motion-safe:animate-fade-in" /> : <Copy className="h-3.5 w-3.5" />}
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
         )}
       </div>
-      <pre ref={ref} className="max-h-[520px] overflow-auto bg-background/35 p-4 text-[12.5px] leading-6 scroll-fade-y">
+      <pre ref={ref} className="max-h-[520px] overflow-auto px-3 py-2.5 text-[12.5px] leading-6 scroll-fade-y">
         {children}
       </pre>
     </div>

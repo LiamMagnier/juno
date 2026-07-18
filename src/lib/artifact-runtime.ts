@@ -60,6 +60,24 @@ export function canonicalLang(raw?: string | null): string {
   return ALIASES[key] ?? key ?? "";
 }
 
+// Canonical language key → file extension for downloads. The stored `language`
+// is a language NAME ("python", "typescript"), never a usable suffix.
+const FILE_EXTENSIONS: Record<string, string> = {
+  javascript: "js", typescript: "ts", jsx: "jsx", tsx: "tsx",
+  python: "py", html: "html", svg: "svg", css: "css", mermaid: "mmd", markdown: "md",
+  bash: "sh", sql: "sql", go: "go", rust: "rs", c: "c", cpp: "cpp", csharp: "cs",
+  java: "java", kotlin: "kt", swift: "swift", ruby: "rb", php: "php", perl: "pl",
+  json: "json", yaml: "yml", toml: "toml", xml: "xml", dockerfile: "dockerfile",
+  makefile: "mk", ini: "ini", graphql: "graphql", vue: "vue", svelte: "svelte",
+  dart: "dart", r: "r", lua: "lua", scala: "scala", elixir: "ex", haskell: "hs",
+};
+
+/** Download extension for an artifact's declared language ("python" → "py"). */
+export function extensionForLanguage(raw?: string | null): string | null {
+  const lang = canonicalLang(raw);
+  return FILE_EXTENSIONS[lang] ?? null;
+}
+
 export function langLabel(lang: string): string {
   return LABELS[lang] ?? (lang ? lang.charAt(0).toUpperCase() + lang.slice(1) : "Text");
 }

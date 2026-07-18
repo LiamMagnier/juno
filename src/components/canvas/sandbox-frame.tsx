@@ -296,12 +296,33 @@ const INSPECTOR_SCRIPT = `<script>
 })();
 </${"script"}>`;
 
+/**
+ * Minimal run-state reporter for documents with no runtime of their own
+ * (HTML/SVG/CSS). Loading → done on load; an uncaught error BEFORE load counts
+ * as a render failure, later errors are interaction noise and only hit the
+ * console. React and console docs report their own richer status instead.
+ */
+const STATUS_LITE = `<script>
+(function(){
+  var failed=false;
+  function post(s){try{parent.postMessage({type:'juno:status',status:s,detail:''},'*');}catch(e){}}
+  post('loading');
+  // ErrorEvent check: uncaught exceptions only. A capture listener would also
+  // receive non-bubbling RESOURCE errors (a dead <img>, a 404'd CDN script) —
+  // pages that render fine must not be reported as failed.
+  window.addEventListener('error',function(e){
+    if(e instanceof ErrorEvent && document.readyState!=='complete'){failed=true;post('error');}
+  });
+  window.addEventListener('load',function(){setTimeout(function(){if(!failed)post('done');},0);});
+})();
+</${"script"}>`;
+
 /** Inject the console bridge (early) + inspector (late) into a web document. */
-function withChrome(doc: string): string {
+function withChrome(doc: string, statusLite = false): string {
   const head = doc.indexOf("</head>");
   // Shim first (before console bridge), so storage/history are safe before any
   // artifact or bridge code runs.
-  const chrome = SANDBOX_SHIM + CONSOLE_BRIDGE;
+  const chrome = SANDBOX_SHIM + (statusLite ? STATUS_LITE : "") + CONSOLE_BRIDGE;
   const out = head !== -1 ? doc.slice(0, head) + chrome + doc.slice(head) : chrome + doc;
   const body = out.lastIndexOf("</body>");
   return body !== -1 ? out.slice(0, body) + INSPECTOR_SCRIPT + out.slice(body) : out + INSPECTOR_SCRIPT;
@@ -509,15 +530,15 @@ export function buildSandboxDoc(type: ArtifactType, content: string, language?: 
     case "jsx":
       return withChrome(reactDoc(content));
     case "html":
-      return withChrome(htmlDoc(content));
+      return withChrome(htmlDoc(content), true);
     case "svg":
-      return withChrome(svgDoc(content));
+      return withChrome(svgDoc(content), true);
     case "css":
-      return withChrome(cssDoc(content));
+      return withChrome(cssDoc(content), true);
     case "mermaid":
       return mermaidDoc(content);
     default:
-      return withChrome(htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`));
+      return withChrome(htmlDoc(`<pre style="padding:16px;white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace">${escapeHtml(content)}</pre>`), true);
   }
 }
 

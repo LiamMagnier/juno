@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { BlockShell, LessonKicker } from "@/components/chat/learning/block-shell";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -9,7 +10,8 @@ import type { ProcessTimelineData } from "@/lib/learning-blocks";
 /**
  * Vertical numbered timeline. Clicking a step makes it active and expands its
  * description (one open at a time); the connector fills up to the active step.
- * ArrowUp/ArrowDown move the active step while the container is focused.
+ * ArrowUp/ArrowDown move the active step while the container is focused, and a
+ * Previous/Next footer walks the sequence for pointer and screen-reader users.
  */
 export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineData }) {
   const steps = timeline.steps;
@@ -115,6 +117,46 @@ export function ProcessTimelineBlock({ timeline }: { timeline: ProcessTimelineDa
           );
         })}
       </ol>
+
+      {/* Step navigation — the same walk the arrow keys make, for everyone. */}
+      {steps.length > 1 && (
+        <footer className="flex items-center justify-between gap-2 border-t border-border/50 px-3 py-2 sm:px-4">
+          {/* aria-disabled, not disabled: a natively disabled button drops
+              keyboard focus to <body> the moment the end of the sequence is
+              reached while it is focused. */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-disabled={active === 0}
+            onClick={() => setActive((current) => Math.max(0, current - 1))}
+            className={cn(
+              "h-7 gap-1 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground coarse:h-10 coarse:px-3",
+              active === 0 && "pointer-events-none opacity-50"
+            )}
+          >
+            <ChevronLeft aria-hidden className="size-3.5" />
+            Previous
+          </Button>
+          <span aria-live="polite" className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground tabular-nums">
+            Step {active + 1} of {steps.length}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-disabled={active === steps.length - 1}
+            onClick={() => setActive((current) => Math.min(steps.length - 1, current + 1))}
+            className={cn(
+              "h-7 gap-1 rounded-[10px] px-2 text-xs text-muted-foreground hover:text-foreground coarse:h-10 coarse:px-3",
+              active === steps.length - 1 && "pointer-events-none opacity-50"
+            )}
+          >
+            Next
+            <ChevronRight aria-hidden className="size-3.5" />
+          </Button>
+        </footer>
+      )}
     </BlockShell>
   );
 }

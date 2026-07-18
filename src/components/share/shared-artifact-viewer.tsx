@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Code2, Eye } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Markdown } from "@/components/chat/markdown";
+import { CodeSurface } from "@/components/canvas/code-surface";
 import { SandboxFrame } from "@/components/canvas/sandbox-frame";
 import { runtimeFor } from "@/lib/artifact-runtime";
 import type { ArtifactType } from "@/lib/message-content";
@@ -37,17 +37,9 @@ export function SharedArtifactViewer({
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as "preview" | "code")} className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-2 pb-3">
-        <TabsList>
-          {hasPreview && (
-            <TabsTrigger value="preview" className="gap-1.5">
-              <Eye className="h-3.5 w-3.5" />
-              Preview
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="code" className="gap-1.5">
-            <Code2 className="h-3.5 w-3.5" />
-            Code
-          </TabsTrigger>
+        <TabsList className="h-8">
+          {hasPreview && <TabsTrigger value="preview">Preview</TabsTrigger>}
+          <TabsTrigger value="code">Code</TabsTrigger>
         </TabsList>
         <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
           {rt.label}
@@ -68,9 +60,7 @@ export function SharedArtifactViewer({
       )}
 
       <TabsContent value="code" className={panel}>
-        <div className="h-full overflow-auto">
-          <Markdown content={`\`\`\`${language ?? ""}\n${content}\n\`\`\``} className="p-4" />
-        </div>
+        <CodeSurface value={content} language={rt.lang || language} readOnly wrap={isMarkdown} ariaLabel="Artifact source" />
       </TabsContent>
     </Tabs>
   );

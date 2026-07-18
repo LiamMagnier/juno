@@ -4,9 +4,16 @@ import { getConversationThread } from "@/lib/queries";
 import { ChatView } from "@/components/chat/chat-view";
 import { CodeSessionView } from "@/components/code/code-session-view";
 
-export default async function ConversationPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ConversationPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ artifact?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const { artifact } = await searchParams;
   const thread = await getConversationThread(user.id, id);
   if (!thread) notFound();
 
@@ -24,6 +31,7 @@ export default async function ConversationPage({ params }: { params: Promise<{ i
       initialModel={thread.conversation.model}
       projectId={thread.conversation.projectId ?? undefined}
       initialConnectors={thread.conversation.activeConnectors}
+      initialArtifactIdentifier={typeof artifact === "string" && artifact ? artifact : undefined}
     />
   );
 }

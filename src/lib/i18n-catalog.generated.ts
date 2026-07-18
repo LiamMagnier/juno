@@ -138,10 +138,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Drag to resize. Arrow keys adjust, Home resets."
   },
   {
-    "id": "021a734de7748f42",
-    "source": "(latest)"
-  },
-  {
     "id": "022c14191cf3acea",
     "source": "Voice conversation controls"
   },
@@ -194,6 +190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "fits you"
   },
   {
+    "id": "036bac15413bfccd",
+    "source": "request_in_progress"
+  },
+  {
     "id": "038602ae4071e6dd",
     "source": "Kimi flagship — multimodal (image + video input) with toggleable thinking."
   },
@@ -238,6 +238,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "user"
   },
   {
+    "id": "050be7950a638d06",
+    "source": "You're offline"
+  },
+  {
     "id": "053946f7f1f2b597",
     "source": "Restart Step Lab"
   },
@@ -248,10 +252,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0559aadba9e29b9a",
     "source": "OWNER"
-  },
-  {
-    "id": "05618b9a6dbb94a4",
-    "source": "Exit history"
   },
   {
     "id": "056a3c0be22d937d",
@@ -268,6 +268,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "057b5de48d7b90f1",
     "source": "Minimal"
+  },
+  {
+    "id": "058bd467c95a02f2",
+    "source": "these filters"
   },
   {
     "id": "058fa5cbf02d0a69",
@@ -430,16 +434,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "(compte, conversations, génération de réponses par les modèles d'IA, support) — base légale : exécution du contrat (CGU)."
   },
   {
+    "id": "096b73624b092bdc",
+    "source": "Saving"
+  },
+  {
     "id": "09c068dd0c101194",
     "source": "Older Codex-tuned model."
   },
   {
     "id": "0a30a815d67d7dd2",
     "source": "Page"
-  },
-  {
-    "id": "0a42460e7a2ef217",
-    "source": "Download as…"
   },
   {
     "id": "0a4e4c29432ecb01",
@@ -460,10 +464,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "0af96a8ed622a394",
     "source": "budget"
-  },
-  {
-    "id": "0b4806d0fc924c9d",
-    "source": "Inspect elements"
   },
   {
     "id": "0b7004c8459afc3a",
@@ -614,6 +614,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open Juno"
   },
   {
+    "id": "10b6c68ee9514540",
+    "source": "→ v"
+  },
+  {
     "id": "10b8732757c6e347",
     "source": "L'utilisation des modèles reste également soumise aux politiques d'usage des laboratoires d'IA concernés."
   },
@@ -716,6 +720,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "13bbde57e2a6805a",
     "source": "Stopped to stay within your plan’s budget."
+  },
+  {
+    "id": "1404a07c7fb4878f",
+    "source": "Could not delete the artifact."
   },
   {
     "id": "140bedbf9c3f6d56",
@@ -1110,6 +1118,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "configured"
   },
   {
+    "id": "203c4cac9f2747c0",
+    "source": "The artifact changed since you opened history — review the new version first."
+  },
+  {
     "id": "204a5eb2cd28bcfd",
     "source": "Cost"
   },
@@ -1342,10 +1354,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GPT-5.6 Terra"
   },
   {
-    "id": "2732ad8affa1d98c",
-    "source": "The source was referenced in the message but is not available locally yet."
-  },
-  {
     "id": "275d4eb39f9207f7",
     "source": "Moonshot · Kimi"
   },
@@ -1490,6 +1498,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Connection dropped — Juno keeps working. Recovering the answer…"
   },
   {
+    "id": "2a78025de6aae5e7",
+    "source": "Select"
+  },
+  {
     "id": "2ad8a7049d7c5511",
     "source": "it"
   },
@@ -1532,6 +1544,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2c21600ed133de4b",
     "source": "Talk with any model — live, interruptible, transcribed both ways. Voice notes drop straight into chat."
+  },
+  {
+    "id": "2c63db59042d04d3",
+    "source": "Discard my draft"
   },
   {
     "id": "2c6782777d2a2867",
@@ -1650,6 +1666,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create your Juno account and start chatting with the best AI models in seconds."
   },
   {
+    "id": "2f6c34e1e304c303",
+    "source": "Restoring keeps history — v"
+  },
+  {
     "id": "2f8b0ce24f5dd394",
     "source": "Too many attempts — try again later."
   },
@@ -1676,6 +1696,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "30333a62af2a6bf3",
     "source": "Chat with Claude, GPT, Gemini and models from a dozen more labs in one calm workspace. Plans are metered by real API cost — you see what every answer costs. Hosted in France, GDPR by default."
+  },
+  {
+    "id": "305386421b6b3438",
+    "source": "Artifact name"
   },
   {
     "id": "3064d79a295cefe4",
@@ -1846,6 +1870,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "projects:sync"
   },
   {
+    "id": "3592d9a84296c6cf",
+    "source": "The new name shows everywhere this artifact appears."
+  },
+  {
     "id": "35db9d14d73d8743",
     "source": "Tell Juno what to remember, update, or forget…"
   },
@@ -1992,6 +2020,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3941fa19ef2282dc",
     "source": "Invalid plan."
+  },
+  {
+    "id": "394d741796dc6db1",
+    "source": "Search artifacts…"
   },
   {
     "id": "39651ebf6d79bb02",
@@ -2144,10 +2176,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3d30020b1863441a",
     "source": ", or"
-  },
-  {
-    "id": "3d585a74a5b062c7",
-    "source": "Restoring creates a new version"
   },
   {
     "id": "3d6df245178e6076",
@@ -2442,10 +2470,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Voice mode accepts up to 4 images in one turn."
   },
   {
-    "id": "4521eba120ffc685",
-    "source": "Your artifacts"
-  },
-  {
     "id": "4529950e3cce03a4",
     "source": "Cedar"
   },
@@ -2456,10 +2480,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "45c9c87cd1cdee93",
     "source": "Socratic"
-  },
-  {
-    "id": "45ef6dae60474e0c",
-    "source": "Couldn’t load your artifacts."
   },
   {
     "id": "460534c21d2ae1cb",
@@ -2538,10 +2558,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Recently shipped"
   },
   {
-    "id": "47805bcf79bc324a",
-    "source": "-&gt; v"
-  },
-  {
     "id": "4787eaf7c938045f",
     "source": "Legal"
   },
@@ -2596,10 +2612,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "49774d1b090e3fe6",
     "source": "task_limit"
-  },
-  {
-    "id": "49a0053f3b0d5045",
-    "source": "Copy code"
   },
   {
     "id": "49a4213e9cce9f9f",
@@ -2798,6 +2810,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The language Juno replies in."
   },
   {
+    "id": "51035b5b67dca0d1",
+    "source": "Filter by type"
+  },
+  {
     "id": "512b760984717cf8",
     "source": "Mentions légales de Juno (chat.liams.dev) : éditeur, directeur de la publication, hébergeur et propriété intellectuelle, conformément à la loi pour la confiance dans l'économie numérique (LCEN)."
   },
@@ -2882,6 +2898,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Available to connect"
   },
   {
+    "id": "5399496e4e675c0c",
+    "source": "Ask Juno to build a page, component, document, or diagram — it opens in the Canvas and collects here."
+  },
+  {
     "id": "53a3b5574a402c03",
     "source": "the export"
   },
@@ -2960,10 +2980,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5660cedc0f34aa98",
     "source": "Voice mode requires a paid plan."
-  },
-  {
-    "id": "56651f34b548b001",
-    "source": "Ask Juno to build a component, page, or diagram — it opens in the Canvas and collects here."
   },
   {
     "id": "56681010b753e1ab",
@@ -3278,6 +3294,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cost-efficient hybrid — instruct, reasoning, and vision in one."
   },
   {
+    "id": "5e4b5a100c298ca5",
+    "source": "Could not save — the artifact may have been deleted."
+  },
+  {
     "id": "5e5eba7f41abfe4c",
     "source": "Open project"
   },
@@ -3288,10 +3308,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5e9f98120dbe5682",
     "source": "Severity"
-  },
-  {
-    "id": "5ea44c3961f16643",
-    "source": "lines"
   },
   {
     "id": "5ebb769533222780",
@@ -3426,10 +3442,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ACTIVE"
   },
   {
-    "id": "63168fcc0e98cd31",
-    "source": "Reload preview"
-  },
-  {
     "id": "63397109345be4ec",
     "source": "Delete this project?"
   },
@@ -3534,6 +3546,14 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This removes the popup and every user dismissal record for it."
   },
   {
+    "id": "6654542e2d9eb25a",
+    "source": "Run the program again"
+  },
+  {
+    "id": "6660878fcb4c8e10",
+    "source": "Rename artifact"
+  },
+  {
     "id": "669d59cd2d84b327",
     "source": "Attachments are not available in private chat."
   },
@@ -3574,6 +3594,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "peuvent être inexactes, incomplètes ou inappropriées"
   },
   {
+    "id": "67a926df4e55b426",
+    "source": "Click an element in the preview · Esc to cancel"
+  },
+  {
     "id": "67c3d04065756c64",
     "source": "Effacement"
   },
@@ -3584,6 +3608,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "685fdb489644bc05",
     "source": "Animated and varied"
+  },
+  {
+    "id": "6885b02baa6cc783",
+    "source": "Your artifacts will load again the moment the connection returns."
   },
   {
     "id": "68a79c562fa5737d",
@@ -3616,6 +3644,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "69264590114c60f0",
     "source": "Couldn't load that version."
+  },
+  {
+    "id": "692ff6f0ac24b7a0",
+    "source": "Invalid receipt lookup."
   },
   {
     "id": "6945f1df7537a931",
@@ -3786,6 +3818,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Try comparing the options against the main idea above."
   },
   {
+    "id": "6ceaa117aca7ff03",
+    "source": "Selecting…"
+  },
+  {
     "id": "6cfa48ed07bbc2e9",
     "source": "GLM X"
   },
@@ -3870,6 +3906,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t load the roadmap."
   },
   {
+    "id": "6e9bb5415be7f8e6",
+    "source": "Couldn't load your artifacts"
+  },
+  {
     "id": "6ea4b827d2eeb8f5",
     "source": "/chat"
   },
@@ -3942,6 +3982,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Post as official reply"
   },
   {
+    "id": "7047b9af7a4cd070",
+    "source": "Open conversation"
+  },
+  {
     "id": "704d863e0d9e3193",
     "source": "Private chat"
   },
@@ -3998,6 +4042,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "or"
   },
   {
+    "id": "7179ea0035fca783",
+    "source": "Clear filters"
+  },
+  {
     "id": "71883a61ed39bb0a",
     "source": "Building the visual explanation..."
   },
@@ -4024,6 +4072,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "725768b8d7b4d664",
     "source": "Couldn’t load your shared links."
+  },
+  {
+    "id": "72b705ef97fb54b6",
+    "source": "Reload the preview"
   },
   {
     "id": "72bb90897ab1eadc",
@@ -4108,6 +4160,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7550821503a79223",
     "source": "The voice transcript could not be saved."
+  },
+  {
+    "id": "7566340b6fe12bd0",
+    "source": "Could not download the source."
   },
   {
     "id": "758e8416eb8a3588",
@@ -4218,6 +4274,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "This deletes your account and everything in it — conversations, memories, uploaded files, and your subscription. It takes effect immediately, and nothing can be recovered afterwards. If you want a copy, export your data first."
   },
   {
+    "id": "7924f4ab279fec70",
+    "source": "The source will stream in here."
+  },
+  {
     "id": "792ce42eac02defa",
     "source": "Save instructions"
   },
@@ -4244,6 +4304,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "79fff4e68510442d",
     "source": "Pre-filter matched a stated intent to kill/harm a specific target."
+  },
+  {
+    "id": "7a650a2c17fb64c2",
+    "source": "This first submission is still being accepted. Retry with the same identifiers."
   },
   {
     "id": "7a6d7fcaace695aa",
@@ -4348,6 +4412,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7d8bf6d1b1792552",
     "source": "ByteDance · Seedance"
+  },
+  {
+    "id": "7d903f0ceabf0533",
+    "source": "Pick an element to ask about or modify"
   },
   {
     "id": "7d9eb7acb13e2462",
@@ -4540,6 +4608,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "822299ffc169e5fb",
     "source": "Start one above."
+  },
+  {
+    "id": "822ea3d9ea3d7f8f",
+    "source": "Artifact view"
   },
   {
     "id": "825426a77a73e6e9",
@@ -4746,6 +4818,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "wrong"
   },
   {
+    "id": "88561e229fc0ef71",
+    "source": "Artifact deleted"
+  },
+  {
     "id": "88d4e16a52c712a6",
     "source": "Free is a browse-only tier. Upgrade to Pro to start using models."
   },
@@ -4870,6 +4946,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Medium"
   },
   {
+    "id": "8e6a6cca7aae1d1e",
+    "source": "Step"
+  },
+  {
     "id": "8e808e7d97cf906f",
     "source": "No repositories match “"
   },
@@ -4900,6 +4980,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8fe816331462c4d7",
     "source": "OpenAI's strongest mini — fast, cheap coding and subagents."
+  },
+  {
+    "id": "9024e08269cdca0b",
+    "source": "This artifact was referenced in the message but its content isn't available here yet."
   },
   {
     "id": "902ceeb21a5f1f10",
@@ -5182,10 +5266,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Task failed"
   },
   {
-    "id": "9735048049870e80",
-    "source": "Exit inspect (Esc)"
-  },
-  {
     "id": "9750ec0cf665cd6f",
     "source": "in “"
   },
@@ -5326,6 +5406,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Base branch"
   },
   {
+    "id": "9ae53f955ae08590",
+    "source": "Every version is removed and any public share link stops working. The conversation it came from is untouched."
+  },
+  {
     "id": "9aee6b1bcdf617d8",
     "source": "POST"
   },
@@ -5458,10 +5542,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "5. Durées de conservation"
   },
   {
-    "id": "9e252576e22f79f1",
-    "source": "Artifact placeholder"
-  },
-  {
     "id": "9e4324ea2bcd7f8c",
     "source": "Search your GitHub repositories"
   },
@@ -5480,6 +5560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9e91ec7f79b7cc94",
     "source": "Reconnected — Juno's answer came through."
+  },
+  {
+    "id": "9ea1fed5d2c1a18d",
+    "source": "Copy source"
   },
   {
     "id": "9ecce0b1bba753b0",
@@ -5508,6 +5592,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a039dfb9628b53dd",
     "source": "Tokens"
+  },
+  {
+    "id": "a03f2386ae06b211",
+    "source": "stale"
   },
   {
     "id": "a072bee2d58866a7",
@@ -5634,6 +5722,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "4. Propriété intellectuelle"
   },
   {
+    "id": "a3feb81f9af3d3c0",
+    "source": "Source unavailable"
+  },
+  {
     "id": "a40d45a85ffded6c",
     "source": "Start free — upgrade any time. Changes apply instantly."
   },
@@ -5714,6 +5806,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Its chats are kept (just unlinked), but the project’s instructions and files are removed. This can’t be undone."
   },
   {
+    "id": "a5528bc9eea0301c",
+    "source": "while you were editing."
+  },
+  {
     "id": "a57b08a480b822a0",
     "source": "Previous"
   },
@@ -5790,20 +5886,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Reopen"
   },
   {
-    "id": "a8893d3aa23abbc9",
-    "source": "in the browser isn't supported yet. The full source is on the Code tab — copy or download to run it locally."
-  },
-  {
-    "id": "a897cc04f13d7eff",
-    "source": "Try “/artifact” in any chat"
-  },
-  {
     "id": "a89ee82d1dfe8d5f",
     "source": "GPT-5.3 Codex"
-  },
-  {
-    "id": "a8b23784a5a2b786",
-    "source": "Saved as a new version"
   },
   {
     "id": "a8bfae3eee941527",
@@ -5866,16 +5950,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "warn"
   },
   {
+    "id": "aa783bb67cbe2e4a",
+    "source": "Something went wrong on the way here."
+  },
+  {
     "id": "aa7b6cd19325162e",
     "source": "Reconnect GitHub"
   },
   {
     "id": "aa8fd4aa35ce3925",
     "source": "Qwen Plus"
-  },
-  {
-    "id": "aa9423f46dcb3f47",
-    "source": "Preparing source code..."
   },
   {
     "id": "aab31cde23ba9783",
@@ -5974,12 +6058,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": messages, fichiers joints et artefacts que vous créez dans le Service. Les conversations sont"
   },
   {
-    "id": "ad4b4d1dc893c9eb",
-    "source": "Select an element"
-  },
-  {
     "id": "ad68f3aaa22289f4",
     "source": "Faster, cheaper Veo tier."
+  },
+  {
+    "id": "ada9cd893adf5991",
+    "source": "Source copied"
   },
   {
     "id": "addb776b173a84f2",
@@ -6026,10 +6110,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Cheapest, lowest-latency tier for high-volume simple tasks."
   },
   {
-    "id": "af172c1796486d18",
-    "source": "Apps, components, and docs Juno built with you."
-  },
-  {
     "id": "af2cfa4675fb1798",
     "source": "Memory reset — Juno starts fresh."
   },
@@ -6044,6 +6124,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "af92524e4c086f56",
     "source": "Invalid request."
+  },
+  {
+    "id": "afacdba8b8ab7344",
+    "source": "Nothing fits"
   },
   {
     "id": "afd25fdf17c7f534",
@@ -6262,8 +6346,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Skip for now"
   },
   {
+    "id": "b5a3cfc4b38e6750",
+    "source": "becomes a new version."
+  },
+  {
     "id": "b5c582d555b204b0",
     "source": "Beyond chat: image and video generation (GPT Image, Nano Banana, Veo, Grok Imagine, Seedance) and realtime voice — all under the same subscription, all metered the same way."
+  },
+  {
+    "id": "b5c7aed7cd2a3085",
+    "source": "ALL"
   },
   {
     "id": "b5ff8386a26706d6",
@@ -6472,6 +6564,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "bda94d3dce78637e",
     "source": "Ash"
+  },
+  {
+    "id": "bdc090ec61e3fcfc",
+    "source": "Reload"
   },
   {
     "id": "bdcd897ab8ed5859",
@@ -6754,6 +6850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "juno:console"
   },
   {
+    "id": "c71436cce0eb861d",
+    "source": "Search artifacts"
+  },
+  {
     "id": "c7169cf55dbd0f3e",
     "source": "). La création d'un compte ou la souscription d'un abonnement emporte acceptation pleine et entière des présentes."
   },
@@ -6836,6 +6936,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c926c2c50e65d5a5",
     "source": "Opening…"
+  },
+  {
+    "id": "c96bfc47eba70b32",
+    "source": "Everything Juno built with you, newest first."
   },
   {
     "id": "c96c6d5be8d08a12",
@@ -7370,8 +7474,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Artificial Analysis"
   },
   {
+    "id": "d6cc9c5929ced349",
+    "source": "· back to latest"
+  },
+  {
     "id": "d6eafe8235910042",
     "source": "Download"
+  },
+  {
+    "id": "d70b9e24bca26b40",
+    "source": "Created"
   },
   {
     "id": "d72a3965fe9531eb",
@@ -7456,10 +7568,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d8f9d3ef2e5e7e39",
     "source": "Link an app so Juno can work with your repositories, designs, docs, and workspace tools."
-  },
-  {
-    "id": "d9085ec1eb878612",
-    "source": "No artifacts yet."
   },
   {
     "id": "d9088c8aee0118cb",
@@ -7574,12 +7682,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Choose new password"
   },
   {
-    "id": "dbfd9e14f393be66",
-    "source": "Building your file…"
-  },
-  {
     "id": "dc052e9106e29f6e",
     "source": "GPT-5.2 Codex"
+  },
+  {
+    "id": "dc18b5728ad82a2a",
+    "source": "Could not rename the artifact."
   },
   {
     "id": "dc20b3d5d2cddf82",
@@ -7626,10 +7734,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Name"
   },
   {
-    "id": "dcd6e88eb356031d",
-    "source": "This clientRequestId is already bound to a different first message."
-  },
-  {
     "id": "dce083a2c47ffdc4",
     "source": "Declined"
   },
@@ -7644,10 +7748,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dd13ebe14f012b6b",
     "source": "7-day window"
-  },
-  {
-    "id": "dd167905de0defca",
-    "source": "Version"
   },
   {
     "id": "dd1841d295024256",
@@ -7708,6 +7808,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "df0fbf9c008fb166",
     "source": "Add to project"
+  },
+  {
+    "id": "df9b882aef17c7e0",
+    "source": "Unsaved changes · saves as v"
   },
   {
     "id": "dfb167939789bfc4",
@@ -7910,6 +8014,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Not found"
   },
   {
+    "id": "e43895bda2722bbe",
+    "source": "receipt_not_found"
+  },
+  {
     "id": "e46ee9fc0d6f038f",
     "source": "Retiring — deprecated by the provider."
   },
@@ -8038,10 +8146,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Compare"
   },
   {
-    "id": "e8b18c6caf4b941b",
-    "source": "View code"
-  },
-  {
     "id": "e8f279b001aea70c",
     "source": "From your library"
   },
@@ -8154,6 +8258,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Grok 4.5"
   },
   {
+    "id": "ebc95f30f86dae2e",
+    "source": "View v"
+  },
+  {
     "id": "ebd685759e2f65ae",
     "source": "Could not delete chat."
   },
@@ -8204,6 +8312,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ed880dc9b9cbfc38",
     "source": "Canvas is off in incognito chats."
+  },
+  {
+    "id": "eda7914c6a93ef0f",
+    "source": "This version failed to render."
   },
   {
     "id": "edb2e96b17249502",
@@ -8264,6 +8376,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ef3b56293fdf1b8f",
     "source": ": adresse e-mail, nom d'affichage, mot de passe (stocké exclusivement sous forme hachée), plan d'abonnement."
+  },
+  {
+    "id": "ef4c87b5083fbe48",
+    "source": "Save anyway"
   },
   {
     "id": "efa626ed64e8cad9",
@@ -8438,6 +8554,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Mac connected"
   },
   {
+    "id": "f5610b27681e0f55",
+    "source": "Saved elsewhere as v"
+  },
+  {
     "id": "f5904cf7a1231a7a",
     "source": "Marketing"
   },
@@ -8560,6 +8680,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f8b10089c3d4db39",
     "source": "Couldn’t register your vote."
+  },
+  {
+    "id": "f8d46c2570e70736",
+    "source": "More actions"
   },
   {
     "id": "f8d50434cd2ddb41",
@@ -8752,6 +8876,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fdab556f67bf858e",
     "source": "Could not send your answer. Check your connection and try again."
+  },
+  {
+    "id": "fdd77e6661ff8531",
+    "source": "Delete “"
   },
   {
     "id": "fddb7f9c69fed4ad",

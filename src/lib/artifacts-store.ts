@@ -20,23 +20,28 @@ export async function persistArtifacts(
     });
 
     if (existing) {
+      // Transaction: the version insert and the currentVersion bump must land
+      // together, or a concurrent writer can leave currentVersion pointing past
+      // (or behind) the real newest row.
       const nextVersion = existing.currentVersion + 1;
-      await prisma.artifactVersion.create({
-        data: { artifactId: existing.id, version: nextVersion, content: a.content },
-      });
-      const updated = await prisma.artifact.update({
-        where: { id: existing.id },
-        data: {
-          title: a.title,
-          type: a.type,
-          language: a.language ?? null,
-          currentVersion: nextVersion,
-          // NOTE: messageId is intentionally NOT reassigned — it stays pinned to the
-          // message that first created the artifact, so regenerating a later turn
-          // never deletes an artifact authored in an earlier (still-present) turn.
-        },
-        include: { versions: true },
-      });
+      const [, updated] = await prisma.$transaction([
+        prisma.artifactVersion.create({
+          data: { artifactId: existing.id, version: nextVersion, content: a.content, origin: "generated" },
+        }),
+        prisma.artifact.update({
+          where: { id: existing.id },
+          data: {
+            title: a.title,
+            type: a.type,
+            language: a.language ?? null,
+            currentVersion: nextVersion,
+            // NOTE: messageId is intentionally NOT reassigned — it stays pinned to the
+            // message that first created the artifact, so regenerating a later turn
+            // never deletes an artifact authored in an earlier (still-present) turn.
+          },
+          include: { versions: true },
+        }),
+      ]);
       out.push(serializeArtifact(updated));
     } else {
       const created = await prisma.artifact.create({
@@ -48,7 +53,7 @@ export async function persistArtifacts(
           type: a.type,
           language: a.language ?? null,
           currentVersion: 1,
-          versions: { create: { version: 1, content: a.content } },
+          versions: { create: { version: 1, content: a.content, origin: "generated" } },
         },
         include: { versions: true },
       });

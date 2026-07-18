@@ -37,6 +37,8 @@ interface ChatViewProps {
   /** Auto-send the initial prompt as a deep-research turn (?research=1). */
   initialPromptResearch?: boolean;
   initialConnectors?: string[];
+  /** Open this artifact's canvas on arrival (?artifact= deep link from the library). */
+  initialArtifactIdentifier?: string;
 }
 
 type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "stopped";
@@ -145,7 +147,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialConnectors }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialConnectors, initialArtifactIdentifier }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -695,6 +697,28 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     [chat.artifacts, openArtifactId]
   );
 
+  // ?artifact= deep link (library → "open in its conversation"): open the named
+  // canvas once per identifier. Keyed by identifier, not a boolean — a client
+  // -side navigation that only swaps ?artifact= re-renders this same mounted
+  // ChatView, and the new target must still open; a plain "consumed" flag would
+  // swallow it. Closing the canvas afterwards stays closed (same identifier).
+  const deepLinkConsumedRef = React.useRef<string | null>(null);
+  // App Router PRESERVES this component instance across /chat/A → /chat/B soft
+  // navigations, so the ref must reset per conversation — identifiers repeat
+  // across conversations ("pomodoro" here is not "pomodoro" there), and a
+  // stale consumed mark would silently swallow the second deep link.
+  React.useEffect(() => {
+    deepLinkConsumedRef.current = null;
+  }, [conversationId]);
+  React.useEffect(() => {
+    if (!initialArtifactIdentifier || deepLinkConsumedRef.current === initialArtifactIdentifier) return;
+    const a = chat.artifacts.find((x) => x.identifier === initialArtifactIdentifier);
+    if (!a) return;
+    deepLinkConsumedRef.current = initialArtifactIdentifier;
+    setOpenArtifactId(a.id);
+    setThoughtOpenId(null);
+  }, [chat.artifacts, initialArtifactIdentifier]);
+
   // Keep the panel mounted through its slide-out; reopening cancels the exit.
   const closeArtifact = React.useCallback(() => {
     setClosingArtifact(openArtifact);
@@ -708,7 +732,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       return;
     }
     if (!closingArtifact) return;
-    const t = window.setTimeout(() => setClosingArtifact(null), 400);
+    // Matches the duration-fast exit — long enough for the fade, short enough
+    // that a reopen never waits on a stale panel.
+    const t = window.setTimeout(() => setClosingArtifact(null), 200);
     return () => window.clearTimeout(t);
   }, [openArtifact, closingArtifact]);
 
@@ -1680,17 +1706,20 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         </div>
       )}
 
-      {/* Canvas — slides in from the right; on close it lingers (absolute, so the
-          chat reflows underneath) while the slide-out plays, then unmounts. */}
+      {/* Canvas — settles in from the right edge it docks against: a short
+          16px slide + fade, not a full-width sweep, so opening reads as the
+          card "handing off" to the workspace rather than a scene change. On
+          close it lingers (absolute, so the chat reflows underneath) while the
+          brief fade-out plays, then unmounts. */}
       {(openArtifact ?? closingArtifact) && (
         <div
           style={{ "--juno-canvas-width": `${canvasWidth}px` } as React.CSSProperties}
           className={cn(
             "relative z-40 h-full w-full bg-background lg:w-[var(--juno-canvas-width)] lg:min-w-[420px] lg:shrink-0 lg:border-l",
-            resizingCanvas ? "select-none transition-none" : "duration-slow ease-out-expo",
+            resizingCanvas ? "select-none transition-none" : "ease-out-expo",
             openArtifact
-              ? !resizingCanvas && "animate-in slide-in-from-right"
-              : "pointer-events-none absolute inset-y-0 right-0 animate-out slide-out-to-right fill-mode-forwards",
+              ? !resizingCanvas && "duration-base animate-in fade-in slide-in-from-right-4"
+              : "pointer-events-none absolute inset-y-0 right-0 duration-fast animate-out fade-out slide-out-to-right-4 fill-mode-forwards",
             openArtifact && !fullscreen && "lg:relative"
           )}
         >
