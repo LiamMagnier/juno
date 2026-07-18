@@ -18,6 +18,7 @@ import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
+import { MESSAGE_DISPLAY_COLLAPSE_CHARS, sampleLineCount } from "@/lib/prompt-limits";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
@@ -486,9 +487,8 @@ export function MessageItem({
   // For multi-MB pastes, never put the full string into the DOM while collapsed
   // (that freezes / blanks the tab). Expand loads the rest on demand.
   // Avoid content.split("\n") on huge strings — that alone can OOM the tab.
-  const HUGE_PASTE = 12_000;
-  const sample = view.content.length > 4_000 ? view.content.slice(0, 4_000) : view.content;
-  const lineCount = sample ? sample.split("\n").length : 0;
+  const HUGE_PASTE = MESSAGE_DISPLAY_COLLAPSE_CHARS;
+  const lineCount = sampleLineCount(view.content);
   const isLong = view.content.length > 700 || lineCount > 14;
   const isHuge = view.content.length > HUGE_PASTE;
   const userDisplayContent =

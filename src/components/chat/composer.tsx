@@ -23,6 +23,7 @@ import {
   MessageSquarePlus,
   Mic,
   Paperclip,
+  Pencil,
   Plug,
   Plus,
   Search,
@@ -67,6 +68,11 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
 import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
+import {
+  COMPOSER_INLINE_SOFT_CHARS,
+  COMPOSER_LONG_TEXT_CHARS,
+  sampleLineCount,
+} from "@/lib/prompt-limits";
 import { formatBytes, cn } from "@/lib/utils";
 import { artifactEditRequestFromQuote, serializeQuote, quoteLocationLabel, type ComposerQuote } from "@/lib/quote-context";
 import type { ModelId } from "@/lib/models";
@@ -355,6 +361,9 @@ export function Composer({
         modality === "image" ? "Describe an image to generate…" : modality === "video" ? "Describe a video to generate…" : "Message Juno…"
       );
   const [text, setText] = React.useState("");
+  // Huge pastes stay in `text` for send, but we collapse the textarea DOM so
+  // multi-10k curricula don't freeze / blank the tab. Expand to edit inline.
+  const [draftExpanded, setDraftExpanded] = React.useState(false);
   // The user's raw draft as it was when a send got intercepted by a
   // clarification — restored on cancel (originalUserMessage may be the
   // serialized quote block, which must not go back into the textarea).
@@ -528,7 +537,10 @@ export function Composer({
   // voice-conversation launcher; the moment there's sendable content it morphs
   // back into Send.
   const showVoiceButton = !isBusy && !canSend && !!onOpenVoiceMode;
-  const longText = text.trim().length > 1500 || text.split("\n").length > 30;
+  // Never split() multi-MB drafts just to count lines — sample the head only.
+  const longText = text.trim().length > COMPOSER_LONG_TEXT_CHARS || sampleLineCount(text) > 30;
+  const hugeDraft = text.length > COMPOSER_INLINE_SOFT_CHARS;
+  const showCollapsedDraft = hugeDraft && !draftExpanded;
 
   const attachAsFile = () => {
     const content = text;
@@ -536,6 +548,7 @@ export function Composer({
     const file = new File([content], "prompt.txt", { type: "text/plain" });
     addComposerFiles([file]);
     setText("");
+    setDraftExpanded(false);
     requestAnimationFrame(autoresize);
   };
 
@@ -559,6 +572,7 @@ export function Composer({
       const result = await onSend(outgoing, sendAttachments, outgoingOptions);
       if (result && result.accepted === false) return;
       setText("");
+      setDraftExpanded(false);
       setResearch(false); // per-send: research never sticks to the next message
       clear();
       onClearQuote?.();
@@ -967,8 +981,20 @@ export function Composer({
     if (files.length && features.storage && !privateMode) {
       e.preventDefault();
       addComposerFiles(files);
+      return;
+    }
+    // After a large text paste, collapse the textarea so the DOM stays light.
+    // React's controlled onChange updates `text` first; we schedule the collapse.
+    const pasted = e.clipboardData.getData("text/plain");
+    if (pasted.length > COMPOSER_INLINE_SOFT_CHARS) {
+      setDraftExpanded(false);
     }
   };
+
+  const setDraftText = React.useCallback((next: string) => {
+    setText(next);
+    if (next.length <= COMPOSER_INLINE_SOFT_CHARS) setDraftExpanded(false);
+  }, []);
 
   const startCanvas = () => {
     onToggleCanvas(true);
@@ -1462,7 +1488,75 @@ export function Composer({
           </div>
         )}
 
-        {longText && features.storage && !privateMode && (
+        {showCollapsedDraft && (
+          <div
+            className="mx-3 mt-3 flex flex-col gap-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-3 sm:mx-3.5"
+            tabIndex={0}
+            role="group"
+            aria-label="Large paste ready to send. Press Enter to send."
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                void submit();
+              }
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Large paste ready to send</p>
+                <p className="mt-0.5 font-mono text-caption text-muted-foreground">
+                  {text.length.toLocaleString()} characters · full text is kept and will be sent · Enter to send
+                </p>
+                <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap break-words text-caption text-muted-foreground/90">
+                  {text.slice(0, 280)}
+                  {text.length > 280 ? "…" : ""}
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Clear paste"
+                className="shrink-0"
+                onClick={() => {
+                  setText("");
+                  setDraftExpanded(false);
+                  requestAnimationFrame(autoresize);
+                }}
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 gap-1.5"
+                onClick={() => {
+                  setDraftExpanded(true);
+                  requestAnimationFrame(() => {
+                    const el = textareaRef.current;
+                    if (!el) return;
+                    el.focus();
+                    const len = el.value.length;
+                    el.setSelectionRange(len, len);
+                    autoresize();
+                  });
+                }}
+              >
+                <Pencil className="h-3.5 w-3.5" /> Expand to edit
+              </Button>
+              {features.storage && !privateMode && (
+                <Button type="button" variant="outline" size="sm" onClick={attachAsFile} className="h-7 gap-1.5">
+                  <FileUp className="h-3.5 w-3.5" /> Attach as file
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {longText && !showCollapsedDraft && features.storage && !privateMode && (
           <div className="flex items-center justify-between gap-3 px-4 pt-3">
             <span className="text-caption text-muted-foreground">
               That’s a long one — attach it as a file to keep the chat tidy?
@@ -1589,27 +1683,33 @@ export function Composer({
           </div>
         )}
 
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-          disabled={isBusy || sendLocked || status === "checking"}
-          rows={1}
-          placeholder={placeholder}
-          // The palette is driven from here — focus never moves to it — so the
-          // textarea has to name the row the arrow keys are sitting on.
-          aria-activedescendant={
-            slashOpen && slash ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}` : undefined
-          }
-          className={cn(
-            "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
-            clarificationOpen
-              ? "max-h-[72px] min-h-[40px] text-[0.9375rem] leading-snug placeholder:text-muted-foreground/70"
-              : "max-h-[200px] min-h-[64px] text-[1rem]"
-          )}
-        />
+        {/* Huge drafts render as a compact card above; keep the textarea out of
+            the DOM so React never diffs multi-10k controlled values every key. */}
+        {!showCollapsedDraft && (
+          <textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setDraftText(e.target.value)}
+            onKeyDown={onKeyDown}
+            onPaste={onPaste}
+            disabled={isBusy || sendLocked || status === "checking"}
+            rows={1}
+            placeholder={placeholder}
+            // The palette is driven from here — focus never moves to it — so the
+            // textarea has to name the row the arrow keys are sitting on.
+            aria-activedescendant={
+              slashOpen && slash ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}` : undefined
+            }
+            className={cn(
+              "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
+              clarificationOpen
+                ? "max-h-[72px] min-h-[40px] text-[0.9375rem] leading-snug placeholder:text-muted-foreground/70"
+                : hugeDraft
+                  ? "max-h-[min(60vh,28rem)] min-h-[120px] text-[0.9375rem]"
+                  : "max-h-[200px] min-h-[64px] text-[1rem]"
+            )}
+          />
+        )}
 
         <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
           {/* Left: + menu and model selector */}

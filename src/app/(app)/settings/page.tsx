@@ -693,7 +693,9 @@ export default function SettingsPage() {
           )}
 
           <Tile eyebrow="Custom instructions" i={7} span>
-            <p className="mb-3 text-sm text-muted-foreground">Juno keeps these in mind in every conversation.</p>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Juno keeps these in mind in every conversation. No character cap — long system prompts and curricula are fine; the model context window is the only real limit.
+            </p>
             <div className="relative">
               <Textarea
                 value={instructions}
@@ -701,10 +703,9 @@ export default function SettingsPage() {
                 onBlur={saveInstructions}
                 placeholder="E.g. I'm a product manager. Keep answers concise and use bullet points."
                 className="min-h-[110px] pb-8"
-                maxLength={4000}
               />
               <span className="absolute bottom-2.5 right-3 font-mono text-[10px] text-muted-foreground/50 select-none">
-                {instructions.length}/4000
+                {instructions.length.toLocaleString()} chars
               </span>
             </div>
           </Tile>

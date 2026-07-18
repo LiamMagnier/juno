@@ -51,7 +51,8 @@ import { useApp } from "@/components/app/app-provider";
 import { Composer } from "@/components/chat/composer";
 import type { ReasoningEffort } from "@/types/chat";
 
-const INSTRUCTIONS_LIMIT = 20_000;
+// Soft UI only — no save rejection. Warn when the draft is very large.
+const INSTRUCTIONS_SOFT_WARN = 50_000;
 
 interface Detail {
   project: { id: string; name: string; instructions: string; starred: boolean; updatedAt: string };
@@ -457,7 +458,7 @@ export default function ProjectDetailPage() {
   const workspaceFiles = data.files.filter((f) => f.fileName !== "__cover__");
   const instructionsDirty = instructions !== data.project.instructions;
   const instructionLines = instructions ? instructions.split("\n").length : 0;
-  const nearInstructionsLimit = instructions.length > INSTRUCTIONS_LIMIT * 0.9;
+  const nearInstructionsLimit = instructions.length > INSTRUCTIONS_SOFT_WARN;
   const totalTokenEstimate = workspaceFiles.reduce(
     (sum, f) => sum + (isTextExtractable(f.mimeType) ? Math.round(f.size / 4) : 0),
     0
@@ -882,7 +883,6 @@ export default function ProjectDetailPage() {
                   value={instructions}
                   onChange={(e) => setInstructions(e.target.value)}
                   placeholder="How should Juno behave? (role, tone, constraints…)"
-                  maxLength={INSTRUCTIONS_LIMIT}
                   spellCheck={false}
                   aria-label="Project instructions"
                   className="min-h-[18rem] rounded-md font-mono text-[13px] leading-relaxed"
@@ -891,7 +891,8 @@ export default function ProjectDetailPage() {
                   {/* Colour set on a bare span: cn() would treat `text-caption` as a colour
                       class and drop it next to text-warning/text-muted-foreground. */}
                   <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                    {instructions.length.toLocaleString()} / {INSTRUCTIONS_LIMIT.toLocaleString()}
+                    {instructions.length.toLocaleString()} chars
+                    {nearInstructionsLimit ? " · large prompt (context window is the limit)" : ""}
                   </span>
                   <div className="flex items-center gap-3">
                     <span className="text-muted-foreground/80">Updated {timeAgo(data.project.updatedAt)}</span>
@@ -1081,7 +1082,6 @@ export default function ProjectDetailPage() {
                 }
               }}
               placeholder={"How should Juno behave? (role, tone, constraints…)\n\nPaste a full system prompt — headings, bullets and code fences all keep their shape."}
-              maxLength={INSTRUCTIONS_LIMIT}
               spellCheck={false}
               autoFocus
               aria-label="Project instructions"
@@ -1093,7 +1093,7 @@ export default function ProjectDetailPage() {
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-6 py-4">
             <div className="flex items-center gap-3 font-mono text-caption">
               <span className={nearInstructionsLimit ? "text-warning" : "text-muted-foreground"}>
-                {instructions.length.toLocaleString()} / {INSTRUCTIONS_LIMIT.toLocaleString()} chars
+                {instructions.length.toLocaleString()} chars
               </span>
               <span aria-hidden className="text-border">|</span>
               <span className="text-muted-foreground">{plural(instructionLines, "line")}</span>

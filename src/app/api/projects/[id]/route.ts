@@ -43,7 +43,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
 const patchSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
-  instructions: z.string().max(20_000).optional(),
+  // No app-side character cap — model context is the real limit.
+  instructions: z.string().optional(),
   starred: z.boolean().optional(),
 });
 

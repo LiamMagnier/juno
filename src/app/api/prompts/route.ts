@@ -48,7 +48,8 @@ export async function GET() {
 
 const createSchema = z.object({
   title: z.string().trim().min(1).max(80),
-  body: z.string().trim().min(1).max(10_000),
+  // No app-side body cap — long system / mentor prompts are a normal use case.
+  body: z.string().trim().min(1),
 });
 
 export async function POST(req: Request) {

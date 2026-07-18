@@ -16,10 +16,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
-// Mirrors the zod bounds in /api/prompts — the server stays the authority; these
-// only keep the user from typing past a rejection.
+// Title still has a short UI ceiling (list labels). Body has no app-side cap —
+// long mentor / system prompts are a normal library use case.
 const MAX_TITLE = 80;
-const MAX_BODY = 10_000;
 
 interface SavedPrompt {
   id: string;
@@ -183,12 +182,14 @@ export function PromptLibraryDialog({ open, onOpenChange, onInsert }: PromptLibr
                 <Textarea
                   id="prompt-body"
                   value={body}
-                  maxLength={MAX_BODY}
                   rows={9}
                   placeholder="Write the prompt you want to reuse…"
                   className="min-h-[14rem] resize-none"
                   onChange={(e) => setBody(e.target.value)}
                 />
+                <p className="font-mono text-[10px] text-muted-foreground/60">
+                  {body.length.toLocaleString()} chars · no size cap
+                </p>
               </div>
             </div>
 

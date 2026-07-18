@@ -17,7 +17,8 @@ const promptSelect = {
 const patchSchema = z
   .object({
     title: z.string().trim().min(1).max(80).optional(),
-    body: z.string().trim().min(1).max(10_000).optional(),
+    // No app-side body cap (mirrors POST /api/prompts).
+    body: z.string().trim().min(1).optional(),
   })
   .refine((v) => v.title !== undefined || v.body !== undefined, { message: "Nothing to update" });
 

@@ -13,7 +13,9 @@ const schema = z.object({
   accent: z.string().max(30).regex(/^([a-z]+|#[0-9a-fA-F]{6})$/).optional(),
   defaultModel: z.string().optional(),
   personality: z.enum(PERSONALITY_IDS).optional(),
-  customInstructions: z.string().max(4000).optional(),
+  // No app-side character cap — model context is the real limit (curriculum /
+  // mentor system prompts regularly exceed the old 4k hard ceiling).
+  customInstructions: z.string().optional(),
   responseLanguage: z.string().max(40).optional(),
   uiLocale: z.string().max(35).optional(),
   memoryEnabled: z.boolean().optional(),

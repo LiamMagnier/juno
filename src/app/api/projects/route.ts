@@ -44,7 +44,8 @@ const createSchema = z.object({
   // Optional: an unnamed project is created as "Untitled project" and gets an
   // auto-generated name from its first chat.
   name: z.string().trim().min(1).max(120).optional(),
-  instructions: z.string().max(20_000).optional(),
+  // No app-side character cap — model context is the real limit.
+  instructions: z.string().optional(),
 });
 
 export async function POST(req: Request) {
