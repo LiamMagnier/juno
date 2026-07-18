@@ -26,11 +26,11 @@ import {
  * than it saves.
  */
 
-// The client aborts its clarify fetch at 6s; auth + rate limit + the context
-// query eat up to ~1.5s before triage starts, so the triage loop itself must
-// stay within 4s or the user pays the full stall and gets nothing for it.
-const TOTAL_DEADLINE_MS = 4000;
-const FIRST_ATTEMPT_TIMEOUT_MS = 2600;
+// The client aborts its clarify fetch at ~3.5s; auth + rate limit + the context
+// query eat a bit of that, so the triage loop itself must stay tight or the
+// user pays a full stall and gets nothing for it.
+const TOTAL_DEADLINE_MS = 2800;
+const FIRST_ATTEMPT_TIMEOUT_MS = 2000;
 // One question keeps the interruption cheap: the single highest-impact
 // unknown, answerable in one click (or one line via the "Other" input).
 const MAX_QUESTIONS = 1;

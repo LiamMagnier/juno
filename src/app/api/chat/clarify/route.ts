@@ -14,6 +14,9 @@ import { MAX_USER_MESSAGE_CHARS } from "@/lib/prompt-limits";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+/** Only the head of a prompt is useful for "should we ask a clarifying Q?". */
+const TRIAGE_MESSAGE_CHARS = 2_500;
+
 const bodySchema = z.object({
   message: z.string().max(MAX_USER_MESSAGE_CHARS),
   conversationId: z.string().cuid().optional().nullable(),
@@ -24,6 +27,17 @@ const bodySchema = z.object({
 export async function POST(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Parse first so cheap deterministic skips never pay plan/budget/DB latency
+  // (or re-process multi-MB bodies beyond what triage needs).
+  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(noPreflightClarification("Invalid clarification check request."), { status: 200 });
+  }
+  const input = parsed.data;
+
+  const skip = quickPreflightSkip({ message: input.message, hasAttachments: input.hasAttachments });
+  if (skip) return NextResponse.json(noPreflightClarification(skip));
 
   if (!isOwnerEmail(user.email)) {
     const limit = await rateLimit({ key: `chat-clarify:${user.id}`, limit: 60, windowSec: 60 });
@@ -40,20 +54,13 @@ export async function POST(req: Request) {
     }
   }
 
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json(noPreflightClarification("Invalid clarification check request."), { status: 200 });
-  const input = parsed.data;
-
-  // Deterministic fast path: obvious "just answer" cases never pay AI latency.
-  const skip = quickPreflightSkip({ message: input.message, hasAttachments: input.hasAttachments });
-  if (skip) return NextResponse.json(noPreflightClarification(skip));
-
   // This whole check is best-effort: any failure past this point must fail
   // OPEN (no clarification, 200) — a broken triage must never block sending.
   try {
     // Recent conversation context lets the triage model recognize follow-ups
     // ("now make the header sticky") instead of re-interrogating the user.
     // Private chats send no conversationId, so nothing is read for them.
+    // Cap decrypt work: only a short slice of each recent turn is useful.
     let recentMessages: TriageContextMessage[] = [];
     if (input.conversationId && !input.privateMode) {
       const rows = await prisma.message.findMany({
@@ -65,10 +72,18 @@ export async function POST(req: Request) {
       recentMessages = rows
         .reverse()
         .filter((m) => m.role === "USER" || m.role === "ASSISTANT")
-        .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: decryptMessageText(m.content) }));
+        .map((m) => ({
+          role: m.role as "USER" | "ASSISTANT",
+          content: decryptMessageText(m.content).slice(0, 800),
+        }));
     }
 
-    const result = await triagePreflightClarification({ message: input.message, recentMessages });
+    const triageMessage =
+      input.message.length > TRIAGE_MESSAGE_CHARS
+        ? input.message.slice(0, TRIAGE_MESSAGE_CHARS)
+        : input.message;
+
+    const result = await triagePreflightClarification({ message: triageMessage, recentMessages });
     return NextResponse.json(result);
   } catch (err) {
     console.error("[chat/clarify] check failed, answering directly:", err instanceof Error ? err.message : err);

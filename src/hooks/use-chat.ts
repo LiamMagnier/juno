@@ -9,6 +9,7 @@ import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import {
   formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
+  quickPreflightSkip,
   type PendingPreflightClarification,
   type PreflightClarificationAnswer,
   type PreflightClarificationContext,
@@ -304,6 +305,12 @@ export function useChat(opts: UseChatOptions) {
       };
 
       try {
+        // Let React paint "submitting" / the pending bubbles before a multi-MB
+        // JSON.stringify blocks the main thread on long pastes / private history.
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => resolve());
+        });
+
         const res = await fetch(path, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -662,20 +669,34 @@ export function useChat(opts: UseChatOptions) {
         });
       }
 
+      // Deterministic skip (long paste, code, "just answer", …) — never pay a
+      // network round-trip for cases the server would skip anyway. Long prompts
+      // used to POST the entire body to /api/chat/clarify *then* again to
+      // /api/chat, which made Send feel stuck for seconds before "charging".
+      const localSkip = quickPreflightSkip({
+        message: trimmed,
+        hasAttachments: attachments.length > 0,
+      });
+      if (localSkip) {
+        return startGeneration({ text: trimmed, attachments });
+      }
+
       setStatus("checking");
       // The preflight clarification check must never block sending: if it hangs
       // or errors, we time out and fall through to actually answering. Without
       // this abort the composer could sit in "Checking…" forever on a stalled
       // request (e.g. a slow/unreachable server), locking the user out of chat.
       const clarifyController = new AbortController();
-      const clarifyTimeout = setTimeout(() => clarifyController.abort(), 6000);
+      // Keep well under the old 6s stall; triage itself budgets ~4s server-side.
+      const clarifyTimeout = setTimeout(() => clarifyController.abort(), 3500);
       try {
         const res = await fetch("/api/chat/clarify", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversationId: opts.privateMode ? null : convoIdRef.current,
-            message: trimmed,
+            // Triage only needs the start of the prompt — never re-upload multi-MB pastes.
+            message: trimmed.length > 2_500 ? trimmed.slice(0, 2_500) : trimmed,
             hasAttachments: attachments.length > 0,
             privateMode: opts.privateMode,
           }),
