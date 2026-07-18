@@ -161,6 +161,22 @@ jobs:
             rm -f .env.shared
             echo "Synced PROD_ENV keys into runtime .env (VM-only keys preserved)."
           fi
+          # Raise nginx header/URI buffers if still on the 8×8k default that
+          # returns 414 Request-URI Too Large on long request lines / cookies.
+          NGINX_SITE="/etc/nginx/sites-available/juno"
+          if [ -f "$NGINX_SITE" ] && ! sudo grep -q "large_client_header_buffers" "$NGINX_SITE"; then
+            echo "Patching nginx large_client_header_buffers…"
+            if ! sudo grep -q "client_max_body_size" "$NGINX_SITE"; then
+              sudo sed -i '/^[[:space:]]*listen 443 ssl/a\    client_max_body_size 120m;' "$NGINX_SITE"
+            fi
+            sudo sed -i '/client_max_body_size/a\    client_header_buffer_size 32k;\n    large_client_header_buffers 8 64k;' "$NGINX_SITE"
+            if sudo nginx -t; then
+              sudo systemctl reload nginx
+              echo "nginx reloaded with larger header buffers."
+            else
+              echo "WARNING: nginx -t failed after header-buffer patch; not reloading."
+            fi
+          fi
           pm2 startOrReload deploy/ecosystem.config.js --update-env
           pm2 save
           echo "Deploy complete."
