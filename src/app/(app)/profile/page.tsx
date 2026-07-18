@@ -27,14 +27,54 @@ import { PLANS, effectiveMinPlan, planRank } from "@/lib/plans";
 import { MODELS_BY_PROVIDER, resolveModel, type ModelInfo } from "@/lib/models";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { providerAccent } from "@/lib/provider-colors";
-import { cn } from "@/lib/utils";
+import { cn, formatUsd } from "@/lib/utils";
+
+interface KindSpend {
+  kind: string;
+  count: number;
+  costMicroUsd: number;
+}
 
 interface Stats {
   daily: Record<string, { tokens: number; count: number }>;
   models: { model: string; count: number; tokens: number }[];
+  /** Year-window totals for the heatmap caption (preferred). */
+  yearTokens?: number;
+  yearMessages?: number;
+  /** Lifetime totals (also mirrored from lifetime.* for older shapes). */
   totalTokens: number;
   totalMessages: number;
+  lifetime?: {
+    tokens: number;
+    messages: number;
+    costMicroUsd: number;
+    modelsTried: number;
+    byKind: KindSpend[];
+  };
+  eurPerUsd?: number;
   memberSince: string | null;
+}
+
+const KIND_LABEL: Record<string, string> = {
+  chat: "Chat",
+  image: "Image",
+  video: "Video",
+  voice: "Voice",
+  code: "Code",
+  task: "Tasks",
+};
+
+function kindLabel(kind: string) {
+  return KIND_LABEL[kind] ?? kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
+function formatLifetimeCost(microUsd: number): string {
+  const usd = microUsd / 1_000_000;
+  if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
+  if (usd < 0.01) return formatUsd(usd);
+  if (usd < 100) return `$${usd.toFixed(2)}`;
+  if (usd < 1_000) return `$${usd.toFixed(2)}`;
+  return `$${usd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 const LEVEL_BG = ["bg-muted", "bg-primary/25", "bg-primary/45", "bg-primary/70", "bg-primary"];
@@ -491,13 +531,22 @@ export default function ProfilePage() {
           </div>
         ) : (
           <div className="mt-8 space-y-4">
-            {/* Activity heatmap */}
-            <Card className="p-5 rounded-[28px]">
-              <div className="mb-4 flex items-end justify-between">
-                <CardEyebrow>Activity</CardEyebrow>
-                <p className="text-sm text-muted-foreground">
-                  <span className="font-mono text-foreground">{compactNumber(stats.totalTokens)}</span> tokens ·{" "}
-                  <span className="font-mono text-foreground">{stats.totalMessages.toLocaleString()}</span> replies
+            {/* Activity heatmap — last ~53 weeks */}
+            <Card className="rounded-[28px] p-5">
+              <div className="mb-4 flex items-end justify-between gap-3">
+                <div>
+                  <CardEyebrow>Activity</CardEyebrow>
+                  <p className="mt-1 text-sm text-muted-foreground">Last 53 weeks of billable generations.</p>
+                </div>
+                <p className="shrink-0 text-sm text-muted-foreground">
+                  <span className="font-mono text-foreground">
+                    {compactNumber(stats.yearTokens ?? stats.totalTokens)}
+                  </span>{" "}
+                  tokens ·{" "}
+                  <span className="font-mono text-foreground">
+                    {(stats.yearMessages ?? stats.totalMessages).toLocaleString()}
+                  </span>{" "}
+                  replies
                 </p>
               </div>
               <TokenHeatmap daily={stats.daily} />
@@ -542,9 +591,12 @@ export default function ProfilePage() {
             </Card>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              {/* Most-used models */}
-              <Card className="p-5 rounded-[28px]">
-                <CardEyebrow className="mb-3">Most-used models</CardEyebrow>
+              {/* Most-used models — year window mix */}
+              <Card className="rounded-[28px] p-5">
+                <div className="mb-3">
+                  <CardEyebrow>Most-used models</CardEyebrow>
+                  <p className="mt-1 text-sm text-muted-foreground">Your mix over the last year.</p>
+                </div>
                 {stats.models.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No chats yet — start one to see your mix.</p>
                 ) : (
@@ -561,7 +613,13 @@ export default function ProfilePage() {
                               <span className="shrink-0 font-mono text-caption text-muted-foreground">{m.count}</span>
                             </div>
                             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
-                              <div className="h-full rounded-full" style={{ width: `${(m.count / Math.max(1, stats.models[0]?.count ?? 1)) * 100}%`, backgroundColor: accent }} />
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${(m.count / Math.max(1, stats.models[0]?.count ?? 1)) * 100}%`,
+                                  backgroundColor: accent,
+                                }}
+                              />
                             </div>
                           </div>
                         </li>
@@ -571,16 +629,7 @@ export default function ProfilePage() {
                 )}
               </Card>
 
-              {/* Totals */}
-              <Card className="p-5 rounded-[28px]">
-                <CardEyebrow className="mb-3">Lifetime</CardEyebrow>
-                <div className="grid grid-cols-2 gap-4">
-                  <Stat label="Tokens" value={compactNumber(stats.totalTokens)} />
-                  <Stat label="Replies" value={stats.totalMessages.toLocaleString()} />
-                  <Stat label="Models tried" value={`${stats.models.length}`} />
-                  <Stat label="Plan" value={plan.name} />
-                </div>
-              </Card>
+              <LifetimeCard stats={stats} planName={plan.name} />
             </div>
           </div>
         )}
@@ -595,11 +644,142 @@ export default function ProfilePage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+/**
+ * Lifetime ledger card — dense editorial recap of real provider cost from
+ * ApiSpend. Hero figure is total API spend; supporting metrics fill the card
+ * so it never reads as an empty 2×2 stat grid.
+ */
+function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
+  const life = stats.lifetime;
+  const tokens = life?.tokens ?? stats.totalTokens;
+  const messages = life?.messages ?? stats.totalMessages;
+  const costMicroUsd = life?.costMicroUsd ?? 0;
+  const modelsTried = life?.modelsTried ?? stats.models.length;
+  const byKind = life?.byKind ?? [];
+  const rate = stats.eurPerUsd && stats.eurPerUsd > 0 ? stats.eurPerUsd : 1;
+  const costUsd = costMicroUsd / 1_000_000;
+  const costEur = costUsd * rate;
+  const maxKindCost = Math.max(1, ...byKind.map((k) => k.costMicroUsd));
+  const kindsWithSpend = byKind.filter((k) => k.costMicroUsd > 0 || k.count > 0);
+
   return (
-    <div>
-      <p className="font-serif text-title font-medium">{value}</p>
-      <p className="font-mono text-caption uppercase tracking-wider text-muted-foreground">{label}</p>
-    </div>
+    <Card className="relative overflow-hidden rounded-[28px] p-5">
+      {/* Quiet paper wash — depth without decoration noise */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_100%_-10%,hsl(var(--primary)/0.08),transparent_60%)]"
+      />
+      <div className="relative">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardEyebrow>Lifetime</CardEyebrow>
+            <p className="mt-1 max-w-[22ch] text-sm text-muted-foreground">
+              Real provider API cost from your spend ledger — not reset by deleting chats.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground shadow-soft">
+            {planName}
+          </span>
+        </div>
+
+        {/* Hero: API cost */}
+        <div className="mt-5 border-t border-border/50 pt-5">
+          <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+            API cost
+          </p>
+          <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <p className="font-serif text-[2rem] font-medium leading-none tracking-[-0.03em] text-foreground sm:text-[2.25rem]">
+              {formatLifetimeCost(costMicroUsd)}
+            </p>
+            {rate !== 1 && costUsd > 0 ? (
+              <p className="font-mono text-caption text-muted-foreground">
+                ≈ €
+                {costEur.toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </p>
+            ) : null}
+          </div>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Sum of every billable model call (chat, image, video, voice, code).
+          </p>
+        </div>
+
+        {/* Supporting metrics — compact strip, not sparse tiles */}
+        <dl className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60">
+          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Tokens
+            </dt>
+            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+              {compactNumber(tokens)}
+            </dd>
+          </div>
+          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Replies
+            </dt>
+            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+              {messages.toLocaleString()}
+            </dd>
+          </div>
+          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Models
+            </dt>
+            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+              {modelsTried}
+            </dd>
+          </div>
+        </dl>
+
+        {/* Cost by surface — only when there's something to show */}
+        {kindsWithSpend.length > 0 ? (
+          <div className="mt-5">
+            <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+              By surface
+            </p>
+            <ul className="mt-3 space-y-2.5">
+              {kindsWithSpend.map((row) => {
+                const share = row.costMicroUsd / maxKindCost;
+                return (
+                  <li key={row.kind} className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="truncate text-sm">{kindLabel(row.kind)}</span>
+                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                        {formatLifetimeCost(row.costMicroUsd)}
+                        <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
+                      </span>
+                    </div>
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                      <div
+                        className="h-full rounded-full bg-primary/80 transition-[width] duration-base ease-out-soft"
+                        style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : (
+          <p className="mt-5 text-sm text-muted-foreground">
+            No billable API use yet — once you chat or generate, the ledger fills in here.
+          </p>
+        )}
+
+        {stats.memberSince ? (
+          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            Member since{" "}
+            {new Date(stats.memberSince).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            })}
+          </p>
+        ) : null}
+      </div>
+    </Card>
   );
 }

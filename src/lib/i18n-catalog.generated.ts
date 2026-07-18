@@ -74,6 +74,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "out — at today&rsquo;s list prices."
   },
   {
+    "id": "00c98d27a5529f78",
+    "source": "API cost"
+  },
+  {
     "id": "00d5d4c526261ec3",
     "source": "process-timeline · ML training cycle"
   },
@@ -2014,6 +2018,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Last updated"
   },
   {
+    "id": "382e390bf7751a27",
+    "source": "No billable API use yet — once you chat or generate, the ledger fills in here."
+  },
+  {
     "id": "3837dfe40e0ad739",
     "source": "Fast agentic coding — successor to Grok Code Fast."
   },
@@ -2630,6 +2638,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Involving you"
   },
   {
+    "id": "49a47375999d1e23",
+    "source": "By surface"
+  },
+  {
     "id": "49abaf804ab38c1d",
     "source": "Nothing here yet"
   },
@@ -2984,6 +2996,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "54e6289e14c7b0e7",
     "source": "transcript"
+  },
+  {
+    "id": "5556e5515e899162",
+    "source": "Your mix over the last year."
   },
   {
     "id": "556c0160ba71373d",
@@ -4694,10 +4710,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Runs on a fresh cloud machine and opens a pull request to review."
   },
   {
-    "id": "8281b9f426fd6572",
-    "source": "Models tried"
-  },
-  {
     "id": "829e1edc5bdfd14f",
     "source": "dashboard.composio.dev"
   },
@@ -5182,6 +5194,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GLM AirX"
   },
   {
+    "id": "9321bcc0ec63e5bb",
+    "source": "Member since"
+  },
+  {
     "id": "93291d9c41dd9a5c",
     "source": "Delete chat"
   },
@@ -5544,6 +5560,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b068269293ae3b3",
     "source": "Canvas editing stopped before any change was applied."
+  },
+  {
+    "id": "9b0e9577de22fcd4",
+    "source": "Sum of every billable model call (chat, image, video, voice, code)."
   },
   {
     "id": "9b11f6b707d2a03e",
@@ -6914,6 +6934,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete an event by UID from a named calendar."
   },
   {
+    "id": "c3c5132a245a4bd5",
+    "source": "Real provider API cost from your spend ledger — not reset by deleting chats."
+  },
+  {
     "id": "c3d2e79ebdd046c6",
     "source": "Connectors"
   },
@@ -8016,6 +8040,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e06171a1c467f2d4",
     "source": "Artifact"
+  },
+  {
+    "id": "e06627b607b71e99",
+    "source": "Last 53 weeks of billable generations."
   },
   {
     "id": "e0ae591d2fd803d5",
