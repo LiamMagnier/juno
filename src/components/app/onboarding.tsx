@@ -152,7 +152,17 @@ export function Onboarding() {
 
   React.useEffect(() => {
     try {
-      if (!localStorage.getItem(KEY) && conversations.length === 0) setShow(true);
+      // Already finished first-run — never reappear, even if the last chat is deleted.
+      if (localStorage.getItem(KEY)) return;
+
+      // Any existing history means they're past first-run. Persist so wiping the
+      // conversation list later doesn't resurrect the welcome tour.
+      if (conversations.length > 0) {
+        localStorage.setItem(KEY, "1");
+        return;
+      }
+
+      setShow(true);
     } catch {
       /* private mode / no storage — just skip onboarding */
     }

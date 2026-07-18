@@ -80,47 +80,51 @@ function CodeGreeting() {
   const phrase = CODE_GREETINGS[idx];
 
   return (
-    <div className="flex flex-col items-center text-center">
+    <div className="flex w-full flex-col items-center text-center">
       <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
         Juno Code
       </p>
-      {/* Text alone defines the page center; the mark hangs left of that box. */}
-      <h1
-        className="relative font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
-        suppressHydrationWarning
-      >
-        <button
-          type="button"
-          aria-label="Juno"
-          onClick={() => setPopping(true)}
-          onAnimationEnd={() => setPopping(false)}
-          className={cn(
-            "absolute right-full top-1/2 mr-[0.38em] -translate-y-1/2 shrink-0 outline-none",
-            "[animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in",
-            popping && "juno-mark-popping",
-          )}
-        >
-          <JunoMark
+      {/* 1fr | text | 1fr — text stays screen-centered; mark flanks left. */}
+      <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
+        <div className="flex items-center justify-end pr-[0.38em]">
+          <button
+            type="button"
+            aria-label="Juno"
+            onClick={() => setPopping(true)}
+            onAnimationEnd={() => setPopping(false)}
             className={cn(
-              "block h-[0.78em] w-[0.78em]",
-              "transition-transform duration-base ease-spring motion-reduce:transition-none",
-              !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
+              "shrink-0 outline-none [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in",
+              popping && "juno-mark-popping",
             )}
-          />
-        </button>
-        <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-          {phrase}
-          {firstName ? "," : "?"}
-        </span>
-        {firstName ? (
-          <>
-            {" "}
-            <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-              {firstName}?
-            </span>
-          </>
-        ) : null}
-      </h1>
+          >
+            <JunoMark
+              className={cn(
+                "block h-[1.32rem] w-[1.32rem] sm:h-[1.83rem] sm:w-[1.83rem]",
+                "transition-transform duration-base ease-spring motion-reduce:transition-none",
+                !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
+              )}
+            />
+          </button>
+        </div>
+        <h1
+          className="text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+          suppressHydrationWarning
+        >
+          <span className="inline-block [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+            {phrase}
+            {firstName ? "," : "?"}
+          </span>
+          {firstName ? (
+            <>
+              {" "}
+              <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+                {firstName}?
+              </span>
+            </>
+          ) : null}
+        </h1>
+        <div aria-hidden="true" />
+      </div>
     </div>
   );
 }

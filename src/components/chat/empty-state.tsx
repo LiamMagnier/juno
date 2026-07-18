@@ -113,8 +113,13 @@ function pickGreeting(random: boolean): string {
 }
 
 /** The serif greeting + signature mark — sits above the centered composer.
- *  Text is what defines the center of the screen; the mark hangs to the left of
- *  that text (absolute) so it never shifts the optical center. */
+ *
+ *  Layout: three equal side columns (`1fr auto 1fr`). The text lives only in
+ *  the middle, so it stays on the true screen center. The mark sits in the
+ *  left column, end-aligned, so it flanks the text without shifting it — and
+ *  never gets clipped the way an absolute `right-full` mark did inside the
+ *  chat overflow container.
+ */
 export function EmptyGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
@@ -127,31 +132,31 @@ export function EmptyGreeting() {
   const [popping, setPopping] = React.useState(false);
 
   return (
-    <div className="flex flex-col items-center text-center">
-      <h1
-        className="relative font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
-        suppressHydrationWarning
-      >
-        {/* Out of flow — does not participate in the centered text box. */}
+    <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center">
+      <div className="flex items-center justify-end pr-[0.38em]">
         <button
           type="button"
           aria-label="Juno"
           onClick={() => setPopping(true)}
           onAnimationEnd={() => setPopping(false)}
           className={cn(
-            "absolute right-full top-1/2 mr-[0.38em] -translate-y-1/2 shrink-0 outline-none",
-            "[animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
+            "shrink-0 outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "block h-[0.78em] w-[0.78em]",
+              "block h-[1.32rem] w-[1.32rem] sm:h-[1.83rem] sm:w-[1.83rem]",
               "transition-transform duration-base ease-spring motion-reduce:transition-none",
               !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
           />
         </button>
+      </div>
+      <h1
+        className="text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        suppressHydrationWarning
+      >
         {/* The greeting and the name rise as two beats rather than one block. */}
         <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
           {phrase}
@@ -166,6 +171,8 @@ export function EmptyGreeting() {
           </>
         ) : null}
       </h1>
+      {/* Mirror column keeps the text cell on the true horizontal center. */}
+      <div aria-hidden="true" />
     </div>
   );
 }
