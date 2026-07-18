@@ -11,11 +11,13 @@ import type { LlmEvent, MessageForModel } from "@/types/llm";
 
 /** Provider-agnostic streaming: routes Anthropic to its native SDK, everything
  *  else through the OpenAI-compatible adapter. Yields text + sources + usage. */
-// Safe upper bound on generated tokens per provider. The requested cap (from the
-// user's plan) is clamped to this so a high value never exceeds a model's own
-// limit. Anthropic is kept lower because its thinking budget is added on top.
+// Each model's native max output tokens, per provider — the real per-reply
+// ceiling now that no plan imposes a smaller cap. A requested value is clamped
+// to this so it never exceeds what the model itself allows. Anthropic adds its
+// thinking budget separately inside streamAnthropic and re-clamps the total to
+// the model's own 64k output ceiling, so the full 64k is safe here.
 const PROVIDER_MAX_OUTPUT: Record<string, number> = {
-  anthropic: 20000,
+  anthropic: 64000,
   // GPT-5.x supports far larger outputs, and hidden reasoning counts toward
   // this budget — too tight a cap starves the visible answer on high effort.
   openai: 32000,
