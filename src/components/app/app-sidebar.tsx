@@ -1346,10 +1346,11 @@ function ConversationRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            type="button"
+            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
-            <SidebarMotionIcon kind="more" className="h-4 w-4" />
+            <SidebarMotionIcon kind="more" className="size-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
@@ -1481,10 +1482,11 @@ function ProjectRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            type="button"
+            className="pressable group/kebab inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:bg-background data-[state=open]:opacity-100 coarse:size-11"
             aria-label="Project options"
           >
-            <SidebarMotionIcon kind="more" className="h-4 w-4" />
+            <SidebarMotionIcon kind="more" className="size-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">

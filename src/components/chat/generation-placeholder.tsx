@@ -129,13 +129,15 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
   const displayPct = pct == null ? null : Math.max(0, Math.min(100, pct < 1 ? pct * 100 : pct));
   const roundedPct = displayPct == null ? null : Math.round(displayPct);
   const ariaProgress = roundedPct == null ? "" : `, ${roundedPct} percent`;
+  const longVideoWait = isVideo && elapsed >= 15;
+  const ariaWait = longVideoWait ? ". Longer clips can take a couple of minutes." : "";
 
   return (
     <div
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      aria-label={`${isVideo ? "Video" : "Image"} generation in progress — ${label}${ariaProgress}`}
+      aria-label={`${isVideo ? "Video" : "Image"} generation in progress — ${label}${ariaProgress}${ariaWait}`}
       data-modality={modality}
       data-stage={stage}
       className={cn(
@@ -151,17 +153,11 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
           </span>
           <span className="generation-placeholder__activity">
             <span />
-            Working
+            {longVideoWait ? "A few minutes" : "Working"}
           </span>
         </div>
 
         {isVideo ? <VideoFrames /> : <ImageDevelopment />}
-
-        {isVideo && elapsed >= 15 && (
-          <p className="generation-placeholder__wait-note" aria-hidden="true">
-            Longer clips can take a couple of minutes.
-          </p>
-        )}
       </div>
 
       <div className="generation-placeholder__footer" aria-hidden="true">

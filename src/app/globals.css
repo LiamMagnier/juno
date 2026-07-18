@@ -360,13 +360,24 @@
   }
   .sidebar-motion-icon__glyph--alternate { opacity: 0; }
 
-  /* Overflow (⋯): always static — a menu affordance, not a character. */
+  /* Overflow (⋯): always static — a menu affordance, not a character.
+     Glyph is a true square block so the three dots sit optically centered in
+     the hit target (SVG inline/baseline alignment was shifting them). */
+  .sidebar-motion-icon--more {
+    display: block;
+    line-height: 0;
+  }
   .sidebar-motion-icon--more,
   .sidebar-motion-icon--more .sidebar-motion-icon__glyph,
   .sidebar-motion-icon--more .sidebar-motion-icon__glyph > * {
     transition: none !important;
     animation: none !important;
     transform: none !important;
+  }
+  .sidebar-motion-icon--more .sidebar-motion-icon__glyph {
+    display: block;
+    width: 100%;
+    height: 100%;
   }
 
   @media (hover: hover) {

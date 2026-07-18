@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -43,22 +43,131 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
   );
 }
 
-/** Generated video (kind FILE, video/*) — same chrome as image thumbnails, fades in when playable. */
+/**
+ * A generated image keeps the same square footprint as its in-flight card while
+ * the browser fetches and decodes the final pixels. The neutral frame arrives
+ * immediately; only the pixels dissolve in, so completion never collapses and
+ * re-expands the transcript.
+ */
+function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAttachment; onEdit?: () => void }) {
+  const [ready, setReady] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
+
+  const revealAfterDecode = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    const reveal = () => {
+      setFailed(false);
+      setReady(true);
+    };
+    // `load` can fire before a large bitmap has finished decoding. Waiting for
+    // decode avoids revealing one blank frame; older browsers simply fall back
+    // to the normal load event.
+    if (typeof image.decode === "function") {
+      void image.decode().catch(() => undefined).then(reveal);
+    } else {
+      reveal();
+    }
+  };
+
+  return (
+    <div className="group/media relative w-full max-w-[320px] motion-safe:animate-fade-in">
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Open ${attachment.fileName}`}
+        className="relative block aspect-square w-full overflow-hidden rounded-xl border border-border/60 bg-muted/35 shadow-soft outline-none motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
+            ready && "opacity-0"
+          )}
+        >
+          <span className="flex flex-col items-center gap-2 px-5 text-center">
+            {failed ? <ImageOff className="size-5" /> : <ImageIcon className="size-5 opacity-70" />}
+            <span className="font-mono text-caption uppercase tracking-[0.12em]">
+              {failed ? "Preview unavailable · open original" : "Preparing image"}
+            </span>
+          </span>
+        </div>
+        <Image
+          src={attachment.url}
+          alt={attachment.fileName}
+          fill
+          sizes="(max-width: 640px) calc(100vw - 2rem), 320px"
+          onLoad={revealAfterDecode}
+          onError={() => {
+            setReady(false);
+            setFailed(true);
+          }}
+          className={cn(
+            "object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
+            ready && "opacity-100"
+          )}
+        />
+      </a>
+      {onEdit && (
+        <button
+          type="button"
+          onClick={onEdit}
+          aria-label={`Edit ${attachment.fileName}`}
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label uppercase text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100"
+        >
+          <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Generated video (kind FILE, video/*) — stable 16:9 chrome, revealed when playable. */
 function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
   const [ready, setReady] = React.useState(false);
+  const [failed, setFailed] = React.useState(false);
   return (
-    <div className="overflow-hidden rounded-xl border bg-muted shadow-soft transition-shadow duration-base hover:shadow-float">
+    <div className="relative aspect-video w-full max-w-[480px] overflow-hidden rounded-xl border border-border/60 bg-muted/35 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
+      <div
+        aria-hidden={!failed}
+        className={cn(
+          "absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
+          ready && "pointer-events-none opacity-0"
+        )}
+      >
+        {failed ? (
+          <a
+            href={attachment.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex flex-col items-center gap-2 rounded-xl px-5 py-3 text-center outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
+          >
+            <VideoIcon className="size-5" aria-hidden="true" />
+            <span className="font-mono text-caption uppercase tracking-[0.12em]">Video preview unavailable · open file</span>
+          </a>
+        ) : (
+          <span className="flex flex-col items-center gap-2 px-5 text-center">
+            <VideoIcon className="size-5 opacity-70" />
+            <span className="font-mono text-caption uppercase tracking-[0.12em]">Preparing video</span>
+          </span>
+        )}
+      </div>
       <video
         controls
         playsInline
         preload="metadata"
         src={attachment.url}
         title={attachment.fileName}
-        onLoadedMetadata={() => setReady(true)}
-        // Still show the player (with its own error UI) if metadata never loads.
-        onError={() => setReady(true)}
+        onLoadedMetadata={() => {
+          setFailed(false);
+          setReady(true);
+        }}
+        onError={() => {
+          setReady(false);
+          setFailed(true);
+        }}
         className={cn(
-          "max-h-[420px] w-auto max-w-full transition-opacity duration-slow ease-out-soft",
+          "absolute inset-0 h-full w-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
           ready ? "opacity-100" : "opacity-0"
         )}
       />
@@ -457,6 +566,8 @@ export function MessageItem({
   const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
   // Generated media: image attachments + video files (kind FILE, video/* mime).
   const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || a.mimeType.startsWith("video/"));
+  const hasTextContent = view.content.trim().length > 0;
+  const isMediaOnly = mediaAttachments.length > 0 && !hasTextContent;
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
   // Finish state comes from `view`: paging back to an older version hides the
   // current answer's continue/finish chrome (it doesn't describe that version).
@@ -514,35 +625,18 @@ export function MessageItem({
                   a.mimeType.startsWith("video/") ? (
                     <VideoAttachment key={a.id} attachment={a} />
                   ) : (
-                    <div key={a.id} className="group/media relative">
-                      <a
-                        href={a.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="block overflow-hidden rounded-xl border shadow-soft transition-shadow duration-base hover:shadow-float"
-                      >
-                        <Image
-                          src={a.url}
-                          alt={a.fileName}
-                          width={512}
-                          height={512}
-                          className="max-h-[420px] w-auto object-contain"
-                        />
-                      </a>
-                      {onImageEdit && currentModelId && !privateMode && !busy && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditTarget(a);
-                            setEditOpen(true);
-                          }}
-                          aria-label={`Edit ${a.fileName}`}
-                          className="absolute right-2 top-2 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label uppercase text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 coarse:h-10 coarse:opacity-100"
-                        >
-                          <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
-                        </button>
-                      )}
-                    </div>
+                    <GeneratedImageAttachment
+                      key={a.id}
+                      attachment={a}
+                      onEdit={
+                        onImageEdit && currentModelId && !privateMode && !busy
+                          ? () => {
+                              setEditTarget(a);
+                              setEditOpen(true);
+                            }
+                          : undefined
+                      }
+                    />
                   )
                 )}
               </div>
@@ -621,10 +715,12 @@ export function MessageItem({
               <VersionPager index={versionIndex} total={totalVersions} loading={versionsLoading} onStep={stepVersion} />
             )}
             <div className="flex items-center opacity-0 transition-opacity duration-base group-hover:opacity-100 focus-within:opacity-100 coarse:opacity-100">
-              <IconAction label="Copy" onClick={copy}>
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-              </IconAction>
-              {onRegenerate && isLast && !busy && !privateMode && (
+              {hasTextContent && (
+                <IconAction label="Copy" onClick={copy}>
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                </IconAction>
+              )}
+              {!isMediaOnly && onRegenerate && isLast && !busy && !privateMode && (
                 <IconAction label="Regenerate" onClick={onRegenerate}>
                   <RefreshCw className="h-4 w-4" />
                 </IconAction>
@@ -649,7 +745,7 @@ export function MessageItem({
                   </IconAction>
                 </>
               )}
-              {onSpeak && (
+              {onSpeak && hasTextContent && (
                 <IconAction
                   label={speaking ? "Stop" : "Read aloud"}
                   onClick={() => onSpeak(message.id, view.content)}
