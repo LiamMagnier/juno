@@ -1718,6 +1718,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Too many attempts — try again later."
   },
   {
+    "id": "2fbd410f0979fdc3",
+    "source": "By model"
+  },
+  {
     "id": "2fd753b7ae8afaa0",
     "source": "et édité par"
   },
@@ -1964,6 +1968,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "36c8f0d859c92b42",
     "source": "Older agentic model."
+  },
+  {
+    "id": "36ecb4f8669133ce",
+    "source": "Input"
   },
   {
     "id": "372e824bd71acab1",
@@ -4682,6 +4690,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Données de compte"
   },
   {
+    "id": "81e7bab3576ce99d",
+    "source": "in ·"
+  },
+  {
     "id": "81f92e15edf9dfcd",
     "source": "app credentials in the Composio dashboard, then connect it here."
   },
@@ -5560,10 +5572,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b068269293ae3b3",
     "source": "Canvas editing stopped before any change was applied."
-  },
-  {
-    "id": "9b0e9577de22fcd4",
-    "source": "Sum of every billable model call (chat, image, video, voice, code)."
   },
   {
     "id": "9b11f6b707d2a03e",
@@ -6934,10 +6942,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Delete an event by UID from a named calendar."
   },
   {
-    "id": "c3c5132a245a4bd5",
-    "source": "Real provider API cost from your spend ledger — not reset by deleting chats."
-  },
-  {
     "id": "c3d2e79ebdd046c6",
     "source": "Connectors"
   },
@@ -7364,6 +7368,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cf8d3c2d8e84bb31",
     "source": "New project…"
+  },
+  {
+    "id": "cf8df936095dc57d",
+    "source": "Chat, image, video, voice, and code — priced at each model&rsquo;s input/output rates. Thinking tokens bill as output."
   },
   {
     "id": "cf912401cde1a5f9",
@@ -8240,6 +8248,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e4e77efdc37460b2",
     "source": "Voice mode can receive images, but not document attachments yet."
+  },
+  {
+    "id": "e527cc7487c267d5",
+    "source": "Provider API cost from the spend ledger — input + output tokens for every model call, including thinking. Not reset by deleting chats."
   },
   {
     "id": "e52ed96d1120a9d3",

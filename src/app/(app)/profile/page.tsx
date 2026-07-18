@@ -33,6 +33,16 @@ interface KindSpend {
   kind: string;
   count: number;
   costMicroUsd: number;
+  tokensIn?: number;
+  tokensOut?: number;
+}
+
+interface ModelSpend {
+  model: string;
+  count: number;
+  costMicroUsd: number;
+  tokensIn: number;
+  tokensOut: number;
 }
 
 interface Stats {
@@ -46,10 +56,14 @@ interface Stats {
   totalMessages: number;
   lifetime?: {
     tokens: number;
+    tokensIn?: number;
+    tokensOut?: number;
     messages: number;
     costMicroUsd: number;
+    storedCostMicroUsd?: number;
     modelsTried: number;
     byKind: KindSpend[];
+    byModel?: ModelSpend[];
   };
   eurPerUsd?: number;
   memberSince: string | null;
@@ -652,19 +666,22 @@ export default function ProfilePage() {
 function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
   const life = stats.lifetime;
   const tokens = life?.tokens ?? stats.totalTokens;
+  const tokensIn = life?.tokensIn;
+  const tokensOut = life?.tokensOut;
   const messages = life?.messages ?? stats.totalMessages;
   const costMicroUsd = life?.costMicroUsd ?? 0;
   const modelsTried = life?.modelsTried ?? stats.models.length;
   const byKind = life?.byKind ?? [];
+  const byModel = life?.byModel ?? [];
   const rate = stats.eurPerUsd && stats.eurPerUsd > 0 ? stats.eurPerUsd : 1;
   const costUsd = costMicroUsd / 1_000_000;
   const costEur = costUsd * rate;
   const maxKindCost = Math.max(1, ...byKind.map((k) => k.costMicroUsd));
+  const maxModelCost = Math.max(1, ...byModel.map((m) => m.costMicroUsd));
   const kindsWithSpend = byKind.filter((k) => k.costMicroUsd > 0 || k.count > 0);
 
   return (
     <Card className="relative overflow-hidden rounded-[28px] p-5">
-      {/* Quiet paper wash — depth without decoration noise */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(520px_220px_at_100%_-10%,hsl(var(--primary)/0.08),transparent_60%)]"
@@ -673,8 +690,9 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <CardEyebrow>Lifetime</CardEyebrow>
-            <p className="mt-1 max-w-[22ch] text-sm text-muted-foreground">
-              Real provider API cost from your spend ledger — not reset by deleting chats.
+            <p className="mt-1 max-w-[28ch] text-sm text-muted-foreground">
+              Provider API cost from the spend ledger — input + output tokens for every model
+              call, including thinking. Not reset by deleting chats.
             </p>
           </div>
           <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground shadow-soft">
@@ -682,7 +700,6 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
           </span>
         </div>
 
-        {/* Hero: API cost */}
         <div className="mt-5 border-t border-border/50 pt-5">
           <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
             API cost
@@ -702,21 +719,29 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             ) : null}
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            Sum of every billable model call (chat, image, video, voice, code).
+            Chat, image, video, voice, and code — priced at each model&rsquo;s input/output rates.
+            Thinking tokens bill as output.
           </p>
         </div>
 
-        {/* Supporting metrics — compact strip, not sparse tiles */}
-        <dl className="mt-5 grid grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60">
-          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+        <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60 sm:grid-cols-4">
+          <div className="bg-card/90 px-3 py-3">
             <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-              Tokens
+              Input
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
-              {compactNumber(tokens)}
+              {compactNumber(tokensIn ?? Math.round(tokens * 0.6))}
             </dd>
           </div>
-          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+          <div className="bg-card/90 px-3 py-3">
+            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+              Output
+            </dt>
+            <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
+              {compactNumber(tokensOut ?? Math.round(tokens * 0.4))}
+            </dd>
+          </div>
+          <div className="bg-card/90 px-3 py-3">
             <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               Replies
             </dt>
@@ -724,7 +749,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
               {messages.toLocaleString()}
             </dd>
           </div>
-          <div className="bg-card/90 px-3 py-3 sm:px-3.5">
+          <div className="bg-card/90 px-3 py-3">
             <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
               Models
             </dt>
@@ -734,8 +759,44 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
           </div>
         </dl>
 
-        {/* Cost by surface — only when there's something to show */}
-        {kindsWithSpend.length > 0 ? (
+        {byModel.length > 0 ? (
+          <div className="mt-5">
+            <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+              By model
+            </p>
+            <ul className="mt-3 space-y-2.5">
+              {byModel.slice(0, 6).map((row) => {
+                const info = resolveModel(row.model);
+                const share = row.costMicroUsd / maxModelCost;
+                return (
+                  <li key={row.model} className="min-w-0">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2">
+                        {info ? <ProviderLogo provider={info.provider} className="h-4 w-4 shrink-0" /> : null}
+                        <span className="truncate text-sm">{info?.name ?? row.model}</span>
+                      </span>
+                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                        {formatLifetimeCost(row.costMicroUsd)}
+                        <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
+                      </span>
+                    </div>
+                    <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+                      {compactNumber(row.tokensIn)} in · {compactNumber(row.tokensOut)} out
+                    </p>
+                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                      <div
+                        className="h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft"
+                        style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ) : null}
+
+        {kindsWithSpend.length > 1 ? (
           <div className="mt-5">
             <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
               By surface
@@ -763,11 +824,11 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
               })}
             </ul>
           </div>
-        ) : (
+        ) : kindsWithSpend.length === 0 ? (
           <p className="mt-5 text-sm text-muted-foreground">
             No billable API use yet — once you chat or generate, the ledger fills in here.
           </p>
-        )}
+        ) : null}
 
         {stats.memberSince ? (
           <p className="mt-5 border-t border-border/50 pt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">

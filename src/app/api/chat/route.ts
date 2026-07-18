@@ -43,7 +43,7 @@ import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
-import { normalizeUsage, estimateCostUsd, supportsFastMode } from "@/lib/pricing";
+import { estimateGenerationCostUsd, supportsFastMode } from "@/lib/pricing";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -217,26 +217,53 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
 
 /**
  * Normalize a generation's token usage and build the "Token usage recorded"
- * detail line + an estimated cost. `totalInput` reconciles per-provider
- * conventions (Anthropic input excludes cache; OpenAI prompt_tokens includes it)
- * so the displayed numbers mean the same thing everywhere.
+ * detail line + an estimated cost. Floors on streamed answer + reasoning
+ * characters so thinking-heavy turns without full usage still bill fairly.
  */
 function buildUsage(
   model: ModelInfo,
-  raw: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number },
+  raw: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    total?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    promptChars?: number;
+    completionChars?: number;
+    reasoningChars?: number;
+  },
   fastMode = false
-): { detail: string; cost: number; totalInput: number; output: number } {
-  const n = normalizeUsage(model.provider, raw);
-  const cost = estimateCostUsd(model, raw, fastMode);
-  const cached = n.cacheRead + n.cacheWrite;
+): { detail: string; cost: number; totalInput: number; output: number; reasoning: number } {
+  const billed = estimateGenerationCostUsd(model, {
+    promptTokens: raw.input,
+    completionTokens: raw.output,
+    reasoningTokens: raw.reasoning,
+    totalTokens: raw.total,
+    cacheRead: raw.cacheRead,
+    cacheWrite: raw.cacheWrite,
+    fastMode,
+    promptChars: raw.promptChars,
+    completionChars: raw.completionChars,
+    reasoningChars: raw.reasoningChars,
+  });
+  const cached = Math.max(0, raw.cacheRead ?? 0) + Math.max(0, raw.cacheWrite ?? 0);
   const detail = [
-    n.totalInput ? `${n.totalInput.toLocaleString()} input${cached ? ` (${cached.toLocaleString()} cached)` : ""}` : null,
-    n.output ? `${n.output.toLocaleString()} output` : null,
-    cost > 0 ? `~${formatUsd(cost)}` : null,
+    billed.promptTokens
+      ? `${billed.promptTokens.toLocaleString()} input${cached ? ` (${cached.toLocaleString()} cached)` : ""}`
+      : null,
+    billed.completionTokens ? `${billed.completionTokens.toLocaleString()} output` : null,
+    billed.costUsd > 0 ? `~${formatUsd(billed.costUsd)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
-  return { detail, cost, totalInput: n.totalInput, output: n.output };
+  return {
+    detail,
+    cost: billed.costUsd,
+    totalInput: billed.promptTokens,
+    output: billed.completionTokens,
+    reasoning: Math.max(0, raw.reasoning ?? 0),
+  };
 }
 
 function searchToolLabel(provider: ModelInfo["provider"]) {
@@ -638,6 +665,8 @@ async function handleChat(req: Request) {
         let lastReasoningPart: number | null = null;
         let promptTokens: number | undefined;
         let completionTokens: number | undefined;
+        let reasoningTokens: number | undefined;
+        let totalTokens: number | undefined;
         let cacheReadTokens: number | undefined;
         let cacheWriteTokens: number | undefined;
         // Which speed actually served (fast adapters may fall back to standard);
@@ -767,6 +796,8 @@ async function handleChat(req: Request) {
             } else if (ev.type === "usage") {
               if (ev.input != null) promptTokens = ev.input;
               if (ev.output != null) completionTokens = ev.output;
+              if (ev.reasoning != null) reasoningTokens = ev.reasoning;
+              if (ev.total != null) totalTokens = ev.total;
               if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
               if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
               if (ev.fast != null) servedFast = ev.fast;
@@ -776,8 +807,18 @@ async function handleChat(req: Request) {
             }
           }
 
-          const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
-          if (promptTokens != null || completionTokens != null) {
+          const usage = buildUsage(modelInfo, {
+            input: promptTokens,
+            output: completionTokens,
+            reasoning: reasoningTokens,
+            total: totalTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
+            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
+            completionChars: full.length,
+            reasoningChars: reasoning.length,
+          }, servedFast);
+          if (usage.totalInput || usage.output) {
             sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
           }
           appendFinishWarning(finishReason, sendActivity);
@@ -818,9 +859,15 @@ async function handleChat(req: Request) {
             source: legacyClient,
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
+            reasoningTokens: reasoningTokens || undefined,
+            totalTokens: totalTokens || undefined,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
             costUsd: usage.cost || undefined,
             promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length + reasoning.length,
+            completionChars: full.length,
+            reasoningChars: reasoning.length,
+            fastMode: servedFast,
           });
           spendRecorded = true;
           console.info("[chat] private generation complete", {
@@ -850,7 +897,16 @@ async function handleChat(req: Request) {
           });
           if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
+            const partialUsage = buildUsage(modelInfo, {
+            input: promptTokens,
+            output: completionTokens,
+            reasoning: reasoningTokens,
+            total: totalTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
+            completionChars: full.length,
+            reasoningChars: reasoning.length,
+          }, servedFast);
             send({
               type: "done",
               message: {
@@ -883,9 +939,15 @@ async function handleChat(req: Request) {
                 source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
+                reasoningTokens: reasoningTokens || undefined,
+                totalTokens: totalTokens || undefined,
+                cacheRead: cacheReadTokens,
+                cacheWrite: cacheWriteTokens,
                 costUsd: partialUsage.cost || undefined,
                 promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-                completionChars: full.length + reasoning.length,
+                completionChars: full.length,
+                reasoningChars: reasoning.length,
+                fastMode: servedFast,
               });
               spendRecorded = true;
             }
@@ -1584,6 +1646,8 @@ async function handleChat(req: Request) {
       let lastReasoningPart: number | null = null;
       let promptTokens: number | undefined;
       let completionTokens: number | undefined;
+      let reasoningTokens: number | undefined;
+      let totalTokens: number | undefined;
       let cacheReadTokens: number | undefined;
       let cacheWriteTokens: number | undefined;
       // Which speed actually served (fast adapters may fall back to standard);
@@ -1909,6 +1973,8 @@ async function handleChat(req: Request) {
           } else if (ev.type === "usage") {
             if (ev.input != null) promptTokens = ev.input;
             if (ev.output != null) completionTokens = ev.output;
+            if (ev.reasoning != null) reasoningTokens = ev.reasoning;
+            if (ev.total != null) totalTokens = ev.total;
             if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
             if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
             if (ev.fast != null) servedFast = ev.fast;
@@ -1925,7 +1991,16 @@ async function handleChat(req: Request) {
         }
 
         // Reconcile token usage across providers and estimate the $ cost once.
-        const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
+        const usage = buildUsage(modelInfo, {
+            input: promptTokens,
+            output: completionTokens,
+            reasoning: reasoningTokens,
+            total: totalTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
+            completionChars: full.length,
+            reasoningChars: reasoning.length,
+          }, servedFast);
 
         // Persist the assistant message — generation succeeded, so it's safe to
         // version-and-overwrite the answer being regenerated (see the helper).
@@ -1970,7 +2045,7 @@ async function handleChat(req: Request) {
 
         assistantFull = full;
 
-        if (promptTokens != null || completionTokens != null) {
+        if (usage.totalInput || usage.output) {
           sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
         }
         appendFinishWarning(finishReason, sendActivity);
@@ -2010,9 +2085,15 @@ async function handleChat(req: Request) {
           source: legacyClient,
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
+          reasoningTokens: reasoningTokens || undefined,
+          totalTokens: totalTokens || undefined,
+          cacheRead: cacheReadTokens,
+          cacheWrite: cacheWriteTokens,
           costUsd: usage.cost || undefined,
           promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-          completionChars: providerOutputChars + reasoning.length,
+          completionChars: providerOutputChars,
+          reasoningChars: reasoning.length,
+          fastMode: servedFast,
         });
         spendRecorded = true;
         console.info("[chat] generation complete", {
@@ -2049,7 +2130,16 @@ async function handleChat(req: Request) {
         if (!artifactEditTarget && (reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
           try {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
+            const partialUsage = buildUsage(modelInfo, {
+            input: promptTokens,
+            output: completionTokens,
+            reasoning: reasoningTokens,
+            total: totalTokens,
+            cacheRead: cacheReadTokens,
+            cacheWrite: cacheWriteTokens,
+            completionChars: full.length,
+            reasoningChars: reasoning.length,
+          }, servedFast);
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
@@ -2093,9 +2183,15 @@ async function handleChat(req: Request) {
                 source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
+                reasoningTokens: reasoningTokens || undefined,
+                totalTokens: totalTokens || undefined,
+                cacheRead: cacheReadTokens,
+                cacheWrite: cacheWriteTokens,
                 costUsd: partialUsage.cost || undefined,
                 promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-                completionChars: providerOutputChars + reasoning.length,
+                completionChars: providerOutputChars,
+                reasoningChars: reasoning.length,
+                fastMode: servedFast,
               });
               spendRecorded = true;
             }

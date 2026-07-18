@@ -202,6 +202,8 @@ export async function* streamOpenAIResponses(
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;
+  let cumReasoning = 0;
+  let cumTotal = 0;
   let sawUsage = false;
   let finishRaw: string | undefined;
   // Declared OUTSIDE the round loop on purpose: a tool round starts a fresh
@@ -279,6 +281,13 @@ export async function* streamOpenAIResponses(
             cumInput += resp.usage.input_tokens ?? 0;
             cumOutput += resp.usage.output_tokens ?? 0;
             cumCached += resp.usage.input_tokens_details?.cached_tokens ?? 0;
+            const details = resp.usage as {
+              output_tokens_details?: { reasoning_tokens?: number };
+              total_tokens?: number;
+            };
+            const reasoningTok = details.output_tokens_details?.reasoning_tokens ?? 0;
+            if (reasoningTok > 0) cumReasoning += reasoningTok;
+            if (details.total_tokens != null) cumTotal += details.total_tokens;
           }
           roundFinish =
             event.type === "response.incomplete"
@@ -335,7 +344,16 @@ export async function* streamOpenAIResponses(
     break;
   }
 
-  if (sawUsage) yield { type: "usage", input: cumInput, output: cumOutput, cacheRead: cumCached || undefined };
+  if (sawUsage) {
+    yield {
+      type: "usage",
+      input: cumInput,
+      output: cumOutput,
+      reasoning: cumReasoning || undefined,
+      total: cumTotal || undefined,
+      cacheRead: cumCached || undefined,
+    };
+  }
   // A trailing tool_calls means even the forced-answer round wanted more tools —
   // surface "length" so the UI warns + offers Continue (same as the compat path).
   const finalRaw = finishRaw === "tool_calls" ? "length" : finishRaw;
@@ -344,6 +362,8 @@ export async function* streamOpenAIResponses(
     model: model.providerModel,
     finishReason: finalRaw ?? "stop",
     promptTokens: sawUsage ? cumInput : null,
+    completionTokens: sawUsage ? cumOutput : null,
+    reasoningTokens: sawUsage ? cumReasoning || null : null,
     cachedTokens: sawUsage ? cumCached : null,
   });
 }

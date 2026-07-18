@@ -202,3 +202,128 @@ export function estimateCostUsd(model: ModelInfo, u: RawUsage, fastMode = false)
   const cost = (n.freshInput * r.input + n.cacheRead * r.cacheRead + n.cacheWrite * r.cacheWrite + n.output * r.output) / 1_000_000;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }
+
+/** Rough token estimate when a provider reports no usage: chars / 4. */
+export function estimateTokensFromChars(chars: number | undefined): number {
+  if (!chars || chars <= 0) return 0;
+  return Math.ceil(chars / 4);
+}
+
+/**
+ * Billable token counts for one generation.
+ *
+ * Providers disagree on whether `completion_tokens` already includes reasoning
+ * / thinking tokens. We never double-count: when the API reports a separate
+ * reasoning total that exceeds completion, we lift output to that total; when
+ * the API is silent we floor on streamed answer + reasoning characters so a
+ * long thinking turn never bills as a short reply.
+ */
+export function resolveBillableTokens(opts: {
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  /** Reasoning/thinking tokens when the provider reports them separately. */
+  reasoningTokens?: number | null;
+  /**
+   * `total_tokens` when present — used as a cross-check so output can't fall
+   * below total − input (some providers omit reasoning from completion_tokens).
+   */
+  totalTokens?: number | null;
+  cacheRead?: number | null;
+  promptChars?: number;
+  /** Visible answer characters. */
+  completionChars?: number;
+  /** Streamed reasoning / thinking characters (summary or full). */
+  reasoningChars?: number;
+}): {
+  promptTokens: number;
+  completionTokens: number;
+  cacheRead: number;
+} {
+  const cacheRead = Math.max(0, opts.cacheRead ?? 0);
+  const charIn = estimateTokensFromChars(opts.promptChars);
+  const charOut = estimateTokensFromChars((opts.completionChars ?? 0) + (opts.reasoningChars ?? 0));
+
+  let prompt = Math.max(0, opts.promptTokens ?? 0);
+  let completion = Math.max(0, opts.completionTokens ?? 0);
+  const reasoning = Math.max(0, opts.reasoningTokens ?? 0);
+  const total = Math.max(0, opts.totalTokens ?? 0);
+
+  // No provider usage at all → char estimate.
+  if (!opts.promptTokens && !opts.completionTokens && !opts.totalTokens) {
+    return {
+      promptTokens: charIn,
+      completionTokens: charOut,
+      cacheRead,
+    };
+  }
+
+  if (!prompt) prompt = charIn;
+
+  // Lift completion when:
+  //  - reasoning was reported separately and is larger than completion (answer-only report)
+  //  - total_tokens implies a higher output than completion_tokens alone
+  //  - char floor exceeds reported completion (missing usage on thinking streams)
+  if (reasoning > completion) completion = reasoning;
+  if (total > 0 && prompt > 0) {
+    const impliedOut = Math.max(0, total - prompt);
+    if (impliedOut > completion) completion = impliedOut;
+  }
+  if (charOut > completion) completion = charOut;
+
+  return { promptTokens: prompt, completionTokens: completion, cacheRead };
+}
+
+/**
+ * Single source of truth for "how much did this generation cost?".
+ * Always prefers real provider usage, floors on streamed characters, and
+ * applies fast-mode / cache rates from tokenRate().
+ */
+export function estimateGenerationCostUsd(
+  model: ModelInfo,
+  opts: {
+    promptTokens?: number | null;
+    completionTokens?: number | null;
+    reasoningTokens?: number | null;
+    totalTokens?: number | null;
+    cacheRead?: number | null;
+    cacheWrite?: number | null;
+    fastMode?: boolean;
+    promptChars?: number;
+    completionChars?: number;
+    reasoningChars?: number;
+  }
+): { costUsd: number; promptTokens: number; completionTokens: number; cacheRead: number } {
+  const tokens = resolveBillableTokens(opts);
+  const costUsd = estimateCostUsd(
+    model,
+    {
+      input: tokens.promptTokens,
+      output: tokens.completionTokens,
+      cacheRead: tokens.cacheRead || undefined,
+      cacheWrite: opts.cacheWrite ?? undefined,
+    },
+    !!opts.fastMode
+  );
+  return {
+    costUsd,
+    promptTokens: tokens.promptTokens,
+    completionTokens: tokens.completionTokens,
+    cacheRead: tokens.cacheRead,
+  };
+}
+
+/** Recompute ledger cost in micro-USD from stored token counts (repair path). */
+export function recomputeCostMicroUsd(
+  modelId: string,
+  promptTokens: number,
+  completionTokens: number,
+  resolve: (id: string) => ModelInfo | null
+): number {
+  const model = resolve(modelId);
+  if (!model) {
+    // Mid-tier fallback $2/$10 per MTok when the model id is gone.
+    return Math.max(0, Math.round(promptTokens * 2 + completionTokens * 10));
+  }
+  const usd = estimateCostUsd(model, { input: promptTokens, output: completionTokens });
+  return Math.max(0, Math.round(usd * 1_000_000));
+}

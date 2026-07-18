@@ -350,6 +350,8 @@ export async function* streamOpenAICompat(
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;
+  let cumReasoning = 0;
+  let cumTotal = 0;
   let sawUsage = false;
   let lastFinish: string | undefined;
 
@@ -382,6 +384,8 @@ export async function* streamOpenAICompat(
     let roundInput = 0;
     let roundOutput = 0;
     let roundCached = 0;
+    let roundReasoning = 0;
+    let roundTotal = 0;
     let roundSawUsage = false;
     let minimaxReasoningBuffer = "";
     // Accumulate streamed tool-call fragments by their choice index.
@@ -434,12 +438,23 @@ export async function* streamOpenAICompat(
         roundOutput = chunk.usage.completion_tokens ?? roundOutput;
         // Standard field first; DeepSeek reports its disk cache as
         // prompt_cache_hit_tokens, Moonshot/Kimi as a top-level cached_tokens.
+        // Reasoning tokens: OpenAI puts them under completion_tokens_details
+        // (subset of completion_tokens). Some OpenAI-compat hosts only expose
+        // thinking there and leave completion_tokens as the visible answer —
+        // resolveBillableTokens lifts output when reasoning > completion.
         const u = chunk.usage as {
           prompt_tokens_details?: { cached_tokens?: number };
+          completion_tokens_details?: { reasoning_tokens?: number };
           prompt_cache_hit_tokens?: number;
           cached_tokens?: number;
+          reasoning_tokens?: number;
+          total_tokens?: number;
         };
         roundCached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens ?? roundCached;
+        const reasoningTok =
+          u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;
+        if (reasoningTok > 0) roundReasoning = Math.max(roundReasoning, reasoningTok);
+        if (u.total_tokens != null) roundTotal = Math.max(roundTotal, u.total_tokens);
       }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
@@ -448,6 +463,8 @@ export async function* streamOpenAICompat(
       cumInput += roundInput;
       cumOutput += roundOutput;
       cumCached += roundCached;
+      cumReasoning += roundReasoning;
+      cumTotal += roundTotal;
     }
     lastFinish = finishReason;
 
@@ -478,7 +495,16 @@ export async function* streamOpenAICompat(
     break; // final answer produced (or tools disabled)
   }
 
-  if (sawUsage) yield { type: "usage", input: cumInput, output: cumOutput, cacheRead: cumCached || undefined };
+  if (sawUsage) {
+    yield {
+      type: "usage",
+      input: cumInput,
+      output: cumOutput,
+      reasoning: cumReasoning || undefined,
+      total: cumTotal || undefined,
+      cacheRead: cumCached || undefined,
+    };
+  }
   // A still-trailing "tool_calls" means even the forced-answer round wanted more
   // tools — report "length" so the UI warns + offers Continue (not a fake stop).
   const finalRaw = lastFinish === "tool_calls" ? "length" : lastFinish;
@@ -489,6 +515,8 @@ export async function* streamOpenAICompat(
     finishReason: finalRaw ?? "stop",
     // Cache hit-rate instrumentation: cachedTokens/promptTokens per response.
     promptTokens: sawUsage ? cumInput : null,
+    completionTokens: sawUsage ? cumOutput : null,
+    reasoningTokens: sawUsage ? cumReasoning || null : null,
     cachedTokens: sawUsage ? cumCached : null,
   });
 }

@@ -29,6 +29,14 @@ export type LlmEvent =
       type: "usage";
       input?: number;
       output?: number;
+      /**
+       * Reasoning / thinking tokens when the provider reports them as a
+       * separate counter. Often a *subset* of `output` (OpenAI); sometimes the
+       * only place thinking is counted (then output is lifted to this value).
+       */
+      reasoning?: number;
+      /** Full request total (input + output). Used as a cross-check. */
+      total?: number;
       /** Prompt-cache hits (input tokens read from cache, billed ~0.1x). */
       cacheRead?: number;
       /** Prompt-cache writes (input tokens written to cache, billed ~1.25x). */

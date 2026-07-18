@@ -401,7 +401,8 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     completionTokens: usage.output || undefined,
     costUsd: costUsd || undefined,
     promptChars: system.length + task.prompt.length,
-    completionChars: full.length + reasoning.length,
+    completionChars: full.length,
+    reasoningChars: reasoning.length,
   });
 
   await prisma.scheduledTaskRun.update({

@@ -3,6 +3,7 @@ import type { Plan } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveModel } from "@/lib/models";
 import { getModelMetrics } from "@/lib/model-metrics";
+import { estimateGenerationCostUsd, estimateTokensFromChars } from "@/lib/pricing";
 import { sendBudgetAlert } from "@/lib/email";
 
 /**
@@ -100,12 +101,6 @@ export function mediaRequestCost(modelId: string, kind: "image" | "video"): numb
   return 30_000;
 }
 
-/** Rough token estimate when a provider reports no usage: chars / 4. */
-function estimateTokens(chars: number | undefined): number {
-  if (!chars || chars <= 0) return 0;
-  return Math.ceil(chars / 4);
-}
-
 export interface RecordSpendInput {
   userId: string;
   model: string;
@@ -114,13 +109,20 @@ export interface RecordSpendInput {
   source?: "web" | "app";
   promptTokens?: number;
   completionTokens?: number;
+  /** Reasoning/thinking tokens when the provider reports them separately. */
+  reasoningTokens?: number;
+  totalTokens?: number;
+  cacheRead?: number;
+  cacheWrite?: number;
   /** Fallback when the provider reported no usage: tokens ≈ chars / 4. */
   promptChars?: number;
   completionChars?: number;
+  /** Streamed reasoning text length — floors thinking-heavy turns without usage. */
+  reasoningChars?: number;
+  fastMode?: boolean;
   /**
-   * Precomputed request cost in USD (cache-aware, per-provider). When set, it
-   * is billed verbatim instead of re-deriving at the full input rate — the
-   * caller already reconciled cache reads/writes (which providers discount).
+   * Precomputed request cost in USD (cache-aware, per-provider). Combined with
+   * a recompute from tokens so a too-low estimate can't underbill the ledger.
    */
   costUsd?: number;
 }
@@ -129,17 +131,61 @@ export interface RecordSpendInput {
  * Compute the request cost and append an ApiSpend ledger row. Fire-and-forget
  * safe: never throws into the caller's stream — failures are logged and the
  * generation proceeds unbilled rather than broken.
+ *
+ * Chat/code/task turns always recompute cost from tokens (and char floors)
+ * using the shared pricing table, then take the MAX of that and any caller
+ * estimate — so missing usage, ignored reasoning tokens, or a stale rate
+ * never under-report spend against the plan budget.
  */
 export async function recordSpend(input: RecordSpendInput): Promise<void> {
   try {
-    const promptTokens = input.promptTokens ?? estimateTokens(input.promptChars);
-    const completionTokens = input.completionTokens ?? estimateTokens(input.completionChars);
-    const costMicroUsd =
-      input.costUsd != null && input.costUsd > 0
-        ? Math.round(input.costUsd * 1_000_000)
-        : input.kind === "image" || input.kind === "video"
-          ? mediaRequestCost(input.model, input.kind)
-          : modelRequestCost({ modelId: input.model, promptTokens, completionTokens });
+    let promptTokens = Math.max(0, input.promptTokens ?? 0);
+    let completionTokens = Math.max(0, input.completionTokens ?? 0);
+    let costMicroUsd = 0;
+
+    if (input.kind === "image" || input.kind === "video") {
+      if (!promptTokens) promptTokens = estimateTokensFromChars(input.promptChars);
+      if (!completionTokens) completionTokens = estimateTokensFromChars(input.completionChars);
+      costMicroUsd =
+        input.costUsd != null && input.costUsd > 0
+          ? Math.round(input.costUsd * 1_000_000)
+          : mediaRequestCost(input.model, input.kind);
+    } else {
+      const model = resolveModel(input.model);
+      if (model) {
+        const billed = estimateGenerationCostUsd(model, {
+          promptTokens: input.promptTokens,
+          completionTokens: input.completionTokens,
+          reasoningTokens: input.reasoningTokens,
+          totalTokens: input.totalTokens,
+          cacheRead: input.cacheRead,
+          cacheWrite: input.cacheWrite,
+          fastMode: input.fastMode,
+          promptChars: input.promptChars,
+          completionChars: input.completionChars,
+          reasoningChars: input.reasoningChars,
+        });
+        promptTokens = billed.promptTokens;
+        completionTokens = billed.completionTokens;
+        const fromTokens = Math.round(billed.costUsd * 1_000_000);
+        const fromCaller =
+          input.costUsd != null && input.costUsd > 0 ? Math.round(input.costUsd * 1_000_000) : 0;
+        // Never underbill: prefer the higher of the two honest estimates.
+        costMicroUsd = Math.max(fromTokens, fromCaller);
+      } else {
+        if (!promptTokens) promptTokens = estimateTokensFromChars(input.promptChars);
+        if (!completionTokens) {
+          completionTokens = estimateTokensFromChars(
+            (input.completionChars ?? 0) + (input.reasoningChars ?? 0)
+          );
+        }
+        const fromTokens = modelRequestCost({ modelId: input.model, promptTokens, completionTokens });
+        const fromCaller =
+          input.costUsd != null && input.costUsd > 0 ? Math.round(input.costUsd * 1_000_000) : 0;
+        costMicroUsd = Math.max(fromTokens, fromCaller);
+      }
+    }
+
     await prisma.apiSpend.create({
       data: {
         userId: input.userId,
@@ -148,7 +194,7 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
         source: input.source ?? "web",
         promptTokens,
         completionTokens,
-        costMicroUsd,
+        costMicroUsd: Math.max(0, costMicroUsd),
       },
     });
   } catch (err) {
