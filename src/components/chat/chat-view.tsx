@@ -37,6 +37,8 @@ interface ChatViewProps {
   initialPrompt?: string;
   /** Auto-send the initial prompt as a deep-research turn (?research=1). */
   initialPromptResearch?: boolean;
+  /** Seed the reasoning slider when starting a chat from a deep-link (e.g. project page). */
+  initialReasoningEffort?: ReasoningEffort | null;
   initialConnectors?: string[];
   /** Open this artifact's canvas on arrival (?artifact= deep link from the library). */
   initialArtifactIdentifier?: string;
@@ -148,7 +150,7 @@ function PrivateGhostMark({ className }: { className?: string }) {
   );
 }
 
-export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialConnectors, initialArtifactIdentifier }: ChatViewProps) {
+export function ChatView({ conversationId, initialMessages, initialArtifacts, initialModel, projectId, initialPrompt, initialPromptResearch, initialReasoningEffort, initialConnectors, initialArtifactIdentifier }: ChatViewProps) {
   const {
     settings,
     quota,
@@ -171,6 +173,12 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const createdIdRef = React.useRef<string | null>(null);
   const [model, setModel] = React.useState<ModelId>(
     () => resolveModel(initialModel)?.id ?? resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL
+  );
+  // Deep-link reasoning (project page → /chat?reasoning=…) must win on the first
+  // render so the auto-sent prompt uses it. After the user moves the slider we
+  // hand control back to sticky composer prefs.
+  const [deepLinkReasoningActive, setDeepLinkReasoningActive] = React.useState(
+    () => initialReasoningEffort !== undefined
   );
   const [openArtifactId, setOpenArtifactId] = React.useState<string | null>(null);
   // Quoted canvas selection waiting in the composer ("select → modify/ask").
@@ -229,15 +237,27 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // (e.g. the new-chat → /chat/[id] navigation after the first reply) and refreshes.
   const canvasEnabled = composerPrefs.canvas;
   const webSearchEnabled = composerPrefs.webSearch;
-  const reasoningEffort = composerPrefs.reasoningEffort;
+  const reasoningEffort =
+    deepLinkReasoningActive && initialReasoningEffort !== undefined
+      ? initialReasoningEffort
+      : composerPrefs.reasoningEffort;
   const fastMode = composerPrefs.fastMode;
   const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
   const setFastMode = React.useCallback((v: boolean) => setComposerPrefs({ fastMode: v }), [setComposerPrefs]);
   const setReasoningEffort = React.useCallback(
-    (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
+    (e: ReasoningEffort | null) => {
+      setDeepLinkReasoningActive(false);
+      setComposerPrefs({ reasoningEffort: e });
+    },
     [setComposerPrefs]
   );
+  // Persist deep-link reasoning into sticky prefs so the /chat → /chat/[id]
+  // remount keeps the same effort without needing the query string again.
+  React.useEffect(() => {
+    if (!deepLinkReasoningActive || initialReasoningEffort === undefined) return;
+    setComposerPrefs({ reasoningEffort: initialReasoningEffort });
+  }, [deepLinkReasoningActive, initialReasoningEffort, setComposerPrefs]);
   // Tool connectors (GitHub/Figma…) enabled for the next message.
   // Seeded from the conversation's persisted set so connectors turned on earlier
   // stay on across sends, remounts (the post-first-message /chat/[id] redirect),

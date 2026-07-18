@@ -94,16 +94,13 @@ export default function ProjectDetailPage() {
   // Chat pending deletion — a real dialog, matching the project-delete confirm.
   const [chatToDelete, setChatToDelete] = React.useState<{ id: string; title: string } | null>(null);
 
-  // Composer states
+  // Composer states. `null` model = not chosen yet → fall back to account default
+  // without overwriting a pick the user already made (that overwrite was sending
+  // every project chat to defaultModel / Kimi).
   const [reasoningEffort, setReasoningEffort] = React.useState<ReasoningEffort | null>("high");
   const [canvasEnabled, setCanvasEnabled] = React.useState(true);
-  const [selectedModel, setSelectedModel] = React.useState<string>("claude-opus-4-8");
-
-  React.useEffect(() => {
-    if (settings?.defaultModel) {
-      setSelectedModel(settings.defaultModel);
-    }
-  }, [settings?.defaultModel]);
+  const [selectedModel, setSelectedModel] = React.useState<string | null>(null);
+  const projectModel = selectedModel ?? settings?.defaultModel ?? "anthropic:claude-sonnet-5";
 
   // Deep-link: /projects/{id}?tab=workspace
   React.useEffect(() => {
@@ -260,9 +257,16 @@ export default function ProjectDetailPage() {
   const handleSend = (text: string, options?: { deepResearch?: boolean }) => {
     const q = text.trim();
     if (!q) return;
-    const reasoning = reasoningEffort ? `&reasoning=${reasoningEffort}` : "";
-    const research = options?.deepResearch ? "&research=1" : "";
-    router.push(`/chat?project=${id}&q=${encodeURIComponent(q)}${reasoning}${research}`);
+    // Carry the composer model through the /chat hand-off. Without `model=`,
+    // NewChatPage always seeds ChatView with the account default (e.g. Kimi).
+    const params = new URLSearchParams({
+      project: id,
+      q,
+      model: projectModel,
+    });
+    if (reasoningEffort) params.set("reasoning", reasoningEffort);
+    if (options?.deepResearch) params.set("research", "1");
+    router.push(`/chat?${params.toString()}`);
   };
 
   const uploadFile = async (file: File) => {
@@ -576,7 +580,7 @@ export default function ProjectDetailPage() {
                 <div className="mb-8">
                   <Composer
                     conversationId={null}
-                    model={selectedModel}
+                    model={projectModel}
                     onModelChange={(m) => setSelectedModel(m)}
                     onSend={(text, _attachments, options) => handleSend(text, options)}
                     isBusy={false}
