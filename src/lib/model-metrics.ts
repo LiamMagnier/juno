@@ -409,14 +409,22 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
   const id = model.providerModel.toLowerCase();
   switch (model.provider) {
     case "anthropic":
-      // output_config.effort. Haiku 4.5 is absent from the effort-supported list
-      // entirely — it only has extended thinking on/off (budget_tokens).
+      // Wire shape is decided in anthropic.ts (buildAnthropicThinkingBits):
+      //   adaptive + output_config.effort — fable/mythos/opus-4.6+/sonnet-4.6+/sonnet-5
+      //   manual type:enabled + budget_tokens — haiku 4.5, opus 4.5, sonnet 4.5
+      // Haiku 4.5 is absent from the effort-supported list entirely — on/off only.
       if (id.includes("haiku")) return caps([], true, true);
-      // Fable/Mythos run adaptive thinking that cannot be disabled.
+      // Fable/Mythos: adaptive always on; disabled rejected.
       if (id.includes("fable") || id.includes("mythos")) return caps(LMHXM, false);
+      // Opus 4.5: manual budget_tokens only (no adaptive); effort API is
+      // supported alongside budget but we still expose LMH for the slider.
       if (id.includes("opus-4-5")) return caps(LMH, true); // no xhigh, no max
-      if (id.includes("opus-4-6")) return caps(["low", "medium", "high", "max"], true); // max, but no xhigh
-      return caps(LMHXM, true); // opus 4.7/4.8, sonnet 4.6/5
+      // Opus 4.6: adaptive preferred; max yes, xhigh no.
+      if (id.includes("opus-4-6")) return caps(["low", "medium", "high", "max"], true);
+      // Sonnet 4.5: manual budget_tokens only.
+      if (id.includes("sonnet-4-5")) return caps(LMH, true);
+      // Opus 4.7/4.8, Sonnet 4.6/5: adaptive + full effort ladder.
+      return caps(LMHXM, true);
     case "openai":
       // The gpt-5.x-pro MODELS (5-pro/5.2-pro/5.4-pro/5.5-pro) restrict effort to
       // medium|high|xhigh and always reason. Note GPT-5.6 has no -pro model id.

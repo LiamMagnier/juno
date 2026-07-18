@@ -47,6 +47,7 @@ silently migrate via `RETIRED_MODELS`/`migrateModelId()`.
 ## Anthropic — checked 2026-07-01
 Sources: platform.claude.com/docs models overview · model-deprecations · pricing.
 - Current: `claude-fable-5` (GA Jun 9 2026; dateless pinned id, adaptive thinking always on, sampling params rejected), `claude-opus-4-8`, `claude-sonnet-5` (released Jun 30 2026, supersedes 4.6; intro pricing $2/$10 through Aug 31 2026), `claude-haiku-4-5` (only active Haiku; extended thinking via budget_tokens).
+- Thinking wire (`src/lib/anthropic-thinking.ts`): **adaptive** + `output_config.effort` for fable/mythos/opus-4.6+/sonnet-4.6+/sonnet-5 (`type:enabled` 400s on 4.7+/sonnet-5/fable); **manual** `type:enabled` + `budget_tokens` for haiku-4-5 / opus-4-5 / sonnet-4-5. Sonnet 5 Instant must send `type:disabled` (default is adaptive on).
 - Deprecated: `claude-opus-4-1` retires **2026-08-05** → Opus 4.8.
 - Retired: entire Claude 3.x line (3 Opus/Sonnet/Haiku, 3.5 Sonnet ×2, 3.5 Haiku).
 - Note: "retirement not sooner than" dates on legacy 4.x models are tentative.

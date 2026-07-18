@@ -1,5 +1,6 @@
 import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
+import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { personalitySystemPrompt } from "@/lib/personalities";
@@ -7,6 +8,12 @@ import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
+
+export {
+  anthropicThinkingKind,
+  buildAnthropicThinkingBits,
+  type AnthropicThinkingKind,
+} from "@/lib/anthropic-thinking";
 
 let anthropic: Anthropic | null = null;
 
@@ -413,26 +420,16 @@ export async function* streamAnthropic(
     { type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } },
     ...(dynamicContext ? [{ type: "text" as const, text: dynamicContext }] : []),
   ];
-  // Thinking budgets per effort tier. max_tokens must cover budget + answer,
-  // and the total must stay within the model's own output ceiling — current
-  // Claude generations allow 64k output; only the deprecated Opus 4.1 line is
-  // still capped at 32k.
-  const requestedBudget = reasoningEffort
-    ? { minimal: 1024, low: 2048, medium: 8192, high: 16000, xhigh: 24000, max: 32000 }[reasoningEffort]
-    : 0;
-  const outputCap = /opus-4-1|claude-3/.test(model.providerModel) ? 32000 : 64000;
-  const totalTokens = Math.min(requestedBudget + maxTokens, outputCap);
-  // Keep at least a quarter of the window for the visible answer; Anthropic
-  // requires the budget to be strictly below max_tokens and at least 1024.
-  const budget = requestedBudget ? Math.max(1024, Math.min(requestedBudget, totalTokens - Math.ceil(totalTokens / 4))) : 0;
+  const thinkingBits = buildAnthropicThinkingBits(model.providerModel, maxTokens, reasoningEffort);
   const useMcp = !!mcpServers && mcpServers.length > 0;
   const baseParams = {
     model: model.providerModel,
-    max_tokens: budget ? totalTokens : maxTokens,
+    max_tokens: thinkingBits.maxTokens,
     system: systemBlocks,
     messages,
     stream: true,
-    ...(budget ? { thinking: { type: "enabled", budget_tokens: budget } } : {}),
+    ...(thinkingBits.thinking ? { thinking: thinkingBits.thinking } : {}),
+    ...(thinkingBits.outputConfig ? { output_config: thinkingBits.outputConfig } : {}),
     // Claude's native web search server tool — searches + cites inline.
     ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] } : {}),
     // Native MCP connector: Claude calls the linked servers (GitHub/Figma…) itself.
