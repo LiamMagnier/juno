@@ -7,31 +7,18 @@ import { toast } from "sonner";
 import {
   AlertCircle,
   Box,
-  CalendarClock,
   Check,
   ChevronDown,
   ChevronRight,
-  Code,
-  Folder,
-  GitPullRequest,
-  Home,
-  Library,
-  MessageCircle,
-  MoreVertical,
-  PanelLeftClose,
-  PanelLeft,
   Pencil,
-  Plug,
   RefreshCw,
-  Search,
-  Shapes,
   Plus,
   Trash2,
   Pin,
-  X,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { UserMenu } from "@/components/app/user-menu";
+import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { JunoMark } from "@/components/brand/logo";
 import { AnimatedTitle } from "@/components/app/animated-title";
 import { Button } from "@/components/ui/button";
@@ -66,6 +53,7 @@ type ConfirmState = { title: string; description: string; confirmLabel: string; 
 type SidebarProject = {
   id: string;
   name: string;
+  nameSource?: "default" | "ai" | "manual";
   starred: boolean;
   updatedAt: string;
   conversationCount: number;
@@ -518,7 +506,7 @@ export function AppSidebar({
           aria-label="Expand sidebar"
           className="group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast active:scale-95 hover:bg-sidebar-accent"
         >
-          <PanelLeft className="h-[18px] w-[18px] text-muted-foreground transition-transform duration-fast group-hover:scale-110" />
+          <SidebarMotionIcon kind="panel-open" className="text-muted-foreground" />
         </button>
         <div className="mt-3">
           <ModeToggle mode={mode} onChange={switchMode} compact />
@@ -527,30 +515,30 @@ export function AppSidebar({
           {mode === "code" ? (
             <>
               <RailIcon onClick={newCodeSession} label="New session">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
-                  <Plus className="h-4 w-4" />
+                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
-              <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><GitPullRequest className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/connections" active={pathname === "/connections"} label="Plugins"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/code/pulls" active={pathname === "/code/pulls"} label="Pull requests"><SidebarMotionIcon kind="pulls" /></RailIcon>
+              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Scheduled"><SidebarMotionIcon kind="tasks" /></RailIcon>
+              <RailIcon href="/connections" active={pathname === "/connections"} label="Plugins"><SidebarMotionIcon kind="connections" /></RailIcon>
             </>
           ) : (
             <>
               <RailIcon onClick={newChat} label="New chat">
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-muted-foreground/15 text-foreground transition-transform duration-fast group-hover:scale-110">
-                  <Plus className="h-4 w-4" />
+                <span className="flex h-7 w-7 items-center justify-center rounded-[10px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-4 w-4" />
                 </span>
               </RailIcon>
-              <RailIcon href="/library" active={pathname === "/library"} label="Library"><Library className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><Shapes className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><Box className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><CalendarClock className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
-              <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><Plug className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" /></RailIcon>
+              <RailIcon href="/library" active={pathname === "/library"} label="Library"><SidebarMotionIcon kind="library" /></RailIcon>
+              <RailIcon href="/artifacts" active={pathname === "/artifacts"} label="Artifacts"><SidebarMotionIcon kind="artifacts" /></RailIcon>
+              <RailIcon href="/projects" active={!!pathname?.startsWith("/projects")} label="Projects"><SidebarMotionIcon kind="projects" /></RailIcon>
+              <RailIcon href="/tasks" active={pathname === "/tasks"} label="Tasks"><SidebarMotionIcon kind="tasks" /></RailIcon>
+              <RailIcon href="/connections" active={pathname === "/connections"} label="Connections"><SidebarMotionIcon kind="connections" /></RailIcon>
             </>
           )}
           <RailIcon onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))} label="Search chats and projects">
-            <Search className="h-[18px] w-[18px] transition-transform duration-fast group-hover:scale-110" />
+            <SidebarMotionIcon kind="search" />
           </RailIcon>
         </div>
         <div className="mt-auto">
@@ -568,7 +556,7 @@ export function AppSidebar({
           left a ~32px void between the wordmark and "New chat" and read as a
           layout gap rather than a deliberate break. */}
       <div className="flex items-center justify-between px-3 pb-2 pt-3">
-        <Link href="/chat" onClick={() => setSidebarOpen(false)} className="rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <Link href="/chat" onClick={() => setSidebarOpen(false)} className="group/brand rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring">
           <span className="flex items-center gap-2 pl-1">
             <JunoMark className="h-[22px] w-[22px] transition-transform duration-base ease-out-soft group-hover/brand:-rotate-6 group-hover/brand:scale-105" />
             <span className="font-serif text-2xl font-normal tracking-normal text-foreground">Juno</span>
@@ -582,7 +570,7 @@ export function AppSidebar({
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             aria-label="Search chats and projects"
           >
-            <Search className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
+            <SidebarMotionIcon kind="search" className="h-4 w-4" />
           </Button>
           {onToggleCollapse && (
             <Button
@@ -592,11 +580,11 @@ export function AppSidebar({
               onClick={onToggleCollapse}
               aria-label="Collapse sidebar"
             >
-              <PanelLeftClose className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
+              <SidebarMotionIcon kind="panel-close" className="h-4 w-4" />
             </Button>
           )}
           <Button variant="ghost" size="icon-sm" className="group md:hidden" onClick={() => setSidebarOpen(false)} aria-label="Close menu">
-            <X className="h-4 w-4 transition-transform duration-fast group-hover:scale-110" />
+            <SidebarMotionIcon kind="close" className="h-4 w-4" />
           </Button>
         </div>
       </div>
@@ -615,32 +603,32 @@ export function AppSidebar({
             <NavRow
               onClick={newCodeSession}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
-                  <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
               label="New session"
             />
-            <NavRow href="/code/pulls" active={pathname === "/code/pulls"} onClick={() => setSidebarOpen(false)} icon={<GitPullRequest className="h-[18px] w-[18px]" />} label="Pull requests" />
-            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Scheduled" />
-            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Plugins" />
+            <NavRow href="/code/pulls" active={pathname === "/code/pulls"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="pulls" />} label="Pull requests" />
+            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Scheduled" />
+            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Plugins" />
           </>
         ) : (
           <>
             <NavRow
               onClick={newChat}
               icon={
-                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-muted-foreground/15 text-foreground">
-                  <Plus className="h-3.5 w-3.5 transition-transform duration-base ease-out-soft group-hover:rotate-90" />
+                <span className="flex h-[22px] w-[22px] items-center justify-center rounded-[8px] bg-muted-foreground/10 text-foreground transition-colors duration-base group-hover:bg-muted-foreground/15">
+                  <SidebarMotionIcon kind="new" className="h-[17px] w-[17px]" />
                 </span>
               }
               label="New chat"
             />
-            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<Library className="h-[18px] w-[18px]" />} label="Library" />
-            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<Shapes className="h-[18px] w-[18px]" />} label="Artifacts" />
-            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<Plug className="h-[18px] w-[18px]" />} label="Connections" />
-            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<Box className="h-[18px] w-[18px]" />} label="Projects" />
-            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<CalendarClock className="h-[18px] w-[18px]" />} label="Tasks" />
+            <NavRow href="/library" active={pathname === "/library"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="library" />} label="Library" />
+            <NavRow href="/artifacts" active={pathname === "/artifacts"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="artifacts" />} label="Artifacts" />
+            <NavRow href="/connections" active={pathname === "/connections"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="connections" />} label="Connections" />
+            <NavRow href="/projects" active={!!pathname?.startsWith("/projects")} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="projects" />} label="Projects" />
+            <NavRow href="/tasks" active={pathname === "/tasks"} onClick={() => setSidebarOpen(false)} icon={<SidebarMotionIcon kind="tasks" />} label="Tasks" />
           </>
         )}
       </nav>
@@ -914,8 +902,6 @@ function ModeToggle({
   onChange: (mode: "home" | "code") => void;
   compact?: boolean;
 }) {
-  const iconCls =
-    "h-3.5 w-3.5 transition-transform duration-fast ease-out-soft group-hover:scale-110 motion-reduce:transition-none motion-reduce:group-hover:scale-100";
   return (
     <SegmentedControl
       value={mode}
@@ -925,8 +911,8 @@ function ModeToggle({
       labelHidden={compact}
       ringOffsetClassName="focus-visible:ring-offset-sidebar"
       options={[
-        { value: "home", label: "Home", icon: <Home className={iconCls} /> },
-        { value: "code", label: "Code", icon: <Code className={iconCls} /> },
+        { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
+        { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
       ]}
     />
   );
@@ -970,10 +956,8 @@ function RailIcon({
   active?: boolean;
   children: React.ReactNode;
 }) {
-  // Icon micro-motion is carried by the icon itself (group-hover:scale-110 at
-  // the call sites), matching the expanded rows — the button only presses.
   const cls = cn(
-    "group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast ease-out-soft active:scale-95",
+    "group flex h-9 w-9 items-center justify-center rounded-[12px] transition-[color,background-color,box-shadow,transform] duration-base ease-out-soft active:scale-[0.96]",
     active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
   );
   if (href) {
@@ -1003,17 +987,15 @@ function NavRow({
   label: string;
   active?: boolean;
 }) {
-  // Claude-density rows: a touch taller (py-2) with roomier gaps, so the nav
-  // breathes like the reference sidebar instead of packing rows tight.
   const cls = cn(
-    "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[14px] font-medium transition-all duration-fast ease-out-soft hover:bg-sidebar-accent hover:translate-x-0.5",
+    "group relative flex items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-[14px] font-medium transition-[color,background-color,box-shadow] duration-base ease-out-soft",
     active
       ? "bg-sidebar-accent font-semibold text-foreground"
       : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-110 group-hover:text-foreground">{icon}</span>
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-colors duration-base group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
   );
@@ -1147,10 +1129,10 @@ function CodeWorkspaceGroup({
         onClick={onToggle}
         aria-expanded={expanded}
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
-        className="group flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent hover:text-foreground"
+        className="group flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-transform duration-fast group-hover:scale-110">
-          <Folder className="h-[16px] w-[16px]" />
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-colors duration-base group-hover:text-foreground">
+          <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
         </span>
         <span className="min-w-0 flex-1 truncate">{name}</span>
         <ChevronRight
@@ -1329,7 +1311,7 @@ function ConversationRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
+        "group relative flex items-center rounded-[10px] pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
         nested && "pl-6",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
@@ -1346,10 +1328,14 @@ function ConversationRow({
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-[color,transform] duration-fast group-hover:scale-110 group-hover:text-foreground">
-          <MessageCircle className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-colors duration-base group-hover:text-foreground">
+          <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
-        <AnimatedTitle title={conversation.title || (variant === "code" ? "New session" : "New chat")} className="min-w-0 flex-1" />
+        <AnimatedTitle
+          title={conversation.title || (variant === "code" ? "New session" : "New chat")}
+          animate={conversation.titleSource === "ai"}
+          className="min-w-0 flex-1"
+        />
         {taskStatus && TASK_STATUS_META[taskStatus] && (
           <span className="flex shrink-0 items-center pl-1" title={TASK_STATUS_META[taskStatus].label}>
             <span className={cn("h-1.5 w-1.5 rounded-full", TASK_STATUS_META[taskStatus].dot)} aria-hidden="true" />
@@ -1363,7 +1349,7 @@ function ConversationRow({
             className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label={variant === "code" ? "Session options" : "Conversation options"}
           >
-            <MoreVertical className="h-4 w-4 transition-transform duration-fast group-hover/kebab:scale-110" />
+            <SidebarMotionIcon kind="more" className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
@@ -1452,7 +1438,7 @@ function ProjectRow({
     <div>
     <div
       className={cn(
-        "group relative flex items-center rounded-md pl-2 pr-1 transition-all duration-fast ease-out-soft hover:translate-x-0.5",
+        "group relative flex items-center rounded-[10px] pl-2 pr-1 transition-[background-color,color] duration-base ease-out-soft",
         active ? "bg-sidebar-accent" : "hover:bg-sidebar-accent"
       )}
     >
@@ -1469,10 +1455,10 @@ function ProjectRow({
         )}
         title={project.name}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-transform duration-fast group-hover:scale-110 group-hover:text-foreground">
-          <Box className="h-[18px] w-[18px]" />
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-colors duration-base group-hover:text-foreground">
+          <SidebarMotionIcon kind="projects" />
         </span>
-        <span className="min-w-0 truncate">{project.name}</span>
+        <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
       </Link>
       {/* Disclosure ›, rotating open. Sits with the kebab at the row's trailing
           edge: the project link owns the whole span it paints hover across. */}
@@ -1495,10 +1481,10 @@ function ProjectRow({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="pressable group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
+            className="pressable group group/kebab rounded-sm p-1 text-muted-foreground opacity-0 hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100 coarse:p-1.5 coarse:opacity-100"
             aria-label="Project options"
           >
-            <MoreVertical className="h-4 w-4 transition-transform duration-fast group-hover/kebab:scale-110" />
+            <SidebarMotionIcon kind="more" className="h-4 w-4" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52 origin-popper data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out">
@@ -1532,13 +1518,13 @@ function ProjectRow({
             aria-current={activePath === `/chat/${c.id}` ? "page" : undefined}
             title={c.title}
             className={cn(
-              "group/pc flex items-center gap-2 rounded-md py-1 pl-9 pr-2 text-[12.5px] transition-all duration-fast ease-out-soft hover:translate-x-0.5 hover:bg-sidebar-accent",
+              "group group/pc flex items-center gap-2 rounded-[9px] py-1 pl-9 pr-2 text-[12.5px] transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent",
               activePath === `/chat/${c.id}`
                 ? "font-medium text-foreground"
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
-            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-[color,transform] duration-fast group-hover/pc:scale-110 group-hover/pc:text-foreground" />
+            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors duration-base group-hover/pc:text-foreground" />
             <span className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}

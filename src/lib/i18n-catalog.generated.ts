@@ -8538,6 +8538,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen Flash"
   },
   {
+    "id": "f32e7887474a996b",
+    "source": "Reconnecting — Juno kept working in the background. The answer will appear here when it's ready."
+  },
+  {
     "id": "f34c2be0d1c5f562",
     "source": "No project"
   },

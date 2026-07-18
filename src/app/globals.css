@@ -316,6 +316,460 @@
     .juno-mark-popping { animation: none; }
   }
 
+  /* Sidebar icons are articulated objects, not stickers. A hover opens the
+     book, joins the plug, turns the clock hands, etc. The parent control owns
+     `group`; these rules keep the choreography identical in rows and the rail. */
+  .sidebar-motion-icon {
+    width: 1.125rem;
+    height: 1.125rem;
+    overflow: visible;
+  }
+  .sidebar-motion-icon * {
+    transform-box: view-box;
+    transition: transform var(--dur-slow) var(--ease-spring), opacity var(--dur-base) var(--ease-out-soft), stroke-dashoffset var(--dur-slow) var(--ease-out-soft);
+  }
+  .group:hover .sidebar-icon__new-plus { animation: sidebar-new-plus 420ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__new-orbit { animation: sidebar-new-orbit 460ms var(--ease-out-soft) both; }
+  .group:hover .sidebar-icon__new-sparks { animation: sidebar-new-sparks 460ms var(--ease-out-soft) both; }
+  .group:hover .sidebar-icon__home-roof { transform: translateY(-1px); }
+  .sidebar-icon__home-door { transform-origin: 12px 19px; }
+  .group:hover .sidebar-icon__home-door { transform: scaleY(0.62); }
+  .group:hover .sidebar-icon__code-left { transform: translateX(1.5px); }
+  .group:hover .sidebar-icon__code-right { transform: translateX(-1.5px); }
+  .sidebar-icon__code-slash { stroke-dasharray: 16; stroke-dashoffset: 0; }
+  .group:hover .sidebar-icon__code-slash { animation: sidebar-code-draw 440ms var(--ease-out-expo) both; }
+  .sidebar-icon__book-left { transform-origin: 12px 12px; }
+  .sidebar-icon__book-right { transform-origin: 12px 12px; }
+  .group:hover .sidebar-icon__book-left { transform: perspective(40px) rotateY(-13deg) translateX(-.4px); }
+  .group:hover .sidebar-icon__book-right { transform: perspective(40px) rotateY(13deg) translateX(.4px); }
+  .group:hover .sidebar-icon__book-page { animation: sidebar-page-turn 460ms var(--ease-spring) both; }
+  .sidebar-icon__artifact-square { transform-origin: 7.5px 8px; }
+  .sidebar-icon__artifact-circle { transform-origin: 16.5px 8px; }
+  .sidebar-icon__artifact-triangle { transform-origin: 16px 17px; }
+  .group:hover .sidebar-icon__artifact-square { transform: translate(-.8px, -.6px) rotate(-8deg); }
+  .group:hover .sidebar-icon__artifact-circle { transform: translate(1px, -1px) scale(.9); }
+  .group:hover .sidebar-icon__artifact-triangle { transform: translate(.8px, .5px) rotate(7deg); }
+  .group:hover .sidebar-icon__artifact-dot { animation: sidebar-artifact-dot 430ms var(--ease-spring) both; }
+  .sidebar-icon__plug-top { transform-origin: 12px 10px; }
+  .group:hover .sidebar-icon__plug-top { animation: sidebar-plug-in 460ms var(--ease-spring) both; }
+  .sidebar-icon__plug-cord { stroke-dasharray: 12; }
+  .group:hover .sidebar-icon__plug-cord { animation: sidebar-cord-charge 480ms var(--ease-out-soft) both; }
+  .group:hover .sidebar-icon__plug-spark { animation: sidebar-plug-spark 520ms var(--ease-out-soft) both; }
+  .sidebar-icon__box-lid { transform-origin: 12px 8px; }
+  .group:hover .sidebar-icon__box-lid { animation: sidebar-box-lid 480ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__box-card { animation: sidebar-box-card 480ms var(--ease-spring) both; }
+  .sidebar-icon__clock-hour,
+  .sidebar-icon__clock-minute { transform-origin: 14.5px 14px; }
+  .group:hover .sidebar-icon__clock-hour { animation: sidebar-clock-hour 560ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__clock-minute { animation: sidebar-clock-minute 620ms var(--ease-spring) both; }
+  .sidebar-icon__pull-route { stroke-dasharray: 28; stroke-dashoffset: 0; }
+  .group:hover .sidebar-icon__pull-route { animation: sidebar-pull-route 540ms var(--ease-out-soft) both; }
+  .group:hover .sidebar-icon__pull-start { animation: sidebar-endpoint 460ms var(--ease-spring) 20ms both; }
+  .group:hover .sidebar-icon__pull-end { animation: sidebar-endpoint 460ms var(--ease-spring) 140ms both; }
+  .sidebar-icon__search-lens,
+  .sidebar-icon__search-handle { transform-origin: 10.5px 10.5px; }
+  .group:hover .sidebar-icon__search-lens,
+  .group:hover .sidebar-icon__search-handle { animation: sidebar-search-look 440ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__search-glint { animation: sidebar-search-glint 480ms var(--ease-out-soft) 70ms both; }
+  .sidebar-icon__panel-divider { transform-origin: center; }
+  .group:hover .sidebar-motion-icon--panel-open .sidebar-icon__panel-divider { transform: translateX(1.5px); }
+  .group:hover .sidebar-motion-icon--panel-close .sidebar-icon__panel-divider { transform: translateX(-1.5px); }
+  .group:hover .sidebar-motion-icon--panel-open .sidebar-icon__panel-chevron { animation: sidebar-panel-open 420ms var(--ease-spring) both; }
+  .group:hover .sidebar-motion-icon--panel-close .sidebar-icon__panel-chevron { animation: sidebar-panel-close 420ms var(--ease-spring) both; }
+  .sidebar-icon__close-a,
+  .sidebar-icon__close-b { transform-origin: 12px 12px; }
+  .group:hover .sidebar-icon__close-a { transform: rotate(12deg) scale(.9); }
+  .group:hover .sidebar-icon__close-b { transform: rotate(-12deg) scale(.9); }
+  .sidebar-icon__folder-front { transform-origin: 12px 18px; }
+  .group:hover .sidebar-icon__folder-front { animation: sidebar-folder-open 480ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__folder-back { transform: translateY(-.5px); }
+  .group:hover .sidebar-icon__chat-dot { animation: sidebar-chat-dot 520ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__chat-dot--2 { animation-delay: 55ms; }
+  .group:hover .sidebar-icon__chat-dot--3 { animation-delay: 110ms; }
+  .group:hover .sidebar-icon__more-dot { animation: sidebar-more-dot 420ms var(--ease-spring) both; }
+  .group:hover .sidebar-icon__more-dot--1 { animation-delay: 0ms; }
+  .group:hover .sidebar-icon__more-dot--2 { animation-delay: 45ms; }
+  .group:hover .sidebar-icon__more-dot--3 { animation-delay: 90ms; }
+
+  @keyframes sidebar-new-plus {
+    0% { transform: rotate(0) scale(1); }
+    58% { transform: rotate(102deg) scale(.9); }
+    100% { transform: rotate(90deg) scale(1); }
+  }
+  @keyframes sidebar-new-orbit {
+    0% { transform: scale(1); opacity: .1; }
+    55% { transform: scale(1.14); opacity: .16; }
+    100% { transform: scale(1.08); opacity: .12; }
+  }
+  @keyframes sidebar-new-sparks {
+    0% { transform: scale(.6); opacity: 0; }
+    48% { transform: scale(1.1); opacity: .75; }
+    100% { transform: scale(1); opacity: .38; }
+  }
+  @keyframes sidebar-code-draw {
+    0% { stroke-dashoffset: 0; opacity: 1; }
+    45% { stroke-dashoffset: 16; opacity: .25; }
+    46% { stroke-dashoffset: -16; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  @keyframes sidebar-page-turn {
+    0% { transform: translateX(0) scaleX(1); opacity: .55; }
+    50% { transform: translateX(1px) scaleX(.18); opacity: .25; }
+    100% { transform: translateX(0) scaleX(1); opacity: .72; }
+  }
+  @keyframes sidebar-artifact-dot {
+    0% { transform: scale(1); opacity: .35; }
+    55% { transform: translate(-.5px, .7px) scale(1.35); opacity: .65; }
+    100% { transform: translate(-.4px, .5px) scale(1.18); opacity: .5; }
+  }
+  @keyframes sidebar-plug-in {
+    0% { transform: translateY(0); }
+    58% { transform: translateY(1.8px) scaleY(.94); }
+    78% { transform: translateY(.6px) scaleY(1.04); }
+    100% { transform: translateY(1px); }
+  }
+  @keyframes sidebar-cord-charge {
+    0% { stroke-dashoffset: 12; opacity: .35; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  @keyframes sidebar-plug-spark {
+    0%, 30% { transform: scale(.5); opacity: 0; }
+    62% { transform: scale(1.15); opacity: .8; }
+    100% { transform: scale(1); opacity: .35; }
+  }
+  @keyframes sidebar-box-lid {
+    0% { transform: translateY(0) rotate(0); }
+    60% { transform: translateY(-2.2px) rotate(-2deg); }
+    100% { transform: translateY(-1.5px) rotate(0); }
+  }
+  @keyframes sidebar-box-card {
+    0% { transform: translateY(2px); opacity: 0; }
+    65% { transform: translateY(-1.7px); opacity: .75; }
+    100% { transform: translateY(-1px); opacity: .5; }
+  }
+  @keyframes sidebar-clock-hour {
+    0% { transform: rotate(0); }
+    68% { transform: rotate(48deg); }
+    100% { transform: rotate(38deg); }
+  }
+  @keyframes sidebar-clock-minute {
+    0% { transform: rotate(0); }
+    68% { transform: rotate(235deg); }
+    100% { transform: rotate(210deg); }
+  }
+  @keyframes sidebar-pull-route {
+    0% { stroke-dashoffset: 28; opacity: .3; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  @keyframes sidebar-endpoint {
+    0% { transform: scale(1); }
+    55% { transform: scale(1.35); }
+    100% { transform: scale(1.08); }
+  }
+  @keyframes sidebar-search-look {
+    0% { transform: rotate(0) translate(0); }
+    56% { transform: rotate(-8deg) translate(-.5px, -.5px); }
+    100% { transform: rotate(-5deg) translate(-.3px, -.3px); }
+  }
+  @keyframes sidebar-search-glint {
+    0% { transform: translate(-1px, 1px); opacity: 0; }
+    55% { transform: translate(0, 0); opacity: .85; }
+    100% { transform: translate(.4px, -.4px); opacity: .38; }
+  }
+  @keyframes sidebar-panel-open {
+    0% { transform: translateX(0); opacity: 1; }
+    55% { transform: translateX(2px); opacity: .45; }
+    100% { transform: translateX(1px); opacity: 1; }
+  }
+  @keyframes sidebar-panel-close {
+    0% { transform: translateX(0); opacity: 1; }
+    55% { transform: translateX(-2px); opacity: .45; }
+    100% { transform: translateX(-1px); opacity: 1; }
+  }
+  @keyframes sidebar-folder-open {
+    0% { transform: perspective(40px) rotateX(0); }
+    65% { transform: perspective(40px) rotateX(-18deg) translateY(1px); }
+    100% { transform: perspective(40px) rotateX(-12deg) translateY(.6px); }
+  }
+  @keyframes sidebar-chat-dot {
+    0%, 100% { transform: translateY(0); opacity: .72; }
+    48% { transform: translateY(-1.5px); opacity: 1; }
+  }
+  @keyframes sidebar-more-dot {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.45); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sidebar-motion-icon *,
+    .group:hover .sidebar-motion-icon * {
+      animation: none !important;
+      transform: none !important;
+      transition: none !important;
+    }
+  }
+
+  /* AI-authored names resolve in place: the old label recedes, a warm scan
+     passes through the line, and the new label settles sharply. Manual renames
+     opt out in AnimatedTitle, so direct edits never feel delayed. */
+  .animated-title--resolving {
+    isolation: isolate;
+  }
+  .animated-title__glow {
+    position: absolute;
+    inset: -2px -6px;
+    z-index: -1;
+    border-radius: 7px;
+    background: linear-gradient(90deg, transparent 0%, hsl(var(--primary) / .04) 24%, hsl(var(--primary) / .16) 50%, hsl(var(--primary) / .04) 76%, transparent 100%);
+    animation: title-resolve-glow 680ms var(--ease-out-soft) both;
+    pointer-events: none;
+  }
+  .animated-title__previous {
+    animation: title-resolve-out 220ms var(--ease-out-soft) both;
+  }
+  .animated-title__current {
+    animation: title-resolve-in 520ms var(--ease-out-expo) 90ms both;
+  }
+  @keyframes title-resolve-out {
+    from { opacity: 1; transform: translateY(0); filter: blur(0); }
+    to { opacity: 0; transform: translateY(-3px); filter: blur(2px); }
+  }
+  @keyframes title-resolve-in {
+    0% { opacity: 0; transform: translateY(4px); clip-path: inset(0 100% 0 0); text-shadow: 0 0 8px hsl(var(--primary) / .18); }
+    55% { opacity: 1; clip-path: inset(0 0 0 0); text-shadow: 0 0 7px hsl(var(--primary) / .14); }
+    100% { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); text-shadow: 0 0 0 hsl(var(--primary) / 0); }
+  }
+  @keyframes title-resolve-glow {
+    0% { opacity: 0; transform: translateX(-45%) scaleX(.55); }
+    38% { opacity: .8; }
+    100% { opacity: 0; transform: translateX(45%) scaleX(.7); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .animated-title__glow,
+    .animated-title__previous,
+    .animated-title__current { animation: none; }
+    .animated-title__previous { display: none; }
+  }
+
+  /* Composer: close, precise elevation instead of a broad floating-card smudge.
+     Focus adds a low-opacity ambient ring and one-pixel lift; the surface stays
+     calm when idle. */
+  .composer-surface {
+    background-image: linear-gradient(180deg, hsl(var(--sheen) / .62), transparent 28%);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen) / .86),
+      0 1px 2px hsl(var(--foreground) / .045),
+      0 9px 24px -20px hsl(var(--foreground) / .32);
+  }
+  .composer-surface:focus-within {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 hsl(var(--sheen)),
+      0 1px 2px hsl(var(--foreground) / .05),
+      0 12px 28px -22px hsl(var(--foreground) / .38),
+      0 0 0 3px hsl(var(--primary) / .055);
+  }
+
+  .composer-add-icon__plus {
+    transform-origin: 10px 10px;
+    transition: transform 420ms var(--ease-spring);
+  }
+  .composer-add-icon__spark {
+    transform-origin: 10px 10px;
+  }
+  .composer-add-button:hover .composer-add-icon__plus {
+    animation: composer-add-plus 420ms var(--ease-spring) both;
+  }
+  .composer-add-button:hover .composer-add-icon__spark {
+    animation: composer-add-spark 480ms var(--ease-out-soft) both;
+  }
+  @keyframes composer-add-plus {
+    0% { transform: rotate(0) scale(1); }
+    58% { transform: rotate(102deg) scale(.88); }
+    100% { transform: rotate(90deg) scale(1); }
+  }
+  @keyframes composer-add-spark {
+    0% { transform: scale(.55); opacity: 0; }
+    58% { transform: scale(1.08); opacity: .65; }
+    100% { transform: scale(1); opacity: .25; }
+  }
+
+  .composer-mic-button::before {
+    content: "";
+    position: absolute;
+    inset: 7px;
+    border: 1px solid hsl(var(--foreground) / .14);
+    border-radius: 999px;
+    opacity: 0;
+    transform: scale(.65);
+    pointer-events: none;
+  }
+  .composer-mic-icon {
+    transform-origin: center bottom;
+    transition: transform var(--dur-slow) var(--ease-spring);
+  }
+  .composer-mic-button:hover .composer-mic-icon {
+    animation: composer-mic-listen 520ms var(--ease-spring) both;
+  }
+  .composer-mic-button:hover::before {
+    animation: composer-mic-ring 600ms var(--ease-out-soft) both;
+  }
+  @keyframes composer-mic-listen {
+    0% { transform: scaleY(1); }
+    45% { transform: scaleY(.84); }
+    72% { transform: scaleY(1.1); }
+    100% { transform: scaleY(1); }
+  }
+  @keyframes composer-mic-ring {
+    0% { transform: scale(.65); opacity: 0; }
+    42% { opacity: .45; }
+    100% { transform: scale(1.45); opacity: 0; }
+  }
+
+  .composer-primary-action {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / .2),
+      0 1px 2px hsl(var(--primary) / .22);
+  }
+  .composer-primary-action:hover {
+    box-shadow:
+      inset 0 1px 0 hsl(0 0% 100% / .25),
+      0 2px 5px -2px hsl(var(--primary) / .38);
+  }
+  .composer-voice-wave {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5px;
+    width: 17px;
+    height: 16px;
+  }
+  .composer-voice-wave > span {
+    display: block;
+    width: 1.5px;
+    border-radius: 999px;
+    background: currentColor;
+    transform-origin: center;
+  }
+  .composer-voice-wave > span:nth-child(1),
+  .composer-voice-wave > span:nth-child(5) { height: 5px; }
+  .composer-voice-wave > span:nth-child(2),
+  .composer-voice-wave > span:nth-child(4) { height: 9px; }
+  .composer-voice-wave > span:nth-child(3) { height: 13px; }
+  .composer-primary-action:hover .composer-voice-wave > span {
+    animation: composer-wave 640ms var(--ease-spring) both;
+  }
+  .composer-primary-action:hover .composer-voice-wave > span:nth-child(2) { animation-delay: 45ms; }
+  .composer-primary-action:hover .composer-voice-wave > span:nth-child(3) { animation-delay: 90ms; }
+  .composer-primary-action:hover .composer-voice-wave > span:nth-child(4) { animation-delay: 135ms; }
+  .composer-primary-action:hover .composer-voice-wave > span:nth-child(5) { animation-delay: 180ms; }
+  .composer-send-icon,
+  .composer-stop-icon {
+    transform-origin: center;
+  }
+  .composer-primary-action:hover .composer-send-icon {
+    animation: composer-send 520ms var(--ease-spring) both;
+  }
+  .composer-primary-action:hover .composer-stop-icon {
+    animation: composer-stop 420ms var(--ease-spring) both;
+  }
+  @keyframes composer-wave {
+    0%, 100% { transform: scaleY(1); }
+    38% { transform: scaleY(.48); }
+    70% { transform: scaleY(1.24); }
+  }
+  @keyframes composer-send {
+    0% { transform: translateY(0) scale(1); opacity: 1; }
+    38% { transform: translateY(-3px) scale(.9); opacity: .35; }
+    39% { transform: translateY(2.5px) scale(.9); opacity: .35; }
+    100% { transform: translateY(0) scale(1); opacity: 1; }
+  }
+  @keyframes composer-stop {
+    0% { transform: rotate(0) scale(1); }
+    58% { transform: rotate(50deg) scale(.76); }
+    100% { transform: rotate(45deg) scale(.82); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-surface:focus-within { transform: none; }
+    .composer-add-button:hover .composer-add-icon__plus,
+    .composer-add-button:hover .composer-add-icon__spark,
+    .composer-mic-button:hover .composer-mic-icon,
+    .composer-mic-button:hover::before,
+    .composer-primary-action:hover .composer-voice-wave > span,
+    .composer-primary-action:hover .composer-send-icon,
+    .composer-primary-action:hover .composer-stop-icon { animation: none; }
+  }
+
+  /* Empty-state intents use the same semantic motion language as the sidebar:
+     pen writes, pages open, hammer strikes, compass decides, columns compare. */
+  .starter-motion-icon * {
+    transform-box: view-box;
+    transition: transform var(--dur-slow) var(--ease-spring), opacity var(--dur-base) var(--ease-out-soft), stroke-dashoffset var(--dur-slow) var(--ease-out-soft);
+  }
+  .starter-icon__pen { transform-origin: 10px 10px; }
+  .group:hover .starter-icon__pen { animation: starter-pen-write 520ms var(--ease-spring) both; }
+  .starter-icon__ink { stroke-dasharray: 12; }
+  .group:hover .starter-icon__ink { animation: starter-ink-draw 520ms var(--ease-out-soft) both; }
+  .starter-icon__page-left,
+  .starter-icon__page-right { transform-origin: 10px 10px; }
+  .group:hover .starter-icon__page-left { transform: perspective(40px) rotateY(-14deg) translateX(-.4px); }
+  .group:hover .starter-icon__page-right { transform: perspective(40px) rotateY(14deg) translateX(.4px); }
+  .group:hover .starter-icon__learn-line { animation: starter-learn-line 480ms var(--ease-spring) both; }
+  .starter-icon__hammer { transform-origin: 5px 15px; }
+  .group:hover .starter-icon__hammer { animation: starter-hammer 520ms var(--ease-spring) both; }
+  .group:hover .starter-icon__build-spark { animation: starter-build-spark 520ms var(--ease-out-soft) 120ms both; }
+  .starter-icon__needle { transform-origin: 10px 10px; }
+  .group:hover .starter-icon__needle { animation: starter-compass 620ms var(--ease-spring) both; }
+  .starter-icon__compare-left { transform-origin: 5.5px 10px; }
+  .starter-icon__compare-right { transform-origin: 14.5px 10px; }
+  .group:hover .starter-icon__compare-left { transform: translateX(1px) scaleY(.92); }
+  .group:hover .starter-icon__compare-right { transform: translateX(-1px) scaleY(.92); }
+  .group:hover .starter-icon__compare-scan { animation: starter-compare-scan 520ms var(--ease-out-soft) both; }
+  @keyframes starter-pen-write {
+    0% { transform: translate(0, 0) rotate(0); }
+    38% { transform: translate(-1px, 1px) rotate(-5deg); }
+    72% { transform: translate(1px, -.5px) rotate(3deg); }
+    100% { transform: translate(0, 0) rotate(0); }
+  }
+  @keyframes starter-ink-draw {
+    0% { stroke-dashoffset: 12; opacity: .15; }
+    100% { stroke-dashoffset: 0; opacity: .62; }
+  }
+  @keyframes starter-learn-line {
+    0%, 100% { transform: scaleX(1); opacity: .45; }
+    50% { transform: scaleX(.25); opacity: .2; }
+  }
+  @keyframes starter-hammer {
+    0% { transform: rotate(0); }
+    50% { transform: rotate(-14deg); }
+    72% { transform: rotate(7deg); }
+    100% { transform: rotate(0); }
+  }
+  @keyframes starter-build-spark {
+    0%, 25% { transform: scale(.4); opacity: 0; }
+    65% { transform: scale(1.35); opacity: .8; }
+    100% { transform: scale(1); opacity: .25; }
+  }
+  @keyframes starter-compass {
+    0% { transform: rotate(0); }
+    52% { transform: rotate(155deg); }
+    75% { transform: rotate(128deg); }
+    100% { transform: rotate(138deg); }
+  }
+  @keyframes starter-compare-scan {
+    0% { transform: translateY(-2px); opacity: .1; }
+    50% { transform: translateY(1px); opacity: .65; }
+    100% { transform: translateY(0); opacity: .4; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .starter-motion-icon *,
+    .group:hover .starter-motion-icon * {
+      animation: none !important;
+      transform: none !important;
+      transition: none !important;
+    }
+  }
+
   /* Recessed field — a subtle inset so inputs read as wells you type into. */
   .field-well {
     box-shadow: var(--well-inset);

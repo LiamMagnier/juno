@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { BookOpen, Columns2, Compass, Hammer, PenLine } from "lucide-react";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { cn } from "@/lib/utils";
@@ -23,13 +22,38 @@ type MemoryResponse = {
 const STARTERS: {
   id: StarterCategory;
   label: string;
-  icon: typeof PenLine;
 }[] = [
-  { id: "write", label: "Write", icon: PenLine },
-  { id: "learn", label: "Learn", icon: BookOpen },
-  { id: "build", label: "Build", icon: Hammer },
-  { id: "decide", label: "Decide", icon: Compass },
+  { id: "write", label: "Write" },
+  { id: "learn", label: "Learn" },
+  { id: "build", label: "Build" },
+  { id: "decide", label: "Decide" },
 ];
+
+function StarterMotionIcon({ kind }: { kind: StarterCategory | "compare" }) {
+  const common = {
+    "aria-hidden": true,
+    className: cn("starter-motion-icon h-4 w-4", `starter-motion-icon--${kind}`),
+    viewBox: "0 0 20 20",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 1.5,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  if (kind === "write") {
+    return <svg {...common}><path className="starter-icon__pen" d="m12.8 3.2 4 4L7.2 16.8 3 17l.2-4.2zM11.5 4.5l4 4" /><path className="starter-icon__ink" d="M3.5 18h10" opacity=".45" /></svg>;
+  }
+  if (kind === "learn") {
+    return <svg {...common}><path className="starter-icon__page-left" d="M10 16.5c-1.6-1.4-3.7-1.9-6.5-1.6V4.5C6.3 4.2 8.4 4.8 10 6z" /><path className="starter-icon__page-right" d="M10 16.5c1.6-1.4 3.7-1.9 6.5-1.6V4.5C13.7 4.2 11.6 4.8 10 6z" /><path className="starter-icon__learn-line" d="M6 8h2M12 8h2" opacity=".45" /></svg>;
+  }
+  if (kind === "build") {
+    return <svg {...common}><path className="starter-icon__hammer" d="m10.5 3.5 3-2 3 3-2 3-2-2-7.5 9.5-2-2 9.5-7.5z" /><path className="starter-icon__build-spark" d="M14.8 11.5v2M13.8 12.5h2" opacity="0" /></svg>;
+  }
+  if (kind === "decide") {
+    return <svg {...common}><circle cx="10" cy="10" r="7" /><path className="starter-icon__needle" d="m12.7 7.3-1.4 4-4 1.4 1.4-4z" /><circle cx="10" cy="10" r=".7" fill="currentColor" stroke="none" /></svg>;
+  }
+  return <svg {...common}><rect className="starter-icon__compare-left" x="2.5" y="4" width="6" height="12" rx="1.5" /><rect className="starter-icon__compare-right" x="11.5" y="4" width="6" height="12" rx="1.5" /><path className="starter-icon__compare-scan" d="M5.5 7v6M14.5 7v6" opacity=".35" /></svg>;
+}
 
 const FALLBACK_TOPICS: Record<StarterCategory, string> = {
   write: "a message I need to send",
@@ -232,7 +256,6 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
     <div className="mx-auto flex w-full max-w-4xl flex-col items-center gap-3 px-3 sm:px-0">
       <div className="flex w-full flex-wrap justify-center gap-2 pb-1">
         {STARTERS.map((starter, i) => {
-          const Icon = starter.icon;
           const selected = starter.id === active;
           return (
             <button
@@ -243,25 +266,19 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
               aria-expanded={selected}
               style={{ animationDelay: `${180 + i * 45}ms` }}
               className={cn(
-                // Pill: full-round so it reads as a chip, not a small card.
-                // transition-[…] rather than transition-all so only compositor
-                // properties (transform/opacity) and paint-cheap colours animate.
-                "group inline-flex h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 font-sans text-sm font-medium shadow-soft backdrop-blur",
-                "transition-[transform,background-color,border-color,box-shadow] duration-base ease-spring",
-                "[animation-fill-mode:backwards] hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none",
-                "sm:h-11 sm:px-4 sm:text-base",
+                "group inline-flex h-9 shrink-0 items-center gap-2 rounded-[13px] border px-3.5 font-sans text-sm font-medium backdrop-blur",
+                "shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] transition-[background-color,border-color,box-shadow,transform] duration-base ease-out-soft",
+                "[animation-fill-mode:backwards] hover:shadow-[0_4px_12px_-9px_hsl(var(--foreground)/0.3)] active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none",
+                "sm:h-10 sm:px-4 sm:text-[15px]",
                 // Coral is reserved for the SELECTED pill, so hover only lifts.
                 selected
                   ? "border-primary/40 bg-primary/10 text-foreground"
                   : "border-border/70 bg-card/70 text-foreground/80 hover:border-border hover:bg-card hover:text-foreground"
               )}
             >
-              <Icon
-                className={cn(
-                  "h-4 w-4 transition-colors duration-base ease-out-soft",
-                  selected ? "text-primary" : "text-muted-foreground group-hover:text-foreground/70"
-                )}
-              />
+              <span className={cn("transition-colors duration-base", selected ? "text-primary" : "text-muted-foreground group-hover:text-foreground/75")}>
+                <StarterMotionIcon kind={starter.id} />
+              </span>
               {starter.label}
             </button>
           );
@@ -272,9 +289,9 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
           onClick={() => router.push("/compare")}
           aria-label="Compare models side by side"
           style={{ animationDelay: `${180 + STARTERS.length * 45}ms` }}
-          className="group inline-flex h-10 shrink-0 items-center gap-2 rounded-full border border-border/70 bg-card/70 px-3.5 font-sans text-sm font-medium text-foreground/80 shadow-soft backdrop-blur transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:-translate-y-0.5 hover:border-border hover:bg-card hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none sm:h-11 sm:px-4 sm:text-base"
+          className="group inline-flex h-9 shrink-0 items-center gap-2 rounded-[13px] border border-border/70 bg-card/60 px-3.5 font-sans text-sm font-medium text-foreground/80 shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] backdrop-blur transition-[background-color,border-color,box-shadow,color,transform] duration-base ease-out-soft [animation-fill-mode:backwards] hover:border-border hover:bg-card hover:text-foreground hover:shadow-[0_4px_12px_-9px_hsl(var(--foreground)/0.3)] active:scale-[0.98] motion-safe:animate-fade-in motion-reduce:transition-none sm:h-10 sm:px-4 sm:text-[15px]"
         >
-          <Columns2 className="h-4 w-4 text-muted-foreground transition-colors duration-base ease-out-soft group-hover:text-foreground/70" />
+          <span className="text-muted-foreground transition-colors duration-base group-hover:text-foreground/75"><StarterMotionIcon kind="compare" /></span>
           Compare
         </button>
       </div>
@@ -303,7 +320,7 @@ export function SuggestionPills({ onPick }: { onPick: (text: string) => void }) 
                 // `relative` + `hover:z-10`: without a stacking order the next
                 // card's opaque background paints over this one's shadow, which
                 // clips it into a straight edge exactly like the wrapper did.
-                className="relative min-h-20 rounded-2xl border border-border/70 bg-card/70 px-4 py-3.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-soft backdrop-blur transition-[transform,background-color,border-color,box-shadow,color] duration-base ease-spring [animation-fill-mode:backwards] hover:z-10 hover:-translate-y-0.5 hover:border-border hover:bg-card hover:text-foreground hover:shadow-float active:translate-y-0 active:scale-[0.99] motion-safe:animate-rise-in motion-reduce:transition-none"
+                className="relative min-h-20 rounded-[15px] border border-border/65 bg-card/60 px-4 py-3.5 text-left font-sans text-sm leading-5 text-foreground/80 shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] backdrop-blur transition-[background-color,border-color,box-shadow,color,transform] duration-base ease-out-soft [animation-fill-mode:backwards] hover:z-10 hover:border-border hover:bg-card hover:text-foreground hover:shadow-[0_6px_16px_-12px_hsl(var(--foreground)/0.32)] active:scale-[0.99] motion-safe:animate-rise-in motion-reduce:transition-none"
               >
                 <span className="line-clamp-3">{prompt}</span>
               </button>

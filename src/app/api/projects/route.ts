@@ -28,6 +28,7 @@ export async function GET() {
       projects.map(async (p) => ({
         id: p.id,
         name: p.name,
+        nameSource: p.nameSource,
         instructions: p.instructions,
         starred: p.starred,
         updatedAt: p.updatedAt.toISOString(),

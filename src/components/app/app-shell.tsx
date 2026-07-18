@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Menu, Plus, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppSidebar } from "@/components/app/app-sidebar";
 import { AnimatedTitle } from "@/components/app/animated-title";
+import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { Onboarding } from "@/components/app/onboarding";
 import { CommandPalette } from "@/components/app/command-palette";
 import { PageTransition } from "@/components/app/page-transition";
@@ -35,7 +35,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [sidebarWidth, setSidebarWidth] = React.useState(SIDEBAR_DEFAULT);
   const [resizing, setResizing] = React.useState(false);
   const widthRef = React.useRef(SIDEBAR_DEFAULT);
-  const activeTitle = activeConversationId ? conversations.find((c) => c.id === activeConversationId)?.title : null;
+  const activeConversation = activeConversationId ? conversations.find((c) => c.id === activeConversationId) : null;
+  const activeTitle = activeConversation?.title ?? null;
 
   const applyWidth = React.useCallback((w: number) => {
     widthRef.current = w;
@@ -210,25 +211,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         style={{ "--juno-sidebar-width": collapsed ? "64px" : `${sidebarWidth}px` } as React.CSSProperties}
       >
         <div className="flex shrink-0 items-center gap-2 border-b bg-background/90 px-2 py-2 backdrop-blur md:hidden">
-          <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
-            <Menu className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="group" onClick={() => setSidebarOpen(true)} aria-label="Open menu">
+            <SidebarMotionIcon kind="panel-open" className="h-5 w-5" />
           </Button>
           <AnimatedTitle
             title={activeTitle || "Juno"}
+            animate={activeConversation?.titleSource === "ai"}
             className="min-w-0 flex-1"
             textClassName="font-serif text-xl font-semibold tracking-tight text-foreground"
           />
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto"
+            className="group ml-auto"
             onClick={() => window.dispatchEvent(new CustomEvent("juno:search"))}
             aria-label="Search chats and projects"
           >
-            <Search className="h-5 w-5" />
+            <SidebarMotionIcon kind="search" className="h-5 w-5" />
           </Button>
-          <Button variant="ghost" size="icon" onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }} aria-label="New chat">
-            <Plus className="h-5 w-5" />
+          <Button variant="ghost" size="icon" className="group" onClick={() => { router.push("/chat"); window.dispatchEvent(new CustomEvent("juno:new-chat")); }} aria-label="New chat">
+            <SidebarMotionIcon kind="new" className="h-5 w-5" />
           </Button>
         </div>
         <div className="min-h-0 flex-1">

@@ -26,7 +26,6 @@ import {
   Mic,
   Paperclip,
   Plug,
-  Plus,
   Search,
   Square,
   SquareDashedMousePointer,
@@ -1296,7 +1295,7 @@ export function Composer({
       <div
         className={cn(
           "relative grid w-full grid-cols-1 grid-rows-1 items-center justify-items-center transition-[min-height] duration-slow ease-spring motion-reduce:transition-none",
-          dictating ? "min-h-[170px]" : "min-h-[76px]"
+          dictating ? "min-h-[170px]" : "min-h-[68px]"
         )}
       >
         <div
@@ -1327,18 +1326,18 @@ export function Composer({
             if (features.storage && !privateMode && e.dataTransfer.files.length) addComposerFiles(e.dataTransfer.files);
           }}
           className={cn(
-            "col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-panel border bg-card/90 shadow-float backdrop-blur",
+            "composer-surface col-start-1 row-start-1 relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
             "transition-[opacity,transform,border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
             dictating ? "pointer-events-none -translate-y-1 scale-[0.97] opacity-0" : "translate-y-0 scale-100 opacity-100",
             clarificationOpen ? "p-4 gap-4" : "",
             privateMode
               ? "border-dashed border-foreground/25"
-              : "border-border/70 focus-within:border-primary/30 focus-within:shadow-glass",
-            dragging && "border-primary/60 ring-2 ring-primary/30"
+              : "border-border/65 focus-within:border-primary/25",
+            dragging && "border-primary/55 ring-2 ring-primary/20"
           )}
         >
         {dragging && !privateMode && (
-          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-panel border-2 border-dashed border-primary/50 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
             <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
           </div>
@@ -1599,12 +1598,12 @@ export function Composer({
             slashOpen && slash ? `composer-palette-${Math.min(slashIndex, slash.items.length - 1)}` : undefined
           }
           className={cn(
-            "w-full resize-none bg-transparent px-3.5 py-3.5 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4",
-            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[74px] text-body-lg"
+            "w-full resize-none bg-transparent px-4 pb-3 pt-4 leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]",
+            clarificationOpen ? "max-h-[60px] min-h-[48px] text-sm" : "max-h-[200px] min-h-[64px] text-[1rem]"
           )}
         />
 
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
           {/* Left: + menu and model selector */}
           <div className="flex min-w-0 flex-1 basis-[13rem] flex-wrap items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
@@ -1615,9 +1614,12 @@ export function Composer({
                   size="icon-sm"
                   aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
                   disabled={controlsLocked}
-                  className={cn("rounded-[20px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
+                  className={cn("composer-add-button rounded-[11px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
                 >
-                  <Plus className="h-4 w-4" />
+                  <svg className="composer-add-icon h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                    <path className="composer-add-icon__plus" d="M10 5.5v9M5.5 10h9" />
+                    <path className="composer-add-icon__spark" d="M10 1.8v1.1M10 17.1v1.1M1.8 10h1.1M17.1 10h1.1" opacity="0" />
+                  </svg>
                   {researchArmed && (
                     <span
                       aria-hidden
@@ -1984,9 +1986,9 @@ export function Composer({
                     disabled={controlsLocked || dictating || voiceActive}
                     aria-label="Dictate"
                     aria-pressed={dictating}
-                    className="coarse:h-11 coarse:w-11"
+                    className="composer-mic-button rounded-[11px] coarse:h-11 coarse:w-11"
                   >
-                    <Mic className="h-4 w-4" />
+                    <Mic className="composer-mic-icon h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Dictate</TooltipContent>
@@ -2021,20 +2023,20 @@ export function Composer({
                         : "Send message"
                   }
                   className={cn(
-                    // rounded-lg (24px) clamps to a perfect circle at these sizes but, unlike
-                    // rounded-full, keeps the radius morph to rounded-md animatable.
-                    "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                    isBusy && status !== "checking" ? "w-12 rounded-md shadow-soft ring-2 ring-primary/20" : "rounded-lg"
+                    "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                    isBusy && status !== "checking" ? "w-11 rounded-[11px] ring-2 ring-primary/15" : "rounded-[13px]"
                   )}
                 >
                   {status === "checking" ? (
                     <Loader2 key="checking" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
                   ) : isBusy ? (
-                    <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                    <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
                   ) : showVoiceButton ? (
-                    <AudioLines key="voice" className="h-4 w-4 motion-safe:animate-fade-in" />
+                    <span key="voice" className="composer-voice-wave motion-safe:animate-fade-in" aria-hidden="true">
+                      <span /><span /><span /><span /><span />
+                    </span>
                   ) : (
-                    <ArrowUp key="send" className="h-4 w-4 motion-safe:animate-fade-in" />
+                    <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
                   )}
                 </Button>
               </TooltipTrigger>
@@ -2079,7 +2081,7 @@ export function Composer({
       </div>
       </div>
       {!hideDisclaimer && (
-        <p className="mt-2 text-center text-caption text-muted-foreground">
+        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground/45">
           {privateMode ? "Incognito chats are not saved or added to memory." : "Juno can be wrong — worth a second look on anything that matters."}
         </p>
       )}

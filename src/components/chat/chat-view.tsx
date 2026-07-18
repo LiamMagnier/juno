@@ -1560,7 +1560,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 {voiceSaveNotice}
                 {composer}
               </div>
-              <p className="pb-2 text-center text-caption text-muted-foreground select-none shrink-0">
+              <p className="shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45">
                 {forkedFrom
                   ? "This branch isn't saved — it continues from the fork point with full context."
                   : privateMode
@@ -1642,7 +1642,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
               <p
                 className={cn(
-                  "shrink-0 pb-2 text-center text-caption text-muted-foreground select-none transition-opacity duration-500 ease-out-soft",
+                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45 transition-opacity duration-500 ease-out-soft",
                   privateMode ? "pointer-events-none opacity-0" : "opacity-100"
                 )}
               >
