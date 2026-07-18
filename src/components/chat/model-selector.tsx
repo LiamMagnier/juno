@@ -414,11 +414,18 @@ export function ModelSelector({
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="group inline-flex h-8 min-w-0 max-w-[12rem] items-center gap-1.5 rounded-[10px] px-2 text-[13px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground sm:max-w-[16rem] coarse:h-11"
+          aria-label={`Model: ${current?.name ?? "Select model"}`}
+          className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-[10px] px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
         >
-          {current && <ProviderLogo provider={current.provider} className="h-4 w-4 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110" />}
-          <span className="truncate font-mono">{current?.name ?? "Select model"}</span>
-          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
+          {current && <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />}
+          <span
+            key={current?.id ?? "no-model"}
+            aria-hidden="true"
+            className="min-w-0 flex-1 overflow-hidden whitespace-nowrap font-mono [mask-image:linear-gradient(to_right,#000_calc(100%_-_10px),transparent)] motion-safe:animate-fade-in max-[359px]:hidden sm:flex-none sm:[mask-image:none]"
+          >
+            {current?.name ?? "Select model"}
+          </span>
+          <ChevronDown className="size-3 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180 sm:size-3.5" />
         </button>
       </PopoverTrigger>
       <PopoverContent

@@ -70,9 +70,11 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   const out: Partial<ComposerPrefs> = {};
   if (
     o.reasoningEffort === null ||
+    o.reasoningEffort === "minimal" ||
     o.reasoningEffort === "low" ||
     o.reasoningEffort === "medium" ||
     o.reasoningEffort === "high" ||
+    o.reasoningEffort === "xhigh" ||
     o.reasoningEffort === "max"
   ) {
     out.reasoningEffort = o.reasoningEffort as ReasoningEffort;

@@ -57,6 +57,8 @@ function friendlyTaskError(code: string | undefined): string {
       return "Cloud runs aren’t enabled on this server yet.";
     case "cloud_dispatch_failed":
       return "Couldn’t start the cloud run. Please try again.";
+    case "attachment_claim_failed":
+      return "One of the attached files is no longer available. Remove it and try again.";
     default:
       return code ?? "Could not start the task.";
   }
@@ -391,19 +393,27 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   );
 
   const send = React.useCallback(
-    async (text: string, target: CodeSendTarget): Promise<{ accepted: boolean }> => {
+    async (
+      text: string,
+      target: CodeSendTarget,
+      attachments: ClientMessage["attachments"] = [],
+    ): Promise<{ accepted: boolean }> => {
       if (statusRef.current !== "idle") return { accepted: false };
       const trimmed = text.trim();
-      if (!trimmed) return { accepted: false };
+      const attachmentIds = attachments.map((a) => a.id);
+      if (!trimmed && attachmentIds.length === 0) return { accepted: false };
 
       setStatus("submitting");
       const userTempId = tempId();
+      const titleFallback =
+        trimmed.slice(0, 60) ||
+        (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
       const userMsg: ChatMessage = {
         id: userTempId,
         role: "USER",
         content: trimmed,
         createdAt: new Date().toISOString(),
-        attachments: [],
+        attachments: [...attachments],
         pending: true,
       };
       setMessages((prev) => [...prev, userMsg]);
@@ -416,8 +426,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 repo: target.repo,
                 baseRef: target.baseRef || undefined,
                 workspaceName: target.workspaceName || undefined,
-                title: trimmed.slice(0, 60),
+                title: titleFallback,
                 prompt: trimmed,
+                attachmentIds: attachmentIds.length ? attachmentIds : undefined,
                 conversationId: opts.conversationId,
               }
             : {
@@ -425,8 +436,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
                 workspacePath: target.workspacePath,
                 workspaceName: target.workspaceName || undefined,
                 workspaceKey: target.workspaceKey || undefined,
-                title: trimmed.slice(0, 60),
+                title: titleFallback,
                 prompt: trimmed,
+                attachmentIds: attachmentIds.length ? attachmentIds : undefined,
                 conversationId: opts.conversationId,
               };
         const res = await fetch("/api/code/tasks", {

@@ -1,16 +1,47 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUp, ArrowUpRight, Cloud, Folder, GitPullRequest, Loader2, ShieldAlert, Square } from "lucide-react";
+import Image from "next/image";
+import {
+  ArrowUp,
+  ArrowUpRight,
+  Cloud,
+  FileText,
+  FileUp,
+  Folder,
+  GitPullRequest,
+  ImagePlus,
+  Library,
+  Loader2,
+  Paperclip,
+  Plus,
+  ShieldAlert,
+  Square,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MessageList } from "@/components/chat/message-list";
+import { LibraryPicker } from "@/components/chat/library-picker";
 import { useApp } from "@/components/app/app-provider";
+import { useUploads } from "@/hooks/use-uploads";
 import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeSessionStatus } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
-import { cn } from "@/lib/utils";
-import type { ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
+import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
+import { cn, formatBytes } from "@/lib/utils";
+import type { ClientAttachment, ClientConversation, ClientMessage, GenerationStatus } from "@/types/chat";
 
 /*
  * The chat surface for a kind:"code" conversation. Same rendering language as
@@ -172,7 +203,7 @@ const TASK_CHIP: Partial<Record<CodeSessionStatus, string>> = {
 };
 
 export function CodeSessionView({ conversation, initialMessages }: CodeSessionViewProps) {
-  const { setActiveConversationId, updateConversation, conversations } = useApp();
+  const { setActiveConversationId, updateConversation, conversations, features } = useApp();
   const workspaceName = conversation.codeWorkspaceName?.trim() || "Code session";
   const workspacePath = conversation.codeWorkspacePath ?? null;
   const workspaceKey = conversation.codeWorkspaceKey ?? null;
@@ -212,17 +243,41 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
   }, [conversation.id]);
 
   const [draft, setDraft] = React.useState("");
+  const [dragging, setDragging] = React.useState(false);
+  const [plusOpen, setPlusOpen] = React.useState(false);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(
+    conversation.id,
+  );
+  const canAttach = features.storage;
+
+  const autoresize = React.useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, []);
+  React.useEffect(() => {
+    autoresize();
+  }, [draft, autoresize]);
 
   // First prompt handed off from the New session screen (device sessions only —
-  // cloud sessions dispatch their task up front). Pre-fill the draft and arm a
-  // one-shot auto-dispatch that fires the moment the Mac is reachable; if it's
-  // offline the prompt simply waits, ready to send, nothing lost.
+  // cloud sessions dispatch their task up front). Pre-fill the draft + staged
+  // attachments and arm a one-shot auto-dispatch that fires the moment the Mac
+  // is reachable; if it's offline the prompt simply waits, ready to send.
   const [autoSendArmed, setAutoSendArmed] = React.useState(false);
+  const handoffDoneRef = React.useRef(false);
   React.useEffect(() => {
+    if (handoffDoneRef.current) return;
+    handoffDoneRef.current = true;
     const pending = takePendingCodePrompt(conversation.id);
     if (pending) {
-      setDraft(pending);
+      setDraft(pending.text);
+      if (pending.attachments.length) addAttachments(pending.attachments);
       setAutoSendArmed(true);
     }
     // Once, on mount for this conversation.
@@ -248,30 +303,50 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             : null;
 
   const nameSessionFromFirstPrompt = React.useCallback(
-    (text: string) => {
+    (text: string, attachments: ClientAttachment[]) => {
       const current = conversations.find((c) => c.id === conversation.id);
       if (current && current.titleSource === "default" && isDefaultCodeSessionTitle(current.title)) {
-        updateConversation(conversation.id, { title: text.slice(0, 48) });
+        const title =
+          text.slice(0, 48) ||
+          (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
+        updateConversation(conversation.id, { title });
       }
     },
     [conversation.id, conversations, updateConversation],
   );
 
+  const removeUpload = React.useCallback(
+    (localId: string) => {
+      setRemovingIds((prev) => [...prev, localId]);
+      window.setTimeout(() => {
+        remove(localId);
+        setRemovingIds((prev) => prev.filter((id) => id !== localId));
+      }, 180);
+    },
+    [remove],
+  );
+
   const submit = React.useCallback(async () => {
     const text = draft.trim();
-    if (!text || session.isBusy) return;
+    const attachments = readyAttachments;
+    if ((!text && attachments.length === 0) || session.isBusy || isUploading) return;
 
     if (isCloud) {
       if (!meta.repoOwner || !meta.repoName) return;
-      const { accepted } = await session.send(text, {
-        mode: "cloud",
-        repo: { owner: meta.repoOwner, name: meta.repoName },
-        baseRef: meta.baseRef,
-        workspaceName: conversation.codeWorkspaceName,
-      });
+      const { accepted } = await session.send(
+        text,
+        {
+          mode: "cloud",
+          repo: { owner: meta.repoOwner, name: meta.repoName },
+          baseRef: meta.baseRef,
+          workspaceName: conversation.codeWorkspaceName,
+        },
+        attachments,
+      );
       if (accepted) {
         setDraft("");
-        nameSessionFromFirstPrompt(text);
+        clear();
+        nameSessionFromFirstPrompt(text, attachments);
         meta.refresh(); // a follow-up run may open a new PR — pick it up
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
@@ -283,37 +358,62 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
     // carries a name (sessions created before the path was recorded).
     const path = workspacePath ?? null;
     if (!path) return;
-    const { accepted } = await session.send(text, {
-      deviceId: presence.device.id,
-      workspacePath: path,
-      workspaceName: conversation.codeWorkspaceName,
-      workspaceKey,
-    });
+    const { accepted } = await session.send(
+      text,
+      {
+        deviceId: presence.device.id,
+        workspacePath: path,
+        workspaceName: conversation.codeWorkspaceName,
+        workspaceKey,
+      },
+      attachments,
+    );
     if (accepted) {
       setDraft("");
+      clear();
       // First prompt of a fresh session names it (server does the same — this
       // mirrors POST /api/code/tasks so the sidebar updates without a refetch).
-      nameSessionFromFirstPrompt(text);
+      nameSessionFromFirstPrompt(text, attachments);
       requestAnimationFrame(() => textareaRef.current?.focus());
     }
-  }, [conversation.codeWorkspaceName, draft, isCloud, meta, nameSessionFromFirstPrompt, presence.device, session, workspaceKey, workspacePath]);
+  }, [
+    clear,
+    conversation.codeWorkspaceName,
+    draft,
+    isCloud,
+    isUploading,
+    meta,
+    nameSessionFromFirstPrompt,
+    presence.device,
+    readyAttachments,
+    session,
+    workspaceKey,
+    workspacePath,
+  ]);
 
   const composerDisabled = isCloud ? !cloudRepoFull : !canTarget || !workspacePath;
-  const canSend = !!draft.trim() && canTarget && (isCloud || !!workspacePath) && !session.isBusy;
+  const hasPayload = !!draft.trim() || readyAttachments.length > 0;
+  const canSend =
+    hasPayload &&
+    canTarget &&
+    (isCloud || !!workspacePath) &&
+    !session.isBusy &&
+    !isUploading;
 
   // Fire the handed-off first prompt as soon as the session can send. Cloud
   // sessions were already dispatched on the New session screen, so this only
   // covers device — it waits out presence resolution, then sends exactly once.
+  // Also wait out any staged-attachment uploads from the New session screen.
   React.useEffect(() => {
     if (!autoSendArmed) return;
     if (isCloud) {
       setAutoSendArmed(false);
       return;
     }
-    if (!canSend) return;
+    if (!canSend || isUploading) return;
     setAutoSendArmed(false);
     void submit();
-  }, [autoSendArmed, canSend, isCloud, submit]);
+  }, [autoSendArmed, canSend, isCloud, isUploading, submit]);
 
   // MessageList's streaming label: "Writing" once prose lands, "Thinking" before.
   const listStatus: GenerationStatus =
@@ -350,19 +450,90 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
               : "Queued — waiting for your Mac to pick this up."}
         </p>
       )}
-      <div className="relative flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-primary/30 focus-within:shadow-glass">
+      <div
+        onDragOver={(e) => {
+          if (!canAttach || composerDisabled) return;
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (canAttach && !composerDisabled && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+        }}
+        className={cn(
+          "composer-surface relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+          "transition-[border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+          "border-border/65 focus-within:border-foreground/15",
+          dragging && "border-primary/55 ring-2 ring-primary/20",
+        )}
+      >
+        {dragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+            <FileUp className="h-6 w-6 text-primary" />
+            <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
+          </div>
+        )}
+
+        {canAttach && (
+          <div
+            className={cn(
+              "grid transition-[grid-template-rows] duration-base ease-out-soft",
+              uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+            )}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="flex flex-wrap gap-2 p-3 pb-0">
+                {uploads.map((u) => (
+                  <div
+                    key={u.localId}
+                    className={cn(
+                      "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                      removingIds.includes(u.localId)
+                        ? "pointer-events-none motion-safe:animate-pop-out"
+                        : "motion-safe:animate-rise-in",
+                    )}
+                  >
+                    {u.attachment?.kind === "IMAGE" ? (
+                      <Image src={u.attachment.url} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded object-cover" />
+                    ) : (
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                    )}
+                    <div className="max-w-[140px]">
+                      <p className="truncate font-medium">{u.fileName}</p>
+                      <p className="text-muted-foreground">
+                        {u.status === "uploading" ? `${u.progress}%` : u.status === "error" ? "Failed" : formatBytes(u.size)}
+                      </p>
+                    </div>
+                    {u.status === "uploading" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    <button
+                      type="button"
+                      onClick={() => removeUpload(u.localId)}
+                      className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                      aria-label="Remove attachment"
+                    >
+                      <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <textarea
           ref={textareaRef}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              void submit();
+              if (canSend) void submit();
             }
           }}
           rows={1}
-          disabled={composerDisabled}
+          disabled={composerDisabled || session.isBusy}
           placeholder={
             composerDisabled
               ? sendBlockedReason ?? "This session can't run tasks right now."
@@ -373,18 +544,70 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                   : "Describe what to build or fix…"
           }
           aria-label="Prompt for this code session"
-          className="max-h-[200px] min-h-[74px] w-full resize-none bg-transparent px-3.5 py-3.5 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4"
+          className="max-h-[200px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
         />
-        <div className="flex items-center gap-2 px-2.5 pb-2.5 pt-0.5">
-          {/* Identity is the workspace NAME (device) or the repo (cloud); the
-              device-local path is honest secondary metadata, on hover. */}
-          <span
-            title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
-            className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label uppercase text-muted-foreground"
-          >
-            {isCloud && <Cloud className="h-3 w-3 shrink-0" aria-hidden="true" />}
-            <span className="min-w-0 truncate">{isCloud ? cloudRepoFull ?? workspaceName : workspaceName}</span>
-          </span>
+
+        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {canAttach && (
+              <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="Add"
+                    disabled={composerDisabled || session.isBusy}
+                    className={cn(
+                      "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                      plusOpen && "bg-accent",
+                    )}
+                  >
+                    <Plus
+                      aria-hidden="true"
+                      strokeWidth={1.75}
+                      className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                    />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                  <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Paperclip className="text-muted-foreground" />
+                      <span className="flex-1">Attach</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-52">
+                      <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                        <ImagePlus className="text-muted-foreground" />
+                        <span className="flex-1">Photos</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                        <FileUp className="text-muted-foreground" />
+                        <span className="flex-1">Files</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                        <Library className="text-muted-foreground" />
+                        <span className="flex-1">From your library</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+
+            {/* Identity is the workspace NAME (device) or the repo (cloud); the
+                device-local path is honest secondary metadata, on hover. */}
+            <span
+              title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
+              className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label uppercase text-muted-foreground"
+            >
+              {isCloud && <Cloud className="h-3 w-3 shrink-0" aria-hidden="true" />}
+              <span className="min-w-0 truncate">{isCloud ? cloudRepoFull ?? workspaceName : workspaceName}</span>
+            </span>
+          </div>
+
           {/* Send morphs into Stop while a task runs — same morph as chat. */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -403,22 +626,55 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                       : "Send to your Mac"
                 }
                 className={cn(
-                  "coarse:h-11 coarse:w-11 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
-                  session.isBusy && session.status !== "submitting" ? "w-12 rounded-md shadow-soft ring-2 ring-primary/20" : "rounded-lg"
+                  "composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9 transition-[width,border-radius,color,background-color,border-color,box-shadow,transform] duration-base ease-spring",
+                  session.isBusy && session.status !== "submitting"
+                    ? "w-11 rounded-[11px] ring-2 ring-primary/15"
+                    : "rounded-[13px]",
                 )}
               >
                 {session.status === "submitting" ? (
                   <Loader2 key="submitting" className="h-4 w-4 animate-spin motion-safe:animate-fade-in" />
                 ) : session.isBusy ? (
-                  <Square key="stop" className="h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
+                  <Square key="stop" className="composer-stop-icon h-3.5 w-3.5 fill-current motion-safe:animate-fade-in" />
                 ) : (
-                  <ArrowUp key="send" className="h-4 w-4 motion-safe:animate-fade-in" />
+                  <ArrowUp key="send" className="composer-send-icon h-4 w-4 motion-safe:animate-fade-in" />
                 )}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{session.isBusy ? "Stop" : "Send"}</TooltipContent>
           </Tooltip>
         </div>
+
+        <input
+          ref={imageInputRef}
+          type="file"
+          multiple
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept={ACCEPT_ATTRIBUTE}
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) addFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        {canAttach && (
+          <LibraryPicker
+            open={libraryOpen}
+            onOpenChange={setLibraryOpen}
+            onAttach={addAttachments}
+            existingCount={uploads.length}
+          />
+        )}
       </div>
     </div>
   );

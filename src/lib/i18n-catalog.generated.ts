@@ -190,6 +190,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "fits you"
   },
   {
+    "id": "034a0062488256f1",
+    "source": "folder"
+  },
+  {
     "id": "036bac15413bfccd",
     "source": "request_in_progress"
   },
@@ -838,6 +842,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Invalid image."
   },
   {
+    "id": "16fe86dddb09c684",
+    "source": "Check your connection and try once more."
+  },
+  {
     "id": "172eac21b886bc76",
     "source": "CTA link"
   },
@@ -848,6 +856,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "177b7cb0686749af",
     "source": "esc"
+  },
+  {
+    "id": "179fed85ec50a433",
+    "source": "Search files"
   },
   {
     "id": "17b616cbd090309d",
@@ -956,6 +968,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1ae403406ea4df96",
     "source": "Unknown timezone — use an IANA name like Europe/Paris."
+  },
+  {
+    "id": "1af851907331c0ed",
+    "source": "Size"
   },
   {
     "id": "1b52aafbc5600b7a",
@@ -1120,10 +1136,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1f968ffdd3ae1c73",
     "source": "Older Opus, 200K context."
-  },
-  {
-    "id": "1fc9a387654d410f",
-    "source": "Select all"
   },
   {
     "id": "1ff57a29d7c9d11b",
@@ -2382,6 +2394,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Search the Apple Music catalog for songs, albums, artists, or playlists."
   },
   {
+    "id": "435760070a20227c",
+    "source": "Go to chat"
+  },
+  {
     "id": "4358e64b14e20c42",
     "source": "Juno could not complete this request."
   },
@@ -2574,10 +2590,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Sign out"
   },
   {
-    "id": "48fe517126dd2617",
-    "source": "Everything you’ve shared with Juno, in one place."
-  },
-  {
     "id": "49195f559e4a9f5b",
     "source": "Submitting…"
   },
@@ -2620,6 +2632,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4a301e0e57c0490f",
     "source": "to the server’s"
+  },
+  {
+    "id": "4a33eacd5fa65f2b",
+    "source": "item"
   },
   {
     "id": "4a36f89dafb0a101",
@@ -2990,6 +3006,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": ": vous pouvez saisir la Commission nationale de l'informatique et des libertés (CNIL), 3 place de Fontenoy, TSA 80715, 75334 Paris Cedex 07 —"
   },
   {
+    "id": "56fc0ca26b09ed4c",
+    "source": "Filter files"
+  },
+  {
     "id": "5730a714375bbce5",
     "source": "Turn on Flash for faster output"
   },
@@ -3308,6 +3328,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "5ef5ef0364b6939c",
     "source": "all"
+  },
+  {
+    "id": "5f3c4f8580d392e4",
+    "source": "items"
   },
   {
     "id": "5f5c5baf8fbc063d",
@@ -4450,6 +4474,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "add"
   },
   {
+    "id": "7eaa329a40093924",
+    "source": "No matching files"
+  },
+  {
     "id": "7eb124b0e318ccb0",
     "source": "Reading private context"
   },
@@ -4872,6 +4900,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8b294a2304e7923f",
     "source": "no storage"
+  },
+  {
+    "id": "8b34dbc2c05eb4d7",
+    "source": "conversation"
   },
   {
     "id": "8b36e085ec319024",
@@ -6490,6 +6522,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "replies"
   },
   {
+    "id": "b9d59e285cedc267",
+    "source": "Try another search or remove the current filter."
+  },
+  {
     "id": "b9e9d6be1bcf2f85",
     "source": "How can I help you today?"
   },
@@ -7180,10 +7216,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ce78afd0e6a225ec",
     "source": "Learn"
-  },
-  {
-    "id": "ce85a83fc50e09bd",
-    "source": "open chat"
   },
   {
     "id": "cea4d2e010b8fd52",
@@ -7978,6 +8010,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Copy"
   },
   {
+    "id": "e222cff43655bc89",
+    "source": "Files and images you share with Juno will appear here automatically."
+  },
+  {
     "id": "e27ba483910567cf",
     "source": "How Juno behaves in this project"
   },
@@ -8000,6 +8036,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e2fea04b48fd9346",
     "source": "Fast o-series reasoning."
+  },
+  {
+    "id": "e3176dfa0978ed1f",
+    "source": "Your library is empty"
   },
   {
     "id": "e33b4377d00b4ee1",
@@ -8142,6 +8182,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Code-agent model, superseded."
   },
   {
+    "id": "e70a5d88a0a63034",
+    "source": "Images and documents shared across your conversations."
+  },
+  {
     "id": "e734f11010f7edcd",
     "source": "Couldn’t save — your text is still here. Check your connection and try again."
   },
@@ -8272,6 +8316,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "eab4d489835897f0",
     "source": "Delete account permanently"
+  },
+  {
+    "id": "eacadb06043db065",
+    "source": "Open source chat"
   },
   {
     "id": "eb1a70e39274bb76",
@@ -8550,10 +8598,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Stop sharing screen"
   },
   {
-    "id": "f376a336db370e13",
-    "source": "Files and images you send in chat will collect here."
-  },
-  {
     "id": "f3d75a69ea9dd309",
     "source": "session.closed"
   },
@@ -8632,6 +8676,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "f5e65825147c4ee3",
     "source": "deprecated"
+  },
+  {
+    "id": "f5ecf1932a05b9ad",
+    "source": "Loading files"
   },
   {
     "id": "f63e546db0fbac3a",

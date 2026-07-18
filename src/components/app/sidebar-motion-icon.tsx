@@ -4,10 +4,11 @@ import {
   CalendarClock,
   Code2,
   Folder,
+  FolderOpen,
   GitPullRequest,
   Home,
   Layers3,
-  MessageSquare,
+  MessageCircle,
   MoreVertical,
   PanelLeft,
   PanelLeftClose,
@@ -57,7 +58,7 @@ const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   "panel-close": PanelLeftClose,
   close: X,
   folder: Folder,
-  conversation: MessageSquare,
+  conversation: MessageCircle,
   more: MoreVertical,
 };
 
@@ -71,11 +72,31 @@ export function SidebarMotionIcon({
   const Icon = ICONS[kind];
 
   return (
-    <Icon
+    <span
       aria-hidden="true"
-      focusable="false"
-      strokeWidth={1.75}
       className={cn("sidebar-motion-icon", `sidebar-motion-icon--${kind}`, className)}
-    />
+    >
+      <Icon
+        focusable="false"
+        strokeWidth={1.75}
+        className="sidebar-motion-icon__glyph h-full w-full"
+      />
+
+      {kind === "folder" ? (
+        <FolderOpen
+          focusable="false"
+          strokeWidth={1.75}
+          className="sidebar-motion-icon__glyph sidebar-motion-icon__glyph--alternate absolute inset-0 h-full w-full"
+        />
+      ) : null}
+
+      {kind === "conversation" ? (
+        <span className="sidebar-motion-icon__chat-dots" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+      ) : null}
+    </span>
   );
 }

@@ -8,6 +8,7 @@ import { requireUser, serializeTask, TASK_STATUSES } from "@/lib/code-remote";
 import { dispatchCloudRunner } from "@/lib/cloud-code";
 import { rateLimit } from "@/lib/rate-limit";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 
 // Abuse controls for cloud task creation (the dispatch fans out to a fresh CI VM
 // that burns Actions minutes + plan budget, so it must not be floodable).
@@ -29,7 +30,13 @@ const postSchema = z.object({
   // local folder); the key rides along for attribution that survives moves.
   workspaceKey: z.string().trim().min(1).max(200).optional(),
   title: z.string().trim().min(1).max(200).optional(),
-  prompt: z.string().trim().min(1).max(100_000),
+  // Empty allowed when attachmentIds is non-empty (a screenshot alone is a valid
+  // "look at this" task). Enforced in the refine below.
+  prompt: z.string().max(100_000).optional().default(""),
+  // Pre-uploaded attachment ids (same claim model as /api/chat). Linked to the
+  // session USER message when conversationId is set; text files also fold into
+  // the task prompt so the Mac/cloud agent can read them.
+  attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
   // The kind:"code" Conversation this task runs in (website sessions). Native
   // clients omit it and keep the pre-linkage behavior unchanged.
   conversationId: z.string().min(1).max(200).optional(),
@@ -42,7 +49,37 @@ const postSchema = z.object({
     })
     .optional(),
   baseRef: z.string().trim().min(1).max(200).optional(),
-});
+}).refine(
+  (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
+  { message: "prompt_or_attachments_required", path: ["prompt"] },
+);
+
+/** Fold claimed attachments into the agent-facing prompt (text extract when we
+ *  have it; otherwise a short filename note so the agent knows something was
+ *  attached even if it can't open the binary). */
+async function enrichPromptWithAttachments(
+  prompt: string,
+  attachmentIds: string[],
+  userId: string
+): Promise<string> {
+  if (attachmentIds.length === 0) return prompt;
+  const atts = await prisma.attachment.findMany({
+    where: { id: { in: attachmentIds }, userId },
+    select: { fileName: true, kind: true, mimeType: true, extractedText: true },
+  });
+  if (atts.length === 0) return prompt || "See attached files.";
+  const blocks = atts.map((att) => {
+    if (att.extractedText?.trim()) {
+      return `Attached file "${att.fileName}":\n\n${att.extractedText.slice(0, 100_000)}`;
+    }
+    if (att.kind === "IMAGE") {
+      return `Attached image: ${att.fileName} (${att.mimeType}). The user shared this image with the task for visual reference.`;
+    }
+    return `Attached file: ${att.fileName} (${att.mimeType}).`;
+  });
+  const joined = blocks.join("\n\n");
+  return prompt ? `${prompt}\n\n---\n${joined}` : joined;
+}
 
 export async function GET(req: Request) {
   const { user, error } = await requireUser();
@@ -78,9 +115,26 @@ export async function POST(req: Request) {
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { deviceId, workspacePath, workspaceName, workspaceKey, title, prompt, conversationId, target, repo, baseRef } =
-    parsed.data;
+  const {
+    deviceId,
+    workspacePath,
+    workspaceName,
+    workspaceKey,
+    title,
+    prompt: rawPrompt,
+    attachmentIds: rawAttachmentIds,
+    conversationId,
+    target,
+    repo,
+    baseRef,
+  } = parsed.data;
   const isCloud = target === "cloud";
+  const attachmentIds = [...new Set(rawAttachmentIds ?? [])];
+  const prompt = rawPrompt.trim();
+  // Fallback when the user only attached files — still need a non-empty title.
+  const defaultTitle =
+    prompt.slice(0, 60) ||
+    (attachmentIds.length === 1 ? "1 attachment" : `${attachmentIds.length} attachments`);
 
   // Resolve conversation + first-prompt title (shared by both targets).
   let sessionTitleUpdate: string | null = null;
@@ -92,9 +146,24 @@ export async function POST(req: Request) {
     if (!conversation) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
     // First prompt of a fresh session names it (never overrides a user rename).
     if (conversation.titleSource === "default" && isDefaultCodeSessionTitle(conversation.title)) {
-      sessionTitleUpdate = prompt.slice(0, 48);
+      sessionTitleUpdate = defaultTitle.slice(0, 48);
     }
   }
+
+  // Pre-validate unclaimed ownership so we never start a run against ids the
+  // user doesn't own / already spent on another message.
+  if (attachmentIds.length > 0) {
+    const available = await prisma.attachment.count({
+      where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+    });
+    if (available !== attachmentIds.length) {
+      return NextResponse.json({ error: "attachment_claim_failed" }, { status: 409 });
+    }
+  }
+
+  // Agent-facing prompt includes extracted text from attachments when present.
+  // The USER message stores the raw composer text so the transcript stays clean.
+  const agentPrompt = await enrichPromptWithAttachments(prompt, attachmentIds, user.id);
 
   let task;
   if (isCloud) {
@@ -147,8 +216,8 @@ export async function POST(req: Request) {
             workspacePath: `${repo.owner}/${repo.name}`,
             workspaceName: workspaceName ?? repo.name,
             workspaceKey: workspaceKey ?? null,
-            title: title ?? prompt.slice(0, 60),
-            prompt,
+            title: title ?? defaultTitle,
+            prompt: agentPrompt,
             conversationId: conversationId ?? null,
           },
         });
@@ -203,8 +272,8 @@ export async function POST(req: Request) {
         workspacePath,
         workspaceName: workspaceName ?? "",
         workspaceKey: workspaceKey ?? null,
-        title: title ?? prompt.slice(0, 60),
-        prompt,
+        title: title ?? defaultTitle,
+        prompt: agentPrompt,
         conversationId: conversationId ?? null,
       },
     });
@@ -217,9 +286,23 @@ export async function POST(req: Request) {
   // leaving nothing to reconcile on a retry.
   let userMessage = null;
   if (conversationId) {
-    const created = await prisma.message.create({
-      data: { conversationId, role: "USER", content: encryptMessageText(prompt) },
-      include: { attachments: true },
+    const created = await prisma.$transaction(async (tx) => {
+      const message = await tx.message.create({
+        data: { conversationId, role: "USER", content: encryptMessageText(prompt) },
+      });
+      if (attachmentIds.length > 0) {
+        // Best-effort claim after pre-validation above. A race that steals an
+        // id between those two moments still lets the run proceed (agent already
+        // has the enriched prompt); the transcript just misses the orphaned chip.
+        await tx.attachment.updateMany({
+          where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+          data: { messageId: message.id, conversationId },
+        });
+      }
+      return tx.message.findUniqueOrThrow({
+        where: { id: message.id },
+        include: { attachments: true },
+      });
     });
     userMessage = await serializeMessage(created);
     await prisma.conversation.updateMany({

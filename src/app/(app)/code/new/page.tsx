@@ -1,14 +1,39 @@
 "use client";
 
 import * as React from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ArrowUp, ChevronDown, Cloud, Loader2 } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronDown,
+  Cloud,
+  FileText,
+  FileUp,
+  ImagePlus,
+  Library,
+  Loader2,
+  Paperclip,
+  Plus,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { ModelSelector } from "@/components/chat/model-selector";
 import { ReasoningSlider } from "@/components/chat/reasoning-slider";
+import { LibraryPicker } from "@/components/chat/library-picker";
 import { JunoMark } from "@/components/brand/logo";
 import {
   CodeTargetPicker,
@@ -17,11 +42,14 @@ import {
   type Workspace,
 } from "@/components/code/code-target-picker";
 import { useApp } from "@/components/app/app-provider";
+import { useUploads } from "@/hooks/use-uploads";
 import { resolveModel, DEFAULT_MODEL, type ModelId } from "@/lib/models";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
-import { CODE_PENDING_PROMPT_PREFIX } from "@/lib/code-session-handoff";
-import { cn } from "@/lib/utils";
-import type { ClientConversation, ReasoningEffort } from "@/types/chat";
+import { supportsFastMode } from "@/lib/pricing";
+import { setPendingCodePrompt } from "@/lib/code-session-handoff";
+import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
+import { cn, formatBytes } from "@/lib/utils";
+import type { ClientAttachment, ClientConversation, ReasoningEffort } from "@/types/chat";
 
 const TARGET_KEY = "juno:code:new:target";
 
@@ -91,7 +119,7 @@ function CodeGreeting() {
 
 export default function NewCodeSessionPage() {
   const router = useRouter();
-  const { settings, upsertConversation, composerPrefs, setComposerPrefs } = useApp();
+  const { settings, upsertConversation, composerPrefs, setComposerPrefs, features } = useApp();
 
   // —— Target (Device ⇄ Cloud), restored after mount (SSR renders "device") ——
   const [target, setTarget] = React.useState<Target>("device");
@@ -116,16 +144,28 @@ export default function NewCodeSessionPage() {
 
   // —— Prompt + model + thinking (visible BEFORE the first send) ——
   const [prompt, setPrompt] = React.useState("");
+  const [dragging, setDragging] = React.useState(false);
+  const [plusOpen, setPlusOpen] = React.useState(false);
+  const [libraryOpen, setLibraryOpen] = React.useState(false);
+  const [removingIds, setRemovingIds] = React.useState<string[]>([]);
   const [model, setModel] = React.useState<ModelId>(
     () => resolveModel(settings.defaultModel)?.id ?? DEFAULT_MODEL,
   );
   const reasoningEffort = composerPrefs.reasoningEffort;
+  const fastMode = composerPrefs.fastMode;
   const setReasoningEffort = React.useCallback(
     (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
     [setComposerPrefs],
   );
+  const setFastMode = React.useCallback(
+    (enabled: boolean) => setComposerPrefs({ fastMode: enabled }),
+    [setComposerPrefs],
+  );
   const resolved = resolveModel(model);
   const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
+  const canFastMode = !!resolved && supportsFastMode(resolved);
+  const canAttach = features.storage;
+  const { uploads, addFiles, addAttachments, remove, clear, readyAttachments, isUploading } = useUploads(null);
 
   // Switching models drops a thinking tier the new model can't do — same guard
   // the chat composer uses, so we never show (or persist) an unsupported effort.
@@ -148,6 +188,8 @@ export default function NewCodeSessionPage() {
   // doesn't leak an empty session on every attempt.
   const cloudConversationId = React.useRef<string | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
 
   const autoresize = React.useCallback(() => {
     const el = textareaRef.current;
@@ -162,12 +204,23 @@ export default function NewCodeSessionPage() {
     requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
+  const removeUpload = React.useCallback(
+    (localId: string) => {
+      setRemovingIds((prev) => [...prev, localId]);
+      window.setTimeout(() => {
+        remove(localId);
+        setRemovingIds((prev) => prev.filter((id) => id !== localId));
+      }, 180);
+    },
+    [remove],
+  );
+
   const hasTarget = target === "device" ? !!selectedWorkspace : !!selectedRepo;
-  const hasPrompt = prompt.trim().length > 0;
-  const canSubmit = hasTarget && hasPrompt && !submitting;
+  const hasPayload = prompt.trim().length > 0 || readyAttachments.length > 0;
+  const canSubmit = hasTarget && hasPayload && !submitting && !isUploading;
 
   const startDevice = React.useCallback(
-    async (w: Workspace, text: string) => {
+    async (w: Workspace, text: string, attachments: ClientAttachment[]) => {
       const res = await fetch("/api/conversations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -182,11 +235,9 @@ export default function NewCodeSessionPage() {
       });
       if (!res.ok) throw new Error("conversation");
       const { conversation } = (await res.json()) as { conversation: ClientConversation };
-      // Hand the first prompt off to the session view, which dispatches it once
-      // the Mac is reachable (create contract stays prompt-free for device).
-      try {
-        sessionStorage.setItem(`${CODE_PENDING_PROMPT_PREFIX}${conversation.id}`, text);
-      } catch {}
+      // Hand the first prompt (+ attachments) off to the session view, which
+      // dispatches once the Mac is reachable (create contract stays prompt-free).
+      setPendingCodePrompt(conversation.id, text, attachments);
       // Carry the chosen model into the client-side session record.
       upsertConversation({ ...conversation, model });
       router.push(`/chat/${conversation.id}`);
@@ -195,7 +246,7 @@ export default function NewCodeSessionPage() {
   );
 
   const startCloud = React.useCallback(
-    async (repo: CloudRepo, text: string, ref: string | null) => {
+    async (repo: CloudRepo, text: string, ref: string | null, attachments: ClientAttachment[]) => {
       // 1) Ensure a kind:"code" session to stream the run into. The repo is the
       //    cloud "workspace": name for display, owner/name as the path.
       let conversation: ClientConversation | null = null;
@@ -214,6 +265,10 @@ export default function NewCodeSessionPage() {
         cloudConversationId.current = conversation.id;
       }
       const conversationId = cloudConversationId.current;
+      const attachmentIds = attachments.map((a) => a.id);
+      const titleFallback =
+        text.slice(0, 60) ||
+        (attachments.length === 1 ? "1 attachment" : `${attachments.length} attachments`);
 
       // 2) Dispatch the cloud task against the selected repo.
       const tRes = await fetch("/api/code/tasks", {
@@ -224,15 +279,22 @@ export default function NewCodeSessionPage() {
           repo: { owner: repo.owner, name: repo.name },
           baseRef: ref ?? undefined,
           prompt: text,
-          title: text.slice(0, 60),
+          title: titleFallback,
+          attachmentIds: attachmentIds.length ? attachmentIds : undefined,
           conversationId,
         }),
       });
 
       if (tRes.ok) {
         if (conversation) {
-          upsertConversation({ ...conversation, title: text.slice(0, 48), titleSource: "manual", model });
+          upsertConversation({
+            ...conversation,
+            title: titleFallback.slice(0, 48),
+            titleSource: "manual",
+            model,
+          });
         }
+        clear();
         router.push(`/chat/${conversationId}`);
         return;
       }
@@ -244,32 +306,46 @@ export default function NewCodeSessionPage() {
         setCloudStartError("dispatch_failed");
       } else if (tRes.status === 400 && err === "github_not_connected") {
         toast.error("Connect GitHub in Connections before starting a cloud run.");
+      } else if (tRes.status === 409 && err === "attachment_claim_failed") {
+        toast.error("One of the attached files is no longer available. Remove it and try again.");
       } else {
         toast.error("Could not start the cloud run. Check your connection and try again.");
       }
     },
-    [model, router, upsertConversation],
+    [clear, model, router, upsertConversation],
   );
 
   const submit = React.useCallback(async () => {
     const text = prompt.trim();
-    if (!text || submitting) return;
+    const attachments = readyAttachments;
+    if ((!text && attachments.length === 0) || submitting || isUploading) return;
     if (target === "device" ? !selectedWorkspace : !selectedRepo) return;
 
     setSubmitting(true);
     setCloudStartError(null);
     try {
       if (target === "device" && selectedWorkspace) {
-        await startDevice(selectedWorkspace, text);
+        await startDevice(selectedWorkspace, text, attachments);
       } else if (target === "cloud" && selectedRepo) {
-        await startCloud(selectedRepo, text, baseRef.trim() || null);
+        await startCloud(selectedRepo, text, baseRef.trim() || null, attachments);
       }
     } catch {
       toast.error("Could not start the session. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
-  }, [prompt, submitting, target, selectedWorkspace, selectedRepo, baseRef, startDevice, startCloud]);
+  }, [
+    prompt,
+    readyAttachments,
+    submitting,
+    isUploading,
+    target,
+    selectedWorkspace,
+    selectedRepo,
+    baseRef,
+    startDevice,
+    startCloud,
+  ]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -296,14 +372,33 @@ export default function NewCodeSessionPage() {
 
           <div className="w-full">
             <div
+              onDragOver={(e) => {
+                if (!canAttach || submitting) return;
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                if (canAttach && !submitting && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+              }}
               className={cn(
-                "relative flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur",
-                "transition-[border-color,box-shadow] duration-base ease-out-soft",
-                "focus-within:border-primary/30 focus-within:shadow-glass",
+                "composer-surface relative flex max-h-[600px] w-full origin-center flex-col rounded-[22px] border bg-card/95 backdrop-blur sm:rounded-[24px]",
+                "transition-[border-color,box-shadow] duration-base ease-spring motion-reduce:transition-none",
+                "border-border/65 focus-within:border-foreground/15",
+                dragging && "border-primary/55 ring-2 ring-primary/20",
               )}
             >
+              {dragging && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
+                  <FileUp className="h-6 w-6 text-primary" />
+                  <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
+                </div>
+              )}
+
               {/* Chip row — where this session runs. */}
-              <div className="flex flex-wrap items-center gap-1.5 px-2.5 pb-0 pt-2.5">
+              <div className="flex flex-wrap items-center gap-1.5 px-3 pb-0 pt-3 sm:px-3.5 sm:pt-3.5">
                 <CodeTargetPicker
                   target={target}
                   onTargetChange={switchTarget}
@@ -324,6 +419,64 @@ export default function NewCodeSessionPage() {
                 />
               </div>
 
+              {canAttach && (
+                <div
+                  className={cn(
+                    "grid transition-[grid-template-rows] duration-base ease-out-soft",
+                    uploads.length > 0 ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
+                  )}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div className="flex flex-wrap gap-2 px-3 pb-0 pt-2.5 sm:px-3.5">
+                      {uploads.map((u) => (
+                        <div
+                          key={u.localId}
+                          className={cn(
+                            "group relative flex items-center gap-2 rounded-md border bg-background px-2.5 py-2 text-xs shadow-soft",
+                            removingIds.includes(u.localId)
+                              ? "pointer-events-none motion-safe:animate-pop-out"
+                              : "motion-safe:animate-rise-in",
+                          )}
+                        >
+                          {u.attachment?.kind === "IMAGE" ? (
+                            <Image
+                              src={u.attachment.url}
+                              alt={u.fileName}
+                              width={32}
+                              height={32}
+                              className="h-8 w-8 rounded object-cover"
+                            />
+                          ) : (
+                            <FileText className="h-5 w-5 text-muted-foreground" />
+                          )}
+                          <div className="max-w-[140px]">
+                            <p className="truncate font-medium">{u.fileName}</p>
+                            <p className="text-muted-foreground">
+                              {u.status === "uploading"
+                                ? `${u.progress}%`
+                                : u.status === "error"
+                                  ? "Failed"
+                                  : formatBytes(u.size)}
+                            </p>
+                          </div>
+                          {u.status === "uploading" && (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeUpload(u.localId)}
+                            className="absolute -right-1.5 -top-1.5 rounded-full bg-foreground p-0.5 text-background opacity-0 shadow-soft transition-opacity duration-fast group-hover:opacity-100 focus-visible:opacity-100 coarse:-right-2.5 coarse:-top-2.5 coarse:p-1.5 coarse:opacity-100"
+                            aria-label="Remove attachment"
+                          >
+                            <X className="h-3 w-3 coarse:h-4 coarse:w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <textarea
                 ref={textareaRef}
                 value={prompt}
@@ -333,14 +486,69 @@ export default function NewCodeSessionPage() {
                 disabled={submitting}
                 placeholder="Describe a task or ask a question"
                 aria-label="Describe the task for this Juno Code session"
-                className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-3.5 py-3 text-body-lg leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground disabled:opacity-70 sm:px-4"
+                className="max-h-[220px] min-h-[64px] w-full resize-none bg-transparent px-4 pb-3 pt-4 text-[1rem] leading-relaxed outline-none transition-[height] duration-fast ease-out-soft placeholder:text-muted-foreground/70 disabled:opacity-70 sm:px-[18px] sm:pt-[17px]"
               />
 
-              {/* Toolbar — model + thinking are visible up front (the whole point),
-                  and wrap gracefully before they ever clip. */}
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-2 px-2.5 pb-2.5 pt-0.5">
-                <div className="flex min-w-0 flex-1 basis-[11rem] flex-wrap items-center gap-1">
-                  <div className={cn("min-w-0 shrink", submitting && "pointer-events-none opacity-60")}>
+              {/* Toolbar — + attach, model + thinking, send. Matches home
+                  composer radius / padding / primary action language. */}
+              <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
+                <div className="flex min-w-0 flex-1 items-center gap-1">
+                  {canAttach && (
+                    <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label="Add"
+                          disabled={submitting}
+                          className={cn(
+                            "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9",
+                            plusOpen && "bg-accent",
+                          )}
+                        >
+                          <Plus
+                            aria-hidden="true"
+                            strokeWidth={1.75}
+                            className="composer-add-icon size-4 transition-transform duration-base ease-spring group-hover:rotate-90 motion-reduce:transform-none motion-reduce:transition-none"
+                          />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
+                        <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+                        <DropdownMenuSub>
+                          <DropdownMenuSubTrigger>
+                            <Paperclip className="text-muted-foreground" />
+                            <span className="flex-1">Attach</span>
+                          </DropdownMenuSubTrigger>
+                          <DropdownMenuSubContent className="w-52">
+                            <DropdownMenuItem onSelect={() => imageInputRef.current?.click()}>
+                              <ImagePlus className="text-muted-foreground" />
+                              <span className="flex-1">Photos</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => fileInputRef.current?.click()}>
+                              <FileUp className="text-muted-foreground" />
+                              <span className="flex-1">Files</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setLibraryOpen(true)}>
+                              <Library className="text-muted-foreground" />
+                              <span className="flex-1">From your library</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuSubContent>
+                        </DropdownMenuSub>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
+
+                  <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
+
+                  <div
+                    className={cn(
+                      "min-w-0 flex-1 sm:flex-none",
+                      submitting && "pointer-events-none opacity-60",
+                    )}
+                  >
                     <ModelSelector
                       value={model}
                       onChange={changeModel}
@@ -351,6 +559,7 @@ export default function NewCodeSessionPage() {
 
                   {effortOptions.length > 0 && (() => {
                     const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
+                    const compactEffortLabel = currentEffort.label === "Extra high" ? "X-high" : currentEffort.label;
                     const atTopTier =
                       effortOptions.length > 1 && currentEffort.value === effortOptions[effortOptions.length - 1].value;
                     return (
@@ -365,19 +574,31 @@ export default function NewCodeSessionPage() {
                                   variant="ghost"
                                   size="sm"
                                   disabled={submitting}
-                                  aria-label={`Thinking effort: ${currentEffort.label}`}
+                                  aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}`}
                                   className={cn(
-                                    "group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground",
+                                    "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[6.5rem] min-[480px]:text-[13px]",
                                     atTopTier ? "text-ultra" : "text-foreground/80",
                                   )}
                                 >
-                                  {currentEffort.label}
+                                  <span className="min-w-0 flex-1 truncate text-center min-[480px]:hidden">
+                                    {compactEffortLabel}
+                                  </span>
+                                  <span className="hidden min-w-0 flex-1 truncate text-center min-[480px]:inline">
+                                    {currentEffort.label}
+                                  </span>
                                   <ChevronDown className="h-3 w-3 shrink-0 opacity-50 transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" />
                                 </Button>
                               </TooltipTrigger>
                             </PopoverTrigger>
                             <PopoverContent align="start" sideOffset={10} className="w-[264px] origin-popper p-3">
-                              <ReasoningSlider options={effortOptions} value={reasoningEffort} onChange={setReasoningEffort} />
+                              <ReasoningSlider
+                                options={effortOptions}
+                                value={reasoningEffort}
+                                onChange={setReasoningEffort}
+                                disabled={submitting}
+                                fastMode={fastMode}
+                                onFastModeChange={canFastMode ? setFastMode : undefined}
+                              />
                             </PopoverContent>
                           </Popover>
                           <TooltipContent>Thinking effort</TooltipContent>
@@ -387,7 +608,7 @@ export default function NewCodeSessionPage() {
                   })()}
                 </div>
 
-                <div className="ml-auto flex shrink-0 items-center gap-2">
+                <div className="ml-auto flex shrink-0 items-center gap-1">
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -402,12 +623,12 @@ export default function NewCodeSessionPage() {
                               ? "Start a cloud run"
                               : "Start the session"
                         }
-                        className="rounded-lg coarse:h-11 coarse:w-11"
+                        className="composer-primary-action h-9 w-9 rounded-[13px] coarse:h-11 coarse:w-11 max-[359px]:coarse:!w-9"
                       >
                         {submitting ? (
                           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                         ) : (
-                          <ArrowUp className="h-4 w-4" aria-hidden="true" />
+                          <ArrowUp className="composer-send-icon h-4 w-4" aria-hidden="true" />
                         )}
                       </Button>
                     </TooltipTrigger>
@@ -415,6 +636,37 @@ export default function NewCodeSessionPage() {
                   </Tooltip>
                 </div>
               </div>
+
+              <input
+                ref={imageInputRef}
+                type="file"
+                multiple
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ACCEPT_ATTRIBUTE}
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files?.length) addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              {canAttach && (
+                <LibraryPicker
+                  open={libraryOpen}
+                  onOpenChange={setLibraryOpen}
+                  onAttach={addAttachments}
+                  existingCount={uploads.length}
+                />
+              )}
             </div>
 
             {/* Inline task-dispatch failures (cloud only). */}

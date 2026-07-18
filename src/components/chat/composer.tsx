@@ -1603,9 +1603,9 @@ export function Composer({
           )}
         />
 
-        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
+        <div className="flex flex-nowrap items-center gap-1.5 px-2 pb-2 pt-0.5 sm:px-2.5 sm:pb-2.5">
           {/* Left: + menu and model selector */}
-          <div className="flex min-w-0 flex-1 basis-[13rem] flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             <DropdownMenu open={plusOpen} onOpenChange={setPlusOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -1614,7 +1614,10 @@ export function Composer({
                   size="icon-sm"
                   aria-label={researchArmed ? "Add — deep research is on for this message" : "Add"}
                   disabled={controlsLocked}
-                  className={cn("composer-add-button group rounded-[11px] coarse:h-11 coarse:w-11", plusOpen && "bg-accent")}
+                  className={cn(
+                    "composer-add-button group shrink-0 rounded-[11px] coarse:h-11 coarse:w-11",
+                    plusOpen && "bg-accent"
+                  )}
                 >
                   <Plus
                     aria-hidden="true"
@@ -1893,7 +1896,7 @@ export function Composer({
             <span className="mx-0.5 hidden h-5 w-px shrink-0 bg-border/60 min-[420px]:block" aria-hidden="true" />
 
             <div
-              className={cn("min-w-0 shrink", controlsLocked && "pointer-events-none opacity-60")}
+              className={cn("min-w-0 flex-1 sm:flex-none", controlsLocked && "pointer-events-none opacity-60")}
               aria-disabled={controlsLocked}
             >
               <ModelSelector value={model} onChange={changeModel} reasoningEffort={reasoningEffort} onReasoningChange={onReasoningChange} />
@@ -1924,7 +1927,7 @@ export function Composer({
                             disabled={controlsLocked}
                             aria-label={`Thinking effort: ${currentEffort.label}${canFastMode ? `; Flash mode ${fastMode ? "on" : "off"}` : ""}`}
                             className={cn(
-                              "group h-8 w-[5.5rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[480px]:w-[6.5rem] min-[480px]:text-[13px]",
+                              "group h-8 w-[4.75rem] shrink-0 justify-between gap-1 rounded-[10px] px-2 font-mono text-[12px] tracking-tight hover:text-foreground focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0 data-[state=open]:bg-accent data-[state=open]:text-foreground min-[360px]:w-[5.5rem] min-[480px]:w-[7.25rem] min-[480px]:text-[13px]",
                               atTopTier ? "text-ultra" : "text-foreground/80"
                             )}
                           >
