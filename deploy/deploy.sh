@@ -50,6 +50,18 @@ if [ -f "$NGINX_SITE" ] && ! sudo grep -q "client_max_body_size" "$NGINX_SITE"; 
         echo -e "${RED}⚠️ Could not patch $NGINX_SITE automatically — add 'client_max_body_size 120m;' to the 443 server block manually.${NC}"
     fi
 fi
+# nginx default header buffers (8 × 8k) return 414 Request-URI Too Large on
+# long request lines / fat cookies. Bump once if missing.
+if [ -f "$NGINX_SITE" ] && ! sudo grep -q "large_client_header_buffers" "$NGINX_SITE"; then
+    echo -e "${YELLOW}🔧 Raising nginx large_client_header_buffers (fixes 414 on large requests)...${NC}"
+    sudo sed -i '/client_max_body_size/a\    client_header_buffer_size 32k;\n    large_client_header_buffers 8 64k;' "$NGINX_SITE"
+    if sudo grep -q "large_client_header_buffers" "$NGINX_SITE" && sudo nginx -t; then
+        sudo systemctl reload nginx
+        echo -e "${GREEN}✅ nginx reloaded with larger header buffers.${NC}"
+    else
+        echo -e "${RED}⚠️ Could not patch header buffers on $NGINX_SITE — add large_client_header_buffers 8 64k; manually.${NC}"
+    fi
+fi
 # -----------------------------------------------------------------------------
 
 # Install dependencies

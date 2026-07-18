@@ -27,6 +27,12 @@ server {
     # client_max_body_size would 413 them before Next.js ever runs.
     client_max_body_size 120m;
 
+    # Default large_client_header_buffers (8 × 8k) rejects long request lines /
+    # cookies with 414 Request-URI Too Large. Bump so large chats never die at
+    # the proxy (prompt text itself goes in the POST body, not the URI).
+    client_header_buffer_size 32k;
+    large_client_header_buffers 8 64k;
+
     # Voice relay WebSocket (standalone service on :8787). Clients connect to
     # wss://YOUR_DOMAIN/voice-relay — the relay ignores the request path on
     # upgrade and serves /healthz at any path suffix, so the URI passes

@@ -9,12 +9,13 @@ import { noPreflightClarification, quickPreflightSkip } from "@/lib/preflight-cl
 import { triagePreflightClarification, type TriageContextMessage } from "@/lib/preflight-triage";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
+import { MAX_USER_MESSAGE_CHARS } from "@/lib/prompt-limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const bodySchema = z.object({
-  message: z.string().max(50_000),
+  message: z.string().max(MAX_USER_MESSAGE_CHARS),
   conversationId: z.string().cuid().optional().nullable(),
   hasAttachments: z.boolean().optional(),
   privateMode: z.boolean().optional(),

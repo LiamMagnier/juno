@@ -46,6 +46,7 @@ import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { estimateGenerationCostUsd, supportsFastMode } from "@/lib/pricing";
 import { mergeUsage, totalInputTokens, type UsageAccumulator } from "@/lib/usage-merge";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
+import { MAX_CLARIFY_MESSAGE_CHARS, MAX_USER_MESSAGE_CHARS } from "@/lib/prompt-limits";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessages } from "@/lib/moderation-ai";
@@ -104,7 +105,7 @@ const clarificationAnswerSchema = z.object({
 const clarificationSchema = z.object({
   messageId: z.string().cuid(),
   blockId: z.string().trim().min(3).max(120),
-  originalUserMessage: z.string().max(50_000),
+  originalUserMessage: z.string().max(MAX_CLARIFY_MESSAGE_CHARS),
   answers: z.array(clarificationAnswerSchema).max(10),
   skippedQuestions: z.array(z.string().trim().max(500)).max(10),
 });
@@ -115,7 +116,7 @@ const preflightClarificationAnswerSchema = z.object({
   value: clarificationAnswerValueSchema.optional(),
 });
 const preflightClarificationSchema = z.object({
-  originalUserMessage: z.string().max(50_000),
+  originalUserMessage: z.string().max(MAX_CLARIFY_MESSAGE_CHARS),
   answers: z.array(preflightClarificationAnswerSchema).max(10),
   skipped: z.boolean().optional(),
 });
@@ -134,7 +135,8 @@ const bodySchema = z
   .object({
     conversationId: z.string().cuid().optional(),
     projectId: z.string().cuid().optional(),
-    message: z.string().max(50_000).optional(),
+    // No small app cap — only a multi-MB safety rail (see prompt-limits.ts).
+    message: z.string().max(MAX_USER_MESSAGE_CHARS).optional(),
     clarification: clarificationSchema.optional(),
     preflightClarification: preflightClarificationSchema.optional(),
     // A modify action from Canvas. Unlike a normal artifact request, this is
@@ -177,7 +179,7 @@ const bodySchema = z
       .array(
         z.object({
           role: z.enum(["USER", "ASSISTANT"]),
-          content: z.string().max(50_000),
+          content: z.string().max(MAX_USER_MESSAGE_CHARS),
         })
       )
       .max(HISTORY_LIMIT)
@@ -1554,7 +1556,7 @@ async function handleChat(req: Request) {
       const fileTexts = project.files.filter((f) => f.extractedText?.trim());
       if (fileTexts.length) {
         sections.push("## Project reference files");
-        for (const f of fileTexts) sections.push(`### ${f.fileName}\n${f.extractedText!.slice(0, 50_000)}`);
+        for (const f of fileTexts) sections.push(`### ${f.fileName}\n${f.extractedText!.slice(0, MAX_USER_MESSAGE_CHARS)}`);
       }
       projectContext = sections.join("\n\n");
     }

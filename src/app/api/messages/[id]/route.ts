@@ -4,7 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { encryptMessageText } from "@/lib/message-crypto";
 import { getCurrentUser } from "@/lib/session";
 
-const schema = z.object({ content: z.string().trim().min(1).max(50_000) });
+import { MAX_EDIT_MESSAGE_CHARS } from "@/lib/prompt-limits";
+
+const schema = z.object({ content: z.string().trim().min(1).max(MAX_EDIT_MESSAGE_CHARS) });
 
 /**
  * Edit a user message: update its content and truncate everything after it.
