@@ -541,27 +541,33 @@ export function Composer({
 
   const submit = async () => {
     if (!canSend) return;
-    if (clarificationOpen && pendingClarification) {
-      const success = await submitClarification(clarificationAnswers);
-      if (success) {
-        setClarificationAnswers([]);
+    try {
+      if (clarificationOpen && pendingClarification) {
+        const success = await submitClarification(clarificationAnswers);
+        if (success) {
+          setClarificationAnswers([]);
+        }
+        return;
       }
-      return;
+      // A quoted selection wraps the user text in a structured block the model
+      // can anchor on (artifact identifier + selection + mode instruction).
+      // Keep the user's raw words: when a clarification intercepts this send,
+      // cancel must restore the pre-serialization draft (the quote chip is
+      // still attached, so restoring the serialized block would double-wrap).
+      interceptedDraftRef.current = text.trim();
+      const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
+      const result = await onSend(outgoing, sendAttachments, outgoingOptions);
+      if (result && result.accepted === false) return;
+      setText("");
+      setResearch(false); // per-send: research never sticks to the next message
+      clear();
+      onClearQuote?.();
+      requestAnimationFrame(autoresize);
+    } catch (err) {
+      // Never let a large-paste / network failure navigate the SPA away.
+      console.error("[composer] send failed", err);
+      toast.error(err instanceof Error ? err.message : "Could not send that message. Try again.");
     }
-    // A quoted selection wraps the user text in a structured block the model
-    // can anchor on (artifact identifier + selection + mode instruction).
-    // Keep the user's raw words: when a clarification intercepts this send,
-    // cancel must restore the pre-serialization draft (the quote chip is
-    // still attached, so restoring the serialized block would double-wrap).
-    interceptedDraftRef.current = text.trim();
-    const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
-    const result = await onSend(outgoing, sendAttachments, outgoingOptions);
-    if (result && result.accepted === false) return;
-    setText("");
-    setResearch(false); // per-send: research never sticks to the next message
-    clear();
-    onClearQuote?.();
-    requestAnimationFrame(autoresize);
   };
 
   // Dictate Mode hand-off: Stop lands the transcript in the textarea for

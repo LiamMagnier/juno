@@ -483,8 +483,18 @@ export function MessageItem({
     }
   };
 
-  const lineCount = view.content ? view.content.split("\n").length : 0;
+  // For multi-MB pastes, never put the full string into the DOM while collapsed
+  // (that freezes / blanks the tab). Expand loads the rest on demand.
+  // Avoid content.split("\n") on huge strings — that alone can OOM the tab.
+  const HUGE_PASTE = 12_000;
+  const sample = view.content.length > 4_000 ? view.content.slice(0, 4_000) : view.content;
+  const lineCount = sample ? sample.split("\n").length : 0;
   const isLong = view.content.length > 700 || lineCount > 14;
+  const isHuge = view.content.length > HUGE_PASTE;
+  const userDisplayContent =
+    isUser && isHuge && !expanded
+      ? `${view.content.slice(0, HUGE_PASTE)}\n\n… (${view.content.length.toLocaleString()} characters — expand to show all)`
+      : view.content;
 
   const toggleExpanded = () => {
     if (!expanded) {
@@ -552,7 +562,7 @@ export function MessageItem({
                   isLong && heightCapped && (expanded ? "max-h-[4000px]" : "max-h-60")
                 )}
               >
-                {view.content}
+                {userDisplayContent}
                 {isLong && (
                   <div
                     className={cn(

@@ -628,7 +628,26 @@ export function useChat(opts: UseChatOptions) {
             : undefined,
         },
         assistantTempId
-      );
+      ).catch((err) => {
+        // Keep the SPA alive if stringify/fetch throws on huge pastes.
+        console.error("[chat] generation failed to start", err);
+        toast.error(err instanceof Error ? err.message : "Could not start that message.");
+        setStatus("error");
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantTempId
+              ? {
+                  ...m,
+                  streaming: false,
+                  error: true,
+                  content: err instanceof Error ? err.message : "Could not send that message.",
+                }
+              : m.pending && m.role === "USER"
+                ? { ...m, pending: false }
+                : m
+          )
+        );
+      });
       return { accepted: true };
     },
     [

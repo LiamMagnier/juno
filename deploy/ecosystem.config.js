@@ -44,10 +44,14 @@ module.exports = {
       script: "npm",
       args: "run start",
       watch: false,
-      max_memory_restart: "800M", // Automatically restart if memory exceeds 800MB (safe for 1GB AMD or ARM VM shapes)
+      // Large pastes + encryption need headroom; 800M was OOM-killing mid-request
+      // and leaving the browser on a blank page after Send.
+      max_memory_restart: "1400M",
       env: {
         PORT: 3000,
         NODE_ENV: "production",
+        // Higher default HTTP header limit (16kb) and heap for big chat bodies.
+        NODE_OPTIONS: "--max-http-header-size=131072 --max-old-space-size=1024",
       },
       error_file: "logs/err.log",
       out_file: "logs/out.log",

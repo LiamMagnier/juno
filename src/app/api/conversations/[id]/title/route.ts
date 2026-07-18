@@ -17,7 +17,7 @@ const requestSchema = z.object({
     .array(
       z.object({
         role: z.enum(["USER", "ASSISTANT"]),
-        content: z.string().max(5_000_000),
+        content: z.string(),
       })
     )
     .max(8)

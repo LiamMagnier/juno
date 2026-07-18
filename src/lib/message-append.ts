@@ -1,11 +1,9 @@
 import { z } from "zod";
-import { MAX_EDIT_MESSAGE_CHARS } from "@/lib/prompt-limits";
 
 /*
  * Request contract for the native transcript push
- * (POST /api/conversations/[id]/messages) — shapes only, no server imports
- * beyond prompt-limits (pure constants), so the hermetic test suite can
- * exercise the contract without a database.
+ * (POST /api/conversations/[id]/messages) — shapes only, no server imports,
+ * so the hermetic test suite can exercise the contract without a database.
  *
  * Each turn carries a client-generated `clientId`; persistence is idempotent
  * on (conversationId, clientId), so a retried batch reuses the rows the first
@@ -16,13 +14,13 @@ import { MAX_EDIT_MESSAGE_CHARS } from "@/lib/prompt-limits";
 
 export const MAX_APPEND_TURNS = 100;
 
-/** @deprecated use MAX_EDIT_MESSAGE_CHARS — kept as alias for native clients. */
-export const MAX_APPEND_CONTENT_CHARS = MAX_EDIT_MESSAGE_CHARS;
+/** @deprecated No app-side character cap; kept for native client compatibility. */
+export const MAX_APPEND_CONTENT_CHARS = Number.MAX_SAFE_INTEGER;
 
 export const appendTurnSchema = z.object({
   clientId: z.string().min(8).max(64).regex(/^[A-Za-z0-9][A-Za-z0-9._:-]*$/),
   role: z.enum(["USER", "ASSISTANT"]),
-  content: z.string().min(1).max(MAX_APPEND_CONTENT_CHARS),
+  content: z.string().min(1),
   createdAt: z.string().datetime({ offset: true }).optional(),
   model: z.string().min(1).max(200).optional(),
   promptTokens: z.number().int().min(0).optional(),

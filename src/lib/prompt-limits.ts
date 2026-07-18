@@ -1,21 +1,22 @@
 /**
- * Application-level ceilings for user-supplied text.
+ * Prompt / input size policy.
  *
- * There is intentionally no small "app" cap like 50k — that rejected large
- * pastes long before the model context window did, and large private-history
- * POSTs / long request lines could surface as 414 Request-URI Too Large at
- * the reverse proxy when headers/URI buffers were undersized.
+ * There is intentionally **no application character cap** on user messages,
+ * private-history turns, or clarification originals. The only real limit is
+ * the selected model's context window (enforced by the provider).
  *
- * Practical limit = the selected model's context window (enforced by the
- * provider). These numbers are only a safety rail against accidental multi-
- * hundred-MB payloads that would OOM the Node process.
+ * Display helpers below only affect the UI so multi-MB pastes don't freeze or
+ * blank the page; the full text is still sent to the API and stored.
  */
 
-/** Single user message / private-history turn (chars). ~1–2M tokens of plain text worst-case. */
-export const MAX_USER_MESSAGE_CHARS = 5_000_000;
+/** Soft UI collapse for very long bubbles (full text still in state / API). */
+export const MESSAGE_DISPLAY_COLLAPSE_CHARS = 12_000;
 
-/** Clarification / preflight originals — same as a user message. */
-export const MAX_CLARIFY_MESSAGE_CHARS = MAX_USER_MESSAGE_CHARS;
+/** @deprecated No longer enforced — kept so native clients compiling against the old export don't break. */
+export const MAX_USER_MESSAGE_CHARS = Number.MAX_SAFE_INTEGER;
 
-/** Message edit / native append. */
-export const MAX_EDIT_MESSAGE_CHARS = MAX_USER_MESSAGE_CHARS;
+/** @deprecated No longer enforced. */
+export const MAX_CLARIFY_MESSAGE_CHARS = Number.MAX_SAFE_INTEGER;
+
+/** @deprecated No longer enforced. */
+export const MAX_EDIT_MESSAGE_CHARS = Number.MAX_SAFE_INTEGER;
