@@ -350,10 +350,14 @@ export async function* streamOpenAICompat(
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;
+  let cumCacheWrite = 0;
   let cumReasoning = 0;
   let cumTotal = 0;
+  let cumWebSearches = 0;
+  let cumXSearches = 0;
   let sawUsage = false;
   let lastFinish: string | undefined;
+  let citationCount = 0;
 
   console.info("[llm:openai-compat] stream start", {
     provider: model.provider,
@@ -430,6 +434,7 @@ export async function* streamOpenAICompat(
       if (citations?.length) {
         const fresh = citations.filter((u) => u && !seen.has(u));
         for (const u of fresh) seen.add(u);
+        citationCount += fresh.length;
         if (fresh.length) yield { type: "sources", sources: fresh.map((url) => ({ title: url, url, snippet: "" })) };
       }
       if (chunk.usage) {
@@ -443,18 +448,28 @@ export async function* streamOpenAICompat(
         // thinking there and leave completion_tokens as the visible answer —
         // resolveBillableTokens lifts output when reasoning > completion.
         const u = chunk.usage as {
-          prompt_tokens_details?: { cached_tokens?: number };
+          prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
           completion_tokens_details?: { reasoning_tokens?: number };
           prompt_cache_hit_tokens?: number;
+          prompt_cache_miss_tokens?: number;
           cached_tokens?: number;
           reasoning_tokens?: number;
           total_tokens?: number;
+          // xAI / some hosts may report server tool counts here.
+          num_sources_used?: number;
+          server_side_tool_usage?: { web_search_requests?: number; x_search_requests?: number };
         };
         roundCached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens ?? roundCached;
+        const writeTok =
+          u.prompt_tokens_details?.cache_write_tokens ?? u.prompt_cache_miss_tokens ?? 0;
+        if (writeTok > 0) cumCacheWrite += writeTok;
         const reasoningTok =
           u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;
         if (reasoningTok > 0) roundReasoning = Math.max(roundReasoning, reasoningTok);
         if (u.total_tokens != null) roundTotal = Math.max(roundTotal, u.total_tokens);
+        const toolUsage = u.server_side_tool_usage;
+        if (toolUsage?.web_search_requests) cumWebSearches += toolUsage.web_search_requests;
+        if (toolUsage?.x_search_requests) cumXSearches += toolUsage.x_search_requests;
       }
       if (choice?.finish_reason) finishReason = choice.finish_reason;
     }
@@ -495,14 +510,24 @@ export async function* streamOpenAICompat(
     break; // final answer produced (or tools disabled)
   }
 
-  if (sawUsage) {
+  // xAI Live Search (search_parameters) often doesn't report per-call counts.
+  // When citations returned and web search was requested, bill at least one
+  // web search so we never report $0 tool fees on a search turn.
+  if (webSearch && model.provider === "xai" && cumWebSearches === 0 && citationCount > 0) {
+    cumWebSearches = Math.max(1, Math.ceil(citationCount / 10));
+  }
+
+  if (sawUsage || cumWebSearches > 0 || cumXSearches > 0) {
     yield {
       type: "usage",
-      input: cumInput,
-      output: cumOutput,
+      input: sawUsage ? cumInput : undefined,
+      output: sawUsage ? cumOutput : undefined,
       reasoning: cumReasoning || undefined,
       total: cumTotal || undefined,
       cacheRead: cumCached || undefined,
+      cacheWrite: cumCacheWrite || undefined,
+      webSearchRequests: cumWebSearches || undefined,
+      xSearchRequests: cumXSearches || undefined,
     };
   }
   // A still-trailing "tool_calls" means even the forced-answer round wanted more
@@ -518,5 +543,6 @@ export async function* streamOpenAICompat(
     completionTokens: sawUsage ? cumOutput : null,
     reasoningTokens: sawUsage ? cumReasoning || null : null,
     cachedTokens: sawUsage ? cumCached : null,
+    webSearchRequests: cumWebSearches || null,
   });
 }

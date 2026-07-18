@@ -465,20 +465,73 @@ export async function* streamAnthropic(
     }
   }
   const seen = new Set<string>();
+
+  /**
+   * Map Anthropic Usage / MessageDeltaUsage into a full LlmEvent usage payload.
+   * message_delta carries CUMULATIVE counters (input grows after server tools
+   * inject search results) — always prefer the latest delta over message_start.
+   */
+  const usageEvent = (
+    u: {
+      input_tokens?: number | null;
+      output_tokens?: number | null;
+      cache_read_input_tokens?: number | null;
+      cache_creation_input_tokens?: number | null;
+      cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
+      output_tokens_details?: { thinking_tokens?: number } | null;
+      server_tool_use?: { web_search_requests?: number } | null;
+      speed?: string | null;
+    } | null | undefined,
+    opts?: { includeFast?: boolean }
+  ): Extract<LlmEvent, { type: "usage" }> | null => {
+    if (!u) return null;
+    const write5m = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
+    const write1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+    const writeAgg = u.cache_creation_input_tokens ?? 0;
+    const thinking = u.output_tokens_details?.thinking_tokens;
+    const webSearches = u.server_tool_use?.web_search_requests;
+    const ev: Extract<LlmEvent, { type: "usage" }> = {
+      type: "usage",
+      ...(u.input_tokens != null ? { input: u.input_tokens } : {}),
+      ...(u.output_tokens != null ? { output: u.output_tokens } : {}),
+      ...(u.cache_read_input_tokens != null ? { cacheRead: u.cache_read_input_tokens } : {}),
+      // Prefer TTL split when present; else aggregate write counter.
+      ...(write5m > 0 || write1h > 0
+        ? {
+            cacheWrite5m: write5m || undefined,
+            cacheWrite1h: write1h || undefined,
+            cacheWrite: write5m + write1h || undefined,
+          }
+        : writeAgg
+          ? { cacheWrite: writeAgg }
+          : {}),
+      ...(thinking != null && thinking > 0 ? { reasoning: thinking } : {}),
+      ...(webSearches != null && webSearches > 0 ? { webSearchRequests: webSearches } : {}),
+    };
+    if (opts?.includeFast) {
+      // `usage.speed` is authoritative when present — don't bill fast if the
+      // API silently ran standard.
+      ev.fast = servedFast && u.speed !== "standard";
+    }
+    // Only emit if we actually have something to report.
+    if (
+      ev.input == null &&
+      ev.output == null &&
+      ev.cacheRead == null &&
+      ev.cacheWrite == null &&
+      ev.reasoning == null &&
+      ev.webSearchRequests == null
+    ) {
+      return null;
+    }
+    return ev;
+  };
+
   for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
     if (event.type === "message_start") {
-      const u = event.message.usage;
-      // `usage.speed` ("fast" | "standard") is authoritative when the API reports
-      // it — e.g. a model that accepts `speed:"fast"` but silently runs standard
-      // reports "standard", so we don't bill the premium for a turn served slow.
-      const reportedSpeed = (u as { speed?: string } | undefined)?.speed;
-      yield {
-        type: "usage",
-        input: u?.input_tokens,
-        cacheRead: u?.cache_read_input_tokens ?? undefined,
-        cacheWrite: u?.cache_creation_input_tokens ?? undefined,
-        fast: servedFast && reportedSpeed !== "standard",
-      };
+      const u = event.message.usage as Parameters<typeof usageEvent>[0];
+      const ev = usageEvent(u, { includeFast: true });
+      if (ev) yield ev;
     } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       yield { type: "text", text: event.delta.text };
     } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
@@ -498,7 +551,9 @@ export async function* streamAnthropic(
         if (sources.length) yield { type: "sources", sources };
       }
     } else if (event.type === "message_delta") {
-      yield { type: "usage", output: event.usage?.output_tokens };
+      // Cumulative final usage — includes search-result input growth + tool counts.
+      const ev = usageEvent(event.usage as Parameters<typeof usageEvent>[0]);
+      if (ev) yield ev;
       const stopReason = (event.delta as { stop_reason?: string | null }).stop_reason;
       if (stopReason) yield { type: "finish", reason: normalizeFinishReason(stopReason), raw: stopReason };
     }

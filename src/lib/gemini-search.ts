@@ -136,6 +136,8 @@ export async function* streamGeminiSearch(
   let usageIn: number | undefined;
   let usageOut: number | undefined;
   let usageCached: number | undefined;
+  let usageThoughts: number | undefined;
+  let usageTotal: number | undefined;
   let finishReason: string | undefined;
 
   const handle = (json: string) => {
@@ -145,7 +147,13 @@ export async function* streamGeminiSearch(
         finishReason?: string;
         groundingMetadata?: { groundingChunks?: { web?: { uri?: string; title?: string } }[] };
       }[];
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; cachedContentTokenCount?: number };
+      usageMetadata?: {
+        promptTokenCount?: number;
+        candidatesTokenCount?: number;
+        cachedContentTokenCount?: number;
+        thoughtsTokenCount?: number;
+        totalTokenCount?: number;
+      };
     };
     try {
       data = JSON.parse(json);
@@ -172,6 +180,8 @@ export async function* streamGeminiSearch(
       usageIn = data.usageMetadata.promptTokenCount;
       usageOut = data.usageMetadata.candidatesTokenCount;
       usageCached = data.usageMetadata.cachedContentTokenCount;
+      usageThoughts = data.usageMetadata.thoughtsTokenCount;
+      usageTotal = data.usageMetadata.totalTokenCount;
     }
     return events;
   };
@@ -191,10 +201,22 @@ export async function* streamGeminiSearch(
   }
 
   if (sources.size) yield { type: "sources", sources: await resolveGroundingUrls([...sources.values()]) };
-  if (usageIn != null || usageOut != null) {
-    yield { type: "usage", input: usageIn, output: usageOut, cacheRead: usageCached };
+  if (usageIn != null || usageOut != null || usageThoughts != null) {
+    yield {
+      type: "usage",
+      input: usageIn,
+      output: usageOut,
+      reasoning: usageThoughts || undefined,
+      total: usageTotal || undefined,
+      cacheRead: usageCached,
+    };
     // Cache hit-rate instrumentation (Gemini implicit caching).
-    console.info("[llm:gemini-search] usage", { model: model.providerModel, promptTokens: usageIn ?? null, cachedTokens: usageCached ?? null });
+    console.info("[llm:gemini-search] usage", {
+      model: model.providerModel,
+      promptTokens: usageIn ?? null,
+      cachedTokens: usageCached ?? null,
+      thoughtsTokens: usageThoughts ?? null,
+    });
   }
   if (!finishReason) yield { type: "finish", reason: "stop" };
 }

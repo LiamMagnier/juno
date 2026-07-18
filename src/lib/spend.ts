@@ -114,6 +114,10 @@ export interface RecordSpendInput {
   totalTokens?: number;
   cacheRead?: number;
   cacheWrite?: number;
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
+  webSearchRequests?: number;
+  xSearchRequests?: number;
   /** Fallback when the provider reported no usage: tokens ≈ chars / 4. */
   promptChars?: number;
   completionChars?: number;
@@ -121,8 +125,9 @@ export interface RecordSpendInput {
   reasoningChars?: number;
   fastMode?: boolean;
   /**
-   * Precomputed request cost in USD (cache-aware, per-provider). Combined with
-   * a recompute from tokens so a too-low estimate can't underbill the ledger.
+   * Precomputed request cost in USD (cache-aware, per-provider, tool fees).
+   * Combined with a recompute from tokens so a too-low estimate can't underbill
+   * the ledger.
    */
   costUsd?: number;
 }
@@ -160,6 +165,10 @@ export async function recordSpend(input: RecordSpendInput): Promise<void> {
           totalTokens: input.totalTokens,
           cacheRead: input.cacheRead,
           cacheWrite: input.cacheWrite,
+          cacheWrite5m: input.cacheWrite5m,
+          cacheWrite1h: input.cacheWrite1h,
+          webSearchRequests: input.webSearchRequests,
+          xSearchRequests: input.xSearchRequests,
           fastMode: input.fastMode,
           promptChars: input.promptChars,
           completionChars: input.completionChars,

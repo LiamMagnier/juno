@@ -202,6 +202,7 @@ export async function* streamOpenAIResponses(
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;
+  let cumCacheWrite = 0;
   let cumReasoning = 0;
   let cumTotal = 0;
   let sawUsage = false;
@@ -282,9 +283,12 @@ export async function* streamOpenAIResponses(
             cumOutput += resp.usage.output_tokens ?? 0;
             cumCached += resp.usage.input_tokens_details?.cached_tokens ?? 0;
             const details = resp.usage as {
+              input_tokens_details?: { cached_tokens?: number; cache_creation_tokens?: number };
               output_tokens_details?: { reasoning_tokens?: number };
               total_tokens?: number;
             };
+            const writeTok = details.input_tokens_details?.cache_creation_tokens ?? 0;
+            if (writeTok > 0) cumCacheWrite += writeTok;
             const reasoningTok = details.output_tokens_details?.reasoning_tokens ?? 0;
             if (reasoningTok > 0) cumReasoning += reasoningTok;
             if (details.total_tokens != null) cumTotal += details.total_tokens;
@@ -352,6 +356,7 @@ export async function* streamOpenAIResponses(
       reasoning: cumReasoning || undefined,
       total: cumTotal || undefined,
       cacheRead: cumCached || undefined,
+      cacheWrite: cumCacheWrite || undefined,
     };
   }
   // A trailing tool_calls means even the forced-answer round wanted more tools —

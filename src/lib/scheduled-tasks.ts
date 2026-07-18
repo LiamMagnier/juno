@@ -13,7 +13,7 @@ import {
   modelRequestCost,
   modelRatesMicroUsdPerToken,
 } from "@/lib/spend";
-import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
+import { estimateGenerationCostUsd } from "@/lib/pricing";
 import type { ClientSource } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
@@ -284,8 +284,14 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
   let reasoning = "";
   let promptTokens: number | undefined;
   let completionTokens: number | undefined;
+  let reasoningTokens: number | undefined;
+  let totalTokens: number | undefined;
   let cacheReadTokens: number | undefined;
   let cacheWriteTokens: number | undefined;
+  let cacheWrite5mTokens: number | undefined;
+  let cacheWrite1hTokens: number | undefined;
+  let webSearchRequests: number | undefined;
+  let xSearchRequests: number | undefined;
   const sources: ClientSource[] = [];
   const sourceUrls = new Set<string>();
 
@@ -330,8 +336,14 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
       } else if (ev.type === "usage") {
         if (ev.input != null) promptTokens = ev.input;
         if (ev.output != null) completionTokens = ev.output;
+        if (ev.reasoning != null) reasoningTokens = ev.reasoning;
+        if (ev.total != null) totalTokens = ev.total;
         if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
         if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+        if (ev.cacheWrite5m != null) cacheWrite5mTokens = ev.cacheWrite5m;
+        if (ev.cacheWrite1h != null) cacheWrite1hTokens = ev.cacheWrite1h;
+        if (ev.webSearchRequests != null) webSearchRequests = ev.webSearchRequests;
+        if (ev.xSearchRequests != null) xSearchRequests = ev.xSearchRequests;
         enforceStreamBudget();
       }
     }
@@ -358,17 +370,31 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     return { status: "error", error };
   }
 
-  // Reconcile usage across providers and estimate the run's cost once.
-  const raw = { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens };
-  const usage = normalizeUsage(model.provider, raw);
-  const costUsd = estimateCostUsd(model, raw);
+  // Reconcile usage across providers and estimate the run's cost once
+  // (same pipeline as chat: tokens + cache TTL rates + server-tool fees).
+  const billed = estimateGenerationCostUsd(model, {
+    promptTokens,
+    completionTokens,
+    reasoningTokens,
+    totalTokens,
+    cacheRead: cacheReadTokens,
+    cacheWrite: cacheWriteTokens,
+    cacheWrite5m: cacheWrite5mTokens,
+    cacheWrite1h: cacheWrite1hTokens,
+    webSearchRequests,
+    xSearchRequests,
+    promptChars: system.length + task.prompt.length,
+    completionChars: full.length,
+    reasoningChars: reasoning.length,
+  });
+  const costUsd = billed.costUsd;
   const costMicroUsd =
     costUsd > 0
       ? Math.round(costUsd * 1_000_000)
       : modelRequestCost({
           modelId: model.id,
-          promptTokens: usage.totalInput || Math.ceil((system.length + task.prompt.length) / 4),
-          completionTokens: usage.output || Math.ceil((full.length + reasoning.length) / 4),
+          promptTokens: billed.promptTokens || Math.ceil((system.length + task.prompt.length) / 4),
+          completionTokens: billed.completionTokens || Math.ceil((full.length + reasoning.length) / 4),
         });
 
   // One exchange per run — prompt then result — encrypted like every chat write.
@@ -383,8 +409,8 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
       content: encryptMessageText(full),
       ...(reasoning ? { reasoning: encryptMessageText(reasoning) } : {}),
       model: model.id,
-      promptTokens: usage.totalInput || null,
-      completionTokens: usage.output || null,
+      promptTokens: billed.promptTokens || null,
+      completionTokens: billed.completionTokens || null,
       ...(sources.length ? { sources: sources as unknown as Prisma.InputJsonValue } : {}),
     },
   });
@@ -397,8 +423,16 @@ export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
     userId: task.userId,
     model: model.id,
     kind: "task",
-    promptTokens: usage.totalInput || undefined,
-    completionTokens: usage.output || undefined,
+    promptTokens: billed.promptTokens || undefined,
+    completionTokens: billed.completionTokens || undefined,
+    reasoningTokens: reasoningTokens || undefined,
+    totalTokens: totalTokens || undefined,
+    cacheRead: cacheReadTokens,
+    cacheWrite: cacheWriteTokens,
+    cacheWrite5m: cacheWrite5mTokens,
+    cacheWrite1h: cacheWrite1hTokens,
+    webSearchRequests,
+    xSearchRequests,
     costUsd: costUsd || undefined,
     promptChars: system.length + task.prompt.length,
     completionChars: full.length,

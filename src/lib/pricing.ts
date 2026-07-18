@@ -1,15 +1,23 @@
 import type { ModelInfo } from "@/lib/models";
 
 /**
- * Rough per-model token pricing so the app can show an estimated $ cost per
- * message. Rates are USD per 1,000,000 tokens and are approximate public list
- * prices — always shown to the user as an estimate ("~$0.01"), never as billing.
+ * Per-model token + tool pricing so message cost and ApiSpend match real
+ * provider billing as closely as list prices allow.
+ *
+ * Rates are USD per 1,000,000 tokens (list prices). Tool fees are flat USD.
+ * Sources: provider pricing pages (see docs/models.md). Always recompute from
+ * complete usage — never invent tokens when the API already reported them.
  */
 export interface TokenRate {
   input: number;
   output: number;
-  cacheRead: number; // cost of a cached-input token (read hit)
-  cacheWrite: number; // cost of writing an input token into the cache
+  cacheRead: number; // $/MTok for a cache hit
+  /** Default cache-write rate ($/MTok). Prefer cacheWrite5m / cacheWrite1h when split. */
+  cacheWrite: number;
+  /** Anthropic 5-minute ephemeral write (1.25× input). */
+  cacheWrite5m: number;
+  /** Anthropic 1-hour ephemeral write (2× input). Juno always uses 1h TTL. */
+  cacheWrite1h: number;
 }
 
 /** Raw usage as reported by a provider stream (conventions differ, see below). */
@@ -17,7 +25,10 @@ export interface RawUsage {
   input?: number;
   output?: number;
   cacheRead?: number;
+  /** Unspecified-TTL cache writes (or total when 5m/1h not split). */
   cacheWrite?: number;
+  cacheWrite5m?: number;
+  cacheWrite1h?: number;
 }
 
 /** Provider token conventions reconciled into one additive shape. */
@@ -26,7 +37,17 @@ export interface NormalizedUsage {
   freshInput: number; // input billed at the full input rate
   cacheRead: number;
   cacheWrite: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
   output: number;
+}
+
+/** Server-tool / live-search counts billed on top of tokens. */
+export interface ToolUsageExtras {
+  webSearchRequests?: number;
+  xSearchRequests?: number;
+  /** Adapter-computed fee override (already USD). */
+  toolFeesUsd?: number;
 }
 
 /**
@@ -38,14 +59,41 @@ export interface NormalizedUsage {
 export function normalizeUsage(provider: string, u: RawUsage): NormalizedUsage {
   const input = Math.max(0, u.input ?? 0);
   const cacheRead = Math.max(0, u.cacheRead ?? 0);
-  const cacheWrite = Math.max(0, u.cacheWrite ?? 0);
+  let cacheWrite5m = Math.max(0, u.cacheWrite5m ?? 0);
+  let cacheWrite1h = Math.max(0, u.cacheWrite1h ?? 0);
+  let cacheWrite = Math.max(0, u.cacheWrite ?? 0);
+
+  // If only the aggregate write is set, treat it as unspecified TTL.
+  if (!cacheWrite5m && !cacheWrite1h && cacheWrite > 0) {
+    // leave cacheWrite as-is; cost path picks default write rate
+  } else if (cacheWrite5m || cacheWrite1h) {
+    // Prefer the split; keep aggregate as sum for display.
+    cacheWrite = cacheWrite5m + cacheWrite1h;
+  }
+
   const output = Math.max(0, u.output ?? 0);
   if (provider === "anthropic") {
-    return { totalInput: input + cacheRead + cacheWrite, freshInput: input, cacheRead, cacheWrite, output };
+    return {
+      totalInput: input + cacheRead + cacheWrite,
+      freshInput: input,
+      cacheRead,
+      cacheWrite,
+      cacheWrite5m,
+      cacheWrite1h,
+      output,
+    };
   }
   // OpenAI-compatible: prompt_tokens already includes cacheRead.
   const freshInput = Math.max(0, input - cacheRead);
-  return { totalInput: input, freshInput, cacheRead, cacheWrite, output };
+  return {
+    totalInput: input,
+    freshInput,
+    cacheRead,
+    cacheWrite,
+    cacheWrite5m,
+    cacheWrite1h,
+    output,
+  };
 }
 
 // Verified against provider pricing pages + Artificial Analysis, 2026-07-10
@@ -169,37 +217,122 @@ export function supportsFastMode(model: ModelInfo): boolean {
   return fastModeMultiplier(model) !== null;
 }
 
-/** Full rate incl. cache multipliers (Anthropic: read 0.1x / write 1.25x).
- *  `fastMode` scales the base input+output (and derived cache rates) by the
- *  model's premium multiplier — see fastModeMultiplier(). */
+/**
+ * Full rate incl. cache multipliers.
+ * Anthropic: read 0.1×, 5m write 1.25×, 1h write 2×.
+ * Juno always writes Anthropic system prefixes with ttl:"1h", so the default
+ * `cacheWrite` for Anthropic is the **1h** rate (2×).
+ * `fastMode` scales base input/output (and derived cache rates).
+ */
 export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
   const raw = baseRate(model);
   const mult = fastMode ? fastModeMultiplier(model) ?? 1 : 1;
   const input = raw.input * mult;
   const output = raw.output * mult;
   if (model.provider === "anthropic") {
-    return { input, output, cacheRead: input * 0.1, cacheWrite: input * 1.25 };
+    return {
+      input,
+      output,
+      cacheRead: input * 0.1,
+      cacheWrite: input * 2, // default = 1h (what we actually write)
+      cacheWrite5m: input * 1.25,
+      cacheWrite1h: input * 2,
+    };
   }
   if (model.provider === "zhipu") {
     // Z.ai bills GLM cached input at $0.26 vs $1.40 fresh (GLM-5.2) ≈ 0.186x;
     // cache storage is currently free, so writes cost the plain input rate.
-    return { input, output, cacheRead: input * 0.186, cacheWrite: input };
+    return {
+      input,
+      output,
+      cacheRead: input * 0.186,
+      cacheWrite: input,
+      cacheWrite5m: input,
+      cacheWrite1h: input,
+    };
   }
   if (model.provider === "openai" && model.providerModel.toLowerCase().includes("gpt-5.6")) {
-    // GPT-5.6 family: 90% cached-input discount ($0.50/$0.25/$0.10 vs
-    // $5/$2.50/$1); cache writes bill at 1.25x the uncached input rate.
-    return { input, output, cacheRead: input * 0.1, cacheWrite: input * 1.25 };
+    // GPT-5.6 family: 90% cached-input discount; cache writes 1.25× uncached.
+    return {
+      input,
+      output,
+      cacheRead: input * 0.1,
+      cacheWrite: input * 1.25,
+      cacheWrite5m: input * 1.25,
+      cacheWrite1h: input * 1.25,
+    };
   }
   // Others: cached input is typically a fraction of full; writes carry no premium.
-  return { input, output, cacheRead: input * 0.25, cacheWrite: input };
+  return {
+    input,
+    output,
+    cacheRead: input * 0.25,
+    cacheWrite: input,
+    cacheWrite5m: input,
+    cacheWrite1h: input,
+  };
 }
 
-/** Estimated USD cost of one generation. Returns 0 when usage is unknown.
- *  Pass `fastMode` to bill the premium fast-mode / priority rate. */
-export function estimateCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
+/**
+ * Flat server-tool fees (USD), on top of token usage.
+ * Sources (2026-07): Anthropic $10/1k web searches; OpenAI $10/1k web search;
+ * xAI $5/1k web_search and $5/1k x_search. Google grounding is token-only.
+ */
+export function toolFeesUsd(
+  provider: ModelInfo["provider"] | string,
+  extras: ToolUsageExtras = {}
+): number {
+  if (extras.toolFeesUsd != null && extras.toolFeesUsd > 0) {
+    return extras.toolFeesUsd;
+  }
+  const web = Math.max(0, extras.webSearchRequests ?? 0);
+  const x = Math.max(0, extras.xSearchRequests ?? 0);
+  if (!web && !x) return 0;
+
+  switch (provider) {
+    case "anthropic":
+      // $10 / 1,000 searches
+      return web * 0.01;
+    case "openai":
+      // Built-in web search on Responses: $10 / 1k calls
+      return web * 0.01;
+    case "xai":
+      // Web Search + X Search: $5 / 1k each
+      return web * 0.005 + x * 0.005;
+    default:
+      return 0;
+  }
+}
+
+/** Token-only cost (no tool fees). */
+function tokenCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
   const n = normalizeUsage(model.provider, u);
   const r = tokenRate(model, fastMode);
-  const cost = (n.freshInput * r.input + n.cacheRead * r.cacheRead + n.cacheWrite * r.cacheWrite + n.output * r.output) / 1_000_000;
+
+  let writeCost = 0;
+  if (n.cacheWrite5m > 0 || n.cacheWrite1h > 0) {
+    writeCost = n.cacheWrite5m * r.cacheWrite5m + n.cacheWrite1h * r.cacheWrite1h;
+  } else {
+    // Unspecified TTL: Anthropic defaults to 1h rate (what we write);
+    // everyone else uses cacheWrite.
+    writeCost = n.cacheWrite * r.cacheWrite;
+  }
+
+  const cost =
+    (n.freshInput * r.input + n.cacheRead * r.cacheRead + writeCost + n.output * r.output) / 1_000_000;
+  return Number.isFinite(cost) && cost > 0 ? cost : 0;
+}
+
+/** Estimated USD cost of one generation (tokens + tool fees). */
+export function estimateCostUsd(
+  model: ModelInfo,
+  u: RawUsage,
+  fastMode = false,
+  extras: ToolUsageExtras = {}
+): number {
+  const tokens = tokenCostUsd(model, u, fastMode);
+  const tools = toolFeesUsd(model.provider, extras);
+  const cost = tokens + tools;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }
 
@@ -273,27 +406,46 @@ export function resolveBillableTokens(opts: {
   return { promptTokens: prompt, completionTokens: completion, cacheRead };
 }
 
+export type GenerationCostOpts = {
+  promptTokens?: number | null;
+  completionTokens?: number | null;
+  reasoningTokens?: number | null;
+  totalTokens?: number | null;
+  cacheRead?: number | null;
+  cacheWrite?: number | null;
+  cacheWrite5m?: number | null;
+  cacheWrite1h?: number | null;
+  fastMode?: boolean;
+  promptChars?: number;
+  completionChars?: number;
+  reasoningChars?: number;
+  webSearchRequests?: number | null;
+  xSearchRequests?: number | null;
+  toolFeesUsd?: number | null;
+};
+
 /**
  * Single source of truth for "how much did this generation cost?".
- * Always prefers real provider usage, floors on streamed characters, and
- * applies fast-mode / cache rates from tokenRate().
+ * Always prefers real provider usage, floors on streamed characters, applies
+ * fast-mode / cache rates, and adds server-tool fees.
  */
 export function estimateGenerationCostUsd(
   model: ModelInfo,
-  opts: {
-    promptTokens?: number | null;
-    completionTokens?: number | null;
-    reasoningTokens?: number | null;
-    totalTokens?: number | null;
-    cacheRead?: number | null;
-    cacheWrite?: number | null;
-    fastMode?: boolean;
-    promptChars?: number;
-    completionChars?: number;
-    reasoningChars?: number;
-  }
-): { costUsd: number; promptTokens: number; completionTokens: number; cacheRead: number } {
+  opts: GenerationCostOpts
+): {
+  costUsd: number;
+  promptTokens: number;
+  completionTokens: number;
+  cacheRead: number;
+  toolFeesUsd: number;
+} {
   const tokens = resolveBillableTokens(opts);
+  const extras: ToolUsageExtras = {
+    webSearchRequests: opts.webSearchRequests ?? undefined,
+    xSearchRequests: opts.xSearchRequests ?? undefined,
+    toolFeesUsd: opts.toolFeesUsd ?? undefined,
+  };
+  const fees = toolFeesUsd(model.provider, extras);
   const costUsd = estimateCostUsd(
     model,
     {
@@ -301,14 +453,18 @@ export function estimateGenerationCostUsd(
       output: tokens.completionTokens,
       cacheRead: tokens.cacheRead || undefined,
       cacheWrite: opts.cacheWrite ?? undefined,
+      cacheWrite5m: opts.cacheWrite5m ?? undefined,
+      cacheWrite1h: opts.cacheWrite1h ?? undefined,
     },
-    !!opts.fastMode
+    !!opts.fastMode,
+    extras
   );
   return {
     costUsd,
     promptTokens: tokens.promptTokens,
     completionTokens: tokens.completionTokens,
     cacheRead: tokens.cacheRead,
+    toolFeesUsd: fees,
   };
 }
 

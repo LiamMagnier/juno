@@ -39,8 +39,17 @@ export type LlmEvent =
       total?: number;
       /** Prompt-cache hits (input tokens read from cache, billed ~0.1x). */
       cacheRead?: number;
-      /** Prompt-cache writes (input tokens written to cache, billed ~1.25x). */
+      /**
+       * Prompt-cache writes. Prefer cacheWrite5m / cacheWrite1h when the API
+       * splits TTL (Anthropic). Aggregate write when only one counter exists.
+       */
       cacheWrite?: number;
+      cacheWrite5m?: number;
+      cacheWrite1h?: number;
+      /** Server web-search tool invocations (Anthropic / OpenAI / xAI). */
+      webSearchRequests?: number;
+      /** xAI X-search tool invocations. */
+      xSearchRequests?: number;
       /** Which speed actually served this turn — true = premium fast mode was
        *  honored, false = it fell back to (or ran at) standard speed. Lets the
        *  route bill the real rate even when a fast request degrades. */

@@ -3,7 +3,7 @@ import { streamChat } from "@/lib/llm";
 import { utilityModelCandidates } from "@/lib/memory";
 import { PROVIDERS } from "@/lib/providers";
 import { recordSpend } from "@/lib/spend";
-import { estimateCostUsd } from "@/lib/pricing";
+import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/models";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
@@ -111,7 +111,18 @@ async function planQueries(opts: {
 }): Promise<{ queries: string[]; costUsd: number }> {
   const { signal, release } = timeboxSignal(opts.signal, PLAN_TIMEOUT_MS);
   let out = "";
-  let usage: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number } = {};
+  let usage: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    total?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    cacheWrite5m?: number;
+    cacheWrite1h?: number;
+    webSearchRequests?: number;
+    xSearchRequests?: number;
+  } = {};
   try {
     for await (const ev of streamChat({
       model: opts.planner,
@@ -121,7 +132,20 @@ async function planQueries(opts: {
       signal,
     })) {
       if (ev.type === "text") out += ev.text;
-      else if (ev.type === "usage") usage = { input: ev.input, output: ev.output, cacheRead: ev.cacheRead, cacheWrite: ev.cacheWrite };
+      else if (ev.type === "usage") {
+        usage = {
+          input: ev.input ?? usage.input,
+          output: ev.output ?? usage.output,
+          reasoning: ev.reasoning ?? usage.reasoning,
+          total: ev.total ?? usage.total,
+          cacheRead: ev.cacheRead ?? usage.cacheRead,
+          cacheWrite: ev.cacheWrite ?? usage.cacheWrite,
+          cacheWrite5m: ev.cacheWrite5m ?? usage.cacheWrite5m,
+          cacheWrite1h: ev.cacheWrite1h ?? usage.cacheWrite1h,
+          webSearchRequests: ev.webSearchRequests ?? usage.webSearchRequests,
+          xSearchRequests: ev.xSearchRequests ?? usage.xSearchRequests,
+        };
+      }
     }
   } catch (e) {
     console.error("[deep-research] plan failed", {
@@ -134,14 +158,35 @@ async function planQueries(opts: {
   // Bill whatever the planner actually consumed, even when parsing fails.
   let costUsd = 0;
   if (out || usage.input != null || usage.output != null) {
-    costUsd = estimateCostUsd(opts.planner, usage);
+    const billed = estimateGenerationCostUsd(opts.planner, {
+      promptTokens: usage.input,
+      completionTokens: usage.output,
+      reasoningTokens: usage.reasoning,
+      totalTokens: usage.total,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      cacheWrite5m: usage.cacheWrite5m,
+      cacheWrite1h: usage.cacheWrite1h,
+      webSearchRequests: usage.webSearchRequests,
+      xSearchRequests: usage.xSearchRequests,
+      promptChars: PLANNER_SYSTEM.length + opts.prompt.length,
+      completionChars: out.length,
+    });
+    costUsd = billed.costUsd;
     await recordSpend({
       userId: opts.userId,
       model: opts.planner.id,
       kind: "chat",
       source: opts.client,
-      promptTokens: usage.input,
-      completionTokens: usage.output,
+      promptTokens: billed.promptTokens,
+      completionTokens: billed.completionTokens,
+      reasoningTokens: usage.reasoning,
+      cacheRead: usage.cacheRead,
+      cacheWrite: usage.cacheWrite,
+      cacheWrite5m: usage.cacheWrite5m,
+      cacheWrite1h: usage.cacheWrite1h,
+      webSearchRequests: usage.webSearchRequests,
+      xSearchRequests: usage.xSearchRequests,
       costUsd: costUsd || undefined,
       promptChars: PLANNER_SYSTEM.length + opts.prompt.length,
       completionChars: out.length,

@@ -217,8 +217,9 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
 
 /**
  * Normalize a generation's token usage and build the "Token usage recorded"
- * detail line + an estimated cost. Floors on streamed answer + reasoning
- * characters so thinking-heavy turns without full usage still bill fairly.
+ * detail line + cost (tokens + cache + server-tool fees). Floors on streamed
+ * answer + reasoning characters so thinking-heavy turns without full usage
+ * still bill fairly.
  */
 function buildUsage(
   model: ModelInfo,
@@ -229,12 +230,27 @@ function buildUsage(
     total?: number;
     cacheRead?: number;
     cacheWrite?: number;
+    cacheWrite5m?: number;
+    cacheWrite1h?: number;
+    webSearchRequests?: number;
+    xSearchRequests?: number;
     promptChars?: number;
     completionChars?: number;
     reasoningChars?: number;
   },
   fastMode = false
-): { detail: string; cost: number; totalInput: number; output: number; reasoning: number } {
+): {
+  detail: string;
+  cost: number;
+  totalInput: number;
+  output: number;
+  reasoning: number;
+  toolFeesUsd: number;
+  webSearchRequests: number;
+  xSearchRequests: number;
+  cacheWrite5m: number;
+  cacheWrite1h: number;
+} {
   const billed = estimateGenerationCostUsd(model, {
     promptTokens: raw.input,
     completionTokens: raw.output,
@@ -242,17 +258,29 @@ function buildUsage(
     totalTokens: raw.total,
     cacheRead: raw.cacheRead,
     cacheWrite: raw.cacheWrite,
+    cacheWrite5m: raw.cacheWrite5m,
+    cacheWrite1h: raw.cacheWrite1h,
+    webSearchRequests: raw.webSearchRequests,
+    xSearchRequests: raw.xSearchRequests,
     fastMode,
     promptChars: raw.promptChars,
     completionChars: raw.completionChars,
     reasoningChars: raw.reasoningChars,
   });
-  const cached = Math.max(0, raw.cacheRead ?? 0) + Math.max(0, raw.cacheWrite ?? 0);
+  // Avoid double-counting when both aggregate and split writes are present.
+  const cachedDisplay =
+    Math.max(0, raw.cacheRead ?? 0) +
+    (raw.cacheWrite5m || raw.cacheWrite1h
+      ? Math.max(0, raw.cacheWrite5m ?? 0) + Math.max(0, raw.cacheWrite1h ?? 0)
+      : Math.max(0, raw.cacheWrite ?? 0));
+  const searches =
+    Math.max(0, raw.webSearchRequests ?? 0) + Math.max(0, raw.xSearchRequests ?? 0);
   const detail = [
     billed.promptTokens
-      ? `${billed.promptTokens.toLocaleString()} input${cached ? ` (${cached.toLocaleString()} cached)` : ""}`
+      ? `${billed.promptTokens.toLocaleString()} input${cachedDisplay ? ` (${cachedDisplay.toLocaleString()} cached)` : ""}`
       : null,
     billed.completionTokens ? `${billed.completionTokens.toLocaleString()} output` : null,
+    searches > 0 ? `${searches.toLocaleString()} ${searches === 1 ? "search" : "searches"}` : null,
     billed.costUsd > 0 ? `~${formatUsd(billed.costUsd)}` : null,
   ]
     .filter(Boolean)
@@ -263,6 +291,11 @@ function buildUsage(
     totalInput: billed.promptTokens,
     output: billed.completionTokens,
     reasoning: Math.max(0, raw.reasoning ?? 0),
+    toolFeesUsd: billed.toolFeesUsd,
+    webSearchRequests: Math.max(0, raw.webSearchRequests ?? 0),
+    xSearchRequests: Math.max(0, raw.xSearchRequests ?? 0),
+    cacheWrite5m: Math.max(0, raw.cacheWrite5m ?? 0),
+    cacheWrite1h: Math.max(0, raw.cacheWrite1h ?? 0),
   };
 }
 
@@ -669,6 +702,10 @@ async function handleChat(req: Request) {
         let totalTokens: number | undefined;
         let cacheReadTokens: number | undefined;
         let cacheWriteTokens: number | undefined;
+        let cacheWrite5mTokens: number | undefined;
+        let cacheWrite1hTokens: number | undefined;
+        let webSearchRequests: number | undefined;
+        let xSearchRequests: number | undefined;
         // Which speed actually served (fast adapters may fall back to standard);
         // defaults to the requested value and is refined from the usage stream.
         let servedFast = useFastMode;
@@ -800,6 +837,10 @@ async function handleChat(req: Request) {
               if (ev.total != null) totalTokens = ev.total;
               if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
               if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+              if (ev.cacheWrite5m != null) cacheWrite5mTokens = ev.cacheWrite5m;
+              if (ev.cacheWrite1h != null) cacheWrite1hTokens = ev.cacheWrite1h;
+              if (ev.webSearchRequests != null) webSearchRequests = ev.webSearchRequests;
+              if (ev.xSearchRequests != null) xSearchRequests = ev.xSearchRequests;
               if (ev.fast != null) servedFast = ev.fast;
               enforceStreamBudget();
             } else if (ev.type === "finish") {
@@ -814,6 +855,10 @@ async function handleChat(req: Request) {
             total: totalTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: cacheWriteTokens,
+            cacheWrite5m: cacheWrite5mTokens,
+            cacheWrite1h: cacheWrite1hTokens,
+            webSearchRequests,
+            xSearchRequests,
             promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
             reasoningChars: reasoning.length,
@@ -863,6 +908,10 @@ async function handleChat(req: Request) {
             totalTokens: totalTokens || undefined,
             cacheRead: cacheReadTokens,
             cacheWrite: cacheWriteTokens,
+            cacheWrite5m: cacheWrite5mTokens,
+            cacheWrite1h: cacheWrite1hTokens,
+            webSearchRequests,
+            xSearchRequests,
             costUsd: usage.cost || undefined,
             promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
@@ -879,6 +928,7 @@ async function handleChat(req: Request) {
             completionTokens: completionTokens ?? null,
             cacheReadTokens: cacheReadTokens ?? null,
             cacheWriteTokens: cacheWriteTokens ?? null,
+            webSearchRequests: webSearchRequests ?? null,
           });
         } catch (err) {
           // A budget-triggered abort saves the partial answer + bills it, exactly
@@ -904,6 +954,10 @@ async function handleChat(req: Request) {
             total: totalTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: cacheWriteTokens,
+            cacheWrite5m: cacheWrite5mTokens,
+            cacheWrite1h: cacheWrite1hTokens,
+            webSearchRequests,
+            xSearchRequests,
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -943,6 +997,10 @@ async function handleChat(req: Request) {
                 totalTokens: totalTokens || undefined,
                 cacheRead: cacheReadTokens,
                 cacheWrite: cacheWriteTokens,
+                cacheWrite5m: cacheWrite5mTokens,
+                cacheWrite1h: cacheWrite1hTokens,
+                webSearchRequests,
+                xSearchRequests,
                 costUsd: partialUsage.cost || undefined,
                 promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
                 completionChars: full.length,
@@ -1650,6 +1708,10 @@ async function handleChat(req: Request) {
       let totalTokens: number | undefined;
       let cacheReadTokens: number | undefined;
       let cacheWriteTokens: number | undefined;
+      let cacheWrite5mTokens: number | undefined;
+      let cacheWrite1hTokens: number | undefined;
+      let webSearchRequests: number | undefined;
+      let xSearchRequests: number | undefined;
       // Which speed actually served (fast adapters may fall back to standard);
       // defaults to the requested value and is refined from the usage stream.
       let servedFast = useFastMode;
@@ -1977,6 +2039,10 @@ async function handleChat(req: Request) {
             if (ev.total != null) totalTokens = ev.total;
             if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
             if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+            if (ev.cacheWrite5m != null) cacheWrite5mTokens = ev.cacheWrite5m;
+            if (ev.cacheWrite1h != null) cacheWrite1hTokens = ev.cacheWrite1h;
+            if (ev.webSearchRequests != null) webSearchRequests = ev.webSearchRequests;
+            if (ev.xSearchRequests != null) xSearchRequests = ev.xSearchRequests;
             if (ev.fast != null) servedFast = ev.fast;
             enforceStreamBudget();
           } else if (ev.type === "finish") {
@@ -1998,6 +2064,10 @@ async function handleChat(req: Request) {
             total: totalTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: cacheWriteTokens,
+            cacheWrite5m: cacheWrite5mTokens,
+            cacheWrite1h: cacheWrite1hTokens,
+            webSearchRequests,
+            xSearchRequests,
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -2089,6 +2159,10 @@ async function handleChat(req: Request) {
           totalTokens: totalTokens || undefined,
           cacheRead: cacheReadTokens,
           cacheWrite: cacheWriteTokens,
+          cacheWrite5m: cacheWrite5mTokens,
+          cacheWrite1h: cacheWrite1hTokens,
+          webSearchRequests,
+          xSearchRequests,
           costUsd: usage.cost || undefined,
           promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
           completionChars: providerOutputChars,
@@ -2107,6 +2181,7 @@ async function handleChat(req: Request) {
           // Prompt-cache instrumentation (read = hit, write = Anthropic-only creation).
           cacheReadTokens: cacheReadTokens ?? null,
           cacheWriteTokens: cacheWriteTokens ?? null,
+          webSearchRequests: webSearchRequests ?? null,
         });
       } catch (err) {
         const reason = budgetHalted
@@ -2137,6 +2212,10 @@ async function handleChat(req: Request) {
             total: totalTokens,
             cacheRead: cacheReadTokens,
             cacheWrite: cacheWriteTokens,
+            cacheWrite5m: cacheWrite5mTokens,
+            cacheWrite1h: cacheWrite1hTokens,
+            webSearchRequests,
+            xSearchRequests,
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -2187,6 +2266,10 @@ async function handleChat(req: Request) {
                 totalTokens: totalTokens || undefined,
                 cacheRead: cacheReadTokens,
                 cacheWrite: cacheWriteTokens,
+                cacheWrite5m: cacheWrite5mTokens,
+                cacheWrite1h: cacheWrite1hTokens,
+                webSearchRequests,
+                xSearchRequests,
                 costUsd: partialUsage.cost || undefined,
                 promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
                 completionChars: providerOutputChars,
