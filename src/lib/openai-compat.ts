@@ -4,6 +4,7 @@ import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { reasoningCaps } from "@/lib/model-metrics";
+import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/openai-prompt-cache";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -32,9 +33,15 @@ const BINARY_ATTACHMENT_LOOKBACK = 8;
 async function toOpenAIMessages(
   system: string,
   history: MessageForModel[],
-  vision: boolean
+  vision: boolean,
+  model?: ModelInfo
 ): Promise<OpenAI.Chat.Completions.ChatCompletionMessageParam[]> {
-  const out: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: "system", content: system }];
+  // OpenAI GPT-5.6+: system as structured text with an explicit cache breakpoint
+  // so the static instructions stay a warm prefix (docs: prompt-caching).
+  const systemMsg = model?.provider === "openai" ? openAISystemMessage(model, system) : { role: "system" as const, content: system };
+  const out: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    systemMsg as OpenAI.Chat.Completions.ChatCompletionMessageParam,
+  ];
   // Anchored to LOOKBACK-sized blocks (not a per-turn slide) so image →
   // placeholder rewrites only move the cacheable-prefix boundary once per
   // block, keeping provider prompt caches warm between steps.
@@ -192,7 +199,7 @@ export async function* streamOpenAICompat(
   cacheKey?: string,
   fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
-  const messages = await toOpenAIMessages(system, history, model.vision);
+  const messages = await toOpenAIMessages(system, history, model.vision, model);
   // Per-request dynamic context (the date) is injected AFTER the frozen
   // conversation history — providers cache the longest stable prefix, so
   // nothing that changes per request may sit before the history. It lands as
@@ -327,16 +334,15 @@ export async function* streamOpenAICompat(
     const zhipuCap = modelId.includes("glm-4.5v") ? 16384 : Infinity;
     params.max_tokens = Math.min(maxTokens, model.provider === "zhipu" ? zhipuCap : Infinity);
   }
-  // Prompt-cache routing hints. OpenAI: automatic caching on >1024-token
-  // stable prefixes; prompt_cache_key routes same-prefix requests (one
-  // conversation) to the same cache shard. Mistral: caching is OPT-IN and
-  // only happens when prompt_cache_key is set. Other providers may reject
-  // unknown params, so this stays gated. (xAI takes a header instead, below.)
-  // Zhipu/DeepSeek/Moonshot cache IMPLICITLY — no request param exists; hits
-  // arrive in usage.prompt_tokens_details.cached_tokens (parsed below) and
-  // depend entirely on the prompt prefix staying byte-stable across turns
-  // (see HISTORY_STEP in the chat route and the block-anchored binaryFrom).
-  if ((model.provider === "openai" || model.provider === "mistral") && cacheKey) {
+  // Prompt caching:
+  // - OpenAI: full guide (prompt_cache_key + GPT-5.6 breakpoints/options +
+  //   extended retention on older GPT-5.x). See openai-prompt-cache.ts.
+  // - Mistral: caching is OPT-IN and only happens when prompt_cache_key is set.
+  // - xAI: header below (no body field).
+  // - Zhipu/DeepSeek/Moonshot: implicit on stable prefixes only.
+  if (model.provider === "openai") {
+    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
+  } else if (model.provider === "mistral" && cacheKey) {
     params.prompt_cache_key = cacheKey;
   }
   // xAI Grok "Live Search" — a request-body extension that returns citations.
@@ -460,8 +466,13 @@ export async function* streamOpenAICompat(
           server_side_tool_usage?: { web_search_requests?: number; x_search_requests?: number };
         };
         roundCached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? u.cached_tokens ?? roundCached;
+        // OpenAI reports writes as cache_write_tokens (GPT-5.6+). Do NOT treat
+        // prompt_cache_miss_tokens as a write — that is uncached input, not a
+        // billable cache-write on OpenAI (and would over-bill).
         const writeTok =
-          u.prompt_tokens_details?.cache_write_tokens ?? u.prompt_cache_miss_tokens ?? 0;
+          model.provider === "openai"
+            ? (u.prompt_tokens_details?.cache_write_tokens ?? 0)
+            : (u.prompt_tokens_details?.cache_write_tokens ?? u.prompt_cache_miss_tokens ?? 0);
         if (writeTok > 0) cumCacheWrite += writeTok;
         const reasoningTok =
           u.completion_tokens_details?.reasoning_tokens ?? u.reasoning_tokens ?? 0;

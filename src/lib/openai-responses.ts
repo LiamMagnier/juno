@@ -4,6 +4,10 @@ import { getObjectBytes } from "@/lib/storage";
 import { providerApiKey, providerBaseUrl, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { reasoningCaps } from "@/lib/model-metrics";
+import {
+  openAIPromptCacheRequestFields,
+  openAIResponsesSystemInput,
+} from "@/lib/openai-prompt-cache";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -142,6 +146,13 @@ export async function* streamOpenAIResponses(
   fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
   const input = await toResponsesInput(history, model.vision);
+  // GPT-5.6+: put system into input with an explicit cache breakpoint so the
+  // static prefix is a first-class cached segment (see openai-prompt-cache.ts).
+  // Older models keep `instructions` below.
+  const systemAsInput = openAIResponsesSystemInput(model, system);
+  if (systemAsInput) {
+    input.unshift(...(systemAsInput as unknown as InputItem[]));
+  }
   // Same cache-safe placement as the compat adapter: dynamic context lands as a
   // system item just before the newest user turn, never ahead of the stable prefix.
   if (dynamicContext) {
@@ -219,7 +230,9 @@ export async function* streamOpenAIResponses(
     const isFinalRound = round === maxRounds - 1;
     const params: OpenAI.Responses.ResponseCreateParamsStreaming & Record<string, unknown> = {
       model: model.providerModel,
-      instructions: system,
+      // When system is already in `input` with a cache breakpoint (GPT-5.6+),
+      // omit `instructions` so the prefix is one contiguous cached block.
+      ...(systemAsInput ? {} : { instructions: system }),
       input,
       stream: true,
       // No server-side persistence: history is resent per round, like every
@@ -239,7 +252,8 @@ export async function* streamOpenAIResponses(
       params.tools = tools;
       params.tool_choice = isFinalRound ? "none" : "auto";
     }
-    if (cacheKey) params.prompt_cache_key = cacheKey;
+    // Official OpenAI prompt caching (key + GPT-5.6 options / retention).
+    Object.assign(params, openAIPromptCacheRequestFields(model, cacheKey));
     // OpenAI priority processing (premium latency). The route gates fastMode to
     // priority-eligible models, so relaying it straight through is safe.
     if (fastMode) params.service_tier = "priority";
@@ -282,12 +296,21 @@ export async function* streamOpenAIResponses(
             cumInput += resp.usage.input_tokens ?? 0;
             cumOutput += resp.usage.output_tokens ?? 0;
             cumCached += resp.usage.input_tokens_details?.cached_tokens ?? 0;
+            // Docs: cache writes are `cache_write_tokens` (GPT-5.6+). Older SDKs
+            // sometimes exposed `cache_creation_tokens` — accept both.
             const details = resp.usage as {
-              input_tokens_details?: { cached_tokens?: number; cache_creation_tokens?: number };
+              input_tokens_details?: {
+                cached_tokens?: number;
+                cache_write_tokens?: number;
+                cache_creation_tokens?: number;
+              };
               output_tokens_details?: { reasoning_tokens?: number };
               total_tokens?: number;
             };
-            const writeTok = details.input_tokens_details?.cache_creation_tokens ?? 0;
+            const writeTok =
+              details.input_tokens_details?.cache_write_tokens ??
+              details.input_tokens_details?.cache_creation_tokens ??
+              0;
             if (writeTok > 0) cumCacheWrite += writeTok;
             const reasoningTok = details.output_tokens_details?.reasoning_tokens ?? 0;
             if (reasoningTok > 0) cumReasoning += reasoningTok;
