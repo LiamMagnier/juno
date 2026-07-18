@@ -894,46 +894,108 @@
     .sidebar-motion-icon__glyph--alternate { opacity: 0 !important; }
   }
 
-  /* AI-authored names resolve in place: the old label recedes, a warm scan
-     passes through the line, and the new label settles sharply. Manual renames
-     opt out in AnimatedTitle, so direct edits never feel delayed. */
+  /* AI-authored names resolve in place — monochrome, quiet, expensive-feeling.
+     No brand/coral flash. Old label recedes; a neutral sheen passes; the new
+     label settles. Manual renames opt out in AnimatedTitle. Timing pairs with
+     RESOLVE_MS in animated-title.tsx (~780ms). */
+  .animated-title {
+    /* Optical room for the sheen without shifting row layout. */
+    padding-inline: 1px;
+  }
   .animated-title--resolving {
     isolation: isolate;
   }
-  .animated-title__glow {
+  .animated-title__sheen {
     position: absolute;
-    inset: -2px -6px;
-    z-index: -1;
-    border-radius: 7px;
-    background: linear-gradient(90deg, transparent 0%, hsl(var(--primary) / .04) 24%, hsl(var(--primary) / .16) 50%, hsl(var(--primary) / .04) 76%, transparent 100%);
-    animation: title-resolve-glow 680ms var(--ease-out-soft) both;
+    inset: -1px -8px;
+    z-index: 0;
+    border-radius: inherit;
     pointer-events: none;
+    background: linear-gradient(
+      105deg,
+      transparent 0%,
+      transparent 34%,
+      hsl(var(--sheen) / .55) 48%,
+      hsl(var(--foreground) / .055) 50%,
+      hsl(var(--sheen) / .45) 52%,
+      transparent 66%,
+      transparent 100%
+    );
+    background-size: 220% 100%;
+    animation: title-resolve-sheen 780ms var(--ease-out-soft) both;
+  }
+  .animated-title__previous,
+  .animated-title__label {
+    position: relative;
+    z-index: 1;
   }
   .animated-title__previous {
-    animation: title-resolve-out 220ms var(--ease-out-soft) both;
+    animation: title-resolve-out 300ms var(--ease-out-soft) both;
   }
   .animated-title__current {
-    animation: title-resolve-in 520ms var(--ease-out-expo) 90ms both;
+    animation: title-resolve-in 680ms var(--ease-out-expo) 50ms both;
   }
+
   @keyframes title-resolve-out {
-    from { opacity: 1; transform: translateY(0); filter: blur(0); }
-    to { opacity: 0; transform: translateY(-3px); filter: blur(2px); }
+    0% {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+      letter-spacing: 0;
+    }
+    100% {
+      opacity: 0;
+      transform: translateY(-1.5px);
+      filter: blur(0.6px);
+      letter-spacing: 0.01em;
+    }
   }
   @keyframes title-resolve-in {
-    0% { opacity: 0; transform: translateY(4px); clip-path: inset(0 100% 0 0); text-shadow: 0 0 8px hsl(var(--primary) / .18); }
-    55% { opacity: 1; clip-path: inset(0 0 0 0); text-shadow: 0 0 7px hsl(var(--primary) / .14); }
-    100% { opacity: 1; transform: translateY(0); clip-path: inset(0 0 0 0); text-shadow: 0 0 0 hsl(var(--primary) / 0); }
+    0% {
+      opacity: 0;
+      transform: translateY(2.5px);
+      filter: blur(0.8px);
+      clip-path: inset(0 18% 0 0);
+      letter-spacing: 0.02em;
+    }
+    42% {
+      opacity: 1;
+      filter: blur(0);
+      letter-spacing: 0.006em;
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+      clip-path: inset(0 0 0 0);
+      letter-spacing: 0;
+    }
   }
-  @keyframes title-resolve-glow {
-    0% { opacity: 0; transform: translateX(-45%) scaleX(.55); }
-    38% { opacity: .8; }
-    100% { opacity: 0; transform: translateX(45%) scaleX(.7); }
+  @keyframes title-resolve-sheen {
+    0% {
+      opacity: 0;
+      background-position: 100% 0;
+    }
+    18% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+      background-position: -40% 0;
+    }
   }
+
   @media (prefers-reduced-motion: reduce) {
-    .animated-title__glow,
+    .animated-title__sheen,
     .animated-title__previous,
-    .animated-title__current { animation: none; }
+    .animated-title__current {
+      animation: none !important;
+      filter: none !important;
+      clip-path: none !important;
+      letter-spacing: normal !important;
+    }
     .animated-title__previous { display: none; }
+    .animated-title__sheen { display: none; }
   }
 
   /* Composer: close, precise elevation instead of a broad floating-card smudge.

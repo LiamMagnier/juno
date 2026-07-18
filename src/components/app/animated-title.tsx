@@ -3,6 +3,16 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
+/** Total resolve window — keep in sync with CSS title-resolve-* durations. */
+const RESOLVE_MS = 780;
+
+/**
+ * In-place title resolve for AI-authored renames (chats, projects).
+ *
+ * Manual renames pass `animate={false}` so a typed edit never feels delayed.
+ * The choreography is deliberately monochrome: old label recedes, a soft sheen
+ * passes through, the new label settles — no brand-color flash.
+ */
 export function AnimatedTitle({
   title,
   animate = true,
@@ -36,23 +46,21 @@ export function AnimatedTitle({
     const timer = window.setTimeout(() => {
       setPreviousTitle(null);
       setResolving(false);
-    }, 680);
+    }, RESOLVE_MS);
     return () => window.clearTimeout(timer);
   }, [animate, title]);
 
   return (
     <span
       className={cn(
-        "animated-title relative block min-w-0 overflow-hidden rounded-[5px]",
+        "animated-title relative block min-w-0 overflow-hidden rounded-[6px]",
         resolving && "animated-title--resolving",
         className,
       )}
       aria-live="polite"
     >
-      {resolving && (
-        <span className="animated-title__glow" aria-hidden="true" />
-      )}
-      {previousTitle && (
+      {resolving ? <span className="animated-title__sheen" aria-hidden="true" /> : null}
+      {previousTitle ? (
         <span
           className={cn(
             "animated-title__previous absolute inset-0 truncate",
@@ -62,11 +70,11 @@ export function AnimatedTitle({
         >
           {previousTitle}
         </span>
-      )}
+      ) : null}
       <span
         key={displayTitle}
         className={cn(
-          "block truncate",
+          "animated-title__label block truncate",
           resolving && "animated-title__current",
           textClassName,
         )}
