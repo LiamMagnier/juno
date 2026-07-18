@@ -7,6 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
@@ -630,6 +631,8 @@ async function handleChat(req: Request) {
 
   // Resolve the model: requested → user default → app default, then ensure the
   // provider is configured and the plan allows it, falling back if not.
+  // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
+  // chat model that can handle it (vision / web-search constraints applied).
   const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
   const requestedId =
     input.model && isModelId(input.model)
@@ -638,10 +641,64 @@ async function handleChat(req: Request) {
         ? settings.defaultModel
         : DEFAULT_MODEL;
 
-  let modelInfo: ModelInfo | undefined = getModel(requestedId);
-  if (!modelInfo || modelInfo.comingSoon || !isProviderConfigured(modelInfo.provider) || !canUseModel(plan, modelInfo.id)) {
+  let modelInfo: ModelInfo | undefined;
+  if (isAutoModelId(requestedId)) {
+    const routingMessage =
+      input.preflightClarification
+        ? formatPreflightClarificationModelMessage(input.preflightClarification)
+        : input.clarification
+          ? formatClarificationModelMessage(input.clarification)
+          : input.message?.trim() ||
+            (input.privateMode
+              ? [...privateHistory].reverse().find((m) => m.role === "USER")?.content ?? ""
+              : "");
+    let hasImages = false;
+    if ((input.attachmentIds?.length ?? 0) > 0) {
+      const imageHit = await prisma.attachment.findFirst({
+        where: { id: { in: input.attachmentIds! }, userId: user.id, kind: "IMAGE" },
+        select: { id: true },
+      });
+      hasImages = !!imageHit;
+    }
+    try {
+      const pick = pickAutoModel({
+        message: routingMessage,
+        plan,
+        hasImages,
+        wantsWebSearch: !!input.webSearch,
+      });
+      modelInfo = pick.model;
+      console.info("[chat:auto]", {
+        level: pick.complexity.level,
+        minIntelligence: pick.complexity.minIntelligence,
+        reasons: pick.complexity.reasons,
+        picked: modelInfo.id,
+        candidates: pick.candidatesConsidered,
+      });
+    } catch (err) {
+      console.error("[chat:auto] routing failed", err);
+      modelInfo = undefined;
+    }
+  } else {
+    modelInfo = getModel(requestedId);
+  }
+
+  if (
+    !modelInfo ||
+    isAutoModelId(modelInfo.id) ||
+    modelInfo.comingSoon ||
+    !isProviderConfigured(modelInfo.provider) ||
+    !canUseModel(plan, modelInfo.id)
+  ) {
     // Fallback must stay plan-aware: only pick a configured model the plan allows.
-    modelInfo = MODEL_LIST.find((m) => !m.comingSoon && isProviderConfigured(m.provider) && canUseModel(plan, m.id));
+    modelInfo = MODEL_LIST.find(
+      (m) =>
+        m.modality === "chat" &&
+        !m.comingSoon &&
+        !isAutoModelId(m.id) &&
+        isProviderConfigured(m.provider) &&
+        canUseModel(plan, m.id)
+    );
   }
   if (!modelInfo) {
     const msg =
@@ -651,6 +708,9 @@ async function handleChat(req: Request) {
     return NextResponse.json({ error: msg }, { status: 503 });
   }
   const modelId = modelInfo.id;
+  // Persist the user's *selection* on the conversation (keep Auto sticky). The
+  // concrete `modelId` is what every generation / message version records.
+  const conversationModelId = isAutoModelId(requestedId) ? AUTO_MODEL_ID : modelId;
 
   // Linked tool connectors (GitHub/Figma…) the user enabled for this message.
   // Never honored in private mode — they'd send the message to a third party.
@@ -1257,7 +1317,7 @@ async function handleChat(req: Request) {
               userId: user.id,
               origin: input.origin ?? null,
               clientRequestId,
-              model: modelId,
+              model: conversationModelId,
               title: truncate(input.message ?? "New chat", 48),
               titleSource: "default",
               projectId: newConversationProjectId,
@@ -1365,7 +1425,7 @@ async function handleChat(req: Request) {
         userId: user.id,
         origin: input.origin ?? null,
         clientRequestId: null,
-        model: modelId,
+        model: conversationModelId,
         title: truncate(input.message ?? "New chat", 48),
         titleSource: "default",
         projectId: newConversationProjectId,
@@ -2164,11 +2224,12 @@ async function handleChat(req: Request) {
         }
 
         // Touch the conversation after the assistant message has been persisted.
+        // Keep Auto as the sticky selection when the user chose Auto.
         await prisma.conversation.updateMany({
           where: { id: conversationId, userId: user.id },
           data: {
             lastMessageAt: new Date(),
-            model: modelId,
+            model: conversationModelId,
           },
         });
 
@@ -2291,7 +2352,10 @@ async function handleChat(req: Request) {
               costMicroUsd: partialUsage.costMicroUsd || null,
             });
             const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
-            await prisma.conversation.updateMany({ where: { id: conversationId, userId: user.id }, data: { lastMessageAt: new Date(), model: modelId } });
+            await prisma.conversation.updateMany({
+              where: { id: conversationId, userId: user.id },
+              data: { lastMessageAt: new Date(), model: conversationModelId },
+            });
             const assistantWithActivity = await prisma.message.update({
               where: { id: assistant.id },
               data: { activity: activityLog as unknown as Prisma.InputJsonValue },

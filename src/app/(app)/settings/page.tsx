@@ -517,7 +517,9 @@ export default function SettingsPage() {
           {/* Default model — spans so the two language selects below pair off
               in the 2-column grid instead of leaving a half-empty row. */}
           <Tile eyebrow="Default model" i={2} span>
-            <p className="mb-3 text-sm text-muted-foreground">Used for new conversations.</p>
+            <p className="mb-3 text-sm text-muted-foreground">
+              Used for new conversations. Choose Auto to route each prompt to the cheapest capable model.
+            </p>
             <Select
               value={resolveModel(settings.defaultModel)?.id ?? settings.defaultModel}
               onValueChange={(v) => save({ defaultModel: v })}
@@ -526,6 +528,10 @@ export default function SettingsPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="juno:auto">
+                  Auto
+                  <span className="ml-1.5 text-xs text-muted-foreground">· cheapest model that can handle the prompt</span>
+                </SelectItem>
                 {models
                   .filter((m) => (m.modality ?? "chat") === "chat")
                   .map((m) => {

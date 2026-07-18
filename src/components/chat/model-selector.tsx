@@ -2,11 +2,12 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, TriangleAlert, Video, Zap } from "lucide-react";
+import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, Sparkles, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
+import { AUTO_MODEL_ID, AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
@@ -116,6 +117,30 @@ function ModelDetailPanel({
     return (
       <div className="flex w-full shrink-0 snap-start items-center border-l bg-card/80 p-5 md:w-60">
         <p className="text-sm text-muted-foreground">Hover a model to compare intelligence, speed, context, and cost.</p>
+      </div>
+    );
+  }
+
+  if (isAutoModelId(model.id)) {
+    return (
+      <div className="flex w-full shrink-0 snap-start flex-col overflow-y-auto border-l bg-card/85 p-5 shadow-soft backdrop-blur-xl md:w-60">
+        <div className="flex items-start justify-between gap-2">
+          <h3 className="text-lg font-semibold leading-tight tracking-tight">Auto</h3>
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Sparkles className="size-4" />
+          </span>
+        </div>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Routes each message to the <span className="font-medium text-foreground">cheapest model</span> that can handle it — based on length, code, multi-step work, and how hard the ask looks.
+        </p>
+        <ul className="mt-4 space-y-2 text-[12px] leading-snug text-muted-foreground">
+          <li className="flex gap-2"><span className="font-mono text-primary">1</span> Short / simple → budget models</li>
+          <li className="flex gap-2"><span className="font-mono text-primary">2</span> Coding & analysis → mid tier</li>
+          <li className="flex gap-2"><span className="font-mono text-primary">3</span> Hard reasoning → flagship</li>
+        </ul>
+        <p className="mt-4 text-[11px] leading-snug text-muted-foreground/80">
+          Respects your plan, vision needs (images), and web search. The model used for each answer still shows on the receipt.
+        </p>
       </div>
     );
   }
@@ -291,8 +316,11 @@ export function ModelSelector({
   const [filter, setFilter] = React.useState<Filter>("all");
   const [hoveredId, setHoveredId] = React.useState<string | null>(null);
 
-  const current = models.find((m) => m.id === value) ?? resolveModel(value);
+  const current = isAutoModelId(value)
+    ? AUTO_MODEL_INFO
+    : models.find((m) => m.id === value) ?? resolveModel(value);
   const q = query.trim().toLowerCase();
+  const autoSelected = isAutoModelId(value);
 
   const providerFilter = filter !== "all" ? (filter as Provider) : null;
   const filterConfigured = providerFilter ? features.providers.includes(providerFilter) : true;
@@ -313,12 +341,20 @@ export function ModelSelector({
           (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
       )
   );
-  const hoveredModel = React.useMemo(
-    () => visible.find((m) => m.id === hoveredId) ?? visible.find((m) => m.id === value) ?? current ?? visible[0] ?? null,
-    [current, hoveredId, value, visible]
-  );
+  const showAutoRow =
+    filter === "all" &&
+    (!q || "auto".includes(q) || "cheap".includes(q) || "route".includes(q) || "smart".includes(q));
+  const hoveredModel = React.useMemo(() => {
+    if (hoveredId === AUTO_MODEL_ID || (!hoveredId && autoSelected)) return AUTO_MODEL_INFO;
+    return visible.find((m) => m.id === hoveredId) ?? visible.find((m) => m.id === value) ?? current ?? visible[0] ?? null;
+  }, [autoSelected, current, hoveredId, value, visible]);
 
   const select = (m: ModelInfo) => {
+    if (isAutoModelId(m.id)) {
+      onChange(AUTO_MODEL_ID);
+      setOpen(false);
+      return;
+    }
     if (m.comingSoon) return; // not callable yet — no live API
     if (planRank(plan) < planRank(effectiveMinPlan(m.minPlan))) {
       setOpen(false);
@@ -417,7 +453,11 @@ export function ModelSelector({
           aria-label={`Model: ${current?.name ?? "Select model"}`}
           className="group inline-flex h-8 w-full min-w-0 max-w-[12rem] items-center gap-1 rounded-[10px] px-1.5 text-[12px] font-medium text-foreground/80 transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-[0.97] data-[state=open]:bg-accent data-[state=open]:text-foreground max-[359px]:w-auto max-[359px]:px-2 sm:w-auto sm:max-w-[16rem] sm:gap-1.5 sm:px-2 sm:text-[13px] coarse:h-11"
         >
-          {current && <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />}
+          {autoSelected ? (
+            <Sparkles className="size-3.5 shrink-0 text-primary transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+          ) : current ? (
+            <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+          ) : null}
           <span
             key={current?.id ?? "no-model"}
             aria-hidden="true"
@@ -489,12 +529,12 @@ export function ModelSelector({
                     Add <span className="font-mono">{PROVIDERS[providerFilter].apiKeyEnv}</span> to enable these models.
                   </p>
                 </div>
-              ) : visible.length === 0 ? (
+              ) : visible.length === 0 && !showAutoRow ? (
                 <p className="px-2 py-10 text-center text-sm text-muted-foreground">No models found.</p>
               ) : (
                 MODALITY_GROUPS.map((g) => {
                   const items = visible.filter((m) => (m.modality ?? "chat") === g.key);
-                  if (items.length === 0) return null;
+                  if (items.length === 0 && !(g.key === "chat" && showAutoRow)) return null;
 
                   const standardItems = items.filter((m) => !m.legacy);
                   const legacyItems = items.filter((m) => m.legacy);
@@ -505,6 +545,40 @@ export function ModelSelector({
                         <g.icon className="h-3.5 w-3.5 text-muted-foreground/75" />
                         <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">{g.label}</span>
                       </div>
+
+                      {g.key === "chat" && showAutoRow && (
+                        <div className="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">
+                          <div
+                            onMouseEnter={() => setHoveredId(AUTO_MODEL_ID)}
+                            onFocus={() => setHoveredId(AUTO_MODEL_ID)}
+                            className={cn(
+                              "group relative flex flex-col justify-between rounded-[10px] border p-3 transition-all duration-base ease-out-soft",
+                              "active:scale-[0.99] " +
+                                (autoSelected
+                                  ? "border-primary bg-primary/5 shadow-sm"
+                                  : "border-border/70 bg-card/65 hover:-translate-y-0.5 hover:border-primary/30 hover:bg-accent/40 hover:shadow-soft active:translate-y-0 active:shadow-none")
+                            )}
+                          >
+                            <button type="button" onClick={() => select(AUTO_MODEL_INFO)} className="flex w-full items-start gap-2.5 text-left">
+                              <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                                <Sparkles className="size-4" />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="flex items-center gap-1.5">
+                                  <span className="truncate text-sm font-semibold">Auto</span>
+                                  <span className="rounded-full border border-primary/30 bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
+                                    Smart
+                                  </span>
+                                </span>
+                                <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground">
+                                  Cheapest model that can handle this prompt
+                                </span>
+                              </span>
+                              {autoSelected ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {standardItems.length > 0 && (
                         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-1">

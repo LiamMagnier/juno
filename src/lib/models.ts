@@ -555,6 +555,26 @@ export function prettifyModelName(providerModel: string): string {
  *  Retired and sync-pruned (UNAVAILABLE) ids transparently resolve to their
  *  replacement so stale settings never route to a dead provider id. */
 export function resolveModel(id: string): ModelInfo | null {
+  // Lazy import would cycle; inline the Auto sentinel so the selector and
+  // composer can resolve "juno:auto" without treating it as a real provider.
+  if (id === "juno:auto" || id === "auto") {
+    return {
+      id: "juno:auto",
+      provider: "anthropic",
+      providerModel: "auto",
+      name: "Auto",
+      description: "Picks the cheapest model that can handle each prompt.",
+      minPlan: "FREE",
+      vision: true,
+      reasoning: true,
+      cost: 1,
+      modality: "chat",
+      webSearch: true,
+      status: "current",
+      family: "auto",
+      legacy: false,
+    };
+  }
   const ref = parseModelRef(id);
   if (!ref) return null;
   const canonical = migrateUnavailableId(migrateModelId(`${ref.provider}:${ref.providerModel}`));
@@ -583,6 +603,7 @@ export function getModel(id: string): ModelInfo | undefined {
 }
 
 export function isModelId(value: string): boolean {
+  if (value === "juno:auto" || value === "auto") return true;
   return parseModelRef(value) !== null;
 }
 

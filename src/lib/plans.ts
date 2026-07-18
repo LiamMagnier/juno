@@ -148,6 +148,8 @@ export function effectiveMinPlan(minPlan: Plan): Plan {
 
 /** A model is usable if the user's plan meets the model's (Pro-floored) minimum. */
 export function canUseModel(plan: Plan, modelId: ModelId): boolean {
+  // Auto is always selectable; the router only returns models the plan can call.
+  if (modelId === "juno:auto" || modelId === "auto") return true;
   const m = getModel(modelId);
   if (!m) return false;
   return planRank(plan) >= planRank(effectiveMinPlan(m.minPlan));
