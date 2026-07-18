@@ -35,7 +35,7 @@ import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
-import { normalizeUsage, estimateCostUsd } from "@/lib/pricing";
+import { normalizeUsage, estimateCostUsd, supportsFastMode } from "@/lib/pricing";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -124,6 +124,9 @@ const bodySchema = z
     voiceMode: z.boolean().optional(),
     canvasEnabled: z.boolean().optional(),
     webSearch: z.boolean().optional(),
+    // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:
+    // "priority"). Honored only on models that support it (supportsFastMode).
+    fastMode: z.boolean().optional(),
     // Durable creation metadata used by native clients and Juno Quick. The
     // legacy `client` field below remains for spend-ledger compatibility.
     origin: chatOriginSchema.optional(),
@@ -189,10 +192,11 @@ function plural(count: number, singular: string, pluralForm = `${singular}s`) {
  */
 function buildUsage(
   model: ModelInfo,
-  raw: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number }
+  raw: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number },
+  fastMode = false
 ): { detail: string; cost: number; totalInput: number; output: number } {
   const n = normalizeUsage(model.provider, raw);
-  const cost = estimateCostUsd(model, raw);
+  const cost = estimateCostUsd(model, raw, fastMode);
   const cached = n.cacheRead + n.cacheWrite;
   const detail = [
     n.totalInput ? `${n.totalInput.toLocaleString()} input${cached ? ` (${cached.toLocaleString()} cached)` : ""}` : null,
@@ -556,6 +560,7 @@ async function handleChat(req: Request) {
     }
 
     const useWebSearch = !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+    const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
     const baseSystem = buildSystemPrompt({
       userName: user.name,
       customInstructions: settings?.customInstructions ?? "",
@@ -601,6 +606,9 @@ async function handleChat(req: Request) {
         let completionTokens: number | undefined;
         let cacheReadTokens: number | undefined;
         let cacheWriteTokens: number | undefined;
+        // Which speed actually served (fast adapters may fall back to standard);
+        // defaults to the requested value and is refined from the usage stream.
+        let servedFast = useFastMode;
         let writingStarted = false;
         let finishReason: ChatFinishReason = "stop";
         let spendRecorded = false;
@@ -693,6 +701,7 @@ async function handleChat(req: Request) {
             // Private chats have no stable conversation id; group the cache by
             // user (their system prompt is the shared prefix).
             cacheKey: `private-${user.id}`,
+            fastMode: useFastMode,
           })) {
             if (ev.type === "text") {
               if (!writingStarted) {
@@ -732,13 +741,14 @@ async function handleChat(req: Request) {
               if (ev.output != null) completionTokens = ev.output;
               if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
               if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+              if (ev.fast != null) servedFast = ev.fast;
               enforceStreamBudget();
             } else if (ev.type === "finish") {
               finishReason = ev.reason;
             }
           }
 
-          const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
+          const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
           if (promptTokens != null || completionTokens != null) {
             sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
           }
@@ -812,7 +822,7 @@ async function handleChat(req: Request) {
           });
           if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
+            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
             send({
               type: "done",
               message: {
@@ -1338,6 +1348,7 @@ async function handleChat(req: Request) {
   // streams (Gemini Google Search, Claude web_search, Grok Live Search). We
   // collect the sources it returns from the stream below — no third-party search.
   const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
+  const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
   const webSources: ClientSource[] = [];
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
@@ -1502,6 +1513,9 @@ async function handleChat(req: Request) {
       let completionTokens: number | undefined;
       let cacheReadTokens: number | undefined;
       let cacheWriteTokens: number | undefined;
+      // Which speed actually served (fast adapters may fall back to standard);
+      // defaults to the requested value and is refined from the usage stream.
+      let servedFast = useFastMode;
       let writingStarted = false;
       let finishReason: ChatFinishReason = "stop";
       let spendRecorded = false;
@@ -1777,6 +1791,7 @@ async function handleChat(req: Request) {
           dynamicContext: buildDynamicContext(),
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
+          fastMode: useFastMode,
         })) {
           if (ev.type === "text") {
             if (!writingStarted) {
@@ -1814,6 +1829,7 @@ async function handleChat(req: Request) {
             if (ev.output != null) completionTokens = ev.output;
             if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
             if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
+            if (ev.fast != null) servedFast = ev.fast;
             enforceStreamBudget();
           } else if (ev.type === "finish") {
             finishReason = ev.reason;
@@ -1821,7 +1837,7 @@ async function handleChat(req: Request) {
         }
 
         // Reconcile token usage across providers and estimate the $ cost once.
-        const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
+        const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
 
         // Persist the assistant message — generation succeeded, so it's safe to
         // version-and-overwrite the answer being regenerated (see the helper).
@@ -1934,7 +1950,7 @@ async function handleChat(req: Request) {
         if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
           try {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens });
+            const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();

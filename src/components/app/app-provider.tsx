@@ -55,11 +55,13 @@ export interface ComposerPrefs {
   reasoningEffort: ReasoningEffort;
   webSearch: boolean;
   canvas: boolean;
+  /** Premium "fast mode" — only ever applied to models that support it. */
+  fastMode: boolean;
 }
 
 // webSearch defaults ON — it's only ever applied to models that actually support
 // native web search, so leaving it on gives up-to-date answers by default.
-const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true };
+const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false };
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
@@ -77,6 +79,7 @@ function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
   }
   if (typeof o.webSearch === "boolean") out.webSearch = o.webSearch;
   if (typeof o.canvas === "boolean") out.canvas = o.canvas;
+  if (typeof o.fastMode === "boolean") out.fastMode = o.fastMode;
   return out;
 }
 

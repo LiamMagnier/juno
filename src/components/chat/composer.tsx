@@ -34,6 +34,7 @@ import {
   Telescope,
   TextQuote,
   X,
+  Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from "sonner";
@@ -59,6 +60,7 @@ import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
+import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
 import { ProviderLogo } from "@/components/brand/provider-logo";
@@ -98,6 +100,10 @@ interface ComposerProps {
   onToggleWebSearch?: (v: boolean) => void;
   reasoningEffort: ReasoningEffort | null;
   onReasoningChange: (e: ReasoningEffort | null) => void;
+  /** Premium "fast mode" (Anthropic speed / OpenAI priority) — the toggle only
+   *  renders for models that support it (supportsFastMode). */
+  fastMode?: boolean;
+  onToggleFastMode?: (v: boolean) => void;
   connectorsEnabled?: string[];
   onToggleConnector?: (id: string) => void;
   /** Quoted artifact selection ("select → modify/ask") attached to the next message. */
@@ -278,6 +284,8 @@ export function Composer({
   onToggleWebSearch,
   reasoningEffort,
   onReasoningChange,
+  fastMode = false,
+  onToggleFastMode,
   connectorsEnabled = [],
   onToggleConnector,
   quote = null,
@@ -295,6 +303,9 @@ export function Composer({
   const resolved = resolveModel(model);
   // Only the thinking tiers this specific model actually supports (real data).
   const effortOptions = React.useMemo(() => (resolved ? reasoningOptions(resolved) : []), [resolved]);
+  // Fast mode (premium speed) is only offered on the handful of models that
+  // actually support it — see supportsFastMode(). The toggle hides otherwise.
+  const canFastMode = React.useMemo(() => !!resolved && supportsFastMode(resolved), [resolved]);
   const modality = resolved?.modality ?? "chat";
 
   // Switching models: drop a thinking effort the new model can't do (e.g. "max"
@@ -1920,6 +1931,36 @@ export function Composer({
                 </>
               );
             })()}
+
+            {/* Fast mode — a flash toggle that sits with the thinking control.
+                Independent of thinking depth (High + Fast is valid) and only
+                shown on models that support it. Coral-on when active signals the
+                premium rate, which the per-message cost line then reflects. */}
+            {canFastMode && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={controlsLocked}
+                    aria-label={fastMode ? "Fast mode on (premium rate)" : "Fast mode off"}
+                    aria-pressed={fastMode}
+                    onClick={() => onToggleFastMode?.(!fastMode)}
+                    className={cn(
+                      "group h-8 gap-1 rounded-[10px] px-2 font-mono text-[13px] tracking-tight focus-visible:bg-accent focus-visible:ring-0 focus-visible:ring-offset-0",
+                      fastMode ? "bg-primary/10 text-primary hover:text-primary" : "text-foreground/80 hover:text-foreground"
+                    )}
+                  >
+                    <Zap className={cn("h-3.5 w-3.5 shrink-0 transition-transform duration-base ease-spring", fastMode ? "fill-current" : "group-hover:scale-110")} />
+                    <span className="hidden min-[420px]:inline">Fast</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {fastMode ? "Fast mode on — faster output, premium rate" : "Fast mode — faster output at a premium rate"}
+                </TooltipContent>
+              </Tooltip>
+            )}
 
           </div>
 

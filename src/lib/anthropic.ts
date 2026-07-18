@@ -360,6 +360,19 @@ export interface AnthropicMcpServer {
   authorization_token: string;
 }
 
+/** True when a `speed:"fast"` request failed specifically because fast mode is
+ *  unavailable to this account/right now (not enrolled in the research preview,
+ *  or fast-tier capacity exhausted) — the cases where retrying at standard speed
+ *  is the right move. Other errors propagate unchanged. */
+function isFastModeUnavailable(err: unknown): boolean {
+  const e = err as { status?: number; message?: string; error?: { message?: string } };
+  const status = e?.status;
+  const msg = (e?.error?.message || e?.message || "").toLowerCase();
+  if (status === 403) return true; // no access to the research preview
+  if ((status === 400 || status === 429) && /fast|speed|beta/.test(msg)) return true;
+  return false;
+}
+
 export async function* streamAnthropic(
   model: ModelInfo,
   system: string,
@@ -369,15 +382,22 @@ export async function* streamAnthropic(
   reasoningEffort?: ReasoningEffort,
   webSearch?: boolean,
   mcpServers?: AnthropicMcpServer[],
-  dynamicContext?: string
+  dynamicContext?: string,
+  fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
   const messages = await toAnthropicMessages(history);
   markConversationCacheBreakpoint(messages);
   // Cache the (large, stable) system prompt so it isn't re-billed every turn.
+  // A 1h TTL (vs the 5m default) keeps the prefix warm across the pauses a real
+  // chat has between turns — a reader who replies 10-40 min later still hits the
+  // cache (0.1x read) instead of paying to rewrite the whole prefix. The 2x
+  // write premium is repaid after a single later read of a prompt this large.
   // Dynamic per-request context (the date) goes in a SECOND system block after
   // the breakpoint, so its daily change never invalidates the cached prefix.
+  // Ordering rule: the 1h block sits before the 5m conversation breakpoint below
+  // (all 1h cache_control entries must precede any 5m entry in a request).
   const systemBlocks: Anthropic.TextBlockParam[] = [
-    { type: "text", text: system, cache_control: { type: "ephemeral" } },
+    { type: "text", text: system, cache_control: { type: "ephemeral", ttl: "1h" } },
     ...(dynamicContext ? [{ type: "text" as const, text: dynamicContext }] : []),
   ];
   // Thinking budgets per effort tier. max_tokens must cover budget + answer,
@@ -393,30 +413,61 @@ export async function* streamAnthropic(
   // requires the budget to be strictly below max_tokens and at least 1024.
   const budget = requestedBudget ? Math.max(1024, Math.min(requestedBudget, totalTokens - Math.ceil(totalTokens / 4))) : 0;
   const useMcp = !!mcpServers && mcpServers.length > 0;
-  const stream = await getAnthropic().messages.create(
-    {
-      model: model.providerModel,
-      max_tokens: budget ? totalTokens : maxTokens,
-      system: systemBlocks,
-      messages,
-      stream: true,
-      ...(budget ? { thinking: { type: "enabled", budget_tokens: budget } } : {}),
-      // Claude's native web search server tool — searches + cites inline.
-      ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] } : {}),
-      // Native MCP connector: Claude calls the linked servers (GitHub/Figma…) itself.
-      ...(useMcp ? { mcp_servers: mcpServers } : {}),
-    } as Anthropic.Messages.MessageCreateParamsStreaming,
-    { signal, ...(useMcp ? { headers: { "anthropic-beta": "mcp-client-2025-04-04" } } : {}) }
-  );
+  const baseParams = {
+    model: model.providerModel,
+    max_tokens: budget ? totalTokens : maxTokens,
+    system: systemBlocks,
+    messages,
+    stream: true,
+    ...(budget ? { thinking: { type: "enabled", budget_tokens: budget } } : {}),
+    // Claude's native web search server tool — searches + cites inline.
+    ...(webSearch ? { tools: [{ type: "web_search_20250305", name: "web_search", max_uses: 5 }] } : {}),
+    // Native MCP connector: Claude calls the linked servers (GitHub/Figma…) itself.
+    ...(useMcp ? { mcp_servers: mcpServers } : {}),
+  } as Anthropic.Messages.MessageCreateParamsStreaming;
+
+  // Open the stream at the requested speed. Fast mode (`speed:"fast"`) streams
+  // output ~2.5x faster at premium price on supported Opus models, behind the
+  // fast-mode research-preview beta. If the account isn't enrolled or fast
+  // capacity is exhausted, fall back to standard speed once rather than failing
+  // the whole turn — switching speed only costs a one-off prompt-cache miss.
+  const openStream = (fast: boolean) => {
+    const betas = [
+      ...(useMcp ? ["mcp-client-2025-04-04"] : []),
+      ...(fast ? ["fast-mode-2026-02-01"] : []),
+    ];
+    return getAnthropic().messages.create(
+      (fast ? { ...baseParams, speed: "fast" } : baseParams) as Anthropic.Messages.MessageCreateParamsStreaming,
+      { signal, ...(betas.length ? { headers: { "anthropic-beta": betas.join(",") } } : {}) }
+    );
+  };
+
+  let servedFast = !!fastMode;
+  let stream: Awaited<ReturnType<typeof openStream>>;
+  try {
+    stream = await openStream(!!fastMode);
+  } catch (err) {
+    if (fastMode && isFastModeUnavailable(err)) {
+      servedFast = false;
+      stream = await openStream(false);
+    } else {
+      throw err;
+    }
+  }
   const seen = new Set<string>();
   for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
     if (event.type === "message_start") {
       const u = event.message.usage;
+      // `usage.speed` ("fast" | "standard") is authoritative when the API reports
+      // it — e.g. a model that accepts `speed:"fast"` but silently runs standard
+      // reports "standard", so we don't bill the premium for a turn served slow.
+      const reportedSpeed = (u as { speed?: string } | undefined)?.speed;
       yield {
         type: "usage",
         input: u?.input_tokens,
         cacheRead: u?.cache_read_input_tokens ?? undefined,
         cacheWrite: u?.cache_creation_input_tokens ?? undefined,
+        fast: servedFast && reportedSpeed !== "standard",
       };
     } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       yield { type: "text", text: event.delta.text };

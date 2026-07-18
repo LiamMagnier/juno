@@ -33,5 +33,9 @@ export type LlmEvent =
       cacheRead?: number;
       /** Prompt-cache writes (input tokens written to cache, billed ~1.25x). */
       cacheWrite?: number;
+      /** Which speed actually served this turn — true = premium fast mode was
+       *  honored, false = it fell back to (or ran at) standard speed. Lets the
+       *  route bill the real rate even when a fast request degrades. */
+      fast?: boolean;
     }
   | { type: "finish"; reason: ChatFinishReason; raw?: string };

@@ -137,9 +137,46 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
   }
 }
 
-/** Full rate incl. cache multipliers (Anthropic: read 0.1x / write 1.25x). */
-export function tokenRate(model: ModelInfo): TokenRate {
-  const { input, output } = baseRate(model);
+/**
+ * Fast-mode / priority premium multiplier applied to a model's standard input +
+ * output rates (and thus the cache rates derived from them). `null` = the model
+ * has no fast mode at all.
+ *
+ *  - Anthropic fast mode (`speed:"fast"` + `fast-mode-2026-02-01` beta): Opus 4.8
+ *    only — 4.7's fast mode is deprecated (removed 2026-07-24) and 4.6/other
+ *    models error or silently run standard. Docs price it 2x ($10/$50 vs $5/$25).
+ *  - OpenAI priority (`service_tier:"priority"`): the 5.6/5.5/5.4 chat tiers.
+ *    5.5 is 2.5x, the rest 2x. The -pro line, 5.1 and 4o are NOT priority-eligible.
+ *
+ * Keep in sync with supportsFastMode(); both are the single source of truth for
+ * which models show the "Fast" toggle and how the premium is billed.
+ */
+export function fastModeMultiplier(model: ModelInfo): number | null {
+  const pm = model.providerModel.toLowerCase();
+  if (model.provider === "anthropic") return pm.includes("opus-4-8") ? 2 : null;
+  if (model.provider === "openai") {
+    if (pm.includes("-pro")) return null; // pro tiers aren't priority-eligible
+    if (pm.includes("gpt-5.6")) return 2; // sol / terra / luna
+    if (pm.includes("gpt-5.5")) return 2.5;
+    if (pm.includes("gpt-5.4")) return 2;
+    return null;
+  }
+  return null;
+}
+
+/** Whether this model supports a faster, premium-priced "fast mode". */
+export function supportsFastMode(model: ModelInfo): boolean {
+  return fastModeMultiplier(model) !== null;
+}
+
+/** Full rate incl. cache multipliers (Anthropic: read 0.1x / write 1.25x).
+ *  `fastMode` scales the base input+output (and derived cache rates) by the
+ *  model's premium multiplier — see fastModeMultiplier(). */
+export function tokenRate(model: ModelInfo, fastMode = false): TokenRate {
+  const raw = baseRate(model);
+  const mult = fastMode ? fastModeMultiplier(model) ?? 1 : 1;
+  const input = raw.input * mult;
+  const output = raw.output * mult;
   if (model.provider === "anthropic") {
     return { input, output, cacheRead: input * 0.1, cacheWrite: input * 1.25 };
   }
@@ -157,10 +194,11 @@ export function tokenRate(model: ModelInfo): TokenRate {
   return { input, output, cacheRead: input * 0.25, cacheWrite: input };
 }
 
-/** Estimated USD cost of one generation. Returns 0 when usage is unknown. */
-export function estimateCostUsd(model: ModelInfo, u: RawUsage): number {
+/** Estimated USD cost of one generation. Returns 0 when usage is unknown.
+ *  Pass `fastMode` to bill the premium fast-mode / priority rate. */
+export function estimateCostUsd(model: ModelInfo, u: RawUsage, fastMode = false): number {
   const n = normalizeUsage(model.provider, u);
-  const r = tokenRate(model);
+  const r = tokenRate(model, fastMode);
   const cost = (n.freshInput * r.input + n.cacheRead * r.cacheRead + n.cacheWrite * r.cacheWrite + n.output * r.output) / 1_000_000;
   return Number.isFinite(cost) && cost > 0 ? cost : 0;
 }

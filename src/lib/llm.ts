@@ -52,8 +52,11 @@ export async function* streamChat(opts: {
   /** Stable id grouping requests that share a prompt prefix (conversation id).
    *  Used as OpenAI's prompt_cache_key to raise automatic cache hit rates. */
   cacheKey?: string;
+  /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
+   *  The route only sets this on models that support it. */
+  fastMode?: boolean;
 }): AsyncGenerator<LlmEvent> {
-  const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey } = opts;
+  const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
   // completion budget — a plan-sized cap can be eaten entirely by thinking,
   // truncating the answer ("length" with little or no visible text). Add an
@@ -79,7 +82,7 @@ export async function* streamChat(opts: {
     // Claude reaches MCP servers itself via the native connector.
     yield* streamAnthropic(
       model, system, history, maxTokens, signal, reasoningEffort, webSearch,
-      active.length ? anthropicMcpServers(active) : undefined, dynamicContext
+      active.length ? anthropicMcpServers(active) : undefined, dynamicContext, fastMode
     );
     return;
   }
@@ -98,7 +101,7 @@ export async function* streamChat(opts: {
     const streamFn = model.provider === "openai" && model.api === "responses"
       ? streamOpenAIResponses
       : streamOpenAICompat;
-    yield* streamFn(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey);
+    yield* streamFn(model, system, history, maxTokens, signal, reasoningEffort, webSearch, toolset, dynamicContext, cacheKey, fastMode);
   } finally {
     if (toolset) await toolset.close();
   }

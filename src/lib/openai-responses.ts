@@ -138,7 +138,8 @@ export async function* streamOpenAIResponses(
   _webSearch?: boolean,
   toolset?: McpToolset,
   dynamicContext?: string,
-  cacheKey?: string
+  cacheKey?: string,
+  fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
   const input = await toResponsesInput(history, model.vision);
   // Same cache-safe placement as the compat adapter: dynamic context lands as a
@@ -236,6 +237,9 @@ export async function* streamOpenAIResponses(
       params.tool_choice = isFinalRound ? "none" : "auto";
     }
     if (cacheKey) params.prompt_cache_key = cacheKey;
+    // OpenAI priority processing (premium latency). The route gates fastMode to
+    // priority-eligible models, so relaying it straight through is safe.
+    if (fastMode) params.service_tier = "priority";
 
     const stream = await c.responses.create(params, { signal });
 

@@ -189,7 +189,8 @@ export async function* streamOpenAICompat(
   webSearch?: boolean,
   toolset?: McpToolset,
   dynamicContext?: string,
-  cacheKey?: string
+  cacheKey?: string,
+  fastMode?: boolean
 ): AsyncGenerator<LlmEvent> {
   const messages = await toOpenAIMessages(system, history, model.vision);
   // Per-request dynamic context (the date) is injected AFTER the frozen
@@ -242,7 +243,12 @@ export async function* streamOpenAICompat(
     model.provider === "deepseek" ||
     model.provider === "xai" ||
     model.provider === "mistral" ||
-    (model.provider === "zhipu" && modelId.includes("glm-5.2"));
+    (model.provider === "zhipu" && modelId.includes("glm-5.2")) ||
+    // Kimi K3 introduced a top-level reasoning_effort enum (low|high|max),
+    // replacing the K2.x `thinking` object. Only K3 speaks it on Moonshot; the
+    // K2.x line stays on the usesThinkingObject path below (and is canDisable:
+    // false, so it never actually emits `thinking` either).
+    (model.provider === "moonshot" && modelId.includes("k3"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
@@ -253,6 +259,11 @@ export async function* streamOpenAICompat(
     // if a specific endpoint ever rejects it.)
     stream_options: { include_usage: true },
   };
+  // OpenAI priority processing: faster, more consistent latency at premium
+  // price. The route only sets fastMode on priority-eligible models, so relaying
+  // it straight through is safe. (Anthropic's own fast mode lives in the native
+  // adapter; this path covers OpenAI.)
+  if (fastMode && model.provider === "openai") params.service_tier = "priority";
   // NOTE: assigned through the Record index rather than the SDK's typed field —
   // the installed openai types predate "none"/"xhigh"/"max", which the REST API
   // accepts. Providers reject unknown VALUES, not unknown TS types.

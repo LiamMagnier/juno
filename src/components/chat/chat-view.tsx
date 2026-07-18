@@ -229,8 +229,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const canvasEnabled = composerPrefs.canvas;
   const webSearchEnabled = composerPrefs.webSearch;
   const reasoningEffort = composerPrefs.reasoningEffort;
+  const fastMode = composerPrefs.fastMode;
   const setCanvasEnabled = React.useCallback((v: boolean) => setComposerPrefs({ canvas: v }), [setComposerPrefs]);
   const setWebSearchEnabled = React.useCallback((v: boolean) => setComposerPrefs({ webSearch: v }), [setComposerPrefs]);
+  const setFastMode = React.useCallback((v: boolean) => setComposerPrefs({ fastMode: v }), [setComposerPrefs]);
   const setReasoningEffort = React.useCallback(
     (e: ReasoningEffort | null) => setComposerPrefs({ reasoningEffort: e }),
     [setComposerPrefs]
@@ -268,6 +270,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     canvasEnabled: privateMode ? false : canvasEnabled,
     webSearch: webSearchEnabled,
     reasoningEffort: reasoningEffort ?? undefined,
+    fastMode,
     connectors: enabledConnectors,
     privateMode,
     onQuota: setQuota,
@@ -1313,6 +1316,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onToggleWebSearch={setWebSearchEnabled}
       reasoningEffort={reasoningEffort}
       onReasoningChange={setReasoningEffort}
+      fastMode={fastMode}
+      onToggleFastMode={setFastMode}
       connectorsEnabled={enabledConnectors}
       onToggleConnector={toggleConnector}
       quote={composerQuote}

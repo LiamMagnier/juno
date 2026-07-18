@@ -515,6 +515,12 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // never reason (bare call -> 200, plain-string content).
       return caps([], false);
     case "moonshot":
+      // Kimi K3: thinking is always on and its DEPTH is now selectable via the
+      // NEW top-level reasoning_effort enum (low|high|max) — this replaces the
+      // K2.x `thinking` object. No off switch (thinking can't be disabled), and
+      // medium/xhigh are not offered by K3. openai-compat.ts routes K3 (and only
+      // K3) on Moonshot through the reasoning_effort send path.
+      if (id.includes("k3")) return caps(["low", "high", "max"], false);
       if (id.includes("k2.7")) return caps([], false); // "disabled" is rejected — always on
       return caps([], true, true); // k2.6: thinking enabled/disabled
     case "minimax":

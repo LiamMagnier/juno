@@ -58,6 +58,9 @@ interface UseChatOptions {
   canvasEnabled?: boolean;
   webSearch?: boolean;
   reasoningEffort?: ReasoningEffort;
+  /** Premium fast mode (Anthropic speed / OpenAI priority). Honored server-side
+   *  only on models that support it. */
+  fastMode?: boolean;
   connectors?: string[];
   privateMode?: boolean;
   onMeta?: (meta: { conversationId: string; title: string; titleSource: TitleSource; isNew: boolean }) => void;
@@ -559,6 +562,7 @@ export function useChat(opts: UseChatOptions) {
           voiceMode: opts.voiceMode,
           canvasEnabled: opts.privateMode ? false : opts.canvasEnabled,
           webSearch: opts.webSearch,
+          fastMode: opts.fastMode,
           // Per-send, never sticky — and never in private mode (research
           // persists sources/activity, which private chats don't do).
           deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
@@ -583,6 +587,7 @@ export function useChat(opts: UseChatOptions) {
       opts.canvasEnabled,
       opts.webSearch,
       opts.reasoningEffort,
+      opts.fastMode,
       opts.connectors,
       opts.projectId,
       opts.privateMode,
@@ -753,11 +758,12 @@ export function useChat(opts: UseChatOptions) {
         voiceMode: opts.voiceMode,
         canvasEnabled: opts.canvasEnabled,
         reasoningEffort: opts.reasoningEffort,
+        fastMode: opts.fastMode,
         connectors: opts.connectors,
       },
       assistantTempId
     );
-  }, [status, runGeneration, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.connectors]);
+  }, [status, runGeneration, opts.model, opts.voiceMode, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.connectors]);
 
   const editAndResend = React.useCallback(
     async (messageId: string, newContent: string) => {
@@ -797,12 +803,13 @@ export function useChat(opts: UseChatOptions) {
           model: opts.model,
           canvasEnabled: opts.canvasEnabled,
           reasoningEffort: opts.reasoningEffort,
+          fastMode: opts.fastMode,
           connectors: opts.connectors,
         },
         assistantTempId
       );
     },
-    [status, runGeneration, opts.model, opts.canvasEnabled, opts.reasoningEffort, opts.connectors]
+    [status, runGeneration, opts.model, opts.canvasEnabled, opts.reasoningEffort, opts.fastMode, opts.connectors]
   );
 
   const stop = React.useCallback(() => {
