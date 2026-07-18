@@ -132,8 +132,8 @@ Three easings, three (+one) durations. Mirrored as CSS vars and Tailwind utiliti
 Named animations to preserve: `rise-in` (translateY(8px)→0 + fade, spring —
 entrance for messages/chips), `pop-in`/`pop-out` (overlays: 180ms expo /
 120ms soft), `overlay-in`/`overlay-out` (backdrop fade), `title-in`/`title-out`,
-and the thinking cluster `dot-think` (2.1s) / `dot-tint` (3.4s) / `dot-breathe`
-(5.6s) — deliberately out of phase so it never reads as a loop.
+and the thinking cluster `dot-think` / `dot-tint` (a shared 1.9s travelling
+emphasis across a stable baseline; no vertical bounce).
 
 ### 1.4 Radius scale
 
@@ -177,7 +177,6 @@ ambient below). **These are the seed of the glass look; §3 evolves them:**
 | `.sheen-sweep` | one-way diagonal highlight on hover (620ms expo) | Primary buttons, interactive cards |
 | `.skeleton` | warm base + primary-tinted shimmer | Loading states |
 | `.scroll-fade-y` | alpha mask, 18px fade top/bottom | Scrollable text |
-| `.text-shimmer` | primary band sweeps across mono label | Streaming eyebrow labels |
 
 Depth-kit color vars: `--sheen` (`0 0% 100% / 0.55` light, `45 40% 96% / 0.06`
 dark — warm white, **this is the specular highlight; reuse it for glass, don't
@@ -186,8 +185,8 @@ swap in a cool white rim**), `--hairline` (`30 12% 18% / 0.06` light,
 
 ### 1.6 Signature language & product voice
 
-- **Dot / ASCII constellation** across scales: `ThinkingDots` (5-dot breathing
-  cluster, the "Juno is thinking" affordance), `DotMatrixMark` (5×5 logo),
+- **Dot / ASCII constellation** across scales: `ThinkingDots` (5-dot travelling
+  emphasis, the "Juno is thinking" affordance), `DotMatrixMark` (5×5 logo),
   `DotIdenticon` (deterministic avatars), `DotFillBar` (progress), `AsciiHero`
   (orbital-sun empty-state graphic, `drift` 18s), `DotField` (interactive
   background grid), `DottedDivider` (whisper-quiet editorial rule with optional
@@ -215,8 +214,9 @@ swap in a cool white rim**), `--hairline` (`30 12% 18% / 0.06` light,
 > - Metadata (tokens, finish reason, sources) sits *below*, mono + muted.
 > - **Zero** `.btn-glossy` / `.halo-primary` / `.sheen-sweep` / glass inside
 >   message content.
-> - `ThinkingDots` + phase label show **only** while streaming with no content
->   yet; the moment content arrives they're swapped out (never both at once).
+> - The standalone `ThinkingDots` fallback shows only before a real run trace
+>   arrives. Once activity/reasoning exists, one unified process strip owns the
+>   phase, action and elapsed time; answer text never gets a second loader.
 
 This law is the reason the glass version stays legible and calm. It is also what
 keeps glass *performant* (§6): the constantly-scrolling message list has no

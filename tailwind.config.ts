@@ -21,8 +21,8 @@ import animate from "tailwindcss-animate";
  *                         rounded-xl. ~16px? rounded-2xl. A pill? rounded-full. Reach for rounded-lg
  *                         only when you actually mean 24px. panel = floating layers.
  * Dot atoms ............. h-dot / w-dot / gap-dot-gap — the dot/ASCII signature unit
- * Thinking .............. animate-{dot-think,dot-tint,dot-breathe} (constellation) ·
- *                         animate-icon-breathe + .text-shimmer / .scroll-fade-y (globals.css)
+ * Thinking .............. animate-{dot-think,dot-tint} (constellation) ·
+ *                         animate-icon-breathe + .scroll-fade-y (globals.css)
  * Keep raw hex out of components; drive everything from these tokens + the HSL vars.
  */
 
@@ -186,24 +186,18 @@ const config: Config = {
           "0%, 60%, 100%": { transform: "translateY(0)", opacity: "0.4" },
           "30%": { transform: "translateY(-4px)", opacity: "1" },
         },
-        // Thinking constellation — three layered periods (2.1s / 3.4s / 5.6s) stay
-        // out of phase so the combined motion never reads as a visible loop.
+        // Thinking constellation — emphasis travels across a stable baseline.
+        // No vertical bounce: transcript text around the mark should feel still.
         "dot-think": {
-          "0%": { transform: "translateY(0) scale(1)", opacity: "0.35" },
-          "18%": { transform: "translateY(-3.5px) scale(1.15)", opacity: "1" },
-          "40%": { transform: "translateY(0.5px) scale(0.97)", opacity: "0.6" },
-          "60%, 100%": { transform: "translateY(0) scale(1)", opacity: "0.35" },
+          "0%, 55%, 100%": { transform: "scale(0.82)", opacity: "0.3" },
+          "18%": { transform: "scale(1.08)", opacity: "0.9" },
+          "34%": { transform: "scale(0.94)", opacity: "0.52" },
         },
-        // Primary tint sweep — active only for the first ~30% of its cycle, so the
-        // hue shimmer reads as occasional rather than constant.
+        // A brief coral handoff follows the same beat; it does not run as a
+        // second independent shimmer.
         "dot-tint": {
-          "0%, 30%, 100%": { opacity: "0" },
-          "12%": { opacity: "0.85" },
-        },
-        // Slow amplitude modulation applied to a wrapper so it compounds with dot-think.
-        "dot-breathe": {
-          "0%, 100%": { transform: "scale(1)" },
-          "50%": { transform: "scale(0.85)" },
+          "0%, 42%, 100%": { opacity: "0" },
+          "18%": { opacity: "0.9" },
         },
         "icon-breathe": {
           "0%, 100%": { transform: "scale(1)", opacity: "0.85" },
@@ -329,9 +323,8 @@ const config: Config = {
         "stroke-draw": "stroke-draw 360ms cubic-bezier(0.16, 1, 0.3, 1) both",
         "dot-wave": "dot-wave 1.2s ease-in-out infinite",
         // Thinking signature (ThinkingDots) + live reasoning header (ActivityTimeline).
-        "dot-think": "dot-think 2.1s ease-in-out infinite",
-        "dot-tint": "dot-tint 3.4s ease-in-out infinite",
-        "dot-breathe": "dot-breathe 5.6s ease-in-out infinite",
+        "dot-think": "dot-think 1.9s cubic-bezier(0.33, 1, 0.68, 1) infinite",
+        "dot-tint": "dot-tint 1.9s cubic-bezier(0.33, 1, 0.68, 1) infinite",
         "icon-breathe": "icon-breathe 2.6s cubic-bezier(0.33, 1, 0.68, 1) infinite",
         "title-in": "title-in 240ms cubic-bezier(0.33,1,0.68,1)",
         "title-out": "title-out 180ms cubic-bezier(0.33,1,0.68,1)",

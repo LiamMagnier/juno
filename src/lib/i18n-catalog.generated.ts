@@ -518,6 +518,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Users will see the newest active popup until they dismiss it."
   },
   {
+    "id": "0dcc1111e409913c",
+    "source": "Run summary"
+  },
+  {
     "id": "0de962814273dd82",
     "source": "Event UID (from list_events)."
   },
@@ -622,6 +626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Active for this model"
   },
   {
+    "id": "10fd874b68dad080",
+    "source": "write"
+  },
+  {
     "id": "10fe3280d9eba6c4",
     "source": "GLM Air"
   },
@@ -694,6 +702,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "connected"
   },
   {
+    "id": "12cc8a290af558c3",
+    "source": "Composing the response"
+  },
+  {
     "id": "12dcffaff86edbcc",
     "source": "Too many message appends. Try again shortly."
   },
@@ -744,6 +756,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1432897a6136de54",
     "source": "Legacy"
+  },
+  {
+    "id": "143b270a32602d41",
+    "source": "Complete"
   },
   {
     "id": "1458230c7e8c3010",
@@ -1206,6 +1222,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Add project image"
   },
   {
+    "id": "22720e53e2711708",
+    "source": "Working through the request"
+  },
+  {
     "id": "2286d1630a17ca47",
     "source": "Regenerate is not available in private chat."
   },
@@ -1266,16 +1286,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Catalog song ids (from search_catalog)."
   },
   {
-    "id": "2419329067823cab",
-    "source": "search"
-  },
-  {
     "id": "243854b4d0c709a0",
     "source": "Resize sidebar"
   },
   {
     "id": "247610f4dedd4ab7",
     "source": "live"
+  },
+  {
+    "id": "24a642de91961804",
+    "source": "Open thought process — complete"
   },
   {
     "id": "24f5bba781bbeeb7",
@@ -1582,10 +1602,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Invalid name."
   },
   {
-    "id": "2ca645a0b9349aaa",
-    "source": "Show full thinking"
-  },
-  {
     "id": "2caa2fa6ead091fc",
     "source": "Older Pro reasoning model (Responses API)."
   },
@@ -1870,6 +1886,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Drop to attach"
   },
   {
+    "id": "34f3b84a9d42f9f3",
+    "source": "Model-provided reasoning"
+  },
+  {
     "id": "35196e6dca66383d",
     "source": "You're sending messages too quickly. Please slow down."
   },
@@ -1912,10 +1932,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "3664895579f0a7e6",
     "source": "Export"
-  },
-  {
-    "id": "3683709dabc0ad05",
-    "source": "Facts"
   },
   {
     "id": "3683c643d61d41fb",
@@ -2332,10 +2348,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "41a86988751ad5cb",
     "source": "Recents"
-  },
-  {
-    "id": "41cf6794ba4200b8",
-    "source": "source"
   },
   {
     "id": "41cf6b5516559946",
@@ -3558,6 +3570,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Attachments are not available in private chat."
   },
   {
+    "id": "66f62d1807d3821a",
+    "source": "research"
+  },
+  {
     "id": "6725e7bbcd28f3a8",
     "source": "System"
   },
@@ -4246,6 +4262,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Medium effort"
   },
   {
+    "id": "7889d06f7235b90b",
+    "source": "Response complete"
+  },
+  {
     "id": "78a11233691a4bb8",
     "source": "Writing the private answer"
   },
@@ -4344,6 +4364,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7b8e819ce4f6702f",
     "source": "Connected tools ready"
+  },
+  {
+    "id": "7bbc36905270774e",
+    "source": "Run details"
   },
   {
     "id": "7c86a0b2f9420e5d",
@@ -4886,6 +4910,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Share this chat"
   },
   {
+    "id": "8c458a05f7052989",
+    "source": "Finding and checking sources"
+  },
+  {
     "id": "8c4b4eb91f682bc9",
     "source": "session.ready"
   },
@@ -5324,6 +5352,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "97ebc65eba0bf96e",
     "source": "Snapshot ·"
+  },
+  {
+    "id": "98038bc093e9fc76",
+    "source": "Run progress"
   },
   {
     "id": "98197a0092b64ff3",
@@ -5794,6 +5826,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "www.cnil.fr"
   },
   {
+    "id": "a52342f5b1ad083a",
+    "source": "Full thinking"
+  },
+  {
     "id": "a52ace420f2175d0",
     "source": "All"
   },
@@ -5912,6 +5948,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a8cb6f3567f68478",
     "source": "Answers that teach: step labs, quizzes, timelines and comparisons rendered inline, right in the reply."
+  },
+  {
+    "id": "a92f0449a9f7235b",
+    "source": "Working"
   },
   {
     "id": "a96856cdb34d33d8",
@@ -6690,8 +6730,16 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Visual explanation"
   },
   {
+    "id": "c2a9461389fdf45a",
+    "source": "Live process"
+  },
+  {
     "id": "c2dcdc8db2cdad56",
     "source": "&ldquo;"
+  },
+  {
+    "id": "c2eb8cd9d9564314",
+    "source": "Attention"
   },
   {
     "id": "c2ff279f92bdc8da",
@@ -6852,10 +6900,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c7395902bd393d76",
     "source": "Link your GitHub account so Juno can list and track the pull requests your code sessions open."
-  },
-  {
-    "id": "c76159a1edb6a9c4",
-    "source": "searches"
   },
   {
     "id": "c76cf6c5d7b65f26",
@@ -7208,10 +7252,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d00b8606f8f5847d",
     "source": "Vous vous engagez à ne pas utiliser le Service pour :"
-  },
-  {
-    "id": "d034d59e5ed3c56a",
-    "source": "Hide full thinking"
   },
   {
     "id": "d0788ad759ba4cc5",
@@ -7670,6 +7710,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Choose new password"
   },
   {
+    "id": "dc01b07203158782",
+    "source": "Researching"
+  },
+  {
     "id": "dc052e9106e29f6e",
     "source": "GPT-5.2 Codex"
   },
@@ -7792,10 +7836,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "de97042844bf60d9",
     "source": "Discard unsaved voice transcript"
-  },
-  {
-    "id": "deb04a0d67010703",
-    "source": "Thought"
   },
   {
     "id": "df0fbf9c008fb166",
@@ -8116,6 +8156,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7cf3ef4f17c3999",
     "source": "Password"
+  },
+  {
+    "id": "e862c46095e398e1",
+    "source": "Finding and checking useful sources"
   },
   {
     "id": "e8694d59fdfea80b",

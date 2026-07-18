@@ -16,7 +16,6 @@ import { SourcesPill } from "@/components/chat/sources-pill";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
 import { ImageEditOverlay } from "@/components/chat/image-edit-overlay";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
-import { JunoMark } from "@/components/brand/logo";
 import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
@@ -30,15 +29,24 @@ import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, Gene
  */
 function StreamStatus({ status }: { status?: GenerationStatus }) {
   const label = status === "writing" ? "Writing" : status === "checking" ? "Checking" : "Thinking";
+  const detail =
+    status === "writing"
+      ? "Composing the response"
+      : status === "checking"
+        ? "Checking your request"
+        : status === "submitting"
+          ? "Starting the request"
+          : "Working through the request";
   return (
-    <div className="flex items-center gap-2.5 py-1 motion-safe:animate-fade-in">
-      <JunoMark className="h-4 w-4 shrink-0 motion-safe:animate-icon-breathe" />
-      <ThinkingDots className="text-primary/90" />
-      <span
-        key={label}
-        className="font-mono text-label uppercase text-muted-foreground text-shimmer motion-safe:animate-fade-in"
-      >
-        {label}
+    <div role="status" className="flex min-h-12 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
+      <span className="flex w-9 shrink-0 items-center justify-center" aria-hidden="true">
+        <ThinkingDots className="text-muted-foreground/55" />
+      </span>
+      <span key={label} className="min-w-0 motion-safe:animate-fade-in">
+        <span className="block font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.13em] text-primary">
+          {label}
+        </span>
+        <span className="block truncate text-body leading-5 text-foreground/78">{detail}</span>
       </span>
     </div>
   );
@@ -455,6 +463,7 @@ export function MessageItem({
 
   // Assistant message
   const showCursor = message.streaming && message.content.length === 0;
+  const hasRunTrace = !!view.reasoning?.trim() || !!view.activity?.length;
   // Generated media: image attachments + video files (kind FILE, video/* mime).
   const mediaAttachments = message.attachments.filter((a) => a.kind === "IMAGE" || a.mimeType.startsWith("video/"));
   const hasPartialWithError = !!message.error && !!message.errorMessage && !!message.content && message.content !== message.errorMessage;
@@ -490,7 +499,7 @@ export function MessageItem({
         />
         {message.progress && !message.error ? (
           <GenerationPlaceholder progress={message.progress} />
-        ) : showCursor ? (
+        ) : showCursor && !hasRunTrace ? (
           <StreamStatus status={status} />
         ) : message.error && !hasPartialWithError ? (
           <div className="space-y-2.5 rounded-lg border border-destructive/40 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">

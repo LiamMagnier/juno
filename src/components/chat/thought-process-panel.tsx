@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ChevronRight, X } from "lucide-react";
+import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn } from "@/lib/utils";
 import { toSteps } from "@/lib/reasoning-parts";
 import type { ClientActivityEvent } from "@/types/chat";
@@ -98,7 +99,6 @@ export interface RunModel {
   searches: number;
   sourceCount: number;
   elapsedMs: number | null;
-  restingLabel: string;
   /** Last warning title, surfaced verbatim. We never editorialise it into a
    *  claim like "Stopped early" — several warnings are non-fatal. */
   note: string | null;
@@ -249,10 +249,6 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // arithmetic rather than aspiration.
   const elapsedMs = span(t0, tEnd);
 
-  const restingLabel = ["Thought", searchEvs.length ? plural(searchEvs.length, "search", "searches") : null, sources.length ? plural(sources.length, "source") : null]
-    .filter(Boolean)
-    .join(" · ");
-
   return {
     t0,
     phases,
@@ -262,7 +258,6 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     searches: searchEvs.length,
     sourceCount: sources.length,
     elapsedMs,
-    restingLabel,
     note: warnings.length ? warnings[warnings.length - 1].title : null,
   };
 }
@@ -338,16 +333,13 @@ export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) 
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="font-mono text-label uppercase text-muted-foreground/70">{children}</span>
-      <span className="h-px flex-1 bg-border/50" aria-hidden="true" />
-    </div>
+    <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/65">{children}</span>
   );
 }
 
-/** Shared row geometry. 4.5rem holds "RESEARCH" at caption/0.1em at every width;
- *  the middle truncates; the number is shrink-0 and never truncates. */
-const ROW = "grid grid-cols-[4.5rem_minmax(0,1fr)_auto] items-baseline gap-3 py-1.5";
+/** Shared receipt geometry. The label stays scannable while the value owns the
+ *  flexible measure and the time remains right-aligned. */
+const ROW = "grid grid-cols-[4rem_minmax(0,1fr)_auto] items-baseline gap-3 py-2";
 
 /**
  * DOCKED, NOT OVERLAID. This was a Radix <Sheet> — a modal dialog with a
@@ -440,8 +432,7 @@ export function ThoughtProcessPanel({
     return space === -1 ? cut : space + 1;
   }, [reasoning]);
 
-  const meta = [
-    run.elapsedMs === null ? null : formatSpan(run.elapsedMs),
+  const scopeMeta = [
     run.searches ? plural(run.searches, "search", "searches") : null,
     run.sourceCount ? plural(run.sourceCount, "source") : null,
   ]
@@ -455,6 +446,21 @@ export function ThoughtProcessPanel({
   // this redesign exists to delete. It appears only once it encodes a real
   // proportion between at least two measured spans.
   const showBar = run.phases.length >= 2 && totalMs > 0;
+  const activePhase = run.phases.find((phase) => phase.active);
+  const overviewTitle = streaming
+    ? activePhase?.key === "research"
+      ? "Finding and checking sources"
+      : activePhase?.key === "write"
+        ? "Composing the response"
+        : "Working through the request"
+    : "Response complete";
+  const overviewLabel = streaming
+    ? activePhase?.key === "research"
+      ? "Researching"
+      : activePhase?.key === "write"
+        ? "Writing"
+        : "Thinking"
+    : "Complete";
 
   return (
     <aside
@@ -464,31 +470,87 @@ export function ThoughtProcessPanel({
       aria-label="Thought process"
       className="flex h-full w-full flex-col bg-card focus:outline-none"
     >
-        <header className="flex shrink-0 items-start gap-3 border-b border-border/60 px-5 pb-4 pt-5">
+        <header className="flex shrink-0 items-center gap-4 border-b border-border/55 px-5 py-4">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate font-serif text-heading text-foreground">Thought process</h2>
-            {meta && (
-              <p className="mt-1 truncate font-mono text-caption uppercase tracking-[0.12em] text-muted-foreground/70">{meta}</p>
-            )}
+            <div className="flex items-center gap-2">
+              {streaming && <ThinkingDots className="origin-left scale-75 text-muted-foreground/55" />}
+              <span className={cn("font-mono text-[10px] font-medium uppercase tracking-[0.14em]", streaming ? "text-primary" : "text-muted-foreground/60")}>{streaming ? "Live process" : "Run summary"}</span>
+            </div>
+            <h2 className="mt-0.5 truncate font-serif text-heading text-foreground">Thought process</h2>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="flex size-8 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-[transform,box-shadow,border-color,color] duration-base ease-out-soft hover:border-border hover:text-foreground hover:shadow-float focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none coarse:size-10"
+            className="flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors duration-base ease-out-soft hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none coarse:size-11"
           >
             <X className="size-4" aria-hidden="true" />
             <span className="sr-only">Close thought process</span>
           </button>
         </header>
 
-        <div className="flex flex-1 flex-col gap-6 overflow-y-auto bg-muted/15 px-5 py-5">
+        <div className="flex flex-1 flex-col gap-7 overflow-y-auto bg-muted/10 px-5 py-5">
+          {/* RUN OVERVIEW — the answer to "what is it doing?" lives at the top,
+              where a live process belongs. Durations remain measurements; the
+              step rail only connects phases that actually exist in the data. */}
+          <section aria-label="Run progress" className="rounded-2xl border border-border/55 bg-background/55 p-4 shadow-soft">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <span className={cn("font-mono text-[10px] font-medium uppercase tracking-[0.14em]", streaming ? "text-primary" : "text-muted-foreground/65")}>{overviewLabel}</span>
+                <p key={overviewTitle} className="mt-0.5 truncate font-serif text-heading text-foreground/90 motion-safe:animate-fade-in">{overviewTitle}</p>
+                {scopeMeta && <p className="mt-1 font-mono text-caption text-muted-foreground/65">{scopeMeta}</p>}
+              </div>
+              {run.elapsedMs !== null && (
+                <span className={cn("shrink-0 rounded-full px-2.5 py-1 font-mono text-caption tabular-nums", streaming ? "bg-primary/8 text-primary" : "bg-muted text-muted-foreground")}>{formatSpan(run.elapsedMs)}</span>
+              )}
+            </div>
+
+            {showBar && (
+              <div className="mt-4 flex h-1 w-full overflow-hidden rounded-full bg-muted/60" aria-hidden="true">
+                {run.phases.map((phase) => (
+                  <span
+                    key={phase.key}
+                    style={{ flexGrow: phase.ms ?? 0 }}
+                    className={cn(
+                      "transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
+                      phase.active
+                        ? "bg-primary"
+                        : phase.key === "research"
+                          ? "bg-source/55"
+                          : phase.key === "think"
+                            ? "bg-muted-foreground/35"
+                            : "bg-foreground/45"
+                    )}
+                  />
+                ))}
+              </div>
+            )}
+
+            {run.phases.length > 0 && (
+              <ol className="mt-3">
+                {run.phases.map((phase, index) => (
+                  <li key={phase.key} className="relative grid grid-cols-[1rem_minmax(0,1fr)_auto] gap-3 py-2 motion-safe:animate-fade-in">
+                    {index < run.phases.length - 1 && <span aria-hidden="true" className="absolute bottom-[-0.5rem] left-[0.21875rem] top-[1.15rem] w-px bg-border/75" />}
+                    <span aria-hidden="true" className="relative mt-[0.3rem] flex h-2 w-2 items-center justify-center rounded-full">
+                      <span className={cn("h-2 w-2 rounded-full transition-[background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", phase.active ? "bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.10)]" : "bg-muted-foreground/35")} />
+                    </span>
+                    <span className="min-w-0">
+                      <span className={cn("block font-mono text-caption uppercase tracking-[0.1em]", phase.active ? "text-primary" : "text-muted-foreground/70")}>{phase.label}</span>
+                      {phase.object && <span className="mt-0.5 block truncate text-body leading-5 text-foreground/72">{phase.object}</span>}
+                    </span>
+                    <span className="font-mono text-caption tabular-nums text-muted-foreground/70">{phase.ms === null ? "—" : formatSpan(phase.ms)}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+
           {/* NOTICES — success is not news; failure is. Fixed position at the top
               so the panel's structure never reshuffles between runs. */}
           {warnings.length > 0 && (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-3">
               <SectionLabel>Notices</SectionLabel>
-              <ul className="flex flex-col">
+              <ul className="flex flex-col rounded-xl border border-warning/20 bg-warning/5 px-3">
                 {warnings.map((c) => (
                   <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
                     <span className="font-mono text-caption uppercase tracking-[0.1em] text-warning">{c.label}</span>
@@ -512,41 +574,27 @@ export function ThoughtProcessPanel({
               provider emitted, in order, verbatim — which is why they appear for
               OpenAI's Responses models and for nobody else. When no provider
               parts exist there is no Steps list and no placeholder for one: the
-              section is just the disclosure, and its absence is the design (same
-              rule PROFILE follows at line ~530). */}
+              section is just the disclosure, and its absence is the design. */}
           {hasReasoning && (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-3">
               <SectionLabel>Reasoning</SectionLabel>
 
               {steps && (
-                <ol className="flex flex-col">
+                <ol className="flex flex-col rounded-2xl border border-border/45 bg-card/65 px-3.5 py-2.5">
                   {steps.map((s, i) => {
                     // Only the LAST step can be in flight, and only while the run
-                    // is live. Coral is ACTIVE/SELECTED ONLY — same rule as the
-                    // Profile rows.
+                    // is live. Coral is ACTIVE/SELECTED ONLY — the same rule as
+                    // the run overview.
                     const active = !!streaming && i === steps.length - 1;
                     return (
                       // Keyed by ARRAY POSITION, never by the provider's index or
                       // the title: OpenAI repeats summary_index within one
                       // response (live: [0…14, 13, 14]) and repeats titles too,
                       // so either would collide two steps into one and drop text.
-                      <li key={i} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
-                        <span
-                          className={cn(
-                            "font-mono text-caption uppercase tracking-[0.1em] tabular-nums transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
-                            active ? "text-primary" : "text-muted-foreground/55"
-                          )}
-                        >
-                          {/* An ordinal, not a duration. Steps have no clock —
-                              ActivityTimeline owns the only one. */}
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        {/* The model's own title when it wrote one; otherwise its
-                            own opening line, truncated for width. Either way the
-                            words are the model's — we never compose a label. */}
-                        <span className="col-span-2 min-w-0 truncate text-body text-foreground/85">
-                          {s.title ?? s.body.split("\n")[0]}
-                        </span>
+                      <li key={i} className="relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 py-2.5 motion-safe:animate-fade-in">
+                        {i < steps.length - 1 && <span aria-hidden="true" className="absolute bottom-[-0.65rem] left-[0.71875rem] top-[2rem] w-px bg-border/65" />}
+                        <span className={cn("relative z-10 flex h-6 w-6 items-center justify-center rounded-full border bg-background font-mono text-[9px] tabular-nums transition-[border-color,color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", active ? "border-primary/45 text-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]" : "border-border/70 text-muted-foreground/60")}>{String(i + 1).padStart(2, "0")}</span>
+                        <span className="min-w-0 self-center truncate text-body text-foreground/82">{s.title ?? s.body.split("\n")[0]}</span>
                       </li>
                     );
                   })}
@@ -558,22 +606,14 @@ export function ThoughtProcessPanel({
                   type="button"
                   onClick={() => setRawOpen((v) => !v)}
                   aria-expanded={rawOpen}
-                  aria-controls={`${id}-reasoning-full`}
-                  className="group flex items-center gap-1.5 self-start rounded-md font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/70 transition-colors duration-base ease-out-soft hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
+                  aria-controls={rawOpen ? `${id}-reasoning-full` : undefined}
+                  className="group flex min-h-11 w-full items-center gap-3 rounded-xl border border-border/45 bg-card/60 px-3 text-left transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
                 >
-                  <ChevronRight
-                    aria-hidden="true"
-                    className={cn(
-                      "size-3 transition-transform duration-base ease-out-soft motion-reduce:transition-none",
-                      rawOpen && "rotate-90"
-                    )}
-                  />
-                  {/* Never "raw". No provider here hands over unedited
-                      chain-of-thought: OpenAI sends a summary it wrote, and
-                      Anthropic summarises server-side too. Calling this the raw
-                      thinking would be a small lie in the one panel that exists
-                      not to tell them. */}
-                  {rawOpen ? "Hide full thinking" : "Show full thinking"}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-body leading-5 text-foreground/82">Full thinking</span>
+                    <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/55">Model-provided reasoning</span>
+                  </span>
+                  <ChevronRight aria-hidden="true" className={cn("size-3.5 text-muted-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none", rawOpen && "rotate-90")} />
                 </button>
 
                 {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
@@ -581,14 +621,11 @@ export function ThoughtProcessPanel({
                 {rawOpen && (
                   <div
                     id={`${id}-reasoning-full`}
-                    className="field-well rounded-2xl border border-border/50 bg-background/40 p-1 motion-safe:animate-fade-in"
+                    className="rounded-2xl border border-border/50 bg-background/55 p-1 duration-base ease-out-soft motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
                   >
                     <div
                       ref={reasoningRef}
-                      /* Smaller than it was (text-caption, max-h-[32vh]) because it
-                         is no longer the headline — but the serif-italic voice is
-                         kept exactly as approved. */
-                      className="scroll-fade-y max-h-[32vh] overflow-y-auto whitespace-pre-wrap rounded-xl px-3.5 py-3 font-serif text-caption italic leading-relaxed text-muted-foreground/90"
+                      className="max-h-[42vh] overflow-y-auto whitespace-pre-wrap break-words rounded-xl px-3.5 py-3 font-serif text-[0.875rem] leading-6 text-foreground/72"
                     >
                       {reasoning!.slice(0, tailFrom)}
                       <span
@@ -609,7 +646,7 @@ export function ThoughtProcessPanel({
           {/* SOURCES — the durable asset. Survives the stream, addressable,
               auditable. No Globe glyph: "nytimes.com" already says it is a site. */}
           {run.sources.length > 0 && (
-            <section className="flex flex-col gap-2.5">
+            <section className="flex flex-col gap-3">
               <SectionLabel>Sources</SectionLabel>
               <div className="flex flex-wrap gap-1.5">
                 {run.sources.map((s) => (
@@ -618,7 +655,7 @@ export function ThoughtProcessPanel({
                     href={s.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="relative inline-flex max-w-full items-center rounded-md border border-border/60 bg-background/70 px-2 py-1 font-mono text-caption text-source shadow-pop transition-[transform,box-shadow,border-color] duration-base ease-out-soft hover:z-10 hover:border-border hover:shadow-float motion-safe:hover:-translate-y-0.5 motion-reduce:transition-none"
+                    className="relative inline-flex min-h-8 max-w-full items-center rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-caption text-source transition-[background-color,border-color] duration-base ease-out-soft hover:border-source/30 hover:bg-source/5 motion-reduce:transition-none"
                   >
                     <span className="truncate">{s.domain}</span>
                   </a>
@@ -627,90 +664,27 @@ export function ThoughtProcessPanel({
             </section>
           )}
 
-          {/* PROFILE — the receipt. Right-aligned durations: scan the right edge
-              and the slow phase announces itself. Header total = sum of parts.
-              Hidden entirely when no span is derivable, so none is claimed. */}
-          {run.phases.length > 0 && (
-            <section className="flex flex-col gap-2.5">
-              <SectionLabel>Profile</SectionLabel>
-
-              {showBar && (
-                <div className="flex h-1.5 w-full overflow-hidden rounded-full bg-muted/40" aria-hidden="true">
-                  {run.phases.map((p) => (
-                    <div
-                      key={p.key}
-                      /* No floor. A span too short to see gets no segment — its
-                         row still carries the exact number. A 2% floor would be
-                         the form lying about proportion in the one element that
-                         claims to show it.
-                         flexGrow is rewritten by the 100ms tick, so it carries NO
-                         transition: a 220ms transition against a 100ms value lags
-                         and fights it into mush. The cadence alone is continuous.
-                         Colour is the only transition, and there is no animate-*
-                         on this element (rule 4). */
-                      style={{ flexGrow: p.ms ?? 0 }}
-                      className={cn(
-                        "transition-[background-color] duration-slow ease-out-soft motion-reduce:transition-none",
-                        p.active
-                          ? "bg-primary"
-                          : p.key === "research"
-                            ? "bg-source/60"
-                            : p.key === "think"
-                              ? "bg-muted-foreground/35"
-                              : "bg-foreground/45"
-                      )}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <ol className="flex flex-col">
-                {run.phases.map((p) => (
-                  <li key={p.key} className={ROW}>
-                    <span
-                      className={cn(
-                        "font-mono text-caption uppercase tracking-[0.1em] transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
-                        p.active ? "text-primary" : "text-muted-foreground/70"
-                      )}
-                    >
-                      {p.label}
-                    </span>
-                    {/* May be empty. An empty cell is honest; filler is not. The
-                        row earns its place on its duration alone. */}
-                    <span className="min-w-0 truncate text-body text-foreground/85">{p.object}</span>
-                    <span className="shrink-0 font-mono text-caption tabular-nums text-foreground/70">
-                      {p.ms === null ? "—" : formatSpan(p.ms)}
-                    </span>
+          {tools.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <SectionLabel>Tools</SectionLabel>
+              <ul className="flex flex-col rounded-xl border border-border/45 bg-card/60 px-3">
+                {tools.map((call) => (
+                  <li key={call.id} className={cn(ROW, "motion-safe:animate-fade-in")}>
+                    <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/65">{call.label}</span>
+                    <span className="min-w-0 truncate text-body text-foreground/80">{call.object}</span>
+                    <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">{call.offsetMs === null ? "—" : `+${formatSpan(call.offsetMs)}`}</span>
                   </li>
                 ))}
-              </ol>
-
-              {tools.length > 0 && (
-                <ul className="mt-1 flex flex-col border-t border-border/40 pt-1">
-                  {tools.map((c) => (
-                    <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
-                      <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/70">{c.label}</span>
-                      <span className="min-w-0 truncate text-body text-foreground/85">{c.object}</span>
-                      {/* "+" marks an offset from T0, not a duration and never a
-                          wall clock. Tool calls land at genuinely arbitrary
-                          moments, which is the one place a stamp means anything. */}
-                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
-                        {c.offsetMs === null ? "—" : `+${formatSpan(c.offsetMs)}`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              </ul>
             </section>
           )}
 
-          {/* FACTS — five things that were five rows in a fake timeline wearing
-              five coloured circles and a fake wall-clock stamp. They are five
-              facts. The missing time column is the whole point. */}
+          {/* RUN DETAILS — configuration and usage are facts, not phases. The
+              missing time column is the whole point. */}
           {run.facts.length > 0 && (
-            <section className="flex flex-col gap-2.5">
-              <SectionLabel>Facts</SectionLabel>
-              <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+            <section className="flex flex-col gap-3">
+              <SectionLabel>Run details</SectionLabel>
+              <dl className="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border border-border/45 bg-card/60 px-3 py-3">
                 {run.facts.map((f) => (
                   <React.Fragment key={f.label}>
                     <dt className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/60">{f.label}</dt>

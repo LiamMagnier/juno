@@ -25,14 +25,17 @@ function ElapsedTime({ startedAt, elapsedMs, running }: { startedAt: number | nu
   return <span className="tabular-nums">{(ms / 1000).toFixed(1)}s</span>;
 }
 
-/** Same premium "thinking → writing" signature the transcript uses. */
+/** The same calm phase/detail hierarchy used by the main transcript. */
 function PaneStreamStatus({ writing }: { writing: boolean }) {
   const label = writing ? "Writing" : "Thinking";
   return (
-    <div className="flex items-center gap-2.5 py-1 motion-safe:animate-fade-in">
-      <ThinkingDots className="text-primary/90" />
-      <span key={label} className="font-mono text-label uppercase text-muted-foreground text-shimmer motion-safe:animate-fade-in">
-        {label}
+    <div role="status" className="flex min-h-12 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
+      <span className="flex w-9 shrink-0 items-center justify-center" aria-hidden="true">
+        <ThinkingDots className="text-muted-foreground/55" />
+      </span>
+      <span key={label} className="min-w-0 motion-safe:animate-fade-in">
+        <span className="block font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.13em] text-primary">{label}</span>
+        <span className="block truncate text-body leading-5 text-foreground/78">{writing ? "Composing the response" : "Working through the request"}</span>
       </span>
     </div>
   );

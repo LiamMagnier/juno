@@ -1680,7 +1680,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // drag re-triggers it — the dock would replay its 400ms slide on
             // every pointer-up. `duration-slow` travels with the animate-*
             // classes it belongs to and is never left behind on its own.
-            animateDock && "duration-slow ease-out-expo motion-safe:animate-in motion-safe:slide-in-from-right",
+            animateDock && "duration-base ease-out-expo motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4",
             resizingThought && "select-none"
           )}
         >

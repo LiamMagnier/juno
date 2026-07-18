@@ -461,33 +461,12 @@
   .origin-popper[data-side="left"],
   .origin-popper[data-side="right"] { --pop-shift: 0px; }
 
-  /* Mono-eyebrow shimmer — a narrow primary band sweeps across currentColor text.
-     The band parks off-canvas between sweeps and at the static (reduced-motion)
-     position, so idle text reads as plain currentColor. */
-  @supports ((-webkit-background-clip: text) or (background-clip: text)) {
-    .text-shimmer {
-      background-image: linear-gradient(100deg, currentColor 40%, hsl(var(--primary)) 50%, currentColor 60%);
-      background-size: 250% 100%;
-      background-repeat: no-repeat;
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-      animation: eyebrow-shimmer 2.8s ease-in-out infinite;
-    }
-  }
-
   /* Soft top/bottom fade so scrollable text dissolves at the frame edges
      (alpha-only mask — black/transparent are not theme colors). */
   .scroll-fade-y {
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
     mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
   }
-}
-
-@keyframes eyebrow-shimmer {
-  0% { background-position: 100% 0; }
-  /* Sweep for 60% of the cycle, then rest with the band just off the right edge. */
-  60%, 100% { background-position: 0% 0; }
 }
 
 /* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ---- */
