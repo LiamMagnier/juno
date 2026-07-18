@@ -250,7 +250,7 @@ function PaletteShell({
                       onClick={() => c.run()}
                       aria-selected={isActive}
                       className={cn(
-                        "group relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
+                        "menu-item group group/menu-item relative flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm transition-colors duration-fast ease-out-soft coarse:py-2.5",
                         isActive ? "text-foreground" : "text-foreground/75"
                       )}
                     >

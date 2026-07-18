@@ -290,6 +290,348 @@
     .danger-hover:hover svg { transform: none; }
   }
 
+  /* ---- Menu icon motion ----------------------------------------------------
+     Every dropdown / submenu / select / command-palette row gets a short,
+     intentional icon gesture on hover/focus/active. Lucide stamps `lucide-*`
+     classes on each SVG, so we can specialize pin/pencil/trash without
+     touching call sites. Default = calm lift for anything unspecified. */
+
+  .menu-item > svg,
+  .menu-item > a > svg,
+  .menu-item [class*="lucide"],
+  [role="menuitem"] > svg,
+  [role="menuitem"] [class*="lucide"],
+  [role="menuitemcheckbox"] > svg,
+  [role="menuitemradio"] > svg,
+  [role="option"] [class*="lucide"] {
+    transform-box: fill-box;
+    transform-origin: center;
+    transition:
+      transform 340ms var(--ease-spring),
+      opacity var(--dur-fast) var(--ease-out-soft);
+  }
+
+  /* Default: a quiet lift + settle for any row icon. */
+  @media (hover: hover) {
+    .menu-item:is(:hover, :focus, :focus-visible) > svg,
+    .menu-item:is(:hover, :focus, :focus-visible) > a > svg,
+    .menu-item:is(:hover, :focus, :focus-visible) > [class*="lucide"]:first-of-type,
+    .menu-item:is(:hover, :focus, :focus-visible) > span > [class*="lucide"],
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) > svg,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) > [class*="lucide"]:first-of-type,
+    [role="option"]:is(:hover, :focus, :focus-visible, [aria-selected="true"]) [class*="lucide"] {
+      transform: translateY(-0.55px) scale(1.06);
+    }
+
+    /* Submenu chevron: nudge into the nested panel. */
+    .menu-item:is(:hover, :focus, :focus-visible, [data-state="open"]) .menu-item__chevron,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible, [data-state="open"]) .menu-item__chevron,
+    .menu-item:is(:hover, :focus, :focus-visible, [data-state="open"]) > .lucide-chevron-right {
+      transform: translateX(2px);
+    }
+
+    /* Pin — press into the board. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-pin,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pin {
+      animation: menu-icon-pin 420ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-pin-off,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pin-off {
+      animation: menu-icon-pin-off 400ms var(--ease-spring) both;
+    }
+
+    /* Pencil / edit — a short write stroke. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-pencil,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-square-pen,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-pen-line,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-pen,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pencil,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-square-pen,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-pen-line {
+      animation: menu-icon-write 460ms var(--ease-spring) both;
+    }
+
+    /* Trash — lid tip. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-trash-2,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-trash,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-trash-2,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-trash {
+      animation: menu-icon-trash 440ms var(--ease-spring) both;
+    }
+
+    /* Plus — resolve into a creation mark. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-plus,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-plus {
+      transform: rotate(90deg) scale(1.06);
+    }
+
+    /* Check — confirm settle. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-check,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-check {
+      animation: menu-icon-check 380ms var(--ease-spring) both;
+    }
+
+    /* Copy — double-up. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-copy,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-clipboard,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-clipboard-copy,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-copy {
+      animation: menu-icon-copy 420ms var(--ease-spring) both;
+    }
+
+    /* Download — drop. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-download,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-download {
+      animation: menu-icon-download 440ms var(--ease-spring) both;
+    }
+
+    /* Share / external — cast out. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-share,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-share-2,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-external-link,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-arrow-up-right,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-share-2,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-external-link,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-arrow-up-right {
+      animation: menu-icon-share 420ms var(--ease-spring) both;
+    }
+
+    /* Settings / gear — quarter turn. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-settings,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-settings-2,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-sliders-horizontal,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-settings,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-settings-2,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sliders-horizontal {
+      animation: menu-icon-spin-quarter 480ms var(--ease-spring) both;
+    }
+
+    /* Refresh / rotate — spin. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-refresh-cw,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-rotate-ccw,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-rotate-cw,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-refresh-cw,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-rotate-ccw {
+      animation: menu-icon-spin 520ms var(--ease-spring) both;
+    }
+
+    /* Log out — slide out. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-log-out,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-log-out {
+      animation: menu-icon-logout 400ms var(--ease-spring) both;
+    }
+
+    /* User / profile — nod. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-user,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-user-round,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-user {
+      animation: menu-icon-bob 400ms var(--ease-spring) both;
+    }
+
+    /* Star / heart — pop. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-star,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-heart,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-star,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-heart {
+      animation: menu-icon-pop 420ms var(--ease-spring) both;
+    }
+
+    /* Box / folder / project — open lift. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-box,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-folder,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-folder-open,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-library,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-box,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-folder,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-library {
+      animation: menu-icon-bob 400ms var(--ease-spring) both;
+    }
+
+    /* Link / chain. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-link,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-link-2,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-link {
+      animation: menu-icon-link 420ms var(--ease-spring) both;
+    }
+
+    /* Message / chat. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-message-square,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-message-circle,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-messages-square,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-message-square,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-message-circle {
+      animation: menu-icon-bob 400ms var(--ease-spring) both;
+    }
+
+    /* Attach / paperclip / image / file. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-paperclip,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-image,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-image-plus,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-file-up,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-file-text,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-file,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-paperclip,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-image-plus,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-file-up,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-file-text {
+      animation: menu-icon-attach 420ms var(--ease-spring) both;
+    }
+
+    /* Globe / search / plug / sparkles / notebook. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-globe,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-globe {
+      animation: menu-icon-spin-quarter 520ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-search,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-search,
+    [role="option"]:is(:hover, [aria-selected="true"]) .lucide-search {
+      animation: menu-icon-search 420ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-plug,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-plug {
+      animation: menu-icon-plug 440ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-sparkles,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sparkles {
+      animation: menu-icon-pop 460ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-notebook-pen,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-book-open,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-notebook-pen {
+      animation: menu-icon-write 460ms var(--ease-spring) both;
+    }
+
+    /* Ban / X — tuck. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-ban,
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-x,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-ban,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-x {
+      animation: menu-icon-tuck 380ms var(--ease-spring) both;
+    }
+
+    /* Keyboard / sun / moon. */
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-sun,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-sun {
+      animation: menu-icon-spin-quarter 520ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-moon,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-moon {
+      animation: menu-icon-bob 400ms var(--ease-spring) both;
+    }
+    .menu-item:is(:hover, :focus, :focus-visible) .lucide-keyboard,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) .lucide-keyboard {
+      animation: menu-icon-bob 380ms var(--ease-spring) both;
+    }
+  }
+
+  @keyframes menu-icon-pin {
+    0% { transform: translateY(0) rotate(0); }
+    45% { transform: translateY(1.5px) rotate(-8deg) scale(0.96); }
+    100% { transform: translateY(-0.5px) rotate(0) scale(1.05); }
+  }
+  @keyframes menu-icon-pin-off {
+    0% { transform: translateY(0) rotate(0); }
+    50% { transform: translateY(-1.5px) rotate(12deg) scale(1.05); }
+    100% { transform: translateY(0) rotate(0) scale(1); }
+  }
+  @keyframes menu-icon-write {
+    0% { transform: translate(0, 0) rotate(0); }
+    35% { transform: translate(1px, 1px) rotate(-8deg); }
+    70% { transform: translate(-0.5px, 0.5px) rotate(4deg); }
+    100% { transform: translate(0, -0.5px) rotate(0) scale(1.04); }
+  }
+  @keyframes menu-icon-trash {
+    0% { transform: translateY(0) rotate(0); }
+    40% { transform: translateY(-1.25px) rotate(-6deg); }
+    100% { transform: translateY(0) rotate(0) scale(1.04); }
+  }
+  @keyframes menu-icon-check {
+    0% { transform: scale(0.86); opacity: 0.7; }
+    55% { transform: scale(1.12); opacity: 1; }
+    100% { transform: scale(1.04); }
+  }
+  @keyframes menu-icon-copy {
+    0% { transform: translate(0, 0); }
+    45% { transform: translate(1.25px, -1.25px) scale(1.05); }
+    100% { transform: translate(0.35px, -0.35px) scale(1.03); }
+  }
+  @keyframes menu-icon-download {
+    0% { transform: translateY(0); }
+    40% { transform: translateY(2px); }
+    100% { transform: translateY(0) scale(1.04); }
+  }
+  @keyframes menu-icon-share {
+    0% { transform: translate(0, 0) scale(1); }
+    50% { transform: translate(1.5px, -1.5px) scale(1.08); }
+    100% { transform: translate(0.5px, -0.5px) scale(1.04); }
+  }
+  @keyframes menu-icon-spin-quarter {
+    0% { transform: rotate(0); }
+    100% { transform: rotate(45deg) scale(1.04); }
+  }
+  @keyframes menu-icon-spin {
+    0% { transform: rotate(0); }
+    100% { transform: rotate(180deg); }
+  }
+  @keyframes menu-icon-logout {
+    0% { transform: translateX(0); }
+    50% { transform: translateX(2px); }
+    100% { transform: translateX(0.75px) scale(1.03); }
+  }
+  @keyframes menu-icon-bob {
+    0% { transform: translateY(0); }
+    45% { transform: translateY(-1.5px) scale(1.06); }
+    100% { transform: translateY(-0.4px) scale(1.03); }
+  }
+  @keyframes menu-icon-pop {
+    0% { transform: scale(1); }
+    40% { transform: scale(0.88); }
+    70% { transform: scale(1.14); }
+    100% { transform: scale(1.05); }
+  }
+  @keyframes menu-icon-link {
+    0% { transform: rotate(0) scale(1); }
+    50% { transform: rotate(-12deg) scale(1.06); }
+    100% { transform: rotate(0) scale(1.03); }
+  }
+  @keyframes menu-icon-attach {
+    0% { transform: translateY(0) rotate(0); }
+    40% { transform: translateY(-1.5px) rotate(-10deg); }
+    100% { transform: translateY(-0.4px) rotate(0) scale(1.04); }
+  }
+  @keyframes menu-icon-search {
+    0% { transform: translate(0, 0) rotate(0); }
+    50% { transform: translate(0.8px, -0.8px) rotate(-8deg) scale(1.06); }
+    100% { transform: translate(0.3px, -0.3px) rotate(0) scale(1.03); }
+  }
+  @keyframes menu-icon-plug {
+    0% { transform: translateY(0); }
+    45% { transform: translateY(-1.75px); }
+    100% { transform: translateY(-0.5px) scale(1.04); }
+  }
+  @keyframes menu-icon-tuck {
+    0% { transform: scale(1) rotate(0); }
+    50% { transform: scale(0.9) rotate(8deg); }
+    100% { transform: scale(1.02) rotate(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .menu-item > svg,
+    .menu-item [class*="lucide"],
+    [role="menuitem"] > svg,
+    [role="menuitem"] [class*="lucide"],
+    [role="option"] [class*="lucide"],
+    .menu-item:is(:hover, :focus, :focus-visible) > svg,
+    .menu-item:is(:hover, :focus, :focus-visible) [class*="lucide"],
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) > svg,
+    [role="menuitem"]:is(:hover, :focus, :focus-visible) [class*="lucide"],
+    [role="option"]:is(:hover, [aria-selected="true"]) [class*="lucide"] {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
+  }
+
   /* ---- Depth kit (Awwwards-lean) --------------------------------------------
      Small, composable primitives so every surface shares one lighting model:
      a light source above the element (top sheen + inner top-hairline) and a
