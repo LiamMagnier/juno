@@ -190,10 +190,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "fits you"
   },
   {
-    "id": "034a0062488256f1",
-    "source": "folder"
-  },
-  {
     "id": "036bac15413bfccd",
     "source": "request_in_progress"
   },
@@ -318,6 +314,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Next version"
   },
   {
+    "id": "0686f93c235136a6",
+    "source": "Preview unavailable · open original"
+  },
+  {
     "id": "068cf0d4ee852b04",
     "source": "Clarification card is no longer available."
   },
@@ -344,10 +344,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "07297fa94a997d0f",
     "source": "Needs review"
-  },
-  {
-    "id": "072a5e231175e499",
-    "source": "Region bounds:"
   },
   {
     "id": "0777720ef0c5e4d7",
@@ -610,6 +606,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "GLM Flash"
   },
   {
+    "id": "0fc529cb14816a8d",
+    "source": "Preparing video"
+  },
+  {
     "id": "0fe5fd939ec1e975",
     "source": "Learning blocks"
   },
@@ -660,10 +660,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "11a6767d5674c7e4",
     "source": "Done"
-  },
-  {
-    "id": "11a931060dad5d13",
-    "source": "Model:"
   },
   {
     "id": "11f097892217a11a",
@@ -998,6 +994,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Edit applied — summary updated."
   },
   {
+    "id": "1b8ca2977380b08c",
+    "source": "Selected area"
+  },
+  {
     "id": "1b929ca36be5a874",
     "source": "Couldn’t load your projects."
   },
@@ -1038,6 +1038,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Qwen Max"
   },
   {
+    "id": "1ca64e8365a562cf",
+    "source": "Image selection canvas"
+  },
+  {
     "id": "1caf1cf8d44cfc5c",
     "source": "Move to project"
   },
@@ -1048,10 +1052,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1ce93dacbcf499b5",
     "source": "chars"
-  },
-  {
-    "id": "1d0784cedc4e2297",
-    "source": "Canvas Editor"
   },
   {
     "id": "1d07e9e39d6d1a28",
@@ -1082,8 +1082,8 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Save & resend"
   },
   {
-    "id": "1da7e47c96330ab9",
-    "source": "Selected Region"
+    "id": "1da73be11dc09e3c",
+    "source": "Image edit controls"
   },
   {
     "id": "1de3df70ddf4faab",
@@ -1192,10 +1192,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "20f4b98983e22d0b",
     "source": "Couldn’t load your stats."
-  },
-  {
-    "id": "21196e708e938c46",
-    "source": "Pick an image model in the composer to edit here."
   },
   {
     "id": "2132e79193336c63",
@@ -1480,6 +1476,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "28d03596d24eeb4e",
     "source": "Skip"
+  },
+  {
+    "id": "28e70663be7527fe",
+    "source": "Generate edit"
   },
   {
     "id": "28f00fd6d4675fa3",
@@ -2182,6 +2182,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Older 4.x generation."
   },
   {
+    "id": "3be0fefd1755ebfb",
+    "source": ". Open the original file instead."
+  },
+  {
     "id": "3c229f983516a163",
     "source": "Fine-grained text-to-image with reference support."
   },
@@ -2754,6 +2758,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Uploads are not available — configure a storage bucket."
   },
   {
+    "id": "4d0ef130cf526c48",
+    "source": "Preparing image…"
+  },
+  {
     "id": "4d26a5d1c5e2aafd",
     "source": "to go…"
   },
@@ -2826,6 +2834,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "ChatGPT"
   },
   {
+    "id": "50b0e0f1192653fa",
+    "source": "Select area"
+  },
+  {
     "id": "50cbffee01bcdecc",
     "source": "The language Juno replies in."
   },
@@ -2896,6 +2908,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "526e0087cc3f254d",
     "source": "Description"
+  },
+  {
+    "id": "5294557442bbfebb",
+    "source": "Image editor"
   },
   {
     "id": "529f5e784c93b24a",
@@ -2976,10 +2992,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "556f61a9c980c38e",
     "source": "memory/extract"
-  },
-  {
-    "id": "5597753f9c2ffeb8",
-    "source": "Edit Image"
   },
   {
     "id": "55af16e99c58ef6c",
@@ -3092,10 +3104,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "58bd8b632c81d03e",
     "source": "Compare models"
-  },
-  {
-    "id": "590e0ca16dcade94",
-    "source": "blends changes based on regional weights. Details near the boundary may adjust."
   },
   {
     "id": "5910c059eabab457",
@@ -3654,6 +3662,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Your artifacts will load again the moment the connection returns."
   },
   {
+    "id": "688f4febd22ac9d0",
+    "source": "Editing selected area"
+  },
+  {
     "id": "68a79c562fa5737d",
     "source": "GPT-5.4 Nano"
   },
@@ -3668,6 +3680,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "68bff1849c0b1cc2",
     "source": "Ready without sign-in"
+  },
+  {
+    "id": "68c5fdd685f3d35f",
+    "source": "Editing whole image"
   },
   {
     "id": "68ffd9951dde4dc7",
@@ -3740,6 +3756,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6a40ad135aec625a",
     "source": "cannot delete an owner"
+  },
+  {
+    "id": "6a5b604d1e7816b0",
+    "source": "Applies to the whole image."
   },
   {
     "id": "6a99d260101cfcbe",
@@ -4026,10 +4046,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Private chat"
   },
   {
-    "id": "7062794edbfb65fa",
-    "source": "Whole Image"
-  },
-  {
     "id": "706629667b0e8da4",
     "source": "Let the model search the web when it supports it."
   },
@@ -4150,12 +4166,20 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Les présentes conditions générales (« CGU/CGV ») régissent l'accès et l'utilisation du service Juno (le « Service »), accessible à l'adresse"
   },
   {
+    "id": "73d6fc07d8e62879",
+    "source": "Image canvas"
+  },
+  {
     "id": "73dd2593b54fa3bd",
     "source": "Research corpus ready"
   },
   {
     "id": "7462a09b0f4c31bb",
     "source": "Save prompt"
+  },
+  {
+    "id": "746e2b10e553f709",
+    "source": "Drag to select. Keyboard: Enter, arrows, Shift + arrows, Escape."
   },
   {
     "id": "74794b4d682f72bc",
@@ -4322,10 +4346,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Create account"
   },
   {
-    "id": "79b4beee9dedd0ef",
-    "source": "Drag a marquee region directly on the canvas to isolate a change, or describe instructions to regenerate the whole image."
-  },
-  {
     "id": "79cf0d1cce07593f",
     "source": "Juno puts Claude, GPT, Gemini and a dozen more labs in one calm workspace — voice, artifacts, projects and a coding agent included — with the real cost of every answer on the receipt."
   },
@@ -4366,6 +4386,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "A Music-User-Token is required."
   },
   {
+    "id": "7ac04e778cd6c406",
+    "source": "Close image editor"
+  },
+  {
     "id": "7ae40d0b45c3803b",
     "source": "Duplicate clientId in batch."
   },
@@ -4384,6 +4408,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7b778c41b18cb07f",
     "source": "needs_auth_config"
+  },
+  {
+    "id": "7b823236b6caba32",
+    "source": "Whole image"
   },
   {
     "id": "7b82859afe24bd24",
@@ -4584,6 +4612,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "802e9409ad7b0ac2",
     "source": "mentions légales"
+  },
+  {
+    "id": "80425695ed675462",
+    "source": "Choose an image model in the composer to edit this image."
   },
   {
     "id": "8053f9c1e94c2741",
@@ -4922,10 +4954,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "no storage"
   },
   {
-    "id": "8b34dbc2c05eb4d7",
-    "source": "conversation"
-  },
-  {
     "id": "8b36e085ec319024",
     "source": "Les réponses générées par les modèles d'IA sont produites automatiquement et"
   },
@@ -5094,12 +5122,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Submit request"
   },
   {
-    "id": "918922485529ed69",
-    "source": "Unknown phase."
+    "id": "9188204d1d488b89",
+    "source": "Describe the change and optionally target a precise area."
   },
   {
-    "id": "91965655dee34368",
-    "source": "This can take a couple of minutes."
+    "id": "918922485529ed69",
+    "source": "Unknown phase."
   },
   {
     "id": "91b9c8945cc9ce69",
@@ -5954,6 +5982,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Close dialog / stop streaming"
   },
   {
+    "id": "a6d883c223df8f7e",
+    "source": "uses the selected area as guidance, so nearby details may also adjust."
+  },
+  {
     "id": "a6df11e706c514f1",
     "source": "Version history"
   },
@@ -6012,6 +6044,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a8cb6f3567f68478",
     "source": "Answers that teach: step labs, quizzes, timelines and comparisons rendered inline, right in the reply."
+  },
+  {
+    "id": "a92f0449a9f7235b",
+    "source": "Working"
   },
   {
     "id": "a96856cdb34d33d8",
@@ -6080,6 +6116,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "aab31cde23ba9783",
     "source": "Collapse sidebar"
+  },
+  {
+    "id": "aab4922458b14785",
+    "source": "Edit canvas"
   },
   {
     "id": "aab79ba94c1f5717",
@@ -6256,10 +6296,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b010f6d81e5adcb6",
     "source": "Start chatting"
-  },
-  {
-    "id": "b073f6c68ef87211",
-    "source": "Scope"
   },
   {
     "id": "b07a5863ac5cc9fa",
@@ -6576,6 +6612,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ba445cff3898a3f2",
     "source": "Privacy policy"
+  },
+  {
+    "id": "ba6b8bccdba03d34",
+    "source": "Video preview unavailable"
   },
   {
     "id": "baaddf70fb5d432b",
@@ -7042,6 +7082,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Open-weight multimodal model — very cheap, but benchmarks below Medium 3.5."
   },
   {
+    "id": "c8d4ed8dfcb6d1cb",
+    "source": "Preparing image"
+  },
+  {
     "id": "c8dae6371b33b8d6",
     "source": "Replay"
   },
@@ -7172,10 +7216,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "cc7f5c3dc31250a5",
     "source": "Untitled artifact"
-  },
-  {
-    "id": "ccca181757536587",
-    "source": "Conversation"
   },
   {
     "id": "cccaa32bc8899230",
@@ -7348,6 +7388,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d089c8a9fc28e4e5",
     "source": "Unauthorized"
+  },
+  {
+    "id": "d091b5249cc9ab0c",
+    "source": "May take minutes"
   },
   {
     "id": "d0a525c87598227d",
@@ -7610,20 +7654,12 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Couldn’t reach GitHub to load your repositories."
   },
   {
-    "id": "d7b43e1b23992389",
-    "source": "Describe what to add, remove, or replace in this area..."
-  },
-  {
     "id": "d7cbbb688b2e506c",
     "source": "selected"
   },
   {
     "id": "d7d8467478fdd922",
     "source": "This canvas changed while the edit was being prepared. Select the part again and retry."
-  },
-  {
-    "id": "d80d0faa58963b92",
-    "source": "Apply Changes"
   },
   {
     "id": "d812c355781846f4",
@@ -7720,6 +7756,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d989893356eeff0f",
     "source": "See plans"
+  },
+  {
+    "id": "d9d12b04b3831c32",
+    "source": "Edit image"
   },
   {
     "id": "d9dad35beb910b80",
@@ -7828,6 +7868,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "dc85af8f2b1d0d67",
     "source": "Saving..."
+  },
+  {
+    "id": "dc8b7a9a1f8b74c5",
+    "source": "Edit area"
   },
   {
     "id": "dc94eb66542cb221",
@@ -9032,6 +9076,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "fe02680f247961a1",
     "source": "Announcements"
+  },
+  {
+    "id": "fe258712a5204dd3",
+    "source": "Preview unavailable for"
   },
   {
     "id": "fe469a98cfab4714",

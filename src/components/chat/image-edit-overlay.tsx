@@ -6,7 +6,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
-import type { ImageEditInput } from "@/hooks/use-chat";
+import type { ImageEditInput, SendResult } from "@/hooks/use-chat";
 
 /**
  * Region-based image editor. Drag a marquee over the image (single-pointer,
@@ -23,6 +23,8 @@ const MIN_REGION = 0.02;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const round4 = (v: number) => Math.round(v * 10000) / 10000;
+const describeRegion = (region: Region) =>
+  `Selection at ${Math.round(region.x * 100)}% from the left and ${Math.round(region.y * 100)}% from the top, ${Math.round(region.w * 100)}% wide by ${Math.round(region.h * 100)}% high.`;
 
 /** The model that will run the edit: the currently selected model when it's an
  * image model, otherwise the image that generated the attachment (or an image
@@ -47,7 +49,7 @@ interface ImageEditOverlayProps {
   currentModelId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (input: ImageEditInput) => void;
+  onSubmit: (input: ImageEditInput) => SendResult;
 }
 
 export function ImageEditOverlay({
@@ -68,7 +70,9 @@ export function ImageEditOverlay({
   const [imgReady, setImgReady] = React.useState(false);
   const [imgFailed, setImgFailed] = React.useState(false);
   const [frameSize, setFrameSize] = React.useState<{ width: number; height: number } | null>(null);
+  const [selectionAnnouncement, setSelectionAnnouncement] = React.useState("");
   const selectionHelpId = React.useId();
+  const selectionStatusId = React.useId();
 
   const editModel = React.useMemo(() => pickEditModel(currentModelId, sourceModelId), [currentModelId, sourceModelId]);
   const support = editModel ? imageEditSupport(editModel.provider) : "none";
@@ -79,11 +83,14 @@ export function ImageEditOverlay({
     setRegion(null);
     setPrompt("");
     setDragging(false);
+    setSelectionAnnouncement("");
     dragStartRef.current = null;
     setFrameSize(null);
     const el = imgRef.current;
-    setImgReady(!!el?.complete && !!el.naturalWidth);
-    setImgFailed(false);
+    const imageComplete = !!el?.complete;
+    const imageDecoded = imageComplete && !!el?.naturalWidth;
+    setImgReady(imageDecoded);
+    setImgFailed(imageComplete && !imageDecoded);
   }, [open, attachment.id]);
 
   const fitFrameToCanvas = React.useCallback(() => {
@@ -177,7 +184,9 @@ export function ImageEditOverlay({
     if ((e.key === "Enter" || e.key === " ") && !region) {
       e.preventDefault();
       e.stopPropagation();
-      setRegion({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      const next = { x: 0.25, y: 0.25, w: 0.5, h: 0.5 };
+      setRegion(next);
+      setSelectionAnnouncement(describeRegion(next));
       return;
     }
 
@@ -185,6 +194,7 @@ export function ImageEditOverlay({
       e.preventDefault();
       e.stopPropagation();
       setRegion(null);
+      setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
       return;
     }
 
@@ -193,20 +203,19 @@ export function ImageEditOverlay({
     e.stopPropagation();
     const step = e.altKey ? 0.005 : 0.02;
 
-    setRegion((current) => {
-      if (!current) return current;
-      if (e.shiftKey) {
-        if (e.key === "ArrowLeft") return { ...current, w: Math.max(MIN_REGION, current.w - step) };
-        if (e.key === "ArrowRight") return { ...current, w: Math.min(1 - current.x, current.w + step) };
-        if (e.key === "ArrowUp") return { ...current, h: Math.max(MIN_REGION, current.h - step) };
-        return { ...current, h: Math.min(1 - current.y, current.h + step) };
-      }
+    let next = region;
+    if (e.shiftKey) {
+      if (e.key === "ArrowLeft") next = { ...region, w: Math.max(MIN_REGION, region.w - step) };
+      else if (e.key === "ArrowRight") next = { ...region, w: Math.min(1 - region.x, region.w + step) };
+      else if (e.key === "ArrowUp") next = { ...region, h: Math.max(MIN_REGION, region.h - step) };
+      else next = { ...region, h: Math.min(1 - region.y, region.h + step) };
+    } else if (e.key === "ArrowLeft") next = { ...region, x: Math.max(0, region.x - step) };
+    else if (e.key === "ArrowRight") next = { ...region, x: Math.min(1 - region.w, region.x + step) };
+    else if (e.key === "ArrowUp") next = { ...region, y: Math.max(0, region.y - step) };
+    else next = { ...region, y: Math.min(1 - region.h, region.y + step) };
 
-      if (e.key === "ArrowLeft") return { ...current, x: Math.max(0, current.x - step) };
-      if (e.key === "ArrowRight") return { ...current, x: Math.min(1 - current.w, current.x + step) };
-      if (e.key === "ArrowUp") return { ...current, y: Math.max(0, current.y - step) };
-      return { ...current, y: Math.min(1 - current.h, current.y + step) };
-    });
+    setRegion(next);
+    setSelectionAnnouncement(describeRegion(next));
   };
 
   /** Opaque-black canvas at the natural size with the region cleared to
@@ -247,8 +256,8 @@ export function ImageEditOverlay({
         if (mask) edit.maskDataUrl = mask;
       }
     }
-    onSubmit({ prompt: prompt.trim(), model: editModel.id, edit });
-    onOpenChange(false);
+    const result = onSubmit({ prompt: prompt.trim(), model: editModel.id, edit });
+    if (result.accepted) onOpenChange(false);
   };
 
   // Caption clips against the frame's top edge when the region hugs the top —
@@ -290,11 +299,11 @@ export function ImageEditOverlay({
                 ref={frameRef}
                 role="group"
                 aria-label="Image selection canvas"
-                aria-describedby={selectionHelpId}
-                aria-keyshortcuts="Enter Space Escape ArrowUp ArrowDown ArrowLeft ArrowRight"
+                aria-describedby={`${selectionHelpId} ${selectionStatusId}`}
+                aria-keyshortcuts="Enter Space Escape ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight"
                 tabIndex={support === "none" || imgFailed || !imgReady ? -1 : 0}
                 onKeyDown={handleCanvasKeyDown}
-                className="relative shrink-0 select-none overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+                className="relative shrink-0 select-none overflow-hidden rounded-[14px] bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] ring-1 ring-inset ring-border/70 outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
                 style={frameSize ? { width: frameSize.width, height: frameSize.height } : { width: "min(16rem, 100%)", height: "min(11rem, 100%)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -327,7 +336,7 @@ export function ImageEditOverlay({
                 )}
 
                 {imgFailed && (
-                  <div className="absolute inset-0 flex min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
                     <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40">
                       <ImageOff className="size-4" aria-hidden="true" />
                     </span>
@@ -401,7 +410,10 @@ export function ImageEditOverlay({
               {region && (
                 <button
                   type="button"
-                  onClick={() => setRegion(null)}
+                  onClick={() => {
+                    setRegion(null);
+                    setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
+                  }}
                   className="shrink-0 rounded-[7px] px-2 py-1 font-medium text-foreground outline-none transition-colors duration-fast hover:bg-background focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none"
                 >
                   Clear selection
@@ -427,7 +439,10 @@ export function ImageEditOverlay({
                   <button
                     type="button"
                     aria-pressed={region == null}
-                    onClick={() => setRegion(null)}
+                    onClick={() => {
+                      setRegion(null);
+                      setSelectionAnnouncement("Selection cleared. Changes apply to the whole image.");
+                    }}
                     className={cn(
                       "flex h-9 items-center justify-center gap-2 rounded-[8px] px-3 text-[12px] font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-fast ease-out-soft active:scale-[0.98] focus-visible:ring-2 focus-visible:ring-foreground/15 motion-reduce:transition-none motion-reduce:active:scale-100",
                       region == null ? "bg-background text-foreground shadow-soft" : "text-muted-foreground hover:text-foreground"
@@ -453,6 +468,9 @@ export function ImageEditOverlay({
                   {region
                     ? `Selection: ${Math.round(region.w * 100)}% × ${Math.round(region.h * 100)}%.`
                     : "Applies to the whole image."}
+                </p>
+                <p id={selectionStatusId} role="status" aria-live="polite" className="sr-only">
+                  {selectionAnnouncement}
                 </p>
               </fieldset>
 

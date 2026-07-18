@@ -4,7 +4,7 @@ import * as React from "react";
 import { ArrowDown } from "lucide-react";
 import { MessageItem } from "@/components/chat/message-item";
 import { cn } from "@/lib/utils";
-import type { ChatMessage, ImageEditInput } from "@/hooks/use-chat";
+import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, GenerationStatus } from "@/types/chat";
 
 interface MessageListProps {
@@ -26,7 +26,7 @@ interface MessageListProps {
   onSpeak?: (id: string, text: string) => void;
   speakingId?: string | null;
   privateMode?: boolean;
-  onImageEdit?: (input: ImageEditInput) => void;
+  onImageEdit?: (input: ImageEditInput) => SendResult;
   currentModelId?: string;
 }
 

@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { Check, ChevronLeft, ChevronRight, Copy, Download, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -19,7 +19,7 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { splitMessageContent } from "@/lib/message-content";
 import { resolveModel } from "@/lib/models";
 import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
-import type { ChatMessage, ImageEditInput } from "@/hooks/use-chat";
+import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 
 /**
@@ -52,6 +52,7 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
 function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAttachment; onEdit?: () => void }) {
   const [ready, setReady] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const protectedLocalUrl = attachment.url.startsWith("/api/files/");
 
   const revealAfterDecode = (event: React.SyntheticEvent<HTMLImageElement>) => {
     const image = event.currentTarget;
@@ -75,7 +76,11 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
         href={attachment.url}
         target="_blank"
         rel="noopener noreferrer"
-        aria-label={`Open ${attachment.fileName}`}
+        aria-label={
+          failed
+            ? `Preview unavailable. Open ${attachment.fileName} in a new tab`
+            : `Open ${attachment.fileName} in a new tab`
+        }
         className="relative block aspect-square w-full overflow-hidden rounded-xl border border-border/60 bg-muted/35 shadow-soft outline-none motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float focus-visible:ring-2 focus-visible:ring-primary/40"
       >
         <div
@@ -96,6 +101,9 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           src={attachment.url}
           alt={attachment.fileName}
           fill
+          // The protected local-storage route requires the browser's session
+          // cookie. Next's internal optimizer fetch does not forward it.
+          unoptimized={protectedLocalUrl}
           sizes="(max-width: 640px) calc(100vw - 2rem), 320px"
           onLoad={revealAfterDecode}
           onError={() => {
@@ -108,12 +116,17 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           )}
         />
       </a>
+      {failed && (
+        <span role="status" aria-live="polite" className="sr-only">
+          Preview unavailable for {attachment.fileName}. Open the original file instead.
+        </span>
+      )}
       {onEdit && (
         <button
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${attachment.fileName}`}
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label uppercase text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100"
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label uppercase text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
         </button>
@@ -126,51 +139,79 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
 function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
   const [ready, setReady] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+
+  const visibleStatus = failed ? "Preview unavailable" : ready ? "Ready" : "Preparing";
+  const accessibleStatus = failed
+    ? `Video preview unavailable for ${attachment.fileName}`
+    : ready
+      ? `${attachment.fileName} is ready`
+      : `Preparing ${attachment.fileName}`;
+
   return (
-    <div className="relative aspect-video w-full max-w-[480px] overflow-hidden rounded-xl border border-border/60 bg-muted/35 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
-      <div
-        aria-hidden={!failed}
-        className={cn(
-          "absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
-          ready && "pointer-events-none opacity-0"
-        )}
-      >
-        {failed ? (
-          <a
-            href={attachment.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex flex-col items-center gap-2 rounded-xl px-5 py-3 text-center outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-primary/40"
-          >
-            <VideoIcon className="size-5" aria-hidden="true" />
-            <span className="font-mono text-caption uppercase tracking-[0.12em]">Video preview unavailable · open file</span>
-          </a>
-        ) : (
+    <div className="group/video grid w-full max-w-[480px] grid-rows-[auto_3.25rem] overflow-hidden rounded-xl border border-border/60 bg-card/75 shadow-soft motion-safe:animate-fade-in motion-safe:transition-[border-color,box-shadow] motion-safe:duration-base hover:border-border hover:shadow-float">
+      <div className="relative aspect-video min-w-0 overflow-hidden bg-muted/35">
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-0 z-10 grid place-items-center bg-muted/35 text-muted-foreground motion-safe:transition-opacity motion-safe:duration-base",
+            ready && "opacity-0"
+          )}
+        >
           <span className="flex flex-col items-center gap-2 px-5 text-center">
             <VideoIcon className="size-5 opacity-70" />
-            <span className="font-mono text-caption uppercase tracking-[0.12em]">Preparing video</span>
+            <span className="font-mono text-caption uppercase tracking-[0.12em]">
+              {failed ? "Video preview unavailable" : "Preparing video"}
+            </span>
           </span>
-        )}
+        </div>
+        <video
+          controls={ready}
+          playsInline
+          preload="auto"
+          src={attachment.url}
+          title={attachment.fileName}
+          aria-label={attachment.fileName}
+          aria-hidden={!ready}
+          tabIndex={ready ? 0 : -1}
+          onLoadStart={() => {
+            setReady(false);
+            setFailed(false);
+          }}
+          onLoadedData={() => {
+            setFailed(false);
+            setReady(true);
+          }}
+          onError={() => {
+            setReady(false);
+            setFailed(true);
+          }}
+          className={cn(
+            "absolute inset-0 h-full w-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
+            ready ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+          )}
+        />
       </div>
-      <video
-        controls
-        playsInline
-        preload="metadata"
-        src={attachment.url}
-        title={attachment.fileName}
-        onLoadedMetadata={() => {
-          setFailed(false);
-          setReady(true);
-        }}
-        onError={() => {
-          setReady(false);
-          setFailed(true);
-        }}
-        className={cn(
-          "absolute inset-0 h-full w-full object-contain opacity-0 motion-safe:transition-opacity motion-safe:duration-slow motion-safe:ease-out-soft",
-          ready ? "opacity-100" : "opacity-0"
-        )}
-      />
+      <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border/60 bg-card/82 px-3.5">
+        <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+          <VideoIcon className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="shrink-0 font-mono text-caption uppercase tracking-[0.12em] text-foreground/75">Video</span>
+          <span aria-hidden="true" className="text-border">·</span>
+          <span role="status" aria-live="polite" className="min-w-0 truncate text-caption">
+            <span aria-hidden="true">{visibleStatus}</span>
+            <span className="sr-only">{accessibleStatus}</span>
+          </span>
+        </div>
+        <a
+          href={attachment.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Open ${attachment.fileName} in a new tab`}
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption uppercase tracking-[0.08em] text-foreground/80 outline-none transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+        >
+          Open
+          <ExternalLink className="size-3" aria-hidden="true" />
+        </a>
+      </div>
     </div>
   );
 }
@@ -313,7 +354,7 @@ interface MessageItemProps {
   speaking?: boolean;
   privateMode?: boolean;
   /** Launches a region-based edit of a generated image (use-chat.sendImageEdit). */
-  onImageEdit?: (input: ImageEditInput) => void;
+  onImageEdit?: (input: ImageEditInput) => SendResult;
   /** Model currently selected in the composer — preferred for image edits. */
   currentModelId?: string;
 }
