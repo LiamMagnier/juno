@@ -84,8 +84,9 @@ function CodeGreeting() {
       <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
         Juno Code
       </p>
+      {/* Text alone defines the page center; the mark hangs left of that box. */}
       <h1
-        className="flex flex-wrap items-center justify-center gap-x-[0.38em] gap-y-1 font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        className="relative font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
         <button
@@ -94,13 +95,14 @@ function CodeGreeting() {
           onClick={() => setPopping(true)}
           onAnimationEnd={() => setPopping(false)}
           className={cn(
-            "shrink-0 outline-none [animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in",
+            "absolute right-full top-1/2 mr-[0.38em] -translate-y-1/2 shrink-0 outline-none",
+            "[animation-delay:60ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in",
             popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "h-[0.78em] w-[0.78em] translate-y-[0.02em]",
+              "block h-[0.78em] w-[0.78em]",
               "transition-transform duration-base ease-spring motion-reduce:transition-none",
               !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
@@ -111,9 +113,12 @@ function CodeGreeting() {
           {firstName ? "," : "?"}
         </span>
         {firstName ? (
-          <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
-            {firstName}?
-          </span>
+          <>
+            {" "}
+            <span className="inline-block font-medium italic text-primary [animation-delay:180ms] [animation-fill-mode:backwards] motion-safe:animate-rise-in">
+              {firstName}?
+            </span>
+          </>
         ) : null}
       </h1>
     </div>

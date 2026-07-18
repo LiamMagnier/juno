@@ -112,7 +112,9 @@ function pickGreeting(random: boolean): string {
   return bucket.phrases[idx];
 }
 
-/** The serif greeting + signature mark — sits above the centered composer. */
+/** The serif greeting + signature mark — sits above the centered composer.
+ *  Text is what defines the center of the screen; the mark hangs to the left of
+ *  that text (absolute) so it never shifts the optical center. */
 export function EmptyGreeting() {
   const { user } = useApp();
   const firstName = user.name?.split(" ")[0];
@@ -127,27 +129,26 @@ export function EmptyGreeting() {
   return (
     <div className="flex flex-col items-center text-center">
       <h1
-        className="flex items-center justify-center gap-[0.38em] font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        className="relative font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
-        {/* The bare Juno mark, optically centered on the line (flex, not
-            baseline hacks). Springy tilt+grow on hover; a keyframed spring pop
-            on click — like Claude's mark. Transform-only, motion-safe gated. */}
+        {/* Out of flow — does not participate in the centered text box. */}
         <button
           type="button"
           aria-label="Juno"
           onClick={() => setPopping(true)}
           onAnimationEnd={() => setPopping(false)}
           className={cn(
-            "shrink-0 outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
-            popping && "juno-mark-popping"
+            "absolute right-full top-1/2 mr-[0.38em] -translate-y-1/2 shrink-0 outline-none",
+            "[animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
+            popping && "juno-mark-popping",
           )}
         >
           <JunoMark
             className={cn(
-              "h-[0.78em] w-[0.78em] translate-y-[0.02em]",
+              "block h-[0.78em] w-[0.78em]",
               "transition-transform duration-base ease-spring motion-reduce:transition-none",
-              !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110"
+              !popping && "motion-safe:hover:-rotate-6 motion-safe:hover:scale-110",
             )}
           />
         </button>
@@ -157,9 +158,12 @@ export function EmptyGreeting() {
           {firstName ? "," : null}
         </span>
         {firstName ? (
-          <span className="inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
-            {firstName}
-          </span>
+          <>
+            {" "}
+            <span className="inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+              {firstName}
+            </span>
+          </>
         ) : null}
       </h1>
     </div>

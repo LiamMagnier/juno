@@ -883,11 +883,21 @@
       0 12px 28px -24px hsl(var(--foreground) / .34);
   }
 
+  /* The video canvas keeps its own 16:9 geometry; the status footer is added
+     below it instead of being subtracted from the media ratio. */
+  .generation-placeholder[data-modality="video"] {
+    grid-template-rows: auto 3.25rem;
+  }
+
   .generation-placeholder__viewport {
     position: relative;
     min-height: 0;
     overflow: hidden;
     background: hsl(var(--muted) / .38);
+  }
+
+  .generation-placeholder[data-modality="video"] .generation-placeholder__viewport {
+    aspect-ratio: 16 / 9;
   }
 
   .generation-placeholder__viewport::after {
@@ -1031,7 +1041,6 @@
     border-radius: .7rem;
     background: hsl(var(--background) / .48);
     box-shadow: inset 0 1px 0 hsl(var(--sheen));
-    animation: generation-video-strip 8s ease-in-out infinite;
   }
 
   .generation-video-frame {
@@ -1042,21 +1051,10 @@
     border: 1px solid hsl(var(--border) / .7);
     border-radius: .38rem;
     background: hsl(var(--muted) / .72);
-    animation: generation-video-frame 3.6s ease-in-out infinite;
+    animation: generation-video-frame 4.8s ease-in-out infinite;
   }
-  .generation-video-frame:nth-child(2) { animation-delay: -2.4s; }
-  .generation-video-frame:nth-child(3) { animation-delay: -1.2s; }
-
-  .generation-video-frame::after {
-    content: "";
-    position: absolute;
-    inset: 0 auto 0 -35%;
-    width: 28%;
-    background: linear-gradient(90deg, transparent, hsl(var(--foreground) / .055), transparent);
-    animation: generation-video-frame-scan 3.6s linear infinite;
-  }
-  .generation-video-frame:nth-child(2)::after { animation-delay: -2.4s; }
-  .generation-video-frame:nth-child(3)::after { animation-delay: -1.2s; }
+  .generation-video-frame:nth-child(2) { animation-delay: -3.2s; }
+  .generation-video-frame:nth-child(3) { animation-delay: -1.6s; }
 
   .generation-video-frame__sun,
   .generation-video-frame__horizon,
@@ -1121,7 +1119,7 @@
     width: 1px;
     height: .9rem;
     background: hsl(var(--primary) / .78);
-    animation: generation-video-playhead 3.6s linear infinite;
+    animation: generation-video-playhead 4.8s linear infinite;
   }
   .generation-video-playhead::before {
     content: "";
@@ -1238,17 +1236,9 @@
     0%, 100% { opacity: .42; transform: scale(.92); }
     55% { opacity: 1; transform: scale(1); }
   }
-  @keyframes generation-video-strip {
-    0%, 100% { transform: translateX(-1px); }
-    50% { transform: translateX(1px); }
-  }
   @keyframes generation-video-frame {
-    0%, 100% { opacity: .58; background-color: hsl(var(--muted) / .55); }
-    40%, 68% { opacity: 1; background-color: hsl(var(--muted) / .82); }
-  }
-  @keyframes generation-video-frame-scan {
-    from { transform: translateX(0); }
-    to { transform: translateX(490%); }
+    0%, 100% { opacity: .68; background-color: hsl(var(--muted) / .58); }
+    42%, 66% { opacity: .96; background-color: hsl(var(--muted) / .78); }
   }
   @keyframes generation-video-playhead {
     from { left: 0; transform: translateX(0); }
@@ -1278,7 +1268,6 @@
     .generation-placeholder__activity > span,
     .generation-image-art,
     .generation-image-art__sun,
-    .generation-video-strip,
     .generation-video-frame,
     .generation-video-playhead,
     .generation-progress__indeterminate,
@@ -1286,11 +1275,11 @@
     .generation-placeholder__stage-current--entering {
       animation: none;
     }
-    .generation-image-scan,
-    .generation-video-frame::after { display: none; }
+    .generation-image-scan { display: none; }
     .generation-video-frame { opacity: .86; }
     .generation-video-playhead { left: 58%; }
     .generation-progress__indeterminate { width: 42%; }
+    .generation-progress__value { transition: none; }
     .generation-placeholder__stage-previous { display: none; }
   }
 

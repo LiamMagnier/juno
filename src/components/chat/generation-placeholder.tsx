@@ -50,6 +50,16 @@ function formatElapsed(totalSec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+function normalizeProgress(pct?: number): number | null {
+  if (pct == null || !Number.isFinite(pct)) return null;
+
+  // A bare `1` is inherently ambiguous. Until every provider adapter emits the
+  // canonical 0..100 contract, prefer fractional completion (1 === complete),
+  // then clamp defensive provider values into a safe visual range.
+  const normalized = pct >= 0 && pct <= 1 ? pct * 100 : pct;
+  return Math.max(0, Math.min(100, normalized));
+}
+
 function ImageDevelopment() {
   return (
     <div className="generation-image-stage" aria-hidden="true">
@@ -114,19 +124,27 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
     return () => window.clearInterval(timer);
   }, []);
 
-  // Stage-label crossfade: retain the outgoing label for one short transition.
-  const [previousDetail, setPreviousDetail] = React.useState<string | null>(null);
-  const lastDetailRef = React.useRef(detail);
+  // Keep the prior stage on the first render after a prop change, then swap both
+  // labels together. This avoids painting the new label once before its entry
+  // animation is attached.
+  const [stageTransition, setStageTransition] = React.useState<{
+    current: string;
+    previous: string | null;
+  }>(() => ({ current: detail, previous: null }));
   React.useEffect(() => {
-    if (lastDetailRef.current === detail) return;
-    setPreviousDetail(lastDetailRef.current);
-    lastDetailRef.current = detail;
-    const timer = window.setTimeout(() => setPreviousDetail(null), 240);
+    setStageTransition((current) =>
+      current.current === detail
+        ? current
+        : { current: detail, previous: current.current }
+    );
+    const timer = window.setTimeout(
+      () => setStageTransition((current) => ({ ...current, previous: null })),
+      240
+    );
     return () => window.clearTimeout(timer);
   }, [detail]);
 
-  // Providers may report a fraction or a percentage — normalize to 0..100.
-  const displayPct = pct == null ? null : Math.max(0, Math.min(100, pct < 1 ? pct * 100 : pct));
+  const displayPct = normalizeProgress(pct);
   const roundedPct = displayPct == null ? null : Math.round(displayPct);
   const ariaProgress = roundedPct == null ? "" : `, ${roundedPct} percent`;
   const longVideoWait = isVideo && elapsed >= 15;
@@ -142,7 +160,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
       data-stage={stage}
       className={cn(
         "generation-placeholder w-full",
-        isVideo ? "aspect-video max-w-[480px]" : "aspect-square max-w-[320px]"
+        isVideo ? "max-w-[480px]" : "aspect-square max-w-[320px]"
       )}
     >
       <div className="generation-placeholder__viewport">
@@ -153,7 +171,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
           </span>
           <span className="generation-placeholder__activity">
             <span />
-            {longVideoWait ? "A few minutes" : "Working"}
+            {longVideoWait ? "May take minutes" : "Working"}
           </span>
         </div>
 
@@ -173,17 +191,19 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
         </div>
         <div className="generation-placeholder__status-row">
           <span className="generation-placeholder__stage">
-            {previousDetail && (
-              <span className="generation-placeholder__stage-previous">{previousDetail}</span>
+            {stageTransition.previous && (
+              <span className="generation-placeholder__stage-previous">
+                {stageTransition.previous}
+              </span>
             )}
             <span
-              key={detail}
+              key={stageTransition.current}
               className={cn(
                 "generation-placeholder__stage-current",
-                previousDetail && "generation-placeholder__stage-current--entering"
+                stageTransition.previous && "generation-placeholder__stage-current--entering"
               )}
             >
-              {detail}
+              {stageTransition.current}
             </span>
           </span>
           <span className="generation-placeholder__metrics">

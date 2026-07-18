@@ -58,6 +58,7 @@ export function ImageEditOverlay({
   onOpenChange,
   onSubmit,
 }: ImageEditOverlayProps) {
+  const canvasAreaRef = React.useRef<HTMLDivElement>(null);
   const frameRef = React.useRef<HTMLDivElement>(null);
   const imgRef = React.useRef<HTMLImageElement>(null);
   const dragStartRef = React.useRef<{ x: number; y: number } | null>(null);
@@ -66,6 +67,7 @@ export function ImageEditOverlay({
   const [prompt, setPrompt] = React.useState("");
   const [imgReady, setImgReady] = React.useState(false);
   const [imgFailed, setImgFailed] = React.useState(false);
+  const [frameSize, setFrameSize] = React.useState<{ width: number; height: number } | null>(null);
   const selectionHelpId = React.useId();
 
   const editModel = React.useMemo(() => pickEditModel(currentModelId, sourceModelId), [currentModelId, sourceModelId]);
@@ -78,10 +80,59 @@ export function ImageEditOverlay({
     setPrompt("");
     setDragging(false);
     dragStartRef.current = null;
+    setFrameSize(null);
     const el = imgRef.current;
     setImgReady(!!el?.complete && !!el.naturalWidth);
     setImgFailed(false);
   }, [open, attachment.id]);
+
+  const fitFrameToCanvas = React.useCallback(() => {
+    const canvasArea = canvasAreaRef.current;
+    const image = imgRef.current;
+    if (!canvasArea) return;
+
+    const rect = canvasArea.getBoundingClientRect();
+    const styles = window.getComputedStyle(canvasArea);
+    const horizontalPadding = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
+    const verticalPadding = Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
+    const availableWidth = Math.max(1, rect.width - horizontalPadding);
+    const availableHeight = Math.max(1, rect.height - verticalPadding);
+
+    // Loading and error states keep a compact, predictable 16:11 canvas.
+    // Once decoded, the frame adopts the image's exact aspect ratio so the
+    // visible pixels, marquee coordinates, and generated mask all agree.
+    const sourceWidth = imgReady && !imgFailed && image?.naturalWidth ? image.naturalWidth : 320;
+    const sourceHeight = imgReady && !imgFailed && image?.naturalHeight ? image.naturalHeight : 220;
+    const scale = Math.min(
+      availableWidth / sourceWidth,
+      availableHeight / sourceHeight,
+      imgReady && !imgFailed ? Number.POSITIVE_INFINITY : 1
+    );
+    const next = {
+      width: Math.max(1, sourceWidth * scale),
+      height: Math.max(1, sourceHeight * scale),
+    };
+
+    setFrameSize((current) =>
+      current && Math.abs(current.width - next.width) < 0.5 && Math.abs(current.height - next.height) < 0.5 ? current : next
+    );
+  }, [imgFailed, imgReady]);
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const canvasArea = canvasAreaRef.current;
+    if (!canvasArea) return;
+
+    fitFrameToCanvas();
+    const observer = new ResizeObserver(fitFrameToCanvas);
+    observer.observe(canvasArea);
+    window.visualViewport?.addEventListener("resize", fitFrameToCanvas);
+
+    return () => {
+      observer.disconnect();
+      window.visualViewport?.removeEventListener("resize", fitFrameToCanvas);
+    };
+  }, [attachment.id, fitFrameToCanvas, open]);
 
   const toNormalized = (e: React.PointerEvent): { x: number; y: number } => {
     const rect = frameRef.current!.getBoundingClientRect();
@@ -92,6 +143,7 @@ export function ImageEditOverlay({
   };
 
   const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!imgReady || imgFailed || support === "none") return;
     if (e.button !== 0 && e.pointerType === "mouse") return;
     e.currentTarget.setPointerCapture(e.pointerId);
     const p = toNormalized(e);
@@ -120,10 +172,41 @@ export function ImageEditOverlay({
   };
 
   const handleCanvasKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== "Escape" || !region) return;
+    if (!imgReady || imgFailed || support === "none") return;
+
+    if ((e.key === "Enter" || e.key === " ") && !region) {
+      e.preventDefault();
+      e.stopPropagation();
+      setRegion({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+      return;
+    }
+
+    if (e.key === "Escape" && region) {
+      e.preventDefault();
+      e.stopPropagation();
+      setRegion(null);
+      return;
+    }
+
+    if (!region || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) return;
     e.preventDefault();
     e.stopPropagation();
-    setRegion(null);
+    const step = e.altKey ? 0.005 : 0.02;
+
+    setRegion((current) => {
+      if (!current) return current;
+      if (e.shiftKey) {
+        if (e.key === "ArrowLeft") return { ...current, w: Math.max(MIN_REGION, current.w - step) };
+        if (e.key === "ArrowRight") return { ...current, w: Math.min(1 - current.x, current.w + step) };
+        if (e.key === "ArrowUp") return { ...current, h: Math.max(MIN_REGION, current.h - step) };
+        return { ...current, h: Math.min(1 - current.y, current.h + step) };
+      }
+
+      if (e.key === "ArrowLeft") return { ...current, x: Math.max(0, current.x - step) };
+      if (e.key === "ArrowRight") return { ...current, x: Math.min(1 - current.w, current.x + step) };
+      if (e.key === "ArrowUp") return { ...current, y: Math.max(0, current.y - step) };
+      return { ...current, y: Math.min(1 - current.h, current.y + step) };
+    });
   };
 
   /** Opaque-black canvas at the natural size with the region cleared to
@@ -202,16 +285,17 @@ export function ImageEditOverlay({
               </span>
             </header>
 
-            <div className="flex min-h-0 flex-1 items-center justify-center p-4 sm:p-6 lg:p-8">
+            <div ref={canvasAreaRef} className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4 sm:p-6 lg:p-8">
               <div
                 ref={frameRef}
                 role="group"
                 aria-label="Image selection canvas"
                 aria-describedby={selectionHelpId}
-                aria-keyshortcuts="Escape"
-                tabIndex={support === "none" || imgFailed ? -1 : 0}
+                aria-keyshortcuts="Enter Space Escape ArrowUp ArrowDown ArrowLeft ArrowRight"
+                tabIndex={support === "none" || imgFailed || !imgReady ? -1 : 0}
                 onKeyDown={handleCanvasKeyDown}
-                className="relative max-h-full max-w-full select-none overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+                className="relative shrink-0 select-none overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[0_18px_50px_hsl(var(--foreground)/0.12)] outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-4 focus-visible:ring-offset-muted/20"
+                style={frameSize ? { width: frameSize.width, height: frameSize.height } : { width: "min(16rem, 100%)", height: "min(11rem, 100%)" }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -219,10 +303,28 @@ export function ImageEditOverlay({
                   src={attachment.url}
                   alt={attachment.fileName}
                   draggable={false}
-                  onLoad={() => setImgReady(true)}
-                  onError={() => setImgFailed(true)}
-                  className="block max-h-[calc(42dvh-5.5rem)] w-auto max-w-full rounded-[13px] object-contain md:max-h-[calc(min(86dvh,43rem)-8rem)]"
+                  onLoad={() => {
+                    setImgFailed(false);
+                    setImgReady(true);
+                  }}
+                  onError={() => {
+                    setImgReady(false);
+                    setImgFailed(true);
+                  }}
+                  className={cn(
+                    "block size-full rounded-[13px] object-contain transition-opacity duration-fast motion-reduce:transition-none",
+                    imgReady && !imgFailed ? "opacity-100" : "opacity-0"
+                  )}
                 />
+
+                {!imgReady && !imgFailed && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground" role="status">
+                    <span className="flex size-10 items-center justify-center rounded-full border border-border bg-muted/40">
+                      <ImageIcon className="size-4 animate-pulse motion-reduce:animate-none" aria-hidden="true" />
+                    </span>
+                    <span className="text-xs">Preparing image…</span>
+                  </div>
+                )}
 
                 {imgFailed && (
                   <div className="absolute inset-0 flex min-h-40 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
@@ -234,20 +336,22 @@ export function ImageEditOverlay({
                 )}
 
                 {/* Pointer-capture layer */}
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-0 z-10 cursor-crosshair"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(e) => {
-                    frameRef.current?.focus({ preventScroll: true });
-                    onPointerDown(e);
-                  }}
-                  onPointerMove={onPointerMove}
-                  onPointerUp={endDrag}
-                  onPointerCancel={endDrag}
-                />
+                {imgReady && !imgFailed && support !== "none" && (
+                  <div
+                    aria-hidden="true"
+                    className="absolute inset-0 z-10 cursor-crosshair"
+                    style={{ touchAction: "none" }}
+                    onPointerDown={(e) => {
+                      frameRef.current?.focus({ preventScroll: true });
+                      onPointerDown(e);
+                    }}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={endDrag}
+                    onPointerCancel={endDrag}
+                  />
+                )}
 
-                {region == null && !imgFailed && support !== "none" && (
+                {region == null && imgReady && !imgFailed && support !== "none" && (
                   <div aria-hidden="true" className="pointer-events-none absolute inset-1.5 z-20 rounded-[10px] border border-dashed border-white/60 mix-blend-difference" />
                 )}
 
@@ -270,9 +374,9 @@ export function ImageEditOverlay({
                       <span
                         key={c}
                         className={cn(
-                          "absolute size-2.5 rounded-[2px] border border-black/30 bg-white shadow-sm",
-                          c[0] === "t" ? "-top-1.5" : "-bottom-1.5",
-                          c[1] === "l" ? "-left-1.5" : "-right-1.5"
+                          "absolute size-3 border-0 border-white drop-shadow-sm",
+                          c[0] === "t" ? "-top-px border-t-2" : "-bottom-px border-b-2",
+                          c[1] === "l" ? "-left-px border-l-2" : "-right-px border-r-2"
                         )}
                       />
                     ))}
@@ -292,7 +396,7 @@ export function ImageEditOverlay({
             <div className="flex min-h-11 shrink-0 items-center justify-between gap-3 border-t border-border/50 px-4 text-[11px] text-muted-foreground sm:px-5">
               <p id={selectionHelpId} className="flex min-w-0 items-center gap-2">
                 <MousePointer2 className="size-3.5 shrink-0" aria-hidden="true" />
-                <span className="truncate">Drag over the image to target an area.</span>
+                <span className="truncate">Drag to select. Keyboard: Enter, arrows, Shift + arrows, Escape.</span>
               </p>
               {region && (
                 <button
@@ -313,7 +417,7 @@ export function ImageEditOverlay({
                 <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Image editor</p>
                 <DialogTitle className="mt-2 font-serif text-[26px] font-normal leading-tight tracking-[-0.02em] text-foreground">Edit image</DialogTitle>
                 <DialogDescription className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
-                  Describe the result you want, then apply it to the whole image or one precise area.
+                  Describe the change and optionally target a precise area.
                 </DialogDescription>
               </div>
 
@@ -345,10 +449,10 @@ export function ImageEditOverlay({
                     {region ? "Selected area" : "Select area"}
                   </button>
                 </div>
-                <p className="mt-2 min-h-4 text-[11px] leading-relaxed text-muted-foreground" aria-live="polite">
+                <p className="mt-2 min-h-4 text-[11px] leading-relaxed text-muted-foreground">
                   {region
-                    ? `${Math.round(region.w * 100)}% × ${Math.round(region.h * 100)}% of the image will be targeted.`
-                    : "No selection — changes apply across the full image."}
+                    ? `Selection: ${Math.round(region.w * 100)}% × ${Math.round(region.h * 100)}%.`
+                    : "Applies to the whole image."}
                 </p>
               </fieldset>
 
@@ -382,7 +486,6 @@ export function ImageEditOverlay({
                     placeholder={region ? "Describe what should change inside the selection…" : "Describe how the image should change…"}
                     aria-label="Describe changes"
                     disabled={support === "none"}
-                    autoFocus
                     className="h-28 w-full resize-none bg-transparent px-3.5 py-3 text-[13px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60 disabled:cursor-not-allowed disabled:opacity-50 md:h-32"
                   />
                   <div className="flex min-h-9 items-center justify-between gap-3 border-t border-border/50 px-3 text-[10px] text-muted-foreground">
