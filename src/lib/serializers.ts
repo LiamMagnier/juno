@@ -97,13 +97,17 @@ type MessageVersionMeta = Pick<MessageVersion, "id" | "model" | "createdAt">;
 export async function serializeMessage(
   msg: Message & { attachments: Attachment[]; versions?: MessageVersionMeta[] }
 ): Promise<ClientMessage> {
-  // Estimated cost from the persisted token counts. Reload lacks the cache split,
-  // so this is an upper-bound estimate; the live stream sends an exact value.
+  // Prefer the exact cost written at generation time (includes cache writes +
+  // tool fees). Recomputing from token counts alone systematically under-bills
+  // Anthropic 1h cache and web search — the bug that showed "~$0.0006".
   const model = msg.model ? resolveModel(msg.model) : null;
+  const storedMicro = (msg as { costMicroUsd?: number | null }).costMicroUsd;
   const costUsd =
-    model && (msg.promptTokens != null || msg.completionTokens != null)
-      ? estimateCostUsd(model, { input: msg.promptTokens ?? 0, output: msg.completionTokens ?? 0 })
-      : undefined;
+    storedMicro != null && storedMicro > 0
+      ? storedMicro / 1_000_000
+      : model && (msg.promptTokens != null || msg.completionTokens != null)
+        ? estimateCostUsd(model, { input: msg.promptTokens ?? 0, output: msg.completionTokens ?? 0 })
+        : undefined;
   return {
     id: msg.id,
     role: msg.role,

@@ -739,13 +739,13 @@ export function MessageItem({
               <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground/60">
                 {modelName}
                 {hasUsage ? `${modelName ? " · " : ""}${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens` : ""}
-                {view.costUsd != null && view.costUsd > 0 ? ` · ~${formatUsd(view.costUsd)}` : ""}
+                {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}
               </p>
             </TooltipTrigger>
             <TooltipContent>
               {view.model}
               {hasUsage ? `${view.model ? " · " : ""}${formatTokens(view.promptTokens ?? 0)} in · ${formatTokens(view.completionTokens ?? 0)} out` : ""}
-              {view.costUsd != null && view.costUsd > 0 ? ` · estimated ${formatUsd(view.costUsd)}` : ""}
+              {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}
             </TooltipContent>
           </Tooltip>
         )}

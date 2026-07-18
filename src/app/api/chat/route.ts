@@ -44,6 +44,7 @@ import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { estimateGenerationCostUsd, supportsFastMode } from "@/lib/pricing";
+import { mergeUsage, totalInputTokens, type UsageAccumulator } from "@/lib/usage-merge";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -242,6 +243,7 @@ function buildUsage(
 ): {
   detail: string;
   cost: number;
+  costMicroUsd: number;
   totalInput: number;
   output: number;
   reasoning: number;
@@ -250,8 +252,12 @@ function buildUsage(
   xSearchRequests: number;
   cacheWrite5m: number;
   cacheWrite1h: number;
+  cacheRead: number;
+  cacheWrite: number;
 } {
   const billed = estimateGenerationCostUsd(model, {
+    // For Anthropic, raw.input is FRESH only; cache is separate. The estimator
+    // bills each bucket at the right rate.
     promptTokens: raw.input,
     completionTokens: raw.output,
     reasoningTokens: raw.reasoning,
@@ -267,35 +273,51 @@ function buildUsage(
     completionChars: raw.completionChars,
     reasoningChars: raw.reasoningChars,
   });
-  // Avoid double-counting when both aggregate and split writes are present.
-  const cachedDisplay =
-    Math.max(0, raw.cacheRead ?? 0) +
-    (raw.cacheWrite5m || raw.cacheWrite1h
-      ? Math.max(0, raw.cacheWrite5m ?? 0) + Math.max(0, raw.cacheWrite1h ?? 0)
-      : Math.max(0, raw.cacheWrite ?? 0));
+  const cacheRead = Math.max(0, raw.cacheRead ?? 0);
+  const cacheWrite5m = Math.max(0, raw.cacheWrite5m ?? 0);
+  const cacheWrite1h = Math.max(0, raw.cacheWrite1h ?? 0);
+  const cacheWrite =
+    cacheWrite5m + cacheWrite1h > 0
+      ? cacheWrite5m + cacheWrite1h
+      : Math.max(0, raw.cacheWrite ?? 0);
+  const cachedDisplay = cacheRead + cacheWrite;
+  // Display/persist total input = fresh + all cache (matches Anthropic billing sum).
+  const totalInput = Math.max(
+    billed.promptTokens + cacheRead + cacheWrite,
+    totalInputTokens({
+      input: raw.input,
+      cacheRead: raw.cacheRead,
+      cacheWrite: raw.cacheWrite,
+      cacheWrite5m: raw.cacheWrite5m,
+      cacheWrite1h: raw.cacheWrite1h,
+    })
+  );
   const searches =
     Math.max(0, raw.webSearchRequests ?? 0) + Math.max(0, raw.xSearchRequests ?? 0);
   const detail = [
-    billed.promptTokens
-      ? `${billed.promptTokens.toLocaleString()} input${cachedDisplay ? ` (${cachedDisplay.toLocaleString()} cached)` : ""}`
+    totalInput
+      ? `${totalInput.toLocaleString()} input${cachedDisplay ? ` (${cachedDisplay.toLocaleString()} cached)` : ""}`
       : null,
     billed.completionTokens ? `${billed.completionTokens.toLocaleString()} output` : null,
     searches > 0 ? `${searches.toLocaleString()} ${searches === 1 ? "search" : "searches"}` : null,
-    billed.costUsd > 0 ? `~${formatUsd(billed.costUsd)}` : null,
+    billed.costUsd > 0 ? formatUsd(billed.costUsd) : null,
   ]
     .filter(Boolean)
     .join(" · ");
   return {
     detail,
     cost: billed.costUsd,
-    totalInput: billed.promptTokens,
+    costMicroUsd: Math.max(0, Math.round(billed.costUsd * 1_000_000)),
+    totalInput,
     output: billed.completionTokens,
     reasoning: Math.max(0, raw.reasoning ?? 0),
     toolFeesUsd: billed.toolFeesUsd,
     webSearchRequests: Math.max(0, raw.webSearchRequests ?? 0),
     xSearchRequests: Math.max(0, raw.xSearchRequests ?? 0),
-    cacheWrite5m: Math.max(0, raw.cacheWrite5m ?? 0),
-    cacheWrite1h: Math.max(0, raw.cacheWrite1h ?? 0),
+    cacheWrite5m,
+    cacheWrite1h,
+    cacheRead,
+    cacheWrite,
   };
 }
 
@@ -696,6 +718,8 @@ async function handleChat(req: Request) {
         // lib/reasoning-parts.
         let reasoningParts: string[] = [];
         let lastReasoningPart: number | null = null;
+        let usageAcc: UsageAccumulator = {};
+        // Back-compat names for budget enforcement / logging.
         let promptTokens: number | undefined;
         let completionTokens: number | undefined;
         let reasoningTokens: number | undefined;
@@ -831,17 +855,30 @@ async function handleChat(req: Request) {
               }
               if (webSources.length) send({ type: "sources", sources: webSources });
             } else if (ev.type === "usage") {
-              if (ev.input != null) promptTokens = ev.input;
-              if (ev.output != null) completionTokens = ev.output;
-              if (ev.reasoning != null) reasoningTokens = ev.reasoning;
-              if (ev.total != null) totalTokens = ev.total;
-              if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
-              if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
-              if (ev.cacheWrite5m != null) cacheWrite5mTokens = ev.cacheWrite5m;
-              if (ev.cacheWrite1h != null) cacheWrite1hTokens = ev.cacheWrite1h;
-              if (ev.webSearchRequests != null) webSearchRequests = ev.webSearchRequests;
-              if (ev.xSearchRequests != null) xSearchRequests = ev.xSearchRequests;
-              if (ev.fast != null) servedFast = ev.fast;
+              usageAcc = mergeUsage(usageAcc, {
+                input: ev.input,
+                output: ev.output,
+                reasoning: ev.reasoning,
+                total: ev.total,
+                cacheRead: ev.cacheRead,
+                cacheWrite: ev.cacheWrite,
+                cacheWrite5m: ev.cacheWrite5m,
+                cacheWrite1h: ev.cacheWrite1h,
+                webSearchRequests: ev.webSearchRequests,
+                xSearchRequests: ev.xSearchRequests,
+                fast: ev.fast,
+              });
+              promptTokens = usageAcc.input;
+              completionTokens = usageAcc.output;
+              reasoningTokens = usageAcc.reasoning;
+              totalTokens = usageAcc.total;
+              cacheReadTokens = usageAcc.cacheRead;
+              cacheWriteTokens = usageAcc.cacheWrite;
+              cacheWrite5mTokens = usageAcc.cacheWrite5m;
+              cacheWrite1hTokens = usageAcc.cacheWrite1h;
+              webSearchRequests = usageAcc.webSearchRequests;
+              xSearchRequests = usageAcc.xSearchRequests;
+              if (usageAcc.fast != null) servedFast = usageAcc.fast;
               enforceStreamBudget();
             } else if (ev.type === "finish") {
               finishReason = ev.reason;
@@ -849,16 +886,16 @@ async function handleChat(req: Request) {
           }
 
           const usage = buildUsage(modelInfo, {
-            input: promptTokens,
-            output: completionTokens,
-            reasoning: reasoningTokens,
-            total: totalTokens,
-            cacheRead: cacheReadTokens,
-            cacheWrite: cacheWriteTokens,
-            cacheWrite5m: cacheWrite5mTokens,
-            cacheWrite1h: cacheWrite1hTokens,
-            webSearchRequests,
-            xSearchRequests,
+            input: usageAcc.input,
+            output: usageAcc.output,
+            reasoning: usageAcc.reasoning,
+            total: usageAcc.total,
+            cacheRead: usageAcc.cacheRead,
+            cacheWrite: usageAcc.cacheWrite,
+            cacheWrite5m: usageAcc.cacheWrite5m,
+            cacheWrite1h: usageAcc.cacheWrite1h,
+            webSearchRequests: usageAcc.webSearchRequests,
+            xSearchRequests: usageAcc.xSearchRequests,
             promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
             reasoningChars: reasoning.length,
@@ -948,16 +985,17 @@ async function handleChat(req: Request) {
           if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
             appendFinishWarning(reason, sendActivity);
             const partialUsage = buildUsage(modelInfo, {
-            input: promptTokens,
-            output: completionTokens,
-            reasoning: reasoningTokens,
-            total: totalTokens,
-            cacheRead: cacheReadTokens,
-            cacheWrite: cacheWriteTokens,
-            cacheWrite5m: cacheWrite5mTokens,
-            cacheWrite1h: cacheWrite1hTokens,
-            webSearchRequests,
-            xSearchRequests,
+            input: usageAcc.input,
+            output: usageAcc.output,
+            reasoning: usageAcc.reasoning,
+            total: usageAcc.total,
+            cacheRead: usageAcc.cacheRead,
+            cacheWrite: usageAcc.cacheWrite,
+            cacheWrite5m: usageAcc.cacheWrite5m,
+            cacheWrite1h: usageAcc.cacheWrite1h,
+            webSearchRequests: usageAcc.webSearchRequests,
+            xSearchRequests: usageAcc.xSearchRequests,
+            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -1702,6 +1740,7 @@ async function handleChat(req: Request) {
       // providers that actually send them.
       let reasoningParts: string[] = [];
       let lastReasoningPart: number | null = null;
+      let usageAcc: UsageAccumulator = {};
       let promptTokens: number | undefined;
       let completionTokens: number | undefined;
       let reasoningTokens: number | undefined;
@@ -1751,6 +1790,8 @@ async function handleChat(req: Request) {
         reasoningParts: string[];
         promptTokens: number | null;
         completionTokens: number | null;
+        /** Exact generation cost (tokens + cache + tool fees), micro-USD. */
+        costMicroUsd?: number | null;
       }) => {
         // Each part is encrypted individually, exactly like `reasoning` — same
         // message-crypto path, same key. The array shape stays in plaintext
@@ -1763,6 +1804,7 @@ async function handleChat(req: Request) {
           model: modelId,
           promptTokens: data.promptTokens,
           completionTokens: data.completionTokens,
+          costMicroUsd: data.costMicroUsd ?? null,
           activity: activityLog as unknown as Prisma.InputJsonValue,
         };
         // Metadata for the pager rides along on the done chunk.
@@ -2033,17 +2075,30 @@ async function handleChat(req: Request) {
             }
             if (webSources.length) send({ type: "sources", sources: webSources });
           } else if (ev.type === "usage") {
-            if (ev.input != null) promptTokens = ev.input;
-            if (ev.output != null) completionTokens = ev.output;
-            if (ev.reasoning != null) reasoningTokens = ev.reasoning;
-            if (ev.total != null) totalTokens = ev.total;
-            if (ev.cacheRead != null) cacheReadTokens = ev.cacheRead;
-            if (ev.cacheWrite != null) cacheWriteTokens = ev.cacheWrite;
-            if (ev.cacheWrite5m != null) cacheWrite5mTokens = ev.cacheWrite5m;
-            if (ev.cacheWrite1h != null) cacheWrite1hTokens = ev.cacheWrite1h;
-            if (ev.webSearchRequests != null) webSearchRequests = ev.webSearchRequests;
-            if (ev.xSearchRequests != null) xSearchRequests = ev.xSearchRequests;
-            if (ev.fast != null) servedFast = ev.fast;
+            usageAcc = mergeUsage(usageAcc, {
+              input: ev.input,
+              output: ev.output,
+              reasoning: ev.reasoning,
+              total: ev.total,
+              cacheRead: ev.cacheRead,
+              cacheWrite: ev.cacheWrite,
+              cacheWrite5m: ev.cacheWrite5m,
+              cacheWrite1h: ev.cacheWrite1h,
+              webSearchRequests: ev.webSearchRequests,
+              xSearchRequests: ev.xSearchRequests,
+              fast: ev.fast,
+            });
+            promptTokens = usageAcc.input;
+            completionTokens = usageAcc.output;
+            reasoningTokens = usageAcc.reasoning;
+            totalTokens = usageAcc.total;
+            cacheReadTokens = usageAcc.cacheRead;
+            cacheWriteTokens = usageAcc.cacheWrite;
+            cacheWrite5mTokens = usageAcc.cacheWrite5m;
+            cacheWrite1hTokens = usageAcc.cacheWrite1h;
+            webSearchRequests = usageAcc.webSearchRequests;
+            xSearchRequests = usageAcc.xSearchRequests;
+            if (usageAcc.fast != null) servedFast = usageAcc.fast;
             enforceStreamBudget();
           } else if (ev.type === "finish") {
             finishReason = ev.reason;
@@ -2058,16 +2113,18 @@ async function handleChat(req: Request) {
 
         // Reconcile token usage across providers and estimate the $ cost once.
         const usage = buildUsage(modelInfo, {
-            input: promptTokens,
-            output: completionTokens,
-            reasoning: reasoningTokens,
-            total: totalTokens,
-            cacheRead: cacheReadTokens,
-            cacheWrite: cacheWriteTokens,
-            cacheWrite5m: cacheWrite5mTokens,
-            cacheWrite1h: cacheWrite1hTokens,
-            webSearchRequests,
-            xSearchRequests,
+            input: usageAcc.input,
+            output: usageAcc.output,
+            reasoning: usageAcc.reasoning,
+            total: usageAcc.total,
+            cacheRead: usageAcc.cacheRead,
+            cacheWrite: usageAcc.cacheWrite,
+            cacheWrite5m: usageAcc.cacheWrite5m,
+            cacheWrite1h: usageAcc.cacheWrite1h,
+            webSearchRequests: usageAcc.webSearchRequests,
+            xSearchRequests: usageAcc.xSearchRequests,
+            // Floor on real prompt size when the provider under-reports input.
+            promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -2091,6 +2148,7 @@ async function handleChat(req: Request) {
           reasoningParts,
           promptTokens: usage.totalInput || promptTokens || null,
           completionTokens: usage.output || completionTokens || null,
+          costMicroUsd: usage.costMicroUsd || null,
         });
 
         // Artifacts + memory side effects.
@@ -2206,16 +2264,17 @@ async function handleChat(req: Request) {
           try {
             appendFinishWarning(reason, sendActivity);
             const partialUsage = buildUsage(modelInfo, {
-            input: promptTokens,
-            output: completionTokens,
-            reasoning: reasoningTokens,
-            total: totalTokens,
-            cacheRead: cacheReadTokens,
-            cacheWrite: cacheWriteTokens,
-            cacheWrite5m: cacheWrite5mTokens,
-            cacheWrite1h: cacheWrite1hTokens,
-            webSearchRequests,
-            xSearchRequests,
+            input: usageAcc.input,
+            output: usageAcc.output,
+            reasoning: usageAcc.reasoning,
+            total: usageAcc.total,
+            cacheRead: usageAcc.cacheRead,
+            cacheWrite: usageAcc.cacheWrite,
+            cacheWrite5m: usageAcc.cacheWrite5m,
+            cacheWrite1h: usageAcc.cacheWrite1h,
+            webSearchRequests: usageAcc.webSearchRequests,
+            xSearchRequests: usageAcc.xSearchRequests,
+            promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
             completionChars: full.length,
             reasoningChars: reasoning.length,
           }, servedFast);
@@ -2228,6 +2287,7 @@ async function handleChat(req: Request) {
               reasoningParts,
               promptTokens: partialUsage.totalInput || promptTokens || null,
               completionTokens: partialUsage.output || completionTokens || null,
+              costMicroUsd: partialUsage.costMicroUsd || null,
             });
             const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
             await prisma.conversation.updateMany({ where: { id: conversationId, userId: user.id }, data: { lastMessageAt: new Date(), model: modelId } });

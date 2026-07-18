@@ -404,6 +404,10 @@ model Message {
   feedback         Feedback? // thumbs up/down on assistant messages
   promptTokens     Int?
   completionTokens Int?
+  // Exact generation cost at write time (tokens + cache + tool fees), micro-USD.
+  // Serializer prefers this over recomputing from token counts alone (which
+  // drop cache writes and web-search fees and under-report badly).
+  costMicroUsd     Int?
   sources          Json? // web-search citations: [{ title, url, snippet }]
   activity         Json? // visible generation timeline: [{ id, kind, title, detail?, url?, createdAt }]
   createdAt        DateTime  @default(now())

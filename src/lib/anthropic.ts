@@ -465,73 +465,57 @@ export async function* streamAnthropic(
     }
   }
   const seen = new Set<string>();
+  // Accumulate across the whole stream. Never emit partial mid-stream usage that
+  // could wipe earlier input/cache with a delta that only has output_tokens.
+  type RawU = {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+    cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
+    output_tokens_details?: { thinking_tokens?: number } | null;
+    server_tool_use?: { web_search_requests?: number } | null;
+    speed?: string | null;
+  };
 
-  /**
-   * Map Anthropic Usage / MessageDeltaUsage into a full LlmEvent usage payload.
-   * message_delta carries CUMULATIVE counters (input grows after server tools
-   * inject search results) — always prefer the latest delta over message_start.
-   */
-  const usageEvent = (
-    u: {
-      input_tokens?: number | null;
-      output_tokens?: number | null;
-      cache_read_input_tokens?: number | null;
-      cache_creation_input_tokens?: number | null;
-      cache_creation?: { ephemeral_5m_input_tokens?: number; ephemeral_1h_input_tokens?: number } | null;
-      output_tokens_details?: { thinking_tokens?: number } | null;
-      server_tool_use?: { web_search_requests?: number } | null;
-      speed?: string | null;
-    } | null | undefined,
-    opts?: { includeFast?: boolean }
-  ): Extract<LlmEvent, { type: "usage" }> | null => {
-    if (!u) return null;
+  const acc = {
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    reasoning: 0,
+    webSearchRequests: 0,
+    fast: servedFast,
+  };
+
+  const fold = (u: RawU | null | undefined) => {
+    if (!u) return;
+    // Prefer higher values so a partial delta never zeros out message_start.
+    if (u.input_tokens != null && u.input_tokens > acc.input) acc.input = u.input_tokens;
+    if (u.output_tokens != null && u.output_tokens > acc.output) acc.output = u.output_tokens;
+    if (u.cache_read_input_tokens != null && u.cache_read_input_tokens > acc.cacheRead) {
+      acc.cacheRead = u.cache_read_input_tokens;
+    }
     const write5m = u.cache_creation?.ephemeral_5m_input_tokens ?? 0;
     const write1h = u.cache_creation?.ephemeral_1h_input_tokens ?? 0;
     const writeAgg = u.cache_creation_input_tokens ?? 0;
-    const thinking = u.output_tokens_details?.thinking_tokens;
-    const webSearches = u.server_tool_use?.web_search_requests;
-    const ev: Extract<LlmEvent, { type: "usage" }> = {
-      type: "usage",
-      ...(u.input_tokens != null ? { input: u.input_tokens } : {}),
-      ...(u.output_tokens != null ? { output: u.output_tokens } : {}),
-      ...(u.cache_read_input_tokens != null ? { cacheRead: u.cache_read_input_tokens } : {}),
-      // Prefer TTL split when present; else aggregate write counter.
-      ...(write5m > 0 || write1h > 0
-        ? {
-            cacheWrite5m: write5m || undefined,
-            cacheWrite1h: write1h || undefined,
-            cacheWrite: write5m + write1h || undefined,
-          }
-        : writeAgg
-          ? { cacheWrite: writeAgg }
-          : {}),
-      ...(thinking != null && thinking > 0 ? { reasoning: thinking } : {}),
-      ...(webSearches != null && webSearches > 0 ? { webSearchRequests: webSearches } : {}),
-    };
-    if (opts?.includeFast) {
-      // `usage.speed` is authoritative when present — don't bill fast if the
-      // API silently ran standard.
-      ev.fast = servedFast && u.speed !== "standard";
-    }
-    // Only emit if we actually have something to report.
-    if (
-      ev.input == null &&
-      ev.output == null &&
-      ev.cacheRead == null &&
-      ev.cacheWrite == null &&
-      ev.reasoning == null &&
-      ev.webSearchRequests == null
-    ) {
-      return null;
-    }
-    return ev;
+    if (write5m > acc.cacheWrite5m) acc.cacheWrite5m = write5m;
+    if (write1h > acc.cacheWrite1h) acc.cacheWrite1h = write1h;
+    const split = acc.cacheWrite5m + acc.cacheWrite1h;
+    if (split > acc.cacheWrite) acc.cacheWrite = split;
+    else if (writeAgg > acc.cacheWrite) acc.cacheWrite = writeAgg;
+    const thinking = u.output_tokens_details?.thinking_tokens ?? 0;
+    if (thinking > acc.reasoning) acc.reasoning = thinking;
+    const searches = u.server_tool_use?.web_search_requests ?? 0;
+    if (searches > acc.webSearchRequests) acc.webSearchRequests = searches;
+    if (u.speed != null) acc.fast = servedFast && u.speed !== "standard";
   };
 
   for await (const event of stream as AsyncIterable<Anthropic.RawMessageStreamEvent>) {
     if (event.type === "message_start") {
-      const u = event.message.usage as Parameters<typeof usageEvent>[0];
-      const ev = usageEvent(u, { includeFast: true });
-      if (ev) yield ev;
+      fold(event.message.usage as RawU);
     } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
       yield { type: "text", text: event.delta.text };
     } else if (event.type === "content_block_delta" && event.delta.type === "thinking_delta") {
@@ -551,11 +535,34 @@ export async function* streamAnthropic(
         if (sources.length) yield { type: "sources", sources };
       }
     } else if (event.type === "message_delta") {
-      // Cumulative final usage — includes search-result input growth + tool counts.
-      const ev = usageEvent(event.usage as Parameters<typeof usageEvent>[0]);
-      if (ev) yield ev;
+      fold(event.usage as RawU);
       const stopReason = (event.delta as { stop_reason?: string | null }).stop_reason;
       if (stopReason) yield { type: "finish", reason: normalizeFinishReason(stopReason), raw: stopReason };
     }
+  }
+
+  // Single authoritative usage event after the stream completes.
+  const hasAny =
+    acc.input > 0 ||
+    acc.output > 0 ||
+    acc.cacheRead > 0 ||
+    acc.cacheWrite > 0 ||
+    acc.reasoning > 0 ||
+    acc.webSearchRequests > 0;
+  if (hasAny) {
+    // Do NOT put cache into `total` — resolveBillableTokens would treat
+    // total−input as "missing output" and inflate completion tokens.
+    yield {
+      type: "usage",
+      input: acc.input || undefined,
+      output: acc.output || undefined,
+      cacheRead: acc.cacheRead || undefined,
+      cacheWrite: acc.cacheWrite || undefined,
+      cacheWrite5m: acc.cacheWrite5m || undefined,
+      cacheWrite1h: acc.cacheWrite1h || undefined,
+      reasoning: acc.reasoning || undefined,
+      webSearchRequests: acc.webSearchRequests || undefined,
+      fast: acc.fast,
+    } satisfies LlmEvent;
   }
 }
