@@ -11,29 +11,35 @@ import type { ClientActivityEvent } from "@/types/chat";
 
 function liveCopy(activeLabel: string | undefined, latest?: ClientActivityEvent) {
   if (latest?.kind === "warning") {
-    return { label: "Attention", detail: latest.title, warning: true };
+    return { message: latest.title, warning: true };
   }
 
   if (activeLabel === "Research") {
     if (latest?.kind === "visit" && latest.url) {
-      return { label: "Researching", detail: `Reading ${domainOf(latest.url)}`, warning: false };
+      return { message: `Reading ${domainOf(latest.url)}`, warning: false };
     }
     if (latest?.kind === "search" && latest.title === "Searching the web" && latest.detail) {
-      return { label: "Researching", detail: `Searching for “${truncate(latest.detail, 58)}”`, warning: false };
+      return { message: `Searching for “${truncate(latest.detail, 58)}”`, warning: false };
     }
-    return { label: "Researching", detail: "Finding and checking useful sources", warning: false };
+    return { message: "Researching your request", warning: false };
   }
 
   if (latest?.kind === "tool" && latest.title.startsWith("Using ")) {
     const tool = [latest.title.slice(6), latest.detail].filter(Boolean).join(" · ");
-    return { label: "Working", detail: tool, warning: false };
+    return { message: `Using ${tool}`, warning: false };
   }
 
   if (activeLabel === "Write") {
-    return { label: "Writing", detail: "Composing the response", warning: false };
+    return { message: "Writing the response", warning: false };
   }
 
-  return { label: "Thinking", detail: "Working through the request", warning: false };
+  return { message: "Thinking about your request", warning: false };
+}
+
+function formatLiveSpan(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 /**
@@ -43,7 +49,7 @@ function liveCopy(activeLabel: string | undefined, latest?: ClientActivityEvent)
  * strip communicates the useful contract instead — phase, current action and
  * elapsed time — while the full provider text remains one click away.
  *
- *   live    •••••  THINKING     Working through the request     4.2s  ›
+ *   live    3×3 matrix  Thinking about your request · 4s
  *   rest           THOUGHT PROCESS  4 searches · 9 sources      8.4s  ›
  *
  * The duration occupies the SAME node, slot and typeface in both states, so the
@@ -126,15 +132,14 @@ export function ActivityTimeline({
   ]
     .filter(Boolean)
     .join(" · ");
-  const phaseLabel = streaming ? live.label : "Thought process";
-  const detail = streaming ? live.detail : restingDetail || "See how this response was made";
+  const detail = restingDetail || "See how this response was made";
   // A phase change should animate once. Reasoning-token growth never changes
   // this key, so the collapsed UI stays calm during long streams.
-  const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.detail}` : "complete";
+  const copyKey = streaming ? `${active?.key ?? "think"}-${latest?.kind ?? "reasoning"}-${live.message}` : "complete";
 
   // THE ACCESSIBLE NAME IS THE WHOLE CONTROL. message-item mounts this inside an
   // `aria-live="polite"` region, so every mutating text node underneath is
-  // announced. The elapsed number alone can rewrite 10x a second. Left visible
+  // announced. The elapsed number alone rewrites once a second. Left visible
   // to the a11y tree, a screen reader would read
   // "4.2s, 4.3s, 4.4s…" for the whole pre-first-token wait, which route.ts
   // documents as lasting MINUTES on hidden-reasoning models, with no way to
@@ -162,63 +167,45 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
-          "group/thought relative -mx-2 mb-3 flex min-h-12 w-[calc(100%+1rem)] items-center gap-3 overflow-hidden rounded-xl px-2 py-1.5 text-left",
+          "group/thought relative -mx-2 mb-3 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-xl px-2 py-1.5 text-left",
           "transition-colors duration-base ease-out-soft hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:min-h-14",
+          streaming ? "min-h-10 gap-3" : "min-h-12 gap-3",
           open && "bg-muted/55"
         )}
       >
         {/* aria-hidden: see `label`. The button is named by aria-label, so this
             stops the surrounding live region announcing every clock tick. */}
-        <span aria-hidden="true" className="flex w-9 shrink-0 items-center justify-center">
-          {streaming ? (
-            <ThinkingDots className="text-muted-foreground/55" />
-          ) : (
-            <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
-          )}
-        </span>
-
-        <span aria-hidden="true" className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "block font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.13em]",
-              streaming ? (live.warning ? "text-warning" : "text-primary") : "text-muted-foreground/65"
-            )}
-          >
-            {phaseLabel}
-          </span>
-          <span
-            key={copyKey}
-            className={cn(
-              "block truncate text-body leading-5 motion-safe:animate-fade-in",
-              live.warning && streaming ? "text-warning" : "text-foreground/78"
-            )}
-          >
-            {detail}
-            {!streaming && run.note && <span className="text-warning"> · {run.note}</span>}
-          </span>
-        </span>
-
-        {run.elapsedMs !== null && (
-          <span
-            aria-hidden="true"
-            className={cn(
-              "shrink-0 font-mono text-caption tabular-nums transition-colors duration-slow ease-out-soft motion-reduce:transition-none",
-              // Same node across the lifecycle. It freezes rather than being
-              // replaced, and visibly demotes from meter to artifact.
-              streaming ? "rounded-full bg-primary/8 px-2 py-1 text-primary" : "px-1 text-muted-foreground/60"
-            )}
-          >
-            {formatSpan(run.elapsedMs)}
-          </span>
+        {streaming ? (
+          <>
+            <ThinkingDots className="text-muted-foreground/65" />
+            <span
+              key={copyKey}
+              aria-hidden="true"
+              className={cn(
+                "min-w-0 truncate text-body-lg leading-6",
+                live.warning ? "text-warning" : "text-muted-foreground/85 motion-safe:animate-status-glow"
+              )}
+            >
+              {live.message}
+              {run.elapsedMs !== null && <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>}
+            </span>
+          </>
+        ) : (
+          <>
+            <span aria-hidden="true" className="flex w-9 shrink-0 items-center justify-center">
+              <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/45 transition-colors duration-base group-hover/thought:bg-primary/70 motion-reduce:transition-none" />
+            </span>
+            <span aria-hidden="true" className="min-w-0 flex-1">
+              <span className="block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">Thought process</span>
+              <span className="block truncate text-body leading-5 text-foreground/78">
+                {detail}
+                {run.note && <span className="text-warning"> · {run.note}</span>}
+              </span>
+            </span>
+            {run.elapsedMs !== null && <span aria-hidden="true" className="shrink-0 px-1 font-mono text-caption tabular-nums text-muted-foreground/60">{formatSpan(run.elapsedMs)}</span>}
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/35 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none" aria-hidden="true" />
+          </>
         )}
-
-        {/* The only icon on this surface, and it is an affordance, not a status
-            mark: it says "this opens something" in the register of punctuation.
-            It does not rotate — this opens a side panel, not an accordion. */}
-        <ChevronRight
-          className="size-3.5 shrink-0 text-muted-foreground/35 transition-[color,transform] duration-base ease-out-soft group-hover/thought:translate-x-0.5 group-hover/thought:text-foreground/70 motion-reduce:transition-none"
-          aria-hidden="true"
-        />
       </button>
 
       {/* The portal is the whole trick: the panel stays in THIS React subtree —

@@ -6,6 +6,8 @@
  * turns it into a structured block the model can parse reliably.
  */
 
+import type { ArtifactEditRequest } from "@/lib/artifact-edit";
+
 export type ComposerQuoteMode = "modify" | "ask";
 export type ComposerQuoteKind = "text" | "element";
 
@@ -13,6 +15,8 @@ export interface ComposerQuote {
   artifactId: string;
   identifier: string;
   title: string;
+  /** Artifact version the user selected from; used for stale-edit protection. */
+  baseVersion: number;
   kind: ComposerQuoteKind;
   /** Selected text, or the element's outerHTML snippet for kind "element". */
   text: string;
@@ -24,6 +28,19 @@ export interface ComposerQuote {
 }
 
 export const QUOTE_TEXT_LIMIT = 2000;
+
+export function artifactEditRequestFromQuote(quote: ComposerQuote): ArtifactEditRequest {
+  return {
+    artifactId: quote.artifactId,
+    identifier: quote.identifier,
+    baseVersion: quote.baseVersion,
+    kind: quote.kind,
+    text: quote.text,
+    ...(quote.lineStart != null ? { lineStart: quote.lineStart } : {}),
+    ...(quote.lineEnd != null ? { lineEnd: quote.lineEnd } : {}),
+    ...(quote.selector ? { selector: quote.selector } : {}),
+  };
+}
 
 /** Cap quoted text, trimming the middle so both ends stay visible. */
 export function clampQuoteText(text: string, limit = QUOTE_TEXT_LIMIT): string {
@@ -81,11 +98,11 @@ export function serializeQuote(quote: ComposerQuote, userText: string): string {
         : "";
   const instruction =
     quote.mode === "modify"
-      ? `Apply a minimal, targeted change to ONLY this selected part, keep everything else unchanged, and re-emit the complete artifact with the same identifier "${quote.identifier}".`
+      ? `Apply a minimal, targeted change to ONLY this selected part in the existing artifact "${quote.identifier}" and keep everything else unchanged.`
       : "Answer about this selection — do not re-emit the artifact unless explicitly asked to change it.";
   const request = userText.trim();
   return [
-    `[Selection from artifact "${quote.identifier}" (${quote.title})${where}]:`,
+    `[Selection from artifact "${quote.identifier}" (${quote.title}), version ${quote.baseVersion}${where}]:`,
     `"""`,
     quote.text,
     `"""`,

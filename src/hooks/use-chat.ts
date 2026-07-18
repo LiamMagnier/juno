@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
 import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
+import type { ArtifactEditRequest } from "@/lib/artifact-edit";
 import {
   formatPreflightClarificationVisibleMessage,
   isPreflightClarificationResult,
@@ -35,7 +36,7 @@ export type ChatMessage = ClientMessage & {
 export type SendResult = { accepted: boolean; clarificationPending?: boolean };
 
 /** Per-send flags carried alongside the message (not sticky composer prefs). */
-export type SendOptions = { deepResearch?: boolean };
+export type SendOptions = { deepResearch?: boolean; artifactEdit?: ArtifactEditRequest };
 
 export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
 
@@ -537,6 +538,7 @@ export function useChat(opts: UseChatOptions) {
       attachments?: ClientAttachment[];
       preflightClarification?: PreflightClarificationContext;
       deepResearch?: boolean;
+      artifactEdit?: ArtifactEditRequest;
     }): SendResult => {
       const trimmed = input.text.trim();
       const attachments = input.attachments ?? [];
@@ -607,6 +609,7 @@ export function useChat(opts: UseChatOptions) {
           // Per-send, never sticky — and never in private mode (research
           // persists sources/activity, which private chats don't do).
           deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
+          artifactEdit: !opts.privateMode ? input.artifactEdit : undefined,
           reasoningEffort: opts.reasoningEffort,
           connectors: opts.connectors,
           preflightClarification: input.preflightClarification,
@@ -650,8 +653,13 @@ export function useChat(opts: UseChatOptions) {
       // Deep research goes straight to generation: the researcher plans its own
       // sub-questions server-side, so the preflight clarification round-trip
       // would only add latency (and the flag wouldn't survive its detour).
-      if (options?.deepResearch && !opts.privateMode) {
-        return startGeneration({ text: trimmed, attachments, deepResearch: true });
+      if ((options?.deepResearch || options?.artifactEdit) && !opts.privateMode) {
+        return startGeneration({
+          text: trimmed,
+          attachments,
+          deepResearch: options.deepResearch,
+          artifactEdit: options.artifactEdit,
+        });
       }
 
       setStatus("checking");

@@ -70,7 +70,7 @@ import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { useApp } from "@/components/app/app-provider";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
 import { formatBytes, cn } from "@/lib/utils";
-import { serializeQuote, quoteLocationLabel, type ComposerQuote } from "@/lib/quote-context";
+import { artifactEditRequestFromQuote, serializeQuote, quoteLocationLabel, type ComposerQuote } from "@/lib/quote-context";
 import type { ModelId } from "@/lib/models";
 import type {
   PendingPreflightClarification,
@@ -337,6 +337,13 @@ export function Composer({
     () => (research && researchAvailable && planAllowsResearch ? { deepResearch: true } : undefined),
     [research, researchAvailable, planAllowsResearch]
   );
+  const outgoingOptions = React.useMemo<SendOptions | undefined>(
+    () =>
+      quote?.mode === "modify"
+        ? { artifactEdit: artifactEditRequestFromQuote(quote) }
+        : sendOptions,
+    [quote, sendOptions]
+  );
   // Research lives in the + menu now, so the trigger carries its armed state —
   // otherwise a per-send mode would be on with nothing on screen saying so.
   const researchArmed = !!sendOptions;
@@ -550,7 +557,7 @@ export function Composer({
     // still attached, so restoring the serialized block would double-wrap).
     interceptedDraftRef.current = text.trim();
     const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
-    const result = await onSend(outgoing, sendAttachments, sendOptions);
+    const result = await onSend(outgoing, sendAttachments, outgoingOptions);
     if (result && result.accepted === false) return;
     setText("");
     setResearch(false); // per-send: research never sticks to the next message
@@ -576,7 +583,7 @@ export function Composer({
       interceptedDraftRef.current = merged;
       const outgoing = quote ? serializeQuote(quote, merged) : merged;
       void (async () => {
-        const result = await onSend(outgoing, sendAttachments, sendOptions);
+        const result = await onSend(outgoing, sendAttachments, outgoingOptions);
         if (result && result.accepted === false) {
           setText(merged); // keep the words — nothing gets lost on a refusal
           return;
@@ -588,7 +595,7 @@ export function Composer({
         requestAnimationFrame(autoresize);
       })();
     },
-    [text, controlsLocked, quote, onSend, sendAttachments, sendOptions, clear, onClearQuote, autoresize, setDictating]
+    [text, controlsLocked, quote, onSend, sendAttachments, outgoingOptions, clear, onClearQuote, autoresize, setDictating]
   );
 
   // ——— Composer palette: "/" for commands, "@" for tools + connectors ———

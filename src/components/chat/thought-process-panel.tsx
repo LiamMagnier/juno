@@ -262,18 +262,6 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   };
 }
 
-function usePrefersReducedMotion() {
-  const [reduced, setReduced] = React.useState(false);
-  React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
-    const on = () => setReduced(mq.matches);
-    mq.addEventListener("change", on);
-    return () => mq.removeEventListener("change", on);
-  }, []);
-  return reduced;
-}
-
 /**
  * THE TICK — the one live signal, and the number the whole design stakes its
  * credibility on. It replaces the ring, the breathe and the shimmer combined,
@@ -296,11 +284,10 @@ function usePrefersReducedMotion() {
  * and why the panel is handed the finished RunModel instead of building its own.
  * A second instance is not a second opinion; it is a second, wrong answer.
  *
- * Reduced motion slows the cadence to 1Hz but never removes the number: a
- * changing number is information, not vestibular motion.
+ * The visible clock is whole seconds, so it ticks at 1Hz. Reduced motion never
+ * removes the number: a changing number is information, not vestibular motion.
  */
 export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) {
-  const reduced = usePrefersReducedMotion();
   const mountRef = React.useRef(Date.now());
   const skewRef = React.useRef<number | null>(null);
   const firstIso = events[0]?.createdAt;
@@ -317,9 +304,9 @@ export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) 
   React.useEffect(() => {
     if (!streaming) return;
     setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), reduced ? 1000 : 100);
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [streaming, reduced]);
+  }, [streaming]);
 
   // Zero-event runs (reasoning only) have no server anchor, so skew stays 0 and
   // both ends of the measurement sit in the client's own frame. Consistent
@@ -451,8 +438,8 @@ export function ThoughtProcessPanel({
     ? activePhase?.key === "research"
       ? "Finding and checking sources"
       : activePhase?.key === "write"
-        ? "Composing the response"
-        : "Working through the request"
+        ? "Writing the response"
+        : "Thinking about your request"
     : "Response complete";
   const overviewLabel = streaming
     ? activePhase?.key === "research"
@@ -474,7 +461,7 @@ export function ThoughtProcessPanel({
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               {streaming && <ThinkingDots className="origin-left scale-75 text-muted-foreground/55" />}
-              <span className={cn("font-mono text-[10px] font-medium uppercase tracking-[0.14em]", streaming ? "text-primary" : "text-muted-foreground/60")}>{streaming ? "Live process" : "Run summary"}</span>
+              <span className={cn("font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em]", streaming ? "text-muted-foreground/80" : "text-muted-foreground/60")}>{streaming ? "Live process" : "Run summary"}</span>
             </div>
             <h2 className="mt-0.5 truncate font-serif text-heading text-foreground">Thought process</h2>
           </div>
@@ -496,8 +483,8 @@ export function ThoughtProcessPanel({
           <section aria-label="Run progress" className="rounded-2xl border border-border/55 bg-background/55 p-4 shadow-soft">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <span className={cn("font-mono text-[10px] font-medium uppercase tracking-[0.14em]", streaming ? "text-primary" : "text-muted-foreground/65")}>{overviewLabel}</span>
-                <p key={overviewTitle} className="mt-0.5 truncate font-serif text-heading text-foreground/90 motion-safe:animate-fade-in">{overviewTitle}</p>
+                <span className="font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em] text-muted-foreground/65">{overviewLabel}</span>
+                <p key={overviewTitle} className={cn("mt-0.5 truncate font-serif text-heading text-foreground/90 motion-safe:animate-fade-in", streaming && "motion-safe:animate-status-glow")}>{overviewTitle}</p>
                 {scopeMeta && <p className="mt-1 font-mono text-caption text-muted-foreground/65">{scopeMeta}</p>}
               </div>
               {run.elapsedMs !== null && (
@@ -535,7 +522,7 @@ export function ThoughtProcessPanel({
                       <span className={cn("h-2 w-2 rounded-full transition-[background-color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", phase.active ? "bg-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.10)]" : "bg-muted-foreground/35")} />
                     </span>
                     <span className="min-w-0">
-                      <span className={cn("block font-mono text-caption uppercase tracking-[0.1em]", phase.active ? "text-primary" : "text-muted-foreground/70")}>{phase.label}</span>
+                      <span className={cn("block font-serif text-[0.8125rem] font-medium leading-4 tracking-[0.01em]", phase.active ? "text-primary" : "text-muted-foreground/70")}>{phase.label}</span>
                       {phase.object && <span className="mt-0.5 block truncate text-body leading-5 text-foreground/72">{phase.object}</span>}
                     </span>
                     <span className="font-mono text-caption tabular-nums text-muted-foreground/70">{phase.ms === null ? "—" : formatSpan(phase.ms)}</span>

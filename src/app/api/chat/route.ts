@@ -14,7 +14,15 @@ import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
-import { persistArtifacts } from "@/lib/artifacts-store";
+import { ArtifactVersionConflictError, persistArtifacts, persistTargetedArtifactEdit } from "@/lib/artifacts-store";
+import {
+  applyArtifactPatch,
+  ArtifactPatchError,
+  buildArtifactEditMessage,
+  buildArtifactEditPrompt,
+  parseArtifactPatch,
+  type ArtifactSourceForEdit,
+} from "@/lib/artifact-edit";
 import { parseArtifacts, parseMemories } from "@/lib/message-content";
 import {
   formatClarificationModelMessage,
@@ -110,6 +118,16 @@ const preflightClarificationSchema = z.object({
   answers: z.array(preflightClarificationAnswerSchema).max(10),
   skipped: z.boolean().optional(),
 });
+const artifactEditSchema = z.object({
+  artifactId: z.string().cuid(),
+  identifier: z.string().trim().min(1).max(240),
+  baseVersion: z.number().int().positive(),
+  kind: z.enum(["text", "element"]),
+  text: z.string().min(1).max(4_000),
+  lineStart: z.number().int().positive().max(1_000_000).optional(),
+  lineEnd: z.number().int().positive().max(1_000_000).optional(),
+  selector: z.string().trim().min(1).max(1_000).optional(),
+});
 
 const bodySchema = z
   .object({
@@ -118,6 +136,9 @@ const bodySchema = z
     message: z.string().max(50_000).optional(),
     clarification: clarificationSchema.optional(),
     preflightClarification: preflightClarificationSchema.optional(),
+    // A modify action from Canvas. Unlike a normal artifact request, this is
+    // resolved to one owned artifact and applied as exact source patches.
+    artifactEdit: artifactEditSchema.optional(),
     attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
     model: z.string().optional(),
     regenerate: z.boolean().optional(),
@@ -162,6 +183,16 @@ const bodySchema = z
       .optional(),
   })
   .superRefine((input, ctx) => {
+    if (
+      input.artifactEdit &&
+      (!input.message?.trim() || input.regenerate || input.clarification || input.preflightClarification || input.deepResearch)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["artifactEdit"],
+        message: "A canvas edit requires one direct message and cannot be combined with regenerate, clarification, or deep research.",
+      });
+    }
     const issue = clientSubmissionMetadataIssue({
       origin: input.origin,
       conversationId: input.conversationId,
@@ -544,6 +575,9 @@ async function handleChat(req: Request) {
     !input.privateMode && input.connectors?.length ? await getActiveConnectors(user.id, input.connectors) : [];
 
   if (input.privateMode) {
+    if (input.artifactEdit) {
+      return NextResponse.json({ error: "Canvas edits are not available in private chat." }, { status: 400 });
+    }
     if (input.regenerate) return NextResponse.json({ error: "Regenerate is not available in private chat." }, { status: 400 });
 
     const budget = await checkBudget(user.id, plan);
@@ -941,6 +975,41 @@ async function handleChat(req: Request) {
       { error: "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat." },
       { status: 409 }
     );
+  }
+  let artifactEditTarget: (ArtifactSourceForEdit & { id: string }) | null = null;
+  if (input.artifactEdit) {
+    if (!conversation) {
+      return NextResponse.json({ error: "Open the saved canvas before editing a selection." }, { status: 400 });
+    }
+    const artifact = await prisma.artifact.findFirst({
+      where: {
+        id: input.artifactEdit.artifactId,
+        identifier: input.artifactEdit.identifier,
+        conversationId: conversation.id,
+        conversation: { userId: user.id },
+      },
+      include: {
+        versions: { where: { version: input.artifactEdit.baseVersion }, take: 1 },
+      },
+    });
+    if (!artifact) {
+      return NextResponse.json({ error: "The selected canvas could not be found in this chat." }, { status: 404 });
+    }
+    if (artifact.currentVersion !== input.artifactEdit.baseVersion || !artifact.versions[0]) {
+      return NextResponse.json(
+        { error: "This canvas changed after you made the selection. Select the part again before editing it." },
+        { status: 409 }
+      );
+    }
+    artifactEditTarget = {
+      id: artifact.id,
+      identifier: artifact.identifier,
+      title: artifact.title,
+      type: artifact.type,
+      language: artifact.language,
+      version: artifact.currentVersion,
+      content: artifact.versions[0].content,
+    };
   }
   let userMessageId: string | null = null;
   let staleAssistantId: string | null = null;
@@ -1364,7 +1433,15 @@ async function handleChat(req: Request) {
     voiceMode: input.voiceMode,
     projectContext,
   });
-  const system = [baseSystem, useWebSearch ? WEB_SEARCH_NUDGE : null, canvasOn ? SELECTION_ANCHOR_NUDGE : null]
+  const targetedArtifactEditPrompt =
+    artifactEditTarget && input.artifactEdit
+      ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
+      : null;
+  const system = [
+    baseSystem,
+    useWebSearch ? WEB_SEARCH_NUDGE : null,
+    targetedArtifactEditPrompt ?? (canvasOn ? SELECTION_ANCHOR_NUDGE : null),
+  ]
     .filter(Boolean)
     .join("\n\n");
   const conversationId = conversation.id;
@@ -1504,6 +1581,8 @@ async function handleChat(req: Request) {
       const sourceUrls = new Set<string>();
       let activityCounter = 0;
       let full = "";
+      let providerOutputChars = 0;
+      let targetedArtifactContent: string | null = null;
       let reasoning = "";
       // See the private branch: flat text for everyone, boundaries only from
       // providers that actually send them.
@@ -1677,6 +1756,13 @@ async function handleChat(req: Request) {
         title: input.regenerate ? "Rebuilding the conversation context" : "Reading the conversation context",
         detail: contextDetails.join(" · "),
       });
+      if (artifactEditTarget) {
+        sendActivity({
+          kind: "tool",
+          title: "Editing existing canvas",
+          detail: `${artifactEditTarget.title} · v${artifactEditTarget.version}`,
+        });
+      }
       sendActivity({
         kind: "model",
         title: "Selected model",
@@ -1796,10 +1882,18 @@ async function handleChat(req: Request) {
           if (ev.type === "text") {
             if (!writingStarted) {
               writingStarted = true;
-              sendActivity({ kind: "write", title: "Writing the answer", detail: "Streaming response text" });
+              sendActivity({
+                kind: "write",
+                title: artifactEditTarget ? "Preparing targeted changes" : "Writing the answer",
+                detail: artifactEditTarget ? "Building an exact source patch" : "Streaming response text",
+              });
             }
             full += ev.text;
-            send({ type: "delta", text: ev.text });
+            providerOutputChars += ev.text.length;
+            // Patch protocol output is server-internal. The client receives a
+            // normal same-identifier artifact only after every source anchor is
+            // validated and the version is saved.
+            if (!artifactEditTarget) send({ type: "delta", text: ev.text });
             enforceStreamBudget();
           } else if (ev.type === "tool") {
             if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
@@ -1836,6 +1930,12 @@ async function handleChat(req: Request) {
           }
         }
 
+        if (artifactEditTarget) {
+          const patch = parseArtifactPatch(full);
+          targetedArtifactContent = applyArtifactPatch(artifactEditTarget.content, patch);
+          full = buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary);
+        }
+
         // Reconcile token usage across providers and estimate the $ cost once.
         const usage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
 
@@ -1844,6 +1944,14 @@ async function handleChat(req: Request) {
         // promptTokens stores the full prompt size (cache included) so the
         // reloaded cost estimate lines up with the stream.
         if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
+        const targetedArtifact =
+          artifactEditTarget && targetedArtifactContent !== null
+            ? await persistTargetedArtifactEdit(
+                artifactEditTarget.id,
+                artifactEditTarget.version,
+                targetedArtifactContent
+              )
+            : null;
         const assistant = await persistAssistantTurn({
           content: full,
           reasoning,
@@ -1853,7 +1961,10 @@ async function handleChat(req: Request) {
         });
 
         // Artifacts + memory side effects.
-        const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
+        const artifacts = targetedArtifact
+          ? [targetedArtifact]
+          : await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
+        if (targetedArtifact) send({ type: "delta", text: full });
         let memoryUpdated = false;
         if (memoryEnabled) {
           const created = await saveAutoMemories(user.id, parseMemories(full), conversationId);
@@ -1913,7 +2024,7 @@ async function handleChat(req: Request) {
           completionTokens: usage.output || undefined,
           costUsd: usage.cost || undefined,
           promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-          completionChars: full.length + reasoning.length,
+          completionChars: providerOutputChars + reasoning.length,
         });
         spendRecorded = true;
         console.info("[chat] generation complete", {
@@ -1947,7 +2058,7 @@ async function handleChat(req: Request) {
           message: err instanceof Error ? err.message : String(err),
         });
 
-        if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
+        if (!artifactEditTarget && (reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
           try {
             appendFinishWarning(reason, sendActivity);
             const partialUsage = buildUsage(modelInfo, { input: promptTokens, output: completionTokens, cacheRead: cacheReadTokens, cacheWrite: cacheWriteTokens }, servedFast);
@@ -1996,7 +2107,7 @@ async function handleChat(req: Request) {
                 completionTokens: partialUsage.output || undefined,
                 costUsd: partialUsage.cost || undefined,
                 promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-                completionChars: full.length + reasoning.length,
+                completionChars: providerOutputChars + reasoning.length,
               });
               spendRecorded = true;
             }
@@ -2039,7 +2150,16 @@ async function handleChat(req: Request) {
           // Generation failed before useful output, so refund the consumed message
           // and report the corrected quota so the UI doesn't go stale.
           const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
-          const message = reason === "user_stopped" ? "Generation stopped before any output." : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+          const message =
+            reason === "user_stopped"
+              ? artifactEditTarget
+                ? "Canvas editing stopped before any change was applied."
+                : "Generation stopped before any output."
+              : err instanceof ArtifactVersionConflictError
+                ? "This canvas changed while the edit was being prepared. Select the part again and retry."
+                : err instanceof ArtifactPatchError
+                  ? `${err.message} Nothing in the canvas was changed.`
+                  : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),

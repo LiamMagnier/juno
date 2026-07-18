@@ -526,10 +526,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Event UID (from list_events)."
   },
   {
-    "id": "0dfe1d63c9d86896",
-    "source": "Checking"
-  },
-  {
     "id": "0e16fd4ddc701b91",
     "source": "Go to Sign-In & Security → App-Specific Passwords (requires two-factor authentication)"
   },
@@ -604,10 +600,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "103afde2707b26f6",
     "source": "Dictation isn't available here — try Chrome, or enable server transcription."
-  },
-  {
-    "id": "105d5a56019121a7",
-    "source": "Writing the answer"
   },
   {
     "id": "1081cf374f5306cd",
@@ -700,10 +692,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "12a7bd86e0a43032",
     "source": "connected"
-  },
-  {
-    "id": "12cc8a290af558c3",
-    "source": "Composing the response"
   },
   {
     "id": "12dcffaff86edbcc",
@@ -944,6 +932,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1a5c151fbbd83623",
     "source": "How your messages split across configured labs."
+  },
+  {
+    "id": "1a5c7852b5d0c9ee",
+    "source": "Researching your request"
   },
   {
     "id": "1a796c1932077792",
@@ -1220,10 +1212,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2240ac7e927c3fd8",
     "source": "Add project image"
-  },
-  {
-    "id": "22720e53e2711708",
-    "source": "Working through the request"
   },
   {
     "id": "2286d1630a17ca47",
@@ -1648,6 +1636,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "2e099fab5c2dc8e4",
     "source": "Memory updated"
+  },
+  {
+    "id": "2e218336e88e06e6",
+    "source": "A canvas edit requires one direct message and cannot be combined with regenerate, clarification, or deep research."
   },
   {
     "id": "2e3ac056d4901875",
@@ -4854,6 +4846,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "The model requested tools, but no tool flow is enabled for this request."
   },
   {
+    "id": "89cdb573c88ab345",
+    "source": "Checking your request"
+  },
+  {
     "id": "89ebfb7a88ca8e6c",
     "source": "Auto-detect"
   },
@@ -5470,6 +5466,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Vote on what matters to you, or request something new. We read every one."
   },
   {
+    "id": "9b068269293ae3b3",
+    "source": "Canvas editing stopped before any change was applied."
+  },
+  {
     "id": "9b11f6b707d2a03e",
     "source": "Monthly"
   },
@@ -5718,6 +5718,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "juno:status"
   },
   {
+    "id": "a1e29e6d219ccd65",
+    "source": "Writing the response"
+  },
+  {
     "id": "a20d12c5e9c428c3",
     "source": "Thinking"
   },
@@ -5760,6 +5764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a3c3370cc7323c71",
     "source": "Model name"
+  },
+  {
+    "id": "a3deee11a17f4082",
+    "source": "Thinking about your request"
   },
   {
     "id": "a3f2994d85e710ec",
@@ -5948,10 +5956,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "a8cb6f3567f68478",
     "source": "Answers that teach: step labs, quizzes, timelines and comparisons rendered inline, right in the reply."
-  },
-  {
-    "id": "a92f0449a9f7235b",
-    "source": "Working"
   },
   {
     "id": "a96856cdb34d33d8",
@@ -6374,6 +6378,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "User"
   },
   {
+    "id": "b53eb415b6d87409",
+    "source": "This canvas changed after you made the selection. Select the part again before editing it."
+  },
+  {
     "id": "b57c2d03a0eed406",
     "source": "Describe what to build or fix — the run happens in the cloud and opens a pull request you can review."
   },
@@ -6408,6 +6416,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b6d42ac2bd053a21",
     "source": ": pour générer une réponse, le contenu de vos messages (« prompts ») et les pièces jointes nécessaires sont"
+  },
+  {
+    "id": "b736e5ea0a81582d",
+    "source": "Open the saved canvas before editing a selection."
   },
   {
     "id": "b73a94dbb2964baa",
@@ -6614,6 +6626,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "5-hour window"
   },
   {
+    "id": "be4faaf0f84f7f41",
+    "source": "Editing existing canvas"
+  },
+  {
     "id": "be7e2f20129365c2",
     "source": "Images"
   },
@@ -6738,10 +6754,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "&ldquo;"
   },
   {
-    "id": "c2eb8cd9d9564314",
-    "source": "Attention"
-  },
-  {
     "id": "c2ff279f92bdc8da",
     "source": "Source image not found."
   },
@@ -6784,6 +6796,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "c3963aedaac6c83c",
     "source": "Memory"
+  },
+  {
+    "id": "c3af0a98ea380b6f",
+    "source": "Starting your request"
   },
   {
     "id": "c3b3a3a082bce092",
@@ -7486,6 +7502,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Profile"
   },
   {
+    "id": "d6a9adf9cb2b7db5",
+    "source": "Canvas edits are not available in private chat."
+  },
+  {
     "id": "d6a9b1b362ebce24",
     "source": "Balanced multimodal hybrid-thinking model with 1M context."
   },
@@ -7514,10 +7534,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Created"
   },
   {
-    "id": "d72a3965fe9531eb",
-    "source": "Juno is thinking"
-  },
-  {
     "id": "d73afcb6755ce36e",
     "source": "Branched into a new chat."
   },
@@ -7536,6 +7552,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d7cbbb688b2e506c",
     "source": "selected"
+  },
+  {
+    "id": "d7d8467478fdd922",
+    "source": "This canvas changed while the edit was being prepared. Select the part again and retry."
   },
   {
     "id": "d80d0faa58963b92",
@@ -8114,6 +8134,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Similar requests — vote instead?"
   },
   {
+    "id": "e6b7be2460669dce",
+    "source": "The selected canvas could not be found in this chat."
+  },
+  {
     "id": "e6cf1188b3cfdb7f",
     "source": "Couldn’t load your prompts."
   },
@@ -8156,10 +8180,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e7cf3ef4f17c3999",
     "source": "Password"
-  },
-  {
-    "id": "e862c46095e398e1",
-    "source": "Finding and checking useful sources"
   },
   {
     "id": "e8694d59fdfea80b",

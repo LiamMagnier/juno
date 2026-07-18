@@ -24,30 +24,21 @@ import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, Gene
 
 /**
  * Premium "thinking → writing" indicator shown in the transcript while the
- * assistant works with no visible content yet. The dot constellation carries the
- * motion; the label crossfades and shimmers as the phase changes.
+ * assistant works with no visible content yet.
  */
 function StreamStatus({ status }: { status?: GenerationStatus }) {
-  const label = status === "writing" ? "Writing" : status === "checking" ? "Checking" : "Thinking";
-  const detail =
+  const statusCopy =
     status === "writing"
-      ? "Composing the response"
+      ? "Writing the response"
       : status === "checking"
         ? "Checking your request"
         : status === "submitting"
-          ? "Starting the request"
-          : "Working through the request";
+          ? "Starting your request"
+          : "Thinking about your request";
   return (
-    <div role="status" className="flex min-h-12 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
-      <span className="flex w-9 shrink-0 items-center justify-center" aria-hidden="true">
-        <ThinkingDots className="text-muted-foreground/55" />
-      </span>
-      <span key={label} className="min-w-0 motion-safe:animate-fade-in">
-        <span className="block font-mono text-[10px] font-medium uppercase leading-4 tracking-[0.13em] text-primary">
-          {label}
-        </span>
-        <span className="block truncate text-body leading-5 text-foreground/78">{detail}</span>
-      </span>
+    <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
+      <ThinkingDots className="text-muted-foreground/65" />
+      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow">{statusCopy}</span>
     </div>
   );
 }

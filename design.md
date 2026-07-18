@@ -132,8 +132,8 @@ Three easings, three (+one) durations. Mirrored as CSS vars and Tailwind utiliti
 Named animations to preserve: `rise-in` (translateY(8px)→0 + fade, spring —
 entrance for messages/chips), `pop-in`/`pop-out` (overlays: 180ms expo /
 120ms soft), `overlay-in`/`overlay-out` (backdrop fade), `title-in`/`title-out`,
-and the thinking cluster `dot-think` / `dot-tint` (a shared 1.9s travelling
-emphasis across a stable baseline; no vertical bounce).
+and the thinking cluster `thinking-matrix` (one dark point with a faint trail
+travelling through a still 3×3 grid) with `status-glow` on the live sentence.
 
 ### 1.4 Radius scale
 
@@ -185,8 +185,8 @@ swap in a cool white rim**), `--hairline` (`30 12% 18% / 0.06` light,
 
 ### 1.6 Signature language & product voice
 
-- **Dot / ASCII constellation** across scales: `ThinkingDots` (5-dot travelling
-  emphasis, the "Juno is thinking" affordance), `DotMatrixMark` (5×5 logo),
+- **Dot / ASCII constellation** across scales: `ThinkingDots` (a compact 3×3 grid
+  with one moving dark point, the "Juno is thinking" affordance), `DotMatrixMark` (5×5 logo),
   `DotIdenticon` (deterministic avatars), `DotFillBar` (progress), `AsciiHero`
   (orbital-sun empty-state graphic, `drift` 18s), `DotField` (interactive
   background grid), `DottedDivider` (whisper-quiet editorial rule with optional

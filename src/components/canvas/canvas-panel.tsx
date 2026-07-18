@@ -587,6 +587,7 @@ export function CanvasPanel({
         artifactId: artifact.id,
         identifier: artifact.identifier,
         title: artifact.title,
+        baseVersion: selectedVersion,
         kind: "text",
         text: clampQuoteText(selectionBar.text),
         lineStart,
@@ -596,7 +597,7 @@ export function CanvasPanel({
       window.getSelection()?.removeAllRanges();
       setSelectionBar(null);
     },
-    [artifact.id, artifact.identifier, artifact.title, onQuote, selectionBar]
+    [artifact.id, artifact.identifier, artifact.title, onQuote, selectedVersion, selectionBar]
   );
 
   const barRef = React.useRef<HTMLDivElement>(null);
@@ -635,6 +636,7 @@ export function CanvasPanel({
         artifactId: artifact.id,
         identifier: artifact.identifier,
         title: artifact.title,
+        baseVersion: selectedVersion,
         kind: "element",
         text: clampQuoteText(sel.snippet || sel.text),
         selector: sel.selector,
@@ -642,7 +644,7 @@ export function CanvasPanel({
       });
       toast.success(`Selected <${sel.tag || "element"}> — describe the change`);
     },
-    [artifact.id, artifact.identifier, artifact.title, onQuote]
+    [artifact.id, artifact.identifier, artifact.title, onQuote, selectedVersion]
   );
 
   const exitInspect = React.useCallback(() => setInspecting(false), []);

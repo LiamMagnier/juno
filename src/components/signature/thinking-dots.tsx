@@ -2,37 +2,37 @@
 
 import { cn } from "@/lib/utils";
 
+// Clockwise around the perimeter, then through the centre. The staggered
+// overlays overlap slightly, leaving a soft trail rather than nine hard blinks.
+const MATRIX_SEQUENCE = [0, 1, 2, 5, 8, 7, 6, 3, 4];
+
 /**
- * Juno's live-work signature.
- *
- * The old constellation bounced, breathed and changed colour at the same time.
- * At transcript scale that read as five unrelated loaders competing for
- * attention. This version keeps one useful gesture: emphasis travels across a
- * stable baseline. Scale + opacity carry the motion, so surrounding text never
- * appears to wobble and reduced-motion users get the same complete mark.
+ * Compact 3×3 thinking matrix. Nine quiet points establish the mark while one
+ * darker point and its faint trail travel through the grid. Reduced motion
+ * leaves the centre point emphasized without changing the footprint.
  */
 export function ThinkingDots({ className }: { className?: string }) {
   return (
     <span
-      className={cn("inline-flex items-center gap-dot-gap text-muted-foreground", className)}
-      role="status"
-      aria-label="Juno is thinking"
+      className={cn("relative inline-grid h-[18px] w-[18px] shrink-0 grid-cols-3 gap-[3px] text-muted-foreground", className)}
+      aria-hidden="true"
     >
-      {[0, 1, 2, 3, 4].map((i) => (
-        <span
-          key={i}
-          className="relative block h-dot w-dot rounded-full bg-current opacity-35 motion-safe:animate-dot-think"
-          // Negative offsets make the mark feel alive on its first painted
-          // frame; the stagger moves left-to-right without a waiting state.
-          style={{ animationDelay: `${i * 0.16 - 1.28}s` }}
-        >
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 rounded-full bg-primary opacity-0 motion-safe:animate-dot-tint"
-            style={{ animationDelay: `${i * 0.16 - 1.28}s` }}
-          />
-        </span>
-      ))}
+      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((gridIndex) => {
+        const sequenceIndex = MATRIX_SEQUENCE.indexOf(gridIndex);
+        return (
+          <span key={gridIndex} className="relative block h-1 w-1">
+            <span className="absolute inset-0 rounded-full bg-current opacity-25" />
+            <span
+              className={cn(
+                "absolute inset-0 rounded-full bg-foreground opacity-0 motion-safe:animate-thinking-matrix",
+                gridIndex === 4 ? "motion-reduce:opacity-90" : "motion-reduce:opacity-0"
+              )}
+              // Start mid-cycle so the matrix is already alive on first paint.
+              style={{ animationDelay: `${sequenceIndex * 0.2 - 1.8}s` }}
+            />
+          </span>
+        );
+      })}
     </span>
   );
 }
