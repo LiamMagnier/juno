@@ -60,7 +60,6 @@ const MIN_INTEL: Record<PromptComplexity, number> = {
  */
 export function classifyPromptComplexity(message: string): PromptComplexityResult {
   const text = message.trim();
-  const lower = text.toLowerCase();
   const reasons: string[] = [];
   let score = 0;
 
