@@ -3,6 +3,11 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { readChatStream } from "@/lib/chat-stream";
+import {
+  clearPendingGeneration,
+  getPendingGeneration,
+  markPendingGeneration,
+} from "@/lib/generation-pending";
 import { appendReasoningDelta, emptyReasoning } from "@/lib/reasoning-parts";
 import { resolveModel } from "@/lib/models";
 import type { ArtifactEditRequest } from "@/lib/artifact-edit";
@@ -56,16 +61,20 @@ const tempId = () => `temp-${Date.now()}-${tempCounter++}`;
 // that value, plus a persistence margin for the final DB write.
 const RECOVERY_WINDOW_MS = 3_600_000 + 60_000;
 
-// Reopening a conversation whose latest turn is a still-unanswered user message
-// means a generation dropped its browser stream but is (very likely) still
-// running server-side — and, unlike the live drop path, nothing is polling for
-// it once you navigate away. Auto-resume the recovery poll on reopen, but only
-// for a turn this fresh; an older dangling user turn is treated as settled.
-const RESUME_MAX_AGE_MS = 5 * 60_000;
-// How long the resumed poll waits for the persisted answer before giving up.
-// Generous enough for long generations, bounded so a genuinely failed turn
-// (which saves no assistant row) can't poll indefinitely.
-const RESUME_POLL_WINDOW_MS = 15 * 60_000;
+// Reopening a conversation after leaving mid-generation: the server keeps writing
+// (detached from the browser stream). We reattach by polling until the assistant
+// row lands. 45m covers long reasoning (Kimi/Claude) after tab close / navigation.
+const RESUME_MAX_AGE_MS = 45 * 60_000;
+const RESUME_POLL_WINDOW_MS = 45 * 60_000;
+
+/** Backoff between recovery polls — first hit is immediate-ish. */
+function recoveryDelayMs(attempt: number): number {
+  if (attempt <= 0) return 400;
+  if (attempt === 1) return 1_200;
+  if (attempt === 2) return 2_500;
+  if (attempt < 10) return 5_000;
+  return 12_000;
+}
 
 interface UseChatOptions {
   conversationId: string | null;
@@ -103,6 +112,8 @@ export function useChat(opts: UseChatOptions) {
   const generationIdRef = React.useRef<string | null>(null);
   const assistantIdRef = React.useRef<string | null>(null);
   const stopRequestedRef = React.useRef(false);
+  /** View detached (new chat / unmount) — abort browser stream without user-stop or error toast. */
+  const detachedRef = React.useRef(false);
   const stopFallbackRef = React.useRef<number | null>(null);
   // Increments on every generation; an in-flight background recovery from a
   // dropped stream aborts itself when the user has already moved on.
@@ -120,10 +131,27 @@ export function useChat(opts: UseChatOptions) {
   // survived a dropped stream is recognized.
   const locallyRemovedRef = React.useRef<Map<string, string>>(new Map());
 
-  // Reset when switching conversation.
+  // Reset when switching conversation. Detach the previous stream so the
+  // server keeps writing; sessionStorage ledger reattaches on return.
   React.useEffect(() => {
+    const prevConvo = convoIdRef.current;
+    if (prevConvo && generationIdRef.current && !stopRequestedRef.current && !opts.privateMode) {
+      markPendingGeneration({
+        conversationId: prevConvo,
+        userMessageId:
+          messagesRef.current.filter((m) => m.role === "USER").at(-1)?.id ??
+          getPendingGeneration(prevConvo)?.userMessageId ??
+          null,
+        generationId: generationIdRef.current,
+        startedAt: getPendingGeneration(prevConvo)?.startedAt ?? Date.now(),
+      });
+    }
+    detachedRef.current = true;
+    abortRef.current?.abort(); // drop browser SSE only — not /api/chat/cancel
     convoIdRef.current = opts.conversationId;
-    generationSeqRef.current++; // cancel any in-flight drop recovery
+    generationSeqRef.current++; // cancel any in-flight drop recovery for this instance
+    generationIdRef.current = null;
+    assistantIdRef.current = null;
     locallyRemovedRef.current = new Map();
     setMessages(opts.initialMessages);
     setArtifacts(opts.initialArtifacts);
@@ -146,11 +174,8 @@ export function useChat(opts: UseChatOptions) {
 
   /**
    * The server deliberately detaches generation from the request: when the SSE
-   * connection drops (flaky network, proxy timeout, long thinking with no
-   * bytes), the answer is still generated and persisted. So instead of showing
-   * an instant error, poll the conversation until the persisted assistant
-   * message appears and swap it in — only giving up after the server's own
-   * generation window has passed.
+   * connection drops (flaky network, tab close, route change), the answer is
+   * still generated and persisted. Poll until the assistant row appears.
    */
   const recoverDroppedStream = React.useCallback(
     async (assistantTempId: string, userMessageId: string | null, seq: number, deadlineMs?: number) => {
@@ -164,7 +189,8 @@ export function useChat(opts: UseChatOptions) {
       const removedAt = new Map(locallyRemovedRef.current);
       // Terminal stamps must write content too: an empty bubble renders its
       // content in the error box, so a content-less error shows an empty box.
-      const stampTerminalError = (errorText: string) =>
+      const stampTerminalError = (errorText: string) => {
+        clearPendingGeneration(convoId);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantTempId
@@ -180,16 +206,17 @@ export function useChat(opts: UseChatOptions) {
               : m
           )
         );
+      };
 
       const deadline = deadlineMs ?? Date.now() + RECOVERY_WINDOW_MS;
       let attempt = 0;
       while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, attempt < 8 ? 5000 : 15000));
+        await new Promise((r) => setTimeout(r, recoveryDelayMs(attempt)));
         attempt++;
         if (generationSeqRef.current !== seq) {
-          // The user moved on (new send, switch, reset) — close out the bubble
-          // instead of leaving it promising an answer that will never arrive.
-          stampTerminalError("Recovery stopped because a newer message took over. Reload if the original answer is missing.");
+          // Newer turn on this hook instance — leave the ledger so reopening
+          // this conversation can still reattach. Don't stamp an error onto a
+          // bubble the user may no longer be looking at.
           return;
         }
         try {
@@ -209,21 +236,25 @@ export function useChat(opts: UseChatOptions) {
           if (!recovered) continue;
           if (generationSeqRef.current !== seq) return;
           locallyRemovedRef.current.delete(recovered.id);
+          clearPendingGeneration(convoId);
           let replaced = false;
           setMessages((prev) =>
             prev.map((m) => {
               if (m.id !== assistantTempId) return m;
               replaced = true;
-              return { ...recovered, streaming: false };
+              return { ...recovered, streaming: false, error: false, errorMessage: undefined };
             })
           );
-          if (replaced) {
-            if (Array.isArray(payload.artifacts)) mergeArtifacts(payload.artifacts);
-            // Fire the same completion side effects as a normal done chunk so
-            // new-chat URL handoff, sidebar refresh, and auto-title still run.
-            opts.onDone?.(recovered, { finishReason: recovered.finishReason ?? undefined });
-            toast.success("Reconnected — Juno's answer came through.");
+          // If the placeholder was lost (e.g. remount race), append the answer.
+          if (!replaced) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === recovered.id)) return prev;
+              return [...prev, { ...recovered, streaming: false }];
+            });
           }
+          if (Array.isArray(payload.artifacts)) mergeArtifacts(payload.artifacts);
+          opts.onDone?.(recovered, { finishReason: recovered.finishReason ?? undefined });
+          toast.success("Answer ready — Juno finished in the background.");
           return;
         } catch {
           // transient poll failure — keep waiting
@@ -235,18 +266,40 @@ export function useChat(opts: UseChatOptions) {
     [mergeArtifacts, opts]
   );
 
-  // Resume recovery when reopening a conversation whose latest turn is a recent,
-  // still-unanswered user message. The live drop path stops polling the moment
-  // you navigate away (the conversation-switch reset bumps the seq), so without
-  // this the persisted answer only surfaces on a manual reload. Runs after the
-  // reset effect above on the same render, so it sees the fresh seq + messages.
+  // Resume when reopening a chat that left mid-generation (tab close, sidebar
+  // navigation, refresh). Server keeps writing; we reattach via poll.
   React.useEffect(() => {
     if (opts.privateMode || !opts.conversationId) return;
+    const convoId = opts.conversationId;
     const msgs = opts.initialMessages;
     const last = msgs[msgs.length - 1];
-    if (!last || last.role !== "USER") return;
-    const age = Date.now() - new Date(last.createdAt).getTime();
-    if (!(age >= 0 && age < RESUME_MAX_AGE_MS)) return;
+    const pending = getPendingGeneration(convoId);
+
+    // Already have a finished assistant as the tail — nothing to recover.
+    if (
+      last?.role === "ASSISTANT" &&
+      (last.content || last.reasoning || (last.attachments?.length ?? 0) > 0)
+    ) {
+      clearPendingGeneration(convoId);
+      return;
+    }
+
+    // Sources of truth for "still waiting on an answer":
+    //  1. Trailing USER message (generation never streamed a done frame)
+    //  2. sessionStorage ledger from a prior tab/route that dropped the SSE
+    const trailingUser = last?.role === "USER" ? last : null;
+    const userMessageId = trailingUser?.id ?? pending?.userMessageId ?? null;
+    if (!trailingUser && !pending) return;
+
+    const ageSource = trailingUser?.createdAt ?? (pending ? new Date(pending.startedAt).toISOString() : null);
+    if (ageSource) {
+      const age = Date.now() - new Date(ageSource).getTime();
+      if (!(age >= 0 && age < RESUME_MAX_AGE_MS)) {
+        if (pending) clearPendingGeneration(convoId);
+        return;
+      }
+    }
+
     const seq = generationSeqRef.current;
     const placeholderId = tempId();
     const placeholder: ChatMessage = {
@@ -256,12 +309,33 @@ export function useChat(opts: UseChatOptions) {
       createdAt: new Date().toISOString(),
       attachments: [],
       activity: [],
-      streaming: false,
-      errorMessage: "Reconnecting — Juno kept working in the background. The answer will appear here when it's ready.",
+      streaming: true,
+      errorMessage: "Juno is still working in the background. The answer will appear here when it's ready.",
     };
-    // Guard against a race with a send that already appended its own bubble.
-    setMessages((prev) => (prev[prev.length - 1]?.id === last.id ? [...prev, placeholder] : prev));
-    void recoverDroppedStream(placeholderId, last.id, seq, Date.now() + RESUME_POLL_WINDOW_MS);
+
+    setMessages((prev) => {
+      const tail = prev[prev.length - 1];
+      // Already showing a recovering/streaming bubble for this turn.
+      if (tail?.role === "ASSISTANT" && (tail.streaming || tail.errorMessage?.includes("background"))) {
+        return prev;
+      }
+      if (trailingUser && tail?.id === trailingUser.id) return [...prev, placeholder];
+      if (!trailingUser && pending && tail?.role === "USER") return [...prev, placeholder];
+      if (!trailingUser && pending && tail?.role === "ASSISTANT" && !tail.content && !tail.reasoning) {
+        return prev.map((m, i) => (i === prev.length - 1 ? { ...placeholder, id: m.id } : m));
+      }
+      return prev;
+    });
+
+    // Ensure the ledger exists so further navigations still reattach.
+    markPendingGeneration({
+      conversationId: convoId,
+      userMessageId,
+      generationId: pending?.generationId ?? null,
+      startedAt: pending?.startedAt ?? Date.now(),
+    });
+
+    void recoverDroppedStream(placeholderId, userMessageId, seq, Date.now() + RESUME_POLL_WINDOW_MS);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
@@ -273,6 +347,7 @@ export function useChat(opts: UseChatOptions) {
       generationIdRef.current = generationId;
       assistantIdRef.current = assistantTempId;
       stopRequestedRef.current = false;
+      detachedRef.current = false;
       setStatus("submitting");
       const seq = ++generationSeqRef.current;
       let sawTerminal = false;
@@ -293,21 +368,36 @@ export function useChat(opts: UseChatOptions) {
       // the answer the server is (very likely) still writing. No finishReason
       // yet — that would surface a "Continue" button on a bubble that is still
       // promising the original answer; terminal states set it later.
-      const beginDropRecovery = () => {
+      const beginDropRecovery = (flags?: { silent?: boolean }) => {
+        const convoId = convoIdRef.current;
+        if (convoId && !opts.privateMode) {
+          markPendingGeneration({
+            conversationId: convoId,
+            userMessageId: metaUserMessageId,
+            generationId,
+            startedAt: Date.now(),
+          });
+        }
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantTempId
               ? {
                   ...m,
-                  streaming: false,
+                  streaming: true,
                   progress: null,
-                  errorMessage: "Connection interrupted — Juno keeps working in the background. The answer will appear here when it's ready.",
+                  error: false,
+                  errorMessage:
+                    "Connection interrupted — Juno keeps working in the background. The answer will appear here when it's ready.",
                 }
               : m
           )
         );
-        toast.info("Connection dropped — Juno keeps working. Recovering the answer…");
-        void recoverDroppedStream(assistantTempId, metaUserMessageId, seq);
+        if (!flags?.silent) {
+          toast.info("Still generating in the background — you can leave and come back.");
+        }
+        if (convoId && !opts.privateMode) {
+          void recoverDroppedStream(assistantTempId, metaUserMessageId, seq);
+        }
       };
 
       try {
@@ -337,7 +427,16 @@ export function useChat(opts: UseChatOptions) {
               metaArrived = true;
               metaUserMessageId = chunk.userMessageId ?? null;
               const isNew = convoIdRef.current === null;
-              if (!opts.privateMode) convoIdRef.current = chunk.conversationId;
+              if (!opts.privateMode) {
+                convoIdRef.current = chunk.conversationId;
+                // Ledger early so a tab close right after accept still recovers.
+                markPendingGeneration({
+                  conversationId: chunk.conversationId,
+                  userMessageId: chunk.userMessageId ?? null,
+                  generationId,
+                  startedAt: Date.now(),
+                });
+              }
               if (chunk.userMessageId) {
                 setMessages((prev) =>
                   prev.map((m) => (m.pending && m.role === "USER" ? { ...m, id: chunk.userMessageId!, pending: false } : m))
@@ -427,6 +526,7 @@ export function useChat(opts: UseChatOptions) {
               // A regenerated answer arrives under its original id (the server
               // overwrites the row in place) — it is no longer "removed".
               locallyRemovedRef.current.delete(chunk.message.id);
+              if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
               if (stopFallbackRef.current != null) {
                 window.clearTimeout(stopFallbackRef.current);
                 stopFallbackRef.current = null;
@@ -452,6 +552,7 @@ export function useChat(opts: UseChatOptions) {
             }
             case "error": {
               sawTerminal = true;
+              if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
               setStatus("error");
               setMessages((prev) =>
                 prev.map((m) =>
@@ -479,10 +580,10 @@ export function useChat(opts: UseChatOptions) {
         // Stream ended without a done/error frame — the platform killed the
         // function or a proxy dropped the SSE mid-generation. Don't leave the
         // bubble spinning forever: recover the persisted answer if possible.
-        if (!sawTerminal && !controller.signal.aborted) {
-          if (metaArrived && !opts.privateMode && convoIdRef.current) {
+        if (!sawTerminal && !detachedRef.current) {
+          if (metaArrived && !opts.privateMode && convoIdRef.current && !stopRequestedRef.current) {
             beginDropRecovery();
-          } else {
+          } else if (!stopRequestedRef.current) {
             setStatus("error");
             const dropMessage = "The connection dropped before the response finished. Please try again.";
             setMessages((prev) =>
@@ -504,19 +605,23 @@ export function useChat(opts: UseChatOptions) {
           }
         }
       } catch (err) {
-        if (controller.signal.aborted) {
-          // Keep whatever streamed; just unmark streaming.
-          const stopped = stopRequestedRef.current;
+        // View moved on (new chat) — server may still finish; ledger keeps recovery.
+        if (detachedRef.current) return;
+        const stopped = stopRequestedRef.current;
+        // Explicit Stop: unmark streaming. Anything else (tab close, route
+        // change, flaky network) is a drop — recover, even if the browser
+        // aborted the fetch (pagehide often surfaces as AbortError).
+        if (stopped) {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantTempId
-                ? { ...m, streaming: false, progress: null, finishReason: stopped ? "user_stopped" : m.finishReason }
+                ? { ...m, streaming: false, progress: null, finishReason: "user_stopped" }
                 : m
             )
           );
+          if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
         } else if (metaArrived && !opts.privateMode && convoIdRef.current) {
-          // The request died mid-stream but generation already started server-
-          // side — it survives client disconnects, so recover instead of erroring.
+          // Generation already started server-side and survives disconnects.
           beginDropRecovery();
         } else {
           const message = err instanceof Error ? err.message : "Something went wrong.";
@@ -918,6 +1023,7 @@ export function useChat(opts: UseChatOptions) {
     const generationId = generationIdRef.current;
     const controller = abortRef.current;
     const assistantId = assistantIdRef.current;
+    if (convoIdRef.current) clearPendingGeneration(convoIdRef.current);
 
     if (generationId) {
       fetch("/api/chat/cancel", {
@@ -949,23 +1055,62 @@ export function useChat(opts: UseChatOptions) {
   }, []);
 
   // Reset to a fresh "new chat" without remounting (used after the shallow-URL flow).
+  // Does NOT cancel server-side generation — only detaches this view. Pending
+  // ledger stays so reopening the prior chat still reattaches.
   const reset = React.useCallback(() => {
+    // Abort only the browser stream reader — server generation is detached and
+    // continues. Do not call /api/chat/cancel (that's explicit Stop).
+    detachedRef.current = true;
+    stopRequestedRef.current = false;
     abortRef.current?.abort();
-    generationSeqRef.current++; // cancel any in-flight drop recovery
+    generationSeqRef.current++; // cancel local drop recovery for THIS instance
     locallyRemovedRef.current = new Map();
     if (stopFallbackRef.current != null) {
       window.clearTimeout(stopFallbackRef.current);
       stopFallbackRef.current = null;
     }
+    // Keep sessionStorage ledger for the previous conversationId.
     convoIdRef.current = null;
     generationIdRef.current = null;
     assistantIdRef.current = null;
-    stopRequestedRef.current = false;
     setMessages([]);
     setArtifacts([]);
     setStatus("idle");
     setPendingClarification(null);
   }, []);
+
+  // Tab close / background / soft navigation: remember the in-flight turn so
+  // reopening the chat reattaches. Never cancel the server generation here.
+  React.useEffect(() => {
+    if (opts.privateMode) return;
+    const remember = () => {
+      const convoId = convoIdRef.current;
+      const genId = generationIdRef.current;
+      if (!convoId || !genId || stopRequestedRef.current) return;
+      // Only while a stream is live (or recently dropped into recovery).
+      if (!abortRef.current && !getPendingGeneration(convoId)) return;
+      markPendingGeneration({
+        conversationId: convoId,
+        userMessageId:
+          messagesRef.current.filter((m) => m.role === "USER").at(-1)?.id ??
+          getPendingGeneration(convoId)?.userMessageId ??
+          null,
+        generationId: genId,
+        startedAt: getPendingGeneration(convoId)?.startedAt ?? Date.now(),
+      });
+    };
+    window.addEventListener("pagehide", remember);
+    window.addEventListener("freeze", remember);
+    const onVis = () => {
+      if (document.visibilityState === "hidden") remember();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.removeEventListener("pagehide", remember);
+      window.removeEventListener("freeze", remember);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [opts.privateMode]);
 
   const setFeedback = React.useCallback((messageId: string, feedback: "UP" | "DOWN" | null) => {
     // Optimistic, but honest: capture the previous value while applying the
