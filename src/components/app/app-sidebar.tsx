@@ -506,7 +506,7 @@ export function AppSidebar({
           aria-label="Expand sidebar"
           className="group flex h-9 w-9 items-center justify-center rounded-lg transition-all duration-fast active:scale-95 hover:bg-sidebar-accent"
         >
-          <SidebarMotionIcon kind="panel-open" className="text-muted-foreground" />
+          <SidebarMotionIcon kind="panel-open" className="text-sidebar-foreground" />
         </button>
         <div className="mt-3">
           <ModeToggle mode={mode} onChange={switchMode} compact />
@@ -958,7 +958,7 @@ function RailIcon({
 }) {
   const cls = cn(
     "group flex h-9 w-9 items-center justify-center rounded-[12px] transition-[color,background-color,box-shadow,transform] duration-base ease-out-soft active:scale-[0.96]",
-    active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-foreground"
+    active ? "bg-sidebar-accent text-foreground" : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-foreground"
   );
   if (href) {
     return (
@@ -995,7 +995,7 @@ function NavRow({
   );
   const inner = (
     <>
-      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-colors duration-base group-hover:text-foreground">{icon}</span>
+      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">{icon}</span>
       <span className="flex-1 truncate">{label}</span>
     </>
   );
