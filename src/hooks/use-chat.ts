@@ -37,7 +37,13 @@ export type ChatMessage = ClientMessage & {
 export type SendResult = { accepted: boolean; clarificationPending?: boolean };
 
 /** Per-send flags carried alongside the message (not sticky composer prefs). */
-export type SendOptions = { deepResearch?: boolean; artifactEdit?: ArtifactEditRequest };
+export type SendOptions = {
+  deepResearch?: boolean;
+  artifactEdit?: ArtifactEditRequest;
+  /** Per-send connector selection. When set, overrides the sticky `opts.connectors`
+   *  for this generation (used when auto-enabling from prompt intent). */
+  connectors?: string[];
+};
 
 export type ImageEditInput = { prompt: string; model: string; edit: GenerateEditPayload };
 
@@ -546,6 +552,7 @@ export function useChat(opts: UseChatOptions) {
       preflightClarification?: PreflightClarificationContext;
       deepResearch?: boolean;
       artifactEdit?: ArtifactEditRequest;
+      connectors?: string[];
     }): SendResult => {
       const trimmed = input.text.trim();
       const attachments = input.attachments ?? [];
@@ -618,7 +625,7 @@ export function useChat(opts: UseChatOptions) {
           deepResearch: !opts.privateMode && input.deepResearch ? true : undefined,
           artifactEdit: !opts.privateMode ? input.artifactEdit : undefined,
           reasoningEffort: opts.reasoningEffort,
-          connectors: opts.connectors,
+          connectors: input.connectors ?? opts.connectors,
           preflightClarification: input.preflightClarification,
           privateMode: opts.privateMode,
           privateHistory: opts.privateMode
@@ -672,8 +679,9 @@ export function useChat(opts: UseChatOptions) {
       if (!trimmed && attachments.length === 0) return { accepted: false };
 
       const modality = resolveModel(opts.model)?.modality ?? "chat";
+      const connectors = options?.connectors;
       if (modality !== "chat" || !trimmed) {
-        return startGeneration({ text: trimmed, attachments });
+        return startGeneration({ text: trimmed, attachments, connectors });
       }
 
       // Deep research goes straight to generation: the researcher plans its own
@@ -685,6 +693,7 @@ export function useChat(opts: UseChatOptions) {
           attachments,
           deepResearch: options.deepResearch,
           artifactEdit: options.artifactEdit,
+          connectors,
         });
       }
 
@@ -697,7 +706,7 @@ export function useChat(opts: UseChatOptions) {
         hasAttachments: attachments.length > 0,
       });
       if (localSkip) {
-        return startGeneration({ text: trimmed, attachments });
+        return startGeneration({ text: trimmed, attachments, connectors });
       }
 
       setStatus("checking");
@@ -738,7 +747,7 @@ export function useChat(opts: UseChatOptions) {
         clearTimeout(clarifyTimeout);
       }
 
-      return startGeneration({ text: trimmed, attachments });
+      return startGeneration({ text: trimmed, attachments, connectors });
     },
     [opts.model, opts.privateMode, pendingClarification, startGeneration, status]
   );

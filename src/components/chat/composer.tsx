@@ -83,6 +83,11 @@ import type {
   PreflightClarificationAnswerValue,
 } from "@/lib/preflight-clarification";
 import type { SendOptions, SendResult } from "@/hooks/use-chat";
+import {
+  MAX_CHAT_CONNECTORS,
+  detectConnectorsFromPrompt,
+  newlyDetectedConnectors,
+} from "@/lib/connector-intent";
 import type { ClientAttachment, GenerationStatus, ReasoningEffort } from "@/types/chat";
 
 interface ComposerProps {
@@ -111,6 +116,8 @@ interface ComposerProps {
   onToggleFastMode?: (v: boolean) => void;
   connectorsEnabled?: string[];
   onToggleConnector?: (id: string) => void;
+  /** Batch-add connector ids for this chat (no toggle-off). Used by prompt intent. */
+  onEnableConnectors?: (ids: string[]) => void;
   /** Quoted artifact selection ("select → modify/ask") attached to the next message. */
   quote?: ComposerQuote | null;
   onClearQuote?: () => void;
@@ -167,7 +174,6 @@ const GROUP_LABELS: Record<PaletteGroup, string> = {
   connectors: "Connectors",
 };
 
-const MAX_CHAT_CONNECTORS = 5;
 const MAX_VOICE_IMAGES = 4;
 // Namespaced like the sidebar's own disclosure prefs (juno:sidebar:recents:collapsed).
 const TOOLS_COLLAPSED_KEY = "juno:composer:tools:collapsed";
@@ -293,6 +299,7 @@ export function Composer({
   onToggleFastMode,
   connectorsEnabled = [],
   onToggleConnector,
+  onEnableConnectors,
   quote = null,
   onClearQuote,
   placeholder: customPlaceholder,
@@ -566,6 +573,53 @@ export function Composer({
     requestAnimationFrame(autoresize);
   };
 
+  /** When the user names a connected app ("my GitHub", "Figma file…"), turn it
+   *  on for this chat and return the full connector list for this send so the
+   *  request doesn't wait a render for sticky state to catch up. */
+  const resolveSendConnectors = React.useCallback(
+    async (prompt: string): Promise<string[] | undefined> => {
+      if (privateMode || !onToggleConnector) return undefined;
+
+      let available = connectors.map((c) => ({ id: c.id, label: c.label }));
+      // First paint may not have /api/connectors yet — fetch once so a prompt
+      // like "use my GitHub" still matches on a cold composer.
+      if (available.length === 0) {
+        try {
+          const response = await fetch("/api/connectors");
+          if (response.ok) {
+            const data = (await response.json()) as {
+              connectors?: { id: string; label: string; connected: boolean }[];
+            };
+            const list = data.connectors ?? [];
+            setAllConnectors(list);
+            available = list.filter((c) => c.connected).map((c) => ({ id: c.id, label: c.label }));
+          }
+        } catch {
+          /* keep empty — no auto-enable without a live connection list */
+        }
+      }
+      if (available.length === 0) return connectorsEnabled;
+
+      const merged = detectConnectorsFromPrompt(prompt, available, connectorsEnabled);
+      const fresh = newlyDetectedConnectors(prompt, available, connectorsEnabled);
+      if (fresh.length > 0) {
+        onEnableConnectors?.(fresh);
+        if (!onEnableConnectors) {
+          for (const id of fresh) {
+            if (!connectorsEnabled.includes(id)) onToggleConnector(id);
+          }
+        }
+        const labels = fresh
+          .map((id) => available.find((c) => c.id === id)?.label ?? id)
+          .filter(Boolean);
+        if (labels.length === 1) toast.message(`Enabled ${labels[0]} for this chat`);
+        else if (labels.length > 1) toast.message(`Enabled ${labels.join(", ")} for this chat`);
+      }
+      return merged.length > 0 ? merged : connectorsEnabled;
+    },
+    [connectors, connectorsEnabled, onEnableConnectors, onToggleConnector, privateMode]
+  );
+
   const submit = async () => {
     if (!canSend) return;
     try {
@@ -583,7 +637,11 @@ export function Composer({
       // still attached, so restoring the serialized block would double-wrap).
       interceptedDraftRef.current = text.trim();
       const outgoing = quote ? serializeQuote(quote, text.trim()) : text.trim();
-      const result = await onSend(outgoing, sendAttachments, outgoingOptions);
+      const connectorsForSend = await resolveSendConnectors(outgoing);
+      const result = await onSend(outgoing, sendAttachments, {
+        ...outgoingOptions,
+        ...(connectorsForSend ? { connectors: connectorsForSend } : null),
+      });
       if (result && result.accepted === false) return;
       setText("");
       setDraftExpanded(false);
@@ -615,7 +673,11 @@ export function Composer({
       interceptedDraftRef.current = merged;
       const outgoing = quote ? serializeQuote(quote, merged) : merged;
       void (async () => {
-        const result = await onSend(outgoing, sendAttachments, outgoingOptions);
+        const connectorsForSend = await resolveSendConnectors(outgoing);
+        const result = await onSend(outgoing, sendAttachments, {
+          ...outgoingOptions,
+          ...(connectorsForSend ? { connectors: connectorsForSend } : null),
+        });
         if (result && result.accepted === false) {
           setText(merged); // keep the words — nothing gets lost on a refusal
           return;
@@ -627,7 +689,7 @@ export function Composer({
         requestAnimationFrame(autoresize);
       })();
     },
-    [text, controlsLocked, quote, onSend, sendAttachments, outgoingOptions, clear, onClearQuote, autoresize, setDictating]
+    [text, controlsLocked, quote, onSend, sendAttachments, outgoingOptions, clear, onClearQuote, autoresize, setDictating, resolveSendConnectors]
   );
 
   // ——— Composer palette: "/" for commands, "@" for tools + connectors ———

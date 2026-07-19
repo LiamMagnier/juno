@@ -267,6 +267,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     (id: string) => setEnabledConnectors((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])),
     []
   );
+  // Prompt-intent auto-enable: only adds (never removes). Cap matches composer.
+  const enableConnectors = React.useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setEnabledConnectors((prev) => {
+      const next = [...prev];
+      for (const id of ids) {
+        if (next.includes(id)) continue;
+        if (next.length >= 5) break;
+        next.push(id);
+      }
+      return next;
+    });
+  }, []);
   const [privateMode, setPrivateMode] = React.useState(false);
   // Set when this view is an unsaved branch forked from another conversation.
   const [forkedFrom, setForkedFrom] = React.useState<{ title: string; count: number } | null>(null);
@@ -1341,6 +1354,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onToggleFastMode={setFastMode}
       connectorsEnabled={enabledConnectors}
       onToggleConnector={toggleConnector}
+      onEnableConnectors={enableConnectors}
       quote={composerQuote}
       onClearQuote={() => setComposerQuote(null)}
       privateMode={privateMode}
