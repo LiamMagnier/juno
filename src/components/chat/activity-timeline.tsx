@@ -9,7 +9,11 @@ import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
 
-function liveCopy(activeLabel: string | undefined, latest?: ClientActivityEvent) {
+function liveCopy(
+  activeLabel: string | undefined,
+  latest: ClientActivityEvent | undefined,
+  elapsedMs: number | null
+) {
   if (latest?.kind === "warning") {
     return { message: latest.title, warning: true };
   }
@@ -33,6 +37,21 @@ function liveCopy(activeLabel: string | undefined, latest?: ClientActivityEvent)
     return { message: "Writing the response", warning: false };
   }
 
+  // Progressive copy so a long silent reasoning stretch (Kimi, Claude Max, …)
+  // doesn't read as hung — and reminds people they can leave and come back.
+  const elapsed = elapsedMs ?? 0;
+  if (elapsed >= 10 * 60_000) {
+    return {
+      message: "Still thinking deeply — safe to leave; the answer will be here when you return",
+      warning: false,
+    };
+  }
+  if (elapsed >= 2 * 60_000) {
+    return {
+      message: "Still thinking — working in the background",
+      warning: false,
+    };
+  }
   return { message: "Thinking about your request", warning: false };
 }
 
@@ -125,7 +144,7 @@ export function ActivityTimeline({
 
   const latest = hasEvents ? list[list.length - 1] : undefined;
   const active = run.phases.find((p) => p.active);
-  const live = liveCopy(active?.label, latest);
+  const live = liveCopy(active?.label, latest, run.elapsedMs);
   const restingDetail = [
     run.searches ? `${run.searches} ${run.searches === 1 ? "search" : "searches"}` : null,
     run.sourceCount ? `${run.sourceCount} ${run.sourceCount === 1 ? "source" : "sources"}` : null,

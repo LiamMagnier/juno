@@ -27,11 +27,36 @@ function ElapsedTime({ startedAt, elapsedMs, running }: { startedAt: number | nu
 
 /** The same calm phase/detail hierarchy used by the main transcript. */
 function PaneStreamStatus({ writing }: { writing: boolean }) {
-  const statusCopy = writing ? "Writing the response" : "Thinking about your request";
+  const startRef = React.useRef(Date.now());
+  const [elapsedSec, setElapsedSec] = React.useState(0);
+  React.useEffect(() => {
+    if (writing) return;
+    startRef.current = Date.now();
+    setElapsedSec(0);
+    const timer = window.setInterval(
+      () => setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000)),
+      1000
+    );
+    return () => window.clearInterval(timer);
+  }, [writing]);
+
+  let statusCopy = "Thinking about your request";
+  if (writing) statusCopy = "Writing the response";
+  else if (elapsedSec >= 600) statusCopy = "Still thinking deeply — safe to leave; the answer will be here when you return";
+  else if (elapsedSec >= 120) statusCopy = "Still thinking — working in the background";
+
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
-      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow">{statusCopy}</span>
+      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow">
+        {statusCopy}
+        {!writing && elapsedSec > 0 && (
+          <span className="whitespace-nowrap tabular-nums">
+            {" "}
+            · {elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`}
+          </span>
+        )}
+      </span>
     </div>
   );
 }

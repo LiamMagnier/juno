@@ -23,23 +23,58 @@ import { cn, formatBytes, formatTokens, formatUsd } from "@/lib/utils";
 import type { ChatMessage, ImageEditInput, SendResult } from "@/hooks/use-chat";
 import type { ClientArtifact, ClientAttachment, ClientMessageVersionDetail, GenerationStatus } from "@/types/chat";
 
+function formatStreamElapsed(totalSec: number): string {
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}m ${s}s`;
+}
+
 /**
  * Premium "thinking → writing" indicator shown in the transcript while the
- * assistant works with no visible content yet.
+ * assistant works with no visible content yet. Elapsed time + progressive copy
+ * keep long silent reasoning from looking hung.
  */
 function StreamStatus({ status }: { status?: GenerationStatus }) {
-  const statusCopy =
-    status === "writing"
-      ? "Writing the response"
-      : status === "checking"
-        ? "Checking your request"
-        : status === "submitting"
-          ? "Starting your request"
-          : "Thinking about your request";
+  const startRef = React.useRef(Date.now());
+  const [elapsedSec, setElapsedSec] = React.useState(0);
+  React.useEffect(() => {
+    startRef.current = Date.now();
+    setElapsedSec(0);
+    const timer = window.setInterval(
+      () => setElapsedSec(Math.floor((Date.now() - startRef.current) / 1000)),
+      1000
+    );
+    return () => window.clearInterval(timer);
+  }, [status]);
+
+  const writing = status === "writing";
+  const checking = status === "checking";
+  const submitting = status === "submitting";
+  let statusCopy = "Thinking about your request";
+  if (writing) statusCopy = "Writing the response";
+  else if (checking) statusCopy = "Checking your request";
+  else if (submitting) statusCopy = "Starting your request";
+  else if (elapsedSec >= 600) {
+    statusCopy = "Still thinking deeply — safe to leave; the answer will be here when you return";
+  } else if (elapsedSec >= 120) {
+    statusCopy = "Still thinking — working in the background";
+  }
+
+  const showClock = !writing && !checking && !submitting && elapsedSec > 0;
+
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
-      <span key={statusCopy} className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow">{statusCopy}</span>
+      <span
+        key={statusCopy}
+        className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow"
+      >
+        {statusCopy}
+        {showClock && (
+          <span className="whitespace-nowrap tabular-nums"> · {formatStreamElapsed(elapsedSec)}</span>
+        )}
+      </span>
     </div>
   );
 }

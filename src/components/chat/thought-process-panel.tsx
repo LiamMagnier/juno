@@ -434,12 +434,17 @@ export function ThoughtProcessPanel({
   // proportion between at least two measured spans.
   const showBar = run.phases.length >= 2 && totalMs > 0;
   const activePhase = run.phases.find((phase) => phase.active);
+  const thinkMs = run.elapsedMs ?? 0;
   const overviewTitle = streaming
     ? activePhase?.key === "research"
       ? "Finding and checking sources"
       : activePhase?.key === "write"
         ? "Writing the response"
-        : "Thinking about your request"
+        : thinkMs >= 10 * 60_000
+          ? "Still thinking deeply — safe to leave and come back"
+          : thinkMs >= 2 * 60_000
+            ? "Still thinking — working in the background"
+            : "Thinking about your request"
     : "Response complete";
   const overviewLabel = streaming
     ? activePhase?.key === "research"
