@@ -1131,7 +1131,7 @@ function CodeWorkspaceGroup({
         aria-label={expanded ? `Collapse ${name}` : `Expand ${name}`}
         className="group flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-1.5 text-left text-[14px] font-medium text-sidebar-foreground/90 transition-[color,background-color] duration-base ease-out-soft hover:bg-sidebar-accent hover:text-foreground"
       >
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/70 transition-colors duration-base group-hover:text-foreground">
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
         </span>
         <span className="min-w-0 flex-1 truncate">{name}</span>
@@ -1328,7 +1328,7 @@ function ConversationRow({
         title={conversation.title}
       >
         {/* Claude-style: every chat carries the same speech-bubble mark. */}
-        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-muted-foreground/60 transition-colors duration-base group-hover:text-foreground">
+        <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
           <SidebarMotionIcon kind="conversation" className={nested ? "h-[13px] w-[13px]" : "h-[15px] w-[15px]"} />
         </span>
         <AnimatedTitle
@@ -1456,7 +1456,7 @@ function ProjectRow({
         )}
         title={project.name}
       >
-        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-muted-foreground/80 transition-colors duration-base group-hover:text-foreground">
+        <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
           <SidebarMotionIcon kind="projects" />
         </span>
         <AnimatedTitle title={project.name} animate={project.nameSource === "ai"} className="min-w-0 flex-1" />
@@ -1526,7 +1526,7 @@ function ProjectRow({
                 : "text-sidebar-foreground/70 hover:text-foreground"
             )}
           >
-            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-colors duration-base group-hover/pc:text-foreground" />
+            <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground transition-colors duration-base group-hover/pc:text-foreground" />
             <span className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}
