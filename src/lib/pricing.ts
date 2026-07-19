@@ -166,6 +166,8 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       if (pm.includes("pro")) return { input: 0.435, output: 0.87 };
       return { input: 0.2, output: 0.8 };
     case "qwen":
+      // 3.8 Max Preview is Token Plan credits-only publicly; estimate above 3.7 Max.
+      if (pm.includes("qwen3.8-max")) return { input: 3.0, output: 9.0 };
       if (pm.includes("qwen3.7-max")) return { input: 2.5, output: 7.5 };
       if (pm.includes("qwen3.7-plus")) return { input: 0.4, output: 1.6 };
       if (pm.includes("flash")) return { input: 0.19, output: 1.13 };

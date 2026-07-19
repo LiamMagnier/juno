@@ -290,12 +290,15 @@ export async function* streamOpenAICompat(
     }
   }
   if (isQwenThinking) {
-    // Instant (no effort) turns Qwen thinking off; any effort turns it on and
-    // maps to a token budget for the thinking phase (extra_body passthrough).
-    params.enable_thinking = !!effectiveReasoningEffort;
-    if (effectiveReasoningEffort) {
+    // Instant (no effort) turns Qwen thinking off for hybrid models. Qwen3.8 Max
+    // Preview is thinking-only (canDisable:false) so always send enable_thinking
+    // true and a budget (default high when the UI sent nothing).
+    const qwenAlwaysThinks = modelId.includes("qwen3.8-max") || !reasoningCaps(model).canDisable;
+    const qwenEffort = effectiveReasoningEffort ?? (qwenAlwaysThinks ? "high" : null);
+    params.enable_thinking = qwenAlwaysThinks ? true : !!qwenEffort;
+    if (qwenEffort) {
       params.thinking_budget = { minimal: 1024, low: 2048, medium: 8192, high: 24000, xhigh: 32000, max: 38000 }[
-        effectiveReasoningEffort
+        qwenEffort
       ];
     }
   }

@@ -280,7 +280,11 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
-  def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "current", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Alibaba's flagship — strong reasoning served extremely fast (~190 tok/s)." }),
+  // qwen3.8-max-preview: Alibaba Model Studio / Token Plan only (Beijing Token Plan
+  // keys, and listed on international docs as Token Plan). Thinking always on;
+  // no public pay-as-you-go $/MTok yet — billed via Token Plan credits.
+  def({ provider: "qwen", id: "qwen3.8-max-preview", name: "Qwen3.8 Max Preview", family: "qwen-max", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship preview — always-on deep thinking, vision, and ~1M context. Model Studio Token Plan access only." }),
+  def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "legacy", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Max flagship — strong reasoning served extremely fast (~190 tok/s). Standard Model Studio pay-as-you-go API." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
   def({ provider: "qwen", id: "qwen3.6-plus", name: "Qwen3.6 Plus", family: "qwen-plus", status: "legacy", released: "2026-03", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Previous Plus generation, superseded by Qwen3.7 Plus." }),
@@ -452,7 +456,9 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
+  // Keep qwen3-max → 3.7 (pay-as-you-go). 3.8-max-preview is Token Plan only.
   "qwen:qwen3-max": "qwen:qwen3.7-max",
+  "qwen:qwen3.8-max": "qwen:qwen3.8-max-preview",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.6-flash",
 };

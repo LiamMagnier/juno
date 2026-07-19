@@ -151,15 +151,16 @@ Sources: mimo.mi.com docs (quick-start / pricing) · litellm xiaomi_mimo provide
 
 ---
 
-## Alibaba Qwen (DashScope / Model Studio) — checked 2026-07-04
-Sources: help.aliyun.com Model Studio model list · dashscope OpenAI-compatible guide · qwen model cards.
+## Alibaba Qwen (DashScope / Model Studio) — checked 2026-07-19
+Sources: help.aliyun.com Model Studio model list · deep-thinking guide · Token Plan personal overview · dashscope OpenAI-compatible guide · live `GET /models` on dashscope-intl.
 - Endpoint: OpenAI-compatible mode. International (default) `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`; Beijing/China `https://dashscope.aliyuncs.com/compatible-mode/v1` (set `QWEN_BASE_URL`). Key env: **`DASHSCOPE_API_KEY`** (`sk-…`).
 - Thinking is provider-specific: Qwen uses `enable_thinking` (bool) + `thinking_budget` (int) in the request body, **not** OpenAI's `reasoning_effort`. `openai-compat.ts` maps Juno's effort tiers to a thinking budget and omits `reasoning_effort` for this provider. Instant = `enable_thinking:false`.
-- Current: `qwen3.7-max` (flagship), `qwen3.7-plus` (balanced multimodal hybrid, 1M ctx), `qwen3.6-flash` (cheap multimodal, 1M ctx), and `qwen-long`.
-- Legacy: `qwen3.6-plus`, `qwen3.5-plus`, `qwen3.5-flash`, `qwen3-vl-plus`, `qwen3-vl-flash`, `qwen-max`, `qwen-turbo`, `qwen-vl-max`, `qwq-plus`.
-- Deprecated / near retirement: `qwen3-coder-plus`, `qwen3-235b-a22b`, `qwen3-30b-a3b` retire **2026-07-08** in the hosted Model Studio listings. Old selector ids `qwen3-max`, `qwen-plus`, and `qwen-flash` migrate to the current versioned ids.
-- Discovery: DashScope exposes `GET /models`, so `npm run sync:models:write` surfaces every other Qwen id the account can call with guessed metadata. Families in `model-discovery-core.ts` label max/plus/flash/long/coder/vl/turbo/qwq.
-- Uncertain: exact per-model context windows and prices vary by account/region — figures here are provider estimates; re-verify against the Model Studio console pricing.
+- **Qwen3.8**: API model id `qwen3.8-max-preview`. Thinking always on (cannot disable). Vision + text. Context ~983K. **Token Plan only** (not on standard pay-as-you-go keys — not returned by intl `GET /models` for a normal DASHSCOPE key as of 2026-07-19). No public $/MTok list; Token Plan bills Credits (Lite/Standard/Pro subscriptions). Personal Token Plan terms also restrict keys to coding/agent tools, not bulk app backends.
+- Current: `qwen3.8-max-preview` (flagship preview, Token Plan), `qwen3.7-plus` (balanced multimodal hybrid, 1M ctx), `qwen3.6-flash` (cheap multimodal, 1M ctx), and `qwen-long`.
+- Legacy: `qwen3.7-max` (standard payg Max), `qwen3.6-plus`, `qwen3.5-plus`, `qwen3.5-flash`, `qwen3-vl-plus`, `qwen3-vl-flash`, `qwen-max`, `qwen-turbo`, `qwen-vl-max`, `qwq-plus`.
+- Deprecated / near retirement: `qwen3-coder-plus`, `qwen3-235b-a22b`, `qwen3-30b-a3b` retire **2026-07-08** in the hosted Model Studio listings. Old selector ids `qwen3-max`, `qwen-plus`, and `qwen-flash` migrate to the current versioned ids (`qwen3-max` → payg `qwen3.7-max`; `qwen3.8-max` → preview).
+- Discovery: DashScope exposes `GET /models`, so `npm run sync:models:write` surfaces every other Qwen id the account can call with guessed metadata. Families in `model-discovery-core.ts` label 3.8-max/max/plus/flash/long/coder/vl/turbo/qwq.
+- Uncertain: exact per-model context windows and prices vary by account/region — figures here are provider estimates; re-verify against the Model Studio console pricing. 3.8 Max Preview internal rates use a provisional $3/$9 per 1M until Alibaba publishes payg.
 
 ## Maintenance checklist
 

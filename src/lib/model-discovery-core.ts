@@ -107,6 +107,7 @@ export const FAMILIES: Partial<Record<Provider, Family[]>> = {
     { label: "MiMo Flash", match: /^mimo-v[\d.]+-flash$/i, minPlan: "FREE", vision: false },
   ],
   qwen: [
+    { label: "Qwen 3.8 Max Preview", match: /^qwen3\.8-max/i, minPlan: "PRO", vision: true },
     { label: "Qwen 3.7 Max", match: /^qwen3\.7-max/i, minPlan: "PRO", vision: false },
     { label: "Qwen 3.7 Plus", match: /^qwen3\.7-plus/i, minPlan: "PRO", vision: true },
     { label: "Qwen 3.6 Flash", match: /^qwen3\.6-flash/i, minPlan: "FREE", vision: true },
