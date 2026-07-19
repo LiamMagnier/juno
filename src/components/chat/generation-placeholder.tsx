@@ -1,47 +1,48 @@
 "use client";
 
 import * as React from "react";
-import { Image as ImageIcon, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * A compact, determinate media-work surface for assistant messages. Images use
- * a developing print metaphor; video uses a frame strip and moving playhead.
- * Both share the same quiet status/footer system so switching modalities feels
- * related without reducing either process to a generic loading shimmer.
+ * Media-generation work surface shown while /api/generate runs.
+ *
+ * ChatGPT / Gemini style: a soft ambient field + smooth shimmer band over a
+ * clean aspect-ratio card. Status lives in a quiet footer (stage, %, elapsed).
+ * No sketch metaphors — the object being made is suggested by shape only
+ * (square for image, 16:9 for video).
  */
 
 const STAGE_LABELS: Record<string, string> = {
-  queued: "Queued…",
-  generating: "Generating…",
-  polling: "Rendering…",
-  downloading: "Downloading…",
-  uploading: "Uploading…",
+  queued: "Queued",
+  generating: "Generating",
+  polling: "Rendering",
+  downloading: "Downloading",
+  uploading: "Uploading",
 };
 
 const STAGE_DETAILS: Record<"image" | "video", Record<string, string>> = {
   image: {
-    queued: "Preparing canvas",
-    generating: "Developing image",
-    polling: "Refining detail",
-    downloading: "Retrieving image",
-    uploading: "Saving to chat",
+    queued: "Preparing…",
+    generating: "Creating image…",
+    polling: "Refining…",
+    downloading: "Retrieving…",
+    uploading: "Saving…",
   },
   video: {
-    queued: "Preparing timeline",
-    generating: "Composing frames",
-    polling: "Rendering sequence",
-    downloading: "Retrieving video",
-    uploading: "Saving to chat",
+    queued: "Preparing…",
+    generating: "Creating video…",
+    polling: "Rendering…",
+    downloading: "Retrieving…",
+    uploading: "Saving…",
   },
 };
 
 function friendlyLabel(stage: string): string {
-  return STAGE_LABELS[stage] ?? `${stage.charAt(0).toUpperCase()}${stage.slice(1)}…`;
+  return STAGE_LABELS[stage] ?? `${stage.charAt(0).toUpperCase()}${stage.slice(1)}`;
 }
 
 function stageDetail(modality: "image" | "video", stage: string): string {
-  return STAGE_DETAILS[modality][stage] ?? friendlyLabel(stage).replace(/…$/, "");
+  return STAGE_DETAILS[modality][stage] ?? `${friendlyLabel(stage)}…`;
 }
 
 function formatElapsed(totalSec: number): string {
@@ -52,52 +53,29 @@ function formatElapsed(totalSec: number): string {
 
 function normalizeProgress(pct?: number): number | null {
   if (pct == null || !Number.isFinite(pct)) return null;
-
-  // A bare `1` is inherently ambiguous. Until every provider adapter emits the
-  // canonical 0..100 contract, prefer fractional completion (1 === complete),
-  // then clamp defensive provider values into a safe visual range.
+  // Bare `1` is ambiguous: prefer fractional completion (1 === complete).
   const normalized = pct >= 0 && pct <= 1 ? pct * 100 : pct;
   return Math.max(0, Math.min(100, normalized));
 }
 
-function ImageDevelopment() {
+/** Soft ambient field + continuous shimmer — shared by image and video. */
+function MediaShimmer({ modality }: { modality: "image" | "video" }) {
   return (
-    <div className="generation-image-stage" aria-hidden="true">
-      <div className="generation-image-sheet">
-        <span className="generation-image-corner generation-image-corner--tl" />
-        <span className="generation-image-corner generation-image-corner--br" />
-        <svg className="generation-image-art" viewBox="0 0 180 128" fill="none">
-          <circle className="generation-image-art__sun" cx="132" cy="35" r="11" />
-          <path className="generation-image-art__far" d="M16 91 54 58l25 22 23-18 62 45" />
-          <path className="generation-image-art__near" d="M16 108 65 72l29 24 22-16 48 34" />
-          <path className="generation-image-art__horizon" d="M16 109h148" />
-        </svg>
-        <span className="generation-image-scan" />
+    <div className="generation-media" data-modality={modality} aria-hidden="true">
+      <div className="generation-media__field">
+        <span className="generation-media__orb generation-media__orb--a" />
+        <span className="generation-media__orb generation-media__orb--b" />
+        <span className="generation-media__orb generation-media__orb--c" />
+        <span className="generation-media__sheen" />
+        <span className="generation-media__pulse" />
       </div>
-    </div>
-  );
-}
-
-function VideoFrames() {
-  return (
-    <div className="generation-video-stage" aria-hidden="true">
-      <div className="generation-video-strip">
-        {[0, 1, 2].map((frame) => (
-          <span className="generation-video-frame" key={frame}>
-            <span className="generation-video-frame__sun" />
-            <span className="generation-video-frame__horizon" />
-            <span className="generation-video-frame__subject" />
-          </span>
-        ))}
-      </div>
-      <div className="generation-video-timeline">
-        <div className="generation-video-segments">
-          {Array.from({ length: 8 }, (_, index) => (
-            <span key={index} />
-          ))}
+      {modality === "video" && (
+        <div className="generation-media__play">
+          <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
+            <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
+          </svg>
         </div>
-        <span className="generation-video-playhead" />
-      </div>
+      )}
     </div>
   );
 }
@@ -109,11 +87,9 @@ interface GenerationPlaceholderProps {
 export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) {
   const { modality, stage, pct } = progress;
   const isVideo = modality === "video";
-  const Icon = isVideo ? Video : ImageIcon;
   const label = friendlyLabel(stage);
   const detail = stageDetail(modality, stage);
 
-  // Client-side elapsed counter — starts when the placeholder mounts.
   const startRef = React.useRef(Date.now());
   const [elapsed, setElapsed] = React.useState(0);
   React.useEffect(() => {
@@ -124,9 +100,6 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
     return () => window.clearInterval(timer);
   }, []);
 
-  // Keep the prior stage on the first render after a prop change, then swap both
-  // labels together. This avoids painting the new label once before its entry
-  // animation is attached.
   const [stageTransition, setStageTransition] = React.useState<{
     current: string;
     previous: string | null;
@@ -139,7 +112,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
     );
     const timer = window.setTimeout(
       () => setStageTransition((current) => ({ ...current, previous: null })),
-      240
+      280
     );
     return () => window.clearTimeout(timer);
   }, [detail]);
@@ -160,26 +133,18 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
       data-stage={stage}
       className={cn(
         "generation-placeholder w-full",
-        isVideo ? "max-w-[480px]" : "aspect-square max-w-[320px]"
+        isVideo ? "max-w-[min(100%,480px)]" : "max-w-[min(100%,360px)]"
       )}
     >
       <div className="generation-placeholder__viewport">
-        <div className="generation-placeholder__header" aria-hidden="true">
-          <span className="generation-placeholder__kind">
-            <Icon className="size-3.5" />
-            {isVideo ? "Video" : "Image"}
-          </span>
-          <span className="generation-placeholder__activity">
-            <span />
-            {longVideoWait ? "May take minutes" : "Working"}
-          </span>
-        </div>
-
-        {isVideo ? <VideoFrames /> : <ImageDevelopment />}
+        <MediaShimmer modality={modality} />
       </div>
 
       <div className="generation-placeholder__footer" aria-hidden="true">
-        <div className="generation-progress" data-determinate={displayPct != null ? "true" : "false"}>
+        <div
+          className="generation-progress"
+          data-determinate={displayPct != null ? "true" : "false"}
+        >
           {displayPct != null ? (
             <span
               className="generation-progress__value"
@@ -207,6 +172,7 @@ export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) 
             </span>
           </span>
           <span className="generation-placeholder__metrics">
+            {longVideoWait && <span className="generation-placeholder__hint">May take a minute</span>}
             {roundedPct != null && <span>{roundedPct}%</span>}
             <span>{formatElapsed(elapsed)}</span>
           </span>
