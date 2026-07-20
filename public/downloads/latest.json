@@ -1,8 +1,8 @@
 {
-  "version": "3.4.1",
-  "build": 48,
+  "version": "3.5.0",
+  "build": 49,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "ec6b18e630513f47120430c1a9f95d76b675ac6397c1f4dc77ad7caad3bba7ba",
-  "notes": "macOS stability: Liquid Glass model/thinking popovers no longer crash; live thought process and status clock in Code; Codex-style prompt queue while a run is busy; chat and Code sessions auto-title as soon as you send (website parity, including project rename ownership).",
+  "sha256": "fe395f9b135c27c7ee5b5f7335b6155096b4bcbfd3c6c0f35f76213843a9d30f",
+  "notes": "Sticky models per chat; Codex-style Code prompt queue (send stacks while running); full-page Projects/Library/Memory/etc (Settings stays a popup); website thinking matrix; Codex thought-process strip; context-menu model/thinking pickers; sidebar orbs removed.",
   "minimumSystemVersion": "26.0"
 }
