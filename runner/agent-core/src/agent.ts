@@ -5,7 +5,6 @@ import type {
   AgentEvent,
   ApprovalDecision,
   ApprovalRequest,
-  AssistantContent,
   ChatMessage,
   PermissionMode,
   Usage,
@@ -17,6 +16,14 @@ import { CheckpointStore } from './checkpoints.js';
 import { SessionStore } from './session.js';
 import { defaultTools } from './tools/registry.js';
 import type { UsageReporter } from './usage.js';
+import { runAgentLoop } from './loop.js';
+import {
+  SubagentManager,
+  delegationPromptSection,
+  isOrchestrationTool,
+  orchestrationToolSpecs,
+  type SubagentConfig,
+} from './subagents.js';
 
 const MAX_STEPS_PER_TURN = 60;
 const MEMORY_FILES = ['JUNO.md', 'AGENTS.md', 'CLAUDE.md'];
@@ -36,16 +43,14 @@ export interface AgentOptions {
   callbacks: AgentCallbacks;
   /** When set, each turn reserves + records against the account plan. */
   usageReporter?: UsageReporter;
-  /**
-   * Environment for child processes spawned by tools (the bash tool). When
-   * omitted, children inherit the driver's `process.env`. The Cloud Code runner
-   * passes a SCRUBBED env so untrusted agent bash cannot reach the driver's
-   * secrets. See runner/agent-core/VENDORED.md (divergence #3).
-   */
+  /** Child-process environment for tools (scrubbed env for untrusted runs).
+   *  Omitted = children inherit process.env, as before. */
   env?: NodeJS.ProcessEnv;
+  /** Subagent delegation config; `false` disables it (no tools exposed). */
+  subagents?: SubagentConfig | false;
 }
 
-function buildSystemPrompt(cwd: string, mode: PermissionMode): string {
+function buildSystemPrompt(cwd: string, mode: PermissionMode, delegation = false): string {
   let memory = '';
   for (const name of MEMORY_FILES) {
     const p = path.join(cwd, name);
@@ -66,7 +71,7 @@ Operating rules:
 - Verify your work: after making changes, run the project's own checks (build, tests, linter) with bash and fix what fails before finishing.
 - Keep edits minimal and consistent with the surrounding code style.
 - Tool calls are gated by user permission settings; a denied call means the user declined — adjust your approach rather than retrying the same call.
-${mode === 'plan' ? '- You are in PLAN MODE: only read-only tools are available. Produce a concise numbered implementation plan and wait; do not attempt edits.' : ''}${memory}`;
+${mode === 'plan' ? '- You are in PLAN MODE: only read-only tools are available. Produce a concise numbered implementation plan and wait; do not attempt edits.' : ''}${delegation ? delegationPromptSection() : ''}${memory}`;
 }
 
 export class AgentSession {
@@ -82,8 +87,13 @@ export class AgentSession {
   private messages: ChatMessage[];
   private callbacks: AgentCallbacks;
   private usageReporter?: UsageReporter;
-  private childEnv?: NodeJS.ProcessEnv;
+  private env?: NodeJS.ProcessEnv;
   private aborter: AbortController | null = null;
+  /** Root-only child-task orchestration. Children run through the manager's
+   *  own executor (which hard-rejects orchestration tools), so nesting is
+   *  impossible by construction. */
+  readonly subagents?: SubagentManager;
+  private currentTurnIndex = 0;
 
   private constructor(store: SessionStore, opts: AgentOptions) {
     this.store = store;
@@ -98,7 +108,25 @@ export class AgentSession {
     this.messages = store.loadMessages();
     this.callbacks = opts.callbacks;
     this.usageReporter = opts.usageReporter;
-    this.childEnv = opts.env;
+    this.env = opts.env;
+    if (opts.subagents !== false) {
+      const session = this;
+      this.subagents = new SubagentManager(
+        {
+          get cwd() { return session.cwd; },
+          get model() { return session.model; },
+          get mode() { return session.mode; },
+          get provider() { return session.provider; },
+          get tools() { return session.tools; },
+          get env() { return session.env; },
+          get usageReporter() { return session.usageReporter; },
+          emit: (event) => session.emit(event),
+          requestApproval: (request) => session.callbacks.requestApproval(request),
+          snapshotForUndo: (absPath) => session.checkpoints.snapshot(session.currentTurnIndex, absPath),
+        },
+        opts.subagents ?? {},
+      );
+    }
   }
 
   static create(opts: AgentOptions): AgentSession {
@@ -153,6 +181,8 @@ export class AgentSession {
 
   abort(): void {
     this.aborter?.abort();
+    // The main Stop kills EVERY child stream, command, and queued task too.
+    this.subagents?.cancelAll('Stopped by user');
   }
 
   private emit(event: AgentEvent): void {
@@ -163,6 +193,8 @@ export class AgentSession {
   /** Run one full user turn: stream, execute tools with gating, until end_turn. */
   async prompt(text: string): Promise<void> {
     const turnIndex = this.store.meta.turnCount;
+    this.currentTurnIndex = turnIndex;
+    this.subagents?.beginTurn(turnIndex);
     if (this.store.meta.title === '(new session)') {
       this.store.meta.title = text.slice(0, 60);
     }
@@ -191,67 +223,37 @@ export class AgentSession {
       }
     }
 
+    // Delegation tools are ROOT-ONLY: children run through the manager's own
+    // executor, whose tool set never includes them (and which rejects them
+    // outright), so recursion is impossible at both levels.
+    const delegation = Boolean(this.subagents?.enabled) && this.mode !== 'plan';
     const toolSpecs =
       this.mode === 'plan'
         ? this.tools.filter((t) => t.kind === 'read').map((t) => t.spec)
-        : this.tools.map((t) => t.spec);
+        : [
+            ...this.tools.map((t) => t.spec),
+            ...(delegation ? orchestrationToolSpecs() : []),
+          ];
 
     let usage: Usage = { inputTokens: 0, outputTokens: 0 };
     let stopReason = 'end_turn';
 
     try {
-      for (let step = 0; step < MAX_STEPS_PER_TURN; step++) {
-        const assistantContent: AssistantContent[] = [];
-        const toolCalls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [];
-        let textAcc = '';
-
-        for await (const ev of this.provider.stream({
-          model: this.model,
-          system: buildSystemPrompt(this.cwd, this.mode),
-          messages: this.messages,
-          tools: toolSpecs,
-          signal: this.aborter.signal,
-        })) {
-          if (ev.type === 'text_delta') {
-            textAcc += ev.text;
-            this.callbacks.onEvent({ type: 'assistant_delta', text: ev.text });
-          } else if (ev.type === 'tool_call') {
-            toolCalls.push({
-              id: ev.id,
-              name: ev.name,
-              input: (ev.input ?? {}) as Record<string, unknown>,
-            });
-          } else if (ev.type === 'done') {
-            usage = {
-              inputTokens: usage.inputTokens + ev.usage.inputTokens,
-              outputTokens: usage.outputTokens + ev.usage.outputTokens,
-            };
-            stopReason = ev.stopReason;
-          }
-        }
-
-        if (textAcc) {
-          assistantContent.push({ type: 'text', text: textAcc });
-          this.emit({ type: 'assistant_message', text: textAcc });
-        }
-        for (const call of toolCalls) {
-          assistantContent.push({ type: 'tool_call', id: call.id, name: call.name, input: call.input });
-        }
-        if (assistantContent.length > 0) {
-          this.messages.push({ role: 'assistant', content: assistantContent });
-        }
-        this.store.saveMessages(this.messages);
-
-        if (stopReason !== 'tool_use' || toolCalls.length === 0) break;
-
-        const results: ChatMessage = { role: 'user', content: [] };
-        for (const call of toolCalls) {
-          const result = await this.executeToolCall(turnIndex, call);
-          results.content.push(result);
-        }
-        this.messages.push(results);
-        this.store.saveMessages(this.messages);
-      }
+      const result = await runAgentLoop({
+        provider: this.provider,
+        model: this.model,
+        system: buildSystemPrompt(this.cwd, this.mode, delegation),
+        messages: this.messages,
+        tools: toolSpecs,
+        signal: this.aborter.signal,
+        maxSteps: MAX_STEPS_PER_TURN,
+        onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
+        onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
+        executeToolCall: (call) => this.executeToolCall(turnIndex, call),
+        onMessagesChanged: () => this.store.saveMessages(this.messages),
+      });
+      usage = result.usage;
+      stopReason = result.stopReason;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.emit({ type: 'error', message });
@@ -272,15 +274,44 @@ export class AgentSession {
         await this.usageReporter.refund().catch(() => {});
       }
     }
+    // A turn is not over while its children run: drain them so a headless
+    // driver (the cloud runner) can never commit/push/exit mid-flight. An
+    // abort already cancelled them, so this returns promptly after Stop.
+    await this.subagents?.drainActive();
     this.store.meta.turnCount = turnIndex + 1;
     this.store.saveMeta();
-    this.emit({ type: 'turn_finished', turnIndex, stopReason, usage });
+    const subagentUsage = this.subagents?.turnSubagentUsage;
+    this.emit({
+      type: 'turn_finished',
+      turnIndex,
+      stopReason,
+      usage,
+      ...(subagentUsage && (subagentUsage.inputTokens > 0 || subagentUsage.outputTokens > 0)
+        ? { subagentUsage }
+        : {}),
+    });
   }
 
   private async executeToolCall(
     turnIndex: number,
     call: { id: string; name: string; input: Record<string, unknown> },
   ): Promise<{ type: 'tool_result'; toolCallId: string; content: string; isError?: boolean }> {
+    if (isOrchestrationTool(call.name)) {
+      if (!this.subagents) {
+        return {
+          type: 'tool_result',
+          toolCallId: call.id,
+          content: 'Subagent delegation is disabled for this session.',
+          isError: true,
+        };
+      }
+      return this.subagents.handleToolCall(turnIndex, call) as Promise<{
+        type: 'tool_result';
+        toolCallId: string;
+        content: string;
+        isError?: boolean;
+      }>;
+    }
     const tool = this.toolsByName.get(call.name);
     if (!tool) {
       return { type: 'tool_result', toolCallId: call.id, content: `Unknown tool: ${call.name}`, isError: true };
@@ -318,7 +349,7 @@ export class AgentSession {
       }
     }
 
-    const ctx: ToolContext = { cwd: this.cwd, env: this.childEnv };
+    const ctx: ToolContext = { cwd: this.cwd, env: this.env };
     for (const abs of tool.mutatedPaths?.(call.input, ctx) ?? []) {
       this.checkpoints.snapshot(turnIndex, abs);
     }

@@ -474,6 +474,7 @@ async function main() {
           requestId: request.callId,
           summary: request.summary,
           risk: riskToTaskRisk(request.risk),
+          ...(request.agentLabel ? { agentLabel: request.agentLabel } : {}),
         });
         sink.push("approval_response", { requestId: request.callId, approve: true });
         return "allow";
@@ -562,11 +563,20 @@ function onAgentEvent(sink, event) {
         name: event.name,
         summary: `${summary}${suffix}`,
         ...(event.output ? { detail: String(event.output).slice(0, 2000) } : {}),
+        ...(event.agentId ? { agentId: event.agentId } : {}),
       });
       break;
     }
     case "tool_denied":
-      sink.push("tool", { name: event.name, summary: `Denied ${event.name}: ${event.reason}` });
+      sink.push("tool", {
+        name: event.name,
+        summary: `Denied ${event.name}: ${event.reason}`,
+        ...(event.agentId ? { agentId: event.agentId } : {}),
+      });
+      break;
+    case "subagent_update":
+      // Child-agent lifecycle snapshot → the web UI's live agent cards.
+      sink.push("agent", { agent: event.agent });
       break;
     case "error":
       sink.push("error", { message: event.message });

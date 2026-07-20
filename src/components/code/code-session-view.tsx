@@ -39,7 +39,7 @@ import { ComposerDictation } from "@/components/chat/composer-dictation";
 import { useApp } from "@/components/app/app-provider";
 import { useUploads } from "@/hooks/use-uploads";
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition";
-import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeSessionStatus } from "@/hooks/use-code-session";
+import { useCodeSession, isLiveId, CODE_SYNC_EVENT, type CodeAgentState, type CodeSessionStatus } from "@/hooks/use-code-session";
 import { isDefaultCodeSessionTitle } from "@/lib/title-ownership";
 import { takePendingCodePrompt } from "@/lib/code-session-handoff";
 import { ACCEPT_ATTRIBUTE } from "@/lib/uploads";
@@ -488,6 +488,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
 
   const composer = (
     <div className="mx-auto w-full max-w-[calc(100vw-1.5rem)] px-0 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:max-w-[48rem] sm:px-4">
+      {session.agents.length > 0 && <AgentCards agents={session.agents} />}
       {session.pendingApproval && (
         <ApprovalCard
           summary={session.pendingApproval.summary}
@@ -906,6 +907,76 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
 
 /** An agent follow-up question: approve or deny the proposed action. The Mac
  *  waits up to five minutes, then denies on its own (native host behavior). */
+/** Live cards for delegated child agents (multi-agent cloud runs): role,
+ *  task, real state, current activity, files, and conflict warnings. No fake
+ *  progress — only what the runner actually reported. */
+function AgentCards({ agents }: { agents: CodeAgentState[] }) {
+  const STATUS_TONE: Record<string, string> = {
+    completed: "text-success",
+    failed: "text-destructive",
+    cancelled: "text-muted-foreground",
+    interrupted: "text-muted-foreground",
+    waiting_approval: "text-warning",
+  };
+  const active = agents.some((a) => !["completed", "failed", "cancelled", "interrupted"].includes(a.status));
+  return (
+    <section
+      aria-label="Helper agents"
+      className="mx-1 mb-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 motion-safe:animate-rise-in"
+    >
+      <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+        <span
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full",
+            active ? "bg-primary/70 motion-safe:animate-pulse" : "bg-muted-foreground/50",
+          )}
+          aria-hidden="true"
+        />
+        Agents
+      </p>
+      <ul className="flex flex-col gap-1.5">
+        {agents.map((agent) => {
+          const status = typeof agent.status === "string" ? agent.status : "unknown";
+          const tone = STATUS_TONE[status] ?? "text-foreground/80";
+          const tokens =
+            agent.usage && Number.isFinite(agent.usage.inputTokens + agent.usage.outputTokens)
+              ? agent.usage.inputTokens + agent.usage.outputTokens
+              : 0;
+          return (
+            <li key={agent.id} className="flex flex-col gap-0.5 text-xs">
+              <span className="flex items-baseline gap-2">
+                <span className="font-medium capitalize text-foreground/90">{agent.role}</span>
+                <span className="truncate text-foreground/80">{agent.title}</span>
+                <span className={cn("ml-auto shrink-0 font-mono text-[10px] uppercase", tone)}>
+                  {status.replace("_", " ")}
+                </span>
+              </span>
+              <span className="flex items-baseline gap-2 text-[11px] text-muted-foreground">
+                <span className="truncate">
+                  {agent.status === "failed" && agent.error ? agent.error : agent.currentActivity ?? ""}
+                </span>
+                {tokens > 0 && (
+                  <span className="ml-auto shrink-0 font-mono">{tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : tokens} tok</span>
+                )}
+              </span>
+              {agent.filesChanged && agent.filesChanged.length > 0 && (
+                <span className="text-[11px] text-muted-foreground">
+                  {agent.applied ? "applied" : "proposed"}: {agent.filesChanged.join(", ")}
+                </span>
+              )}
+              {agent.conflictedFiles && agent.conflictedFiles.length > 0 && (
+                <span className="text-[11px] text-warning">
+                  conflicts with your checkout: {agent.conflictedFiles.join(", ")}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
 function ApprovalCard({
   summary,
   risk,

@@ -29,17 +29,13 @@ export interface BackendCatalogModel {
 export interface BackendConfig {
   /** e.g. https://chat.liams.dev/api/agent (no trailing slash) */
   baseUrl: string;
-  /** Full Cookie header value carrying the signed-in session (Mac app). */
+  /** Full Cookie header value carrying the signed-in session. */
   cookie: string;
   /**
-   * Alternative to `cookie`: a complete Authorization header value, e.g.
-   * "Bearer cct_…". Used by the headless Cloud Code runner, which
-   * authenticates each proxied request with a short-lived per-task bearer
-   * token instead of a session cookie. When present it takes precedence over
-   * `cookie` (the two auth schemes are never sent together).
-   *
-   * VENDORED CHANGE — see runner/agent-core/VENDORED.md. The upstream
-   * juno-app/core copy needs the same field for parity.
+   * Bearer credential, used instead of the cookie when set — e.g. the Cloud
+   * Code runner authenticates every proxy call with a short-lived per-task
+   * token rather than a session cookie. Format: the full header value,
+   * e.g. "Bearer cct_…". Keep in sync with the vendored copy in juno/runner.
    */
   authorization?: string;
   models: BackendCatalogModel[];
@@ -94,8 +90,6 @@ export function createProxyProvider(config: BackendConfig, backendProviderId: st
     throw new Error(`The backend catalog has no models for provider "${providerId}".`);
   }
   const base = `${config.baseUrl.replace(/\/+$/, '')}/${providerId}`;
-  // Prefer the per-task bearer (runner) over the session cookie (Mac app); the
-  // proxy authenticates the request and swaps in the real server-side key.
   const headers: Record<string, string> = config.authorization
     ? { Authorization: config.authorization }
     : { Cookie: config.cookie };

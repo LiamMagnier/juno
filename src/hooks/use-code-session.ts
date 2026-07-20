@@ -20,6 +20,24 @@ import type { ClientActivityEvent, ClientMessage } from "@/types/chat";
 
 export type CodeSessionStatus = "idle" | "submitting" | "queued" | "running" | "awaiting_approval" | "stopping";
 
+/** Live snapshot of one delegated child agent (from "agent" task events). */
+export interface CodeAgentState {
+  id: string;
+  title: string;
+  role: string;
+  model?: string;
+  status: string;
+  writes?: boolean;
+  currentActivity?: string;
+  summary?: string;
+  error?: string;
+  filesChanged?: string[];
+  conflictedFiles?: string[];
+  worktreeBranch?: string;
+  applied?: boolean;
+  usage?: { inputTokens: number; outputTokens: number };
+}
+
 export interface CodePendingApproval {
   requestId: string;
   summary: string;
@@ -141,6 +159,8 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
   const [pendingApproval, setPendingApproval] = React.useState<CodePendingApproval | null>(null);
   const [activeTask, setActiveTask] = React.useState<RemoteTask | null>(null);
   const [responding, setResponding] = React.useState(false);
+  /** Delegated child agents of the live task, newest state per id. */
+  const [agents, setAgents] = React.useState<CodeAgentState[]>([]);
 
   const abortRef = React.useRef<AbortController | null>(null);
   const lastSeqRef = React.useRef(0);
@@ -161,6 +181,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setStatus("idle");
     setPendingApproval(null);
     setActiveTask(null);
+    setAgents([]);
     lastSeqRef.current = 0;
     liveRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -269,6 +290,19 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
           }
           case "error": {
             live.errorMessage = str(event.payload, "message") ?? live.errorMessage;
+            break;
+          }
+          case "agent": {
+            const snapshot = (event.payload?.agent ?? null) as CodeAgentState | null;
+            if (snapshot && typeof snapshot.id === "string") {
+              setAgents((prev) => {
+                const index = prev.findIndex((a) => a.id === snapshot.id);
+                if (index === -1) return [...prev, snapshot];
+                const next = [...prev];
+                next[index] = snapshot;
+                return next;
+              });
+            }
             break;
           }
           default:
@@ -459,6 +493,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
         );
         lastSeqRef.current = 0;
         liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+        setAgents([]);
         setActiveTask(task);
         setStatus("queued");
         opts.onActivity?.();
@@ -482,6 +517,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
       if (TERMINAL.has(task.status)) return;
       lastSeqRef.current = 0;
       liveRef.current = { taskId: task.id, content: "", activity: [], errorMessage: null, bubbleShown: false };
+      setAgents([]);
       setActiveTask(task);
       setStatus(task.status === "queued" ? "queued" : task.status === "awaiting_approval" ? "awaiting_approval" : "running");
       void streamTask(task.id);
@@ -562,6 +598,7 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     status,
     activeTask,
     pendingApproval,
+    agents,
     responding,
     isBusy: status !== "idle",
     send,

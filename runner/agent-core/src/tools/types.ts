@@ -2,13 +2,7 @@ import type { ToolSpec } from '../types.js';
 
 export interface ToolContext {
   cwd: string;
-  /**
-   * Environment handed to spawned child processes (the bash tool). When unset,
-   * children inherit the driver's `process.env` (the desktop default). A caller
-   * that runs untrusted agent code — the Cloud Code runner — passes a SCRUBBED
-   * env here so agent-authored shell cannot read the driver's secrets out of its
-   * own environment. See runner/agent-core/VENDORED.md (divergence #3).
-   */
+  /** Child-process environment override (scrubbed env for untrusted runs). */
   env?: NodeJS.ProcessEnv;
 }
 

@@ -37,9 +37,17 @@ export interface ApprovalRequest {
   risk: RiskLevel;
   /** Human-readable line explaining what is being approved, e.g. the shell command. */
   summary: string;
+  /** Set when a SUBAGENT (not the root agent) is asking. */
+  agentId?: string;
+  /** e.g. "builder · Implement auth API" — always show WHO is asking. */
+  agentLabel?: string;
 }
 
-/** Events streamed from the agent loop to whichever surface is attached. */
+/** Events streamed from the agent loop to whichever surface is attached.
+ *  `agentId` (where present) attributes an event to a SUBAGENT; absent means
+ *  the root agent. `subagent_update` carries child lifecycle snapshots (the
+ *  payload type lives in subagents.ts — typed as a structural record here to
+ *  keep this module dependency-free). */
 export type AgentEvent =
   | {
       type: 'session_started';
@@ -52,7 +60,7 @@ export type AgentEvent =
   | { type: 'turn_started'; turnIndex: number }
   | { type: 'assistant_delta'; text: string }
   | { type: 'assistant_message'; text: string }
-  | { type: 'tool_started'; callId: string; name: string; input: unknown; risk: RiskLevel }
+  | { type: 'tool_started'; callId: string; name: string; input: unknown; risk: RiskLevel; agentId?: string }
   | {
       type: 'tool_finished';
       callId: string;
@@ -60,14 +68,47 @@ export type AgentEvent =
       output: string;
       isError: boolean;
       durationMs: number;
+      agentId?: string;
     }
-  | { type: 'tool_denied'; callId: string; name: string; reason: string }
+  | { type: 'tool_denied'; callId: string; name: string; reason: string; agentId?: string }
   | { type: 'approval_requested'; request: ApprovalRequest }
-  | { type: 'approval_resolved'; callId: string; decision: ApprovalDecision }
+  | { type: 'approval_resolved'; callId: string; decision: ApprovalDecision; agentId?: string }
   | { type: 'files_changed'; turnIndex: number; paths: string[] }
   | { type: 'mode_changed'; mode: PermissionMode }
-  | { type: 'turn_finished'; turnIndex: number; stopReason: string; usage: Usage }
-  | { type: 'error'; message: string };
+  | {
+      type: 'turn_finished';
+      turnIndex: number;
+      stopReason: string;
+      usage: Usage;
+      /** Aggregated child-agent usage for the turn (absent when none ran). */
+      subagentUsage?: Usage;
+    }
+  | { type: 'error'; message: string }
+  | { type: 'subagent_update'; agent: SubagentSnapshot };
+
+/** Structural mirror of subagents.ts SubagentPublicState (kept loose here so
+ *  types.ts stays leaf-level; the manager emits the precisely typed value). */
+export interface SubagentSnapshot {
+  id: string;
+  title: string;
+  role: string;
+  model: string;
+  isolation: string;
+  writes: boolean;
+  status: string;
+  currentActivity: string;
+  usage: Usage;
+  error?: string;
+  summary?: string;
+  filesChanged?: string[];
+  conflictedFiles?: string[];
+  commandsExecuted?: string[];
+  warnings?: string[];
+  worktreeBranch?: string;
+  applied?: boolean;
+  startedAt?: string;
+  completedAt?: string;
+}
 
 export interface SessionMeta {
   id: string;

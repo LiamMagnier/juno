@@ -14,36 +14,15 @@ source of truth and re-sync when it changes.
 
 Keep this list exhaustive so a re-sync is mechanical.
 
-1. **`src/providers/proxy.ts` — task-bearer auth.**
-   `BackendConfig` gains an optional `authorization?: string` field, and
-   `createProxyProvider` sends `{ Authorization: config.authorization }` when it is
-   set (falling back to `{ Cookie: config.cookie }` otherwise). The runner
-   authenticates every `/api/agent/*` proxy call with a short-lived per-task bearer
-   token, not a session cookie.
-   **Upstream `juno-app/core/src/providers/proxy.ts` needs the same field for
-   parity** (do not edit `juno-app` from the runner worktree — track it as a
-   follow-up on that repo).
-
-2. **`tsconfig.json` — self-contained.**
+1. **`tsconfig.json` — self-contained.**
    Upstream extends `../tsconfig.base.json`, which does not exist in this repo. The
    vendored `tsconfig.json` inlines the identical `compilerOptions` so `tsc` builds
    standalone. No source/behaviour change.
 
-3. **Caller-provided child-process env (`AgentOptions.env` → `ToolContext.env`).**
-   `AgentOptions` gains an optional `env?: NodeJS.ProcessEnv`; `AgentSession`
-   stashes it and threads it into every `ToolContext`, and `tools/bash.ts` spawns
-   with `env: ctx.env ?? process.env` instead of the hard-coded `process.env`. The
-   Cloud Code runner runs UNTRUSTED, auto-approved agent bash as the same OS uid as
-   the driver, so it passes a SCRUBBED env (no task/exchange tokens, no clone token,
-   no `JUNO_*`/`GIT_ASKPASS`/`ACTIONS_*`) — agent-authored shell then cannot read
-   Juno secrets out of its own environment. When `env` is omitted the behaviour is
-   identical to before (children inherit `process.env`), so the desktop surface is
-   unaffected.
-   **Upstream `juno-app/core` needs the same three edits for parity** (`agent.ts`,
-   `tools/types.ts`, `tools/bash.ts`) — track as a follow-up on that repo; do not
-   edit `juno-app` from the runner worktree.
-
-Nothing else is modified — `src/` is otherwise a byte-for-byte copy.
+Former divergences #1 (proxy `authorization` bearer auth) and #3 (caller-provided
+child-process env) have been **merged upstream** — `src/` is now a byte-for-byte
+copy of `juno-app/core/src`, including the subagent orchestration layer
+(`subagents.ts`, `loop.ts`) that landed with the 2026-07 multi-agent work.
 
 ## Build
 

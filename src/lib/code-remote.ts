@@ -29,6 +29,9 @@ export const EVENT_KINDS = [
   "cancel_request",
   "error",
   "done",
+  // Subagent lifecycle snapshots ({ agent: SubagentPublicState }) from
+  // multi-agent runs — the web UI renders live agent cards from these.
+  "agent",
 ] as const;
 
 const CONTROL_KINDS = ["approval_response", "cancel_request"];
@@ -265,6 +268,7 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
 
   const textParts: string[] = [];
   const activity: ClientActivityEvent[] = [];
+  const agentSnapshots = new Map<string, { event: CodeTaskEvent; agent: Record<string, unknown> }>();
   let promptTokens: number | null = null;
   let completionTokens: number | null = null;
   let errorMessage: string | null = null;
@@ -306,9 +310,33 @@ export async function persistCodeTaskOutcome(task: CodeTask): Promise<void> {
         completionTokens = payloadNum(event.payload, "completionTokens") ?? completionTokens;
         break;
       }
+      case "agent": {
+        // Keep only each agent's LATEST snapshot; folded below after the loop.
+        const agent = (event.payload as Record<string, unknown> | null)?.agent as
+          | Record<string, unknown>
+          | undefined;
+        if (agent && typeof agent.id === "string") {
+          agentSnapshots.set(agent.id, { event, agent });
+        }
+        break;
+      }
       default:
         break; // status/user/approval_response/cancel_request carry no transcript content
     }
+  }
+
+  // One activity line per delegated agent (its final state) so the persisted
+  // transcript records who did what.
+  for (const { event, agent } of agentSnapshots.values()) {
+    const role = typeof agent.role === "string" ? agent.role : "agent";
+    const title = typeof agent.title === "string" ? agent.title : "";
+    const status = typeof agent.status === "string" ? agent.status : "";
+    const summary = typeof agent.summary === "string" ? agent.summary : undefined;
+    push(event, {
+      kind: "tool",
+      title: `Agent ${role}${title ? ` · ${title}` : ""} — ${status}`,
+      detail: summary ? summary.slice(0, 500) : undefined,
+    });
   }
 
   if (task.status === "failed") {

@@ -18,4 +18,20 @@ export { PermissionEngine, classifyRisk, classifySensitiveCommand, loadProjectRu
 export { CheckpointStore } from './checkpoints.js';
 export { SessionStore, junoHome, sessionsDir } from './session.js';
 export { AgentSession, type AgentCallbacks, type AgentOptions } from './agent.js';
+export { runAgentLoop, type AgentLoopOptions, type AgentLoopResult } from './loop.js';
+export {
+  SubagentManager,
+  isOrchestrationTool,
+  orchestrationToolSpecs,
+  delegationPromptSection,
+  stricterMode,
+  SUBAGENT_TOOL_NAMES,
+  type SubagentConfig,
+  type SubagentHost,
+  type SubagentSpec,
+  type SubagentRole,
+  type SubagentStatus,
+  type SubagentIsolation,
+  type SubagentPublicState,
+} from './subagents.js';
 export { startSidecarServer, type SidecarOptions } from './server.js';
