@@ -22,6 +22,9 @@ const patchSchema = z.object({
   archived: z.boolean().optional(),
   folderId: z.string().cuid().nullable().optional(),
   projectId: z.string().cuid().nullable().optional(),
+  // Sticky per-chat model (composer pick). Empty string rejected — omit to leave
+  // the column alone. Max length mirrors model catalog ids (provider:slug).
+  model: z.string().trim().min(1).max(200).optional(),
   // The Juno app retro-marks synced Code sessions (+ their workspace).
   kind: z.enum(["chat", "code"]).optional(),
   ...codeWorkspaceAttributionShape,
