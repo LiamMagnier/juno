@@ -1,8 +1,8 @@
 {
-  "version": "3.5.0",
-  "build": 49,
+  "version": "3.6.0",
+  "build": 50,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "fe395f9b135c27c7ee5b5f7335b6155096b4bcbfd3c6c0f35f76213843a9d30f",
-  "notes": "Sticky models per chat; Codex-style Code prompt queue (send stacks while running); full-page Projects/Library/Memory/etc (Settings stays a popup); website thinking matrix; Codex thought-process strip; context-menu model/thinking pickers; sidebar orbs removed.",
+  "sha256": "c8d45c53a47761d333f56ca71b46cfcb8f8c697d980c2f869dd97c7055ed675e",
+  "notes": "Redesigned Projects, Artifacts (Canvas), and Connections pages to match the web \u2014 plus a new Composio app directory to browse and connect hundreds of apps. Model and thinking pickers rebuilt as native macOS Liquid Glass.",
   "minimumSystemVersion": "26.0"
 }
