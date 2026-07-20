@@ -1,8 +1,8 @@
 {
-  "version": "3.6.0",
-  "build": 50,
+  "version": "3.6.1",
+  "build": 56,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "c8d45c53a47761d333f56ca71b46cfcb8f8c697d980c2f869dd97c7055ed675e",
-  "notes": "Redesigned Projects, Artifacts (Canvas), and Connections pages to match the web \u2014 plus a new Composio app directory to browse and connect hundreds of apps. Model and thinking pickers rebuilt as native macOS Liquid Glass.",
+  "sha256": "df9aefe8bb8ce32f0ec83b1bec5c2927e22c73cecd6dd3aa2a21b2b30ae2c61e",
+  "notes": "Model and thinking pickers now open as native macOS popovers attached to the composer, and the thinking slider drags properly. Adds the composer to the project page.",
   "minimumSystemVersion": "26.0"
 }
