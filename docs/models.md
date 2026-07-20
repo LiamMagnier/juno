@@ -61,7 +61,7 @@ Sources: developers.openai.com/api/docs models · models/all index · deprecatio
 - **`gpt-5.5-thinking` and `gpt-5.5-mini` are NOT API ids** (ChatGPT product names); they migrate to `gpt-5.5` / `gpt-5.4-mini`.
 - Deprecated wave (shutdowns): o3-deep-research & o4-mini-deep-research 2026-07-23; o3-mini, gpt-4-turbo, gpt-4o snapshots, gpt-3.5-turbo, gpt-image-1 2026-10-23; o3, gpt-5/-mini/-pro snapshots 2026-12-11.
 - Retired: o1-preview (2025-07-28), o1-mini (2025-10-27), **DALL·E 2 & 3 (2026-05-12)** — dall-e-3 had been wrongly listed as the current image model.
-- GPT-5.6 went GA 2026-07-09 as three tiers (`gpt-5.6-sol`/`-terra`/`-luna`, $5/$30 · $2.50/$15 · $1/$6, 1.05M ctx, cache writes 1.25x) — registered current. New Realtime voice models `gpt-realtime-2.1`/`-mini` (2026-07-06) power the voice relay (not chat models, so not in the registry). Consumer "GPT-Live" full-duplex voice has NO API yet.
+- GPT-5.6 went GA 2026-07-09 as three tiers (`gpt-5.6-sol`/`-terra`/`-luna`, $5/$30 · $2.50/$15 · $1/$6, 1.05M ctx, cache writes 1.25x) — registered current. Effort ladder (OpenAI model docs): **none | low | medium | high | xhigh | max** (default medium); Pro is a separate `reasoning.mode` axis, not an effort. New Realtime voice models `gpt-realtime-2.1`/`-mini` (2026-07-06) power the voice relay (not chat models, so not in the registry). Consumer "GPT-Live" full-duplex voice has NO API yet.
 - Uncertain: Sora 2 is deprecated with unclear successor and no video adapter in Juno (not registered).
 
 ## Google — checked 2026-07-01

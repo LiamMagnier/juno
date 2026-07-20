@@ -355,18 +355,18 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 // a tier a model doesn't accept (e.g. "max" to GPT-5.5) is a 400.
 //
 // Notable, easily-missed facts encoded here:
-//  - "max" is NOT a GPT tier at all. GPT-5.6 REJECTS it ("Supported values are:
-//    'none', 'low', 'medium', 'high', and 'xhigh'") and GPT-5.5 stops at xhigh.
-//    The old note here read '"max" is GPT-5.6 ONLY', which was backwards and is
-//    what shipped a 400 on every sol/terra/luna request at the top tier.
-//    Where "max" IS real: Claude Opus 4.6+/4.7+ and Sonnet 4.6+; GLM-5.2
-//    (live-verified, its deepest rung); DeepSeek v4 (unverified — key has no
-//    balance).
+//  - GPT-5.6 Sol/Terra/Luna: OpenAI model docs (2026-07) list
+//    none | low | medium | high | xhigh | max. "max" is the deepest effort
+//    (above xhigh); Instant maps to none. Default is medium.
+//    GPT-5.5 / 5.4 stop at xhigh (no max).
 //  - The gpt-5.x-pro MODELS accept only medium|high|xhigh and cannot be run
 //    non-thinking. On GPT-5.6, by contrast, "pro" is not an effort at all — it is
 //    a separate reasoning.mode axis (see PRO_MODE_MODELS below).
 //  - Claude Haiku 4.5 has NO effort parameter — extended thinking is on/off only.
 //  - Claude Opus 4.5 tops out at high; 4.6 adds max; 4.7+ adds xhigh.
+//  - Where "max" is also real outside GPT-5.6: Claude Opus 4.6+/4.7+ and
+//    Sonnet 4.6+; GLM-5.2; DeepSeek v4.
+
 //  - Gemini reads reasoning_effort on its OpenAI-compat shim (enum
 //    none|minimal|low|medium|high), which maps onto the native thinking_config.
 //    Only gemini-3.1-flash-lite has a PROVEN off-switch; the pro line is
@@ -389,10 +389,9 @@ export const REASONING_TIERS = ["minimal", "low", "medium", "high", "xhigh", "ma
 export type ReasoningTier = (typeof REASONING_TIERS)[number];
 const TIER_ORDER: ReasoningTier[] = [...REASONING_TIERS];
 const LMH: ReasoningTier[] = ["low", "medium", "high"];
-/** OpenAI's full non-thinking-excluded ladder for the 5.4/5.5 generation. */
+/** OpenAI GPT-5.2 / 5.4 / 5.5 (+ some codex) — xhigh yes, max no. */
 const LMHX: ReasoningTier[] = ["low", "medium", "high", "xhigh"];
-/** Claude Opus 4.7+ / Sonnet 4.6+ — the only families with a real tier above
- *  xhigh. NOT GPT-5.6, which rejects "max" (see the openai branch below). */
+/** GPT-5.6 + Claude Opus 4.7+/Sonnet 4.6+/Fable — full ladder through max. */
 const LMHXM: ReasoningTier[] = ["low", "medium", "high", "xhigh", "max"];
 
 export interface ReasoningCaps {
@@ -434,11 +433,10 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       // Verified on /v1/responses: none|minimal|low all 400 with "Supported
       // values are: 'medium', 'high', and 'xhigh'" on 5.5/5.4/5.2-pro.
       if (/gpt-5(\.\d)?-pro/.test(id)) return caps(["medium", "high", "xhigh"], false);
-      // 5.6 REJECTS "max" (the old '"max" is 5.6-only' comment was backwards).
-      // Oracle: "does not support 'max' with this model. Supported values are:
-      // 'none', 'low', 'medium', 'high', and 'xhigh'." canDisable verified:
-      // reasoning_effort:"none" -> 200 with reasoning_tokens=0 on sol/terra/luna.
-      if (id.includes("gpt-5.6")) return caps(LMHX, true);
+      // GPT-5.6 Sol/Terra/Luna — OpenAI model docs + deployment checklist:
+      // none | low | medium | high | xhigh | max. Instant = none (canDisable).
+      // "max" is deeper than xhigh (Using GPT-5.6 guide, Jul 2026).
+      if (id.includes("gpt-5.6")) return caps(LMHXM, true);
       // Codex is NOT uniformly always-on — each snapshot verified separately on
       // /v1/responses (they 404 on chat/completions, so the oracle lives there).
       // 5.3-codex: "minimal" -> 400 "Supported values are: 'none', 'low',
