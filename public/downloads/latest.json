@@ -1,8 +1,8 @@
 {
-  "version": "3.3.5",
-  "build": 42,
+  "version": "3.3.6",
+  "build": 43,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "5c0771777cd78c4d6996458c5d952c8111ed02c79827223ec55d26228eeac137",
-  "notes": "Crash-safe model picker and menus on macOS 27, scrollable Code prompts, Auto model, Juno menu-bar mark, progressive thinking status.",
+  "sha256": "28803483654c33ab60dce1e0d4b857787ba96fa57c5a130d0cddc1904688201d",
+  "notes": "Long prompts no longer blank the app; calmer design (composer, icons, motion).",
   "minimumSystemVersion": "26.0"
 }
