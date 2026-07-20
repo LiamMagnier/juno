@@ -1,8 +1,8 @@
 {
-  "version": "3.3.6",
-  "build": 43,
+  "version": "3.4.0",
+  "build": 47,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "28803483654c33ab60dce1e0d4b857787ba96fa57c5a130d0cddc1904688201d",
-  "notes": "Long prompts no longer blank the app; calmer design (composer, icons, motion).",
+  "sha256": "76935e8b4326a83de829d3b1e9950d0e9683e144f29b11cba844e7027f1694a2",
+  "notes": "Real Liquid Glass composer restored across Chat, Code, Quick and Voice; every model now works in Juno Code (account-mode proxy auth fixed, Auto expands correctly, per-provider thinking dialects for Qwen/Mistral/DeepSeek/GLM, legacy token caps); menu bar, command palette and keyboard shortcuts; leaving a chat no longer cancels the reply; per-chat connectors with auto-enable; preflight clarification in the composer; multi-question quizzes; skeleton loading, input wells, glossy buttons and richer motion throughout.",
   "minimumSystemVersion": "26.0"
 }
