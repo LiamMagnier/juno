@@ -1,8 +1,8 @@
 {
-  "version": "3.3.3",
-  "build": 40,
+  "version": "3.3.5",
+  "build": 42,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "04ab08c9686c53674528fd95119ec21fe559f43f05a68df031378c934aacb4d8",
-  "notes": "Juno Quick pill: much clearer text (the glass now stays graphite over any background instead of washing out), and you can drag the pill anywhere on screen \u2014 it remembers where you put it, with Reset position in the + menu to recenter.",
+  "sha256": "5c0771777cd78c4d6996458c5d952c8111ed02c79827223ec55d26228eeac137",
+  "notes": "Crash-safe model picker and menus on macOS 27, scrollable Code prompts, Auto model, Juno menu-bar mark, progressive thinking status.",
   "minimumSystemVersion": "26.0"
 }
