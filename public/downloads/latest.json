@@ -1,8 +1,8 @@
 {
-  "version": "3.6.1",
-  "build": 56,
+  "version": "3.7.0",
+  "build": 57,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "df9aefe8bb8ce32f0ec83b1bec5c2927e22c73cecd6dd3aa2a21b2b30ae2c61e",
-  "notes": "Model and thinking pickers now open as native macOS popovers attached to the composer, and the thinking slider drags properly. Adds the composer to the project page.",
+  "sha256": "ecf43ed90b2df925b55e2645d2e4b1b9ee0969e7ed1c339e7ab8992c70b2a3d0",
+  "notes": "Multi-agent Code: Juno can now split big requests across up to four focused helper agents that run in parallel \u2014 investigators, builders, reviewers and testers, each with its own isolated context, permissions and live activity card. Writing agents work in isolated Git worktrees and their changes arrive as reviewable diffs; you approve every risky action from one central prompt. Plus a new Agents control in the composer (Off / Ask / Auto), per-agent usage accounting, and the corrected thinking-effort ladder for the latest models.",
   "minimumSystemVersion": "26.0"
 }
