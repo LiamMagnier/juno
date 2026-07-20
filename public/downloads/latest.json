@@ -1,8 +1,8 @@
 {
-  "version": "3.4.0",
-  "build": 47,
+  "version": "3.4.1",
+  "build": 48,
   "url": "https://chat.liams.dev/downloads/Juno.dmg",
-  "sha256": "76935e8b4326a83de829d3b1e9950d0e9683e144f29b11cba844e7027f1694a2",
-  "notes": "Real Liquid Glass composer restored across Chat, Code, Quick and Voice; every model now works in Juno Code (account-mode proxy auth fixed, Auto expands correctly, per-provider thinking dialects for Qwen/Mistral/DeepSeek/GLM, legacy token caps); menu bar, command palette and keyboard shortcuts; leaving a chat no longer cancels the reply; per-chat connectors with auto-enable; preflight clarification in the composer; multi-question quizzes; skeleton loading, input wells, glossy buttons and richer motion throughout.",
+  "sha256": "ec6b18e630513f47120430c1a9f95d76b675ac6397c1f4dc77ad7caad3bba7ba",
+  "notes": "macOS stability: Liquid Glass model/thinking popovers no longer crash; live thought process and status clock in Code; Codex-style prompt queue while a run is busy; chat and Code sessions auto-title as soon as you send (website parity, including project rename ownership).",
   "minimumSystemVersion": "26.0"
 }
