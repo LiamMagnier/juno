@@ -78,3 +78,10 @@
 - Consequences: changes to a specification must regenerate and review the corresponding project. Native CI must eventually fail when generated projects drift.
 - Files: `native/macOS/JunoMac/project.yml`, `native/macOS/JunoMac/JunoMac.xcodeproj/**`, `native/iOS/JunoMobile/project.yml`, `native/iOS/JunoMobile/JunoMobile.xcodeproj/**`, `native/Config/**`, `native/Scripts/generate-projects.sh`.
 - Status: implemented and Debug/Stable build-verified in `0fb7cc3`.
+
+## D-011 — Device-local Keychain token persistence
+
+- Context: native bearer and rotating refresh credentials must survive launches without entering UserDefaults, synced Keychain, logs, or the local entity database.
+- Decision: store one generic-password item per account under the Juno service, using `AfterFirstUnlockThisDeviceOnly` and disabled Keychain synchronization. Persist and validate the bound device-session identifier in the versioned payload. Serialize read/compare/write and conditional deletion in one actor, behind an injectable Security client.
+- Reason: account separation, background refresh availability, fail-closed rotation/revocation races, deterministic failure tests, and no cross-device credential propagation.
+- Status: implemented and strict-test verified in `8297de4`.

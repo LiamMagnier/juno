@@ -47,6 +47,15 @@ Swift: 6.4. Xcode: 27.0 beta (`27A5218g`). Before production release, repeat all
 | UI test targets | Not run | Targets and sources compile; runtime UI coverage remains a later gate. |
 | Next configurations | Not run | Settings and shared schemes were generated and inspected; compile Next explicitly before using that channel. |
 
+## Keychain token persistence — `8297de4`
+
+| Command | Result | Evidence |
+|---|---|---|
+| Strict `KeychainAuthTokenStoreTests` | Pass | 8/8: account/device scope, replacement, compare-and-swap, missing item, conditional deletion, malformed/cross-account payloads, Security denial and service validation. |
+| Strict full package suite | Pass | 58/58 tests with Swift 6 warnings treated as errors. |
+| Strict Release package build | Pass | All ten products compile through Security.framework with warnings treated as errors. |
+| `npm run native:contract:check` | Pass | Generated Swift contract still matches canonical OpenAPI. |
+
 Environment note: a default package `.build` directory inside the Desktop/File
 Provider worktree can acquire Finder metadata/resource forks and make product
 signing fail. Use an isolated `--scratch-path /tmp/...`; both final package

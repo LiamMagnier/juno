@@ -1,11 +1,11 @@
 # Juno Native — Status
 
-Last updated: 2026-07-21 22:15 Europe/Paris
+Last updated: 2026-07-21 22:30 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `0fb7cc38f2a22bba641773fa873dc5b89e232a8b` (`feat(native): add shared foundation and app projects`).
+- Current completed implementation commit: `8297de42cea973962f4498cb25a415df81d6a257` (`feat(native): persist auth tokens in Keychain`).
 - Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
 - Expected working tree at this handoff boundary: clean after the documentation commit.
 - Main checkout: `/Users/liammagnier/Desktop/workspace/juno` remains independently on `main` at `e0d1285`, with pre-existing Remote Session changes untouched by this run.
@@ -17,9 +17,9 @@ Last updated: 2026-07-21 22:15 Europe/Paris
 Phase 2 foundation is complete. The next sequential phase is production auth and
 storage composition.
 
-Current task at stop: no implementation is in progress. The exact next unit is a
-Security-backed, account-scoped Keychain token store with deterministic tests,
-followed by wiring the auth bootstrap into both app shells.
+The production Keychain unit is complete. The exact next unit is selective migration
+of the old app's PKCE `ASWebAuthenticationSession` flow, canonical callback handling,
+token exchange composition, and wiring into both app shells.
 
 ## Actually completed
 
@@ -28,7 +28,10 @@ followed by wiring the auth bootstrap into both app shells.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 50 focused Swift package tests, all passing with warnings treated as errors.
+- 58 focused Swift package tests, all passing with warnings treated as errors.
+- Security.framework-backed token persistence with device-local accessibility,
+  disabled Keychain sync, account/device validation, serialized rotation/removal,
+  malformed-data failure, and an injectable Security client.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -42,7 +45,7 @@ applications and not downloadable releases.
 
 ## Remaining
 
-- Production Keychain token storage, system-browser auth sessions, callback return tests, device/session UI, logout/revocation wiping, and app composition.
+- System-browser auth sessions, callback return tests, device/session UI, logout/revocation wiping, and app composition over the completed Keychain store.
 - Durable SQLite-backed account storage, migrations, cursor persistence, offline outbox persistence, crash recovery, compaction recovery, backoff, and conflict UI.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
@@ -54,7 +57,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-tests-final -Xswiftc -warnings-as-errors` — 50/50 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-keychain-full -Xswiftc -warnings-as-errors` — 58/58 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -90,18 +93,18 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Implement a production `KeychainAuthTokenStore` behind `AuthTokenStore` using an
-injectable Security client and account/device-scoped keys. Add success,
-replacement, missing-item, deletion, malformed-data, and access-failure tests;
-then run the strict package suite before wiring it into both app entry points.
+Migrate only the production-safe browser-auth behavior from the old app's
+`WebAuthService.swift`: retain state/nonce/verifier validation, switch to the
+canonical callback, use the shared token models/store, and wire the resulting auth
+composition into both app entry points. Do not migrate direct-provider/BYOK paths.
 
 Open first:
 
-1. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenStore.swift`
-2. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenCoordinator.swift`
-3. `native/Packages/JunoNativeKit/Tests/JunoAuthTests/AuthTokenCoordinatorTests.swift`
+1. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/WebAuthService.swift` (read-only)
+2. `native/Packages/JunoNativeKit/Sources/JunoAuth/PKCE.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoAuth/KeychainAuthTokenStore.swift`
 4. `native/macOS/JunoMac/App/JunoMacApp.swift`
 5. `native/iOS/JunoMobile/App/JunoMobileApp.swift`
 
-Do not start SQLite, feature UI, CI, or release work until the Keychain unit is
-tested, committed, and handed off.
+Do not start SQLite, broader feature UI, CI, or release work until browser auth
+and its two app entry-point compositions are tested, committed, and handed off.

@@ -1,16 +1,16 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 22:15 Europe/Paris
+Updated: 2026-07-21 22:30 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `0fb7cc38f2a22bba641773fa873dc5b89e232a8b`
+- Current completed implementation commit: `8297de42cea973962f4498cb25a415df81d6a257` (`feat(native): persist auth tokens in Keychain`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
 - Working tree: expected clean after the handoff documentation commit.
 - Current phase: production auth and storage composition.
-- Current task: stopped at a stable boundary; no implementation is in progress.
-- Next exact action: implement and test a Security-backed, account/device-scoped `KeychainAuthTokenStore`, then wire the auth bootstrap into the two app entry points.
+- Current task: Keychain token persistence is complete; browser auth and app composition are next.
+- Next exact action: selectively migrate the production-safe PKCE browser flow from the old app's `WebAuthService.swift`, adapt it to the canonical callback and shared token store, then wire it into both app entry points.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -20,7 +20,8 @@ clean, restore, stage, or commit those files from this native worktree.
 
 - General repository/backend/OpenAPI/toolchain/prototype audit; baseline commit `1de5cda`.
 - Canonical callback and OpenAPI/backend/Swift-generation alignment; implementation commit `b903159`.
-- `JunoNativeKit` Swift 6 package with ten acyclic products and 50 strict-concurrency tests.
+- `JunoNativeKit` Swift 6 package with ten acyclic products and 58 strict-concurrency tests.
+- Security.framework-backed, device-local `KeychainAuthTokenStore` with serialized compare-and-swap, account/device scope validation, injectable Security boundary, and eight focused tests; strict suite now 58/58.
 - Deterministic generated Swift contract and local drift command.
 - Storage/sync/search foundations: account-scoped store protocol, deterministic in-memory test adapter, cursor application, mutation outbox, and local-search contract.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
@@ -32,14 +33,14 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenStore.swift`
-2. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenCoordinator.swift`
-3. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokens.swift`
-4. `native/Packages/JunoNativeKit/Tests/JunoAuthTests/AuthTokenCoordinatorTests.swift`
+1. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/WebAuthService.swift` (read-only source lineage)
+2. `native/Packages/JunoNativeKit/Sources/JunoAuth/PKCE.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoAuth/KeychainAuthTokenStore.swift`
+4. `native/Packages/JunoNativeKit/Tests/JunoAuthTests/PKCETests.swift`
 5. `native/macOS/JunoMac/App/JunoMacApp.swift`
 6. `native/iOS/JunoMobile/App/JunoMobileApp.swift`
-7. `docs/native/DECISIONS.md`
-8. `docs/native/TESTING.md`
+7. `native/macOS/JunoMac/project.yml`
+8. `native/iOS/JunoMobile/project.yml`
 
 ## Commands to run next
 
@@ -54,7 +55,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test \
 npm run native:contract:check
 ```
 
-After the Keychain unit is added, rerun the two Debug builds:
+After browser auth and app composition are added, rerun the two Debug builds:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
@@ -74,7 +75,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 50/50 tests.
+- Strict package suite: 58/58 tests, including Keychain-focused tests 8/8.
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
 - JunoMac unit tests: 2/2.
@@ -115,7 +116,7 @@ anything; do not assume files in the main checkout belong to this branch.
 
 ## Remaining work
 
-- Keychain and system-browser auth composition.
+- System-browser auth composition and app wiring over the completed Keychain store.
 - Durable SQLite/migrations and production sync/search persistence.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.
