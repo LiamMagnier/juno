@@ -1,16 +1,16 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 23:55 Europe/Paris
+Updated: 2026-07-22 00:37 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `9bceb7ee3634f6bd32a9c3dbe05bfee0a8defed7` (`feat(native): add encrypted SQLite account storage`)
+- Current completed implementation commit: `364f0f2d204e8ef7870b7d17b64d607762961f8d` (`feat(native): add durable account synchronization`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
 - Working tree: expected clean after the handoff documentation commit.
-- Current phase: production synchronization composition.
-- Current task: encrypted SQLite, account wipe and atomic hydrated-baseline installation are complete.
-- Next exact action: implement typed hydration and change-feed clients over the existing `/api/v1/entities`, `/changes`, and `/changes/stream` routes, then persist pages and the durable outbox.
+- Current phase: real conversations and messages.
+- Current task: encrypted SQLite and production synchronization are complete.
+- Next exact action: project persisted conversation/message records and replace both native chat placeholders with real list/detail/mutation states.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -20,7 +20,7 @@ clean, restore, stage, or commit those files from this native worktree.
 
 - General repository/backend/OpenAPI/toolchain/prototype audit; baseline commit `1de5cda`.
 - Canonical callback and OpenAPI/backend/Swift-generation alignment; implementation commit `b903159`.
-- `JunoNativeKit` Swift 6 package with ten acyclic products and 96 strict-concurrency tests.
+- `JunoNativeKit` Swift 6 package with ten acyclic products and 112 strict-concurrency tests.
 - Security.framework-backed, device-local `KeychainAuthTokenStore` with active-account restoration, account-switch purge, serialized compare-and-swap, and ten focused tests.
 - Canonical PKCE-S256 browser authorization, strict callback correlation, existing token/refresh/session/logout route client, authoritative session validation, and production app composition on macOS and iOS.
 - Refresh-aware same-origin bearer transport and a fail-closed checkpoint client for the existing `/api/v1/bootstrap` route, with account, contract, cursor and model-manifest validation.
@@ -32,6 +32,10 @@ clean, restore, stage, or commit those files from this native worktree.
 - Atomic installation of fully hydrated bootstrap entities plus cursor/floor and
   model-manifest metadata; both apps open this repository and auth lifecycle
   purges it before credential removal.
+- Production synchronization in `364f0f2`: persisted bootstrap/cursor, entity
+  hydration, atomic pages, tombstones/revisions, real SSE wakeups, compaction
+  rebuild, reconnect backoff/jitter, strict account isolation and encrypted
+  durable mutation outbox/drainer.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -41,12 +45,11 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `src/app/api/v1/entities/route.ts`
-2. `src/app/api/v1/changes/route.ts`
-3. `src/app/api/v1/changes/stream/route.ts`
-4. `contracts/openapi/juno-native-v1.yaml`
-5. `native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift`
-6. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift` (read-only source lineage)
+1. `native/Packages/JunoNativeKit/Sources/JunoChatKit`
+2. `native/macOS/JunoMac/App/JunoMacRootView.swift`
+3. `native/iOS/JunoMobile/App/JunoMobileRootView.swift`
+4. `src/lib/api/v1/mutations.ts`
+5. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/ChatService.swift` (read-only source lineage)
 
 ## Commands to run next
 
@@ -56,8 +59,8 @@ git status --short --branch
 git log -3 --oneline
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test \
   --package-path native/Packages/JunoNativeKit \
-  --scratch-path /tmp/juno-native-kit-tests-next \
-  -Xswiftc -warnings-as-errors
+  --scratch-path "$(mktemp -d)" \
+  -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete
 npm run native:contract:check
 ```
 
@@ -81,7 +84,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 96/96 tests, including Auth 35/35, Storage 11/11 and Sync 21/21.
+- Strict package suite: 112/112 tests, including Auth 35/35, Storage 11/11 and Sync 37/37.
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
 - JunoMac unit tests: 2/2.
@@ -122,8 +125,8 @@ anything; do not assume files in the main checkout belong to this branch.
 
 ## Remaining work
 
-- Entity/change-feed composition, durable outbox and production sync recovery.
-- Production search persistence and reconnect/compaction recovery.
+- Conversation/message projection and mutation conflict UI.
+- Production search persistence and live-account offline/reconnect proof.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.
 - UI/E2E/accessibility/performance/secret/dependency gates and native CI.

@@ -113,9 +113,13 @@ Resolution in this unit: backfill live pre-capture rows at revision zero and
 expose an owner-scoped, keyset-paginated entity inventory adjacent to the
 existing `/entities` hydration route. Payload hydration stays in the existing
 loader; clients replay `/changes` from the bootstrap cursor so concurrent writes
-are not lost. Remaining client work: durable outbox, compaction recovery,
-reconnect backoff/jitter and conflict UI, plus Web-to-Swift offline/reconnect
-proof.
+are not lost.
+
+Progress in `364f0f2`: both production app roots now compose the encrypted
+SQLite cache, persisted bootstrap/cursor, authoritative hydration, atomic change
+pages, tombstones/revisions, real SSE wakeups, compaction rebuild, reconnect
+backoff/jitter and a durable account-scoped mutation outbox/drainer. Remaining:
+conflict UI and Web-to-Swift live-account offline/reconnect proof.
 
 ### GAP-006 — route error behavior is inconsistent outside `/api/v1`
 
