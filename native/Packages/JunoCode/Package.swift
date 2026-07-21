@@ -50,7 +50,12 @@ let package = Package(
         ),
         .testTarget(
             name: "JunoCodeBridgeTests",
-            dependencies: ["JunoCodeCore", "JunoCodeBridge"]
+            dependencies: [
+                "JunoCodeCore",
+                "JunoCodeLocal",
+                "JunoCodeRuntime",
+                "JunoCodeBridge",
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]
