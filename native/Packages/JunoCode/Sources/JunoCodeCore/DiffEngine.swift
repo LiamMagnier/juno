@@ -85,7 +85,7 @@ public enum DiffEngine {
         )
     }
 
-    static func splitLines(_ text: String) -> [String] {
+    public static func splitLines(_ text: String) -> [String] {
         guard !text.isEmpty else { return [] }
         var lines = text.components(separatedBy: "\n")
         // A trailing newline produces one phantom empty element; drop it so
