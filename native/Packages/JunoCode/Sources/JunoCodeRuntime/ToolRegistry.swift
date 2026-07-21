@@ -58,14 +58,14 @@ public struct ToolRegistry: Sendable {
         return SchemaValidator.validate(input: input, against: tool.inputSchema)
     }
 
-    /// Full gated invocation: validate → assess → authorize (suspending when
-    /// approval is required) → re-verify the digest → execute.
-    public func invoke(
+    /// Validates and authorizes one invocation, suspending while an approval
+    /// is pending. Throws when the action is refused. On success the action
+    /// may be executed with `executeAuthorized`.
+    public func authorizeInvocation(
         toolName: String,
         input: JSONValue,
-        context: ToolContext,
         permissions: PermissionCoordinator
-    ) async throws -> ToolResult {
+    ) async throws {
         guard let tool = tools[toolName] else {
             throw ToolError.unknownTool(name: toolName)
         }
@@ -85,7 +85,7 @@ public struct ToolRegistry: Sendable {
         )
         switch outcome {
         case .allowed:
-            break
+            return
         case let .approved(request):
             // The approval must still bind this exact action, unexpired.
             guard request.authorizes(digest: tool.actionDigest(input: input), at: Date()) else {
@@ -94,7 +94,34 @@ public struct ToolRegistry: Sendable {
         case let .denied(reason):
             throw ToolError.denied(reason: reason)
         }
+    }
+
+    /// Executes a previously authorized invocation.
+    public func executeAuthorized(
+        toolName: String,
+        input: JSONValue,
+        context: ToolContext
+    ) async throws -> ToolResult {
+        guard let tool = tools[toolName] else {
+            throw ToolError.unknownTool(name: toolName)
+        }
         try Task.checkCancellation()
         return try await tool.execute(input: input, context: context)
+    }
+
+    /// Full gated invocation: validate → assess → authorize (suspending when
+    /// approval is required) → re-verify the digest → execute.
+    public func invoke(
+        toolName: String,
+        input: JSONValue,
+        context: ToolContext,
+        permissions: PermissionCoordinator
+    ) async throws -> ToolResult {
+        try await authorizeInvocation(
+            toolName: toolName,
+            input: input,
+            permissions: permissions
+        )
+        return try await executeAuthorized(toolName: toolName, input: input, context: context)
     }
 }
