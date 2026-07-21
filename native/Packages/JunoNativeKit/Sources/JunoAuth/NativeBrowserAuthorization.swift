@@ -202,7 +202,16 @@ public actor KeychainInstallationIDStore {
             throw NativeBrowserAuthorizationError.invalidInstallationIdentifier
         }
         let installationID = try InstallationID(rawValue)
-        try securityClient.upsert(Data(rawValue.utf8), for: Self.item)
-        return installationID
+        if try securityClient.insertIfAbsent(Data(rawValue.utf8), for: Self.item) {
+            return installationID
+        }
+        guard let stored = try securityClient.read(Self.item),
+            let storedValue = String(data: stored, encoding: .utf8),
+            NativeAuthorizationPlanner.isValidInstallationID(storedValue)
+        else {
+            throw NativeBrowserAuthorizationError
+                .malformedStoredInstallationIdentifier
+        }
+        return try InstallationID(storedValue)
     }
 }

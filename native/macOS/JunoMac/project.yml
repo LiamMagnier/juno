@@ -35,6 +35,10 @@ targets:
         product: JunoCore
       - package: JunoNativeKit
         product: JunoDesignSystem
+      - package: JunoNativeKit
+        product: JunoStorage
+      - package: JunoNativeKit
+        product: JunoSync
     configFiles:
       Debug: ../../Config/JunoMac-Debug.xcconfig
       Stable: ../../Config/JunoMac-Stable.xcconfig

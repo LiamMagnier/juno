@@ -2,6 +2,18 @@ import Foundation
 import JunoAPI
 import JunoCore
 
+public protocol NativeAccountDataPurging: Sendable {
+    func wipe(accountID: AccountID) async throws
+}
+
+public enum NativeAuthRuntimeError: Error, Equatable, LocalizedError, Sendable {
+    case localDataPurgeFailed
+
+    public var errorDescription: String? {
+        "Juno could not securely remove the local account data."
+    }
+}
+
 public actor NativeAuthRuntime {
     private let tokenStore: KeychainAuthTokenStore
     private let installationStore: KeychainInstallationIDStore
@@ -9,13 +21,15 @@ public actor NativeAuthRuntime {
     private let apiClient: NativeAuthAPIClient
     private let coordinator: AuthTokenCoordinator
     private let device: NativeDeviceMetadata
+    private let accountDataPurger: (any NativeAccountDataPurging)?
 
     public init(
         tokenStore: KeychainAuthTokenStore,
         installationStore: KeychainInstallationIDStore,
         planner: NativeAuthorizationPlanner,
         apiClient: NativeAuthAPIClient,
-        device: NativeDeviceMetadata
+        device: NativeDeviceMetadata,
+        accountDataPurger: (any NativeAccountDataPurging)? = nil
     ) {
         self.tokenStore = tokenStore
         self.installationStore = installationStore
@@ -23,11 +37,13 @@ public actor NativeAuthRuntime {
         self.apiClient = apiClient
         coordinator = AuthTokenCoordinator(store: tokenStore, refreshClient: apiClient)
         self.device = device
+        self.accountDataPurger = accountDataPurger
     }
 
     public static func live(
         origin: APIOrigin,
-        device: NativeDeviceMetadata
+        device: NativeDeviceMetadata,
+        accountDataPurger: (any NativeAccountDataPurging)? = nil
     ) throws -> NativeAuthRuntime {
         let securityClient = SystemSecurityKeychainClient()
         let tokenStore = KeychainAuthTokenStore(securityClient: securityClient)
@@ -43,7 +59,8 @@ public actor NativeAuthRuntime {
             installationStore: installationStore,
             planner: NativeAuthorizationPlanner(origin: origin),
             apiClient: apiClient,
-            device: device
+            device: device,
+            accountDataPurger: accountDataPurger
         )
     }
 
@@ -77,6 +94,11 @@ public actor NativeAuthRuntime {
                 refreshToken: issued.refreshToken,
                 refreshTokenExpiresAt: issued.refreshTokenExpiresAt
             )
+            if let previous = try await tokenStore.loadActive(),
+                previous.accountID != tokens.accountID
+            {
+                try await purgeLocalData(for: previous.accountID)
+            }
             try await coordinator.install(tokens)
             return session
         } catch {
@@ -92,18 +114,19 @@ public actor NativeAuthRuntime {
             return nil
         }
         do {
-            let accessToken = try await coordinator.accessToken(for: stored.accountID)
+            let accessToken = try await coordinatedAccessToken(
+                for: stored.accountID
+            )
             let session = try await apiClient.session(accessToken: accessToken)
             guard session.profile.id == stored.accountID,
                 session.deviceID == stored.deviceID
             else {
-                try await coordinator.revokeLocally(for: stored.accountID)
                 throw NativeAuthAPIError.deviceSessionMismatch
             }
             return session
         } catch let error as NativeAuthAPIError {
             if error.invalidatesLocalCredentials {
-                try? await coordinator.revokeLocally(for: stored.accountID)
+                try await invalidateLocalAccount(stored.accountID)
             }
             throw error
         }
@@ -115,7 +138,7 @@ public actor NativeAuthRuntime {
         _ request: NativeBearerRequest,
         for accountID: AccountID
     ) async throws -> HTTPResponse {
-        let initialAccessToken = try await coordinator.accessToken(for: accountID)
+        let initialAccessToken = try await coordinatedAccessToken(for: accountID)
         let initialResponse = try await apiClient.sendBearer(
             request,
             accessToken: initialAccessToken
@@ -124,7 +147,7 @@ public actor NativeAuthRuntime {
             return initialResponse
         }
 
-        let refreshedAccessToken = try await coordinator.accessTokenAfterUnauthorized(
+        let refreshedAccessToken = try await coordinatedAccessTokenAfterUnauthorized(
             for: accountID,
             rejectedAccessToken: initialAccessToken
         )
@@ -133,7 +156,7 @@ public actor NativeAuthRuntime {
             accessToken: refreshedAccessToken
         )
         if retryResponse.statusCode == 401 {
-            try? await coordinator.revokeLocally(for: accountID)
+            try await invalidateLocalAccount(accountID)
         }
         return retryResponse
     }
@@ -144,14 +167,72 @@ public actor NativeAuthRuntime {
         }
         var remoteError: (any Error)?
         do {
-            let accessToken = try await coordinator.accessToken(for: stored.accountID)
-            try await apiClient.logout(accessToken: accessToken)
+            // Logout does not need a refresh. Using the stored access token
+            // keeps the local credential available until secure data wiping
+            // succeeds, even when the server considers that token expired.
+            try await apiClient.logout(accessToken: stored.accessToken)
         } catch {
             remoteError = error
         }
+        try await purgeLocalData(for: stored.accountID)
         try await coordinator.revokeLocally(for: stored.accountID)
         if let remoteError {
             throw remoteError
+        }
+    }
+
+    private func invalidateLocalAccount(_ accountID: AccountID) async throws {
+        try await purgeLocalData(for: accountID)
+        try await coordinator.revokeLocally(for: accountID)
+    }
+
+    private func coordinatedAccessToken(
+        for accountID: AccountID
+    ) async throws -> AccessToken {
+        do {
+            return try await coordinator.accessToken(for: accountID)
+        } catch {
+            try await purgeAfterTerminalRefresh(error, for: accountID)
+            throw error
+        }
+    }
+
+    private func coordinatedAccessTokenAfterUnauthorized(
+        for accountID: AccountID,
+        rejectedAccessToken: AccessToken
+    ) async throws -> AccessToken {
+        do {
+            return try await coordinator.accessTokenAfterUnauthorized(
+                for: accountID,
+                rejectedAccessToken: rejectedAccessToken
+            )
+        } catch {
+            try await purgeAfterTerminalRefresh(error, for: accountID)
+            throw error
+        }
+    }
+
+    private func purgeAfterTerminalRefresh(
+        _ error: any Error,
+        for accountID: AccountID
+    ) async throws {
+        if let failure = error as? AuthRefreshFailure,
+            failure.invalidatesStoredCredentials
+        {
+            try await invalidateLocalAccount(accountID)
+        } else if let coordinatorError = error as? AuthTokenCoordinatorError,
+            coordinatorError == .refreshCredentialExpired
+        {
+            try await invalidateLocalAccount(accountID)
+        }
+    }
+
+    private func purgeLocalData(for accountID: AccountID) async throws {
+        guard let accountDataPurger else { return }
+        do {
+            try await accountDataPurger.wipe(accountID: accountID)
+        } catch {
+            throw NativeAuthRuntimeError.localDataPurgeFailed
         }
     }
 }

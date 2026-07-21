@@ -85,13 +85,22 @@ public final class NativeAuthModel {
 
     public func signOut() async {
         guard let runtime else { return }
+        let previousPhase = phase
         do {
             try await runtime.signOut()
             lastErrorDescription = nil
+            phase = .signedOut
+        } catch let error as NativeAuthRuntimeError
+            where error == .localDataPurgeFailed
+        {
+            // Keep the authenticated phase so secure local deletion can be
+            // retried instead of orphaning data after credentials disappear.
+            phase = previousPhase
+            lastErrorDescription = error.localizedDescription
         } catch {
             // Local credentials are removed even if the remote logout was offline.
             lastErrorDescription = error.localizedDescription
+            phase = .signedOut
         }
-        phase = .signedOut
     }
 }

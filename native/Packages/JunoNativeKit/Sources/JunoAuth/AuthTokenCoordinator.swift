@@ -141,10 +141,6 @@ public actor AuthTokenCoordinator {
                 }
                 let now = await clock.now()
                 guard current.refreshTokenExpiresAt > now else {
-                    _ = try await store.remove(
-                        for: accountID,
-                        ifRefreshTokenMatches: current.refreshToken
-                    )
                     throw AuthTokenCoordinatorError.refreshCredentialExpired
                 }
 
@@ -157,12 +153,6 @@ public actor AuthTokenCoordinator {
                 do {
                     refreshed = try await refreshClient.refresh(credential: credential)
                 } catch let failure as AuthRefreshFailure {
-                    if failure.invalidatesStoredCredentials {
-                        _ = try await store.remove(
-                            for: accountID,
-                            ifRefreshTokenMatches: current.refreshToken
-                        )
-                    }
                     throw failure
                 }
                 try Task.checkCancellation()

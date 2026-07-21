@@ -309,6 +309,192 @@ final class NativeAuthRuntimeTests: XCTestCase {
         }
     }
 
+    func testSignOutPurgesAccountDataBeforeRemovingCredential() async throws {
+        let transport = QueueTransport(
+            responses: [successResponse(body: #"{"revoked":true}"#)]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(tokenSet(accountID: accountID))
+        let purger = RecordingAccountDataPurger()
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+
+        try await runtime.signOut()
+
+        let purgedAccountIDs = await purger.accountIDs
+        let storedAfterSignOut = try await tokenStore.loadActive()
+        XCTAssertEqual(purgedAccountIDs, [accountID])
+        XCTAssertNil(storedAfterSignOut)
+    }
+
+    func testPurgeFailureKeepsCredentialForCleanupRetry() async throws {
+        let transport = QueueTransport(
+            responses: [successResponse(body: #"{"revoked":true}"#)]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(tokenSet(accountID: accountID))
+        let purger = RecordingAccountDataPurger(shouldFail: true)
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+
+        do {
+            try await runtime.signOut()
+            XCTFail("Failed secure deletion must remain retryable")
+        } catch {
+            XCTAssertEqual(
+                error as? NativeAuthRuntimeError,
+                .localDataPurgeFailed
+            )
+        }
+        let storedAfterFailure = try await tokenStore.loadActive()
+        XCTAssertNotNil(storedAfterFailure)
+    }
+
+    func testRepeatedUnauthorizedPurgesDataAndCredential() async throws {
+        let transport = QueueTransport(
+            responses: [
+                errorResponse(status: 401, code: "token_expired"),
+                refreshResponse(),
+                errorResponse(status: 401, code: "device_revoked"),
+            ]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(tokenSet(accountID: accountID))
+        let purger = RecordingAccountDataPurger()
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+
+        let response = try await runtime.send(
+            NativeBearerRequest(path: "/api/v1/bootstrap"),
+            for: accountID
+        )
+
+        XCTAssertEqual(response.statusCode, 401)
+        let purgedAccountIDs = await purger.accountIDs
+        let activeAfterRejection = try await tokenStore.loadActive()
+        XCTAssertEqual(purgedAccountIDs, [accountID])
+        XCTAssertNil(activeAfterRejection)
+    }
+
+    func testAccountSwitchPurgesPreviousAccountBeforeInstallation() async throws {
+        let transport = QueueTransport(
+            responses: [tokenResponse(), sessionResponse()]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let previousAccountID = try AccountID("acct_previous")
+        try await tokenStore.storeInitial(
+            tokenSet(accountID: previousAccountID)
+        )
+        let purger = RecordingAccountDataPurger()
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+        let attempt = try await runtime.beginAuthorization()
+
+        _ = try await runtime.completeAuthorization(
+            attempt,
+            callbackURL: callbackURL(for: attempt, code: validCode)
+        )
+
+        let purgedAccountIDs = await purger.accountIDs
+        XCTAssertEqual(purgedAccountIDs, [previousAccountID])
+        let active = try await tokenStore.loadActive()
+        XCTAssertEqual(active?.accountID, try AccountID("acct_one"))
+    }
+
+    func testTerminalRefreshFailureAlsoPurgesAccountData() async throws {
+        let transport = QueueTransport(
+            responses: [
+                errorResponse(status: 401, code: "token_expired"),
+                errorResponse(status: 401, code: "invalid_grant"),
+            ]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(tokenSet(accountID: accountID))
+        let purger = RecordingAccountDataPurger()
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+
+        do {
+            _ = try await runtime.send(
+                NativeBearerRequest(path: "/api/v1/bootstrap"),
+                for: accountID
+            )
+            XCTFail("A terminal refresh failure must fail the request")
+        } catch {
+            XCTAssertEqual(error as? AuthRefreshFailure, .invalidGrant)
+        }
+        let purgedAccountIDs = await purger.accountIDs
+        let active = try await tokenStore.loadActive()
+        XCTAssertEqual(purgedAccountIDs, [accountID])
+        XCTAssertNil(active)
+    }
+
+    func testTerminalRefreshPurgeFailureKeepsCredentialForRetry() async throws {
+        let transport = QueueTransport(
+            responses: [
+                errorResponse(status: 401, code: "token_expired"),
+                errorResponse(status: 401, code: "invalid_grant"),
+            ]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(tokenSet(accountID: accountID))
+        let purger = RecordingAccountDataPurger(shouldFail: true)
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore,
+            accountDataPurger: purger
+        )
+
+        do {
+            _ = try await runtime.send(
+                NativeBearerRequest(path: "/api/v1/bootstrap"),
+                for: accountID
+            )
+            XCTFail("A failed terminal purge must fail closed")
+        } catch {
+            XCTAssertEqual(
+                error as? NativeAuthRuntimeError,
+                .localDataPurgeFailed
+            )
+        }
+        let purgedAccountIDs = await purger.accountIDs
+        let active = try await tokenStore.loadActive()
+        XCTAssertEqual(purgedAccountIDs, [accountID])
+        XCTAssertEqual(active?.accountID, accountID)
+    }
+
     private let validCode = "authorization_code_0000000000000000000000000000"
     private let refreshToken = "refresh_token_00000000000000000000000000000000000000000000"
 
@@ -331,7 +517,8 @@ final class NativeAuthRuntimeTests: XCTestCase {
     private func makeRuntime(
         transport: QueueTransport,
         security: TestSecurityClient,
-        tokenStore: KeychainAuthTokenStore
+        tokenStore: KeychainAuthTokenStore,
+        accountDataPurger: (any NativeAccountDataPurging)? = nil
     ) throws -> NativeAuthRuntime {
         let origin = try APIOrigin(URL(string: "https://juno.test")!)
         return try NativeAuthRuntime(
@@ -349,7 +536,19 @@ final class NativeAuthRuntimeTests: XCTestCase {
                 name: "Test device",
                 platform: "macOS",
                 appVersion: "0.1.0"
-            )
+            ),
+            accountDataPurger: accountDataPurger
+        )
+    }
+
+    private func tokenSet(accountID: AccountID) throws -> AuthTokenSet {
+        try AuthTokenSet(
+            accountID: accountID,
+            deviceID: DeviceID("device_one"),
+            accessToken: AccessToken("access-one"),
+            accessTokenExpiresAt: Date(timeIntervalSince1970: 2_100_000_000),
+            refreshToken: RefreshToken(refreshToken),
+            refreshTokenExpiresAt: Date(timeIntervalSince1970: 2_200_000_000)
         )
     }
 
@@ -464,6 +663,26 @@ private struct FixedRandomBytes: RandomByteGenerating {
     }
 }
 
+private actor RecordingAccountDataPurger: NativeAccountDataPurging {
+    private(set) var accountIDs: [AccountID] = []
+    private let shouldFail: Bool
+
+    init(shouldFail: Bool = false) {
+        self.shouldFail = shouldFail
+    }
+
+    func wipe(accountID: AccountID) throws {
+        accountIDs.append(accountID)
+        if shouldFail {
+            throw RecordingAccountDataPurgerError.failed
+        }
+    }
+}
+
+private enum RecordingAccountDataPurgerError: Error {
+    case failed
+}
+
 private actor QueueTransport: HTTPTransport {
     private var responses: [HTTPResponse]
     private(set) var requests: [HTTPRequest] = []
@@ -504,6 +723,18 @@ private final class TestSecurityClient: SecurityKeychainClient,
         lock.withLock {
             storedUpsertCount += 1
             items[item] = data
+        }
+    }
+
+    func insertIfAbsent(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws -> Bool {
+        lock.withLock {
+            guard items[item] == nil else { return false }
+            storedUpsertCount += 1
+            items[item] = data
+            return true
         }
     }
 

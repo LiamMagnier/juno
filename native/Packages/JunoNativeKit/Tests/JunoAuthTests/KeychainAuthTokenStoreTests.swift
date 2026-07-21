@@ -291,6 +291,20 @@ private final class RecordingSecurityClient: SecurityKeychainClient,
         }
     }
 
+    func insertIfAbsent(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws -> Bool {
+        try lock.withLock {
+            try throwIfNeeded()
+            state.lastItem = item
+            guard state.items[item] == nil else { return false }
+            state.upsertCount += 1
+            state.items[item] = data
+            return true
+        }
+    }
+
     func delete(_ item: SecurityKeychainItem) throws -> Bool {
         try lock.withLock {
             try throwIfNeeded()

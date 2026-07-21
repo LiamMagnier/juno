@@ -17,7 +17,7 @@ public actor InMemoryTransactionalStore: AccountScopedRepository {
     public init() {}
 
     public func snapshot(for accountID: StorageAccountID) throws -> AccountStoreSnapshot {
-        try validate(accountID: accountID)
+        try StorageValidation.accountID(accountID)
         let bucket = buckets[accountID] ?? Bucket()
         return AccountStoreSnapshot(
             accountID: accountID,
@@ -29,7 +29,7 @@ public actor InMemoryTransactionalStore: AccountScopedRepository {
 
     @discardableResult
     public func apply(_ transaction: StorageTransaction) throws -> StorageCommit {
-        try validate(accountID: transaction.accountID)
+        try StorageValidation.transaction(transaction)
 
         let current = buckets[transaction.accountID] ?? Bucket()
         if let expected = transaction.expectedStoreVersion, expected != current.version {
@@ -48,27 +48,23 @@ public actor InMemoryTransactionalStore: AccountScopedRepository {
         for operation in transaction.operations {
             switch operation {
             case let .upsert(record):
-                try validate(record: record, expectedAccountID: transaction.accountID)
                 if candidate.records[record.key] != record {
                     candidate.records[record.key] = record
                     changedRecords.insert(record.key)
                 }
 
             case let .remove(key):
-                try validate(key: key)
                 if candidate.records.removeValue(forKey: key) != nil {
                     changedRecords.insert(key)
                 }
 
             case let .setMetadata(key, value):
-                try validate(metadataKey: key)
                 if candidate.metadata[key] != value {
                     candidate.metadata[key] = value
                     changedMetadata.insert(key)
                 }
 
             case let .removeMetadata(key):
-                try validate(metadataKey: key)
                 if candidate.metadata.removeValue(forKey: key) != nil {
                     changedMetadata.insert(key)
                 }
@@ -89,40 +85,7 @@ public actor InMemoryTransactionalStore: AccountScopedRepository {
     }
 
     public func wipe(accountID: StorageAccountID) throws {
-        try validate(accountID: accountID)
+        try StorageValidation.accountID(accountID)
         buckets.removeValue(forKey: accountID)
-    }
-
-    private func validate(accountID: StorageAccountID) throws {
-        guard !accountID.rawValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AccountStorageError.invalidAccountID
-        }
-    }
-
-    private func validate(key: RecordKey) throws {
-        let namespace = key.namespace.trimmingCharacters(in: .whitespacesAndNewlines)
-        let id = key.id.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !namespace.isEmpty, !id.isEmpty else {
-            throw AccountStorageError.invalidRecordKey(key)
-        }
-    }
-
-    private func validate(metadataKey: String) throws {
-        guard !metadataKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw AccountStorageError.invalidMetadataKey(metadataKey)
-        }
-    }
-
-    private func validate(
-        record: StoredRecord,
-        expectedAccountID: StorageAccountID
-    ) throws {
-        try validate(key: record.key)
-        guard record.accountID == expectedAccountID else {
-            throw AccountStorageError.recordAccountMismatch(
-                expected: expectedAccountID,
-                actual: record.accountID
-            )
-        }
     }
 }

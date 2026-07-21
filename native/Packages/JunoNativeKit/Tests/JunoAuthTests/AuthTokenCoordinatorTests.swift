@@ -63,7 +63,7 @@ final class AuthTokenCoordinatorTests: XCTestCase {
         XCTAssertNotNil(stored)
     }
 
-    func testTerminalFailureAtomicallyClearsOnlyMatchingCredential() async throws {
+    func testTerminalFailureKeepsCredentialForOwnerControlledCleanup() async throws {
         let fixture = try await makeFixture()
         let task = Task { try await fixture.coordinator.refresh(for: fixture.accountID) }
         let joined = await waitForWaiters(
@@ -82,8 +82,8 @@ final class AuthTokenCoordinatorTests: XCTestCase {
         }
         let stored = try await fixture.store.load(for: fixture.accountID)
         let removals = await fixture.store.removeCount
-        XCTAssertNil(stored)
-        XCTAssertEqual(removals, 1)
+        XCTAssertNotNil(stored)
+        XCTAssertEqual(removals, 0)
     }
 
     func testRevocationDuringRefreshFailsClosedAndCannotRestoreTokens() async throws {

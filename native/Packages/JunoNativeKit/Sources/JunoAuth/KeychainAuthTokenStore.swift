@@ -22,6 +22,7 @@ public enum SecurityKeychainClientError: Error, Equatable, Sendable {
 /// A narrow, injectable boundary around Security.framework.
 public protocol SecurityKeychainClient: Sendable {
     func read(_ item: SecurityKeychainItem) throws -> Data?
+    func insertIfAbsent(_ data: Data, for item: SecurityKeychainItem) throws -> Bool
     func upsert(_ data: Data, for item: SecurityKeychainItem) throws
     func delete(_ item: SecurityKeychainItem) throws -> Bool
 }
@@ -51,11 +52,7 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     }
 
     public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
-        var attributes = baseQuery(for: item)
-        attributes[kSecValueData as String] = data
-        attributes[kSecAttrAccessible as String] =
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        attributes[kSecAttrSynchronizable as String] = false
+        let attributes = newItemAttributes(data, for: item)
 
         let addStatus = SecItemAdd(attributes as CFDictionary, nil)
         guard addStatus == errSecDuplicateItem else {
@@ -76,6 +73,24 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         )
         guard updateStatus == errSecSuccess else {
             throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
+        }
+    }
+
+    public func insertIfAbsent(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws -> Bool {
+        let status = SecItemAdd(
+            newItemAttributes(data, for: item) as CFDictionary,
+            nil
+        )
+        switch status {
+        case errSecSuccess:
+            return true
+        case errSecDuplicateItem:
+            return false
+        default:
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
         }
     }
 
@@ -102,6 +117,44 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
         return query
+    }
+
+    private func newItemAttributes(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) -> [String: Any] {
+        var attributes = baseQuery(for: item)
+        attributes[kSecValueData as String] = data
+        attributes[kSecAttrAccessible as String] =
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        attributes[kSecAttrSynchronizable as String] = false
+        return attributes
+    }
+}
+
+public enum SecureRandomDataError: Error, Equatable, Sendable {
+    case invalidCount
+    case generationFailed(Int32)
+}
+
+public protocol SecureRandomDataGenerating: Sendable {
+    func generate(count: Int) throws -> Data
+}
+
+public struct SystemSecureRandomDataGenerator: SecureRandomDataGenerating {
+    public init() {}
+
+    public func generate(count: Int) throws -> Data {
+        guard count > 0 else { throw SecureRandomDataError.invalidCount }
+        var data = Data(count: count)
+        let status = data.withUnsafeMutableBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else { return errSecParam }
+            return SecRandomCopyBytes(kSecRandomDefault, count, baseAddress)
+        }
+        guard status == errSecSuccess else {
+            throw SecureRandomDataError.generationFailed(Int32(status))
+        }
+        return data
     }
 }
 

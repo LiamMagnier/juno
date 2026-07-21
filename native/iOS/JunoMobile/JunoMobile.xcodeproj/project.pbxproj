@@ -7,8 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0018278BF7A67D0668145C7B /* JunoSync in Frameworks */ = {isa = PBXBuildFile; productRef = F81434780A363C6AAB06DA09 /* JunoSync */; };
 		036D682C452F5D4DB69BE781 /* JunoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 587829A8A0C26A1DE4FEDD99 /* JunoCore */; };
 		06F71844B372A51ACA32F9C9 /* JunoDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */; };
+		1CFB7663D4D8F5A5A5717D1C /* JunoStorage in Frameworks */ = {isa = PBXBuildFile; productRef = D0882F26D7E19F0B6AAC7C2D /* JunoStorage */; };
 		3332E2E0FBA80209F4D9FFB4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 42F513173B2B045DA0E00E0B /* PrivacyInfo.xcprivacy */; };
 		37CD61443FAACDA5EBDC1315 /* JunoMobileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53C15665D358B6C83B0AE8EE /* JunoMobileSection.swift */; };
 		45CCA073CA14C99F39139360 /* JunoAPI in Frameworks */ = {isa = PBXBuildFile; productRef = C39AD130331CB3021961BB61 /* JunoAPI */; };
@@ -67,6 +69,8 @@
 				F2C3551EEB174DFC75B413B2 /* JunoAuth in Frameworks */,
 				036D682C452F5D4DB69BE781 /* JunoCore in Frameworks */,
 				06F71844B372A51ACA32F9C9 /* JunoDesignSystem in Frameworks */,
+				1CFB7663D4D8F5A5A5717D1C /* JunoStorage in Frameworks */,
+				0018278BF7A67D0668145C7B /* JunoSync in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -217,6 +221,8 @@
 				D6FE3BCE715A045341A9BBD3 /* JunoAuth */,
 				587829A8A0C26A1DE4FEDD99 /* JunoCore */,
 				80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */,
+				D0882F26D7E19F0B6AAC7C2D /* JunoStorage */,
+				F81434780A363C6AAB06DA09 /* JunoSync */,
 			);
 			productName = JunoMobile;
 			productReference = 51F5144F04041806FCB5E2F9 /* JunoMobile.app */;
@@ -702,9 +708,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoAPI;
 		};
+		D0882F26D7E19F0B6AAC7C2D /* JunoStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoStorage;
+		};
 		D6FE3BCE715A045341A9BBD3 /* JunoAuth */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoAuth;
+		};
+		F81434780A363C6AAB06DA09 /* JunoSync */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoSync;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
