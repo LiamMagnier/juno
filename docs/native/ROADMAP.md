@@ -1,7 +1,7 @@
 # Juno Native — Execution Roadmap
 
-1. Audit and handoff baseline — in progress.
-2. Shared API/auth/sync/storage/search packages and contract drift gate.
+1. Audit and handoff baseline — complete (`1de5cda`).
+2. Shared API/auth/sync/storage/search packages and contract drift gate — in progress.
 3. Independent macOS shell, chat, search, and account flows.
 4. macOS Juno Code, trust/permissions, Remote Host, and controlled Computer Use.
 5. Independent adaptive iOS/iPadOS shell, chat, sidebar, search, and account flows.

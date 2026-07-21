@@ -1,12 +1,12 @@
 # Juno Native — Status
 
-Last updated: 2026-07-21 21:45 Europe/Paris
+Last updated: 2026-07-21 21:48 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current commit: `be6db2564c97a346739043b54b9b816bd8e582a3` (`chore: untrack .claude/launch.json (local Claude state, already gitignored)`)
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; it is isolated on `agent/juno-native` and currently contains only the uncommitted `docs/native/**` audit baseline.
+- Current completed phase commit: `1de5cda93e4eeb761eeec17056513ca8632048d0` (`docs: establish native audit and handoff baseline`).
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; it is isolated on `agent/juno-native`. No implementation changes are pending at this handoff boundary.
 - Main checkout: a concurrent task returned `/Users/liammagnier/Desktop/workspace/juno` to `main` and committed `e0d1285`. Its existing Remote Session changes remain there, untouched and unstaged by this native run.
 - Remote: `origin https://github.com/LiamMagnier/juno.git`
 - GitHub CLI: installed, but the stored `LiamMagnier` token is invalid as of this update.
@@ -22,9 +22,9 @@ Last updated: 2026-07-21 21:45 Europe/Paris
 
 ## Current phase
 
-Phase 1 — forensic audit, persistent handoff, and safe prototype-salvage plan.
+Phase 2 — shared Swift foundation and independent project skeletons.
 
-Current task: establish the native documentation baseline, audit the local prototype, then migrate validated code into independent macOS and iOS/iPadOS projects backed by shared Swift packages.
+Current task: create the acyclic `JunoNativeKit` package, its first deterministic tests, and the independent macOS/iOS project skeletons.
 
 ## Completed
 
@@ -36,6 +36,7 @@ Current task: establish the native documentation baseline, audit the local proto
 - Built the local monolithic prototype for Debug and Release macOS with code signing disabled; its 34 macOS unit tests pass.
 - Ran the prototype iOS Simulator build and captured its existing platform-coupling failure.
 - Consulted current official OpenAI, Apple, and Anthropic product/security/design documentation; conclusions are in `RESEARCH.md`.
+- Committed the complete audit, architecture, parity, API-gap, testing, research, security, release and persistent-handoff baseline as `1de5cda`.
 
 ## Remaining
 
@@ -99,7 +100,7 @@ They live only in the main checkout. The dedicated native worktree does not cont
 
 ## Next exact action
 
-Finish the prototype audit, then generate the new package/project skeleton and run:
+Create `native/Packages/JunoNativeKit/Package.swift` and the first `JunoCore`, `JunoAPI`, `JunoAuth`, `JunoStorage`, `JunoSync`, `JunoSearch`, `JunoDesignSystem`, `JunoChatKit`, `JunoCodeKit`, and `JunoVoiceKit` targets with acyclic imports, then run:
 
 ```bash
 cd /Users/liammagnier/Desktop/workspace/juno

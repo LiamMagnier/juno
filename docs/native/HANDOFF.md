@@ -1,15 +1,15 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 21:45 Europe/Paris
+Updated: 2026-07-21 21:48 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Commit at audit start: `be6db2564c97a346739043b54b9b816bd8e582a3`
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; only `docs/native/**` is uncommitted while this audit baseline is being finalized.
+- Current completed phase commit: `1de5cda93e4eeb761eeec17056513ca8632048d0`
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; no implementation changes are pending at this handoff boundary.
 - Main checkout: independently on `main` at `e0d1285`, with pre-existing Remote Session changes. Never reset, restore, clean, or stage those files from native work.
-- Current phase: audit and safe salvage of a local Swift prototype.
-- Current task: split validated prototype capabilities into two independent apps and shared packages; do not ship the monolithic prototype.
+- Current phase: shared Swift foundation and independent project skeletons.
+- Current task: implement and test `JunoNativeKit`, then generate separate `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`; do not ship the monolithic prototype.
 
 ## Actually completed
 
@@ -19,6 +19,7 @@ Updated: 2026-07-21 21:45 Europe/Paris
 - Local prototype found at `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild`; Debug and Release macOS builds succeed with Xcode 27 beta/signing disabled, and 34/34 macOS tests pass.
 - The same prototype fails its Debug iOS Simulator build at `AuthSession.swift:73` because it calls macOS-only `Host.current()` and sends `platform: "macOS"`; do not label it a functional iOS client.
 - Official OpenAI/Apple/Anthropic research completed and summarized in `RESEARCH.md`.
+- Audit and handoff baseline committed as `1de5cda`.
 
 No new production native application is complete yet. Do not describe the prototype or legacy DMG as the requested finished release.
 
@@ -36,10 +37,11 @@ No new production native application is complete yet. Do not describe the protot
 
 ## Next exact work
 
-1. Finish identifying prototype files that are safe to migrate and the code that must be rejected (demo data, direct provider keys, monolithic platform coupling).
-2. Create `native/Packages/JunoNativeKit/Package.swift` with acyclic targets and tests.
-3. Create independent `native/macOS/JunoMac/JunoMac.xcodeproj` and `native/iOS/JunoMobile/JunoMobile.xcodeproj` projects.
-4. Migrate API/auth/sync first; run Swift tests before migrating UI.
+1. Create `native/Packages/JunoNativeKit/Package.swift` with the documented acyclic targets.
+2. Add platform-neutral core/API/auth primitives and deterministic Swift tests.
+3. Run package tests with strict concurrency enabled and correct introduced failures.
+4. Create independent `native/macOS/JunoMac/JunoMac.xcodeproj` and `native/iOS/JunoMobile/JunoMobile.xcodeproj` projects.
+5. Migrate storage/sync/search before feature UI.
 
 ## Commands to run next
 
@@ -47,7 +49,7 @@ No new production native application is complete yet. Do not describe the protot
 cd /Users/liammagnier/Desktop/workspace/juno
 git status --short --branch
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -version
-rg -n 'mock|demo|BYOK|useDirectProviders|apiKey|ProviderClient|fatalError|TODO' /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno
+git show --stat 1de5cda
 ```
 
 After the package exists:
