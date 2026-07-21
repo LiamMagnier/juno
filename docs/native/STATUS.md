@@ -1,21 +1,22 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 00:55 Europe/Paris
+Last updated: 2026-07-22 01:26 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `0cb44d8082fecd60798df83d233dd3e12c8a2b16` (`feat(native): load and manage real conversations`).
+- Current completed implementation commit: `6e20050da149ee7bc057a637274edc8e06d7ac8f` (`feat(native): stream real Juno chat`).
 - Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
-- Expected working tree at this handoff boundary: clean after the documentation commit.
+- Known unstaged Xcode 27 project/scheme and String Catalog rewrites remain
+  preserved outside the implementation commits; inspect rather than resetting them.
 - Main checkout: `/Users/liammagnier/Desktop/workspace/juno` remains independently on `main` at `e0d1285`, with pre-existing Remote Session changes untouched by this run.
 - Remote: `origin https://github.com/LiamMagnier/juno.git`.
 - GitHub CLI: installed, but the stored `LiamMagnier` token is invalid.
 
 ## Current phase
 
-Production auth, storage, sync and real conversation/message UI are complete.
-The next sequential unit is the real chat composer and streaming transport.
+Production auth, storage, sync, conversation/message UI and real chat streaming
+are complete. The next sequential unit is projects and files.
 
 ## Actually completed
 
@@ -24,7 +25,7 @@ The next sequential unit is the real chat composer and streaming transport.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 115 focused Swift package tests, all passing with warnings treated as errors
+- 119 focused Swift package tests, all passing with warnings treated as errors
   and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
@@ -52,6 +53,11 @@ The next sequential unit is the real chat composer and streaming transport.
 - Real account conversations/messages are projected from encrypted SQLite in
   `0cb44d8`; both apps now provide native list/detail, loading/empty/error/offline
   states and durable create, rename, model, pin and archive actions.
+- Real saved-conversation chat in `6e20050`: both apps compose the existing
+  bearer-capable model catalog, idempotent message append and production
+  `/api/chat` SSE stream with progressive answer/reasoning/sources, stop, retry,
+  bounded reconnect reconciliation and duplicate prevention. OpenAPI 1.1.0
+  publishes these existing routes; no chat service or route was added.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -66,8 +72,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Real chat composer/streaming, mutation conflict UI and live-account
-  offline/reconnect proof.
+- Projects/files, mutation conflict UI and live-account offline/reconnect proof.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -78,7 +83,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 115/115 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 119/119 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -114,18 +119,16 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Reuse the existing chat route and old app streaming client to implement the real
-native composer, model/effort catalog, progressive SSE response, stop, retry and
-reconnect semantics. Do not add a server route unless the targeted checks prove
-a gap.
+Reuse the existing project and file clients to implement real project lists,
+project detail, file browsing and account-scoped offline projection in both apps.
+Do not add a server route unless the targeted checks prove a gap.
 
 Open first:
 
-1. `src/app/api/chat/route.ts`
-2. `contracts/openapi/juno-native-v1.yaml`
-3. `native/Packages/JunoNativeKit/Sources/JunoChatKit`
-4. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/ChatTransport.swift` (read-only)
-5. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/ChatEngine.swift` (read-only)
+1. `src/app/api/projects`
+2. `src/lib/sync-entities.ts`
+3. `native/Packages/JunoNativeKit/Sources/JunoSync`
+4. the old native project's project/file clients (read-only source lineage)
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.

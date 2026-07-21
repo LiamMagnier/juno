@@ -1,27 +1,27 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "0cb44d8082fecd60798df83d233dd3e12c8a2b16",
-  "workingTreeClean": true,
-  "currentPhase": "real-chat-streaming",
-  "currentTask": "Reuse the existing chat route and old app stream decoder for native send, progressive response, stop, retry and reconnect.",
+  "currentCommit": "6e20050da149ee7bc057a637274edc8e06d7ac8f",
+  "workingTreeClean": false,
+  "currentPhase": "projects-and-files",
+  "currentTask": "Reuse existing project and file routes, sync entities and old native clients for real native project and file surfaces.",
   "nextFiles": [
-    "src/app/api/chat/route.ts",
-    "contracts/openapi/juno-native-v1.yaml",
-    "native/Packages/JunoNativeKit/Sources/JunoChatKit",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/ChatTransport.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/ChatEngine.swift"
+    "src/app/api/projects",
+    "src/lib/sync-entities.ts",
+    "native/Packages/JunoNativeKit/Sources/JunoSync",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
-    "One hundred fifteen strict-concurrency Swift package tests",
+    "One hundred nineteen strict-concurrency Swift package tests",
     "Security.framework-backed active-account/device-scoped Keychain token store with account-switch purge and ten focused tests",
     "Canonical PKCE system-browser flow, existing production auth-route client, refresh-aware restore and logout",
     "Refresh-aware same-origin bearer transport and validated checkpoint client for the existing bootstrap route in 9dad2a1",
     "Encrypted versioned SQLite account repository, atomic Keychain key, lifecycle wipe and atomic hydrated baseline in 9bceb7e",
     "Durable production synchronization with entity hydration, atomic cursor pages, SSE wakeups, compaction recovery, reconnect backoff and encrypted outbox in 364f0f2",
     "Real encrypted conversation and message projection with native list, detail and durable management actions in 0cb44d8",
+    "Real native chat with model and effort selection, production SSE, stop, retry, reconnect and duplicate prevention in 6e20050",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -32,7 +32,7 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Real native chat composer, model and effort selection, streaming, stop and retry",
+    "Real native projects and files",
     "Mutation conflict UI and live-account offline and reconnect proof",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
@@ -44,7 +44,7 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (115/115)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (119/119)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",
