@@ -1,0 +1,105 @@
+name: JunoMac
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "15.0"
+  developmentLanguage: en
+  knownRegions:
+    - en
+    - fr
+  minimumXcodeGenVersion: 2.46.0
+configs:
+  Debug: debug
+  Stable: release
+  Next: release
+packages:
+  JunoNativeKit:
+    path: ../../Packages/JunoNativeKit
+targets:
+  JunoMac:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Resources
+        excludes:
+          - Info.plist
+          - JunoMac.entitlements
+        buildPhase: resources
+    dependencies:
+      - package: JunoNativeKit
+        product: JunoCore
+      - package: JunoNativeKit
+        product: JunoDesignSystem
+    configFiles:
+      Debug: ../../Config/JunoMac-Debug.xcconfig
+      Stable: ../../Config/JunoMac-Stable.xcconfig
+      Next: ../../Config/JunoMac-Next.xcconfig
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: Resources/JunoMac.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+  JunoMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: JunoMac
+    configFiles:
+      Debug: ../../Config/JunoMac-Debug.xcconfig
+      Stable: ../../Config/JunoMac-Stable.xcconfig
+      Next: ../../Config/JunoMac-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMac.tests
+  JunoMacUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: JunoMac
+    configFiles:
+      Debug: ../../Config/JunoMac-Debug.xcconfig
+      Stable: ../../Config/JunoMac-Stable.xcconfig
+      Next: ../../Config/JunoMac-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMac.uitests
+        TEST_TARGET_NAME: JunoMac
+schemes:
+  JunoMac:
+    build:
+      targets:
+        JunoMac: all
+        JunoMacTests: [test]
+        JunoMacUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - JunoMacTests
+        - JunoMacUITests
+    profile:
+      config: Stable
+    analyze:
+      config: Debug
+    archive:
+      config: Stable
+  JunoMac-Next:
+    build:
+      targets:
+        JunoMac: all
+    run:
+      config: Next
+    profile:
+      config: Next
+    analyze:
+      config: Next
+    archive:
+      config: Next

@@ -1,0 +1,96 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "menu.navigate" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Navigate" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Navigation" } }
+      }
+    },
+    "navigation.artifacts" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Artefacts" } }
+      }
+    },
+    "navigation.chat" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chat" } }
+      }
+    },
+    "navigation.code" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code" } }
+      }
+    },
+    "navigation.connections" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connections" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Connexions" } }
+      }
+    },
+    "navigation.library" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Library" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Bibliothèque" } }
+      }
+    },
+    "navigation.projects" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Projects" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Projets" } }
+      }
+    },
+    "navigation.search" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Recherche" } }
+      }
+    },
+    "navigation.settings" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réglages" } }
+      }
+    },
+    "navigation.tasks" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tasks" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tâches" } }
+      }
+    },
+    "section.account" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Account" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Compte" } }
+      }
+    },
+    "section.intelligence" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Intelligence" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Intelligence" } }
+      }
+    },
+    "section.product" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Product" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Produit" } }
+      }
+    },
+    "shell.foundation.description" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "This native area will become available after authentication and synchronization are connected." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Cet espace natif sera disponible après le raccordement de l’authentification et de la synchronisation." } }
+      }
+    },
+    "sidebar.search.prompt" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search Juno" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Rechercher dans Juno" } }
+      }
+    }
+  },
+  "version" : "1.0"
+}

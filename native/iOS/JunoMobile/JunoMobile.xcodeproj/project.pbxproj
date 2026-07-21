@@ -1,0 +1,694 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		3332E2E0FBA80209F4D9FFB4 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 42F513173B2B045DA0E00E0B /* PrivacyInfo.xcprivacy */; };
+		37CD61443FAACDA5EBDC1315 /* JunoMobileSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53C15665D358B6C83B0AE8EE /* JunoMobileSection.swift */; };
+		45CCA073CA14C99F39139360 /* JunoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 587829A8A0C26A1DE4FEDD99 /* JunoCore */; };
+		62A276163B404EB40B77E094 /* JunoMobileApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A161E251463048E767FA7C4 /* JunoMobileApp.swift */; };
+		7D6CF61A7C6BC98485DF9F98 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 263173540341BD6A4CF6F923 /* Assets.xcassets */; };
+		8FE41C06BD0740693C5608C8 /* JunoMobileNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADEDC5B4FBF00B7F6F68EF8 /* JunoMobileNavigationTests.swift */; };
+		BD7ADFECA76F50A40658C95B /* JunoMobileLaunchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1E8580B3F4DBC67391C51C /* JunoMobileLaunchUITests.swift */; };
+		D6D916590666516EA1BA0059 /* JunoMobileRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8DAE7CE0FB1659B88AC26E1 /* JunoMobileRootView.swift */; };
+		E09C7A58C7209403F61F2AE5 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 2CCDED5E629523C68884573A /* Localizable.xcstrings */; };
+		F2C3551EEB174DFC75B413B2 /* JunoDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		1D4475D47132E1AB042ACE51 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A8EA4AD3AA2881C4ED07A75 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B08015F59BA5814B520393;
+			remoteInfo = JunoMobile;
+		};
+		6A83AC12154C74650463320C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8A8EA4AD3AA2881C4ED07A75 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A1B08015F59BA5814B520393;
+			remoteInfo = JunoMobile;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1A161E251463048E767FA7C4 /* JunoMobileApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileApp.swift; sourceTree = "<group>"; };
+		263173540341BD6A4CF6F923 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		2CCDED5E629523C68884573A /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		35FDEEB217765F40AF6CCE4E /* JunoMobile-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMobile-Next.xcconfig"; sourceTree = "<group>"; };
+		42F513173B2B045DA0E00E0B /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		51F5144F04041806FCB5E2F9 /* JunoMobile.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = JunoMobile.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		53C15665D358B6C83B0AE8EE /* JunoMobileSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileSection.swift; sourceTree = "<group>"; };
+		5A1E8580B3F4DBC67391C51C /* JunoMobileLaunchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileLaunchUITests.swift; sourceTree = "<group>"; };
+		788E806C8DD43BA93448142B /* JunoMobileUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JunoMobileUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9ADEDC5B4FBF00B7F6F68EF8 /* JunoMobileNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileNavigationTests.swift; sourceTree = "<group>"; };
+		A8DAE7CE0FB1659B88AC26E1 /* JunoMobileRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMobileRootView.swift; sourceTree = "<group>"; };
+		AE88DF4F9AD7BA9AE6999AB1 /* JunoMobile-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMobile-Stable.xcconfig"; sourceTree = "<group>"; };
+		C1E4592348ABC4DF692C8F72 /* JunoNativeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoNativeKit; path = ../../Packages/JunoNativeKit; sourceTree = SOURCE_ROOT; };
+		DF0095C723DF76F6A97E4EE9 /* JunoMobile-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMobile-Debug.xcconfig"; sourceTree = "<group>"; };
+		EE4AD8F3CE30432D98FA0683 /* JunoMobileTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = JunoMobileTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		35D29BDCF2F360DE6A444425 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				45CCA073CA14C99F39139360 /* JunoCore in Frameworks */,
+				F2C3551EEB174DFC75B413B2 /* JunoDesignSystem in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		110253258C8D45568B026BF3 /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				DF0095C723DF76F6A97E4EE9 /* JunoMobile-Debug.xcconfig */,
+				35FDEEB217765F40AF6CCE4E /* JunoMobile-Next.xcconfig */,
+				AE88DF4F9AD7BA9AE6999AB1 /* JunoMobile-Stable.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		1CEA628BE656EE9CC38414E3 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				9ADEDC5B4FBF00B7F6F68EF8 /* JunoMobileNavigationTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		23FE142BA0AB75A07C85A851 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				263173540341BD6A4CF6F923 /* Assets.xcassets */,
+				2CCDED5E629523C68884573A /* Localizable.xcstrings */,
+				42F513173B2B045DA0E00E0B /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		4370B4095066E32494E43AEE /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				C1E4592348ABC4DF692C8F72 /* JunoNativeKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		4B27B13FEEE9D13A64727D5A /* App */ = {
+			isa = PBXGroup;
+			children = (
+				1A161E251463048E767FA7C4 /* JunoMobileApp.swift */,
+				A8DAE7CE0FB1659B88AC26E1 /* JunoMobileRootView.swift */,
+				53C15665D358B6C83B0AE8EE /* JunoMobileSection.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		52FF88166DD5E2767524BF49 = {
+			isa = PBXGroup;
+			children = (
+				4B27B13FEEE9D13A64727D5A /* App */,
+				B154D340D958ED504A26D5B2 /* native */,
+				4370B4095066E32494E43AEE /* Packages */,
+				23FE142BA0AB75A07C85A851 /* Resources */,
+				1CEA628BE656EE9CC38414E3 /* Tests */,
+				FE3866F76F9185ED75B408DD /* UITests */,
+				E8B03E24265473213B18B086 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B154D340D958ED504A26D5B2 /* native */ = {
+			isa = PBXGroup;
+			children = (
+				110253258C8D45568B026BF3 /* Config */,
+			);
+			name = native;
+			path = ../..;
+			sourceTree = "<group>";
+		};
+		E8B03E24265473213B18B086 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				51F5144F04041806FCB5E2F9 /* JunoMobile.app */,
+				EE4AD8F3CE30432D98FA0683 /* JunoMobileTests.xctest */,
+				788E806C8DD43BA93448142B /* JunoMobileUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		FE3866F76F9185ED75B408DD /* UITests */ = {
+			isa = PBXGroup;
+			children = (
+				5A1E8580B3F4DBC67391C51C /* JunoMobileLaunchUITests.swift */,
+			);
+			path = UITests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6D5615F8AFDDA70B8927E8F7 /* JunoMobileTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1DD9696C4D444AFBDE6911EE /* Build configuration list for PBXNativeTarget "JunoMobileTests" */;
+			buildPhases = (
+				EB6F01925BDB2E69495E824A /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				131C66FE350676466693CD66 /* PBXTargetDependency */,
+			);
+			name = JunoMobileTests;
+			packageProductDependencies = (
+			);
+			productName = JunoMobileTests;
+			productReference = EE4AD8F3CE30432D98FA0683 /* JunoMobileTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		714C7D189431CDC91730331B /* JunoMobileUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7404EF5E51EA7A7D5A727587 /* Build configuration list for PBXNativeTarget "JunoMobileUITests" */;
+			buildPhases = (
+				4B9BD2E14452F311ECC6C0CA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				8E2FF1E2F5EFDD7E604EE1EA /* PBXTargetDependency */,
+			);
+			name = JunoMobileUITests;
+			packageProductDependencies = (
+			);
+			productName = JunoMobileUITests;
+			productReference = 788E806C8DD43BA93448142B /* JunoMobileUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		A1B08015F59BA5814B520393 /* JunoMobile */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B8F29B67E431D31B05D1F56 /* Build configuration list for PBXNativeTarget "JunoMobile" */;
+			buildPhases = (
+				D8FFE0F3CFDCA163D5973585 /* Sources */,
+				7485FACA44F3636D6E8AE6E3 /* Resources */,
+				35D29BDCF2F360DE6A444425 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = JunoMobile;
+			packageProductDependencies = (
+				587829A8A0C26A1DE4FEDD99 /* JunoCore */,
+				80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */,
+			);
+			productName = JunoMobile;
+			productReference = 51F5144F04041806FCB5E2F9 /* JunoMobile.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8A8EA4AD3AA2881C4ED07A75 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					714C7D189431CDC91730331B = {
+						TestTargetID = A1B08015F59BA5814B520393;
+					};
+				};
+			};
+			buildConfigurationList = BAAB33287995A06147A7E281 /* Build configuration list for PBXProject "JunoMobile" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+				fr,
+			);
+			mainGroup = 52FF88166DD5E2767524BF49;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				23DDEE212098921EAB329F86 /* XCLocalSwiftPackageReference "../../Packages/JunoNativeKit" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = E8B03E24265473213B18B086 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A1B08015F59BA5814B520393 /* JunoMobile */,
+				6D5615F8AFDDA70B8927E8F7 /* JunoMobileTests */,
+				714C7D189431CDC91730331B /* JunoMobileUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7485FACA44F3636D6E8AE6E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7D6CF61A7C6BC98485DF9F98 /* Assets.xcassets in Resources */,
+				E09C7A58C7209403F61F2AE5 /* Localizable.xcstrings in Resources */,
+				3332E2E0FBA80209F4D9FFB4 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4B9BD2E14452F311ECC6C0CA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BD7ADFECA76F50A40658C95B /* JunoMobileLaunchUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8FFE0F3CFDCA163D5973585 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				62A276163B404EB40B77E094 /* JunoMobileApp.swift in Sources */,
+				D6D916590666516EA1BA0059 /* JunoMobileRootView.swift in Sources */,
+				37CD61443FAACDA5EBDC1315 /* JunoMobileSection.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EB6F01925BDB2E69495E824A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8FE41C06BD0740693C5608C8 /* JunoMobileNavigationTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		131C66FE350676466693CD66 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B08015F59BA5814B520393 /* JunoMobile */;
+			targetProxy = 6A83AC12154C74650463320C /* PBXContainerItemProxy */;
+		};
+		8E2FF1E2F5EFDD7E604EE1EA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A1B08015F59BA5814B520393 /* JunoMobile */;
+			targetProxy = 1D4475D47132E1AB042ACE51 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2BD7D272C9CE3302CA1FDA94 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DF0095C723DF76F6A97E4EE9 /* JunoMobile-Debug.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.uitests;
+				TEST_TARGET_NAME = JunoMobile;
+			};
+			name = Debug;
+		};
+		3571EE09299789DB5E226395 /* Stable */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AE88DF4F9AD7BA9AE6999AB1 /* JunoMobile-Stable.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoMobile.app/JunoMobile";
+			};
+			name = Stable;
+		};
+		3F8F4C0FFB83996352BF5F09 /* Next */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 35FDEEB217765F40AF6CCE4E /* JunoMobile-Next.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoMobile.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+			};
+			name = Next;
+		};
+		726CB20087A54C8BDD49055C /* Next */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 35FDEEB217765F40AF6CCE4E /* JunoMobile-Next.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.uitests;
+				TEST_TARGET_NAME = JunoMobile;
+			};
+			name = Next;
+		};
+		8ABD745350F1CBA7CEA1593F /* Next */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Next;
+		};
+		8FBF0567A468DBFB06AA9580 /* Stable */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AE88DF4F9AD7BA9AE6999AB1 /* JunoMobile-Stable.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.uitests;
+				TEST_TARGET_NAME = JunoMobile;
+			};
+			name = Stable;
+		};
+		9E762708D33815916D55DE1E /* Stable */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AE88DF4F9AD7BA9AE6999AB1 /* JunoMobile-Stable.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoMobile.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+			};
+			name = Stable;
+		};
+		B662BAE0F22D9F2053A54C62 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		B8625D188F03BB293384860A /* Stable */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Stable;
+		};
+		C6BD635420F37BF15FE49086 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DF0095C723DF76F6A97E4EE9 /* JunoMobile-Debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoMobile.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		D0F9D11A2630B12500D26457 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = DF0095C723DF76F6A97E4EE9 /* JunoMobile-Debug.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoMobile.app/JunoMobile";
+			};
+			name = Debug;
+		};
+		F9199C95BBD9BE2D7FDABD96 /* Next */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 35FDEEB217765F40AF6CCE4E /* JunoMobile-Next.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoMobile.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoMobile.app/JunoMobile";
+			};
+			name = Next;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		1B8F29B67E431D31B05D1F56 /* Build configuration list for PBXNativeTarget "JunoMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C6BD635420F37BF15FE49086 /* Debug */,
+				3F8F4C0FFB83996352BF5F09 /* Next */,
+				9E762708D33815916D55DE1E /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1DD9696C4D444AFBDE6911EE /* Build configuration list for PBXNativeTarget "JunoMobileTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D0F9D11A2630B12500D26457 /* Debug */,
+				F9199C95BBD9BE2D7FDABD96 /* Next */,
+				3571EE09299789DB5E226395 /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7404EF5E51EA7A7D5A727587 /* Build configuration list for PBXNativeTarget "JunoMobileUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2BD7D272C9CE3302CA1FDA94 /* Debug */,
+				726CB20087A54C8BDD49055C /* Next */,
+				8FBF0567A468DBFB06AA9580 /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BAAB33287995A06147A7E281 /* Build configuration list for PBXProject "JunoMobile" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B662BAE0F22D9F2053A54C62 /* Debug */,
+				8ABD745350F1CBA7CEA1593F /* Next */,
+				B8625D188F03BB293384860A /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		23DDEE212098921EAB329F86 /* XCLocalSwiftPackageReference "../../Packages/JunoNativeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/JunoNativeKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		587829A8A0C26A1DE4FEDD99 /* JunoCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCore;
+		};
+		80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoDesignSystem;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8A8EA4AD3AA2881C4ED07A75 /* Project object */;
+}
