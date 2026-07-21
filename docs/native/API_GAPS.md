@@ -181,6 +181,11 @@ unless an explicit security decision says otherwise.
 flags and no effective announcement data. It does not express separate stable/next
 iOS, iPadOS and macOS compatibility or capability negotiation.
 
+Client progress in `9dad2a1`: the existing bearer route is reused without backend
+changes. The native checkpoint validates account ownership, contract version,
+canonical cursors and the model-manifest version; it intentionally does not invent
+missing compatibility metadata.
+
 Required resolution: add typed per-platform minimum/recommended versions,
 contract/protocol capabilities, feature flags and maintenance/update messaging.
 
@@ -230,6 +235,10 @@ Swift decoding/storage tests, UI tests, accessibility suite, or real Web↔Mac�
 end-to-end environment.
 
 Required resolution: implement the complete test matrix before claiming parity.
+
+Progress in `9dad2a1`: strict package coverage reaches 74 tests, including a
+single-flight concurrent-401 rotation test and typed bootstrap failure cases.
+Database-backed route and cross-surface scenarios remain open.
 
 ### GAP-018 — native account and connector handoffs need explicit contracts
 

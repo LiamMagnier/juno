@@ -1,16 +1,16 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 22:55 Europe/Paris
+Updated: 2026-07-21 23:15 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `7e80d8eebc09fcdf66dcf721e971f2d5915826c1` (`feat(native): connect production browser authentication`)
+- Current completed implementation commit: `9dad2a13149438505e569f16dd21420f9d6c100a` (`feat(native): add refresh-aware bootstrap client`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
 - Working tree: expected clean after the handoff documentation commit.
-- Current phase: authenticated bootstrap and durable storage composition.
-- Current task: production browser auth is complete and wired into both apps.
-- Next exact action: reuse the existing bearer `/api/v1/bootstrap` contract and old app bootstrap client to add a refresh-aware shared bootstrap client, then persist its account-scoped cursor in the production local store.
+- Current phase: durable storage and synchronization composition.
+- Current task: the production bearer bootstrap checkpoint is complete over the existing backend route.
+- Next exact action: implement the production SQLite account repository with migrations, atomic account partitions and wipe behavior, then persist the validated bootstrap cursor through it.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -20,9 +20,10 @@ clean, restore, stage, or commit those files from this native worktree.
 
 - General repository/backend/OpenAPI/toolchain/prototype audit; baseline commit `1de5cda`.
 - Canonical callback and OpenAPI/backend/Swift-generation alignment; implementation commit `b903159`.
-- `JunoNativeKit` Swift 6 package with ten acyclic products and 67 strict-concurrency tests.
+- `JunoNativeKit` Swift 6 package with ten acyclic products and 74 strict-concurrency tests.
 - Security.framework-backed, device-local `KeychainAuthTokenStore` with active-account restoration, account-switch purge, serialized compare-and-swap, and ten focused tests.
 - Canonical PKCE-S256 browser authorization, strict callback correlation, existing token/refresh/session/logout route client, authoritative session validation, and production app composition on macOS and iOS.
+- Refresh-aware same-origin bearer transport and a fail-closed checkpoint client for the existing `/api/v1/bootstrap` route, with account, contract, cursor and model-manifest validation.
 - Deterministic generated Swift contract and local drift command.
 - Storage/sync/search foundations: account-scoped store protocol, deterministic in-memory test adapter, cursor application, mutation outbox, and local-search contract.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
@@ -34,13 +35,12 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `src/app/api/v1/bootstrap/route.ts` (read-only production source of truth)
-2. `contracts/openapi/juno-native-v1.yaml`
-3. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/BackendClient.swift` (read-only source lineage)
-4. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncModels.swift` (read-only source lineage)
-5. `native/Packages/JunoNativeKit/Sources/JunoAuth/NativeAuthRuntime.swift`
-6. `native/Packages/JunoNativeKit/Sources/JunoSync/`
-7. `native/Packages/JunoNativeKit/Sources/JunoStorage/`
+1. `native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoStorage/InMemoryTransactionalStore.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift`
+4. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Models/PersistenceModels.swift` (read-only source lineage)
+5. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift` (read-only source lineage)
+6. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/OutboxService.swift` (read-only source lineage)
 
 ## Commands to run next
 
@@ -55,7 +55,7 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test \
 npm run native:contract:check
 ```
 
-After bootstrap composition is added, rerun the package suite and both Debug builds:
+After durable storage is composed into the apps, rerun the package suite and both Debug builds:
 
 ```bash
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
@@ -75,7 +75,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 67/67 tests, including Keychain 10/10 and browser/runtime 7/7.
+- Strict package suite: 74/74 tests, including Auth 29/29 and Sync 12/12.
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
 - JunoMac unit tests: 2/2.
@@ -116,8 +116,8 @@ anything; do not assume files in the main checkout belong to this branch.
 
 ## Remaining work
 
-- Authenticated bootstrap and durable cursor/entity/outbox persistence.
-- Durable SQLite/migrations and production sync/search persistence.
+- Durable SQLite/migrations and cursor/entity/outbox persistence.
+- Production sync/search persistence and reconnect/compaction recovery.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.
 - UI/E2E/accessibility/performance/secret/dependency gates and native CI.

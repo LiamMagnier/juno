@@ -74,6 +74,16 @@ commands above pass there. This is not a source regression.
 | `npm run native:contract:check` | Pass | No backend/OpenAPI/generated Swift drift. |
 | Live account browser completion | Not run | Requires an interactive authenticated Juno browser session; no mock was substituted. |
 
+## Refresh-aware authenticated bootstrap — `9dad2a1`
+
+| Command / gate | Result | Evidence |
+|---|---|---|
+| Strict full package suite | Pass | 74/74 tests; Auth 29/29 and Sync 12/12. |
+| Strict Release package build | Pass | All ten products compile with warnings treated as errors. |
+| Concurrent rejected-token rotation | Pass | 24 simultaneous 401 callers plus a late caller share one refresh rotation. |
+| Existing bootstrap route decoding | Pass | Request path, account binding, contract version, canonical cursors, manifest version and typed server errors are covered. |
+| `npm run native:contract:check` | Pass | Existing OpenAPI and generated Swift remain aligned; no server change was required. |
+
 ## Required gates by unit
 
 ### Shared packages

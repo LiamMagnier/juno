@@ -1,25 +1,25 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "7e80d8eebc09fcdf66dcf721e971f2d5915826c1",
+  "currentCommit": "9dad2a13149438505e569f16dd21420f9d6c100a",
   "workingTreeClean": true,
-  "currentPhase": "authenticated-bootstrap-and-durable-storage",
-  "currentTask": "Reuse the existing bearer bootstrap route through a refresh-aware shared client, then persist its validated account-scoped cursor in the production local store.",
+  "currentPhase": "durable-storage-and-synchronization",
+  "currentTask": "Implement the production SQLite account repository, then persist the validated bootstrap cursor through it.",
   "nextFiles": [
-    "src/app/api/v1/bootstrap/route.ts",
-    "contracts/openapi/juno-native-v1.yaml",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/BackendClient.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncModels.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoAuth/NativeAuthRuntime.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoSync",
-    "native/Packages/JunoNativeKit/Sources/JunoStorage"
+    "native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoStorage/InMemoryTransactionalStore.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Models/PersistenceModels.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/OutboxService.swift"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
-    "Sixty-seven strict-concurrency Swift package tests",
+    "Seventy-four strict-concurrency Swift package tests",
     "Security.framework-backed active-account/device-scoped Keychain token store with account-switch purge and ten focused tests",
     "Canonical PKCE system-browser flow, existing production auth-route client, refresh-aware restore and logout",
+    "Refresh-aware same-origin bearer transport and validated checkpoint client for the existing bootstrap route in 9dad2a1",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -30,8 +30,8 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Authenticated bootstrap and durable account-scoped cursor/entity/outbox persistence",
-    "Durable SQLite storage, migrations, cursor/outbox persistence, crash and compaction recovery",
+    "Durable SQLite storage, migrations and account-scoped cursor/entity/outbox persistence",
+    "Production synchronization, crash recovery and compaction recovery",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
     "UI, end-to-end, accessibility, performance, dependency and secret gates",
@@ -42,7 +42,7 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-auth-scratch -Xswiftc -warnings-as-errors (67/67)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-bootstrap-full-final -Xswiftc -warnings-as-errors (74/74)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",

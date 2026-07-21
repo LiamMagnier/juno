@@ -92,3 +92,10 @@
 - Decision: reuse `/app-auth` and `/api/v1/auth/token`, `refresh`, `session`, and `logout` through a cookie-free bounded transport. New apps use only the canonical callback and validate scheme, host, path, state, nonce, duplicate fields and code shape before exchange.
 - Consequences: both apps use `ASWebAuthenticationSession`, verify the returned device session before Keychain installation, revoke server state after post-exchange failure, and purge local credentials on logout/account switch. No auth backend route was added.
 - Status: implemented and package/app/UI-test verified in `7e80d8e`; interactive live-account completion remains a manual gate.
+
+## D-013 — Existing bootstrap as the native synchronization checkpoint
+
+- Context: `/api/v1/bootstrap`, its bearer authorization and its production use already exist; the generated Swift schema intentionally exposes only a small subset of the permissive bootstrap object.
+- Decision: reuse that route through the shared auth runtime. Treat the native model as a validated checkpoint containing profile, current/floor cursors, model-manifest version and compatibility metadata, rather than duplicating the full backend service or pretending all bootstrap fields are typed.
+- Consequences: one 401 may rotate and retry once; repeated rejection purges local credentials. Account, contract, cursor and manifest values fail closed. Settings, usage, subscription, flags and announcements must be expanded from the authoritative OpenAPI before native UI relies on them.
+- Status: implemented and strict-test verified in `9dad2a1`; no backend change or API gap was required for the checkpoint.

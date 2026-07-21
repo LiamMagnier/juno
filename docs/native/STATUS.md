@@ -1,11 +1,11 @@
 # Juno Native — Status
 
-Last updated: 2026-07-21 22:55 Europe/Paris
+Last updated: 2026-07-21 23:15 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `7e80d8eebc09fcdf66dcf721e971f2d5915826c1` (`feat(native): connect production browser authentication`).
+- Current completed implementation commit: `9dad2a13149438505e569f16dd21420f9d6c100a` (`feat(native): add refresh-aware bootstrap client`).
 - Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
 - Expected working tree at this handoff boundary: clean after the documentation commit.
 - Main checkout: `/Users/liammagnier/Desktop/workspace/juno` remains independently on `main` at `e0d1285`, with pre-existing Remote Session changes untouched by this run.
@@ -14,8 +14,9 @@ Last updated: 2026-07-21 22:55 Europe/Paris
 
 ## Current phase
 
-Phase 2 foundation and production browser-auth composition are complete. The next
-sequential unit is authenticated bootstrap followed by durable account storage.
+Phase 2 foundation, production browser authentication and the authenticated
+bootstrap checkpoint are complete. The next sequential unit is durable account
+storage followed by cursor persistence.
 
 ## Actually completed
 
@@ -24,13 +25,16 @@ sequential unit is authenticated bootstrap followed by durable account storage.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 67 focused Swift package tests, all passing with warnings treated as errors.
+- 74 focused Swift package tests, all passing with warnings treated as errors.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
   malformed-data failure, and an injectable Security client.
 - System-browser PKCE-S256 auth on macOS/iOS, canonical callback/state/nonce checks,
   existing production auth-route transport, refresh-aware restore, logout, local
   account-switch purge, signed-in gates and EN/FR auth UI.
+- Same-origin bearer requests with one bounded 401 refresh/retry and a typed
+  checkpoint client for the existing `/api/v1/bootstrap` route; no backend route
+  or duplicate service was added.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -56,7 +60,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-auth-scratch -Xswiftc -warnings-as-errors` — 67/67 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-bootstrap-full-final -Xswiftc -warnings-as-errors` — 74/74 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -92,20 +96,19 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Reuse the existing bearer `/api/v1/bootstrap` route and old app bootstrap decoding,
-expose a refresh-aware authenticated request path from the shared runtime, validate
-the returned account/contract/cursors, and persist the first account-scoped cursor
-in the production local store. Do not add a server route unless a documented gap is
-demonstrated.
+Implement the production SQLite account repository with explicit migrations,
+transactional optimistic versions, account partitioning and secure wipe behavior.
+Then persist the validated bootstrap cursor through it. Do not add a server route:
+the required bootstrap and sync contracts already exist.
 
 Open first:
 
-1. `src/app/api/v1/bootstrap/route.ts` (read-only production source of truth)
-2. `contracts/openapi/juno-native-v1.yaml`
-3. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/BackendClient.swift` (read-only)
-4. `native/Packages/JunoNativeKit/Sources/JunoAuth/NativeAuthRuntime.swift`
-5. `native/Packages/JunoNativeKit/Sources/JunoSync/`
-6. `native/Packages/JunoNativeKit/Sources/JunoStorage/`
+1. `native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoStorage/InMemoryTransactionalStore.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift`
+4. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Models/PersistenceModels.swift` (read-only)
+5. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift` (read-only)
+6. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/OutboxService.swift` (read-only)
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
