@@ -923,7 +923,12 @@ that lazily fetches `/versions`. Feedback (👍/👎) via `/feedback`.
 
 **Projects** (`/api/projects`) bundle instructions + reference files. The project's
 instructions and each reference file's extracted text are injected into the system prompt
-for every turn in a project conversation.
+for every turn in a project conversation. Native macOS and iOS clients project the
+authoritative `project`, `conversation`, and `attachment` entities from encrypted SQLite;
+create/edit/favorite/delete use the existing idempotent `/api/v1/mutations` outbox.
+Reference uploads reuse bearer-capable `POST /api/upload` with `projectId`, while rename
+and delete reuse `/api/attachments/{id}`. Expiring attachment URLs are never persisted:
+the client rehydrates the attachment entity immediately before previewing it.
 
 **Artifacts / Canvas.** `/api/artifacts` (library index across all conversations),
 `/[id]` (versioned save with optimistic concurrency; rename; delete), `/[id]/export`
@@ -1064,7 +1069,8 @@ generates Swift models from it and fails the build on drift.
   `baseRevision` concurrency (mismatch → **409** `revision_conflict`; reused key with a
   different hash → **409** `idempotency_key_reused`). Mutable types: conversation, folder,
   project, memory, settings. Conversation updates include title, pin, sticky model,
-  project/folder placement and archive state.
+  project/folder placement and archive state. Project updates include name, instructions
+  and the boolean favorite state (`starred`).
 - **`GET /models`** — the native model catalog (ETag'd).
 - **Existing general chat routes** — operation-level `/api` servers in the same
   contract publish the bearer-capable transcript append, chat SSE, cancellation and

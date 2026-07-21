@@ -158,7 +158,14 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "project.update": {
       await requireRevision(tx, accountId, "project", op.entityId, baseRevision);
-      const updated = await tx.project.updateMany({ where: { id: op.entityId, userId: accountId }, data: { ...(op.name !== undefined ? { name: op.name, nameSource: "user" } : {}), ...(op.instructions !== undefined ? { instructions: op.instructions } : {}) } });
+      const updated = await tx.project.updateMany({
+        where: { id: op.entityId, userId: accountId },
+        data: {
+          ...(op.name !== undefined ? { name: op.name, nameSource: "user" } : {}),
+          ...(op.instructions !== undefined ? { instructions: op.instructions } : {}),
+          ...(op.starred !== undefined ? { starred: op.starred } : {}),
+        },
+      });
       if (!updated.count) throw new ApiV1Error("not_found", 404, "The project was not found.");
       return { entity: { id: op.entityId, revision: await nextRevision(tx, accountId, "project", op.entityId) } };
     }

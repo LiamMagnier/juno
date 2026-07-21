@@ -429,6 +429,9 @@ components:
         baseRevision: { type: integer, minimum: 0 }
         operation:
           type: object
+          description: >-
+            Strict operation union implemented by the server. project.update accepts
+            entityId plus optional name, instructions, and starred fields.
           required: [type]
           additionalProperties: true
           properties:

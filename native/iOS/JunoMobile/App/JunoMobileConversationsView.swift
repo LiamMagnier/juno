@@ -4,9 +4,10 @@ import SwiftUI
 
 struct JunoMobileConversationsView: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 switch model.phase {
                 case .idle, .loading:
@@ -60,6 +61,15 @@ struct JunoMobileConversationsView: View {
                     .background(.bar)
                 }
             }
+        }
+        .onAppear {
+            if let id = model.selectedConversationID, path.last != id {
+                path = [id]
+            }
+        }
+        .onChange(of: model.selectedConversationID) { _, id in
+            guard let id, path.last != id else { return }
+            path = [id]
         }
     }
 

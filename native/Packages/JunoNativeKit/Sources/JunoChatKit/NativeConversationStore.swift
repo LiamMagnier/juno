@@ -516,7 +516,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     @discardableResult
     public func createConversation(
         title: String = "New conversation",
-        model: String? = nil
+        model: String? = nil,
+        projectID: String? = nil
     ) async -> String? {
         guard let accountID else { return nil }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -538,6 +539,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 return nil
             }
             operation["model"] = trimmedModel
+        }
+        if let projectID {
+            guard !projectID.isEmpty, projectID.utf8.count <= 200 else {
+                lastErrorDescription = NativeConversationStoreError.invalidMutation.localizedDescription
+                return nil
+            }
+            operation["projectId"] = projectID
         }
         selectedConversationID = clientID
         await enqueueAndDrain(

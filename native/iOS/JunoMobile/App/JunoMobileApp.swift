@@ -13,6 +13,7 @@ struct JunoMobileApp: App {
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
@@ -20,6 +21,7 @@ struct JunoMobileApp: App {
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
+        _projectModel = State(initialValue: configuration.projectModel)
         localStore = configuration.localStore
     }
 
@@ -28,7 +30,8 @@ struct JunoMobileApp: App {
             JunoMobileRootView(
                 authModel: authModel,
                 syncModel: syncModel,
-                conversationModel: conversationModel
+                conversationModel: conversationModel,
+                projectModel: projectModel
             )
         }
     }
@@ -83,6 +86,11 @@ struct JunoMobileApp: App {
                 )
             )
             let outbox = PersistentMutationOutbox(repository: localStore)
+            let drainer = NativeMutationDrainer(
+                repository: localStore,
+                outbox: outbox,
+                sender: runtime
+            )
             return JunoMobileConfiguration(
                 authModel: authModel,
                 localStore: localStore,
@@ -90,13 +98,16 @@ struct JunoMobileApp: App {
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
-                    drainer: NativeMutationDrainer(
-                        repository: localStore,
-                        outbox: outbox,
-                        sender: runtime
-                    ),
+                    drainer: drainer,
                     syncModel: syncModel,
                     chatClient: NativeChatAPIClient(transport: runtime)
+                ),
+                projectModel: NativeProjectModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel,
+                    sender: runtime
                 )
             )
         } catch {
@@ -106,7 +117,8 @@ struct JunoMobileApp: App {
                 ),
                 localStore: nil,
                 syncModel: nil,
-                conversationModel: nil
+                conversationModel: nil,
+                projectModel: nil
             )
         }
     }
@@ -126,4 +138,5 @@ private struct JunoMobileConfiguration {
     let localStore: SQLiteAccountRepository?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
 }

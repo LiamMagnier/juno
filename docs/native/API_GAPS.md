@@ -229,6 +229,20 @@ missing compatibility metadata.
 Required resolution: add typed per-platform minimum/recommended versions,
 contract/protocol capabilities, feature flags and maintenance/update messaging.
 
+### GAP-020 — project favorites are absent from the native mutation union
+
+Targeted project-route inspection confirmed that the synchronized `project`
+entity and the existing bearer-capable `PATCH /api/projects/{id}` route both
+support `starred`, while `project.update` in `/api/v1/mutations` accepts only
+`name` and `instructions`. That prevents an offline native favorite change from
+using the same revision and idempotency guarantees as other project edits.
+
+Status: resolved in the current projects/files lot. The existing
+`project.update` operation now has an optional boolean `starred` field, applies
+it in the current transaction, mirrors it in OpenAPI, and has acceptance/rejection
+coverage in the mutation contract tests. No new route or duplicate project
+service was added.
+
 ## P1 — blocks commerce, release and production download
 
 ### GAP-014 — StoreKit 2 and server reconciliation are absent
