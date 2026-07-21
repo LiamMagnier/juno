@@ -32,6 +32,8 @@ targets:
       - package: JunoNativeKit
         product: JunoAuth
       - package: JunoNativeKit
+        product: JunoChatKit
+      - package: JunoNativeKit
         product: JunoCore
       - package: JunoNativeKit
         product: JunoDesignSystem

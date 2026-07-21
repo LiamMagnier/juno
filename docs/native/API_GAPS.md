@@ -121,6 +121,13 @@ pages, tombstones/revisions, real SSE wakeups, compaction rebuild, reconnect
 backoff/jitter and a durable account-scoped mutation outbox/drainer. Remaining:
 conflict UI and Web-to-Swift live-account offline/reconnect proof.
 
+Proven conversation-mutation gap (2026-07-22): the existing bearer
+`conversation.update` mutation supports title, pin, project and folder, but not
+the conversation's sticky `model`. The Web route and old native app both persist
+that field, and the sync entity already returns it. Resolution is limited to
+accepting and validating `patch.model` in the existing mutation; no route or
+service is added.
+
 ### GAP-006 — route error behavior is inconsistent outside `/api/v1`
 
 `/api/v1` returns typed request-ID/versioned error envelopes. Many reusable

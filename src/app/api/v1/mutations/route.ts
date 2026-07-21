@@ -104,6 +104,9 @@ async function executeMutation(tx: Tx, accountId: string, baseRevision: number, 
     }
     case "conversation.update": {
       await requireRevision(tx, accountId, "conversation", op.entityId, baseRevision);
+      if (op.patch.model !== undefined && !isModelId(op.patch.model)) {
+        throw new ApiV1Error("invalid_request", 400, "The model is unknown.");
+      }
       await requireOwnedConversationReferences(tx, accountId, op.patch);
       const updated = await tx.conversation.updateMany({ where: { id: op.entityId, userId: accountId }, data: {
         ...op.patch,

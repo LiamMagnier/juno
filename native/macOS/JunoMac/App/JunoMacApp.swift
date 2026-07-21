@@ -1,5 +1,6 @@
 import JunoAPI
 import JunoAuth
+import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
@@ -11,12 +12,14 @@ struct JunoMacApp: App {
     @State private var selectedSection = JunoMacSection.chat
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
+        _conversationModel = State(initialValue: configuration.conversationModel)
         localStore = configuration.localStore
     }
 
@@ -25,7 +28,8 @@ struct JunoMacApp: App {
             JunoMacRootView(
                 selection: $selectedSection,
                 authModel: authModel,
-                syncModel: syncModel
+                syncModel: syncModel,
+                conversationModel: conversationModel
             )
                 .frame(minWidth: 760, minHeight: 520)
         }
@@ -76,15 +80,27 @@ struct JunoMacApp: App {
                 runtime: runtime,
                 browser: JunoMacWebAuthenticationClient()
             )
+            let syncModel = NativeSyncModel(
+                coordinator: coordinator,
+                monitor: NativeSyncMonitor(
+                    coordinator: coordinator,
+                    streamer: runtime
+                )
+            )
+            let outbox = PersistentMutationOutbox(repository: localStore)
             return JunoMacConfiguration(
                 authModel: authModel,
                 localStore: localStore,
-                syncModel: NativeSyncModel(
-                    coordinator: coordinator,
-                    monitor: NativeSyncMonitor(
-                        coordinator: coordinator,
-                        streamer: runtime
-                    )
+                syncModel: syncModel,
+                conversationModel: NativeConversationModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: NativeMutationDrainer(
+                        repository: localStore,
+                        outbox: outbox,
+                        sender: runtime
+                    ),
+                    syncModel: syncModel
                 )
             )
         } catch {
@@ -93,7 +109,8 @@ struct JunoMacApp: App {
                     configurationErrorDescription: error.localizedDescription
                 ),
                 localStore: nil,
-                syncModel: nil
+                syncModel: nil,
+                conversationModel: nil
             )
         }
     }
@@ -112,6 +129,7 @@ private struct JunoMacConfiguration {
     let authModel: NativeAuthModel
     let localStore: SQLiteAccountRepository?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
 }
 
 private struct JunoMacNavigationCommands: Commands {

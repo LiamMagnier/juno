@@ -225,7 +225,8 @@ public actor NativeSyncMonitor<Repository: AccountScopedRepository> {
                 reconnectAttempt = 0
                 streamLoop: for try await wakeup in stream {
                     switch wakeup {
-                    case .ready: break
+                    case .ready:
+                        await onSynchronized(result)
                     case .cursor:
                         result = try await coordinator.synchronizeWithRetry(for: accountID)
                         await onSynchronized(result)

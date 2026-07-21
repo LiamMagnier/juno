@@ -1,4 +1,5 @@
 import JunoAuth
+import JunoChatKit
 import JunoStorage
 import JunoSync
 import SwiftUI
@@ -7,6 +8,7 @@ struct JunoMacRootView: View {
     @Binding var selection: JunoMacSection
     let authModel: NativeAuthModel
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     @State private var sidebarSearch = ""
 
     var body: some View {
@@ -26,9 +28,18 @@ struct JunoMacRootView: View {
         .onChange(of: authModel.phase) { _, phase in
             if case .signedIn(let session) = phase {
                 syncModel?.start(for: session.profile.id)
+                Task { await conversationModel?.start(for: session.profile.id) }
             } else {
                 syncModel?.stop()
+                conversationModel?.stop()
             }
+        }
+        .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
+            guard let generation else { return }
+            Task { await conversationModel?.synchronizationDidAdvance(to: generation) }
+        }
+        .onChange(of: syncModel?.phase) { _, _ in
+            Task { await conversationModel?.reload() }
         }
     }
 
@@ -54,7 +65,7 @@ struct JunoMacRootView: View {
             .searchable(text: $sidebarSearch, prompt: "sidebar.search.prompt")
             .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 340)
         } detail: {
-            JunoMacDetailView(section: selection)
+            JunoMacDetailView(section: selection, conversationModel: conversationModel)
                 .id(selection)
         }
         .navigationSplitViewStyle(.balanced)
@@ -164,16 +175,22 @@ private struct JunoMacSignInView: View {
 
 private struct JunoMacDetailView: View {
     let section: JunoMacSection
+    let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
 
+    @ViewBuilder
     var body: some View {
-        NavigationStack {
-            ContentUnavailableView {
-                Label(section.title, systemImage: section.systemImage)
-            } description: {
-                Text("shell.foundation.description")
+        if section == .chat, let conversationModel {
+            JunoMacConversationsView(model: conversationModel)
+        } else {
+            NavigationStack {
+                ContentUnavailableView {
+                    Label(section.title, systemImage: section.systemImage)
+                } description: {
+                    Text("shell.foundation.description")
+                }
+                .accessibilityIdentifier("juno.mac.detail")
+                .navigationTitle(section.title)
             }
-            .accessibilityIdentifier("juno.mac.detail")
-            .navigationTitle(section.title)
         }
     }
 }

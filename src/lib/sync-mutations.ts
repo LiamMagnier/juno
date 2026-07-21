@@ -21,6 +21,7 @@ export const mutationOperationSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("conversation.rename"), entityId: z.string().min(1).max(200), title: z.string().trim().min(1).max(200) }).strict(),
   z.object({ type: z.literal("conversation.update"), entityId: z.string().min(1).max(200), patch: z.object({
     title: z.string().trim().min(1).max(200).optional(), pinned: z.boolean().optional(),
+    model: z.string().trim().min(1).max(200).optional(),
     projectId: z.string().min(1).max(200).nullable().optional(), folderId: z.string().min(1).max(200).nullable().optional(),
   }).strict() }).strict(),
   z.object({ type: z.literal("conversation.archive"), entityId: z.string().min(1).max(200), archived: z.boolean().default(true) }).strict(),

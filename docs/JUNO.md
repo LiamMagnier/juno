@@ -1053,7 +1053,8 @@ generates Swift models from it and fails the build on drift.
   `(account, device)`), executed in a **Serializable** transaction with optimistic
   `baseRevision` concurrency (mismatch → **409** `revision_conflict`; reused key with a
   different hash → **409** `idempotency_key_reused`). Mutable types: conversation, folder,
-  project, memory, settings.
+  project, memory, settings. Conversation updates include title, pin, sticky model,
+  project/folder placement and archive state.
 - **`GET /models`** — the native model catalog (ETag'd).
 
 **Change capture is done entirely by Postgres triggers**

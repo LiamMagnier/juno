@@ -69,7 +69,7 @@ let package = Package(
         ),
         .testTarget(
             name: "JunoChatKitTests",
-            dependencies: ["JunoCore", "JunoChatKit"]
+            dependencies: ["JunoCore", "JunoStorage", "JunoSync", "JunoChatKit"]
         ),
         .testTarget(
             name: "JunoCodeKitTests",
