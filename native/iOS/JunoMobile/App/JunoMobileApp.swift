@@ -10,17 +10,19 @@ import UIKit
 @main
 struct JunoMobileApp: App {
     @State private var authModel: NativeAuthModel
+    @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
+        _syncModel = State(initialValue: configuration.syncModel)
         localStore = configuration.localStore
     }
 
     var body: some Scene {
         WindowGroup {
-            JunoMobileRootView(authModel: authModel)
+            JunoMobileRootView(authModel: authModel, syncModel: syncModel)
         }
     }
 
@@ -51,26 +53,39 @@ struct JunoMobileApp: App {
                     .appendingPathComponent("Juno", isDirectory: true)
                     .appendingPathComponent("accounts.sqlite3")
             ).openRepository()
+            let runtime = try NativeAuthRuntime.live(
+                origin: APIOrigin(backendURL),
+                device: device,
+                accountDataPurger: RepositoryAccountDataPurger(
+                    repository: localStore
+                )
+            )
+            let coordinator = NativeSyncCoordinator(
+                repository: localStore,
+                sender: runtime
+            )
             let authModel = NativeAuthModel(
-                runtime: try NativeAuthRuntime.live(
-                    origin: APIOrigin(backendURL),
-                    device: device,
-                    accountDataPurger: RepositoryAccountDataPurger(
-                        repository: localStore
-                    )
-                ),
+                runtime: runtime,
                 browser: JunoMobileWebAuthenticationClient()
             )
             return JunoMobileConfiguration(
                 authModel: authModel,
-                localStore: localStore
+                localStore: localStore,
+                syncModel: NativeSyncModel(
+                    coordinator: coordinator,
+                    monitor: NativeSyncMonitor(
+                        coordinator: coordinator,
+                        streamer: runtime
+                    )
+                )
             )
         } catch {
             return JunoMobileConfiguration(
                 authModel: NativeAuthModel(
                     configurationErrorDescription: error.localizedDescription
                 ),
-                localStore: nil
+                localStore: nil,
+                syncModel: nil
             )
         }
     }
@@ -88,4 +103,5 @@ private enum JunoMobileAppConfigurationError: Error, LocalizedError {
 private struct JunoMobileConfiguration {
     let authModel: NativeAuthModel
     let localStore: SQLiteAccountRepository?
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
 }

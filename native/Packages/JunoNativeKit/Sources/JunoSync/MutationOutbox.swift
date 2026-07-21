@@ -25,7 +25,7 @@ public struct IdempotencyKey: RawRepresentable, Hashable, Codable, Sendable {
     }
 }
 
-public struct MutationDraft: Equatable, Sendable {
+public struct MutationDraft: Equatable, Sendable, Codable {
     public let id: OutboxMutationID
     public let accountID: StorageAccountID
     public let idempotencyKey: IdempotencyKey
@@ -53,7 +53,7 @@ public struct MutationDraft: Equatable, Sendable {
     }
 }
 
-public struct MutationLease: Equatable, Sendable {
+public struct MutationLease: Equatable, Sendable, Codable {
     public let token: String
     public let owner: String
     public let leasedAt: Date
@@ -67,7 +67,7 @@ public struct MutationLease: Equatable, Sendable {
     }
 }
 
-public struct MutationRetry: Equatable, Sendable {
+public struct MutationRetry: Equatable, Sendable, Codable {
     public let eligibleAt: Date
     public let errorCode: String
 
@@ -77,7 +77,7 @@ public struct MutationRetry: Equatable, Sendable {
     }
 }
 
-public struct MutationConflict: Equatable, Sendable {
+public struct MutationConflict: Equatable, Sendable, Codable {
     public let detectedAt: Date
     public let localRevision: UInt64?
     public let serverRevision: UInt64?
@@ -96,7 +96,7 @@ public struct MutationConflict: Equatable, Sendable {
     }
 }
 
-public enum MutationState: Equatable, Sendable {
+public enum MutationState: Equatable, Sendable, Codable {
     case pending
     case leased(MutationLease)
     case retryScheduled(MutationRetry)
@@ -105,7 +105,7 @@ public enum MutationState: Equatable, Sendable {
     case discarded(at: Date, reason: String)
 }
 
-public struct QueuedMutation: Equatable, Sendable {
+public struct QueuedMutation: Equatable, Sendable, Codable {
     public let draft: MutationDraft
     public private(set) var attemptCount: UInt
     public private(set) var state: MutationState
@@ -196,6 +196,7 @@ public protocol MutationOutboxRepository: Sendable {
 
     func acknowledge(
         id: OutboxMutationID,
+        accountID: StorageAccountID,
         owner: String,
         token: String,
         now: Date
@@ -203,6 +204,7 @@ public protocol MutationOutboxRepository: Sendable {
 
     func scheduleRetry(
         id: OutboxMutationID,
+        accountID: StorageAccountID,
         owner: String,
         token: String,
         now: Date,
@@ -212,6 +214,7 @@ public protocol MutationOutboxRepository: Sendable {
 
     func markConflict(
         id: OutboxMutationID,
+        accountID: StorageAccountID,
         owner: String,
         token: String,
         now: Date,
@@ -222,12 +225,13 @@ public protocol MutationOutboxRepository: Sendable {
 
     func resolveConflict(
         id: OutboxMutationID,
+        accountID: StorageAccountID,
         resolution: ConflictResolution,
         now: Date
     ) async throws
 
-    func mutations(accountID: StorageAccountID) async -> [QueuedMutation]
-    func wipe(accountID: StorageAccountID) async
+    func mutations(accountID: StorageAccountID) async throws -> [QueuedMutation]
+    func wipe(accountID: StorageAccountID) async throws
 }
 
 /// Actor-backed outbox intended only for deterministic tests and development.
@@ -313,6 +317,17 @@ public actor InMemoryMutationOutbox: MutationOutboxRepository {
 
     public func acknowledge(
         id: OutboxMutationID,
+        accountID: StorageAccountID,
+        owner: String,
+        token: String,
+        now: Date
+    ) throws {
+        try requireAccount(id: id, accountID: accountID)
+        try acknowledge(id: id, owner: owner, token: token, now: now)
+    }
+
+    public func acknowledge(
+        id: OutboxMutationID,
         owner: String,
         token: String,
         now: Date
@@ -320,6 +335,22 @@ public actor InMemoryMutationOutbox: MutationOutboxRepository {
         var mutation = try leasedMutation(id: id, owner: owner, token: token, now: now)
         mutation.transition(to: .acknowledged(at: now))
         entries[id] = mutation
+    }
+
+    public func scheduleRetry(
+        id: OutboxMutationID,
+        accountID: StorageAccountID,
+        owner: String,
+        token: String,
+        now: Date,
+        eligibleAt: Date,
+        errorCode: String
+    ) throws {
+        try requireAccount(id: id, accountID: accountID)
+        try scheduleRetry(
+            id: id, owner: owner, token: token, now: now,
+            eligibleAt: eligibleAt, errorCode: errorCode
+        )
     }
 
     public func scheduleRetry(
@@ -338,6 +369,24 @@ public actor InMemoryMutationOutbox: MutationOutboxRepository {
             )
         )
         entries[id] = mutation
+    }
+
+    public func markConflict(
+        id: OutboxMutationID,
+        accountID: StorageAccountID,
+        owner: String,
+        token: String,
+        now: Date,
+        localRevision: UInt64?,
+        serverRevision: UInt64?,
+        reason: String
+    ) throws {
+        try requireAccount(id: id, accountID: accountID)
+        try markConflict(
+            id: id, owner: owner, token: token, now: now,
+            localRevision: localRevision, serverRevision: serverRevision,
+            reason: reason
+        )
     }
 
     public func markConflict(
@@ -362,6 +411,16 @@ public actor InMemoryMutationOutbox: MutationOutboxRepository {
             )
         )
         entries[id] = mutation
+    }
+
+    public func resolveConflict(
+        id: OutboxMutationID,
+        accountID: StorageAccountID,
+        resolution: ConflictResolution,
+        now: Date
+    ) throws {
+        try requireAccount(id: id, accountID: accountID)
+        try resolveConflict(id: id, resolution: resolution, now: now)
     }
 
     public func resolveConflict(
@@ -415,6 +474,15 @@ public actor InMemoryMutationOutbox: MutationOutboxRepository {
             throw MutationOutboxError.leaseExpired(id)
         }
         return mutation
+    }
+
+    private func requireAccount(
+        id: OutboxMutationID,
+        accountID: StorageAccountID
+    ) throws {
+        guard entries[id]?.draft.accountID == accountID else {
+            throw MutationOutboxError.mutationNotFound(id)
+        }
     }
 
     private func validate(_ draft: MutationDraft) throws {

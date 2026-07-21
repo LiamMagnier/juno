@@ -1,9 +1,12 @@
 import JunoAuth
+import JunoStorage
+import JunoSync
 import SwiftUI
 
 struct JunoMacRootView: View {
     @Binding var selection: JunoMacSection
     let authModel: NativeAuthModel
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var sidebarSearch = ""
 
     var body: some View {
@@ -19,6 +22,13 @@ struct JunoMacRootView: View {
         }
         .task {
             await authModel.restore()
+        }
+        .onChange(of: authModel.phase) { _, phase in
+            if case .signedIn(let session) = phase {
+                syncModel?.start(for: session.profile.id)
+            } else {
+                syncModel?.stop()
+            }
         }
     }
 
@@ -50,6 +60,9 @@ struct JunoMacRootView: View {
         .navigationSplitViewStyle(.balanced)
         .toolbar {
             ToolbarItem {
+                JunoMacSyncStatus(model: syncModel)
+            }
+            ToolbarItem {
                 Menu {
                     Button("auth.sign-out", role: .destructive) {
                         Task { await authModel.signOut() }
@@ -80,6 +93,30 @@ struct JunoMacRootView: View {
             String(localized: String.LocalizationValue(section.rawValue))
                 .localizedStandardContains(sidebarSearch)
                 || section.rawValue.localizedStandardContains(sidebarSearch)
+        }
+    }
+}
+
+private struct JunoMacSyncStatus: View {
+    let model: NativeSyncModel<SQLiteAccountRepository>?
+
+    var body: some View {
+        if let model {
+            Button {
+                Task { await model.refresh() }
+            } label: {
+                switch model.phase {
+                case .idle, .synchronizing:
+                    ProgressView().controlSize(.small)
+                case .live:
+                    Label("Synced", systemImage: "checkmark.circle.fill")
+                case .offline:
+                    Label("Offline", systemImage: "wifi.slash")
+                }
+            }
+            .buttonStyle(.plain)
+            .help(model.lastErrorDescription ?? "Refresh Juno")
+            .accessibilityIdentifier("juno.mac.sync-status")
         }
     }
 }

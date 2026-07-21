@@ -6,17 +6,20 @@ public struct SyncChangePage: Equatable, Sendable {
     public let previousCursor: String?
     public let nextCursor: String
     public let changes: [StoredRecord]
+    public let metadataUpdates: [String: Data]
 
     public init(
         accountID: StorageAccountID,
         previousCursor: String?,
         nextCursor: String,
-        changes: [StoredRecord]
+        changes: [StoredRecord],
+        metadataUpdates: [String: Data] = [:]
     ) {
         self.accountID = accountID
         self.previousCursor = previousCursor
         self.nextCursor = nextCursor
         self.changes = changes
+        self.metadataUpdates = metadataUpdates
     }
 }
 
@@ -145,6 +148,12 @@ public actor CursorPageApplier<Repository: AccountScopedRepository> {
                     }
                 }
                 operations.append(.upsert(record))
+            }
+
+            for key in page.metadataUpdates.keys.sorted() {
+                if let value = page.metadataUpdates[key] {
+                    operations.append(.setMetadata(key: key, value: value))
+                }
             }
 
             operations.append(

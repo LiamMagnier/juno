@@ -1,8 +1,11 @@
 import JunoAuth
+import JunoStorage
+import JunoSync
 import SwiftUI
 
 struct JunoMobileRootView: View {
     let authModel: NativeAuthModel
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var selection: JunoMobileSection? = .chat
     @State private var sidebarSearch = ""
 
@@ -19,6 +22,13 @@ struct JunoMobileRootView: View {
         }
         .task {
             await authModel.restore()
+        }
+        .onChange(of: authModel.phase) { _, phase in
+            if case .signedIn(let session) = phase {
+                syncModel?.start(for: session.profile.id)
+            } else {
+                syncModel?.stop()
+            }
         }
     }
 
@@ -52,6 +62,9 @@ struct JunoMobileRootView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                JunoMobileSyncStatus(model: syncModel)
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("auth.sign-out", role: .destructive) {
@@ -81,6 +94,29 @@ struct JunoMobileRootView: View {
         guard !sidebarSearch.isEmpty else { return sections }
         return sections.filter { section in
             section.rawValue.localizedStandardContains(sidebarSearch)
+        }
+    }
+}
+
+private struct JunoMobileSyncStatus: View {
+    let model: NativeSyncModel<SQLiteAccountRepository>?
+
+    var body: some View {
+        if let model {
+            Button {
+                Task { await model.refresh() }
+            } label: {
+                switch model.phase {
+                case .idle, .synchronizing:
+                    ProgressView().controlSize(.small)
+                case .live:
+                    Image(systemName: "checkmark.icloud.fill")
+                case .offline:
+                    Image(systemName: "icloud.slash")
+                }
+            }
+            .accessibilityLabel(model.phase == .offline ? "Offline" : "Synced")
+            .accessibilityIdentifier("juno.mobile.sync-status")
         }
     }
 }

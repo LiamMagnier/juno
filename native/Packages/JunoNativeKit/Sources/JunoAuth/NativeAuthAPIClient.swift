@@ -8,6 +8,7 @@ public enum NativeAuthAPIError: Error, Equatable, LocalizedError, Sendable {
     case invalidTokenType
     case contractVersionMismatch(expected: String, received: String)
     case deviceSessionMismatch
+    case streamingUnavailable
 
     public var errorDescription: String? {
         switch self {
@@ -25,6 +26,8 @@ public enum NativeAuthAPIError: Error, Equatable, LocalizedError, Sendable {
             "This version of Juno is not compatible with the server."
         case .deviceSessionMismatch:
             "The returned Juno session belongs to another device."
+        case .streamingUnavailable:
+            "This Juno client cannot open a live server stream."
         }
     }
 }
@@ -122,16 +125,20 @@ public struct NativeBearerRequest: Equatable, Sendable {
 
 public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
     private let client: BoundedHTTPClient
+    private let streamingTransport: (any HTTPStreamingTransport)?
 
     public init(client: BoundedHTTPClient) {
         self.client = client
+        streamingTransport = nil
     }
 
     public init(
         origin: APIOrigin,
-        transport: any HTTPTransport
+        transport: any HTTPTransport,
+        streamingTransport: (any HTTPStreamingTransport)? = nil
     ) {
         client = BoundedHTTPClient(origin: origin, transport: transport)
+        self.streamingTransport = streamingTransport
     }
 
     public func exchangeAuthorizationCode(
@@ -268,6 +275,30 @@ public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
             body: request.body
         )
         return try await client.send(authenticatedRequest)
+    }
+
+    public func streamBearer(
+        _ request: NativeBearerRequest,
+        accessToken: AccessToken
+    ) async throws -> HTTPByteStreamResponse {
+        guard let streamingTransport else {
+            throw NativeAuthAPIError.streamingUnavailable
+        }
+        var fields = request.headers.allFields
+        fields["authorization"] = "Bearer \(accessToken.reveal())"
+        if fields["accept"] == nil { fields["accept"] = "text/event-stream" }
+        let authenticatedRequest = try client.makeRequest(
+            path: request.path,
+            method: request.method,
+            queryItems: request.queryItems,
+            headers: HTTPHeaders(fields),
+            body: request.body
+        )
+        let response = try await streamingTransport.stream(authenticatedRequest)
+        guard (100...599).contains(response.statusCode) else {
+            throw URLSessionTransportError.invalidResponse
+        }
+        return response
     }
 
     private func sendJSON<Body: Encodable & Sendable>(

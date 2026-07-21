@@ -10,17 +10,23 @@ import SwiftUI
 struct JunoMacApp: App {
     @State private var selectedSection = JunoMacSection.chat
     @State private var authModel: NativeAuthModel
+    @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
+        _syncModel = State(initialValue: configuration.syncModel)
         localStore = configuration.localStore
     }
 
     var body: some Scene {
         WindowGroup("Juno") {
-            JunoMacRootView(selection: $selectedSection, authModel: authModel)
+            JunoMacRootView(
+                selection: $selectedSection,
+                authModel: authModel,
+                syncModel: syncModel
+            )
                 .frame(minWidth: 760, minHeight: 520)
         }
         .defaultSize(width: 1_180, height: 760)
@@ -55,26 +61,39 @@ struct JunoMacApp: App {
                     .appendingPathComponent("Juno", isDirectory: true)
                     .appendingPathComponent("accounts.sqlite3")
             ).openRepository()
+            let runtime = try NativeAuthRuntime.live(
+                origin: APIOrigin(backendURL),
+                device: device,
+                accountDataPurger: RepositoryAccountDataPurger(
+                    repository: localStore
+                )
+            )
+            let coordinator = NativeSyncCoordinator(
+                repository: localStore,
+                sender: runtime
+            )
             let authModel = NativeAuthModel(
-                runtime: try NativeAuthRuntime.live(
-                    origin: APIOrigin(backendURL),
-                    device: device,
-                    accountDataPurger: RepositoryAccountDataPurger(
-                        repository: localStore
-                    )
-                ),
+                runtime: runtime,
                 browser: JunoMacWebAuthenticationClient()
             )
             return JunoMacConfiguration(
                 authModel: authModel,
-                localStore: localStore
+                localStore: localStore,
+                syncModel: NativeSyncModel(
+                    coordinator: coordinator,
+                    monitor: NativeSyncMonitor(
+                        coordinator: coordinator,
+                        streamer: runtime
+                    )
+                )
             )
         } catch {
             return JunoMacConfiguration(
                 authModel: NativeAuthModel(
                     configurationErrorDescription: error.localizedDescription
                 ),
-                localStore: nil
+                localStore: nil,
+                syncModel: nil
             )
         }
     }
@@ -92,6 +111,7 @@ private enum JunoMacAppConfigurationError: Error, LocalizedError {
 private struct JunoMacConfiguration {
     let authModel: NativeAuthModel
     let localStore: SQLiteAccountRepository?
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
 }
 
 private struct JunoMacNavigationCommands: Commands {

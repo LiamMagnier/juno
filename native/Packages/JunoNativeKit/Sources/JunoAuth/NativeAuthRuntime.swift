@@ -52,7 +52,8 @@ public actor NativeAuthRuntime {
         )
         let apiClient = NativeAuthAPIClient(
             origin: origin,
-            transport: try URLSessionHTTPTransport()
+            transport: try URLSessionHTTPTransport(),
+            streamingTransport: try URLSessionHTTPStreamingTransport()
         )
         return try NativeAuthRuntime(
             tokenStore: tokenStore,
@@ -152,6 +153,32 @@ public actor NativeAuthRuntime {
             rejectedAccessToken: initialAccessToken
         )
         let retryResponse = try await apiClient.sendBearer(
+            request,
+            accessToken: refreshedAccessToken
+        )
+        if retryResponse.statusCode == 401 {
+            try await invalidateLocalAccount(accountID)
+        }
+        return retryResponse
+    }
+
+    /// Opens one same-origin bearer byte stream, applying the same single
+    /// rotating-refresh rule as ordinary native requests before returning it.
+    public func stream(
+        _ request: NativeBearerRequest,
+        for accountID: AccountID
+    ) async throws -> HTTPByteStreamResponse {
+        let initialAccessToken = try await coordinatedAccessToken(for: accountID)
+        let initialResponse = try await apiClient.streamBearer(
+            request,
+            accessToken: initialAccessToken
+        )
+        guard initialResponse.statusCode == 401 else { return initialResponse }
+        let refreshedAccessToken = try await coordinatedAccessTokenAfterUnauthorized(
+            for: accountID,
+            rejectedAccessToken: initialAccessToken
+        )
+        let retryResponse = try await apiClient.streamBearer(
             request,
             accessToken: refreshedAccessToken
         )
