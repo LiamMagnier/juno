@@ -1,0 +1,56 @@
+{
+  "branch": "agent/juno-native",
+  "currentCommit": "be6db2564c97a346739043b54b9b816bd8e582a3",
+  "workingTreeClean": false,
+  "currentPhase": "audit-and-prototype-salvage",
+  "currentTask": "Commit the completed audit baseline, then create independent macOS and iOS projects over shared Swift packages.",
+  "nextFiles": [
+    "docs/native/ARCHITECTURE.md",
+    "docs/native/DECISIONS.md",
+    "docs/native/PARITY_MATRIX.md",
+    "docs/native/API_GAPS.md",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/AuthSession.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Code/RemoteCodeHost.swift",
+    "contracts/openapi/juno-native-v1.yaml"
+  ],
+  "completed": [
+    "Read master prompt and continuity addendum",
+    "Captured Git/Web/OpenAPI/toolchain baseline",
+    "Created agent/juno-native branch",
+    "Located and built the local monolithic Swift prototype for Debug macOS",
+    "Built the prototype for unsigned Release macOS and ran 34 passing macOS tests",
+    "Completed initial official OpenAI, Apple, and Anthropic research",
+    "Created persistent audit and handoff documents"
+  ],
+  "remaining": [
+    "Shared Swift packages",
+    "Independent JunoMac project",
+    "Independent JunoMobile project",
+    "Typed contract expansion and generation drift CI",
+    "Auth/sync/storage/search migration and tests",
+    "macOS chat and Juno Code/Remote Host/Computer Use",
+    "iOS/iPadOS chat/sidebar/search/Cloud/Remote",
+    "Accessibility/localization/performance/E2E",
+    "Signed release, GitHub publication, macOS download and TestFlight/App Store"
+  ],
+  "passingCommands": [
+    "npx tsc --noEmit",
+    "npm run lint (exit 0, three pre-existing warnings)",
+    "npm test",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno.xcodeproj -scheme Juno -configuration Debug -destination platform=macOS -derivedDataPath /tmp/juno-prototype-derived CODE_SIGNING_ALLOWED=NO build",
+    "Prototype unsigned macOS Release build",
+    "Prototype macOS tests: 34/34 pass"
+  ],
+  "failingCommands": [
+    "npm test in restricted sandbox: tsx IPC listen EPERM; approved rerun passes",
+    "xcodebuild without DEVELOPER_DIR: active developer directory is CommandLineTools",
+    "simctl in restricted sandbox: CoreSimulatorService unavailable",
+    "Prototype iOS Simulator build: AuthSession.swift:73 cannot find Host in scope and hardcodes platform macOS"
+  ],
+  "blockers": [
+    "GitHub CLI token invalid; gh auth login required before push/release",
+    "Apple signing, provisioning, App Store Connect, Developer ID and notarization credentials are not available in the repository",
+    "Production StoreKit product mapping and APNs credentials are owner-provided inputs"
+  ]
+}
