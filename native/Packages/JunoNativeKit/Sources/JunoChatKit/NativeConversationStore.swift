@@ -61,15 +61,19 @@ public struct NativeConversation: Identifiable, Equatable, Sendable {
 }
 
 public struct NativeChatMessage: Identifiable, Equatable, Sendable {
-    public let id: String
+    public var id: String
     public let conversationID: String
     public let clientID: String?
     public let role: NativeChatRole
-    public let content: String
-    public let reasoning: String?
-    public let model: String?
-    public let createdAt: Date
+    public var content: String
+    public var reasoning: String?
+    public var model: String?
+    public var createdAt: Date
     public let revision: UInt64
+    public var sources: [NativeChatSource]
+    public var finishReason: NativeChatFinishReason?
+    public var isPending: Bool
+    public var errorDescription: String?
 
     public init(
         id: String,
@@ -80,7 +84,11 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         reasoning: String?,
         model: String?,
         createdAt: Date,
-        revision: UInt64
+        revision: UInt64,
+        sources: [NativeChatSource] = [],
+        finishReason: NativeChatFinishReason? = nil,
+        isPending: Bool = false,
+        errorDescription: String? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -91,6 +99,10 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.model = model
         self.createdAt = createdAt
         self.revision = revision
+        self.sources = sources
+        self.finishReason = finishReason
+        self.isPending = isPending
+        self.errorDescription = errorDescription
     }
 }
 
@@ -333,6 +345,27 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
     }
 }
 
+public enum NativeChatGenerationPhase: Equatable, Sendable {
+    case idle
+    case appending
+    case submitting
+    case reasoning
+    case streaming
+    case stopping
+    case reconnecting
+    case failed
+
+    public var isActive: Bool {
+        switch self {
+        case .appending, .submitting, .reasoning, .streaming, .stopping,
+             .reconnecting:
+            true
+        case .idle, .failed:
+            false
+        }
+    }
+}
+
 @MainActor
 @Observable
 public final class NativeConversationModel<Repository: AccountScopedRepository> {
@@ -351,6 +384,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var conflictedMutationCount = 0
     public private(set) var lastErrorDescription: String?
     public private(set) var isMutating = false
+    public private(set) var modelCatalog: [NativeChatModelOption] = []
+    public private(set) var modelCatalogErrorDescription: String?
+    public private(set) var chatPhase: NativeChatGenerationPhase = .idle
+    public private(set) var chatErrorDescription: String?
+    public private(set) var activeChatConversationID: String?
     public var selectedConversationID: String?
 
     public var selectedConversation: NativeConversation? {
@@ -358,27 +396,51 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     }
 
     public var selectedMessages: [NativeChatMessage] {
-        selectedConversationID.flatMap { messagesByConversation[$0] } ?? []
+        selectedConversationID.map { visibleMessages(for: $0) } ?? []
+    }
+
+    public var isGenerating: Bool { chatPhase.isActive }
+
+    public var canRetrySelectedConversation: Bool {
+        selectedConversationID.flatMap { retryContexts[$0] } != nil
     }
 
     private let store: NativeConversationStore<Repository>
     private let outbox: any MutationOutboxRepository
     private let drainer: NativeMutationDrainer<Repository>
     private let syncModel: NativeSyncModel<Repository>
+    private let chatClient: NativeChatAPIClient?
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
+    private var transientMessagesByConversation: [String: [NativeChatMessage]] = [:]
+    private var retryContexts: [String: RetryContext] = [:]
+    private var generationTask: Task<Void, Never>?
+    private var activeGenerationID: String?
+
+    private struct RetryContext: Sendable {
+        let accountID: AccountID
+        let conversationID: String
+        let clientID: String
+        let prompt: String
+        let modelID: String
+        let reasoningEffort: NativeReasoningEffort?
+        var userMessageID: String?
+        var userCreatedAt: Date
+    }
 
     public init(
         repository: Repository,
         outbox: any MutationOutboxRepository,
         drainer: NativeMutationDrainer<Repository>,
-        syncModel: NativeSyncModel<Repository>
+        syncModel: NativeSyncModel<Repository>,
+        chatClient: NativeChatAPIClient? = nil
     ) {
         store = NativeConversationStore(repository: repository, outbox: outbox)
         self.outbox = outbox
         self.drainer = drainer
         self.syncModel = syncModel
+        self.chatClient = chatClient
     }
 
     public func start(for accountID: AccountID) async {
@@ -391,15 +453,26 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         phase = .loading
         await reload()
         await reconcilePendingMutations()
+        await reloadModelCatalog()
     }
 
     public func stop() {
+        generationTask?.cancel()
+        generationTask = nil
+        activeGenerationID = nil
         accountID = nil
         conversations = []
         messagesByConversation = [:]
+        transientMessagesByConversation = [:]
+        retryContexts = [:]
         pendingMutationCount = 0
         conflictedMutationCount = 0
         lastErrorDescription = nil
+        modelCatalog = []
+        modelCatalogErrorDescription = nil
+        chatPhase = .idle
+        chatErrorDescription = nil
+        activeChatConversationID = nil
         selectedConversationID = nil
         lastSynchronizationGeneration = -1
         phase = .idle
@@ -419,6 +492,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             guard self.accountID == accountID else { return }
             conversations = snapshot.conversations
             messagesByConversation = snapshot.messagesByConversation
+            pruneTransientMessages()
             pendingMutationCount = snapshot.pendingMutationCount
             conflictedMutationCount = snapshot.conflictedMutationCount
             if let selectedConversationID,
@@ -524,6 +598,448 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 "archived": archived,
             ]
         )
+    }
+
+    public func messages(for conversationID: String) -> [NativeChatMessage] {
+        visibleMessages(for: conversationID)
+    }
+
+    public func reloadModelCatalog() async {
+        guard let accountID, let chatClient else { return }
+        do {
+            let catalog = try await chatClient.modelCatalog(for: accountID)
+            guard self.accountID == accountID else { return }
+            modelCatalog = catalog.models.filter(\.isAvailable)
+            modelCatalogErrorDescription = nil
+        } catch {
+            guard self.accountID == accountID else { return }
+            modelCatalogErrorDescription = error.localizedDescription
+        }
+    }
+
+    @discardableResult
+    public func sendMessage(
+        conversationID: String,
+        prompt: String,
+        modelID: String,
+        reasoningEffort: NativeReasoningEffort?
+    ) -> Bool {
+        guard !chatPhase.isActive, let accountID, chatClient != nil,
+            let conversation = conversations.first(where: { $0.id == conversationID }),
+            !conversation.isPending
+        else {
+            chatErrorDescription = conversationPendingMessage(conversationID)
+            return false
+        }
+        let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            chatErrorDescription = NativeChatAPIError.invalidMessage.localizedDescription
+            return false
+        }
+        guard validModelSelection(modelID, effort: reasoningEffort) else {
+            chatErrorDescription = "Choose a model and reasoning level available to this account."
+            return false
+        }
+        let clientID = UUID().uuidString.lowercased()
+        let now = Date()
+        let context = RetryContext(
+            accountID: accountID,
+            conversationID: conversationID,
+            clientID: clientID,
+            prompt: trimmed,
+            modelID: modelID,
+            reasoningEffort: reasoningEffort,
+            userMessageID: nil,
+            userCreatedAt: now
+        )
+        retryContexts.removeValue(forKey: conversationID)
+        chatErrorDescription = nil
+        activeChatConversationID = conversationID
+        chatPhase = .appending
+        appendTransient(
+            NativeChatMessage(
+                id: "local-user-\(clientID)",
+                conversationID: conversationID,
+                clientID: clientID,
+                role: .user,
+                content: trimmed,
+                reasoning: nil,
+                model: nil,
+                createdAt: now,
+                revision: 0,
+                isPending: true
+            )
+        )
+        appendAssistantPlaceholder(for: context)
+        if let index = conversations.firstIndex(where: { $0.id == conversationID }) {
+            conversations[index].model = modelID
+            conversations[index].lastMessageAt = now
+        }
+        launchGeneration(context, needsAppend: true)
+        return true
+    }
+
+    public func retryLastMessage(conversationID: String) {
+        guard !chatPhase.isActive, let context = retryContexts[conversationID],
+            accountID == context.accountID
+        else { return }
+        chatErrorDescription = nil
+        activeChatConversationID = conversationID
+        chatPhase = context.userMessageID == nil ? .appending : .submitting
+        removeTransientAssistant(for: conversationID)
+        appendAssistantPlaceholder(for: context)
+        launchGeneration(context, needsAppend: context.userMessageID == nil)
+    }
+
+    public func stopGeneration() {
+        guard chatPhase.isActive, let accountID, let generationID = activeGenerationID,
+            let chatClient
+        else { return }
+        chatPhase = .stopping
+        Task { @MainActor [weak self] in
+            do {
+                _ = try await chatClient.cancelGeneration(id: generationID, for: accountID)
+            } catch {
+                guard let self, self.accountID == accountID else { return }
+                self.chatErrorDescription = error.localizedDescription
+                self.chatPhase = .reconnecting
+            }
+        }
+    }
+
+    private func launchGeneration(_ context: RetryContext, needsAppend: Bool) {
+        generationTask?.cancel()
+        generationTask = Task { @MainActor [weak self] in
+            await self?.performGeneration(context, needsAppend: needsAppend)
+        }
+    }
+
+    private func performGeneration(
+        _ initialContext: RetryContext,
+        needsAppend: Bool
+    ) async {
+        guard let chatClient, accountID == initialContext.accountID else { return }
+        var context = initialContext
+        do {
+            if needsAppend {
+                chatPhase = .appending
+                let appended = try await chatClient.appendUserMessage(
+                    conversationID: context.conversationID,
+                    clientID: context.clientID,
+                    content: context.prompt,
+                    for: context.accountID
+                )
+                guard accountID == context.accountID else { return }
+                context.userMessageID = appended.id
+                context.userCreatedAt = appended.createdAt
+                replaceTransientUser(with: appended, conversationID: context.conversationID)
+            }
+
+            let generationID = "juno-native-\(UUID().uuidString.lowercased())"
+            activeGenerationID = generationID
+            chatPhase = .submitting
+            let events = try await chatClient.generationEvents(
+                NativeChatGenerationRequest(
+                    conversationID: context.conversationID,
+                    modelID: context.modelID,
+                    reasoningEffort: context.reasoningEffort,
+                    generationID: generationID
+                ),
+                for: context.accountID
+            )
+            var terminal = false
+            for try await event in events {
+                try Task.checkCancellation()
+                guard accountID == context.accountID,
+                    activeGenerationID == generationID
+                else { return }
+                switch event {
+                case .metadata(let conversationID, _, let title, let serverGenerationID):
+                    guard conversationID == context.conversationID,
+                        serverGenerationID == nil || serverGenerationID == generationID
+                    else { throw NativeChatAPIError.malformedResponse }
+                    updateTitle(title, conversationID: conversationID)
+                case .title(let conversationID, let title):
+                    guard conversationID == context.conversationID else {
+                        throw NativeChatAPIError.malformedResponse
+                    }
+                    updateTitle(title, conversationID: conversationID)
+                case .textDelta(let text):
+                    appendAssistantText(text, conversationID: context.conversationID)
+                    chatPhase = .streaming
+                case .reasoningDelta(let text):
+                    appendAssistantReasoning(text, conversationID: context.conversationID)
+                    if chatPhase == .submitting { chatPhase = .reasoning }
+                case .sources(let sources):
+                    updateAssistantSources(sources, conversationID: context.conversationID)
+                case .completed(let message):
+                    completeAssistant(message, conversationID: context.conversationID)
+                    retryContexts.removeValue(forKey: context.conversationID)
+                    terminal = true
+                case .failed(let message, let reason, _, _):
+                    failAssistant(
+                        message,
+                        reason: reason,
+                        context: context
+                    )
+                    terminal = true
+                case .ping:
+                    break
+                }
+                if terminal { break }
+            }
+            guard terminal else {
+                throw NativeChatAPIError.streamEndedWithoutTerminalEvent
+            }
+            activeGenerationID = nil
+            generationTask = nil
+            activeChatConversationID = nil
+            if chatPhase != .failed { chatPhase = .idle }
+            await syncModel.refresh()
+            await reload()
+        } catch is CancellationError {
+            return
+        } catch {
+            guard accountID == context.accountID else { return }
+            if shouldRecover(error) {
+                chatErrorDescription = NativeChatAPIError
+                    .streamEndedWithoutTerminalEvent.localizedDescription
+                chatPhase = .reconnecting
+                retryContexts[context.conversationID] = context
+                await recoverPersistedGeneration(context)
+            } else {
+                failAssistant(
+                    error.localizedDescription,
+                    reason: .error,
+                    context: context
+                )
+                activeGenerationID = nil
+                generationTask = nil
+                activeChatConversationID = nil
+                await syncModel.refresh()
+                await reload()
+            }
+        }
+    }
+
+    private func recoverPersistedGeneration(_ context: RetryContext) async {
+        let policy = NativeSyncBackoffPolicy(initialDelay: 1, maximumDelay: 30)
+        let jitter = SystemNativeSyncJitterSource()
+        let sleeper = SystemNativeSyncSleeper()
+        var attempt = 0
+        while attempt < 12, !Task.isCancelled, accountID == context.accountID,
+            activeChatConversationID == context.conversationID
+        {
+            await syncModel.refresh()
+            await reload()
+            if persistedAssistantExists(after: context.userCreatedAt, in: context.conversationID) {
+                removeTransientAssistant(for: context.conversationID)
+                retryContexts.removeValue(forKey: context.conversationID)
+                activeGenerationID = nil
+                generationTask = nil
+                activeChatConversationID = nil
+                chatErrorDescription = nil
+                chatPhase = .idle
+                return
+            }
+            do {
+                let delay = policy.delay(
+                    attempt: attempt,
+                    randomUnit: await jitter.nextUnit()
+                )
+                attempt += 1
+                try await sleeper.sleep(seconds: delay)
+            } catch {
+                return
+            }
+        }
+        guard !Task.isCancelled, accountID == context.accountID,
+            activeChatConversationID == context.conversationID
+        else { return }
+        let message = "Juno could not confirm the saved response after reconnecting. Retry the response when the network is stable."
+        failAssistant(message, reason: .networkError, context: context)
+        activeGenerationID = nil
+        generationTask = nil
+        activeChatConversationID = nil
+    }
+
+    private func shouldRecover(_ error: any Error) -> Bool {
+        if let error = error as? NativeChatAPIError {
+            switch error {
+            case .streamEndedWithoutTerminalEvent: true
+            case .server(_, _, _, let retryable): retryable
+            default: false
+            }
+        } else {
+            true
+        }
+    }
+
+    private func failAssistant(
+        _ message: String,
+        reason: NativeChatFinishReason,
+        context: RetryContext
+    ) {
+        updateTransientAssistant(for: context.conversationID) {
+            $0.isPending = false
+            $0.errorDescription = message
+            $0.finishReason = reason
+        }
+        retryContexts[context.conversationID] = context
+        chatErrorDescription = message
+        chatPhase = .failed
+    }
+
+    private func completeAssistant(
+        _ message: NativeCompletedChatMessage,
+        conversationID: String
+    ) {
+        updateTransientAssistant(for: conversationID) {
+            $0.id = message.id
+            $0.content = message.content
+            $0.reasoning = message.reasoning
+            $0.model = message.model
+            $0.createdAt = message.createdAt
+            $0.sources = message.sources
+            $0.finishReason = message.finishReason
+            $0.isPending = false
+            $0.errorDescription = nil
+        }
+    }
+
+    private func appendAssistantPlaceholder(for context: RetryContext) {
+        appendTransient(NativeChatMessage(
+            id: "local-assistant-\(UUID().uuidString.lowercased())",
+            conversationID: context.conversationID,
+            clientID: nil,
+            role: .assistant,
+            content: "",
+            reasoning: nil,
+            model: context.modelID,
+            createdAt: max(Date(), context.userCreatedAt.addingTimeInterval(0.001)),
+            revision: 0,
+            isPending: true
+        ))
+    }
+
+    private func appendAssistantText(_ text: String, conversationID: String) {
+        updateTransientAssistant(for: conversationID) { $0.content.append(text) }
+    }
+
+    private func appendAssistantReasoning(_ text: String, conversationID: String) {
+        updateTransientAssistant(for: conversationID) {
+            $0.reasoning = ($0.reasoning ?? "") + text
+        }
+    }
+
+    private func updateAssistantSources(
+        _ sources: [NativeChatSource],
+        conversationID: String
+    ) {
+        updateTransientAssistant(for: conversationID) { $0.sources = sources }
+    }
+
+    private func updateTransientAssistant(
+        for conversationID: String,
+        _ update: (inout NativeChatMessage) -> Void
+    ) {
+        guard var messages = transientMessagesByConversation[conversationID],
+            let index = messages.lastIndex(where: { $0.role == .assistant })
+        else { return }
+        update(&messages[index])
+        transientMessagesByConversation[conversationID] = messages
+    }
+
+    private func replaceTransientUser(
+        with message: NativeAppendedUserMessage,
+        conversationID: String
+    ) {
+        guard var messages = transientMessagesByConversation[conversationID],
+            let index = messages.firstIndex(where: { $0.clientID == message.clientID })
+        else { return }
+        messages[index].id = message.id
+        messages[index].content = message.content
+        messages[index].createdAt = message.createdAt
+        messages[index].isPending = false
+        if let assistantIndex = messages.lastIndex(where: {
+            $0.role == .assistant && $0.isPending
+        }), messages[assistantIndex].createdAt <= message.createdAt {
+            messages[assistantIndex].createdAt = message.createdAt.addingTimeInterval(0.001)
+        }
+        transientMessagesByConversation[conversationID] = messages
+    }
+
+    private func appendTransient(_ message: NativeChatMessage) {
+        transientMessagesByConversation[message.conversationID, default: []]
+            .append(message)
+    }
+
+    private func removeTransientAssistant(for conversationID: String) {
+        transientMessagesByConversation[conversationID]?.removeAll {
+            $0.role == .assistant
+        }
+    }
+
+    private func visibleMessages(for conversationID: String) -> [NativeChatMessage] {
+        var result = messagesByConversation[conversationID] ?? []
+        let persistedIDs = Set(result.map(\.id))
+        let persistedClientIDs = Set(result.compactMap(\.clientID))
+        for transient in transientMessagesByConversation[conversationID] ?? []
+        where !persistedIDs.contains(transient.id)
+            && (transient.clientID == nil || !persistedClientIDs.contains(transient.clientID!))
+        {
+            result.append(transient)
+        }
+        return result.sorted {
+            $0.createdAt == $1.createdAt ? $0.id < $1.id : $0.createdAt < $1.createdAt
+        }
+    }
+
+    private func pruneTransientMessages() {
+        for conversationID in Array(transientMessagesByConversation.keys) {
+            let persisted = messagesByConversation[conversationID] ?? []
+            let persistedIDs = Set(persisted.map(\.id))
+            let persistedClientIDs = Set(persisted.compactMap(\.clientID))
+            transientMessagesByConversation[conversationID]?.removeAll { transient in
+                persistedIDs.contains(transient.id)
+                    || transient.clientID.map(persistedClientIDs.contains) == true
+            }
+            if transientMessagesByConversation[conversationID]?.isEmpty == true {
+                transientMessagesByConversation.removeValue(forKey: conversationID)
+            }
+        }
+    }
+
+    private func persistedAssistantExists(after date: Date, in conversationID: String) -> Bool {
+        (messagesByConversation[conversationID] ?? []).contains {
+            $0.role == .assistant && $0.createdAt >= date
+        }
+    }
+
+    private func updateTitle(_ title: String, conversationID: String) {
+        guard !title.isEmpty,
+            let index = conversations.firstIndex(where: { $0.id == conversationID })
+        else { return }
+        conversations[index].title = title
+    }
+
+    private func validModelSelection(
+        _ modelID: String,
+        effort: NativeReasoningEffort?
+    ) -> Bool {
+        guard !modelID.isEmpty, modelID.utf8.count <= 200 else { return false }
+        guard let model = modelCatalog.first(where: { $0.id == modelID }) else {
+            return modelCatalog.isEmpty
+        }
+        guard let effort else { return model.canDisableReasoning || model.supportedReasoningEfforts.isEmpty }
+        return model.supportedReasoningEfforts.contains(effort)
+    }
+
+    private func conversationPendingMessage(_ id: String) -> String {
+        if conversations.first(where: { $0.id == id })?.isPending == true {
+            return NativeConversationStoreError.pendingConversation(id).localizedDescription
+        }
+        return NativeConversationStoreError.conversationNotFound(id).localizedDescription
     }
 
     private func mutateExisting(

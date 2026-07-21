@@ -100,7 +100,8 @@ struct JunoMacApp: App {
                         outbox: outbox,
                         sender: runtime
                     ),
-                    syncModel: syncModel
+                    syncModel: syncModel,
+                    chatClient: NativeChatAPIClient(transport: runtime)
                 )
             )
         } catch {

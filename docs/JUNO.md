@@ -373,6 +373,16 @@ Each frame is `data: {json}\n\n`. Event `type` values:
 | `done` | terminal success — final `message`, `artifacts`, `memoryUpdated`, `quota`, `finishReason`, `title?` |
 | `error` | terminal failure — `message`, `failureCode`, `receiptState:"failed"`, stable ids, `preservePartial?` |
 
+Native clients authenticate these existing routes with the same short-lived bearer
+used by `/api/v1`; `getCurrentUser()` treats an Authorization header as authoritative.
+For an existing saved conversation, the native client first idempotently appends the
+USER turn to `POST /api/conversations/{conversationId}/messages` using its stable
+`clientId`, then calls `POST /api/chat` with `regenerate:true` and no `message`. This
+generates from the authoritative persisted final user row. A lost stream is reconciled
+through `/api/v1/changes`; the client never automatically repeats the ambiguous chat
+POST, preventing duplicate generations and billing. This bearer flow, cancellation,
+receipt lookup and the SSE event union are published in the native OpenAPI contract.
+
 Artifacts and quota ride on `done`/`error` (not separate events); the client detects
 a streaming artifact from accumulated `delta` text. `send()` swallows enqueue errors
 so **generation and persistence continue after the client disconnects** (the provider
@@ -1022,7 +1032,7 @@ data export.
 
 ## 16. Native sync API (`/api/v1`)
 
-A versioned (`CONTRACT_VERSION = 1.0.0`) bearer-authenticated contract that native
+A versioned (`CONTRACT_VERSION = 1.1.0`) bearer-authenticated contract that native
 clients use to mirror an account offline. Every response carries `X-Juno-Request-Id` +
 `X-Juno-Contract-Version`; errors are a typed envelope `{ error: { code, message,
 requestId, retryable, retryAfterMs } }`. The canonical source is
@@ -1056,6 +1066,9 @@ generates Swift models from it and fails the build on drift.
   project, memory, settings. Conversation updates include title, pin, sticky model,
   project/folder placement and archive state.
 - **`GET /models`** — the native model catalog (ETag'd).
+- **Existing general chat routes** — operation-level `/api` servers in the same
+  contract publish the bearer-capable transcript append, chat SSE, cancellation and
+  first-submission receipt operations without duplicating their production services.
 
 **Change capture is done entirely by Postgres triggers**
 (`prisma/migrations/.../account_change_log`), so *any* write — web or native — to a tracked

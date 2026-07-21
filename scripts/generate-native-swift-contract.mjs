@@ -7,7 +7,7 @@ const outputArg = process.argv.find((value) => value.startsWith("--output="));
 if (!outputArg) throw new Error("Pass --output=/absolute/path/to/JunoNativeContract.swift");
 const outputPath = resolve(outputArg.slice("--output=".length));
 const source = await readFile(contractPath, "utf8");
-for (const required of ["operationId: exchangeAuthorizationCode", "operationId: listModels", "operationId: getBootstrap", "operationId: listAccountChanges", "operationId: applyAccountMutation", "/auth/refresh:", "com.liammagnier.juno://auth/callback", "juno://auth/callback"]) {
+for (const required of ["operationId: exchangeAuthorizationCode", "operationId: listModels", "operationId: getBootstrap", "operationId: listAccountChanges", "operationId: applyAccountMutation", "operationId: appendNativeConversationMessages", "operationId: streamNativeChat", "operationId: cancelNativeChatGeneration", "operationId: getNativeChatReceipt", "/auth/refresh:", "com.liammagnier.juno://auth/callback", "juno://auth/callback"]) {
   if (!source.includes(required)) throw new Error(`OpenAPI contract is missing required fragment: ${required}`);
 }
 const version = source.match(/^  version: ([0-9]+\.[0-9]+\.[0-9]+)$/m)?.[1];

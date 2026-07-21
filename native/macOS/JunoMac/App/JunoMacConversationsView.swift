@@ -36,9 +36,8 @@ struct JunoMacConversationsView: View {
         } detail: {
             if let conversation = model.selectedConversation {
                 JunoMacConversationDetail(
+                    model: model,
                     conversation: conversation,
-                    messages: model.selectedMessages,
-                    isBusy: model.isMutating,
                     rename: beginRename,
                     editModel: beginModelEdit,
                     togglePin: {
@@ -185,31 +184,50 @@ struct JunoMacConversationsView: View {
 }
 
 private struct JunoMacConversationDetail: View {
+    @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
-    let messages: [NativeChatMessage]
-    let isBusy: Bool
     let rename: () -> Void
     let editModel: () -> Void
     let togglePin: () -> Void
     let toggleArchive: () -> Void
+    @State private var prompt = ""
+    @State private var selectedModelID = ""
+    @State private var reasoningEffort: NativeReasoningEffort?
+
+    private var messages: [NativeChatMessage] {
+        model.messages(for: conversation.id)
+    }
+
+    private var selectedModel: NativeChatModelOption? {
+        model.modelCatalog.first { $0.id == selectedModelID }
+    }
+
+    private var generatingHere: Bool {
+        model.isGenerating && model.activeChatConversationID == conversation.id
+    }
 
     var body: some View {
-        ScrollView {
-            if messages.isEmpty {
-                ContentUnavailableView(
-                    "No messages yet",
-                    systemImage: "bubble.left",
-                    description: Text("This conversation is ready for its first message.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 360)
-            } else {
-                LazyVStack(spacing: 18) {
-                    ForEach(messages) { message in
-                        JunoMacMessageRow(message: message)
+        VStack(spacing: 0) {
+            ScrollView {
+                if messages.isEmpty {
+                    ContentUnavailableView(
+                        "No messages yet",
+                        systemImage: "bubble.left",
+                        description: Text("This conversation is ready for its first message.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 360)
+                } else {
+                    LazyVStack(spacing: 18) {
+                        ForEach(messages) { message in
+                            JunoMacMessageRow(message: message)
+                        }
                     }
+                    .padding(24)
                 }
-                .padding(24)
             }
+            .defaultScrollAnchor(.bottom)
+            Divider()
+            composer
         }
         .navigationTitle(conversation.title)
         .toolbar {
@@ -223,10 +241,151 @@ private struct JunoMacConversationDetail: View {
                 } label: {
                     Label("Conversation actions", systemImage: "ellipsis.circle")
                 }
-                .disabled(isBusy || conversation.isPending)
+                .disabled(model.isMutating || conversation.isPending)
             }
         }
+        .onAppear { configureSelections() }
+        .onChange(of: conversation.id) { _, _ in configureSelections() }
+        .onChange(of: selectedModelID) { _, _ in configureSelections() }
+        .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
         .accessibilityIdentifier("juno.mac.conversation-detail")
+    }
+
+    private var composer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                if model.modelCatalog.isEmpty {
+                    Label(conversation.model, systemImage: "cpu")
+                        .lineLimit(1)
+                } else {
+                    Picker("Model", selection: $selectedModelID) {
+                        ForEach(model.modelCatalog) { option in
+                            Text("\(option.providerName) · \(option.displayName)")
+                                .tag(option.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 300)
+                }
+                if let selectedModel, !selectedModel.supportedReasoningEfforts.isEmpty {
+                    Picker("Reasoning", selection: $reasoningEffort) {
+                        if selectedModel.canDisableReasoning {
+                            Text("Instant").tag(nil as NativeReasoningEffort?)
+                        }
+                        ForEach(selectedModel.supportedReasoningEfforts) { effort in
+                            Text(effort.rawValue.capitalized)
+                                .tag(effort as NativeReasoningEffort?)
+                        }
+                    }
+                    .frame(maxWidth: 150)
+                }
+                Spacer()
+                if model.chatPhase != .idle {
+                    Label(chatPhaseLabel, systemImage: chatPhaseSymbol)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack(alignment: .bottom, spacing: 10) {
+                TextEditor(text: $prompt)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 54, maxHeight: 140)
+                    .padding(8)
+                    .background(.quaternary.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .accessibilityLabel("Message")
+                    .accessibilityIdentifier("juno.mac.chat-composer")
+
+                if generatingHere {
+                    Button {
+                        model.stopGeneration()
+                    } label: {
+                        Label("Stop", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
+                    .accessibilityIdentifier("juno.mac.chat-stop")
+                } else {
+                    Button {
+                        let value = prompt
+                        if model.sendMessage(
+                            conversationID: conversation.id,
+                            prompt: value,
+                            modelID: selectedModelID.isEmpty
+                                ? conversation.model : selectedModelID,
+                            reasoningEffort: reasoningEffort
+                        ) {
+                            prompt = ""
+                        }
+                    } label: {
+                        Label("Send", systemImage: "arrow.up.circle.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(
+                        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            || model.isGenerating || conversation.isPending
+                    )
+                    .accessibilityIdentifier("juno.mac.chat-send")
+                }
+            }
+
+            if model.canRetrySelectedConversation && !model.isGenerating {
+                HStack {
+                    Text(model.chatErrorDescription ?? "The response was interrupted.")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    Spacer()
+                    Button("Retry response") {
+                        model.retryLastMessage(conversationID: conversation.id)
+                    }
+                    .accessibilityIdentifier("juno.mac.chat-retry")
+                }
+            }
+        }
+        .padding(14)
+        .background(.bar)
+    }
+
+    private var chatPhaseLabel: String {
+        switch model.chatPhase {
+        case .idle: "Ready"
+        case .appending: "Saving message"
+        case .submitting: "Starting"
+        case .reasoning: "Reasoning"
+        case .streaming: "Writing"
+        case .stopping: "Stopping"
+        case .reconnecting: "Reconnecting"
+        case .failed: "Interrupted"
+        }
+    }
+
+    private var chatPhaseSymbol: String {
+        switch model.chatPhase {
+        case .reconnecting: "wifi.exclamationmark"
+        case .failed: "exclamationmark.circle"
+        case .stopping: "stop.circle"
+        default: "sparkles"
+        }
+    }
+
+    private func configureSelections() {
+        if selectedModelID.isEmpty
+            || !model.modelCatalog.contains(where: { $0.id == selectedModelID })
+        {
+            selectedModelID = model.modelCatalog.contains(where: { $0.id == conversation.model })
+                ? conversation.model : model.modelCatalog.first?.id ?? conversation.model
+        }
+        guard let selectedModel else { reasoningEffort = nil; return }
+        if let reasoningEffort,
+            !selectedModel.supportedReasoningEfforts.contains(reasoningEffort)
+        {
+            self.reasoningEffort = selectedModel.canDisableReasoning
+                ? nil : selectedModel.supportedReasoningEfforts.first
+        } else if reasoningEffort == nil && !selectedModel.canDisableReasoning {
+            reasoningEffort = selectedModel.supportedReasoningEfforts.first
+        }
     }
 }
 
@@ -242,8 +401,28 @@ private struct JunoMacMessageRow: View {
                     .foregroundStyle(.secondary)
                 Text(message.content)
                     .textSelection(.enabled)
+                if let reasoning = message.reasoning, !reasoning.isEmpty {
+                    DisclosureGroup("Reasoning") {
+                        Text(reasoning)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                ForEach(message.sources, id: \.url) { source in
+                    Link(source.title, destination: source.url)
+                        .font(.caption)
+                }
                 if let model = message.model, !model.isEmpty {
                     Text(model).font(.caption2).foregroundStyle(.tertiary)
+                }
+                if message.isPending {
+                    ProgressView().controlSize(.small)
+                }
+                if let error = message.errorDescription {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
             .padding(12)

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { NativeAuthError } from "@/lib/native-auth";
 
-export const CONTRACT_VERSION = "1.0.1";
+export const CONTRACT_VERSION = "1.1.0";
 
 export class ApiV1Error extends Error {
   constructor(

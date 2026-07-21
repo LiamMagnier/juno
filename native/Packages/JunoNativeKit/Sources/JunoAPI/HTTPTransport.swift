@@ -87,8 +87,8 @@ public final class URLSessionHTTPStreamingTransport: HTTPStreamingTransport,
 
     public init(
         maximumRequestBodyBytes: Int = HTTPMessageLimits.standard.maximumRequestBodyBytes,
-        maximumStreamBytes: Int = 2 * 1_024 * 1_024,
-        requestTimeout: TimeInterval = 70
+        maximumStreamBytes: Int = 20 * 1_024 * 1_024,
+        requestTimeout: TimeInterval = 3_700
     ) throws {
         guard maximumRequestBodyBytes >= 0, maximumStreamBytes > 0,
             requestTimeout.isFinite, requestTimeout > 0

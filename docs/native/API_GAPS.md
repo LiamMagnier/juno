@@ -42,9 +42,10 @@ nonce/code validation are implemented in `7e80d8e`.
   default and enumerates only the canonical and legacy values.
 - `docs/JUNO.md` describes the canonical `com.liammagnier.juno://` lineage.
 
-Completed: the contract is version 1.0.1, the server reports the same version,
-generation is deterministic and self-contained, focused tests verify the exact
-allowlist, and new app configurations register only the canonical scheme.
+Completed: the authentication/callback correction shipped in contract 1.0.1;
+the current 1.1.0 contract and server still report the same version, generation
+is deterministic and self-contained, focused tests verify the exact allowlist,
+and new app configurations register only the canonical scheme.
 Remaining project work: run an interactive signed-in browser return/cancellation
 matrix on both platforms. Removing the legacy URI server-side would still break
 existing builds.
@@ -139,6 +140,9 @@ used by native clients without breaking existing Web callers.
 
 ### GAP-007 — native chat and upload contracts are not explicit
 
+Status: chat contract and transport resolved in the current native chat unit;
+upload/attachment contract work remains.
+
 The Web has production chat SSE, receipts, cancellation and uploads, and its
 session gate can support bearer requests. The exact native request headers,
 idempotency behavior, SSE resume semantics, attachment claim flow, cancellation
@@ -146,6 +150,15 @@ and typed event schema are not captured in OpenAPI or tested as native contracts
 
 Required resolution: publish and test the authoritative bearer flow before
 building native chat transports.
+
+Resolution for chat: OpenAPI 1.1.0 now publishes the existing bearer-capable
+transcript append, `/api/chat` SSE, cancellation and receipt routes with typed
+request/response/event schemas. The Swift transport uses the old application's
+production SSE protocol, idempotently appends an existing-conversation user turn,
+then regenerates from that persisted row. It never automatically re-POSTs after an
+ambiguous stream loss; it reconciles the persisted assistant through the account
+change feed. Focused transport tests cover fragmented SSE, the regenerate envelope
+and exactly-one-POST recovery behavior. No backend chat route or service was added.
 
 ## P1 — blocks complete Juno Code and mobile behavior
 
