@@ -28,6 +28,10 @@ targets:
         buildPhase: resources
     dependencies:
       - package: JunoNativeKit
+        product: JunoAPI
+      - package: JunoNativeKit
+        product: JunoAuth
+      - package: JunoNativeKit
         product: JunoCore
       - package: JunoNativeKit
         product: JunoDesignSystem

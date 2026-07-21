@@ -1,10 +1,30 @@
+import JunoAuth
 import SwiftUI
 
 struct JunoMacRootView: View {
     @Binding var selection: JunoMacSection
+    let authModel: NativeAuthModel
     @State private var sidebarSearch = ""
 
     var body: some View {
+        Group {
+            switch authModel.phase {
+            case .signedIn(let session):
+                authenticatedContent(session: session)
+            case .restoring:
+                ProgressView("auth.restoring")
+            case .signedOut, .signingIn, .unavailable:
+                JunoMacSignInView(authModel: authModel)
+            }
+        }
+        .task {
+            await authModel.restore()
+        }
+    }
+
+    private func authenticatedContent(
+        session: NativeAuthenticatedSession
+    ) -> some View {
         NavigationSplitView {
             List(selection: $selection) {
                 Section("section.product") {
@@ -28,6 +48,21 @@ struct JunoMacRootView: View {
                 .id(selection)
         }
         .navigationSplitViewStyle(.balanced)
+        .toolbar {
+            ToolbarItem {
+                Menu {
+                    Button("auth.sign-out", role: .destructive) {
+                        Task { await authModel.signOut() }
+                    }
+                } label: {
+                    Label(
+                        session.profile.name ?? session.profile.email,
+                        systemImage: "person.crop.circle"
+                    )
+                }
+                .accessibilityIdentifier("juno.mac.account-menu")
+            }
+        }
     }
 
     @ViewBuilder
@@ -46,6 +81,47 @@ struct JunoMacRootView: View {
                 .localizedStandardContains(sidebarSearch)
                 || section.rawValue.localizedStandardContains(sidebarSearch)
         }
+    }
+}
+
+private struct JunoMacSignInView: View {
+    let authModel: NativeAuthModel
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: "circle.hexagongrid.fill")
+                .font(.system(size: 42))
+                .foregroundStyle(.tint)
+                .accessibilityHidden(true)
+            Text("auth.welcome.title")
+                .font(.title2.weight(.semibold))
+            Text("auth.welcome.description")
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420)
+            if let error = authModel.lastErrorDescription {
+                Text(error)
+                    .foregroundStyle(.red)
+                    .multilineTextAlignment(.center)
+                    .accessibilityIdentifier("juno.mac.auth-error")
+            }
+            if authModel.phase != .unavailable {
+                Button {
+                    Task { await authModel.signIn() }
+                } label: {
+                    if authModel.phase == .signingIn {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("auth.sign-in")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(authModel.phase == .signingIn)
+                .accessibilityIdentifier("juno.mac.sign-in")
+            }
+        }
+        .padding(40)
     }
 }
 

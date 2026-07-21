@@ -5,12 +5,13 @@ final class JunoMobileLaunchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testLaunchShowsNativeNavigation() {
+    @MainActor
+    func testLaunchShowsRealSignInGate() {
         let app = XCUIApplication()
         app.launch()
 
-        let sidebar = app.descendants(matching: .any)["juno.mobile.sidebar"].firstMatch
-        let detail = app.descendants(matching: .any)["juno.mobile.detail"].firstMatch
-        XCTAssertTrue(sidebar.waitForExistence(timeout: 5) || detail.waitForExistence(timeout: 5))
+        XCTAssertTrue(
+            app.buttons["juno.mobile.sign-in"].waitForExistence(timeout: 5)
+        )
     }
 }

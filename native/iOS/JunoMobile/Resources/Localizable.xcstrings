@@ -1,6 +1,66 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "auth.error.cancelled" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign-in was cancelled." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La connexion a été annulée." } }
+      }
+    },
+    "auth.error.configuration" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Juno could not configure its secure connection." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Juno n’a pas pu configurer sa connexion sécurisée." } }
+      }
+    },
+    "auth.error.in-progress" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "A sign-in is already in progress." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Une connexion est déjà en cours." } }
+      }
+    },
+    "auth.error.invalid-callback" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The sign-in response was invalid." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La réponse de connexion était invalide." } }
+      }
+    },
+    "auth.error.unavailable" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "The system browser is unavailable." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le navigateur système est indisponible." } }
+      }
+    },
+    "auth.restoring" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Restoring your Juno session…" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Restauration de votre session Juno…" } }
+      }
+    },
+    "auth.sign-in" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue in browser" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Continuer dans le navigateur" } }
+      }
+    },
+    "auth.sign-out" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Se déconnecter" } }
+      }
+    },
+    "auth.welcome.description" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use your Juno account to securely sync conversations, projects, and settings." } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Utilisez votre compte Juno pour synchroniser en toute sécurité vos conversations, projets et réglages." } }
+      }
+    },
+    "auth.welcome.title" : {
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "Welcome to Juno" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Bienvenue dans Juno" } }
+      }
+    },
     "navigation.artifacts" : {
       "localizations" : {
         "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },

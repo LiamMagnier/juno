@@ -40,7 +40,42 @@ final class KeychainAuthTokenStoreTests: XCTestCase {
         let loaded = try await store.load(for: first.accountID)
         let upsertCount = client.upsertCount
         XCTAssertEqual(loaded, second)
-        XCTAssertEqual(upsertCount, 2)
+        XCTAssertEqual(upsertCount, 4)
+    }
+
+    func testActiveAccountRestoresAndClearsWithCredential() async throws {
+        let client = RecordingSecurityClient()
+        let store = KeychainAuthTokenStore(securityClient: client)
+        let tokens = try makeTokens()
+
+        let initiallyActive = try await store.loadActive()
+        XCTAssertNil(initiallyActive)
+        try await store.storeInitial(tokens)
+        let restored = try await store.loadActive()
+        XCTAssertEqual(restored, tokens)
+
+        let removed = try await store.remove(
+            for: tokens.accountID,
+            ifRefreshTokenMatches: nil
+        )
+        let activeAfterRemoval = try await store.loadActive()
+        XCTAssertTrue(removed)
+        XCTAssertNil(activeAfterRemoval)
+    }
+
+    func testAccountSwitchPurgesPreviousCredential() async throws {
+        let client = RecordingSecurityClient()
+        let store = KeychainAuthTokenStore(securityClient: client)
+        let first = try makeTokens(account: "acct_first")
+        let second = try makeTokens(account: "acct_second")
+
+        try await store.storeInitial(first)
+        try await store.storeInitial(second)
+
+        let restored = try await store.loadActive()
+        let firstStored = try await store.load(for: first.accountID)
+        XCTAssertEqual(restored, second)
+        XCTAssertNil(firstStored)
     }
 
     func testCompareAndSwapReplacesOnlyMatchingRefreshTokenAndDevice() async throws {

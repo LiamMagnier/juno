@@ -5,15 +5,13 @@ final class JunoMacLaunchUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testLaunchShowsNativeSidebarAndDetail() {
+    @MainActor
+    func testLaunchShowsRealSignInGate() {
         let app = XCUIApplication()
         app.launch()
 
         XCTAssertTrue(
-            app.descendants(matching: .any)["juno.mac.sidebar"].firstMatch.waitForExistence(timeout: 5)
-        )
-        XCTAssertTrue(
-            app.descendants(matching: .any)["juno.mac.detail"].firstMatch.waitForExistence(timeout: 5)
+            app.buttons["juno.mac.sign-in"].waitForExistence(timeout: 5)
         )
     }
 }

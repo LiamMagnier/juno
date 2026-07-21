@@ -1,2 +1,3 @@
 # Ignore Finder/File Provider conflict copies; canonical projects have no numeric suffix.
 * 2.xcodeproj/
+**/xcuserdata/

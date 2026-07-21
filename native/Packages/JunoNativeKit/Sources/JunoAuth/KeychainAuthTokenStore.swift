@@ -119,6 +119,9 @@ public enum KeychainAuthTokenStoreError: Error, Equatable, Sendable {
 /// during a rotating-token compare-and-swap.
 public actor KeychainAuthTokenStore: AuthTokenStore {
     public static let defaultService = "com.liammagnier.juno.auth.tokens"
+    private static let activeAccountService =
+        "com.liammagnier.juno.auth.active-account"
+    private static let activeAccountName = "current"
 
     private let securityClient: any SecurityKeychainClient
     private let service: String
@@ -152,15 +155,53 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
     }
 
     public func load(for accountID: AccountID) async throws -> AuthTokenSet? {
+        try loadStored(for: accountID)
+    }
+
+    private func loadStored(for accountID: AccountID) throws -> AuthTokenSet? {
         guard let data = try securityClient.read(item(for: accountID)) else {
             return nil
         }
         return try decode(data, expectedAccountID: accountID)
     }
 
+    /// Restores the account selected by the last successful token installation.
+    public func loadActive() async throws -> AuthTokenSet? {
+        let activeItem = activeAccountItem()
+        guard let accountID = try activeAccountID() else {
+            return nil
+        }
+        guard let tokens = try loadStored(for: accountID) else {
+            _ = try securityClient.delete(activeItem)
+            return nil
+        }
+        return tokens
+    }
+
     public func storeInitial(_ tokenSet: AuthTokenSet) async throws {
+        let previousAccountID = try activeAccountID()
+        let isAccountSwitch = previousAccountID.map { $0 != tokenSet.accountID }
+            ?? false
+
+        if let previousAccountID, isAccountSwitch {
+            _ = try securityClient.delete(item(for: previousAccountID))
+        }
+
         let data = try encode(tokenSet)
-        try securityClient.upsert(data, for: item(for: tokenSet.accountID))
+        let tokenItem = item(for: tokenSet.accountID)
+        do {
+            try securityClient.upsert(data, for: tokenItem)
+            try securityClient.upsert(
+                Data(tokenSet.accountID.rawValue.utf8),
+                for: activeAccountItem()
+            )
+        } catch {
+            _ = try? securityClient.delete(tokenItem)
+            if isAccountSwitch {
+                _ = try? securityClient.delete(activeAccountItem())
+            }
+            throw error
+        }
     }
 
     public func replace(
@@ -171,7 +212,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         guard tokenSet.accountID == accountID else {
             throw KeychainAuthTokenStoreError.accountScopeMismatch
         }
-        guard let current = try await load(for: accountID) else {
+        guard let current = try loadStored(for: accountID) else {
             return false
         }
         guard current.refreshToken == expectedRefreshToken else {
@@ -190,13 +231,22 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         for accountID: AccountID,
         ifRefreshTokenMatches refreshToken: RefreshToken?
     ) async throws -> Bool {
-        guard let current = try await load(for: accountID) else {
+        guard let current = try loadStored(for: accountID) else {
             return false
         }
         if let refreshToken, current.refreshToken != refreshToken {
             return false
         }
-        return try securityClient.delete(item(for: accountID))
+        guard try securityClient.delete(item(for: accountID)) else {
+            return false
+        }
+        let activeItem = activeAccountItem()
+        if let activeData = try securityClient.read(activeItem),
+            String(data: activeData, encoding: .utf8) == accountID.rawValue
+        {
+            _ = try securityClient.delete(activeItem)
+        }
+        return true
     }
 
     private func item(for accountID: AccountID) -> SecurityKeychainItem {
@@ -205,6 +255,26 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
             account: accountID.rawValue,
             accessGroup: accessGroup
         )
+    }
+
+    private func activeAccountItem() -> SecurityKeychainItem {
+        SecurityKeychainItem(
+            service: Self.activeAccountService,
+            account: Self.activeAccountName,
+            accessGroup: accessGroup
+        )
+    }
+
+    private func activeAccountID() throws -> AccountID? {
+        guard let data = try securityClient.read(activeAccountItem()) else {
+            return nil
+        }
+        guard let rawValue = String(data: data, encoding: .utf8),
+            let accountID = try? AccountID(rawValue)
+        else {
+            throw KeychainAuthTokenStoreError.malformedData
+        }
+        return accountID
     }
 
     private func encode(_ tokenSet: AuthTokenSet) throws -> Data {
