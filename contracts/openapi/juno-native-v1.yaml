@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Juno Native API
-  version: 1.0.0
+  version: 1.0.1
   description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
 servers:
   - url: /api/v1
@@ -199,7 +199,11 @@ components:
       properties:
         code: { type: string }
         codeVerifier: { type: string, minLength: 43, maxLength: 256 }
-        redirectUri: { type: string, const: 'juno://auth/callback' }
+        redirectUri:
+          type: string
+          enum: ['com.liammagnier.juno://auth/callback', 'juno://auth/callback']
+          default: 'com.liammagnier.juno://auth/callback'
+          description: New clients use the canonical reverse-DNS URI; the legacy URI remains allowlisted only for installed-client migration.
         installationId: { type: string, minLength: 16, maxLength: 200 }
         deviceName: { type: string, minLength: 1, maxLength: 120 }
         platform: { type: string, minLength: 1, maxLength: 40 }
