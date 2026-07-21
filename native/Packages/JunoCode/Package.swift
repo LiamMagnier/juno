@@ -29,7 +29,13 @@ let package = Package(
             name: "JunoCodeBridge",
             dependencies: [
                 "JunoCodeCore",
+                "JunoCodeRuntime",
                 .product(name: "JunoCodeKit", package: "JunoNativeKit"),
+                .product(name: "JunoCore", package: "JunoNativeKit"),
+                .product(name: "JunoAPI", package: "JunoNativeKit"),
+                .product(name: "JunoAuth", package: "JunoNativeKit"),
+                .product(name: "JunoSync", package: "JunoNativeKit"),
+                .product(name: "JunoChatKit", package: "JunoNativeKit"),
             ]
         ),
         .testTarget(name: "JunoCodeCoreTests", dependencies: ["JunoCodeCore"]),
