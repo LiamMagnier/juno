@@ -32,7 +32,8 @@ reimplemented for native clients.
 
 Status: resolved for backend/OpenAPI/generation in `b903159`; canonical
 URL-scheme registration is present in both independent apps as of `0fb7cc3`.
-System-browser return and negative callback UI tests remain.
+Production `ASWebAuthenticationSession` composition and strict callback/state/
+nonce/code validation are implemented in `7e80d8e`.
 
 - `src/lib/native-auth-core.ts` declares
   `com.liammagnier.juno://auth/callback` as canonical and accepts
@@ -44,9 +45,9 @@ System-browser return and negative callback UI tests remain.
 Completed: the contract is version 1.0.1, the server reports the same version,
 generation is deterministic and self-contained, focused tests verify the exact
 allowlist, and new app configurations register only the canonical scheme.
-Remaining project work: implement `ASWebAuthenticationSession` composition and
-cover browser return/state/cancellation in platform tests. Removing the legacy
-URI server-side would still break existing builds.
+Remaining project work: run an interactive signed-in browser return/cancellation
+matrix on both platforms. Removing the legacy URI server-side would still break
+existing builds.
 
 ### GAP-002 — native client source and topology foundation
 

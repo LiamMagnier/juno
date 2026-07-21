@@ -1,25 +1,26 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "8297de42cea973962f4498cb25a415df81d6a257",
+  "currentCommit": "7e80d8eebc09fcdf66dcf721e971f2d5915826c1",
   "workingTreeClean": true,
-  "currentPhase": "production-auth-storage-composition",
-  "currentTask": "Selectively migrate the old app PKCE system-browser flow, adapt it to the canonical callback and shared Keychain store, then wire auth composition into both app entry points.",
+  "currentPhase": "authenticated-bootstrap-and-durable-storage",
+  "currentTask": "Reuse the existing bearer bootstrap route through a refresh-aware shared client, then persist its validated account-scoped cursor in the production local store.",
   "nextFiles": [
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/WebAuthService.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoAuth/PKCE.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoAuth/KeychainAuthTokenStore.swift",
-    "native/Packages/JunoNativeKit/Tests/JunoAuthTests/PKCETests.swift",
-    "native/macOS/JunoMac/App/JunoMacApp.swift",
-    "native/iOS/JunoMobile/App/JunoMobileApp.swift",
-    "native/macOS/JunoMac/project.yml",
-    "native/iOS/JunoMobile/project.yml"
+    "src/app/api/v1/bootstrap/route.ts",
+    "contracts/openapi/juno-native-v1.yaml",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/BackendClient.swift",
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncModels.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoAuth/NativeAuthRuntime.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoSync",
+    "native/Packages/JunoNativeKit/Sources/JunoStorage"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
-    "Fifty-eight strict-concurrency Swift package tests",
-    "Security.framework-backed account/device-scoped Keychain token store with eight focused failure and rotation tests",
+    "Sixty-seven strict-concurrency Swift package tests",
+    "Security.framework-backed active-account/device-scoped Keychain token store with account-switch purge and ten focused tests",
+    "Canonical PKCE system-browser flow, existing production auth-route client, refresh-aware restore and logout",
+    "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
     "Independent JunoMac and JunoMobile Xcode projects with Debug, Stable and Next configurations",
@@ -29,7 +30,7 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "System-browser auth composition over the completed production Keychain token store",
+    "Authenticated bootstrap and durable account-scoped cursor/entity/outbox persistence",
     "Durable SQLite storage, migrations, cursor/outbox persistence, crash and compaction recovery",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
@@ -41,13 +42,14 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-keychain-full -Xswiftc -warnings-as-errors (58/58)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-auth-scratch -Xswiftc -warnings-as-errors (67/67)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",
     "JunoMobile Stable generic iOS Simulator xcodebuild, arm64+x86_64",
     "JunoMacTests 2/2",
     "JunoMobileTests 2/2",
+    "JunoMacUITests auth gate 1/1 and JunoMobileUITests auth gate 1/1",
     "Earlier Web typecheck, lint, test and native callback contract suites"
   ],
   "failingCommands": [

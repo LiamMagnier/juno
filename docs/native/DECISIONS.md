@@ -85,3 +85,10 @@
 - Decision: store one generic-password item per account under the Juno service, using `AfterFirstUnlockThisDeviceOnly` and disabled Keychain synchronization. Persist and validate the bound device-session identifier in the versioned payload. Serialize read/compare/write and conditional deletion in one actor, behind an injectable Security client.
 - Reason: account separation, background refresh availability, fail-closed rotation/revocation races, deterministic failure tests, and no cross-device credential propagation.
 - Status: implemented and strict-test verified in `8297de4`.
+
+## D-012 — Production system-browser authentication over existing routes
+
+- Context: the backend and old native app already implement the authoritative PKCE grant, rotating refresh, session and logout flow.
+- Decision: reuse `/app-auth` and `/api/v1/auth/token`, `refresh`, `session`, and `logout` through a cookie-free bounded transport. New apps use only the canonical callback and validate scheme, host, path, state, nonce, duplicate fields and code shape before exchange.
+- Consequences: both apps use `ASWebAuthenticationSession`, verify the returned device session before Keychain installation, revoke server state after post-exchange failure, and purge local credentials on logout/account switch. No auth backend route was added.
+- Status: implemented and package/app/UI-test verified in `7e80d8e`; interactive live-account completion remains a manual gate.

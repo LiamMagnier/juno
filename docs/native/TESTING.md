@@ -61,6 +61,19 @@ Provider worktree can acquire Finder metadata/resource forks and make product
 signing fail. Use an isolated `--scratch-path /tmp/...`; both final package
 commands above pass there. This is not a source regression.
 
+## Production browser authentication — `7e80d8e`
+
+| Command / gate | Result | Evidence |
+|---|---|---|
+| Strict full package suite | Pass | 67/67 tests; JunoAuth 26/26, including Keychain 10/10 and browser/API/runtime 7/7. |
+| Strict Release package build | Pass | All ten products compile with warnings treated as errors. |
+| JunoMac Debug + Stable unsigned builds | Pass | Production auth composition and AuthenticationServices adapter compile. |
+| JunoMobile Debug + Stable simulator builds | Pass | iPhone/iPad auth composition and AuthenticationServices adapter compile. |
+| App unit suites | Pass | JunoMacTests 2/2 and JunoMobileTests 2/2. |
+| Auth gate UI suites | Pass | JunoMacUITests 1/1 and JunoMobileUITests 1/1; macOS ad-hoc XCUI runner required `ENABLE_HARDENED_RUNTIME=NO`. |
+| `npm run native:contract:check` | Pass | No backend/OpenAPI/generated Swift drift. |
+| Live account browser completion | Not run | Requires an interactive authenticated Juno browser session; no mock was substituted. |
+
 ## Required gates by unit
 
 ### Shared packages
