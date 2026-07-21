@@ -19,6 +19,11 @@ final class AuthTokenCoordinatorTests: XCTestCase {
             accountID: fixture.accountID
         )
         XCTAssertTrue(joined)
+        let refreshStarted = await waitForRefreshCalls(
+            count: 1,
+            client: fixture.client
+        )
+        XCTAssertTrue(refreshStarted)
         await fixture.client.succeed(with: refreshed)
 
         for task in tasks {
@@ -132,6 +137,46 @@ final class AuthTokenCoordinatorTests: XCTestCase {
         XCTAssertEqual(token, refreshed.accessToken)
     }
 
+    func testConcurrentAndLateUnauthorizedCallersShareOneRotation() async throws {
+        let fixture = try await makeFixture(
+            accessExpiry: now.addingTimeInterval(3_600)
+        )
+        let rejected = try AccessToken("access-initial")
+        let refreshed = try makeRefreshedTokens(suffix: "unauthorized")
+        let requests = (0..<24).map { _ in
+            Task {
+                try await fixture.coordinator.accessTokenAfterUnauthorized(
+                    for: fixture.accountID,
+                    rejectedAccessToken: rejected
+                )
+            }
+        }
+        let joined = await waitForWaiters(
+            count: 1,
+            coordinator: fixture.coordinator,
+            accountID: fixture.accountID
+        )
+        XCTAssertTrue(joined)
+        let refreshStarted = await waitForRefreshCalls(
+            count: 1,
+            client: fixture.client
+        )
+        XCTAssertTrue(refreshStarted)
+        await fixture.client.succeed(with: refreshed)
+        for request in requests {
+            let result = try await request.value
+            XCTAssertEqual(result, refreshed.accessToken)
+        }
+
+        let late = try await fixture.coordinator.accessTokenAfterUnauthorized(
+            for: fixture.accountID,
+            rejectedAccessToken: rejected
+        )
+        let calls = await fixture.client.callCount
+        XCTAssertEqual(late, refreshed.accessToken)
+        XCTAssertEqual(calls, 1)
+    }
+
     func testTokenDescriptionsAreRedacted() throws {
         let access = try AccessToken("access-secret")
         let refresh = try RefreshToken("refresh-secret-000000000000000000")
@@ -185,6 +230,19 @@ final class AuthTokenCoordinatorTests: XCTestCase {
     ) async -> Bool {
         for _ in 0..<20_000 {
             if await coordinator.refreshWaiterCount(for: accountID) == count {
+                return true
+            }
+            await Task.yield()
+        }
+        return false
+    }
+
+    private func waitForRefreshCalls(
+        count: Int,
+        client: ControlledRefreshClient
+    ) async -> Bool {
+        for _ in 0..<20_000 {
+            if await client.callCount == count {
                 return true
             }
             await Task.yield()

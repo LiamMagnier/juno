@@ -55,7 +55,9 @@ let package = Package(
         .testTarget(name: "JunoStorageTests", dependencies: ["JunoStorage"]),
         .testTarget(
             name: "JunoSyncTests",
-            dependencies: ["JunoCore", "JunoStorage", "JunoSync"]
+            dependencies: [
+                "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
+            ]
         ),
         .testTarget(
             name: "JunoSearchTests",

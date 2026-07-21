@@ -18,6 +18,12 @@ public actor AuthTokenCoordinator {
         var waiterCount: Int
     }
 
+    private struct UnauthorizedFlight: Sendable {
+        let id: UUID
+        let rejectedAccessToken: AccessToken
+        let task: Task<AccessToken, any Error>
+    }
+
     private let clock: any JunoClock
     private let refreshClient: any AuthRefreshClient
     private let store: any AuthTokenStore
@@ -25,6 +31,7 @@ public actor AuthTokenCoordinator {
     private var flights: [AccountID: Flight] = [:]
     private var generations: [AccountID: UInt64] = [:]
     private var locallyRevokedAccounts: Set<AccountID> = []
+    private var unauthorizedFlights: [AccountID: UnauthorizedFlight] = [:]
 
     public init(
         store: any AuthTokenStore,
@@ -39,6 +46,7 @@ public actor AuthTokenCoordinator {
     public func install(_ tokenSet: AuthTokenSet) async throws {
         incrementGeneration(for: tokenSet.accountID)
         flights.removeValue(forKey: tokenSet.accountID)?.task.cancel()
+        unauthorizedFlights.removeValue(forKey: tokenSet.accountID)?.task.cancel()
         try await store.storeInitial(tokenSet)
         locallyRevokedAccounts.remove(tokenSet.accountID)
     }
@@ -61,6 +69,52 @@ public actor AuthTokenCoordinator {
             return tokens.accessToken
         }
         return try await refresh(for: accountID).accessToken
+    }
+
+    /// Rotates once for a rejected access token, including callers that observe
+    /// the same 401 after the first rotation has already completed.
+    public func accessTokenAfterUnauthorized(
+        for accountID: AccountID,
+        rejectedAccessToken: AccessToken
+    ) async throws -> AccessToken {
+        guard !locallyRevokedAccounts.contains(accountID) else {
+            throw AuthTokenCoordinatorError.locallyRevoked
+        }
+        guard let current = try await store.load(for: accountID) else {
+            throw AuthTokenCoordinatorError.noCredentials
+        }
+        guard !locallyRevokedAccounts.contains(accountID) else {
+            throw AuthTokenCoordinatorError.locallyRevoked
+        }
+        if current.accessToken != rejectedAccessToken {
+            return current.accessToken
+        }
+        let flight: UnauthorizedFlight
+        if let currentFlight = unauthorizedFlights[accountID],
+            currentFlight.rejectedAccessToken == rejectedAccessToken
+        {
+            flight = currentFlight
+        } else {
+            let flightID = UUID()
+            let task = Task<AccessToken, any Error> {
+                try await self.refresh(for: accountID).accessToken
+            }
+            flight = UnauthorizedFlight(
+                id: flightID,
+                rejectedAccessToken: rejectedAccessToken,
+                task: task
+            )
+            unauthorizedFlights[accountID] = flight
+        }
+
+        do {
+            return try await flight.task.value
+        } catch {
+            if unauthorizedFlights[accountID]?.id == flight.id {
+                unauthorizedFlights.removeValue(forKey: accountID)
+            }
+            throw error
+        }
     }
 
     public func refresh(for accountID: AccountID) async throws -> AuthTokenSet {
@@ -165,6 +219,7 @@ public actor AuthTokenCoordinator {
 
     public func revokeLocally(for accountID: AccountID) async throws {
         locallyRevokedAccounts.insert(accountID)
+        unauthorizedFlights.removeValue(forKey: accountID)?.task.cancel()
         incrementGeneration(for: accountID)
         flights.removeValue(forKey: accountID)?.task.cancel()
         _ = try await store.remove(for: accountID, ifRefreshTokenMatches: nil)

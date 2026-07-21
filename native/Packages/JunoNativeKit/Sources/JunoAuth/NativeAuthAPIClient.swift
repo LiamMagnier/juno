@@ -91,6 +91,35 @@ public struct NativeIssuedTokens: Equatable, Sendable {
     public let refreshTokenExpiresAt: Date
 }
 
+public enum NativeBearerRequestError: Error, Equatable, Sendable {
+    case callerSuppliedCredentialHeader(String)
+}
+
+public struct NativeBearerRequest: Equatable, Sendable {
+    public let path: String
+    public let method: HTTPMethod
+    public let queryItems: [URLQueryItem]
+    public let headers: HTTPHeaders
+    public let body: Data?
+
+    public init(
+        path: String,
+        method: HTTPMethod = .get,
+        queryItems: [URLQueryItem] = [],
+        headers: HTTPHeaders = HTTPHeaders(),
+        body: Data? = nil
+    ) throws {
+        for forbidden in ["authorization", "cookie"] where headers[forbidden] != nil {
+            throw NativeBearerRequestError.callerSuppliedCredentialHeader(forbidden)
+        }
+        self.path = path
+        self.method = method
+        self.queryItems = queryItems
+        self.headers = headers
+        self.body = body
+    }
+}
+
 public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
     private let client: BoundedHTTPClient
 
@@ -220,6 +249,25 @@ public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
         guard (200...299).contains(response.statusCode) else {
             throw serverError(from: response)
         }
+    }
+
+    public func sendBearer(
+        _ request: NativeBearerRequest,
+        accessToken: AccessToken
+    ) async throws -> HTTPResponse {
+        var fields = request.headers.allFields
+        fields["authorization"] = "Bearer \(accessToken.reveal())"
+        if fields["accept"] == nil {
+            fields["accept"] = "application/json"
+        }
+        let authenticatedRequest = try client.makeRequest(
+            path: request.path,
+            method: request.method,
+            queryItems: request.queryItems,
+            headers: HTTPHeaders(fields),
+            body: request.body
+        )
+        return try await client.send(authenticatedRequest)
     }
 
     private func sendJSON<Body: Encodable & Sendable>(

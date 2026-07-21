@@ -1,5 +1,6 @@
 import Foundation
 import JunoAPI
+import JunoCore
 
 public actor NativeAuthRuntime {
     private let tokenStore: KeychainAuthTokenStore
@@ -106,6 +107,35 @@ public actor NativeAuthRuntime {
             }
             throw error
         }
+    }
+
+    /// Sends one same-origin bearer request and performs at most one rotating
+    /// refresh when the server rejects the access token.
+    public func send(
+        _ request: NativeBearerRequest,
+        for accountID: AccountID
+    ) async throws -> HTTPResponse {
+        let initialAccessToken = try await coordinator.accessToken(for: accountID)
+        let initialResponse = try await apiClient.sendBearer(
+            request,
+            accessToken: initialAccessToken
+        )
+        guard initialResponse.statusCode == 401 else {
+            return initialResponse
+        }
+
+        let refreshedAccessToken = try await coordinator.accessTokenAfterUnauthorized(
+            for: accountID,
+            rejectedAccessToken: initialAccessToken
+        )
+        let retryResponse = try await apiClient.sendBearer(
+            request,
+            accessToken: refreshedAccessToken
+        )
+        if retryResponse.statusCode == 401 {
+            try? await coordinator.revokeLocally(for: accountID)
+        }
+        return retryResponse
     }
 
     public func signOut() async throws {

@@ -249,6 +249,66 @@ final class NativeAuthRuntimeTests: XCTestCase {
         XCTAssertNil(stored)
     }
 
+    func testAuthenticatedRequestRefreshesOnceAfterUnauthorized() async throws {
+        let transport = QueueTransport(
+            responses: [
+                errorResponse(status: 401, code: "token_expired"),
+                refreshResponse(),
+                successResponse(body: #"{"ok":true}"#),
+            ]
+        )
+        let security = TestSecurityClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: security)
+        let accountID = try AccountID("acct_one")
+        try await tokenStore.storeInitial(
+            AuthTokenSet(
+                accountID: accountID,
+                deviceID: try DeviceID("device_one"),
+                accessToken: try AccessToken("access-one"),
+                accessTokenExpiresAt: Date(timeIntervalSince1970: 2_100_000_000),
+                refreshToken: try RefreshToken(refreshToken),
+                refreshTokenExpiresAt: Date(timeIntervalSince1970: 2_200_000_000)
+            )
+        )
+        let runtime = try makeRuntime(
+            transport: transport,
+            security: security,
+            tokenStore: tokenStore
+        )
+
+        let response = try await runtime.send(
+            NativeBearerRequest(path: "/api/v1/bootstrap"),
+            for: accountID
+        )
+        XCTAssertEqual(response.statusCode, 200)
+
+        let requests = await transport.requests
+        XCTAssertEqual(
+            requests.map(\.url.path),
+            ["/api/v1/bootstrap", "/api/v1/auth/refresh", "/api/v1/bootstrap"]
+        )
+        XCTAssertEqual(requests[0].headers["authorization"], "Bearer access-one")
+        XCTAssertNil(requests[1].headers["authorization"])
+        XCTAssertEqual(requests[2].headers["authorization"], "Bearer access-two")
+    }
+
+    func testBearerRequestRejectsCallerCredentialHeaders() throws {
+        for header in ["Authorization", "Cookie"] {
+            let headers = try HTTPHeaders([header: "caller-controlled"])
+            XCTAssertThrowsError(
+                try NativeBearerRequest(
+                    path: "/api/v1/bootstrap",
+                    headers: headers
+                )
+            ) { error in
+                XCTAssertEqual(
+                    error as? NativeBearerRequestError,
+                    .callerSuppliedCredentialHeader(header.lowercased())
+                )
+            }
+        }
+    }
+
     private let validCode = "authorization_code_0000000000000000000000000000"
     private let refreshToken = "refresh_token_00000000000000000000000000000000000000000000"
 
@@ -345,6 +405,20 @@ final class NativeAuthRuntimeTests: XCTestCase {
               "accessTokenExpiresAt":"2033-05-18T04:33:20Z",
               "contractVersion":"\(JunoNativeContract.version)",
               "minimumSupportedAppVersion":"0.1.0"
+            }
+            """
+        )
+    }
+
+    private func refreshResponse() -> HTTPResponse {
+        successResponse(
+            body: """
+            {
+              "tokenType":"Bearer",
+              "accessToken":"access-two",
+              "accessTokenExpiresAt":"2033-05-18T05:33:20Z",
+              "refreshToken":"refresh_token_two_000000000000000000000000000000000000000",
+              "refreshTokenExpiresAt":"2033-06-17T04:33:20Z"
             }
             """
         )
