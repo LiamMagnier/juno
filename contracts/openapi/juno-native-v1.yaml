@@ -164,6 +164,28 @@ paths:
           description: Unknown entity type or malformed id batch.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /entities/index:
+    get:
+      operationId: listEntityIndex
+      parameters:
+        - in: query
+          name: after
+          schema: { type: string }
+          description: Opaque keyset cursor returned by the preceding page.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: >-
+            Keyset-paginated owner-scoped inventory of every live sync entity.
+            Fresh and compacted clients enumerate ids here, then hydrate them
+            through /entities and replay /changes from their bootstrap cursor.
+          content: { application/json: { schema: { $ref: '#/components/schemas/EntityIndexResponse' } } }
+        '400':
+          description: Malformed keyset cursor or page limit.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /mutations:
     post:
       operationId: applyAccountMutation
@@ -327,6 +349,22 @@ components:
       required: [entities]
       properties:
         entities: { type: array, items: { $ref: '#/components/schemas/EntityEnvelope' } }
+    EntityIndexItem:
+      type: object
+      additionalProperties: false
+      required: [type, id, revision]
+      properties:
+        type: { type: string }
+        id: { type: string }
+        revision: { type: integer, minimum: 0 }
+    EntityIndexResponse:
+      type: object
+      additionalProperties: false
+      required: [items, nextAfter, hasMore]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/EntityIndexItem' } }
+        nextAfter: { type: [string, 'null'] }
+        hasMore: { type: boolean }
     ErrorEnvelope:
       type: object
       required: [error]

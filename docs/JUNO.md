@@ -1038,7 +1038,12 @@ generates Swift models from it and fails the build on drift.
   upsert|delete, changedAt}`); a cursor below the compaction floor → **410**
   `cursor_compacted` (resync from bootstrap). `/changes/stream` is an SSE wake-up channel
   (not data) with a 55 s window, 15 s heartbeat, and `cursor` events on advance.
-- **`GET /entities`** — batch hydration by type + ids (≤100). 23 loaders cover profile,
+- **`GET /entities/index`** — keyset-paginated owner-scoped live entity inventory for
+  fresh installs and compaction rebuilds. The client captures `/bootstrap` first,
+  enumerates ids here, hydrates them, commits the baseline atomically, then replays
+  `/changes` after that captured cursor so concurrent writes cannot be lost.
+- **`GET /entities`** — batch hydration by type + ids (≤100) discovered by the inventory
+  or change feed. 22 loaders cover profile,
   settings, subscription, folder, conversation, message (decrypted), message_version,
   attachment (signed url), artifact(+version), project, memory, saved_prompt, connection
   (credentials excluded), usage, share, announcement_dismissal, scheduled_task,

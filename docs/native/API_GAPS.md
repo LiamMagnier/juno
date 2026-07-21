@@ -96,10 +96,26 @@ in-memory transactional test adapter, cursor-page application, and mutation
 outbox state/retry/conflict primitives have focused Swift tests. They are not a
 production database or complete sync actor.
 
-Remaining resolution: implement SQLite migrations and durable cursor/outbox
-persistence, compaction and crash recovery, backoff/jitter, secure wipe and
-conflict UI, then prove them with Web-to-Swift and mandatory offline/reconnect
-scenarios.
+Progress in `9bceb7e`: the native clients now have a versioned encrypted SQLite
+store, account-scoped atomic records/cursors, production Keychain key custody,
+secure wipe and bootstrap-baseline installation. Durable outbox and the complete
+network coordinator remain.
+
+Proven server contract gap (2026-07-21): a fresh client cannot discover the ids
+needed by `GET /api/v1/entities`. `/bootstrap` returns only a current cursor,
+`/entities` requires caller-supplied ids, and starting `/changes` at the current
+cursor intentionally omits historical rows. The old native app works around this
+with several feature-specific list routes, but those routes are capped and do not
+cover all sync entity types. Rows created before change capture also have no
+`EntityRevision`, so a revision-table-only inventory would be incomplete.
+
+Resolution in this unit: backfill live pre-capture rows at revision zero and
+expose an owner-scoped, keyset-paginated entity inventory adjacent to the
+existing `/entities` hydration route. Payload hydration stays in the existing
+loader; clients replay `/changes` from the bootstrap cursor so concurrent writes
+are not lost. Remaining client work: durable outbox, compaction recovery,
+reconnect backoff/jitter and conflict UI, plus Web-to-Swift offline/reconnect
+proof.
 
 ### GAP-006 — route error behavior is inconsistent outside `/api/v1`
 
