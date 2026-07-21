@@ -1,16 +1,16 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 01:26 Europe/Paris
+Updated: 2026-07-22 01:49 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `6e20050da149ee7bc057a637274edc8e06d7ac8f` (`feat(native): stream real Juno chat`)
+- Current completed implementation commit: `35fce4a04f41ffc3d252e988950c6eec03743bc7` (`feat(native): add real projects and files`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
 - Working tree: known unstaged Xcode 27 project/scheme and String Catalog rewrites are preserved outside implementation commits.
-- Current phase: projects and files.
-- Current task: production chat streaming is complete.
-- Next exact action: reuse the existing project/file routes, sync entities and old native clients for native project and file surfaces.
+- Current phase: library and artifacts.
+- Current task: production projects and files are complete.
+- Next exact action: reuse the existing library/artifact routes, sync entities and old native clients for native saved-item and versioned-artifact surfaces.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -20,7 +20,7 @@ clean, restore, stage, or commit those files from this native worktree.
 
 - General repository/backend/OpenAPI/toolchain/prototype audit; baseline commit `1de5cda`.
 - Canonical callback and OpenAPI/backend/Swift-generation alignment; implementation commit `b903159`.
-- `JunoNativeKit` Swift 6 package with ten acyclic products and 119 strict-concurrency tests.
+- `JunoNativeKit` Swift 6 package with ten acyclic products and 126 strict-concurrency tests.
 - Security.framework-backed, device-local `KeychainAuthTokenStore` with active-account restoration, account-switch purge, serialized compare-and-swap, and ten focused tests.
 - Canonical PKCE-S256 browser authorization, strict callback correlation, existing token/refresh/session/logout route client, authoritative session validation, and production app composition on macOS and iOS.
 - Refresh-aware same-origin bearer transport and a fail-closed checkpoint client for the existing `/api/v1/bootstrap` route, with account, contract, cursor and model-manifest validation.
@@ -41,6 +41,9 @@ clean, restore, stage, or commit those files from this native worktree.
 - Real chat in `6e20050`: native composer/model/effort controls, idempotent user
   append, production SSE, progressive response/reasoning/sources, cancellation,
   retry and sync-based reconnect without duplicate POSTs on ambiguous loss.
+- Real projects and files in `35fce4a`: encrypted account-scoped projection,
+  durable project mutations, linked conversations, bearer uploads, fresh file
+  access hydration, preview/rename/delete, and native state handling on both apps.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -50,10 +53,10 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `src/app/api/projects`
-2. `src/lib/sync-entities.ts`
-3. `native/Packages/JunoNativeKit/Sources/JunoSync`
-4. the old native project's project/file clients (read-only source lineage)
+1. `src/app/api/library`
+2. `src/app/api/artifacts`
+3. `src/lib/sync-entities.ts`
+4. the old native project's library/artifact clients (read-only source lineage)
 
 ## Commands to run next
 
@@ -88,7 +91,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 119/119 tests, including Auth 35/35, Storage 11/11, Sync 37/37 and ChatKit 11/11.
+- Strict package suite: 126/126 tests, including seven focused project/file tests.
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
 - JunoMac unit tests: 2/2.
@@ -107,7 +110,7 @@ Failed, unrun, or pre-existing:
 ## Uncommitted changes
 
 Known preserved changes: iOS Xcode 27 project/scheme rewrites and both generated
-String Catalog rewrites. They are not part of `6e20050`; inspect before staging
+String Catalog rewrites. They are not part of `35fce4a`; inspect before staging
 and do not reset them or the independent main checkout.
 
 ## Decisions not to reopen without evidence
@@ -130,7 +133,7 @@ and do not reset them or the independent main checkout.
 
 ## Remaining work
 
-- Projects/files and mutation conflict UI.
+- Library/artifacts and mutation conflict UI.
 - Production search persistence and live-account offline/reconnect proof.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.
