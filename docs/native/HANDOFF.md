@@ -1,104 +1,132 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 22:00 Europe/Paris
+Updated: 2026-07-21 22:15 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `b903159ad678f773f5cdbe2e64a926ffa68e6564`
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; shared package/project files under `native/**` are active uncommitted work from parallel builders.
-- Main checkout: independently on `main` at `e0d1285`, with pre-existing Remote Session changes. Never reset, restore, clean, or stage those files from native work.
-- Current phase: shared Swift foundation and independent project skeletons.
-- Current task: implement and test `JunoNativeKit`, then generate separate `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`; do not ship the monolithic prototype.
+- Current completed implementation commit: `0fb7cc38f2a22bba641773fa873dc5b89e232a8b`
+- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
+- Working tree: expected clean after the handoff documentation commit.
+- Current phase: production auth and storage composition.
+- Current task: stopped at a stable boundary; no implementation is in progress.
+- Next exact action: implement and test a Security-backed, account/device-scoped `KeychainAuthTokenStore`, then wire the auth bootstrap into the two app entry points.
+
+The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
+on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
+clean, restore, stage, or commit those files from this native worktree.
 
 ## Actually completed
 
-- Full master prompt and continuity addendum read.
-- Repository/backend/OpenAPI/release/toolchain baseline captured.
-- Web baseline passes (`npx tsc --noEmit`, `npm test`; lint has warnings only).
-- Local prototype found at `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild`; Debug and Release macOS builds succeed with Xcode 27 beta/signing disabled, and 34/34 macOS tests pass.
-- The same prototype fails its Debug iOS Simulator build at `AuthSession.swift:73` because it calls macOS-only `Host.current()` and sends `platform: "macOS"`; do not label it a functional iOS client.
-- Official OpenAI/Apple/Anthropic research completed and summarized in `RESEARCH.md`.
-- Audit and handoff baseline committed as `1de5cda`.
-- Callback/version drift resolved in `b903159`: server/OpenAPI are at 1.0.1, new clients use the canonical reverse-DNS callback, legacy remains an exact migration allowlist value, and generated Swift is self-contained.
+- General repository/backend/OpenAPI/toolchain/prototype audit; baseline commit `1de5cda`.
+- Canonical callback and OpenAPI/backend/Swift-generation alignment; implementation commit `b903159`.
+- `JunoNativeKit` Swift 6 package with ten acyclic products and 50 strict-concurrency tests.
+- Deterministic generated Swift contract and local drift command.
+- Storage/sync/search foundations: account-scoped store protocol, deterministic in-memory test adapter, cursor application, mutation outbox, and local-search contract.
+- Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
+- Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
+- macOS unit tests 2/2 and iOS unit tests 2/2 pass.
+- All three active lots integrated in `0fb7cc3`.
 
-No new production native application is complete yet. Do not describe the prototype or legacy DMG as the requested finished release.
+This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `native/Packages/JunoNativeKit/Package.swift`
-2. `native/Packages/JunoNativeKit/Sources/`
-3. `native/Packages/JunoNativeKit/Tests/`
-4. `native/macOS/JunoMac/`
-5. `native/iOS/JunoMobile/`
-6. `docs/native/ARCHITECTURE.md`
-7. `docs/native/API_GAPS.md`
-
-## Next exact work
-
-1. Create `native/Packages/JunoNativeKit/Package.swift` with the documented acyclic targets.
-2. Add platform-neutral core/API/auth primitives and deterministic Swift tests.
-3. Run package tests with strict concurrency enabled and correct introduced failures.
-4. Create independent `native/macOS/JunoMac/JunoMac.xcodeproj` and `native/iOS/JunoMobile/JunoMobile.xcodeproj` projects.
-5. Migrate storage/sync/search before feature UI.
+1. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenStore.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenCoordinator.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokens.swift`
+4. `native/Packages/JunoNativeKit/Tests/JunoAuthTests/AuthTokenCoordinatorTests.swift`
+5. `native/macOS/JunoMac/App/JunoMacApp.swift`
+6. `native/iOS/JunoMobile/App/JunoMobileApp.swift`
+7. `docs/native/DECISIONS.md`
+8. `docs/native/TESTING.md`
 
 ## Commands to run next
 
 ```bash
 cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary
 git status --short --branch
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -version
-git show --stat b903159
+git log -3 --oneline
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test \
+  --package-path native/Packages/JunoNativeKit \
+  --scratch-path /tmp/juno-native-kit-tests-next \
+  -Xswiftc -warnings-as-errors
+npm run native:contract:check
 ```
 
-After the package exists:
+After the Keychain unit is added, rerun the two Debug builds:
 
 ```bash
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac \
+  -configuration Debug -destination 'platform=macOS' \
+  -derivedDataPath /tmp/juno-mac-next-derived CODE_SIGNING_ALLOWED=NO build
+
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile \
+  -configuration Debug -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /tmp/juno-mobile-next-derived CODE_SIGNING_ALLOWED=NO build
 ```
 
 ## Test record
 
 Passing:
 
-- `npx tsc --noEmit`
-- `npm run lint` (exit 0; three existing warnings)
-- `npm test`
-- prototype Debug macOS unsigned `xcodebuild build`
-- prototype Release macOS unsigned `xcodebuild build`
-- prototype macOS tests (34/34)
-- native callback/contract tests
-- Web TypeScript typecheck after contract version bump
-- generated Swift contract strict-concurrency typecheck
+- `npm run native:contract:check`.
+- Strict Release package build with `-warnings-as-errors`.
+- Strict package suite: 50/50 tests.
+- JunoMac Debug and Stable unsigned builds.
+- JunoMobile Debug and Stable simulator builds.
+- JunoMac unit tests: 2/2.
+- JunoMobile unit tests: 2/2.
+- Earlier Web typecheck/lint/test baseline and callback contract tests.
 
-Failed/blocked:
+Failed, unrun, or pre-existing:
 
-- restricted-sandbox `npm test` (`tsx` IPC `EPERM`); approved rerun passed.
-- unqualified `xcodebuild` because `xcode-select` points at Command Line Tools; use `DEVELOPER_DIR`.
-- simulator discovery in restricted sandbox; run Xcode commands with approved access.
-- prototype Debug iOS Simulator build: `Host` unavailable in `AuthSession.swift`; fix by platform-specific device metadata during migration, not by patching the read-only prototype.
+- UI test targets compile but were not run.
+- Next configurations were generated/inspected but not compiled separately.
+- The default package `.build` path inside the Desktop/File Provider worktree can fail product signing due Finder metadata/resource forks; use an isolated `/tmp` scratch path.
+- `xcodebuild` without `DEVELOPER_DIR` selects Command Line Tools and fails.
+- The separate monolithic prototype's iOS build has the pre-existing macOS-only `Host.current()` error. Do not patch or ship the prototype.
+- Three pre-existing Web React Hook warnings remain.
+
+## Uncommitted changes
+
+None expected at handoff. If `git status` is not clean, inspect before changing
+anything; do not assume files in the main checkout belong to this branch.
 
 ## Decisions not to reopen without evidence
 
-- Preserve and extend the current Web backend; native clients never access PostgreSQL.
-- Keep Mac-authoritative Remote sessions; the server is the authenticated registry/relay/snapshot index.
-- Salvage the local prototype, but do not copy its monolithic topology or production demo/BYOK paths.
-- Use system SwiftUI/AppKit navigation and controls; screenshots are interaction references, not pixel targets.
-- Store native credentials in Keychain and use bearer device sessions; never convert Auth.js cookies into native identity.
-- Keep decrypted full-text search local and wipe it on logout/revocation/account switch.
-- Do not publish until independent Debug/Release builds, required tests, signing gates, and secret scans pass.
+- Two independent app projects; shared code only through acyclic local packages.
+- Existing backend remains authoritative; native never accesses PostgreSQL.
+- Canonical reverse-DNS callback, exact legacy callback retained server-side only.
+- Bearer device sessions plus Keychain; no Web-cookie identity, direct provider credentials, demo/BYOK production paths, or token logging.
+- In-memory store/search implementations are test/development adapters, not production persistence.
+- Mac-authoritative Remote sessions and native system navigation/materials.
+- No publication before CI, archive, signature, privacy, secret, and notarization/TestFlight gates pass.
 
 ## Work not to repeat
 
-- Do not repeat the general repository audit unless these docs become stale.
-- Do not recreate the prototype from scratch; inspect and migrate it selectively.
-- Do not re-research basic Codex/Claude Remote and Apple Liquid Glass principles; sources and conclusions are in `RESEARCH.md`.
-- Do not treat `public/downloads/Juno.dmg` as a fresh validated build.
+- Do not repeat the general repository audit or basic OpenAI/Anthropic/Apple research while these docs are current.
+- Do not rebuild the package/project skeletons or reintroduce a monolithic multiplatform project.
+- Do not recreate the generated contract manually; use the generator and drift command.
+- Do not treat the local prototype or `public/downloads/Juno.dmg` as release-ready.
+- Do not rerun or modify the three completed lots unless a concrete regression is demonstrated.
+
+## Remaining work
+
+- Keychain and system-browser auth composition.
+- Durable SQLite/migrations and production sync/search persistence.
+- Full typed chat/upload/account/Code/Remote/voice/push contracts.
+- Functional feature UI on macOS and iOS/iPadOS.
+- UI/E2E/accessibility/performance/secret/dependency gates and native CI.
+- Production artwork, signed archives, notarized macOS distribution, and TestFlight/App Store delivery.
 
 ## Real blockers / user actions
 
-- GitHub CLI token is invalid; user must complete `gh auth login -h github.com` before publication.
-- Signed macOS/iOS distribution requires Apple developer identities/profiles and App Store/Notary access not present in the repository.
-- StoreKit product mapping and APNs credentials need owner-provided production values.
+- GitHub CLI token is invalid; `gh auth login -h github.com` is required before push/release.
+- Apple bundle-ID reservation, Team/signing/provisioning, App Store Connect, Developer ID, and notarization inputs are unavailable.
+- StoreKit product mapping and APNs credentials require owner-provided production values.
 
-Continue all non-proprietary implementation and validation before asking for those inputs.
+Continue non-proprietary implementation sequentially. Ask for these inputs only
+when the corresponding release/commerce/notification gate is reached.

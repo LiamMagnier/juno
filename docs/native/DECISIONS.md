@@ -58,3 +58,23 @@
 - Context: a legacy DMG exists, but new native clients lack independent projects, release validation, signing and notarization evidence.
 - Decision: publish only artifacts built from the final commit after Debug and Release builds, tests, secret scans, entitlement/privacy checks, signature verification, and (for public Mac distribution) notarization/stapling. iOS availability means TestFlight/App Store, not an unsigned GitHub IPA.
 - Reason: a downloadable file is not a production release unless the chain of custody and platform security gates are verifiable.
+
+## D-009 — Swift 6 package boundaries and test-only adapters
+
+- Context: the two apps need shared logic without circular imports or hidden platform coupling, while persistence/search production adapters do not yet exist.
+- Options: one large shared module; app-local duplication; acyclic capability packages with protocol boundaries.
+- Decision: use ten Swift 6 products with one-way dependencies. Keep the in-memory transactional store and search index as deterministic test/development adapters only; production must provide durable account-scoped storage and protected indexing.
+- Reason: strict concurrency and explicit boundaries expose unsafe coupling early and allow both apps to share behavior without sharing lifecycle or privileged UI.
+- Consequences: app targets may not silently promote the in-memory adapters to production. Keychain and SQLite implementations require focused failure, wiping, migration, and crash-recovery tests.
+- Files: `native/Packages/JunoNativeKit/Package.swift`, `native/Packages/JunoNativeKit/Sources/**`, `native/Packages/JunoNativeKit/Tests/**`.
+- Status: implemented as a compile- and test-verified foundation in `0fb7cc3`.
+
+## D-010 — Reproducible independent project generation
+
+- Context: hand-edited project files drift easily, but the repository must still open and build without regenerating files.
+- Options: commit only XcodeGen specifications; commit only hand-maintained projects; commit separate specifications plus their generated projects and verify drift later in CI.
+- Decision: keep one XcodeGen specification and one committed `.xcodeproj` per application. Share build settings through explicit Debug/Stable/Next `.xcconfig` files while preserving separate bundle, entitlement, resource, test, and release surfaces.
+- Reason: this satisfies the two-project topology, supports reproducible regeneration, and keeps fresh checkouts immediately buildable.
+- Consequences: changes to a specification must regenerate and review the corresponding project. Native CI must eventually fail when generated projects drift.
+- Files: `native/macOS/JunoMac/project.yml`, `native/macOS/JunoMac/JunoMac.xcodeproj/**`, `native/iOS/JunoMobile/project.yml`, `native/iOS/JunoMobile/JunoMobile.xcodeproj/**`, `native/Config/**`, `native/Scripts/generate-projects.sh`.
+- Status: implemented and Debug/Stable build-verified in `0fb7cc3`.

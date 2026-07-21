@@ -1,59 +1,62 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "b903159ad678f773f5cdbe2e64a926ffa68e6564",
-  "workingTreeClean": false,
-  "currentPhase": "shared-swift-foundation",
-  "currentTask": "Create and test the acyclic JunoNativeKit package, then generate independent JunoMac and JunoMobile projects.",
+  "currentCommit": "0fb7cc38f2a22bba641773fa873dc5b89e232a8b",
+  "workingTreeClean": true,
+  "currentPhase": "production-auth-storage-composition",
+  "currentTask": "Implement and test a Security-backed account/device-scoped KeychainAuthTokenStore, then wire auth bootstrap into both app entry points.",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Package.swift",
-    "native/Packages/JunoNativeKit/Sources",
-    "native/Packages/JunoNativeKit/Tests",
-    "native/macOS/JunoMac",
-    "native/iOS/JunoMobile",
-    "docs/native/ARCHITECTURE.md"
+    "native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenStore.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenCoordinator.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokens.swift",
+    "native/Packages/JunoNativeKit/Tests/JunoAuthTests/AuthTokenCoordinatorTests.swift",
+    "native/macOS/JunoMac/App/JunoMacApp.swift",
+    "native/iOS/JunoMobile/App/JunoMobileApp.swift",
+    "docs/native/DECISIONS.md",
+    "docs/native/TESTING.md"
   ],
   "completed": [
-    "Read master prompt and continuity addendum",
-    "Captured Git/Web/OpenAPI/toolchain baseline",
-    "Created agent/juno-native branch",
-    "Located and built the local monolithic Swift prototype for Debug macOS",
-    "Built the prototype for unsigned Release macOS and ran 34 passing macOS tests",
-    "Completed initial official OpenAI, Apple, and Anthropic research",
-    "Created persistent audit and handoff documents",
-    "Committed the complete native audit baseline as 1de5cda",
-    "Aligned native callback and contract version across backend, OpenAPI and deterministic Swift generation in b903159"
+    "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
+    "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
+    "Acyclic Swift 6 JunoNativeKit package with ten products",
+    "Fifty strict-concurrency Swift package tests",
+    "Deterministic checked-in Swift contract with local drift command",
+    "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
+    "Independent JunoMac and JunoMobile Xcode projects with Debug, Stable and Next configurations",
+    "Mac Debug and Stable unsigned builds, including universal Stable output",
+    "iOS Debug and Stable simulator builds",
+    "JunoMac unit tests 2/2 and JunoMobile unit tests 2/2",
+    "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Shared Swift packages",
-    "Independent JunoMac project",
-    "Independent JunoMobile project",
-    "Typed contract expansion and generation drift CI",
-    "Auth/sync/storage/search migration and tests",
-    "macOS chat and Juno Code/Remote Host/Computer Use",
-    "iOS/iPadOS chat/sidebar/search/Cloud/Remote",
-    "Accessibility/localization/performance/E2E",
-    "Signed release, GitHub publication, macOS download and TestFlight/App Store"
+    "Production Keychain token store and system-browser auth composition",
+    "Durable SQLite storage, migrations, cursor/outbox persistence, crash and compaction recovery",
+    "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
+    "Functional macOS and iOS/iPadOS feature UI",
+    "UI, end-to-end, accessibility, performance, dependency and secret gates",
+    "Native CI and Release/archive dry runs",
+    "Production artwork",
+    "Signed/notarized macOS release and TestFlight/App Store delivery"
   ],
   "passingCommands": [
-    "npx tsc --noEmit",
-    "npm run lint (exit 0, three pre-existing warnings)",
-    "npm test",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno.xcodeproj -scheme Juno -configuration Debug -destination platform=macOS -derivedDataPath /tmp/juno-prototype-derived CODE_SIGNING_ALLOWED=NO build",
-    "Prototype unsigned macOS Release build",
-    "Prototype macOS tests: 34/34 pass",
-    "npx tsx --test tests/native-contract.test.ts tests/native-auth-core.test.ts",
-    "npx tsc --noEmit after native contract alignment",
-    "Generated Swift strict-concurrency typecheck with warnings as errors"
+    "npm run native:contract:check",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-tests-final -Xswiftc -warnings-as-errors (50/50)",
+    "JunoMac Debug unsigned xcodebuild",
+    "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
+    "JunoMobile Debug generic iOS Simulator xcodebuild",
+    "JunoMobile Stable generic iOS Simulator xcodebuild, arm64+x86_64",
+    "JunoMacTests 2/2",
+    "JunoMobileTests 2/2",
+    "Earlier Web typecheck, lint, test and native callback contract suites"
   ],
   "failingCommands": [
-    "npm test in restricted sandbox: tsx IPC listen EPERM; approved rerun passes",
-    "xcodebuild without DEVELOPER_DIR: active developer directory is CommandLineTools",
-    "simctl in restricted sandbox: CoreSimulatorService unavailable",
-    "Prototype iOS Simulator build: AuthSession.swift:73 cannot find Host in scope and hardcodes platform macOS"
+    "Default Swift package scratch under the Desktop/File Provider worktree can fail signing because Finder metadata/resource forks are attached; isolated /tmp scratch paths pass",
+    "xcodebuild without DEVELOPER_DIR fails because xcode-select points to CommandLineTools",
+    "Separate monolithic prototype iOS build fails at AuthSession.swift:73 because Host.current() is unavailable and platform is hardcoded macOS"
   ],
   "blockers": [
-    "GitHub CLI token invalid; gh auth login required before push/release",
-    "Apple signing, provisioning, App Store Connect, Developer ID and notarization credentials are not available in the repository",
-    "Production StoreKit product mapping and APNs credentials are owner-provided inputs"
+    "GitHub CLI token invalid; gh auth login required before push, PR, tag or release",
+    "Apple bundle identifiers, Team/signing/provisioning, App Store Connect, Developer ID and notarization inputs unavailable",
+    "Production StoreKit mapping and APNs credentials require owner input"
   ]
 }

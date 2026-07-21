@@ -31,6 +31,27 @@ Swift: 6.4. Xcode: 27.0 beta (`27A5218g`). Before production release, repeat all
 | `npx tsc --noEmit` | Pass | Contract version 1.0.1 introduces no TypeScript errors. |
 | Generated Swift `swiftc -typecheck -strict-concurrency=complete -warnings-as-errors` | Pass | Required approved execution because the Xcode module cache is outside the restricted sandbox. |
 
+## Shared foundation and independent projects — `0fb7cc3`
+
+| Command / gate | Result | Notes |
+|---|---|---|
+| `npm run native:contract:check` | Pass | Regeneration in a temporary directory matches the checked-in Swift contract and canonical OpenAPI digest. |
+| `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors` | Pass | Ten Swift 6 products compile under strict concurrency with warnings treated as errors. |
+| `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-tests-final -Xswiftc -warnings-as-errors` | Pass | 50/50 focused tests across Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit. |
+| JunoMac Debug unsigned build | Pass | `platform=macOS`, DerivedData `/tmp/juno-mac-foundation-derived`, signing disabled. |
+| JunoMac Stable unsigned build | Pass | DerivedData `/tmp/juno-mac-stable-derived`; universal `arm64` + `x86_64`. |
+| JunoMobile Debug simulator build | Pass | Generic iOS Simulator, DerivedData `/tmp/juno-mobile-foundation-derived`, signing disabled. |
+| JunoMobile Stable simulator build | Pass | DerivedData `/tmp/juno-mobile-stable-derived`; `arm64` + `x86_64`. |
+| `JunoMacTests` | Pass | 2/2 shell/navigation unit tests. |
+| `JunoMobileTests` | Pass | 2/2 shell/navigation unit tests on an iPhone 17 Pro simulator. |
+| UI test targets | Not run | Targets and sources compile; runtime UI coverage remains a later gate. |
+| Next configurations | Not run | Settings and shared schemes were generated and inspected; compile Next explicitly before using that channel. |
+
+Environment note: a default package `.build` directory inside the Desktop/File
+Provider worktree can acquire Finder metadata/resource forks and make product
+signing fail. Use an isolated `--scratch-path /tmp/...`; both final package
+commands above pass there. This is not a source regression.
+
 ## Required gates by unit
 
 ### Shared packages

@@ -30,8 +30,9 @@ reimplemented for native clients.
 
 ### GAP-001 — callback URI contract drift
 
-Status: resolved for backend/OpenAPI/generation in `b903159`; app URL-scheme
-registration remains part of the independent-project unit.
+Status: resolved for backend/OpenAPI/generation in `b903159`; canonical
+URL-scheme registration is present in both independent apps as of `0fb7cc3`.
+System-browser return and negative callback UI tests remain.
 
 - `src/lib/native-auth-core.ts` declares
   `com.liammagnier.juno://auth/callback` as canonical and accepts
@@ -41,20 +42,21 @@ registration remains part of the independent-project unit.
 - `docs/JUNO.md` describes the canonical `com.liammagnier.juno://` lineage.
 
 Completed: the contract is version 1.0.1, the server reports the same version,
-generation is deterministic and self-contained, and focused tests verify the
-exact allowlist. Remaining project work: register only the canonical URI in new
-app configurations and cover the browser return in platform tests. Removing the
-legacy URI server-side would still break existing builds.
+generation is deterministic and self-contained, focused tests verify the exact
+allowlist, and new app configurations register only the canonical scheme.
+Remaining project work: implement `ASWebAuthenticationSession` composition and
+cover browser return/state/cancellation in platform tests. Removing the legacy
+URI server-side would still break existing builds.
 
-### GAP-002 — no native client source in the active checkout
+### GAP-002 — native client source and topology foundation
 
-There is no `native/` directory, Swift package, Xcode project, Keychain client,
-local database, API client, sync engine, macOS app, or iOS/iPadOS app in the active
-repository tree.
+Status: source/topology foundation resolved in `0fb7cc3`.
 
-Required resolution: create two independent app projects plus shared packages,
-then make the generated contract compile independently. Any native code found in
-other local worktrees must be audited for security and topology before reuse.
+The repository now contains a ten-product Swift package, compile-verified API/auth/
+storage/sync/search primitives, and independent macOS and iOS Xcode projects.
+Both projects build in Debug and Stable unsigned. Production Keychain, SQLite,
+transport/app composition and functional feature UI remain tracked by their
+specific gaps; the existence of source does not make the clients release-ready.
 
 ### GAP-003 — OpenAPI does not represent native product parity
 
@@ -75,8 +77,11 @@ schema and omits most request/response unions. As of `b903159`, its existing
 output is deterministic, public, Sendable and self-contained; the undefined
 `BackendUser` dependency is removed and its digest compiles under strict Swift.
 
-Required resolution: generate a self-contained Sendable Swift model/client layer,
-check the contract digest, and add CI that regenerates and fails on any diff.
+Progress in `0fb7cc3`: the selected self-contained Sendable output is checked in
+under `JunoAPI/Generated`; `npm run native:contract:check` regenerates it in a
+temporary directory and fails on drift, and the package compiles/tests under
+strict concurrency. Remaining resolution: generate the complete model/client
+layer and enforce regeneration in native CI.
 
 ### GAP-005 — no native storage, outbox or synchronization engine
 
@@ -85,8 +90,15 @@ cache, account separation, cursor persistence, offline mutation queue, optimisti
 rollback, conflict resolution, compaction recovery, reconnect backoff/jitter,
 crash recovery, corruption rebuild or secure cache wiping.
 
-Required resolution: implement these in shared Swift packages and prove them with
-Web-to-Swift contract tests and the mandatory offline/reconnect scenarios.
+Progress in `0fb7cc3`: account-scoped storage protocols, a deterministic
+in-memory transactional test adapter, cursor-page application, and mutation
+outbox state/retry/conflict primitives have focused Swift tests. They are not a
+production database or complete sync actor.
+
+Remaining resolution: implement SQLite migrations and durable cursor/outbox
+persistence, compaction and crash recovery, backoff/jitter, secure wipe and
+conflict UI, then prove them with Web-to-Swift and mandatory offline/reconnect
+scenarios.
 
 ### GAP-006 — route error behavior is inconsistent outside `/api/v1`
 
@@ -154,9 +166,13 @@ The current Web palette searches only chat titles and project names. Message bod
 are encrypted on the server, so server-side plaintext message search would change
 the security model.
 
-Required resolution: build a protected local index for authorized decrypted
-content, define searchable entity metadata and wipe rules, and keep server APIs to
-non-sensitive metadata unless an explicit security decision says otherwise.
+Progress in `0fb7cc3`: a local-search protocol and deterministic in-memory adapter
+cover normalized account-scoped indexing/querying and wipe behavior in tests.
+
+Remaining resolution: add a protected durable index for authorized decrypted
+content, define complete entity metadata/filters/recents, integrate authorization
+and logout/revocation wiping, and keep server APIs to non-sensitive metadata
+unless an explicit security decision says otherwise.
 
 ### GAP-013 — bootstrap and compatibility metadata are incomplete
 
@@ -195,8 +211,13 @@ They do not run Swift tests, Xcode builds/tests, Release dry archives, OpenAPI
 Swift regeneration drift checks, entitlement/privacy validation, dependency
 license review or native binary secret scans.
 
-Required resolution: add macOS and iOS simulator jobs on appropriate macOS runners
-and archive all test/build diagnostics.
+Progress in `0fb7cc3`: local strict package build/tests, a deterministic contract
+drift command, independent Debug/Stable builds, privacy manifests and native test
+targets exist. No workflow runs them yet.
+
+Required resolution: add macOS and iOS simulator jobs on appropriate macOS runners,
+enforce project/contract regeneration drift, validate entitlements/privacy,
+perform dependency/license/binary-secret checks, and archive diagnostics.
 
 ## P2 — completeness and robustness
 

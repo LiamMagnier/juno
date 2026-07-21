@@ -1,112 +1,107 @@
 # Juno Native — Status
 
-Last updated: 2026-07-21 22:00 Europe/Paris
+Last updated: 2026-07-21 22:15 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `b903159ad678f773f5cdbe2e64a926ffa68e6564` (`fix(native): align auth callback contract`).
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; it is isolated on `agent/juno-native`. The shared package and project skeletons are currently uncommitted work in progress under `native/**`.
-- Main checkout: a concurrent task returned `/Users/liammagnier/Desktop/workspace/juno` to `main` and committed `e0d1285`. Its existing Remote Session changes remain there, untouched and unstaged by this native run.
-- Remote: `origin https://github.com/LiamMagnier/juno.git`
-- GitHub CLI: installed, but the stored `LiamMagnier` token is invalid as of this update.
-
-## Initial baseline
-
-- The active checkout had no `native/` directory, Swift package, Swift source, Xcode project, entitlement, or privacy manifest.
-- A separate local prototype exists at `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild` with about 35,845 lines of Swift and one monolithic `Juno.xcodeproj` targeting iOS and macOS.
-- The prototype Debug macOS target builds successfully with Xcode 27 beta when signing is disabled.
-- The prototype Debug iOS Simulator target fails to compile because `AuthSession.swift` uses macOS-only `Host.current()` and hardcodes `platform: "macOS"`; this confirms that the single target is not a valid mobile application despite listing iOS as a supported platform.
-- The prototype cannot be shipped unchanged: it violates the required two-project topology, targets both platforms from one app target, and contains demo/BYOK/provider-key paths that production must not expose.
-- Existing Web/backend foundations include native PKCE/device sessions, bearer APIs, bootstrap/change feed/entities/mutations, Cloud Code, agent core, voice relay, and uncommitted Remote Session routes.
+- Current completed implementation commit: `0fb7cc38f2a22bba641773fa873dc5b89e232a8b` (`feat(native): add shared foundation and app projects`).
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
+- Expected working tree at this handoff boundary: clean after the documentation commit.
+- Main checkout: `/Users/liammagnier/Desktop/workspace/juno` remains independently on `main` at `e0d1285`, with pre-existing Remote Session changes untouched by this run.
+- Remote: `origin https://github.com/LiamMagnier/juno.git`.
+- GitHub CLI: installed, but the stored `LiamMagnier` token is invalid.
 
 ## Current phase
 
-Phase 2 — shared Swift foundation and independent project skeletons.
+Phase 2 foundation is complete. The next sequential phase is production auth and
+storage composition.
 
-Current task: create the acyclic `JunoNativeKit` package, its first deterministic tests, and the independent macOS/iOS project skeletons.
+Current task at stop: no implementation is in progress. The exact next unit is a
+Security-backed, account-scoped Keychain token store with deterministic tests,
+followed by wiring the auth bootstrap into both app shells.
 
-## Completed
+## Actually completed
 
-- Read the full master prompt and continuity addendum.
-- Inspected Git status, branch, history, remotes, worktrees, local prototypes, Web routes, native OpenAPI, toolchain, and release artifacts.
-- Created branch `agent/juno-native` without disturbing pre-existing changes.
-- Established the Web baseline.
-- Located Xcode 27 beta at `/Applications/Xcode-beta.app`; the global developer directory still points at Command Line Tools.
-- Built the local monolithic prototype for Debug and Release macOS with code signing disabled; its 34 macOS unit tests pass.
-- Ran the prototype iOS Simulator build and captured its existing platform-coupling failure.
-- Consulted current official OpenAI, Apple, and Anthropic product/security/design documentation; conclusions are in `RESEARCH.md`.
-- Committed the complete audit, architecture, parity, API-gap, testing, research, security, release and persistent-handoff baseline as `1de5cda`.
-- Aligned the backend and OpenAPI contract at version 1.0.1, made `com.liammagnier.juno://auth/callback` canonical while retaining the exact legacy callback, made Swift generation self-contained/deterministic, and added focused tests in `b903159`.
+- General repository/backend/OpenAPI/toolchain/prototype audit and official research; do not repeat while these documents remain current.
+- Persistent native audit/handoff baseline in `1de5cda`.
+- Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
+- Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
+- Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
+- 50 focused Swift package tests, all passing with warnings treated as errors.
+- Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
+- Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
+- Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
+- macOS Debug and Stable unsigned builds; Stable is universal `arm64` + `x86_64`.
+- iOS Debug and Stable simulator builds for `arm64` + `x86_64`.
+- macOS unit tests 2/2 and iOS unit tests 2/2.
+- The three active implementation lots were reviewed and committed together as `0fb7cc3`.
+
+The app shells are compile-verified foundations, not feature-complete production
+applications and not downloadable releases.
 
 ## Remaining
 
-- Create shared Swift packages for API, auth, sync, storage, search, chat, Code, voice, and design system without circular dependencies.
-- Create independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj` projects and migrate validated features.
-- Register and test the canonical auth callback in both independent apps.
-- Complete typed API/Remote contracts and generation drift checks.
-- Implement and verify auth, single-flight refresh, Keychain, sync, offline queue, conflicts, local search, chat, Cloud Code, Remote Host/mobile, approvals, Computer Use controls, accessibility, localization, and release tooling.
-- Add native CI, Release builds, tests, archives, secret scans, and signed distribution gates.
-- Authenticate GitHub, obtain Apple signing/notarization/TestFlight inputs, publish only after all gates pass.
+- Production Keychain token storage, system-browser auth sessions, callback return tests, device/session UI, logout/revocation wiping, and app composition.
+- Durable SQLite-backed account storage, migrations, cursor persistence, offline outbox persistence, crash recovery, compaction recovery, backoff, and conflict UI.
+- Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
+- Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
+- Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
+- Production artwork: the current 1024 px icon is mechanically upscaled from the repository's 512 px source and must be replaced before release.
+- Apple signing/provisioning/notarization/TestFlight/App Store work and GitHub publication.
 
-## Files currently modified before this run
+## Passing commands
 
-- `prisma/schema.prisma`
-- `src/app/api/code/devices/route.ts`
-- `src/app/api/code/tasks/route.ts`
-- `src/lib/code-remote.ts`
-- `prisma/migrations/20260719120000_remote_code_sessions/migration.sql` (untracked)
-- `src/app/api/code/devices/[deviceId]/**` (untracked)
-- `src/lib/code-remote-sessions.ts` (untracked)
-- `src/lib/code-session-command-route.ts` (untracked)
-- `tests/code-remote-sessions.test.ts` (untracked)
+- `npm run native:contract:check`
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors`
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-tests-final -Xswiftc -warnings-as-errors` — 50/50 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
+- Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
+- Same iOS project/scheme with `-configuration Stable` and `/tmp/juno-mobile-stable-derived`.
+- `JunoMacTests` 2/2 and `JunoMobileTests` 2/2 through `xcodebuild test`.
+- Earlier Web baseline: `npx tsc --noEmit`, `npm run lint` (warnings only), and `npm test`.
 
-These files appear related to the requested Remote work, but ownership predates this run. Keep them isolated from native documentation commits until reviewed.
+## Failed, unrun, and pre-existing
 
-They live only in the main checkout. The dedicated native worktree does not contain these uncommitted changes.
+- UI test targets compile but were not executed in this unit.
+- Next-channel settings were generated and inspected but the Next configurations were not separately compiled.
+- A package build using the default `.build` inside the Desktop/File Provider worktree can fail code signing because Finder metadata/resource forks are attached to products. The isolated `--scratch-path /tmp/...` commands above pass; this is an environment issue.
+- Unqualified `xcodebuild` fails because `xcode-select` points to Command Line Tools; keep the explicit `DEVELOPER_DIR`.
+- The read-only monolithic prototype's iOS target still fails at `AuthSession.swift:73` because it uses macOS-only `Host.current()` and hardcodes `platform: "macOS"`. Do not fix or ship that prototype.
+- Three pre-existing Web React Hook lint warnings remain documented in `TESTING.md`.
 
-## Commands executed
+## Decisions not to reopen without evidence
 
-### Passing
+- Keep two independent app projects over acyclic local packages.
+- Preserve the existing backend as source of truth; native clients never access PostgreSQL directly.
+- Use canonical `com.liammagnier.juno://auth/callback`; retain the exact legacy callback server-side only during migration.
+- Use bearer device sessions and Keychain; never reuse Web cookies or expose provider/BYOK keys in production clients.
+- Treat in-memory storage/search implementations as deterministic test/development adapters only.
+- Keep the Mac authoritative for local Remote sessions.
+- Use native SwiftUI/AppKit navigation and restrained system Liquid Glass.
+- Publish only after signed release gates pass; legacy DMG files are not release evidence.
 
-- `npx tsc --noEmit`
-- `npm run lint` — exits 0 with three pre-existing React hook warnings.
-- `npm test` — 121 Node tests plus auth, message-crypto, and moderation scripts pass.
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno.xcodeproj -scheme Juno -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-prototype-derived CODE_SIGNING_ALLOWED=NO build`
-- Prototype unsigned macOS Release build.
-- Prototype macOS tests — 34/34 pass.
-- `npx tsx --test tests/native-contract.test.ts tests/native-auth-core.test.ts`
-- `npx tsc --noEmit` after contract version/callback changes.
-- Generated Swift contract strict-concurrency typecheck with warnings as errors.
+## Real blockers and user actions
 
-### Initially failed because of environment restrictions
-
-- `npm test` inside the restricted sandbox: `tsx` could not create its IPC socket (`listen EPERM`). The same command passed with approved local execution.
-- `xcodebuild` without `DEVELOPER_DIR`: active directory was `/Library/Developer/CommandLineTools`. Use the explicit Xcode beta path.
-- `simctl` inside the restricted sandbox: CoreSimulatorService was unavailable. Use approved Xcode execution for simulator builds/tests.
-- Prototype iOS Simulator build after simulator access was approved: compile error at `Juno/Services/Backend/AuthSession.swift:73` (`Host` is unavailable on iOS), plus a hardcoded macOS platform value. This is a prototype defect, not a regression in the active checkout.
-
-## Known pre-existing issues
-
-- ESLint warnings:
-  - `src/components/canvas/sandbox-frame.tsx`: unnecessary `runNonce` dependency.
-  - `src/components/chat/chat-view.tsx`: two effects omit `chat.messages`.
-- The current OpenAPI covers core native auth/sync but not most Chat, Upload, Voice, Code, Remote, StoreKit, or notification contracts.
-- `public/downloads/Juno.dmg` and `latest.json` are legacy artifacts, not evidence that the requested new clients are ready.
-
-## Proprietary blockers
-
-- Valid GitHub authentication for push, PR, tag, and GitHub Release.
-- Apple Developer Team, reserved bundle identifiers, signing certificates/profiles, App Store Connect/TestFlight access, Developer ID identity, and notarization credentials.
-- Production StoreKit product identifiers/server mapping and APNs credentials.
+- Run `gh auth login -h github.com` before any push, PR, tag, or GitHub Release.
+- Provide/confirm Apple Developer Team, reserved bundle identifiers, certificates/profiles, App Store Connect/TestFlight access, Developer ID identity, and notarization credentials.
+- Provide production StoreKit mappings and APNs credentials when those phases start.
 
 ## Next exact action
 
-Create `native/Packages/JunoNativeKit/Package.swift` and the first `JunoCore`, `JunoAPI`, `JunoAuth`, `JunoStorage`, `JunoSync`, `JunoSearch`, `JunoDesignSystem`, `JunoChatKit`, `JunoCodeKit`, and `JunoVoiceKit` targets with acyclic imports, then run:
+Implement a production `KeychainAuthTokenStore` behind `AuthTokenStore` using an
+injectable Security client and account/device-scoped keys. Add success,
+replacement, missing-item, deletion, malformed-data, and access-failure tests;
+then run the strict package suite before wiring it into both app entry points.
 
-```bash
-cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary
-DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit
-```
+Open first:
 
-Do not begin feature migration until `ARCHITECTURE.md`, `DECISIONS.md`, `PARITY_MATRIX.md`, `API_GAPS.md`, and `HANDOFF.md` agree on the source topology and trust boundaries.
+1. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenStore.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoAuth/AuthTokenCoordinator.swift`
+3. `native/Packages/JunoNativeKit/Tests/JunoAuthTests/AuthTokenCoordinatorTests.swift`
+4. `native/macOS/JunoMac/App/JunoMacApp.swift`
+5. `native/iOS/JunoMobile/App/JunoMobileApp.swift`
+
+Do not start SQLite, feature UI, CI, or release work until the Keychain unit is
+tested, committed, and handed off.
