@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -13,6 +14,7 @@ struct JunoMacRootView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
     @State private var sidebarSearch = ""
 
     var body: some View {
@@ -82,12 +84,14 @@ struct JunoMacRootView: View {
                 conversationModel: conversationModel,
                 projectModel: projectModel,
                 artifactModel: artifactModel,
+                chatTransport: chatTransport,
+                accountID: session.profile.id,
                 openConversation: { id in
                     conversationModel?.selectedConversationID = id
                     selection = .chat
                 }
             )
-                .id(selection)
+            .id(selection)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
@@ -199,6 +203,8 @@ private struct JunoMacDetailView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
+    let accountID: AccountID
     let openConversation: (String) -> Void
 
     @ViewBuilder
@@ -218,6 +224,8 @@ private struct JunoMacDetailView: View {
                 model: artifactModel,
                 openConversation: openConversation
             )
+        } else if section == .code, let chatTransport {
+            JunoMacCodeView(transport: chatTransport, accountID: accountID)
         } else {
             NavigationStack {
                 ContentUnavailableView {

@@ -16,6 +16,7 @@ struct JunoMacApp: App {
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
+    private let chatTransport: (any NativeChatRequestSending)?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -25,6 +26,7 @@ struct JunoMacApp: App {
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
         localStore = configuration.localStore
+        chatTransport = configuration.chatTransport
     }
 
     var body: some Scene {
@@ -35,7 +37,8 @@ struct JunoMacApp: App {
                 syncModel: syncModel,
                 conversationModel: conversationModel,
                 projectModel: projectModel,
-                artifactModel: artifactModel
+                artifactModel: artifactModel,
+                chatTransport: chatTransport
             )
                 .frame(minWidth: 760, minHeight: 520)
         }
@@ -121,7 +124,8 @@ struct JunoMacApp: App {
                     repository: localStore,
                     syncModel: syncModel,
                     sender: runtime
-                )
+                ),
+                chatTransport: runtime
             )
         } catch {
             return JunoMacConfiguration(
@@ -132,7 +136,8 @@ struct JunoMacApp: App {
                 syncModel: nil,
                 conversationModel: nil,
                 projectModel: nil,
-                artifactModel: nil
+                artifactModel: nil,
+                chatTransport: nil
             )
         }
     }
@@ -154,6 +159,7 @@ private struct JunoMacConfiguration {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
 }
 
 private struct JunoMacNavigationCommands: Commands {

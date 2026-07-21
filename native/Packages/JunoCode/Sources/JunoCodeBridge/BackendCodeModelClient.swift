@@ -324,7 +324,7 @@ struct AnthropicStreamDecoder {
             throw AgentModelClientError.invalidResponse(message: "Malformed model event.")
         }
         switch wire.type {
-        case "message_start", "ping", "content_block_stop" where wire.index == nil:
+        case "message_start", "ping":
             return []
         case "content_block_start":
             guard let index = wire.index, let block = wire.contentBlock else { return [] }

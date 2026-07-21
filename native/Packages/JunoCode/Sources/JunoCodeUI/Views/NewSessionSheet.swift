@@ -36,7 +36,7 @@ struct NewSessionSheet: View {
                 Divider()
 
                 Picker("Model", selection: $modelID) {
-                    ForEach(model.dependencies.availableModels) { option in
+                    ForEach(model.availableModels) { option in
                         Text(option.displayName).tag(option.modelID)
                     }
                 }
@@ -88,7 +88,7 @@ struct NewSessionSheet: View {
         .frame(width: 460)
         .onAppear {
             workspaceID = model.workspaces.first?.id
-            modelID = model.dependencies.availableModels.first?.modelID ?? ""
+            modelID = model.availableModels.first?.modelID ?? ""
         }
     }
 

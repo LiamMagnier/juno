@@ -89,7 +89,7 @@ struct SidebarView: View {
                             await model.createSession(
                                 workspaceID: record.id,
                                 configuration: AgentConfiguration(
-                                    modelID: model.dependencies.availableModels.first?.modelID
+                                    modelID: model.availableModels.first?.modelID
                                         ?? "default"
                                 )
                             )

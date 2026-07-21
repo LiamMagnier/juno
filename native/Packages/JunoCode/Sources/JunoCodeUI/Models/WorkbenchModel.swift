@@ -75,6 +75,10 @@ public final class WorkbenchModel {
     public var selectedSessionID: CodeSessionID?
     public var sessionSearchText = ""
     public private(set) var lastError: String?
+    /// The models offered in the new-session composer. Seeded from
+    /// `dependencies.availableModels` and refreshable once the real manifest
+    /// loads after sign-in.
+    public var availableModels: [ModelOption]
 
     public let dependencies: Dependencies
     public let sessionStore: CodeSessionStore
@@ -85,6 +89,7 @@ public final class WorkbenchModel {
 
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
+        self.availableModels = dependencies.availableModels
         self.sessionStore = CodeSessionStore(
             directoryURL: dependencies.storageRootURL.appendingPathComponent("sessions-store")
         )
