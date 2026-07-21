@@ -1,15 +1,15 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "1de5cda93e4eeb761eeec17056513ca8632048d0",
-  "workingTreeClean": true,
+  "currentCommit": "b903159ad678f773f5cdbe2e64a926ffa68e6564",
+  "workingTreeClean": false,
   "currentPhase": "shared-swift-foundation",
   "currentTask": "Create and test the acyclic JunoNativeKit package, then generate independent JunoMac and JunoMobile projects.",
   "nextFiles": [
     "native/Packages/JunoNativeKit/Package.swift",
-    "contracts/openapi/juno-native-v1.yaml",
-    "scripts/generate-native-swift-contract.mjs",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/AuthSession.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift",
+    "native/Packages/JunoNativeKit/Sources",
+    "native/Packages/JunoNativeKit/Tests",
+    "native/macOS/JunoMac",
+    "native/iOS/JunoMobile",
     "docs/native/ARCHITECTURE.md"
   ],
   "completed": [
@@ -20,7 +20,8 @@
     "Built the prototype for unsigned Release macOS and ran 34 passing macOS tests",
     "Completed initial official OpenAI, Apple, and Anthropic research",
     "Created persistent audit and handoff documents",
-    "Committed the complete native audit baseline as 1de5cda"
+    "Committed the complete native audit baseline as 1de5cda",
+    "Aligned native callback and contract version across backend, OpenAPI and deterministic Swift generation in b903159"
   ],
   "remaining": [
     "Shared Swift packages",
@@ -39,7 +40,10 @@
     "npm test",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno.xcodeproj -scheme Juno -configuration Debug -destination platform=macOS -derivedDataPath /tmp/juno-prototype-derived CODE_SIGNING_ALLOWED=NO build",
     "Prototype unsigned macOS Release build",
-    "Prototype macOS tests: 34/34 pass"
+    "Prototype macOS tests: 34/34 pass",
+    "npx tsx --test tests/native-contract.test.ts tests/native-auth-core.test.ts",
+    "npx tsc --noEmit after native contract alignment",
+    "Generated Swift strict-concurrency typecheck with warnings as errors"
   ],
   "failingCommands": [
     "npm test in restricted sandbox: tsx IPC listen EPERM; approved rerun passes",

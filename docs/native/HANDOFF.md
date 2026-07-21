@@ -1,12 +1,12 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-21 21:48 Europe/Paris
+Updated: 2026-07-21 22:00 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native`
-- Current completed phase commit: `1de5cda93e4eeb761eeec17056513ca8632048d0`
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; no implementation changes are pending at this handoff boundary.
+- Current completed implementation commit: `b903159ad678f773f5cdbe2e64a926ffa68e6564`
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; shared package/project files under `native/**` are active uncommitted work from parallel builders.
 - Main checkout: independently on `main` at `e0d1285`, with pre-existing Remote Session changes. Never reset, restore, clean, or stage those files from native work.
 - Current phase: shared Swift foundation and independent project skeletons.
 - Current task: implement and test `JunoNativeKit`, then generate separate `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`; do not ship the monolithic prototype.
@@ -20,20 +20,19 @@ Updated: 2026-07-21 21:48 Europe/Paris
 - The same prototype fails its Debug iOS Simulator build at `AuthSession.swift:73` because it calls macOS-only `Host.current()` and sends `platform: "macOS"`; do not label it a functional iOS client.
 - Official OpenAI/Apple/Anthropic research completed and summarized in `RESEARCH.md`.
 - Audit and handoff baseline committed as `1de5cda`.
+- Callback/version drift resolved in `b903159`: server/OpenAPI are at 1.0.1, new clients use the canonical reverse-DNS callback, legacy remains an exact migration allowlist value, and generated Swift is self-contained.
 
 No new production native application is complete yet. Do not describe the prototype or legacy DMG as the requested finished release.
 
 ## Open next
 
-1. `docs/native/ARCHITECTURE.md`
-2. `docs/native/DECISIONS.md`
-3. `docs/native/PARITY_MATRIX.md`
-4. `docs/native/API_GAPS.md`
-5. `docs/native/STATUS.md`
-6. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/AuthSession.swift`
-7. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift`
-8. `/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Code/RemoteCodeHost.swift`
-9. `contracts/openapi/juno-native-v1.yaml`
+1. `native/Packages/JunoNativeKit/Package.swift`
+2. `native/Packages/JunoNativeKit/Sources/`
+3. `native/Packages/JunoNativeKit/Tests/`
+4. `native/macOS/JunoMac/`
+5. `native/iOS/JunoMobile/`
+6. `docs/native/ARCHITECTURE.md`
+7. `docs/native/API_GAPS.md`
 
 ## Next exact work
 
@@ -46,10 +45,10 @@ No new production native application is complete yet. Do not describe the protot
 ## Commands to run next
 
 ```bash
-cd /Users/liammagnier/Desktop/workspace/juno
+cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary
 git status --short --branch
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -version
-git show --stat 1de5cda
+git show --stat b903159
 ```
 
 After the package exists:
@@ -68,6 +67,9 @@ Passing:
 - prototype Debug macOS unsigned `xcodebuild build`
 - prototype Release macOS unsigned `xcodebuild build`
 - prototype macOS tests (34/34)
+- native callback/contract tests
+- Web TypeScript typecheck after contract version bump
+- generated Swift contract strict-concurrency typecheck
 
 Failed/blocked:
 

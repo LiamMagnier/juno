@@ -23,6 +23,14 @@ DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer
 
 Swift: 6.4. Xcode: 27.0 beta (`27A5218g`). Before production release, repeat all archives with the intended stable Xcode/SDK.
 
+## Contract alignment — `b903159`
+
+| Command | Result | Notes |
+|---|---|---|
+| `npx tsx --test tests/native-contract.test.ts tests/native-auth-core.test.ts` | Pass | Exact canonical/legacy callback allowlist, backend/OpenAPI version parity, deterministic self-contained generation, PKCE and token checks. |
+| `npx tsc --noEmit` | Pass | Contract version 1.0.1 introduces no TypeScript errors. |
+| Generated Swift `swiftc -typecheck -strict-concurrency=complete -warnings-as-errors` | Pass | Required approved execution because the Xcode module cache is outside the restricted sandbox. |
+
 ## Required gates by unit
 
 ### Shared packages

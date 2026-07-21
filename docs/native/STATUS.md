@@ -1,12 +1,12 @@
 # Juno Native — Status
 
-Last updated: 2026-07-21 21:48 Europe/Paris
+Last updated: 2026-07-21 22:00 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed phase commit: `1de5cda93e4eeb761eeec17056513ca8632048d0` (`docs: establish native audit and handoff baseline`).
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; it is isolated on `agent/juno-native`. No implementation changes are pending at this handoff boundary.
+- Current completed implementation commit: `b903159ad678f773f5cdbe2e64a926ffa68e6564` (`fix(native): align auth callback contract`).
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`; it is isolated on `agent/juno-native`. The shared package and project skeletons are currently uncommitted work in progress under `native/**`.
 - Main checkout: a concurrent task returned `/Users/liammagnier/Desktop/workspace/juno` to `main` and committed `e0d1285`. Its existing Remote Session changes remain there, untouched and unstaged by this native run.
 - Remote: `origin https://github.com/LiamMagnier/juno.git`
 - GitHub CLI: installed, but the stored `LiamMagnier` token is invalid as of this update.
@@ -37,13 +37,13 @@ Current task: create the acyclic `JunoNativeKit` package, its first deterministi
 - Ran the prototype iOS Simulator build and captured its existing platform-coupling failure.
 - Consulted current official OpenAI, Apple, and Anthropic product/security/design documentation; conclusions are in `RESEARCH.md`.
 - Committed the complete audit, architecture, parity, API-gap, testing, research, security, release and persistent-handoff baseline as `1de5cda`.
+- Aligned the backend and OpenAPI contract at version 1.0.1, made `com.liammagnier.juno://auth/callback` canonical while retaining the exact legacy callback, made Swift generation self-contained/deterministic, and added focused tests in `b903159`.
 
 ## Remaining
 
-- Finish prototype safety/parity audit and record salvage inventory.
-- Resolve callback URI compatibility across backend, OpenAPI, generator, and both apps.
 - Create shared Swift packages for API, auth, sync, storage, search, chat, Code, voice, and design system without circular dependencies.
 - Create independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj` projects and migrate validated features.
+- Register and test the canonical auth callback in both independent apps.
 - Complete typed API/Remote contracts and generation drift checks.
 - Implement and verify auth, single-flight refresh, Keychain, sync, offline queue, conflicts, local search, chat, Cloud Code, Remote Host/mobile, approvals, Computer Use controls, accessibility, localization, and release tooling.
 - Add native CI, Release builds, tests, archives, secret scans, and signed distribution gates.
@@ -75,6 +75,9 @@ They live only in the main checkout. The dedicated native worktree does not cont
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project /Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno.xcodeproj -scheme Juno -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-prototype-derived CODE_SIGNING_ALLOWED=NO build`
 - Prototype unsigned macOS Release build.
 - Prototype macOS tests — 34/34 pass.
+- `npx tsx --test tests/native-contract.test.ts tests/native-auth-core.test.ts`
+- `npx tsc --noEmit` after contract version/callback changes.
+- Generated Swift contract strict-concurrency typecheck with warnings as errors.
 
 ### Initially failed because of environment restrictions
 
@@ -88,7 +91,6 @@ They live only in the main checkout. The dedicated native worktree does not cont
 - ESLint warnings:
   - `src/components/canvas/sandbox-frame.tsx`: unnecessary `runNonce` dependency.
   - `src/components/chat/chat-view.tsx`: two effects omit `chat.messages`.
-- Native OpenAPI accepts only legacy `juno://auth/callback`, while the backend canonical URI is `com.liammagnier.juno://auth/callback`.
 - The current OpenAPI covers core native auth/sync but not most Chat, Upload, Voice, Code, Remote, StoreKit, or notification contracts.
 - `public/downloads/Juno.dmg` and `latest.json` are legacy artifacts, not evidence that the requested new clients are ready.
 
@@ -103,7 +105,7 @@ They live only in the main checkout. The dedicated native worktree does not cont
 Create `native/Packages/JunoNativeKit/Package.swift` and the first `JunoCore`, `JunoAPI`, `JunoAuth`, `JunoStorage`, `JunoSync`, `JunoSearch`, `JunoDesignSystem`, `JunoChatKit`, `JunoCodeKit`, and `JunoVoiceKit` targets with acyclic imports, then run:
 
 ```bash
-cd /Users/liammagnier/Desktop/workspace/juno
+cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit
 ```
 

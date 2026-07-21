@@ -30,17 +30,21 @@ reimplemented for native clients.
 
 ### GAP-001 — callback URI contract drift
 
+Status: resolved for backend/OpenAPI/generation in `b903159`; app URL-scheme
+registration remains part of the independent-project unit.
+
 - `src/lib/native-auth-core.ts` declares
   `com.liammagnier.juno://auth/callback` as canonical and accepts
   `juno://auth/callback` as legacy.
-- `contracts/openapi/juno-native-v1.yaml` currently constrains token exchange to
-  the legacy `juno://auth/callback` only.
+- `contracts/openapi/juno-native-v1.yaml` now makes the canonical URI the
+  default and enumerates only the canonical and legacy values.
 - `docs/JUNO.md` describes the canonical `com.liammagnier.juno://` lineage.
 
-Required resolution: keep both callbacks accepted server-side for compatibility,
-make the canonical URI the default emitted/used by new apps, and align OpenAPI,
-generated Swift, Xcode URL schemes, browser handoff tests, universal/custom links
-and release configuration. Removing the legacy URI would break existing builds.
+Completed: the contract is version 1.0.1, the server reports the same version,
+generation is deterministic and self-contained, and focused tests verify the
+exact allowlist. Remaining project work: register only the canonical URI in new
+app configurations and cover the browser return in platform tests. Removing the
+legacy URI server-side would still break existing builds.
 
 ### GAP-002 — no native client source in the active checkout
 
@@ -67,8 +71,9 @@ request, response, error and stream in a typed contract. Preserve Web compatibil
 
 `scripts/generate-native-swift-contract.mjs` checks selected source fragments and
 emits a small hand-authored model subset. It does not generate the full OpenAPI
-schema, omits most request/response unions, and references `BackendUser` from
-outside the generated file.
+schema and omits most request/response unions. As of `b903159`, its existing
+output is deterministic, public, Sendable and self-contained; the undefined
+`BackendUser` dependency is removed and its digest compiles under strict Swift.
 
 Required resolution: generate a self-contained Sendable Swift model/client layer,
 check the contract digest, and add CI that regenerates and fails on any diff.

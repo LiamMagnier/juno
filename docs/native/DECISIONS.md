@@ -32,6 +32,7 @@
 - Decision: new apps use `com.liammagnier.juno://auth/callback`; server compatibility keeps the legacy URI during migration. OpenAPI and generated models must express the accepted set without weakening strict redirect validation.
 - Reason: resolves contract drift without breaking installed clients.
 - Consequences: add backend/OpenAPI/Swift tests for exact accepted callbacks and rejection of all other URIs.
+- Status: backend/OpenAPI/generator alignment and focused tests completed in `b903159`; Xcode URL-scheme and browser-return tests remain.
 
 ## D-005 — Local-first protected search
 
