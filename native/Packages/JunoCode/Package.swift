@@ -12,6 +12,10 @@ let package = Package(
         .library(name: "JunoCodeLocal", targets: ["JunoCodeLocal"]),
         .library(name: "JunoCodeRuntime", targets: ["JunoCodeRuntime"]),
         .library(name: "JunoCodeUI", targets: ["JunoCodeUI"]),
+        .library(name: "JunoCodeBridge", targets: ["JunoCodeBridge"]),
+    ],
+    dependencies: [
+        .package(path: "../JunoNativeKit")
     ],
     targets: [
         .target(name: "JunoCodeCore"),
@@ -20,6 +24,13 @@ let package = Package(
         .target(
             name: "JunoCodeUI",
             dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime"]
+        ),
+        .target(
+            name: "JunoCodeBridge",
+            dependencies: [
+                "JunoCodeCore",
+                .product(name: "JunoCodeKit", package: "JunoNativeKit"),
+            ]
         ),
         .testTarget(name: "JunoCodeCoreTests", dependencies: ["JunoCodeCore"]),
         .testTarget(name: "JunoCodeLocalTests", dependencies: ["JunoCodeCore", "JunoCodeLocal"]),
@@ -30,6 +41,10 @@ let package = Package(
         .testTarget(
             name: "JunoCodeUITests",
             dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime", "JunoCodeUI"]
+        ),
+        .testTarget(
+            name: "JunoCodeBridgeTests",
+            dependencies: ["JunoCodeCore", "JunoCodeBridge"]
         ),
     ],
     swiftLanguageModes: [.v6]
