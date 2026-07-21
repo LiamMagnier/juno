@@ -1,25 +1,26 @@
 {
   "branch": "agent/juno-native",
-  "currentCommit": "9dad2a13149438505e569f16dd21420f9d6c100a",
+  "currentCommit": "9bceb7ee3634f6bd32a9c3dbe05bfee0a8defed7",
   "workingTreeClean": true,
-  "currentPhase": "durable-storage-and-synchronization",
-  "currentTask": "Implement the production SQLite account repository, then persist the validated bootstrap cursor through it.",
+  "currentPhase": "production-synchronization",
+  "currentTask": "Implement typed entity hydration and change-feed clients over the existing sync routes, then compose atomic SQLite synchronization.",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Sources/JunoStorage/AccountScopedStorage.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoStorage/InMemoryTransactionalStore.swift",
+    "src/app/api/v1/entities/route.ts",
+    "src/app/api/v1/changes/route.ts",
+    "src/app/api/v1/changes/stream/route.ts",
+    "contracts/openapi/juno-native-v1.yaml",
     "native/Packages/JunoNativeKit/Sources/JunoSync/CursorPageApplier.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Models/PersistenceModels.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/OutboxService.swift"
+    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild/Juno/Services/Backend/SyncService.swift"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
-    "Seventy-four strict-concurrency Swift package tests",
+    "Ninety-six strict-concurrency Swift package tests",
     "Security.framework-backed active-account/device-scoped Keychain token store with account-switch purge and ten focused tests",
     "Canonical PKCE system-browser flow, existing production auth-route client, refresh-aware restore and logout",
     "Refresh-aware same-origin bearer transport and validated checkpoint client for the existing bootstrap route in 9dad2a1",
+    "Encrypted versioned SQLite account repository, atomic Keychain key, lifecycle wipe and atomic hydrated baseline in 9bceb7e",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -30,8 +31,8 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Durable SQLite storage, migrations and account-scoped cursor/entity/outbox persistence",
-    "Production synchronization, crash recovery and compaction recovery",
+    "Typed entity hydration, changes and stream composition over the existing sync routes",
+    "Durable outbox, production synchronization, crash recovery and compaction recovery",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
     "UI, end-to-end, accessibility, performance, dependency and secret gates",
@@ -41,8 +42,8 @@
   ],
   "passingCommands": [
     "npm run native:contract:check",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-release-final -Xswiftc -warnings-as-errors",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-bootstrap-full-final -Xswiftc -warnings-as-errors (74/74)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path /tmp/juno-native-kit-sqlite-release-final-3 -Xswiftc -warnings-as-errors",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-native-kit-sqlite-final-3 -Xswiftc -warnings-as-errors (96/96)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",
