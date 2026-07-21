@@ -33,6 +33,16 @@ test("conversation.create carries kind, model, and projectId; strict shapes reje
   assert.ok(mutationOperationSchema.safeParse({ type: "conversation.create" }).success);
   assert.ok(!mutationOperationSchema.safeParse({ type: "conversation.create", kind: "voice" }).success);
   assert.ok(!mutationOperationSchema.safeParse({ type: "conversation.create", surprise: true }).success);
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "conversation.update",
+    entityId: "c1",
+    patch: { model: "anthropic:claude-opus-4-8", pinned: true },
+  }).success);
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "conversation.update",
+    entityId: "c1",
+    patch: { model: "" },
+  }).success);
 });
 
 test("settings.update accepts the email preference fields the web settings API supports", () => {

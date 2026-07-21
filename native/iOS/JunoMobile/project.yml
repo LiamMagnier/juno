@@ -1,0 +1,115 @@
+name: JunoMobile
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "18.0"
+  developmentLanguage: en
+  knownRegions:
+    - en
+    - fr
+  minimumXcodeGenVersion: 2.46.0
+configs:
+  Debug: debug
+  Stable: release
+  Next: release
+packages:
+  JunoNativeKit:
+    path: ../../Packages/JunoNativeKit
+targets:
+  JunoMobile:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Resources
+        excludes:
+          - Info.plist
+          - JunoMobile.entitlements
+        buildPhase: resources
+    dependencies:
+      - package: JunoNativeKit
+        product: JunoAPI
+      - package: JunoNativeKit
+        product: JunoAuth
+      - package: JunoNativeKit
+        product: JunoChatKit
+      - package: JunoNativeKit
+        product: JunoCore
+      - package: JunoNativeKit
+        product: JunoDesignSystem
+      - package: JunoNativeKit
+        product: JunoStorage
+      - package: JunoNativeKit
+        product: JunoSync
+    configFiles:
+      Debug: ../../Config/JunoMobile-Debug.xcconfig
+      Stable: ../../Config/JunoMobile-Stable.xcconfig
+      Next: ../../Config/JunoMobile-Next.xcconfig
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: Resources/JunoMobile.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+  JunoMobileTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: JunoMobile
+    configFiles:
+      Debug: ../../Config/JunoMobile-Debug.xcconfig
+      Stable: ../../Config/JunoMobile-Stable.xcconfig
+      Next: ../../Config/JunoMobile-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMobile.tests
+  JunoMobileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: JunoMobile
+    configFiles:
+      Debug: ../../Config/JunoMobile-Debug.xcconfig
+      Stable: ../../Config/JunoMobile-Stable.xcconfig
+      Next: ../../Config/JunoMobile-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoMobile.uitests
+        TEST_TARGET_NAME: JunoMobile
+schemes:
+  JunoMobile:
+    build:
+      targets:
+        JunoMobile: all
+        JunoMobileTests: [test]
+        JunoMobileUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - JunoMobileTests
+        - JunoMobileUITests
+    profile:
+      config: Stable
+    analyze:
+      config: Debug
+    archive:
+      config: Stable
+  JunoMobile-Next:
+    build:
+      targets:
+        JunoMobile: all
+    run:
+      config: Next
+    profile:
+      config: Next
+    analyze:
+      config: Next
+    archive:
+      config: Next

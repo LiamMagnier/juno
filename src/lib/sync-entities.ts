@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import { coerceChatOrigin } from "@/lib/chat-origin";
 import { getViewUrl } from "@/lib/storage";
+import type { EntityIndexCursor } from "@/lib/sync-entity-index";
 
 /*
  * Entity hydration for the native sync contract (GET /api/v1/entities): given
@@ -436,6 +437,49 @@ export type EntityEnvelope = {
   deletedAt: string | null;
   data: EntityData | null;
 };
+
+export type EntityIndexItem = {
+  type: string;
+  id: string;
+  revision: number;
+};
+
+/**
+ * Enumerates the complete live, owner-scoped entity set using a stable keyset.
+ * Payloads remain in loadEntities(); this inventory exists only so a fresh or
+ * compacted client can discover the ids it must hydrate.
+ */
+export async function listEntityIndex(
+  accountId: string,
+  after: EntityIndexCursor | null,
+  limit: number,
+): Promise<{ items: EntityIndexItem[]; hasMore: boolean }> {
+  const rows = await prisma.entityRevision.findMany({
+    where: {
+      accountId,
+      deletedAt: null,
+      entityType: { in: SYNC_ENTITY_TYPES },
+      ...(after ? {
+        OR: [
+          { entityType: { gt: after.type } },
+          { entityType: after.type, entityId: { gt: after.id } },
+        ],
+      } : {}),
+    },
+    orderBy: [{ entityType: "asc" }, { entityId: "asc" }],
+    take: limit + 1,
+    select: { entityType: true, entityId: true, revision: true },
+  });
+  const hasMore = rows.length > limit;
+  return {
+    items: rows.slice(0, limit).map((row) => ({
+      type: row.entityType,
+      id: row.entityId,
+      revision: row.revision,
+    })),
+    hasMore,
+  };
+}
 
 /**
  * Hydrate a batch of entities of one type. Ids resolve in request order;

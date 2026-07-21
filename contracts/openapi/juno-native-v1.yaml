@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Juno Native API
-  version: 1.0.0
+  version: 1.0.1
   description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
 servers:
   - url: /api/v1
@@ -164,6 +164,28 @@ paths:
           description: Unknown entity type or malformed id batch.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /entities/index:
+    get:
+      operationId: listEntityIndex
+      parameters:
+        - in: query
+          name: after
+          schema: { type: string }
+          description: Opaque keyset cursor returned by the preceding page.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 500, default: 200 }
+      responses:
+        '200':
+          description: >-
+            Keyset-paginated owner-scoped inventory of every live sync entity.
+            Fresh and compacted clients enumerate ids here, then hydrate them
+            through /entities and replay /changes from their bootstrap cursor.
+          content: { application/json: { schema: { $ref: '#/components/schemas/EntityIndexResponse' } } }
+        '400':
+          description: Malformed keyset cursor or page limit.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /mutations:
     post:
       operationId: applyAccountMutation
@@ -199,7 +221,11 @@ components:
       properties:
         code: { type: string }
         codeVerifier: { type: string, minLength: 43, maxLength: 256 }
-        redirectUri: { type: string, const: 'juno://auth/callback' }
+        redirectUri:
+          type: string
+          enum: ['com.liammagnier.juno://auth/callback', 'juno://auth/callback']
+          default: 'com.liammagnier.juno://auth/callback'
+          description: New clients use the canonical reverse-DNS URI; the legacy URI remains allowlisted only for installed-client migration.
         installationId: { type: string, minLength: 16, maxLength: 200 }
         deviceName: { type: string, minLength: 1, maxLength: 120 }
         platform: { type: string, minLength: 1, maxLength: 40 }
@@ -323,6 +349,22 @@ components:
       required: [entities]
       properties:
         entities: { type: array, items: { $ref: '#/components/schemas/EntityEnvelope' } }
+    EntityIndexItem:
+      type: object
+      additionalProperties: false
+      required: [type, id, revision]
+      properties:
+        type: { type: string }
+        id: { type: string }
+        revision: { type: integer, minimum: 0 }
+    EntityIndexResponse:
+      type: object
+      additionalProperties: false
+      required: [items, nextAfter, hasMore]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/EntityIndexItem' } }
+        nextAfter: { type: [string, 'null'] }
+        hasMore: { type: boolean }
     ErrorEnvelope:
       type: object
       required: [error]
