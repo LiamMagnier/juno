@@ -1,8 +1,29 @@
 # Juno Code macOS — Integration Handoff
 
 Updated: 2026-07-22 (Europe/Paris)
-Branch: `agent/juno-code-macos` (base `9bceb7e`, 15 commits, tip `bd09427`)
+Branch: `agent/juno-code-macos`, rebased on `agent/juno-native` (which includes
+Codex commit `6e20050`, the real Juno chat transport).
 Author track: Juno Code rebuild (parallel to the Codex track; zero overlap by construction).
+
+## Final integration status
+
+The model transport is now wired to the real backend. `BackendCodeModelClient`
+(in `JunoCodeBridge`) implements `AgentModelClient` over the existing
+refresh-aware bearer transport (`NativeAuthRuntime` /
+`NativeAuthenticatedByteStreaming`) and the existing authenticated agent proxy
+`/api/agent/anthropic/v1/messages` — **no new authentication and no new backend
+route**. Juno Code is composed into the main `JunoMac` app behind the existing
+`.code` navigation section (`JunoMacCodeView`), building the workbench for the
+signed-in account and loading the live model manifest from `/api/v1/models`.
+The standalone `JunoCode` app is retained for isolated testing.
+
+The full local vertical slice is validated end to end against the real model
+client (over replayed real Anthropic SSE, since interactive browser sign-in
+cannot run headless): instruction → model turns → `read_file` → `apply_patch`
+(real on-disk mutation) → `run_command` (streamed output) → completion, plus
+approval genuinely suspending a model-driven tool call, and network
+drop/persistent-failure ending the session cleanly with no false success and no
+partial mutation.
 
 ## What this branch delivers
 
@@ -42,38 +63,37 @@ the new architecture. Nothing from the legacy `juno-app` monolith was ported.
     Computer tabs), graphite/terracotta theme, keyboard shortcuts, VoiceOver
     labels; `WorkspaceDirectory` persisting bookmark grants; MainActor
     observable models bridging the actor runtime.
-  - `JunoCodeBridge` — the only seam to `JunoNativeKit`: adapters to
-    `CodeExecutionLocation`, `CodePermissionMode`, `WorkspaceRelativePath`,
-    `CodeApprovalRequest` and `CodeTaskConfiguration`.
+  - `JunoCodeBridge` — the seam to `JunoNativeKit`: `BackendCodeModelClient`
+    (the real model transport over the authenticated agent proxy), plus
+    adapters to `CodeExecutionLocation`, `CodePermissionMode`,
+    `WorkspaceRelativePath`, `CodeApprovalRequest` and `CodeTaskConfiguration`.
+- **`native/macOS/JunoMac`** — Juno Code is composed into the main app behind
+  the `.code` section (`JunoMacCodeView`), wired to the real backend model
+  client for the signed-in account.
 - **`native/macOS/JunoCode`** — a standalone XcodeGen app project (Debug/
-  Stable/Next via new `native/Config/JunoCode-*.xcconfig` files) whose
-  composition root wires the workbench. Local vertical slice works end to end:
-  pick workspace → create session → prompt → read → patch (approval suspends,
-  approve/deny both resume) → diff → run test → stop/finish, with checkpoints
-  and undo.
+  Stable/Next via new `native/Config/JunoCode-*.xcconfig` files) retained for
+  isolated testing; its composition root uses `UnconfiguredModelClient`.
 
 ## Verification record
 
 - `swift test` on `native/Packages/JunoCode` with `-warnings-as-errors`:
-  **166/166** (Core 68, Local 56, Runtime 30, UI 7, Bridge 5).
-- `xcodebuild` JunoCode app: Debug **green**, Stable **green**, unit test green
-  (`CODE_SIGNING_ALLOWED=NO`, unsigned).
-- JunoMac Debug build re-verified **green** (untouched).
-- `npm run native:contract:check`: **canonical digest matches** (contract
-  untouched).
-- JunoNativeKit package: 61 non-auth tests re-run green; the auth suite was
-  skipped in this headless session because `KeychainAuthTokenStoreTests`
-  requires the interactive user keychain (pre-existing constraint, none of its
-  files changed).
-- `git diff 9bceb7e..HEAD` touches **nothing** under
-  `native/Packages/JunoNativeKit`, `native/macOS/JunoMac`, `native/iOS`,
-  `src`, `prisma`, or `contracts`.
+  **179/179** (Core 68, Local 56, Runtime 30, UI 7, Bridge 18 incl. real
+  model-client + end-to-end integration).
+- `xcodebuild` **JunoMac** Debug **green**, Stable **green**; JunoMac unit test
+  bundle **green** (2/2). The JunoMac UITests runner cannot bootstrap in this
+  headless, unsigned session (pre-existing environment limitation, unrelated to
+  Code — the Code UI lives behind the browser sign-in gate).
+- `xcodebuild` standalone JunoCode app: Debug **green**.
+- JunoNativeKit package: **84** non-auth tests re-run green (includes Codex's
+  new chat suite); the auth suite is skipped headless because
+  `KeychainAuthTokenStoreTests` needs the interactive user keychain
+  (pre-existing constraint, none of its files changed).
+- `git diff agent/juno-native..HEAD` touches **nothing** under
+  `native/Packages/JunoNativeKit`, `native/iOS`, `src`, `prisma`, or
+  `contracts`.
 
 ## Not implemented yet (by design)
 
-- **Model transport**: `AgentModelClient` is a protocol; the app composes
-  `UnconfiguredModelClient`, which fails with a "sign in to Juno" message.
-  No mock path exists.
 - **Cloud/Remote sessions**: the event model and bridge are ready; no backend
   routes exist yet in `contracts/openapi/juno-native-v1.yaml` for Code
   sessions (see "Backend needs" below). The new-session sheet shows both modes
@@ -84,24 +104,24 @@ the new architecture. Nothing from the legacy `juno-app` monolith was ported.
   (Juno Code is agent-first, not an editor).
 - App icon assets, localization catalogs (FR), signing/notarization.
 
-## Integration points for the Codex track
+## Integration points (status)
 
-1. **Authenticated model turns** (the one required raccord): implement
-   `JunoCodeRuntime.AgentModelClient` with the refresh-aware bearer transport
-   (`JunoAuth`/`JunoSync` composition) and inject it in
-   `native/macOS/JunoCode/App/JunoCodeApp.swift` (replace
-   `UnconfiguredModelClient`). The protocol is 1 method:
-   `streamTurn(ModelTurnRequest) -> AsyncThrowingStream<ModelStreamEvent, Error>`
-   with `textDelta` / `reasoningSummary` / `toolCallRequested` / `turnCompleted`.
-2. **Model manifest**: replace the placeholder `availableModels` array in the
-   same file with the bootstrap model manifest.
-3. **Session sync (optional, later)**: `CodeSessionStore` events are
+1. **Authenticated model turns** — DONE. `BackendCodeModelClient`
+   (`JunoCodeBridge`) implements `AgentModelClient` over the bearer transport
+   and the `/api/agent/anthropic/v1/messages` proxy, injected in
+   `JunoMacCodeView`.
+2. **Model manifest** — DONE. `JunoMacCodeView` loads `/api/v1/models` via
+   `NativeChatAPIClient` and populates the composer (Claude models; static
+   fallback offline).
+3. **Non-Claude providers** — OPEN. `CodeModelProviderResolver` currently
+   routes only Claude models to the anthropic proxy path; OpenAI models fail
+   closed. Adding an OpenAI request/SSE mapping (the proxy already allows
+   `openai/chat/completions`) enables GPT models.
+4. **Session sync (optional, later)** — `CodeSessionStore` events are
    append-only with strict sequences and Codable payloads
    (`SessionEventPayload`), designed to map onto the change-feed/entities
    model; `JunoCodeBridge` maps configurations onto `CodeTaskConfiguration`.
-4. **Shell embedding (optional)**: `WorkbenchView(model:)` is a plain SwiftUI
-   view; JunoMac could host it in a "Code" section with the same injection,
-   or keep the standalone app.
+5. **Cloud/Remote Code (optional, later)** — needs the backend routes below.
 
 ### Backend needs (documented only; no backend change in this branch)
 
@@ -113,29 +133,32 @@ Remote Host addressing by opaque workspace ID. The local event model in
 
 ## Merge guidance
 
-- Files unique to this branch: everything under `native/Packages/JunoCode/`,
-  `native/macOS/JunoCode/`, `native/Config/JunoCode-*.xcconfig`, and this
-  document. No file edited by both tracks is touched, so merging into
-  `agent/juno-native` should be conflict-free.
-- Only plausible conflict: if the Codex track also adds *new entries* next to
-  these paths (e.g. another doc referencing the same directories) — trivial
-  union merges.
-- Strategy: merge (or cherry-pick in commit order `6db47de..bd09427`; every
-  commit builds and tests green independently per layer). Do not rebase across
-  the Codex track's package edits; none are needed.
+This branch is rebased on `agent/juno-native`; the Juno Code integration commits
+sit on top and touch only Code files plus the additive `JunoMac` wiring
+(`JunoMacApp`, `JunoMacRootView`, new `JunoMacCodeView`, `project.yml`). No
+JunoNativeKit, backend, iOS, prisma, or contract file is modified. Open the PR
+against `agent/juno-native`; it should merge cleanly.
 
 ## Running Juno Code macOS
 
+Inside the main app (real model transport):
+
 ```bash
-cd native/Packages/JunoCode && swift test        # package suite
-xcodegen generate --spec native/macOS/JunoCode/project.yml   # only if project.yml changes
+xcodegen generate --spec native/macOS/JunoMac/project.yml
+xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj \
+  -scheme JunoMac -configuration Debug -destination 'platform=macOS' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+Launch, sign in to Juno, open the **Code** section (⌘8): Open Workspace… →
+New Code Session → prompt. Model turns run through the authenticated backend
+agent proxy.
+
+Package suite and the standalone test app:
+
+```bash
+swift test --package-path native/Packages/JunoCode
 xcodebuild -project native/macOS/JunoCode/JunoCode.xcodeproj \
   -scheme JunoCode -configuration Debug -destination 'platform=macOS' \
   CODE_SIGNING_ALLOWED=NO build
-open <derived-data>/Build/Products/Debug/Juno\ Code.app
 ```
-
-In the app: Open Workspace… (⇧⌘O) → New Code Session (⌘N) → prompt (⌘⏎).
-Until the model transport is composed, runs fail with the explicit
-"No model transport is configured" error; every workspace/inspector feature
-(files, grep, git, tests, terminal, diff/checkpoint review) is fully live.
