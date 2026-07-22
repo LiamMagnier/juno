@@ -481,6 +481,13 @@ model Attachment {
   height         Int?
   createdAt      DateTime       @default(now())
 
+  /// Set only by the native upload route. A native client retries on a flaky
+  /// network by design, so without this every retry would leave a duplicate
+  /// attachment behind. Nullable because the web route does not send one, and
+  /// Postgres treats NULLs as distinct, so the unique index below does not
+  /// collide across every legacy row.
+  idempotencyKey String?
+
   projectId String?
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -488,6 +495,7 @@ model Attachment {
   message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
   project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, idempotencyKey])
   @@index([userId])
   @@index([conversationId])
   @@index([messageId])
