@@ -39,9 +39,11 @@ grouping. Because no controller is ever created, it does **not** yet cover trans
 reasoning, tool calls, terminal output, stderr, diffs, tests, checkpoints or approvals —
 those need fixture-backed controllers and are the next Block 1 unit.
 
-**Known open defect:** the session list scrolls under the pinned "New Code Session" button
-without a bottom content inset, clipping the last row mid-height. Reproduced in both light
-and dark at 1180×760.
+**Checked, not a defect:** the last sidebar row looks clipped by the pinned "New Code
+Session" button at the initial scroll position. Scrolling to the bottom shows the final row
+fully clear of the button — `SidebarView` already applies `.safeAreaInset(edge: .bottom)`
+and it reserves the space correctly. Verified at 1180×760 in both light and dark. Recorded
+so it is not "fixed" twice.
 
 ## Mobile UI refresh — session log (head `b5dbc98`)
 
