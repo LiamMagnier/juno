@@ -7,9 +7,9 @@ Updated: 2026-07-22 03:05 Europe/Paris
 - Branch: `agent/juno-native-claude-continuation` (PRs target `agent/juno-native`, never `main`)
 - Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
-- Current phase: mutation-conflict UI completion and offline/reconnect proof.
-- Current task: production memory/settings and offline global search are complete.
-- Next exact action: surface conflicted outbox items with per-item resolution in conversations and projects (matching the memory/settings pattern) and prove the durable outbox across relaunch/offline/reconnect.
+- Current phase: Juno Code integration (PR #17), Cloud Code and Remote host.
+- Current task: memory/settings, offline global search, mutation-conflict resolution and the durable offline/reconnect proof are complete.
+- Next exact action: update this branch onto the latest `agent/juno-native`, then compose `JunoCodeKit` and the generated Code/Remote contracts into real native Cloud Code and Remote surfaces.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -57,6 +57,11 @@ clean, restore, stage, or commit those files from this native worktree.
   entities through the JunoSearch contract in a throwaway index (no plaintext
   persistence), with debounce, cancellation, grouped ranked results and
   navigation on both apps.
+- Mutation-conflict resolution across conversations and projects with keep-mine/
+  use-server banners, plus a durable offline/reconnect proof: an offline-enqueued
+  mutation survives relaunch, submits once on reconnect with its original
+  idempotency key, and ambiguous loss replays the same key as a server-side
+  no-op.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -66,10 +71,10 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `native/Packages/JunoNativeKit/Sources/JunoSync/PersistentMutationOutbox.swift`
-2. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift`
-3. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeProjectStore.swift`
-4. the memory/settings conflict banner in both apps (reference pattern)
+1. PR #17 (`gh pr view 17`) and the current `agent/juno-native` head
+2. `native/Packages/JunoNativeKit/Sources/JunoCodeKit`
+3. `src/app/api/v1` Code/Remote routes and `src/lib/cloud-code.ts`, `src/lib/code-remote.ts`
+4. the web Code surfaces (read-only functional reference)
 
 ## Commands to run next
 
@@ -104,7 +109,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 154/154 tests, including fifteen memory/settings and five search tests.
+- Strict package suite: 156/156 tests, including fifteen memory/settings, five search, and two offline/reconnect proof tests.
 - Web `npx tsc --noEmit` and `tsx --test tests/native-contract.test.ts` (3/3).
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
@@ -147,8 +152,8 @@ and do not reset them or the independent main checkout.
 
 ## Remaining work
 
-- Remaining mutation conflict UI.
-- Production search persistence and live-account offline/reconnect proof.
+- Juno Code integration (PR #17), Cloud Code and Remote host.
+- Live-account interactive completion (device browser, connected-device management).
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.
 - UI/E2E/accessibility/performance/secret/dependency gates and native CI.

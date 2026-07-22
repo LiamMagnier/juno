@@ -1,13 +1,14 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "833332b",
+  "currentCommit": "01c6a74",
   "workingTreeClean": true,
-  "currentPhase": "conflict-ui-and-offline-proof",
-  "currentTask": "Surface conflicted outbox items with per-item keep-mine/use-server resolution in conversations and projects, then prove the durable outbox across relaunch/offline/reconnect.",
+  "currentPhase": "juno-code-integration",
+  "currentTask": "Update this branch onto the latest agent/juno-native, then compose JunoCodeKit and the generated Code/Remote contracts into real native Cloud Code and Remote host surfaces.",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Sources/JunoSync/PersistentMutationOutbox.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeProjectStore.swift"
+    "native/Packages/JunoNativeKit/Sources/JunoCodeKit",
+    "src/lib/cloud-code.ts",
+    "src/lib/code-remote.ts",
+    "src/app/api/v1"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
@@ -25,6 +26,7 @@
     "Real encrypted library and artifact surfaces with offline version history, optimistic edits, exports and native previews in 719db31",
     "Real encrypted memory and settings with optimistic durable mutations, conflict resolution, summary hydration, explicit permanent reset and full native forms in 778a47d; /api/memory published in OpenAPI 1.2.0",
     "Real offline global search over encrypted synchronized entities via the JunoSearch contract with a throwaway index, debounce, cancellation, grouped ranked results and native navigation on both apps",
+    "Mutation-conflict resolution across conversations and projects with keep-mine/use-server banners, plus a durable offline/reconnect proof (offline enqueue survives relaunch, submits once on reconnect with the original idempotency key, ambiguous loss replays the same key as a no-op) in 01c6a74",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -35,7 +37,8 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Mutation conflict UI completion and live-account offline and reconnect proof",
+    "Juno Code integration (PR #17), Cloud Code and Remote host",
+    "Live-account interactive completion (device browser, connected-device management)",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
     "UI, end-to-end, accessibility, performance, dependency and secret gates",
@@ -46,7 +49,7 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (154/154)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (156/156)",
     "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",

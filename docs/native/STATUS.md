@@ -16,9 +16,10 @@ Last updated: 2026-07-22 03:05 Europe/Paris
 ## Current phase
 
 Production auth, storage, sync, conversation/message UI, real chat streaming,
-projects/files, library/artifacts, memory/settings and offline global search
-are complete. The next sequential unit is mutation-conflict UI completion and
-the live-account offline/reconnect proof.
+projects/files, library/artifacts, memory/settings, offline global search,
+mutation-conflict resolution across conversations/projects and the durable
+offline/reconnect proof are complete. The next sequential unit is the Juno
+Code integration from PR #17, rebased on the latest `agent/juno-native`.
 
 ## Actually completed
 
@@ -27,7 +28,7 @@ the live-account offline/reconnect proof.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 154 focused Swift package tests, all passing with warnings treated as errors
+- 156 focused Swift package tests, all passing with warnings treated as errors
   and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
@@ -90,6 +91,15 @@ the live-account offline/reconnect proof.
   Both apps compose a real Search section with debounce, cancellation,
   grouped ranked results, diacritic-insensitive matching and navigation into
   chats, projects, library/files, artifacts and settings.
+- Mutation-conflict resolution across conversations and projects, matching the
+  memory/settings pattern: `resolveConflicts(keepLocalChanges:)` retries every
+  conflicted outbox item against the freshly synced revision or discards it in
+  favor of the server version, with keep-mine/use-server banners in both apps.
+- Durable offline/reconnect proof: a package test shows a mutation enqueued
+  while offline survives an app relaunch (new outbox/drainer over the same
+  repository), submits exactly once on reconnect with its original idempotency
+  key, and that ambiguous response loss replays the same clientMutationId so
+  the server receipt makes it a no-op rather than a duplicate.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -104,7 +114,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Remaining mutation conflict UI and live-account offline/reconnect proof.
+- Juno Code integration (PR #17), Cloud Code and Remote host.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -115,7 +125,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 154/154 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 156/156 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -151,19 +161,18 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Complete the remaining mutation-conflict UI (surface conflicted outbox items
-with per-item keep-mine/use-server resolution in conversations and projects,
-matching the memory/settings pattern) and produce the live-account
-offline/reconnect proof for the durable outbox across app relaunches. Then
-proceed to Juno Code integration from PR #17 after rebasing it on the latest
-`agent/juno-native`.
+Integrate Juno Code from PR #17: update this branch onto the latest
+`agent/juno-native`, then compose the existing `JunoCodeKit` reducers and the
+generated Code/Remote contracts into real native Cloud Code and Remote host
+surfaces. Do not add a server route unless the targeted checks prove a gap and
+it is recorded in `API_GAPS.md`.
 
 Open first:
 
-1. `native/Packages/JunoNativeKit/Sources/JunoSync/PersistentMutationOutbox.swift`
-2. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift`
-3. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeProjectStore.swift`
-4. the memory/settings conflict banner in both apps (reference pattern)
+1. PR #17 (`gh pr view 17` / its diff) and the current `agent/juno-native` head
+2. `native/Packages/JunoNativeKit/Sources/JunoCodeKit`
+3. `src/app/api/v1` Code/Remote routes and `src/lib/cloud-code.ts`, `src/lib/code-remote.ts`
+4. the web Code surfaces (read-only functional reference)
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
