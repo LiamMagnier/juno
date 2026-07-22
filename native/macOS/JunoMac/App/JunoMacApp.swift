@@ -18,6 +18,7 @@ struct JunoMacApp: App {
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
+    private let chatTransport: (any NativeChatRequestSending)?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -29,6 +30,7 @@ struct JunoMacApp: App {
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _searchModel = State(initialValue: configuration.searchModel)
         localStore = configuration.localStore
+        chatTransport = configuration.chatTransport
     }
 
     var body: some Scene {
@@ -41,7 +43,8 @@ struct JunoMacApp: App {
                 projectModel: projectModel,
                 artifactModel: artifactModel,
                 memorySettingsModel: memorySettingsModel,
-                searchModel: searchModel
+                searchModel: searchModel,
+                chatTransport: chatTransport
             )
                 .frame(minWidth: 760, minHeight: 520)
         }
@@ -135,7 +138,8 @@ struct JunoMacApp: App {
                     syncModel: syncModel,
                     sender: runtime
                 ),
-                searchModel: NativeSearchModel(repository: localStore)
+                searchModel: NativeSearchModel(repository: localStore),
+                chatTransport: runtime
             )
         } catch {
             return JunoMacConfiguration(
@@ -148,7 +152,8 @@ struct JunoMacApp: App {
                 projectModel: nil,
                 artifactModel: nil,
                 memorySettingsModel: nil,
-                searchModel: nil
+                searchModel: nil,
+                chatTransport: nil
             )
         }
     }
@@ -172,6 +177,7 @@ private struct JunoMacConfiguration {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
 }
 
 private struct JunoMacNavigationCommands: Commands {

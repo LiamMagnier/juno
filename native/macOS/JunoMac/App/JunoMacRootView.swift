@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -15,6 +16,7 @@ struct JunoMacRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
     @State private var sidebarSearch = ""
 
     var body: some View {
@@ -93,6 +95,8 @@ struct JunoMacRootView: View {
                 artifactModel: artifactModel,
                 memorySettingsModel: memorySettingsModel,
                 searchModel: searchModel,
+                chatTransport: chatTransport,
+                accountID: session.profile.id,
                 openConversation: { id in
                     conversationModel?.selectedConversationID = id
                     selection = .chat
@@ -116,7 +120,7 @@ struct JunoMacRootView: View {
                     }
                 }
             )
-                .id(selection)
+            .id(selection)
         }
         .navigationSplitViewStyle(.balanced)
         .toolbar {
@@ -230,6 +234,8 @@ private struct JunoMacDetailView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
+    let accountID: AccountID
     let openConversation: (String) -> Void
     let openSearchResult: (NativeSearchResult) -> Void
 
@@ -257,6 +263,8 @@ private struct JunoMacDetailView: View {
                 model: artifactModel,
                 openConversation: openConversation
             )
+        } else if section == .code, let chatTransport {
+            JunoMacCodeView(transport: chatTransport, accountID: accountID)
         } else {
             NavigationStack {
                 ContentUnavailableView {
