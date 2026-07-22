@@ -1491,11 +1491,10 @@ private enum JunoMobileExportFile {
 /// a slide-in navigation menu rather than the macOS `sidebar.leading` rectangle.
 private struct JunoMenuGlyph: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Capsule().frame(width: 18, height: 2)
-            Capsule().frame(width: 12, height: 2)
+        VStack(alignment: .leading, spacing: 5.5) {
+            Capsule().fill(Color.primary).frame(width: 20, height: 2.5)
+            Capsule().fill(Color.primary).frame(width: 13, height: 2.5)
         }
-        .frame(width: 22, height: 22, alignment: .center)
-        .foregroundStyle(.primary)
+        .frame(width: 24, height: 24, alignment: .center)
     }
 }
