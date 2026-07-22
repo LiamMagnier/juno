@@ -71,13 +71,18 @@ type DeviceRow = {
 
 const PRESENCE_POLL_MS = 30_000;
 
-function deviceOffersWorkspace(device: DeviceRow, key: string | null, path: string | null, name: string | null): boolean {
+function deviceOffersWorkspace(device: DeviceRow, key: string | null, _path: string | null, name: string | null): boolean {
   if (!Array.isArray(device.workspaces)) return false;
-  return (device.workspaces as { name?: unknown; path?: unknown; key?: unknown }[]).some((w) => {
+  return (device.workspaces as { name?: unknown; key?: unknown }[]).some((w) => {
     // Stable identity first — a host that re-registered the folder from a new
     // location still owns this session's workspace.
     if (key != null && w?.key === key) return true;
-    return path ? w?.path === path : name != null && w?.name === name;
+    // Name is the fallback, not path. The device list no longer returns paths
+    // at all: they disclose the account name and directory layout, and nothing
+    // outside the host needs one. A key-less host with two identically named
+    // workspaces is the only case this reads less precisely than before, and
+    // that is worth the disclosure it removes.
+    return name != null && w?.name === name;
   });
 }
 

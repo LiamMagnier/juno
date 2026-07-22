@@ -7,6 +7,7 @@ import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
+import { publicWorkspaces } from "@/lib/code-workspace-privacy";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
@@ -181,12 +182,14 @@ export async function requireOidcRunnerAuth(
   return { user: { id: task.userId }, error: null };
 }
 
+export { publicWorkspaces };
+
 export function serializeDevice(device: CodeDevice, online?: boolean) {
   const base = {
     id: device.id,
     name: device.name,
     platform: device.platform,
-    workspaces: device.workspaces,
+    workspaces: publicWorkspaces(device.workspaces),
     lastSeenAt: device.lastSeenAt.toISOString(),
   };
   return online === undefined ? base : { ...base, online };
