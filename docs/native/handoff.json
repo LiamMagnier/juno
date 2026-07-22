@@ -1,13 +1,14 @@
 {
-  "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "69f0463",
+  "branch": "agent/juno-code-remote-backend (stacked on agent/juno-native-claude-continuation)",
+  "currentCommit": "d08198e",
   "workingTreeClean": true,
-  "currentPhase": "ui-ux-refresh",
-  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done; unit 4 chat done; debug UI Preview mode done (69f0463, --juno-ui-preview). Now: QA-sweep the remaining screens (projects/files, library, artifacts, memory, settings, search, Juno Code) in light+dark and every scenario via the preview harness, fix visual issues, then units 5+ (responsive/motion/accessibility). Then Phase 11 backend (Juno Code Remote/Cloud) on a NEW stacked branch agent/juno-code-remote-backend.",
+  "currentPhase": "code-remote-backend",
+  "currentTask": "Phase 11 Juno Code Remote/Cloud on stacked branch agent/juno-code-remote-backend (PR #19). Audit found the Code control plane already exists and accepts native bearer; read contract published (1.3.0). NEXT: publish mutating command routes (create/respond/cancel), build JunoCodeBridge bearer transport mapping CodeTaskEvent.payload->SessionEventPayload, macOS Remote Host coordinator on the existing runtime, mobile Remote controller/screens, and the GAP-022 path-free projection. See docs/native/CODE_REMOTE_AUDIT.md.",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
-    "native/macOS/JunoMac/App",
-    "native/iOS/JunoMobile/App"
+    "docs/native/CODE_REMOTE_AUDIT.md",
+    "src/app/api/code/tasks/[id]/respond/route.ts",
+    "native/Packages/JunoCode/Sources/JunoCodeBridge",
+    "contracts/openapi/juno-native-v1.yaml"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
