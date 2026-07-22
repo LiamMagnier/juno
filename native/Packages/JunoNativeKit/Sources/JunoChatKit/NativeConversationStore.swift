@@ -435,6 +435,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let prompt: String
         let modelID: String
         let reasoningEffort: NativeReasoningEffort?
+        /// Carried through retries so a resend claims the same uploads rather
+        /// than losing them. Claiming is idempotent per attachment — the second
+        /// attempt finds `messageId` already set and the server refuses — so a
+        /// retry of a *successful* append must not re-send them; this is only
+        /// re-sent when the append itself never landed.
+        let attachmentIDs: [String]
         var userMessageID: String?
         var userCreatedAt: Date
     }
@@ -661,7 +667,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         conversationID: String,
         prompt: String,
         modelID: String,
-        reasoningEffort: NativeReasoningEffort?
+        reasoningEffort: NativeReasoningEffort?,
+        attachmentIDs: [String] = []
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -688,6 +695,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             prompt: trimmed,
             modelID: modelID,
             reasoningEffort: reasoningEffort,
+            attachmentIDs: attachmentIDs,
             userMessageID: nil,
             userCreatedAt: now
         )
@@ -766,6 +774,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID,
                     clientID: context.clientID,
                     content: context.prompt,
+                    attachmentIDs: context.attachmentIDs,
                     for: context.accountID
                 )
                 guard accountID == context.accountID else { return }

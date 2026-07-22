@@ -193,6 +193,22 @@
         }
       }
     },
+    "attachments.wait": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait for the attachments to finish uploading, or remove the ones that failed."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Attendez la fin de l’envoi des pièces jointes, ou retirez celles qui ont échoué."
+          }
+        }
+      }
+    },
     "auth.error.cancelled": {
       "localizations": {
         "en": {

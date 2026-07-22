@@ -248,6 +248,7 @@ public struct NativeChatAPIClient: Sendable {
         conversationID: String,
         clientID: String,
         content: String,
+        attachmentIDs: [String] = [],
         for accountID: AccountID
     ) async throws -> NativeAppendedUserMessage {
         try requireIdentifier(conversationID)
@@ -257,7 +258,8 @@ public struct NativeChatAPIClient: Sendable {
         let requestBody = AppendRequestWire(turns: [AppendTurnWire(
             clientId: clientID,
             role: "USER",
-            content: trimmed
+            content: trimmed,
+            attachmentIds: attachmentIDs.isEmpty ? nil : attachmentIDs
         )])
         let response = try await sender.send(
             try NativeBearerRequest(
@@ -559,6 +561,10 @@ private struct AppendTurnWire: Encodable {
     let clientId: String
     let role: String
     let content: String
+    /// Omitted entirely when empty — the route's schema is `.strict()`, and an
+    /// empty array would still be a claim of zero attachments rather than no
+    /// claim at all.
+    let attachmentIds: [String]?
 }
 private struct AppendResponseWire: Decodable {
     struct Message: Decodable {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { describe, it } from "node:test";
 import { randomUUID } from "node:crypto";
-import { appendRequestSchema, appendTurnCreatedAt, MAX_APPEND_TURNS } from "../src/lib/message-append";
+import { appendRequestSchema, appendTurnCreatedAt, MAX_APPEND_TURNS, MAX_ATTACHMENTS_PER_TURN } from "../src/lib/message-append";
 
 const turn = (overrides: Record<string, unknown> = {}) => ({
   clientId: randomUUID(),
@@ -47,4 +47,72 @@ test("turn timestamps honor the client clock but never run ahead of the server",
   assert.ok(first.getTime() < second.getTime());
   assert.ok(second.getTime() < third.getTime());
   assert.equal(third.getTime(), now);
+});
+
+/*
+ * Attachments on an appended turn.
+ *
+ * The native composer uploads each file first and sends the returned ids with
+ * the turn. `/api/chat` claims attachments for the web, but it creates the user
+ * message itself — the native flow appends through this route instead, so
+ * without a claim here native uploads would succeed and then attach to nothing.
+ */
+describe("appendRequestSchema — attachments", () => {
+  const validTurn = {
+    clientId: "client-abcdefgh",
+    role: "USER" as const,
+    content: "Look at this",
+  };
+  const attachmentId = "cmrqlaev0000abcdefghijkl";
+
+  it("accepts attachment ids on a USER turn", () => {
+    const parsed = appendRequestSchema.safeParse({
+      turns: [{ ...validTurn, attachmentIds: [attachmentId] }],
+    });
+    assert.equal(parsed.success, true);
+  });
+
+  it("accepts a turn with no attachments at all", () => {
+    assert.equal(appendRequestSchema.safeParse({ turns: [validTurn] }).success, true);
+  });
+
+  /*
+   * Only a person attaches files. An ASSISTANT turn claiming attachments is
+   * either a client bug or an attempt to bind someone's upload to generated
+   * content, and neither should pass quietly.
+   */
+  it("refuses attachments on an ASSISTANT turn", () => {
+    const parsed = appendRequestSchema.safeParse({
+      turns: [{
+        clientId: "client-abcdefgh",
+        role: "ASSISTANT",
+        content: "Here you go",
+        attachmentIds: [attachmentId],
+      }],
+    });
+    assert.equal(parsed.success, false);
+  });
+
+  /* A non-cuid id cannot address a row, so it is rejected before it reaches SQL. */
+  it("refuses ids that are not cuids", () => {
+    for (const bad of ["../../etc", "'; DROP TABLE", "", "not-a-cuid"]) {
+      const parsed = appendRequestSchema.safeParse({
+        turns: [{ ...validTurn, attachmentIds: [bad] }],
+      });
+      assert.equal(parsed.success, false, `${bad} must be refused`);
+    }
+  });
+
+  it("enforces the per-turn ceiling", () => {
+    const parsed = appendRequestSchema.safeParse({
+      turns: [{
+        ...validTurn,
+        attachmentIds: Array.from(
+          { length: MAX_ATTACHMENTS_PER_TURN + 1 },
+          (_, i) => `cmrqlaev0000abcdefghij${String(i).padStart(2, "0")}`,
+        ),
+      }],
+    });
+    assert.equal(parsed.success, false);
+  });
 });

@@ -14,6 +14,9 @@ import { z } from "zod";
 
 export const MAX_APPEND_TURNS = 100;
 
+/** Mirrors the web composer's ceiling, so a message is composable on either client. */
+export const MAX_ATTACHMENTS_PER_TURN = 10;
+
 /** @deprecated No app-side character cap; kept for native client compatibility. */
 export const MAX_APPEND_CONTENT_CHARS = Number.MAX_SAFE_INTEGER;
 
@@ -25,6 +28,16 @@ export const appendTurnSchema = z.object({
   model: z.string().min(1).max(200).optional(),
   promptTokens: z.number().int().min(0).optional(),
   completionTokens: z.number().int().min(0).optional(),
+  /*
+   * Attachments uploaded ahead of the turn, claimed onto the created message.
+   *
+   * The native composer uploads each file to /api/v1/attachments first and gets
+   * an id back, then sends those ids with the turn. `/api/chat` does the same
+   * thing for the web, but it creates the user message itself — the native flow
+   * appends through this route instead, so the claim has to happen here or
+   * native attachments would upload successfully and then attach to nothing.
+   */
+  attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS_PER_TURN).optional(),
 }).strict();
 
 export const appendRequestSchema = z.object({
@@ -39,6 +52,12 @@ export const appendRequestSchema = z.object({
     // Model/token metadata describes a generation — user turns have none.
     if (turn.role === "USER" && (turn.model !== undefined || turn.promptTokens !== undefined || turn.completionTokens !== undefined)) {
       ctx.addIssue({ code: "custom", path: ["turns", index, "role"], message: "USER turns cannot carry model or token metadata." });
+    }
+    // Only a person attaches files. An ASSISTANT turn claiming attachments is
+    // either a client bug or an attempt to bind someone's upload to generated
+    // content, and neither should be accepted quietly.
+    if (turn.role === "ASSISTANT" && (turn.attachmentIds?.length ?? 0) > 0) {
+      ctx.addIssue({ code: "custom", path: ["turns", index, "attachmentIds"], message: "ASSISTANT turns cannot carry attachments." });
     }
   }
 });

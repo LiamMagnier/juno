@@ -596,13 +596,25 @@ private struct JunoMobileConversationDetail: View {
 
     private func send() {
         let value = prompt
+        // Refuse rather than silently drop: an upload still in flight, or one
+        // that failed, means the message would arrive missing a file, and
+        // nothing on the client can repair that afterwards.
+        if let attachmentModel, !attachmentModel.attachments.isEmpty,
+            !attachmentModel.canSend
+        {
+            attachmentNotice = String(localized: "attachments.wait")
+            return
+        }
         if model.sendMessage(
             conversationID: conversation.id,
             prompt: value,
             modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
-            reasoningEffort: reasoningEffort
+            reasoningEffort: reasoningEffort,
+            attachmentIDs: attachmentModel?.uploadedIDs ?? []
         ) {
             prompt = ""
+            attachmentModel?.clear()
+            attachmentNotice = nil
         }
     }
 
