@@ -88,22 +88,46 @@ answer.
 
 | stage | state |
 |---|---|
-| 1 Diagnostics | **done** — Settings › About › Diagnostics, iOS |
-| 2 Signed install | **done** — 0.1.1 (2), `03c90248be`, on the physical iPhone |
+| 1 Diagnostics | **done** — iOS **and** macOS, one shared view |
+| 2 Signed install | **done** — 0.1.1 (2) on the physical iPhone |
 | 3 Sync fix | **partly** — three defects fixed with tests; real-device half blocked |
 | 4 Cross-client matrix | **not done** — needs the owner's account |
 | 5 Camera/Photos/Files | **done** — unverified against production |
 | 6 Deep Research | **done** — unverified against production |
 | 7 Canvas | **already existed** — verified, not rebuilt |
-| 8 Code Remote backend | **not started** |
-| 9 Mac remote host | **not started** |
-| 10 Mobile Remote | **not started** |
+| 8 Code Remote backend | **done** — relay landed on main's lineage, 19 tests |
+| 9 Mac remote host | **foundation only** — client layer built; no host loop |
+| 10 Mobile Remote | **foundation only** — client layer built; no UI |
 | 11 Cloud | **done** — audited, safe, stays enabled. `CLOUD_AUDIT.md` |
 | 12 Design pass | **not done** as a sweep |
 | 13 Accessibility / threat model | **not done** as a sweep |
-| 14 Test matrix | **passing** for everything that exists |
-| 15 Release + deploy | **not done** — see below |
-| 16 Final builds | **partly** — iPhone carries `03c90248be`; Mac has no Diagnostics screen |
+| 14 Test matrix | **passing** — 783 native, 150 backend, tsc, lint, gates |
+| 15 Release + deploy | **not done** — two migrations pending |
+| 16 Final builds | **partly** — iPhone carries `03c90248be` |
+
+### Stages 8–10 — where the line actually is
+
+**Landed:** the relay backend (seven routes, three Prisma models, an idempotent
+re-dated migration) and `NativeCodeRemoteClient`, the client both sides use.
+
+**Not landed:** the Mac *host loop* — register, heartbeat with jitter, claim
+commands, execute them through the existing JunoCode runtime and its approval
+system, post events back — and the mobile Remote *screens*. The client layer is
+the shared foundation for both; neither is wired to a runtime or a view yet.
+
+So **Remote does not work end to end**, and no part of this should be read as
+saying it does. What exists is tested at its boundaries: hostile identifiers
+never reach the network, no filesystem path crosses to the phone, events resume
+from a cursor, and a command's idempotency key belongs to the action so a retry
+is a lookup rather than a second Stop.
+
+Two things to know before continuing Stage 9:
+- The relay's command channel is a 25-second long poll (`GET .../commands`),
+  claimed with an `updateMany` CAS so two host processes can never run the same
+  command.
+- `JunoCodeCore` already exports a `JSONValue`; the new one in JunoCore is
+  `JunoJSONValue`. The Mac app imports both, and an unqualified name there is a
+  build error.
 
 ### Stage 3 — what was actually fixed
 
@@ -141,10 +165,15 @@ read out **Phase**, **Last HTTP status** and **Failure**.
 
 ## Deploy is the remaining gated step
 
-Nothing on this branch has shipped. `prisma/migrations/20260722200000_attachment_idempotency_key`
-is additive and idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE UNIQUE INDEX IF
-NOT EXISTS`) and hand-written per the standing rule against `migrate dev` on the
-shared database — but it has not been applied.
+Nothing on this branch has shipped. **Two** migrations are pending, both additive and both hand-written per the
+standing rule against `migrate dev` on the shared database:
+
+- `20260722200000_attachment_idempotency_key`
+- `20260722210000_remote_code_sessions` — re-dated from `20260719120000` so it
+  no longer sorts before applied history, and made fully idempotent
+  (`IF NOT EXISTS` throughout, foreign keys guarded on `pg_constraint`) because
+  it was never established whether the original ever ran. It is safe under
+  either answer.
 
 ```bash
 git checkout main && git merge --ff-only agent/juno-final-completion && git push origin main

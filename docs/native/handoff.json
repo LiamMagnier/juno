@@ -87,7 +87,7 @@
     "Production StoreKit mapping and APNs credentials require owner input"
   ],
   "updated": "2026-07-22",
-  "head": "93261dc",
+  "head": "5cd84f6",
   "worktree": "/Users/liammagnier/Desktop/workspace/.worktrees/juno-final-completion",
   "baseMain": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
   "deployedServerSHA": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
@@ -108,33 +108,37 @@
   },
   "stagesComplete": [
     "audit",
-    "stage-1-diagnostics",
-    "stage-2-signed-install"
+    "stage-1",
+    "stage-2",
+    "stage-8",
+    "stage-11"
   ],
   "stagesNotStarted": [
     "stage-4",
-    "stage-6",
-    "stage-7",
-    "stage-8",
-    "stage-9",
-    "stage-10",
-    "stage-11",
     "stage-12",
     "stage-13",
-    "stage-14-full",
-    "stage-15",
-    "stage-16"
+    "stage-15"
   ],
   "tests": {
-    "junoNativeKit": "738 executions, 0 failures",
-    "backend": "131 pass, 0 fail",
+    "junoNativeKit": "783 executions, 0 failures",
+    "backend": "150 pass, 0 fail",
     "releaseGates": "all passed",
-    "macBuild": "succeeded"
+    "macBuild": "succeeded",
+    "iosBuild": "succeeded"
   },
   "nextAction": "Owner opens iPhone Settings > About > Diagnostics and reports Phase, Last HTTP status, Failure rows",
   "stagesPartial": {
-    "stage-3": "failure classification + banner readability fixed with tests; real-device verification blocked",
-    "stage-5": "attachments implemented end to end (backend, transcoder, composer, claim); not exercised against production"
+    "stage-3": "failure classification + banner readability fixed; real-device half blocked",
+    "stage-5": "attachments end to end; unverified against production",
+    "stage-6": "Deep Research parity; unverified against production",
+    "stage-7": "Canvas already existed; verified not rebuilt",
+    "stage-9": "relay client built; no Mac host loop",
+    "stage-10": "relay client built; no mobile Remote UI",
+    "stage-16": "iPhone carries 03c90248be; Mac Diagnostics now exists"
   },
-  "pendingMigration": "20260722200000_attachment_idempotency_key (additive, not yet deployed)"
+  "pendingMigration": "20260722200000_attachment_idempotency_key (additive, not yet deployed)",
+  "pendingMigrations": [
+    "20260722200000_attachment_idempotency_key",
+    "20260722210000_remote_code_sessions"
+  ]
 }
