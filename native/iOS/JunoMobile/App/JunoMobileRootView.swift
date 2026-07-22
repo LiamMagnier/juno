@@ -135,7 +135,6 @@ struct JunoMobileRootView: View {
                 selection: $selection,
                 conversationModel: conversationModel,
                 session: session,
-                isPreview: isPreviewSession,
                 canCreateChat: conversationModel != nil,
                 openDestination: openSidebarDestination,
                 openConversation: openSidebarConversation,
@@ -190,19 +189,10 @@ struct JunoMobileRootView: View {
             selection: $selection,
             conversationModel: conversationModel,
             session: session,
-            isPreview: isPreviewSession,
             openDestination: openSidebarDestination,
             openConversation: openSidebarConversation,
             newChat: startNewChat
         )
-    }
-
-    private var isPreviewSession: Bool {
-        #if DEBUG
-        return previewSession != nil
-        #else
-        return false
-        #endif
     }
 
     private func openSidebarDestination(_ destination: JunoMobileSection) {
@@ -338,7 +328,6 @@ private struct JunoMobileSidebarDrawer: View {
     @Binding var selection: JunoMobileSection
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let session: NativeAuthenticatedSession
-    var isPreview: Bool = false
     var canCreateChat: Bool = true
     let openDestination: (JunoMobileSection) -> Void
     let openConversation: (String) -> Void
@@ -362,12 +351,6 @@ private struct JunoMobileSidebarDrawer: View {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    JunoMobileSidebarRow(
-                        icon: JunoMobileSection.chat.systemImage,
-                        title: "navigation.chat",
-                        selected: selection == .chat,
-                        action: { openDestination(.chat) }
-                    )
                     JunoMobileSidebarRow(
                         icon: JunoMobileSection.projects.systemImage,
                         title: "navigation.projects",
@@ -465,16 +448,7 @@ private struct JunoMobileSidebarDrawer: View {
             Spacer(minLength: 0)
             newChatButton
         }
-        .overlay(alignment: .center) {
-            if isPreview {
-                Text("Preview")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .accessibilityLabel("Debug preview build")
-                    .allowsHitTesting(false)
-            }
-        }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 22)
         .padding(.top, 8)
         .padding(.bottom, 8)
     }
@@ -555,11 +529,7 @@ private struct JunoMobileSidebarRow: View {
             .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Color.primary.opacity(0.04) : .clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(selected ? Color.primary.opacity(0.18) : .clear, lineWidth: 1)
+                    .fill(selected ? Color.primary.opacity(0.06) : .clear)
             )
             .contentShape(Rectangle())
         }
