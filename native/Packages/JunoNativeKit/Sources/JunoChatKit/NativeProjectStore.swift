@@ -669,14 +669,29 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
         } catch {
             guard self.accountID == accountID else { return }
             lastErrorDescription = error.localizedDescription
-            phase = .failed
+            // Draining is a network call, so losing connectivity here is an
+            // outage, not a refusal. Reporting it as `.failed` told the reader
+            // their queued changes had hard-failed when they were still safely
+            // queued and would go out on reconnect.
+            phase = NativeSyncModel<Repository>.isConnectivityFailure(error)
+                || syncModel.phase == .offline
+                ? .offline
+                : .failed
         }
     }
 
     private func recordFileError(_ error: any Error, accountID: AccountID) {
         guard self.accountID == accountID else { return }
         lastErrorDescription = error.localizedDescription
-        if error is URLError { phase = .offline }
+        // This used to set a phase *only* for `URLError`, which left every
+        // other failure showing an error banner over a `.ready` phase — the
+        // screen claimed to be fine and complained at the same time. It also
+        // misread a real outage, which arrives as `retryLimitExceeded` rather
+        // than as a `URLError`.
+        phase = NativeSyncModel<Repository>.isConnectivityFailure(error)
+            || syncModel.phase == .offline
+            ? .offline
+            : .failed
     }
 
     /// Resolves every conflicted project mutation at once: retry replays the

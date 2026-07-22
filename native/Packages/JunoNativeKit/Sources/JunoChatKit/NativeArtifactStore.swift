@@ -446,11 +446,16 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
 
     private func record(_ error: any Error) {
         lastErrorDescription = error.localizedDescription
-        if error is URLError {
-            phase = .offline
-        } else {
-            phase = .failed
-        }
+        // `error is URLError` is not the same question. A genuine outage
+        // surfaces as `NativeSyncCoordinatorError.retryLimitExceeded` once the
+        // retry ladder gives up — the underlying `URLError` is swallowed — so
+        // matching only `URLError` reported real outages as hard failures.
+        // `URLError.cancelled`, conversely, is a control-flow signal and not a
+        // connectivity verdict. `isConnectivityFailure` is the one definition.
+        phase = NativeSyncModel<Repository>.isConnectivityFailure(error)
+            || syncModel.phase == .offline
+            ? .offline
+            : .failed
     }
 }
 
