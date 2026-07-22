@@ -29,10 +29,19 @@ kept as minimum deployment targets via availability checks. Sequential units:
    menus; adaptive iOS `TabView(.sidebarAdaptable)`; dead Tasks/Connections and
    GAP-021 Cloud/Remote sections removed so every destination is real; account/
    sign-out moved to Settings, sync to the Chat toolbar.
-2. Chat & composer — in progress.
-3. Product screens + real states.
-4. Design system & Liquid Glass.
+2. Chat & composer — **done**: follow-the-stream auto-scroll with a floating
+   scroll-to-latest control, Liquid Glass composer capsule on OS 26+, ⌘↩ send on
+   macOS, explicit disabled/streaming states, crude free-text model editor
+   removed. Attachments left out (no transport payload — recorded, not faked).
+3. Design system & Liquid Glass — in progress.
+4. Product screens + real states.
 5. Responsive, motion, accessibility, visual validation.
+
+**Visual-validation constraint:** unsigned simulator builds have no Keychain, so
+the Keychain-derived SQLite key fails and no signed-in surface can load; every
+authenticated screen therefore needs a signed build with a live session for
+visual QA. Builds compile against the OS 27 SDK (adopting Liquid Glass) and the
+sign-in surface renders on an iOS 27 simulator.
 
 ## Actually completed
 

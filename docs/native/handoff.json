@@ -1,14 +1,13 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "65bc78d",
+  "currentCommit": "(unit 2 committed; see git log)",
   "workingTreeClean": true,
   "currentPhase": "ui-ux-refresh",
-  "currentTask": "Native UI/UX refresh (option 2), designed for OS 27 SDK. Unit 1 (navigation architecture + sidebar) done in 65bc78d. Next: unit 2 (chat & composer), then product screens, design system/Liquid Glass, responsive/motion/accessibility.",
+  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1 (navigation) and 2 (chat/composer) done. Now unit 3 (design system & Liquid Glass tokens), then unit 4 (product screens), then unit 5 (responsive/motion/accessibility). Authenticated-surface visual QA needs a signed build with a live session.",
   "nextFiles": [
-    "native/iOS/JunoMobile/App/JunoMobileConversationsView.swift",
-    "native/macOS/JunoMac/App/JunoMacConversationsView.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ChatStreamReducer.swift",
-    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift"
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
+    "native/macOS/JunoMac/App",
+    "native/iOS/JunoMobile/App"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
