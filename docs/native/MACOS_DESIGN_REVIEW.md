@@ -92,8 +92,8 @@ Captured window-only (`screencapture -l <windowid>`), never the full desktop.
   visual one and is fixed by stating icon colours.
 - Icon-only controls use `Label` + `.labelStyle(.iconOnly)`; a bare `Image`
   reaches VoiceOver unnamed and leaks the SF Symbol id as the identifier.
-- **Not done:** the Code inspector's tab strip still relies on unlabelled
-  glyphs. It is listed under remaining limitations, not claimed as fixed.
+- ~~**Not done:** the Code inspector's tab strip still relies on unlabelled
+  glyphs.~~ Fixed in the second pass — see §8.
 
 ## 6. What landed in this pass
 
@@ -147,10 +147,9 @@ Stated rather than hidden:
   .sidebar)` owns the top slot of a sidebar column and no `safeAreaInset` can get
   above it. Chat has no search field, so there the header is flush to the top.
   Making these identical means giving up the system search field in Code.
-- **The Code transcript, terminal, diff, tests, Git and approvals surfaces were
-  not redesigned** in this pass, nor was the Code composer. Phase G is partially
-  done: sidebar, empty state, inspector proportions and the New Session action
-  only.
+- ~~**The Code transcript, terminal, diff, tests, Git and approvals surfaces were
+  not redesigned** in this pass, nor was the Code composer.~~ Done in the second
+  pass — see §8.
 - **The Chat canvas still has large vertical emptiness for short threads.** That
   is honest — a two-message conversation in a 760pt-tall window *is* mostly
   empty — but a designed short-thread state would do better.
@@ -159,3 +158,89 @@ Stated rather than hidden:
   brief were not run.
 - **The preview scenario matrix in Phase I was not extended.** The existing
   `normal`/`empty`/`error`/… scenarios were reused.
+
+## 8. Second pass — the Juno Code developer surfaces
+
+This pass finishes what §7 listed as undone: the Code transcript and every
+surface hanging off it. The governing decision is that **Code stops owning its
+own visual language**. `JunoCodeTheme` used to define its own palette, spacing
+and radii in parallel with Chat's, which is how two products in one window drift.
+It is now a thin alias layer over `JunoDesignSystem` and nothing else:
+`background → .junoCanvasWarm`, `surface → .junoRaised`, `well → .junoTerminal`,
+`Spacing`/`Radius` forward to `JunoSpace`/`JunoRadius`. The old `Font.junoMono`
+pair is deprecated in place rather than deleted, so a stale call site is a
+warning at the point of use instead of a silent difference on screen.
+
+**`JunoStatus.swift` (new).** Status and developer colour is shared rather than
+per-product: `junoSuccess`, `junoDanger`, `junoCaution`, `junoDiffAdded`,
+`junoDiffRemoved`, plus `junoCode()` / `junoCodeSmall()` as the two monospaced
+roles. Chat and Code now cannot disagree about what "failed" or "added" looks
+like.
+
+**Transcript.** Every non-message event was a differently-shaped one-off. They
+are now one `ActivityRow` — 18pt glyph column, single-line title truncating in
+the *middle* (a path is identified by both ends, not by its first 40 characters),
+optional monospaced subtitle, optional trailing accessory. Assistant turns render
+through `JunoMarkdownText`, the same renderer Chat uses, instead of plain `Text`;
+user turns are right-aligned outlined cards. Reasoning is collapsed by default and
+its disclosure respects `accessibilityReduceMotion`. Tool calls carry a summary,
+tool name, duration and a chevron only when there is detail to open. Colour is
+spent only where it carries meaning: deletions and failures are tinted, ordinary
+file edits are not.
+
+**Checkpoints are visible.** A file change with a `checkpointID` shows a
+checkpoint glyph labelled "Checkpointed before this edit — this change can be
+reverted". The safety net existed in the runtime and was invisible in the UI.
+
+**Approvals.** `ApprovalBanner` became `ApprovalCard` — a real card in the
+composer's safe-area inset, tinted `junoDanger` for `.critical` and
+`junoCaution` otherwise, so a destructive request does not look like a routine
+one. Permission mode is now a labelled `Menu` in the composer instead of a state
+the reader cannot see or change without leaving the session.
+
+**Composer.** Floats over the canvas on a `safeAreaInset`, width-matched to the
+720pt transcript measure, with transient errors and approvals stacked above it.
+Send/Stop are 26pt circular prominent buttons.
+
+**Inspector.** The tab strip now shows **labels** and falls back to icon-only
+below a documented 330pt threshold, measured with `onGeometryChange`; the four
+primary tabs stay on the strip and the rest move into an overflow `Menu` that
+names the selected secondary tab. Each tab carries a `purpose` string used for
+both the tooltip and the VoiceOver hint. Changes has a badge count; Diff picks
+files through a menu showing "filename — directory"; diff gutters are 34/34/14pt
+with per-line accessibility labels.
+
+**A real preview-isolation defect was found and fixed.** `JunoMacApp.init()`
+built the live configuration unconditionally, so *launching the DEBUG preview
+opened the live SQLite account store and built the live auth runtime against
+`chat.liams.dev`* — contradicting the preview's own claim to be inert. It now
+resolves `.inert` for any preview launch, and `makeConfiguration()`'s `catch`
+returns `.inert(describing:)` rather than trapping. This was found by trying to
+screenshot the preview, not by reading the code.
+
+### What was actually verified
+
+- `swift build -Xswiftc -strict-concurrency=complete` and `swift test` green for
+  both `JunoCode` and `JunoNativeKit`; JunoMac Debug `** BUILD SUCCEEDED **`.
+- Two captures, window-only, taken from the built app and committed:
+  `docs/native/design/after-code-transcript-light.png` and
+  `-dark.png`, both 1180×760.
+
+### Honest limitations of this pass
+
+- **The capture matrix is incomplete.** Only 1180×760 light and dark were
+  captured. 900×650, 1440×900, full screen, and inspector-open/closed pairs were
+  not, because window creation for newly launched apps broke in this login
+  session (self-inflicted: the capture harness ran `killall cfprefsd`, which took
+  down the session's preferences daemon; the harness now carries a comment
+  forbidding it). The responsive behaviour is implemented and reasoned about —
+  `ViewThatFits` on the header, the 330pt strip threshold — but it is *not*
+  screenshot-verified at those sizes. Re-run `scratchpad/shoot.sh` from a fresh
+  login session to finish it.
+- **The Code sidebar has a confirmed, unfixed layout defect.** At 1180×760 in
+  both appearances the session list collapses to the bottom edge: the
+  "Workspaces" section header collides with the "New session" footer and the
+  wordmark, and no session rows are visible. It is visible in both committed
+  captures. `SidebarView.swift` was not touched in this pass, so this is
+  pre-existing rather than a regression. It is deliberately left unfixed: with no
+  way to launch the app, any fix would be a guess presented as a repair.

@@ -1,6 +1,6 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 18:25 Europe/Paris
+Updated: 2026-07-22 (late) Europe/Paris
 
 > **Read `docs/native/NEXT_PROMPT.md` first.** It is the self-contained
 > continuation prompt: exact worktree, branch, head, first command, next task
@@ -10,11 +10,26 @@ Updated: 2026-07-22 18:25 Europe/Paris
 
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
 - Branch: `agent/juno-native-claude-continuation` (PR #18 → `agent/juno-native`; PRs never target `main`)
-- Head: `043051b` (`fix(auth): report the real Keychain status instead of an enum case index`) — pushed, tree clean
+- Head: `d19e924` (`feat(code): redesign the Juno Code developer surfaces onto the shared design system`) — tree clean
 - `main` untouched; `origin/main` is `173be21`; production live and unchanged at `https://chat.liams.dev`
-- Next task: **phase 5, backend reconciliation** — triage the uncommitted
-  Remote-session work still sitting unstaged in the `main` checkout, then rebase
-  PR #19 (`agent/juno-code-remote-backend`, `cedc264`) onto PR #18
+- Next task: **PR #19** — rebase `agent/juno-code-remote-backend` (`cedc264`,
+  four commits) onto the final PR #18, then triage the orphaned backend work in
+  `scratchpad/main-dirty-backup/` file by file
+
+## Live hazards, added this session
+
+- **Never `killall cfprefsd`.** It takes down the login session's preferences
+  daemon, and afterwards newly launched apps stop getting windows at all — the
+  session does not recover. This cost the remaining screenshot matrix. The
+  capture harness now carries a comment saying so.
+- **`swift test` in `JunoNativeKit` fails to codesign its xctest bundles when
+  `.build` sits on the iCloud Desktop** ("resource fork, Finder information, or
+  similar detritus not allowed"). Pass `--scratch-path` somewhere under `/tmp`.
+  Same root cause as the `xattr -cr` note below.
+- **The Code sidebar session list is collapsed to the bottom edge** at 1180×760
+  in both appearances, in `SidebarView.swift`, pre-existing and unfixed. Visible
+  in `docs/native/design/after-code-transcript-{light,dark}.png`. Fix it from a
+  session that can actually launch the app and confirm the repair.
 
 ## Corrections to what this file used to say
 

@@ -6,6 +6,45 @@ Last updated: 2026-07-22 18:25 Europe/Paris
 > worktree, branch, head, next task and the live hazards. This file is the
 > longer history behind it.
 
+## Session 2026-07-22 (late) — Juno Code developer surfaces, head `d19e924`
+
+The half of the macOS redesign that the previous entry listed as *not done* —
+the Code transcript, tool calls, approvals, terminal, diff, tests, Git,
+checkpoints, composer and inspector navigation — is now done and committed as
+`d19e924`. The full reasoning is in `MACOS_DESIGN_REVIEW.md` §8; the short
+version is that `JunoCodeTheme` stopped being a second design system and became
+an alias layer over `JunoDesignSystem`, and every non-message transcript event
+collapsed into one `ActivityRow` shape.
+
+**A real defect fell out of it.** `JunoMacApp.init()` built the live
+configuration unconditionally, so launching the DEBUG preview opened the live
+SQLite account store and built the live auth runtime against `chat.liams.dev`,
+contradicting the preview's own inertness claim. Preview launches now resolve
+`.inert`. This was found by trying to screenshot the preview, not by reading it.
+
+### Verified
+
+- `JunoCode` and `JunoNativeKit`: `swift build -Xswiftc
+  -strict-concurrency=complete` clean, suites pass with zero failures.
+- JunoMac Debug: `** BUILD SUCCEEDED **`.
+- Two window-only captures committed: `docs/native/design/
+  after-code-transcript-{light,dark}.png`, both 1180×760.
+
+### Two things that are *not* done, and must not be read as done
+
+1. **The capture matrix is incomplete.** 900×650, 1440×900, full screen and the
+   inspector-open/closed pairs were not captured. Window creation for newly
+   launched apps broke in that login session — the capture harness ran
+   `killall cfprefsd`, which takes down the login session's preferences daemon,
+   and afterwards nothing newly launched gets a window. The harness now carries
+   a comment forbidding it. Re-run from a fresh login session to finish.
+2. **The Code sidebar has a confirmed layout defect.** The session list collapses
+   to the bottom edge — "Workspaces" collides with the "New session" footer and
+   the wordmark, and no session rows show. Visible in both committed captures.
+   `SidebarView.swift` was untouched this pass, so it is pre-existing, not a
+   regression. Left unfixed on purpose: with no way to launch the app, a fix
+   would be a guess dressed up as a repair.
+
 ## Session 2026-07-22 (evening) — Mac Chat workspace, head `043051b`
 
 The Mac app opened on a list of destinations, with Chat buried behind a *second*

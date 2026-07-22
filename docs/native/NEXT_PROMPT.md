@@ -8,7 +8,7 @@ was verified on 2026-07-22, not remembered.
 ```
 worktree  /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude
 branch    agent/juno-native-claude-continuation   (PR #18 → agent/juno-native)
-head      b3f069a  (pushed)  — macOS design-system rebuild + Chat/Code redesign
+head      d19e924  — Juno Code developer surfaces on the shared design system
 tree      clean, no merge/rebase/cherry-pick in progress
 ```
 
@@ -38,18 +38,30 @@ tracked.
 ## Design work still open (owner rejected the previous visuals once)
 
 `docs/native/MACOS_DESIGN_REVIEW.md` is the source of truth: diagnosis,
-before/after screenshots in `docs/native/design/`, and an explicit "remaining
-limitations" section. What is still **not** redesigned:
+before/after screenshots in `docs/native/design/`, and an explicit limitations
+section per pass. §8 covers the Code surfaces, done in `d19e924`.
 
-- Code's transcript, terminal, diff, tests, Git and approvals surfaces
-- Code's composer (still a plain field)
-- the Code inspector's tab strip (unlabelled glyphs)
-- window sizes 900×650, 1440×900 and full screen were never captured
-- the extended Chat/Code preview scenario matrix from the brief
+Fixed and verified across the two passes: the all-coral navigation and the
+invisible dark-mode sidebar icons (one root cause — an unstated icon colour
+inheriting AppKit's implicit sidebar accent tint); the whole Code transcript,
+approvals, terminal, diff, tests, Git, composer and inspector navigation.
 
-Fixed and verified this pass: the all-coral navigation and the invisible
-dark-mode sidebar icons (same root cause — an unstated icon colour inheriting
-AppKit's implicit sidebar accent tint).
+What is still **not** done, and must not be read as done:
+
+- **the capture matrix.** Only 1180×760 light and dark exist. 900×650,
+  1440×900, full screen and the inspector-open/closed pairs were never taken,
+  because window creation for newly launched apps broke in that login session —
+  the capture harness had run `killall cfprefsd`, which kills the login
+  session's preferences daemon and stops newly launched apps getting windows at
+  all. **Never run it.** Re-run `scratchpad/shoot.sh` from a fresh login session
+  to finish the matrix.
+- **the Code sidebar layout defect.** At 1180×760 in both appearances the
+  session list collapses to the bottom edge: "Workspaces" collides with the
+  "New session" footer and the wordmark, and no session rows are visible. It is
+  in both committed captures. `SidebarView.swift` was not touched in the pass
+  that found it, so it is pre-existing. Fix it from a session that can launch
+  the app and confirm the repair, not by guessing.
+- the extended Chat/Code preview scenario matrix from the brief.
 
 Known and accepted: in Code the switcher sits below the system search field,
 because `.searchable(placement: .sidebar)` owns that slot.
