@@ -15,14 +15,24 @@ Last updated: 2026-07-22 03:05 Europe/Paris
 
 ## Current phase
 
-Production auth, storage, sync, conversation/message UI, real chat streaming,
-projects/files, library/artifacts, memory/settings, offline global search,
-mutation-conflict resolution, the durable offline/reconnect proof, and the
-Juno Code macOS integration (PR #17 merged) are complete. Local Juno Code runs
-against the authenticated backend model transport; Cloud/Remote Code sessions
-remain gated on backend Code-session routes that do not yet exist (see
-`docs/native/JUNO_CODE_HANDOFF.md` and `API_GAPS.md`). The next sequential unit
-is Juno Code Remote Host, which is blocked on that same backend surface.
+All functional units are complete: production auth, storage, sync, chat, projects/
+files, library/artifacts, memory/settings, offline search, mutation-conflict
+resolution, the offline/reconnect proof, and the Juno Code macOS integration.
+Cloud/Remote Code stays gated on backend routes (GAP-021, out of scope this run).
+
+Current work is the **native UI/UX refresh** (owner-directed, option 2), designed
+for the OS 27 SDK (Liquid Glass gen-27, newest SwiftUI) with iOS 18 / macOS 15
+kept as minimum deployment targets via availability checks. Sequential units:
+
+1. Navigation architecture + sidebar — **done** (`65bc78d`): grouped resizable/
+   collapsible macOS sidebar with @SceneStorage selection restoration and context
+   menus; adaptive iOS `TabView(.sidebarAdaptable)`; dead Tasks/Connections and
+   GAP-021 Cloud/Remote sections removed so every destination is real; account/
+   sign-out moved to Settings, sync to the Chat toolbar.
+2. Chat & composer — in progress.
+3. Product screens + real states.
+4. Design system & Liquid Glass.
+5. Responsive, motion, accessibility, visual validation.
 
 ## Actually completed
 

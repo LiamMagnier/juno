@@ -1,14 +1,14 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "677d781",
+  "currentCommit": "65bc78d",
   "workingTreeClean": true,
-  "currentPhase": "post-juno-code-integration",
-  "currentTask": "Juno Code macOS (PR #17) is merged and validated. Cloud/Remote Code needs backend Code-session routes that do not exist (GAP-021); escalate that backend design or proceed to the unblocked UI/UX refresh and accessibility work.",
+  "currentPhase": "ui-ux-refresh",
+  "currentTask": "Native UI/UX refresh (option 2), designed for OS 27 SDK. Unit 1 (navigation architecture + sidebar) done in 65bc78d. Next: unit 2 (chat & composer), then product screens, design system/Liquid Glass, responsive/motion/accessibility.",
   "nextFiles": [
-    "docs/native/API_GAPS.md",
-    "docs/native/JUNO_CODE_HANDOFF.md",
-    "native/Packages/JunoCode/Sources/JunoCodeBridge",
-    "contracts/openapi/juno-native-v1.yaml"
+    "native/iOS/JunoMobile/App/JunoMobileConversationsView.swift",
+    "native/macOS/JunoMac/App/JunoMacConversationsView.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoChatKit/ChatStreamReducer.swift",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
