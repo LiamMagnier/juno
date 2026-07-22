@@ -13,6 +13,7 @@ struct JunoMobileRootView: View {
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     @State private var selection: JunoMobileSection? = .chat
     @State private var sidebarSearch = ""
 
@@ -37,12 +38,14 @@ struct JunoMobileRootView: View {
                 Task { await projectModel?.start(for: session.profile.id) }
                 Task { await artifactModel?.start(for: session.profile.id) }
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
+                searchModel?.start(for: session.profile.id)
             } else {
                 syncModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
                 artifactModel?.stop()
                 memorySettingsModel?.stop()
+                searchModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -51,6 +54,7 @@ struct JunoMobileRootView: View {
             Task { await projectModel?.synchronizationDidAdvance(to: generation) }
             Task { await artifactModel?.synchronizationDidAdvance(to: generation) }
             Task { await memorySettingsModel?.synchronizationDidAdvance(to: generation) }
+            searchModel?.synchronizationDidAdvance(to: generation)
         }
         .onChange(of: syncModel?.phase) { _, _ in
             Task { await conversationModel?.reload() }
@@ -88,9 +92,28 @@ struct JunoMobileRootView: View {
                     projectModel: projectModel,
                     artifactModel: artifactModel,
                     memorySettingsModel: memorySettingsModel,
+                    searchModel: searchModel,
                     openConversation: { id in
                         conversationModel?.selectedConversationID = id
                         self.selection = .chat
+                    },
+                    openSearchResult: { result in
+                        switch result.kind {
+                        case .conversation, .message:
+                            conversationModel?.selectedConversationID =
+                                result.conversationID ?? result.entityID
+                            self.selection = .chat
+                        case .project:
+                            projectModel?.selectedProjectID = result.entityID
+                            self.selection = .projects
+                        case .file:
+                            self.selection = .files
+                        case .artifact:
+                            artifactModel?.selectedArtifactID = result.entityID
+                            self.selection = .artifacts
+                        case .memory:
+                            self.selection = .settings
+                        }
                     }
                 )
                     .id(selection)
@@ -205,12 +228,16 @@ private struct JunoMobileDetailView: View {
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let openConversation: (String) -> Void
+    let openSearchResult: (NativeSearchResult) -> Void
 
     @ViewBuilder
     var body: some View {
         if section == .chat, let conversationModel {
             JunoMobileConversationsView(model: conversationModel)
+        } else if section == .search, let searchModel {
+            JunoMobileSearchView(model: searchModel, open: openSearchResult)
         } else if section == .settings, let memorySettingsModel {
             JunoMobileSettingsView(
                 model: memorySettingsModel,

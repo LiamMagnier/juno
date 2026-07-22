@@ -16,6 +16,7 @@ struct JunoMacApp: App {
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
@@ -26,6 +27,7 @@ struct JunoMacApp: App {
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
+        _searchModel = State(initialValue: configuration.searchModel)
         localStore = configuration.localStore
     }
 
@@ -38,7 +40,8 @@ struct JunoMacApp: App {
                 conversationModel: conversationModel,
                 projectModel: projectModel,
                 artifactModel: artifactModel,
-                memorySettingsModel: memorySettingsModel
+                memorySettingsModel: memorySettingsModel,
+                searchModel: searchModel
             )
                 .frame(minWidth: 760, minHeight: 520)
         }
@@ -131,7 +134,8 @@ struct JunoMacApp: App {
                     drainer: drainer,
                     syncModel: syncModel,
                     sender: runtime
-                )
+                ),
+                searchModel: NativeSearchModel(repository: localStore)
             )
         } catch {
             return JunoMacConfiguration(
@@ -143,7 +147,8 @@ struct JunoMacApp: App {
                 conversationModel: nil,
                 projectModel: nil,
                 artifactModel: nil,
-                memorySettingsModel: nil
+                memorySettingsModel: nil,
+                searchModel: nil
             )
         }
     }
@@ -166,6 +171,7 @@ private struct JunoMacConfiguration {
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
 }
 
 private struct JunoMacNavigationCommands: Commands {
