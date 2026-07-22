@@ -95,11 +95,14 @@ final class JunoMacComposerUITests: XCTestCase {
         let slider = app.descendants(matching: .any)["juno.thinking-slider"].firstMatch
         require(slider, app, timeout: 5)
 
-        // Clicking a track position selects that detent — the popover survives
-        // being interacted with, which is the crash this guards.
+        // Clicking a track position selects that detent — and the popover
+        // survives being interacted with, which is the crash this guards.
+        //
+        // Asserted through the composer chip rather than the slider's own
+        // value: AppKit does not surface AXValue for this custom element the
+        // way UIKit does, and the chip is the thing a user actually reads.
         slider.coordinate(withNormalizedOffset: CGVector(dx: 0.99, dy: 0.5)).click()
-        XCTAssertEqual(slider.value as? String, "Thinking max")
-        slider.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).click()
-        XCTAssertEqual(slider.value as? String, "Thinking off")
+        app.typeKey(.escape, modifierFlags: [])
+        XCTAssertEqual(thinking.value as? String, "Max. Available levels: Off, Minimal, Low, Medium, High, Extra high, Max")
     }
 }

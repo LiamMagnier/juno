@@ -714,3 +714,27 @@ Open first:
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
+
+### macOS composer parity
+
+The Mac composer's two system `Picker` menus are replaced by the same controls
+the iPhone uses: a model chip opening a three-region picker (provider rail ·
+searchable list · detail) and a Thinking chip opening the discrete slider. The
+leaf views — provider mark, capability chips, grade bars, detail panel, chip
+flow layout, and the slider itself — now live in `JunoChatKit/JunoModelViews`
+and are shared by both apps; only the presentation shell differs (detent sheet
+on iPhone, anchored popover on Mac).
+
+**Both Mac popovers are fixed-size by construction.** The Thinking popover
+contains a `GeometryReader`, and a self-sizing AppKit popover around measuring
+content is what shipped as the 3.0.5 crash; `JunoThinkingPopover` therefore
+takes its width as a required parameter, and the Mac call site pins width *and*
+height. `JunoMacComposerUITests` opens both popovers and drives the slider, so a
+regression to self-sizing would be caught rather than shipped.
+
+`JunoMacUITests` needs `DEVELOPMENT_TEAM=58PVP763WX CODE_SIGN_STYLE=Automatic`
+on the xcodebuild invocation; without it the runner and the app get different
+Team IDs and the test bundle cannot be loaded (this affected the pre-existing
+`JunoMacChatShellUITests` too). This machine also intermittently launches the
+app with no window at all — the tests detect that and skip rather than report a
+false failure.
