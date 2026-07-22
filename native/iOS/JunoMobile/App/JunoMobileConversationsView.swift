@@ -59,8 +59,10 @@ private struct JunoMobileConversationDetail: View {
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
+    /// Set when switching models forced the thinking level to move, so the
+    /// change is explained rather than silent.
+    @State private var thinkingNotice: String?
     @State private var isNearBottom = true
-    @State private var showingActions = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
 
@@ -109,6 +111,11 @@ private struct JunoMobileConversationDetail: View {
                         .id(bottomAnchor)
                 }
             }
+            // Scoped to the transcript, NOT to the whole screen: applied after
+            // `.safeAreaInset` it was stamped onto every composer control too,
+            // so the model and Thinking chips all reported this identifier
+            // instead of their own.
+            .accessibilityIdentifier("juno.mobile.conversation-detail")
             .background(Color.junoCanvas)
             .defaultScrollAnchor(.bottom)
             .onScrollGeometryChange(for: Bool.self) { geometry in
@@ -197,296 +204,44 @@ private struct JunoMobileConversationDetail: View {
                 Task { await model.renameConversation(id: conversation.id, title: editValue) }
             }
         }
-        .safeAreaInset(edge: .bottom) { composer }
+        .safeAreaInset(edge: .bottom) {
+            JunoMobileComposer(
+                model: model,
+                conversation: conversation,
+                projects: projects,
+                prompt: $prompt,
+                selectedModelID: $selectedModelID,
+                reasoningEffort: $reasoningEffort,
+                thinkingNotice: $thinkingNotice,
+                composerFocused: $composerFocused
+            )
+        }
         .onAppear { configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
-        .task {
-            #if DEBUG
-            if CommandLine.arguments.contains("--juno-preview-composer-actions") {
-                try? await Task.sleep(nanoseconds: 400_000_000)
-                showingActions = true
-            }
-            #endif
-        }
-        .accessibilityIdentifier("juno.mobile.conversation-detail")
     }
 
-    private var composer: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 10) {
-                if model.modelCatalog.isEmpty {
-                    Label(junoDisplayModelName(conversation.model), systemImage: "cpu")
-                        .lineLimit(1)
-                } else {
-                    Picker("Model", selection: $selectedModelID) {
-                        ForEach(model.modelCatalog) { option in
-                            Text(option.displayName)
-                                .tag(option.id)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityIdentifier("juno.mobile.chat-model")
-                }
-                if let selectedModel, !selectedModel.supportedReasoningEfforts.isEmpty {
-                    Picker("Effort", selection: $reasoningEffort) {
-                        if selectedModel.canDisableReasoning {
-                            Text("Instant").tag(nil as NativeReasoningEffort?)
-                        }
-                        ForEach(selectedModel.supportedReasoningEfforts) { effort in
-                            Text(effort.rawValue.capitalized)
-                                .tag(effort as NativeReasoningEffort?)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .accessibilityIdentifier("juno.mobile.chat-effort")
-                }
-                Spacer(minLength: 0)
-                if model.chatPhase != .idle {
-                    HStack(spacing: 5) {
-                        if isStreamingPhase {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Image(systemName: phaseSymbol)
-                        }
-                        Text(phaseLabel)
-                    }
-                    .foregroundStyle(.secondary)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(phaseLabel)
-                }
-            }
-            .font(.caption)
-
-            TextField("Message Juno", text: $prompt, axis: .vertical)
-                .lineLimit(1...6)
-                .textFieldStyle(.plain)
-                .focused($composerFocused)
-                .padding(.leading, 48)
-                .padding(.trailing, 48)
-                .padding(.vertical, 11)
-                .background(JunoGlassBackground(cornerRadius: 22))
-                .overlay(alignment: .bottomLeading) {
-                    composerPlusButton.padding(5)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    composerActionButton.padding(5)
-                }
-                .accessibilityIdentifier("juno.mobile.chat-composer")
-                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
-                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
-
-            if model.canRetrySelectedConversation && !model.isGenerating {
-                HStack(spacing: 8) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
-                    Text(model.chatErrorDescription ?? "The response was interrupted.")
-                        .lineLimit(2)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 8)
-                    Button("Retry") {
-                        model.retryLastMessage(conversationID: conversation.id)
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("juno.mobile.chat-retry")
-                }
-                .font(.caption)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(.bar)
-    }
-
-    private var sendDisabled: Bool {
-        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || model.isGenerating
-            || conversation.isPending
-    }
-
-    private var isStreamingPhase: Bool {
-        switch model.chatPhase {
-        case .appending, .submitting, .reasoning, .streaming, .reconnecting: true
-        case .idle, .stopping, .failed: false
-        }
-    }
-
-    private var phaseLabel: String {
-        switch model.chatPhase {
-        case .idle: "Ready"
-        case .appending: "Saving message"
-        case .submitting: "Starting"
-        case .reasoning: "Reasoning"
-        case .streaming: "Writing"
-        case .stopping: "Stopping"
-        case .reconnecting: "Reconnecting"
-        case .failed: "Interrupted"
-        }
-    }
-
-    private var phaseSymbol: String {
-        switch model.chatPhase {
-        case .reconnecting: "wifi.exclamationmark"
-        case .failed: "exclamationmark.circle"
-        case .stopping: "stop.circle"
-        default: "sparkles"
-        }
-    }
-
-    /// The "+" control, docked inside the composer's leading edge. A neutral
-    /// glass circle (never accent — that stays reserved for Send) that morphs to
-    /// an "×" and presents a compact anchored actions panel.
-    private var composerPlusButton: some View {
-        Button {
-            showingActions = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 34, height: 34)
-                .rotationEffect(.degrees(showingActions ? 45 : 0))
-                .modifier(JunoComposerGlassCircle())
-        }
-        .buttonStyle(.plain)
-        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showingActions)
-        .accessibilityLabel("Add content or tools")
-        .accessibilityIdentifier("juno.mobile.chat-plus")
-        .popover(isPresented: $showingActions) {
-            composerActionsPanel
-                .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    /// A compact popover anchored to the "+" button. Only genuinely wired
-    /// actions appear here — today that is associating the current conversation
-    /// with a project (server-validated), so the panel is the project picker
-    /// with the current association checked and a "No project" row to clear it.
-    private var composerActionsPanel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Add to project")
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14)
-                .padding(.top, 11)
-                .padding(.bottom, 5)
-
-            ScrollView {
-                VStack(spacing: 1) {
-                    projectOptionRow(
-                        id: nil, name: "No project", icon: "tray",
-                        selected: conversation.projectId == nil
-                    )
-                    ForEach(projects) { project in
-                        projectOptionRow(
-                            id: project.id, name: project.name, icon: "folder",
-                            selected: conversation.projectId == project.id
-                        )
-                    }
-                }
-            }
-            .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: 244)
-        }
-        .frame(width: 268)
-        .padding(.bottom, 6)
-        .accessibilityIdentifier("juno.mobile.composer-actions")
-    }
-
-    private func projectOptionRow(id: String?, name: String, icon: String, selected: Bool) -> some View {
-        Button {
-            Task {
-                await model.setProject(id: conversation.id, projectID: id)
-                showingActions = false
-            }
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .frame(width: 24)
-                    .foregroundStyle(selected ? Color.junoAccent : .primary)
-                Text(name)
-                    .font(.system(size: 16))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-                if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color.junoAccent)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(selected ? "\(name), selected" : name)
-    }
-
-    /// The send / stop control, docked inside the composer's trailing edge as a
-    /// circular coral Liquid Glass button. It fades to a discreet disabled state
-    /// when there is nothing to send and swaps to a Stop button while streaming.
-    @ViewBuilder
-    private var composerActionButton: some View {
-        if generatingHere {
-            Button {
-                model.stopGeneration()
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .modifier(JunoComposerSendBackground(active: true))
-            }
-            .buttonStyle(.plain)
-            .transition(.scale.combined(with: .opacity))
-            .accessibilityLabel("Stop generation")
-            .accessibilityIdentifier("juno.mobile.chat-stop")
-        } else {
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
-                    .scaleEffect(sendDisabled ? 0.92 : 1)
-            }
-            .buttonStyle(.plain)
-            .disabled(sendDisabled)
-            .transition(.scale.combined(with: .opacity))
-            .accessibilityLabel("Send message")
-            .accessibilityIdentifier("juno.mobile.chat-send")
-        }
-    }
-
-    private func send() {
-        let value = prompt
-        if model.sendMessage(
-            conversationID: conversation.id,
-            prompt: value,
-            modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
-            reasoningEffort: reasoningEffort
-        ) {
-            prompt = ""
-        }
-    }
-
+    /// Keeps the composer's model and thinking selections valid as the catalog
+    /// loads and as the user switches models. Two rules matter here: a model
+    /// that is no longer selectable (plan change, retirement) falls back to one
+    /// that is, and a thinking level the new model cannot honour is re-fitted —
+    /// with a sentence explaining it, never silently.
     private func configureSelections() {
-        if selectedModelID.isEmpty
-            || !model.modelCatalog.contains(where: { $0.id == selectedModelID })
-        {
-            selectedModelID = model.modelCatalog.contains(where: { $0.id == conversation.model })
-                ? conversation.model : model.modelCatalog.first?.id ?? conversation.model
+        selectedModelID = JunoMobileComposerSelection.resolvedModelID(
+            current: selectedModelID,
+            conversationModel: conversation.model,
+            selectable: model.selectableModels
+        )
+        guard let selectedModel else {
+            reasoningEffort = nil
+            return
         }
-        guard let selectedModel else { reasoningEffort = nil; return }
-        if let reasoningEffort,
-            !selectedModel.supportedReasoningEfforts.contains(reasoningEffort)
-        {
-            self.reasoningEffort = selectedModel.canDisableReasoning
-                ? nil : selectedModel.supportedReasoningEfforts.first
-        } else if reasoningEffort == nil && !selectedModel.canDisableReasoning {
-            reasoningEffort = selectedModel.supportedReasoningEfforts.first
-        }
+        let adjustment = NativeThinkingScale(model: selectedModel)
+            .adjusting(reasoningEffort)
+        reasoningEffort = adjustment.effort
+        // Only surface the notice when something actually moved; the draft is
+        // untouched either way.
+        thinkingNotice = adjustment.explanation
     }
 }
 
@@ -627,40 +382,5 @@ private struct JunoReasoningDisclosure: View {
         }
         .tint(Color.junoAccent)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: expanded)
-    }
-}
-
-/// A circular coral Liquid Glass background for the composer's send/stop button,
-/// with a material fallback below OS 26. When inactive the coral tint fades to a
-/// discreet level so the disabled state stays legible without shouting.
-private struct JunoComposerSendBackground: ViewModifier {
-    let active: Bool
-
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular.tint(Color.junoAccent.opacity(active ? 0.95 : 0.32)).interactive(),
-                    in: Circle()
-                )
-        } else {
-            content
-                .background(Color.junoAccent.opacity(active ? 1 : 0.35), in: Circle())
-        }
-    }
-}
-
-/// A neutral (non-accent) circular Liquid Glass background for the composer's
-/// "+" button, with a material fallback below OS 26.
-private struct JunoComposerGlassCircle: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            content
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
     }
 }

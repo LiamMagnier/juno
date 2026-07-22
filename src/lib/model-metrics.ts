@@ -294,23 +294,36 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
 
 /**
  * Canonical display order for a model list, applied wherever the payload/list is
- * built so BOTH the web selector and the Mac app (which consumes /api/models and
- * trusts its order) render identically. Sort key, in order:
+ * built so BOTH the web selector and the native apps (which consume the manifest
+ * and trust its order) render identically. Sort key, in order:
  *   1. lab/provider — PROVIDER_LIST index ascending (the rail order)
- *   2. intelligence — descending (best model in a lab first)
- *   3. release date — descending as a "YYYY-MM" string compare (nullish last)
- *   4. name — ascending, as a stable final tiebreak
+ *   2. current before legacy — a superseded model never outranks a live one,
+ *      whatever its grades, because the pickers group them separately
+ *   3. release date — descending as a "YYYY-MM" string compare (nullish last),
+ *      so the newest generation leads its lab
+ *   4. intelligence — descending, which orders one generation's siblings by
+ *      power (5.6 Sol before Terra before Luna)
+ *   5. name — ascending, as a stable final tiebreak
+ *
+ * Release date outranks intelligence deliberately: a lab's newest generation is
+ * what a user is looking for, and sorting by grade first buried a just-shipped
+ * mid-tier model under the previous flagship.
+ *
  * Returns a new array; the input is not mutated.
  */
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
     const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
     if (labDelta !== 0) return labDelta;
-    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
-    if (intelDelta !== 0) return intelDelta;
+    // `legacy` is a cached copy of `status`; fall back to the source of truth.
+    const legacyDelta =
+      Number(a.legacy ?? a.status !== "current") - Number(b.legacy ?? b.status !== "current");
+    if (legacyDelta !== 0) return legacyDelta;
     // "" sorts before any real date; descending compare pushes nullish releases last.
     const relDelta = (b.released ?? "").localeCompare(a.released ?? "");
     if (relDelta !== 0) return relDelta;
+    const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+    if (intelDelta !== 0) return intelDelta;
     return a.name.localeCompare(b.name);
   });
 }

@@ -612,6 +612,13 @@ components:
         minimumSupportedAppVersion: { type: string }
     ModelManifest:
       type: object
+      description: >-
+        Account-specific: `availability` is computed against the caller's plan,
+        and the list order is the display order every Juno client renders
+        verbatim — per lab: current models before superseded ones, newest
+        release first, then most capable first within a release. `juno:auto` is
+        included as a real, selectable entry whenever the account has at least
+        one usable chat model.
       required: [manifestVersion, contractDigest, generatedAt, models]
       properties:
         manifestVersion: { type: string }
@@ -621,8 +628,68 @@ components:
           type: array
           items:
             type: object
-            required: [id, provider, displayName, lifecycle, availability, minimumPlan, modalities, contextWindowTokens, pricing, supportedReasoningEfforts, reasoning, capabilities]
+            required: [id, provider, displayName, description, highlights, lifecycle, modality, legacy, released, availability, minimumPlan, requiredPlan, modalities, contextWindowTokens, pricing, metrics, supportedReasoningEfforts, reasoning, capabilities]
             additionalProperties: true
+            properties:
+              modality:
+                type: string
+                enum: [chat, image, video]
+                description: >-
+                  What the model produces. Clients section the picker by this
+                  (Chat · Image · Video). Only `chat` entries stream, so only
+                  they are selectable in a chat composer.
+              legacy:
+                type: boolean
+                description: >-
+                  Superseded within its family. Clients collapse these behind an
+                  "Older models" disclosure rather than interleaving them with
+                  the current generation.
+              released:
+                type: [string, 'null']
+                description: '"YYYY-MM", or null when the lab published no date.'
+              availability:
+                type: string
+                enum: [available, coming_soon, requires_plan]
+                description: >-
+                  `requires_plan` means the model exists and streams but the
+                  caller's plan cannot call it. A client must show it disabled
+                  with `requiredPlan` as the reason, never as a selection.
+              requiredPlan:
+                type: string
+                description: The plan the chat route actually enforces (paid models are Pro-floored).
+              highlights:
+                type: [array, 'null']
+                items: { type: string }
+                description: Product-authored bullets; non-null only for `juno:auto`.
+              contextWindowTokens:
+                type: [integer, 'null']
+                description: Null for `juno:auto`, which has no single context window.
+              pricing:
+                type: [object, 'null']
+                description: Null for `juno:auto`, which has no single price.
+              metrics:
+                type: [object, 'null']
+                description: >-
+                  The 1–10 grades the selectors' bars read from. Null for
+                  `juno:auto` — it is a router, not one model. Clients must not
+                  synthesize these values when null.
+                required: [speed, intelligence]
+                properties:
+                  speed: { type: integer, minimum: 1, maximum: 10 }
+                  intelligence: { type: integer, minimum: 1, maximum: 10 }
+              reasoning:
+                type: object
+                required: [supported, canDisable, onOffOnly, automatic]
+                properties:
+                  supported: { type: boolean }
+                  canDisable: { type: boolean }
+                  onOffOnly: { type: boolean }
+                  automatic:
+                    type: boolean
+                    description: >-
+                      True only for `juno:auto`: the router chooses the thinking
+                      depth per message, `supportedReasoningEfforts` is empty,
+                      and a client must not send `reasoningEffort` with it.
     BootstrapResponse:
       type: object
       required: [profile, subscription, usage, settings, featureFlags, currentChangeCursor, compactionFloorCursor, modelManifestVersion, contractVersion, minimumClientVersions, announcements]

@@ -17,19 +17,162 @@ public enum NativeReasoningEffort: String, CaseIterable, Codable, Identifiable,
     public var id: String { rawValue }
 }
 
+/// The 1–10 grades the server publishes for a model. Never synthesized on the
+/// client: a model without real numbers (Auto, which is a router) has none.
+public struct NativeModelGrades: Equatable, Sendable {
+    public let speed: Int
+    public let intelligence: Int
+
+    public init(speed: Int, intelligence: Int) {
+        self.speed = speed
+        self.intelligence = intelligence
+    }
+}
+
+public struct NativeModelPricing: Equatable, Sendable {
+    /// "economy" | "standard" | "premium" — the server's relative cost class.
+    public let priceClass: String
+    public let inputPerMillion: Double
+    public let outputPerMillion: Double
+    public let currency: String
+
+    public init(
+        priceClass: String,
+        inputPerMillion: Double,
+        outputPerMillion: Double,
+        currency: String
+    ) {
+        self.priceClass = priceClass
+        self.inputPerMillion = inputPerMillion
+        self.outputPerMillion = outputPerMillion
+        self.currency = currency
+    }
+}
+
+/// Why a model in the manifest cannot be selected right now. The server decides
+/// this — the client only renders the explanation.
+public enum NativeModelUnavailability: Equatable, Sendable {
+    case comingSoon
+    /// The account's plan cannot call it; the payload names the plan that can.
+    case requiresPlan(String)
+    /// Present in the manifest but not a streaming chat model (image/video gen).
+    case notAChatModel
+}
+
 public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     public let id: String
     public let providerID: String
     public let providerName: String
     public let displayName: String
+    public let summary: String?
+    /// Product-authored bullets. Non-empty only for Auto today.
+    public let highlights: [String]
     public let minimumPlan: String
+    /// The plan the chat route actually enforces (paid models are Pro-floored).
+    public let requiredPlan: String
     public let availability: String
+    public let lifecycle: String
+    /// What the model produces: "chat", "image" or "video". Drives the picker's
+    /// top-level sections.
+    public let modality: String
+    /// Superseded within its family — collapsed behind "Older models" rather
+    /// than interleaved with the current generation.
+    public let isLegacy: Bool
+    /// "YYYY-MM", or nil when the lab never published one.
+    public let released: String?
+    public let contextWindowTokens: Int?
+    public let pricing: NativeModelPricing?
+    public let grades: NativeModelGrades?
     public let supportedReasoningEfforts: [NativeReasoningEffort]
     public let canDisableReasoning: Bool
+    public let supportsReasoning: Bool
+    /// One thinking state rather than depths (GLM-4.6, Haiku 4.5): the server
+    /// takes `high` as "on" and nothing as "off", and publishes no tiers.
+    public let isOnOffReasoningOnly: Bool
+    /// True only for Auto: the server picks the thinking depth per message, so
+    /// the client must offer no slider and send no effort.
+    public let choosesReasoningAutomatically: Bool
     public let supportsStreaming: Bool
+    public let supportsVision: Bool
+    public let supportsWebSearch: Bool
+    public let supportsTools: Bool
+    public let supportsAttachments: Bool
+    public let deprecationNote: String?
+
+    /// A streaming chat model — the only kind this composer can send to. Image
+    /// and video generation entries share the manifest but are not selectable
+    /// here, and are not "unavailable" either; they are a different product.
+    public var isChatCapable: Bool { supportsStreaming }
 
     public var isAvailable: Bool {
         availability == "available" && supportsStreaming
+    }
+
+    public var unavailability: NativeModelUnavailability? {
+        if !supportsStreaming { return .notAChatModel }
+        switch availability {
+        case "available": return nil
+        case "coming_soon": return .comingSoon
+        default: return .requiresPlan(requiredPlan)
+        }
+    }
+
+    public init(
+        id: String,
+        providerID: String,
+        providerName: String,
+        displayName: String,
+        summary: String? = nil,
+        highlights: [String] = [],
+        minimumPlan: String,
+        requiredPlan: String = "",
+        availability: String,
+        lifecycle: String = "active",
+        modality: String = "chat",
+        isLegacy: Bool = false,
+        released: String? = nil,
+        contextWindowTokens: Int? = nil,
+        pricing: NativeModelPricing? = nil,
+        grades: NativeModelGrades? = nil,
+        supportedReasoningEfforts: [NativeReasoningEffort],
+        canDisableReasoning: Bool,
+        supportsReasoning: Bool = false,
+        isOnOffReasoningOnly: Bool = false,
+        choosesReasoningAutomatically: Bool = false,
+        supportsStreaming: Bool,
+        supportsVision: Bool = false,
+        supportsWebSearch: Bool = false,
+        supportsTools: Bool = false,
+        supportsAttachments: Bool = false,
+        deprecationNote: String? = nil
+    ) {
+        self.id = id
+        self.providerID = providerID
+        self.providerName = providerName
+        self.displayName = displayName
+        self.summary = summary
+        self.highlights = highlights
+        self.minimumPlan = minimumPlan
+        self.requiredPlan = requiredPlan.isEmpty ? minimumPlan : requiredPlan
+        self.availability = availability
+        self.lifecycle = lifecycle
+        self.modality = modality
+        self.isLegacy = isLegacy
+        self.released = released
+        self.contextWindowTokens = contextWindowTokens
+        self.pricing = pricing
+        self.grades = grades
+        self.supportedReasoningEfforts = supportedReasoningEfforts
+        self.canDisableReasoning = canDisableReasoning
+        self.supportsReasoning = supportsReasoning
+        self.isOnOffReasoningOnly = isOnOffReasoningOnly
+        self.choosesReasoningAutomatically = choosesReasoningAutomatically
+        self.supportsStreaming = supportsStreaming
+        self.supportsVision = supportsVision
+        self.supportsWebSearch = supportsWebSearch
+        self.supportsTools = supportsTools
+        self.supportsAttachments = supportsAttachments
+        self.deprecationNote = deprecationNote
     }
 }
 
@@ -220,27 +363,75 @@ public struct NativeChatAPIClient: Sendable {
             guard Set(efforts).count == efforts.count else {
                 throw NativeChatAPIError.malformedResponse
             }
+            // Grades are presentation-critical (the detail panel draws bars from
+            // them), so a nonsense range is a malformed manifest rather than
+            // something to clamp into looking real.
+            if let metrics = model.metrics {
+                guard (1...10).contains(metrics.speed),
+                    (1...10).contains(metrics.intelligence)
+                else { throw NativeChatAPIError.malformedResponse }
+            }
+            if let context = model.contextWindowTokens, context <= 0 {
+                throw NativeChatAPIError.malformedResponse
+            }
+            let automatic = model.reasoning.automatic ?? false
+            // A model that routes its own thinking must not also publish tiers —
+            // the two together have no coherent meaning for the slider.
+            guard !automatic || efforts.isEmpty else {
+                throw NativeChatAPIError.malformedResponse
+            }
             return NativeChatModelOption(
                 id: model.id,
                 providerID: model.provider.id,
                 providerName: model.provider.displayName,
                 displayName: model.displayName,
+                summary: nonEmpty(model.description, maximum: 600),
+                highlights: (model.highlights ?? []).compactMap {
+                    nonEmpty($0, maximum: 300)
+                },
                 minimumPlan: model.minimumPlan,
+                requiredPlan: nonEmpty(model.requiredPlan, maximum: 40) ?? model.minimumPlan,
                 availability: model.availability,
+                lifecycle: nonEmpty(model.lifecycle, maximum: 40) ?? "active",
+                modality: nonEmpty(model.modality, maximum: 40) ?? "chat",
+                // A manifest without the flag is an older server; fall back to
+                // the lifecycle it has always sent.
+                isLegacy: model.legacy ?? (model.lifecycle.map { $0 != "active" } ?? false),
+                released: nonEmpty(model.released, maximum: 20),
+                contextWindowTokens: model.contextWindowTokens,
+                pricing: model.pricing.map {
+                    NativeModelPricing(
+                        priceClass: $0.class,
+                        inputPerMillion: $0.inputPerMillion,
+                        outputPerMillion: $0.outputPerMillion,
+                        currency: $0.currency
+                    )
+                },
+                grades: model.metrics.map {
+                    NativeModelGrades(speed: $0.speed, intelligence: $0.intelligence)
+                },
                 supportedReasoningEfforts: efforts,
                 canDisableReasoning: model.reasoning.canDisable,
-                supportsStreaming: model.capabilities.streaming
+                supportsReasoning: model.reasoning.supported ?? !efforts.isEmpty,
+                isOnOffReasoningOnly: model.reasoning.onOffOnly ?? false,
+                choosesReasoningAutomatically: automatic,
+                supportsStreaming: model.capabilities.streaming,
+                supportsVision: model.capabilities.vision ?? false,
+                supportsWebSearch: model.capabilities.webSearch ?? false,
+                supportsTools: model.capabilities.tools ?? false,
+                supportsAttachments: model.capabilities.attachments ?? false,
+                deprecationNote: nonEmpty(model.deprecationNote, maximum: 400)
             )
         }
         return NativeChatModelCatalog(
             manifestVersion: wire.manifestVersion,
             contractDigest: wire.contractDigest,
             generatedAt: generatedAt,
-            models: models.sorted {
-                $0.providerName == $1.providerName
-                    ? $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-                    : $0.providerName.localizedCaseInsensitiveCompare($1.providerName) == .orderedAscending
-            }
+            // Server order, verbatim. The manifest is already sorted the way the
+            // web selector sorts (lab, then intelligence), and Auto leads it;
+            // re-sorting here would put Auto under "J" and make the app's list
+            // disagree with the website's for the same account.
+            models: models
         )
     }
 
@@ -511,6 +702,16 @@ public struct NativeChatAPIClient: Sendable {
             && !value.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
     }
 
+    /// Optional descriptive copy: absent, blank, or over-long all collapse to
+    /// nil. These fields decorate the UI rather than drive it, so an oversized
+    /// one is dropped instead of failing the whole manifest.
+    private func nonEmpty(_ value: String?, maximum: Int) -> String? {
+        guard let value else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validText(trimmed, maximum: maximum) else { return nil }
+        return trimmed
+    }
+
     private func parseDate(_ value: String) -> Date? {
         let precise = ISO8601DateFormatter()
         precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -537,16 +738,45 @@ private extension NativeChatServerEvent {
 private struct ModelCatalogWire: Decodable {
     struct Model: Decodable {
         struct Provider: Decodable { let id: String; let displayName: String }
-        struct Reasoning: Decodable { let canDisable: Bool }
-        struct Capabilities: Decodable { let streaming: Bool }
+        struct Reasoning: Decodable {
+            let supported: Bool?
+            let canDisable: Bool
+            let onOffOnly: Bool?
+            let automatic: Bool?
+        }
+        struct Capabilities: Decodable {
+            let streaming: Bool
+            let vision: Bool?
+            let webSearch: Bool?
+            let tools: Bool?
+            let attachments: Bool?
+        }
+        struct Pricing: Decodable {
+            let `class`: String
+            let inputPerMillion: Double
+            let outputPerMillion: Double
+            let currency: String
+        }
+        struct Metrics: Decodable { let speed: Int; let intelligence: Int }
         let id: String
         let provider: Provider
         let displayName: String
+        let description: String?
+        let highlights: [String]?
         let availability: String
+        let lifecycle: String?
+        let modality: String?
+        let legacy: Bool?
+        let released: String?
         let minimumPlan: String
+        let requiredPlan: String?
+        let contextWindowTokens: Int?
+        let pricing: Pricing?
+        let metrics: Metrics?
         let supportedReasoningEfforts: [String]
         let reasoning: Reasoning
         let capabilities: Capabilities
+        let deprecationNote: String?
     }
     let manifestVersion: String
     let contractDigest: String

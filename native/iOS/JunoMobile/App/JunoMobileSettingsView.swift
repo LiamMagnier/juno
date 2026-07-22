@@ -95,7 +95,7 @@ struct JunoMobileSettingsView: View {
             if let settings = model.settings {
                 JunoMobileSettingsSections(
                     settings: settings,
-                    modelCatalog: conversationModel?.modelCatalog ?? [],
+                    modelCatalog: conversationModel?.selectableModels ?? [],
                     disabled: model.isMutating,
                     update: { patch in Task { await model.updateSettings(patch) } }
                 )
