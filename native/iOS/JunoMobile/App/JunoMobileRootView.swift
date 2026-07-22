@@ -1192,6 +1192,13 @@ private struct JunoMobileFilesView: View {
     @State private var renameValue = ""
     @State private var previewURL: URL?
     @State private var localError: String?
+    @State private var searchText = ""
+
+    private var filteredFiles: [NativeProjectFile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.files }
+        return model.files.filter { $0.fileName.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
         Group {
@@ -1204,10 +1211,13 @@ private struct JunoMobileFilesView: View {
                     description: Text("Files uploaded to Juno will appear here offline.")
                 )
             } else {
-                List(model.files) { file in
+                List(filteredFiles) { file in
                     JunoMobileProjectFileRow(
                         file: file,
                         busy: model.isPerformingFileAction,
+                        projectName: file.projectID.flatMap { pid in
+                            model.projects.first { $0.id == pid }?.name
+                        },
                         open: { openFile(file) },
                         rename: {
                             renameValue = file.fileName
@@ -1215,13 +1225,20 @@ private struct JunoMobileFilesView: View {
                         },
                         delete: { Task { await model.deleteFile(id: file.id) } }
                     )
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .overlay {
+                    if filteredFiles.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                    }
+                }
                 .accessibilityIdentifier("juno.mobile.file-list")
             }
         }
         .navigationTitle("navigation.library")
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search files")
         .safeAreaInset(edge: .bottom) {
             if model.phase == .offline || model.lastErrorDescription != nil {
                 JunoMobileProjectStatus(model: model)
@@ -1268,6 +1285,7 @@ private struct JunoMobileFilesView: View {
 private struct JunoMobileProjectFileRow: View {
     let file: NativeProjectFile
     let busy: Bool
+    var projectName: String? = nil
     let open: () -> Void
     let rename: () -> Void
     let delete: () -> Void
@@ -1275,25 +1293,28 @@ private struct JunoMobileProjectFileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: file.kind == "IMAGE" ? "photo" : "doc")
-                .frame(width: 24)
+                .font(.system(size: 20))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 26)
             Button(action: open) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(file.fileName).lineLimit(1)
-                    HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.fileName).font(.body).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 5) {
                         Text(ByteCountFormatter.string(
                             fromByteCount: Int64(file.size),
                             countStyle: .file
                         ))
-                        if let projectID = file.projectID {
-                            Text("• \(projectID)").lineLimit(1)
+                        if let projectName, !projectName.isEmpty {
+                            Text("· \(projectName)").lineLimit(1)
                         }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Spacer()
             if busy { ProgressView().controlSize(.small) }
             Menu {
                 Button("Open", action: open)
@@ -1301,6 +1322,7 @@ private struct JunoMobileProjectFileRow: View {
                 Button("Delete", role: .destructive, action: delete)
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Color.junoAccent)
             }
         }
     }
@@ -1330,6 +1352,16 @@ private enum JunoMobileFilePreview {
 private struct JunoMobileArtifactsView: View {
     @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
     let openConversation: (String) -> Void
+    @State private var searchText = ""
+
+    private var filteredArtifacts: [NativeArtifact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.artifacts }
+        return model.artifacts.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.conversationTitle.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
         Group {
@@ -1350,18 +1382,18 @@ private struct JunoMobileArtifactsView: View {
                     description: Text("Artifacts generated in conversations appear here.")
                 )
             default:
-                List(model.artifacts) { artifact in
+                List(filteredArtifacts) { artifact in
                     NavigationLink(value: artifact.id) {
                         HStack(spacing: 12) {
                             Image(systemName: artifactIcon(artifact.kind))
-                                .font(.title3)
+                                .font(.system(size: 20))
                                 .foregroundStyle(Color.junoAccent)
                                 .frame(width: 28)
-                            VStack(alignment: .leading, spacing: 3) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(artifact.title).font(.body.weight(.medium)).lineLimit(1)
-                                HStack {
+                                HStack(spacing: 6) {
                                     Text(artifact.conversationTitle).lineLimit(1)
-                                    Spacer()
+                                    Spacer(minLength: 0)
                                     Text("v\(artifact.currentVersion)").monospacedDigit()
                                 }
                                 .font(.caption)
@@ -1370,13 +1402,20 @@ private struct JunoMobileArtifactsView: View {
                         }
                         .padding(.vertical, 3)
                     }
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
+                .overlay {
+                    if filteredArtifacts.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                    }
+                }
                 .accessibilityIdentifier("juno.mobile.artifact-list")
             }
         }
         .navigationTitle("Artifacts")
         .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search artifacts")
         .navigationDestination(for: String.self) { id in
             if let artifact = model.artifacts.first(where: { $0.id == id }) {
                 JunoMobileArtifactDetail(
