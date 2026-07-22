@@ -14,8 +14,8 @@ struct JunoMobileRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
-    @State private var selection: JunoMobileSection? = .chat
-    @State private var sidebarSearch = ""
+    // Restores the last-viewed tab across relaunches (per scene).
+    @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
 
     var body: some View {
         Group {
@@ -64,120 +64,149 @@ struct JunoMobileRootView: View {
         }
     }
 
+    /// Size-adaptive top-level navigation: a tab bar on iPhone and a sidebar on
+    /// iPad/large widths, from one declaration. Every tab hosts a real surface.
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("section.product") {
-                    rows(for: [.chat, .search, .projects, .files, .artifacts, .tasks, .connections])
-                }
+        TabView(selection: $selection) {
+            Tab(value: JunoMobileSection.chat) {
+                chatTab
+            } label: {
+                Label("navigation.chat", systemImage: JunoMobileSection.chat.systemImage)
+            }
 
-                Section("section.code") {
-                    rows(for: [.codeCloud, .codeRemote])
-                }
+            Tab(value: JunoMobileSection.search, role: .search) {
+                searchTab
+            } label: {
+                Label("navigation.search", systemImage: JunoMobileSection.search.systemImage)
+            }
 
-                Section("section.account") {
-                    rows(for: [.settings])
+            TabSection("sidebar.group.content") {
+                Tab(value: JunoMobileSection.projects) {
+                    projectsTab
+                } label: {
+                    Label("navigation.projects", systemImage: JunoMobileSection.projects.systemImage)
+                }
+                Tab(value: JunoMobileSection.library) {
+                    libraryTab
+                } label: {
+                    Label("navigation.library", systemImage: JunoMobileSection.library.systemImage)
+                }
+                Tab(value: JunoMobileSection.artifacts) {
+                    artifactsTab
+                } label: {
+                    Label("navigation.artifacts", systemImage: JunoMobileSection.artifacts.systemImage)
                 }
             }
-            .accessibilityIdentifier("juno.mobile.sidebar")
-            .navigationTitle("Juno")
-            .searchable(text: $sidebarSearch, prompt: "sidebar.search.prompt")
-        } detail: {
-            if let selection {
-                JunoMobileDetailView(
-                    section: selection,
-                    conversationModel: conversationModel,
-                    projectModel: projectModel,
-                    artifactModel: artifactModel,
-                    memorySettingsModel: memorySettingsModel,
-                    searchModel: searchModel,
-                    openConversation: { id in
-                        conversationModel?.selectedConversationID = id
-                        self.selection = .chat
-                    },
-                    openSearchResult: { result in
-                        switch result.kind {
-                        case .conversation, .message:
-                            conversationModel?.selectedConversationID =
-                                result.conversationID ?? result.entityID
-                            self.selection = .chat
-                        case .project:
-                            projectModel?.selectedProjectID = result.entityID
-                            self.selection = .projects
-                        case .file:
-                            self.selection = .files
-                        case .artifact:
-                            artifactModel?.selectedArtifactID = result.entityID
-                            self.selection = .artifacts
-                        case .memory:
-                            self.selection = .settings
-                        }
-                    }
-                )
-                    .id(selection)
-            } else {
-                ContentUnavailableView("shell.choose.title", systemImage: "sidebar.left")
+
+            Tab(value: JunoMobileSection.settings) {
+                settingsTab(session: session)
+            } label: {
+                Label("navigation.settings", systemImage: JunoMobileSection.settings.systemImage)
             }
         }
-        .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                JunoMobileSyncStatus(model: syncModel)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("auth.sign-out", role: .destructive) {
-                        Task { await authModel.signOut() }
-                    }
-                } label: {
-                    Label(
-                        session.profile.name ?? session.profile.email,
-                        systemImage: "person.crop.circle"
-                    )
-                }
-                .accessibilityIdentifier("juno.mobile.account-menu")
-            }
+        .tabViewStyle(.sidebarAdaptable)
+        .accessibilityIdentifier("juno.mobile.tabs")
+    }
+
+    private func openConversation(_ id: String) {
+        conversationModel?.selectedConversationID = id
+        selection = .chat
+    }
+
+    private func openSearchResult(_ result: NativeSearchResult) {
+        switch result.kind {
+        case .conversation, .message:
+            conversationModel?.selectedConversationID = result.conversationID ?? result.entityID
+            selection = .chat
+        case .project:
+            projectModel?.selectedProjectID = result.entityID
+            selection = .projects
+        case .file:
+            selection = .library
+        case .artifact:
+            artifactModel?.selectedArtifactID = result.entityID
+            selection = .artifacts
+        case .memory:
+            selection = .settings
         }
     }
 
     @ViewBuilder
-    private func rows(for sections: [JunoMobileSection]) -> some View {
-        ForEach(filtered(sections)) { section in
-            NavigationLink(value: section) {
-                Label(section.title, systemImage: section.systemImage)
-            }
+    private var chatTab: some View {
+        if let conversationModel {
+            JunoMobileConversationsView(model: conversationModel, syncModel: syncModel)
+        } else {
+            JunoMobileUnavailableTab()
         }
     }
 
-    private func filtered(_ sections: [JunoMobileSection]) -> [JunoMobileSection] {
-        guard !sidebarSearch.isEmpty else { return sections }
-        return sections.filter { section in
-            section.rawValue.localizedStandardContains(sidebarSearch)
+    @ViewBuilder
+    private var searchTab: some View {
+        if let searchModel {
+            JunoMobileSearchView(model: searchModel, open: openSearchResult)
+        } else {
+            JunoMobileUnavailableTab()
+        }
+    }
+
+    @ViewBuilder
+    private var projectsTab: some View {
+        if let projectModel {
+            JunoMobileProjectsView(
+                model: projectModel,
+                conversationModel: conversationModel,
+                openConversation: openConversation
+            )
+        } else {
+            JunoMobileUnavailableTab()
+        }
+    }
+
+    @ViewBuilder
+    private var libraryTab: some View {
+        if let projectModel {
+            JunoMobileFilesView(model: projectModel)
+        } else {
+            JunoMobileUnavailableTab()
+        }
+    }
+
+    @ViewBuilder
+    private var artifactsTab: some View {
+        if let artifactModel {
+            JunoMobileArtifactsView(model: artifactModel, openConversation: openConversation)
+        } else {
+            JunoMobileUnavailableTab()
+        }
+    }
+
+    @ViewBuilder
+    private func settingsTab(session: NativeAuthenticatedSession) -> some View {
+        if let memorySettingsModel {
+            JunoMobileSettingsView(
+                model: memorySettingsModel,
+                conversationModel: conversationModel,
+                authModel: authModel,
+                session: session
+            )
+        } else {
+            JunoMobileUnavailableTab()
         }
     }
 }
 
-private struct JunoMobileSyncStatus: View {
-    let model: NativeSyncModel<SQLiteAccountRepository>?
-
+/// Honest fallback shown only when a store failed to open at launch — never a
+/// placeholder for an unbuilt feature.
+private struct JunoMobileUnavailableTab: View {
     var body: some View {
-        if let model {
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                switch model.phase {
-                case .idle, .synchronizing:
-                    ProgressView().controlSize(.small)
-                case .live:
-                    Image(systemName: "checkmark.icloud.fill")
-                case .offline:
-                    Image(systemName: "icloud.slash")
-                }
+        NavigationStack {
+            ContentUnavailableView {
+                Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text("shell.unavailable.description")
             }
-            .accessibilityLabel(model.phase == .offline ? "Offline" : "Synced")
-            .accessibilityIdentifier("juno.mobile.sync-status")
         }
     }
 }
@@ -222,53 +251,6 @@ private struct JunoMobileSignInView: View {
     }
 }
 
-private struct JunoMobileDetailView: View {
-    let section: JunoMobileSection
-    let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
-    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
-    let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
-    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
-    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
-    let openConversation: (String) -> Void
-    let openSearchResult: (NativeSearchResult) -> Void
-
-    @ViewBuilder
-    var body: some View {
-        if section == .chat, let conversationModel {
-            JunoMobileConversationsView(model: conversationModel)
-        } else if section == .search, let searchModel {
-            JunoMobileSearchView(model: searchModel, open: openSearchResult)
-        } else if section == .settings, let memorySettingsModel {
-            JunoMobileSettingsView(
-                model: memorySettingsModel,
-                conversationModel: conversationModel
-            )
-        } else if section == .projects, let projectModel {
-            JunoMobileProjectsView(
-                model: projectModel,
-                conversationModel: conversationModel,
-                openConversation: openConversation
-            )
-        } else if section == .files, let projectModel {
-            JunoMobileFilesView(model: projectModel)
-        } else if section == .artifacts, let artifactModel {
-            JunoMobileArtifactsView(
-                model: artifactModel,
-                openConversation: openConversation
-            )
-        } else {
-            NavigationStack {
-                ContentUnavailableView {
-                    Label(section.title, systemImage: section.systemImage)
-                } description: {
-                    Text("shell.foundation.description")
-                }
-                .accessibilityIdentifier("juno.mobile.detail")
-                .navigationTitle(section.title)
-            }
-        }
-    }
-}
 
 private struct JunoMobileProjectsView: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>

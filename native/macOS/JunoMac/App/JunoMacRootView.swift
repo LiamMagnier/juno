@@ -17,7 +17,7 @@ struct JunoMacRootView: View {
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
-    @State private var sidebarSearch = ""
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
 
     var body: some View {
         Group {
@@ -69,24 +69,20 @@ struct JunoMacRootView: View {
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $selection) {
-                Section("section.product") {
-                    rows(for: [.chat, .projects, .library, .artifacts, .tasks, .connections])
-                }
-
-                Section("section.intelligence") {
-                    rows(for: [.search, .code])
-                }
-
-                Section("section.account") {
-                    rows(for: [.settings])
+                ForEach(JunoMacSection.Group.allCases) { group in
+                    Section(group.title) {
+                        ForEach(group.sections) { section in
+                            sidebarRow(section)
+                        }
+                    }
                 }
             }
+            .listStyle(.sidebar)
             .accessibilityIdentifier("juno.mac.sidebar")
             .navigationTitle("Juno")
-            .searchable(text: $sidebarSearch, prompt: "sidebar.search.prompt")
-            .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 340)
+            .navigationSplitViewColumnWidth(min: 216, ideal: 244, max: 340)
         } detail: {
             JunoMacDetailView(
                 section: selection,
@@ -144,20 +140,40 @@ struct JunoMacRootView: View {
     }
 
     @ViewBuilder
-    private func rows(for sections: [JunoMacSection]) -> some View {
-        ForEach(filtered(sections)) { section in
-            NavigationLink(value: section) {
-                Label(section.title, systemImage: section.systemImage)
-            }
-        }
+    private func sidebarRow(_ section: JunoMacSection) -> some View {
+        Label(section.title, systemImage: section.systemImage)
+            .tag(section)
+            .accessibilityIdentifier("juno.mac.sidebar.\(section.rawValue)")
+            .contextMenu { sidebarContextMenu(section) }
     }
 
-    private func filtered(_ sections: [JunoMacSection]) -> [JunoMacSection] {
-        guard !sidebarSearch.isEmpty else { return sections }
-        return sections.filter { section in
-            String(localized: String.LocalizationValue(section.rawValue))
-                .localizedStandardContains(sidebarSearch)
-                || section.rawValue.localizedStandardContains(sidebarSearch)
+    @ViewBuilder
+    private func sidebarContextMenu(_ section: JunoMacSection) -> some View {
+        switch section {
+        case .chat:
+            Button {
+                Task {
+                    if let id = await conversationModel?.createConversation() {
+                        conversationModel?.selectedConversationID = id
+                        selection = .chat
+                    }
+                }
+            } label: {
+                Label("chat.new", systemImage: "square.and.pencil")
+            }
+            .disabled(conversationModel == nil)
+        case .search:
+            Button {
+                selection = .search
+            } label: {
+                Label("navigation.search", systemImage: "magnifyingglass")
+            }
+        default:
+            Button {
+                selection = section
+            } label: {
+                Label("sidebar.open", systemImage: "arrow.forward")
+            }
         }
     }
 }
@@ -266,11 +282,14 @@ private struct JunoMacDetailView: View {
         } else if section == .code, let chatTransport {
             JunoMacCodeView(transport: chatTransport, accountID: accountID)
         } else {
+            // Reached only when a store failed to open at launch (a genuine
+            // configuration error), never as a placeholder for an unbuilt
+            // feature — every section above maps to a real surface.
             NavigationStack {
                 ContentUnavailableView {
-                    Label(section.title, systemImage: section.systemImage)
+                    Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text("shell.foundation.description")
+                    Text("shell.unavailable.description")
                 }
                 .accessibilityIdentifier("juno.mac.detail")
                 .navigationTitle(section.title)

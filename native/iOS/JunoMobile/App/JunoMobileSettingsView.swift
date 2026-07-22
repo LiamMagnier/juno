@@ -1,3 +1,4 @@
+import JunoAuth
 import JunoChatKit
 import JunoStorage
 import SwiftUI
@@ -7,6 +8,9 @@ import SwiftUI
 struct JunoMobileSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    var authModel: NativeAuthModel?
+    var session: NativeAuthenticatedSession?
+    @State private var showingSignOut = false
 
     var body: some View {
         NavigationStack {
@@ -34,12 +38,49 @@ struct JunoMobileSettingsView: View {
                     statusBanner
                 }
             }
+            .confirmationDialog(
+                "auth.sign-out.confirm.title",
+                isPresented: $showingSignOut,
+                titleVisibility: .visible
+            ) {
+                Button("auth.sign-out", role: .destructive) {
+                    Task { await authModel?.signOut() }
+                }
+                Button("action.cancel", role: .cancel) {}
+            } message: {
+                Text("auth.sign-out.confirm.message")
+            }
         }
         .accessibilityIdentifier("juno.mobile.settings")
     }
 
     private var settingsForm: some View {
         Form {
+            if let session {
+                Section {
+                    LabeledContent {
+                        Text(session.profile.email)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    } label: {
+                        Label {
+                            Text(session.profile.name ?? session.profile.email)
+                        } icon: {
+                            Image(systemName: "person.crop.circle")
+                        }
+                    }
+                    if authModel != nil {
+                        Button(role: .destructive) {
+                            showingSignOut = true
+                        } label: {
+                            Label("auth.sign-out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                        .accessibilityIdentifier("juno.mobile.account-signout")
+                    }
+                } header: {
+                    Text("settings.account")
+                }
+            }
             if let settings = model.settings {
                 JunoMobileSettingsSections(
                     settings: settings,

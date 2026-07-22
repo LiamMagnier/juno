@@ -9,7 +9,8 @@ import SwiftUI
 
 @main
 struct JunoMacApp: App {
-    @State private var selectedSection = JunoMacSection.chat
+    // Restores the last-viewed section across relaunches (per scene).
+    @SceneStorage("juno.mac.selectedSection") private var selectedSection = JunoMacSection.chat
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -185,13 +186,17 @@ private struct JunoMacNavigationCommands: Commands {
 
     var body: some Commands {
         CommandMenu("menu.navigate") {
-            ForEach(JunoMacSection.allCases) { section in
-                Button {
-                    selection = section
-                } label: {
-                    Label(section.title, systemImage: section.systemImage)
+            ForEach(JunoMacSection.Group.allCases) { group in
+                Section {
+                    ForEach(group.sections) { section in
+                        Button {
+                            selection = section
+                        } label: {
+                            Label(section.title, systemImage: section.systemImage)
+                        }
+                        .keyboardShortcut(section.keyboardShortcut, modifiers: .command)
+                    }
                 }
-                .keyboardShortcut(section.keyboardShortcut, modifiers: .command)
             }
         }
     }

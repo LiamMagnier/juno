@@ -1,9 +1,33 @@
 import JunoChatKit
 import JunoStorage
+import JunoSync
 import SwiftUI
+
+/// Compact synchronization indicator; tapping it forces a refresh.
+struct JunoMobileSyncButton: View {
+    let model: NativeSyncModel<SQLiteAccountRepository>
+
+    var body: some View {
+        Button {
+            Task { await model.refresh() }
+        } label: {
+            switch model.phase {
+            case .idle, .synchronizing:
+                ProgressView().controlSize(.small)
+            case .live:
+                Image(systemName: "checkmark.icloud")
+            case .offline:
+                Image(systemName: "icloud.slash")
+            }
+        }
+        .accessibilityLabel(model.phase == .offline ? Text("sync.offline") : Text("sync.synced"))
+        .accessibilityIdentifier("juno.mobile.sync-status")
+    }
+}
 
 struct JunoMobileConversationsView: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var path: [String] = []
 
     var body: some View {
@@ -31,6 +55,11 @@ struct JunoMobileConversationsView: View {
             }
             .navigationTitle("Conversations")
             .toolbar {
+                if let syncModel {
+                    ToolbarItem(placement: .topBarLeading) {
+                        JunoMobileSyncButton(model: syncModel)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await model.createConversation() }
