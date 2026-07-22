@@ -1,12 +1,12 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 02:12 Europe/Paris
+Last updated: 2026-07-22 03:05 Europe/Paris
 
 ## Repository state
 
-- Branch: `agent/juno-native`
-- Current completed implementation commit: `719db31c4ae96c4ee18244230d0a768f69bb04f0` (`feat(native): add real library and artifacts`).
-- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
+- Branch: `agent/juno-native-claude-continuation` (continuation of `agent/juno-native`; PRs target `agent/juno-native`, never `main`).
+- Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`).
+- Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`.
 - Known unstaged Xcode 27 project/scheme and String Catalog rewrites remain
   preserved outside the implementation commits; inspect rather than resetting them.
 - Main checkout: `/Users/liammagnier/Desktop/workspace/juno` remains independently on `main` at `e0d1285`, with pre-existing Remote Session changes untouched by this run.
@@ -16,8 +16,8 @@ Last updated: 2026-07-22 02:12 Europe/Paris
 ## Current phase
 
 Production auth, storage, sync, conversation/message UI, real chat streaming,
-projects/files, library and artifacts are complete. The next sequential unit is
-memory and settings.
+projects/files, library/artifacts and memory/settings are complete. The next
+sequential unit is real global search plus complete sidebar/navigation.
 
 ## Actually completed
 
@@ -26,7 +26,7 @@ memory and settings.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 134 focused Swift package tests, all passing with warnings treated as errors
+- 149 focused Swift package tests, all passing with warnings treated as errors
   and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
@@ -71,6 +71,17 @@ memory and settings.
   detected Office export and native HTML/SVG/Markdown/source previews on both
   apps. Existing `/api/library` and `/api/artifacts` routes were published in
   the native OpenAPI contract; no backend route or service was added.
+- Real memory and settings in `778a47d`: synchronized encrypted memory-entry
+  and settings projection with strict account isolation, offline reads,
+  optimistic `memory.create/update/delete` and `settings.update` mutations on
+  the durable outbox, revision-conflict detection with keep-mine/use-server
+  resolution, summary hydration through the existing `GET /api/memory`,
+  explicit-acknowledgement permanent reset via `DELETE /api/memory`, and full
+  settings/memory forms with loading/empty/error/offline/confirmation states
+  on both apps. The existing `/api/memory` route was published in OpenAPI
+  1.2.0 (mirrored in `CONTRACT_VERSION`); no backend route or service was
+  added. Unknown stored preference values remain selectable rather than being
+  silently rewritten.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -85,7 +96,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Memory/settings, search/sidebar, remaining mutation conflict UI and live-account offline/reconnect proof.
+- Search/sidebar, remaining mutation conflict UI and live-account offline/reconnect proof.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -96,7 +107,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 134/134 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 149/149 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -132,16 +143,18 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Reuse the existing memory/settings routes, sync entities and old native clients
-to implement the real account-scoped memory and settings surfaces in both apps.
+Implement real global search: reuse the existing local-search contract in
+`JunoSearch`, the encrypted synchronized entities (conversations, messages,
+projects, files, artifacts, memories) and the existing routes to build the
+account-scoped search surfaces plus the complete macOS/iOS sidebar navigation.
 Do not add a server route unless the targeted checks prove a gap.
 
 Open first:
 
-1. `src/app/api/memory`
-2. `src/app/api/settings`
-3. `src/lib/sync-entities.ts`
-4. the old native project's memory/settings clients (read-only source lineage)
+1. `native/Packages/JunoNativeKit/Sources/JunoSearch`
+2. `src/app/api/search` (if present) and the web sidebar search behavior
+3. `native/macOS/JunoMac/App/JunoMacRootView.swift` sidebar composition
+4. `native/iOS/JunoMobile/App/JunoMobileRootView.swift` sidebar composition
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.

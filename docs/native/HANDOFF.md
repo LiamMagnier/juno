@@ -1,16 +1,15 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 02:12 Europe/Paris
+Updated: 2026-07-22 03:05 Europe/Paris
 
 ## Resume here
 
-- Branch: `agent/juno-native`
-- Current completed implementation commit: `719db31c4ae96c4ee18244230d0a768f69bb04f0` (`feat(native): add real library and artifacts`)
-- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`
-- Working tree: known unstaged Xcode 27 project/scheme and String Catalog rewrites are preserved outside implementation commits.
-- Current phase: memory and settings.
-- Current task: production library and artifacts are complete.
-- Next exact action: reuse the existing memory/settings routes, sync entities and old native clients for native account memory and settings surfaces.
+- Branch: `agent/juno-native-claude-continuation` (PRs target `agent/juno-native`, never `main`)
+- Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`)
+- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
+- Current phase: real global search plus complete sidebar/navigation.
+- Current task: production memory and settings are complete.
+- Next exact action: reuse the JunoSearch local-search contract and the encrypted synchronized entities for real account-scoped search and full macOS/iOS sidebar navigation.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -48,6 +47,12 @@ clean, restore, stage, or commit those files from this native worktree.
   offline artifact/version history, direct bearer hydration, optimistic edit and
   restore conflicts, rename/delete, Office export and native previews on both apps.
   Existing routes were published in OpenAPI; no backend route was added.
+- Real memory and settings in `778a47d`: encrypted synchronized memory/settings
+  projection, optimistic durable mutations with conflict resolution and retry,
+  summary hydration via existing `GET /api/memory`, explicit-acknowledgement
+  permanent reset, and complete settings/memory forms on both apps. `/api/memory`
+  published in OpenAPI 1.2.0 with `CONTRACT_VERSION` mirrored; no backend route
+  was added.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -57,15 +62,15 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `src/app/api/memory`
-2. `src/app/api/settings`
-3. `src/lib/sync-entities.ts`
-4. the old native project's memory/settings clients (read-only source lineage)
+1. `native/Packages/JunoNativeKit/Sources/JunoSearch`
+2. the web sidebar/search behavior (read-only functional reference)
+3. `native/macOS/JunoMac/App/JunoMacRootView.swift`
+4. `native/iOS/JunoMobile/App/JunoMobileRootView.swift`
 
 ## Commands to run next
 
 ```bash
-cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary
+cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude
 git status --short --branch
 git log -3 --oneline
 DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test \
@@ -95,7 +100,8 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 134/134 tests, including eight focused artifact tests.
+- Strict package suite: 149/149 tests, including fifteen focused memory/settings tests.
+- Web `npx tsc --noEmit` and `tsx --test tests/native-contract.test.ts` (3/3).
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
 - JunoMac unit tests: 2/2.
@@ -137,7 +143,7 @@ and do not reset them or the independent main checkout.
 
 ## Remaining work
 
-- Memory/settings, search/sidebar and remaining mutation conflict UI.
+- Search/sidebar and remaining mutation conflict UI.
 - Production search persistence and live-account offline/reconnect proof.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.

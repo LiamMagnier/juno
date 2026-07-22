@@ -1,15 +1,14 @@
 {
-  "branch": "agent/juno-native",
-  "currentCommit": "719db31c4ae96c4ee18244230d0a768f69bb04f0",
-  "workingTreeClean": false,
-  "currentPhase": "memory-and-settings",
-  "currentTask": "Reuse existing memory and settings routes, sync entities and old native clients for real account memory and settings surfaces.",
+  "branch": "agent/juno-native-claude-continuation",
+  "currentCommit": "778a47d",
+  "workingTreeClean": true,
+  "currentPhase": "search-and-sidebar",
+  "currentTask": "Reuse the JunoSearch local-search contract and encrypted synchronized entities for real account-scoped global search and complete macOS/iOS sidebar navigation.",
   "nextFiles": [
-    "src/app/api/memory",
-    "src/app/api/settings",
-    "src/lib/sync-entities.ts",
-    "native/Packages/JunoNativeKit/Sources/JunoSync",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild"
+    "native/Packages/JunoNativeKit/Sources/JunoSearch",
+    "native/macOS/JunoMac/App/JunoMacRootView.swift",
+    "native/iOS/JunoMobile/App/JunoMobileRootView.swift",
+    "src/lib/sync-entities.ts"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
@@ -25,6 +24,7 @@
     "Real native chat with model and effort selection, production SSE, stop, retry, reconnect and duplicate prevention in 6e20050",
     "Real encrypted projects and files with durable mutations, linked conversations, uploads, fresh file access and native surfaces in 35fce4a",
     "Real encrypted library and artifact surfaces with offline version history, optimistic edits, exports and native previews in 719db31",
+    "Real encrypted memory and settings with optimistic durable mutations, conflict resolution, summary hydration, explicit permanent reset and full native forms in 778a47d; /api/memory published in OpenAPI 1.2.0",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -35,7 +35,6 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Real native memory and settings",
     "Search and sidebar completion plus mutation conflict UI and live-account offline and reconnect proof",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
@@ -47,7 +46,8 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (134/134)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (149/149)",
+    "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",
