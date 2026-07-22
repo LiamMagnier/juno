@@ -10,13 +10,18 @@ import Foundation
 ///
 /// `[String: Any]` would do the same job and is not `Sendable`, `Equatable` or
 /// `Codable`, all three of which this needs.
-public enum JSONValue: Equatable, Sendable, Codable {
+///
+/// Named `JunoJSONValue` rather than the obvious `JSONValue` because
+/// `JunoCodeCore` already exports a type by that name, and the Mac app imports
+/// both — an unqualified `JSONValue` there is ambiguous, which is a compile
+/// error in one target and a silently wrong type in another.
+public enum JunoJSONValue: Equatable, Sendable, Codable {
     case null
     case bool(Bool)
     case number(Double)
     case string(String)
-    case array([JSONValue])
-    case object([String: JSONValue])
+    case array([JunoJSONValue])
+    case object([String: JunoJSONValue])
 
     public init(from decoder: any Decoder) throws {
         let container = try decoder.singleValueContainer()
@@ -28,9 +33,9 @@ public enum JSONValue: Equatable, Sendable, Codable {
             self = .number(value)
         } else if let value = try? container.decode(String.self) {
             self = .string(value)
-        } else if let value = try? container.decode([JSONValue].self) {
+        } else if let value = try? container.decode([JunoJSONValue].self) {
             self = .array(value)
-        } else if let value = try? container.decode([String: JSONValue].self) {
+        } else if let value = try? container.decode([String: JunoJSONValue].self) {
             self = .object(value)
         } else {
             throw DecodingError.dataCorruptedError(

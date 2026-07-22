@@ -68,12 +68,12 @@ public struct CodeRemoteCommand: Equatable, Sendable, Identifiable {
     public let id: String
     public let sessionID: String
     public let kind: String
-    public let payload: [String: JSONValue]
+    public let payload: [String: JunoJSONValue]
     public let status: String
 
     public init(
         id: String, sessionID: String, kind: String,
-        payload: [String: JSONValue], status: String
+        payload: [String: JunoJSONValue], status: String
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -86,10 +86,10 @@ public struct CodeRemoteCommand: Equatable, Sendable, Identifiable {
 public struct CodeRemoteSessionEvent: Equatable, Sendable {
     public let seq: Int
     public let kind: String
-    public let payload: [String: JSONValue]
+    public let payload: [String: JunoJSONValue]
     public let createdAt: Date
 
-    public init(seq: Int, kind: String, payload: [String: JSONValue], createdAt: Date) {
+    public init(seq: Int, kind: String, payload: [String: JunoJSONValue], createdAt: Date) {
         self.seq = seq
         self.kind = kind
         self.payload = payload
@@ -166,7 +166,7 @@ public struct NativeCodeRemoteClient: Sendable {
         deviceID: String,
         sessionID: String,
         kind: String,
-        payload: [String: JSONValue],
+        payload: [String: JunoJSONValue],
         idempotencyKey: String,
         for accountID: AccountID
     ) async throws -> CodeRemoteCommand {
@@ -175,7 +175,7 @@ public struct NativeCodeRemoteClient: Sendable {
         guard Self.supportedCommandKinds.contains(kind) else {
             throw CodeRemoteError.unsupportedCommand(kind)
         }
-        let body: [String: JSONValue] = [
+        let body: [String: JunoJSONValue] = [
             "sessionID": .string(sessionID),
             "kind": .string(kind),
             "payload": .object(payload),
@@ -234,12 +234,12 @@ public struct NativeCodeRemoteClient: Sendable {
         deviceID: String,
         commandID: String,
         status: String,
-        result: [String: JSONValue]?,
+        result: [String: JunoJSONValue]?,
         error: String?,
         for accountID: AccountID
     ) async throws {
         try validate(deviceID)
-        var body: [String: JSONValue] = [
+        var body: [String: JunoJSONValue] = [
             "commandId": .string(commandID),
             "status": .string(status),
         ]
@@ -258,7 +258,7 @@ public struct NativeCodeRemoteClient: Sendable {
     ) async throws {
         try validate(deviceID)
         try validate(sessionID)
-        let encoded = JSONValue.array(events.map { event in
+        let encoded = JunoJSONValue.array(events.map { event in
             .object([
                 "seq": .number(Double(event.seq)),
                 "kind": .string(event.kind),
@@ -287,7 +287,7 @@ public struct NativeCodeRemoteClient: Sendable {
     }
 
     private func post(
-        _ path: String, body: JSONValue, for accountID: AccountID
+        _ path: String, body: JunoJSONValue, for accountID: AccountID
     ) async throws -> HTTPResponse {
         let response = try await sender.send(
             try NativeBearerRequest(
@@ -333,14 +333,14 @@ public struct NativeCodeRemoteClient: Sendable {
         else { throw CodeRemoteError.invalidIdentifier }
     }
 
-    private func decodeObject(_ response: HTTPResponse) throws -> [String: JSONValue]? {
-        guard let value = try? JSONDecoder().decode(JSONValue.self, from: response.body),
+    private func decodeObject(_ response: HTTPResponse) throws -> [String: JunoJSONValue]? {
+        guard let value = try? JSONDecoder().decode(JunoJSONValue.self, from: response.body),
             case .object(let object) = value
         else { return nil }
         return object
     }
 
-    private func decodeSummary(_ value: JSONValue) throws -> CodeRemoteSessionSummary {
+    private func decodeSummary(_ value: JunoJSONValue) throws -> CodeRemoteSessionSummary {
         guard case .object(let object) = value,
             case .string(let sessionID)? = object["sessionID"],
             case .string(let deviceID)? = object["deviceID"],
@@ -373,27 +373,27 @@ public struct NativeCodeRemoteClient: Sendable {
         )
     }
 
-    private func decodeCommand(_ value: JSONValue) throws -> CodeRemoteCommand {
+    private func decodeCommand(_ value: JunoJSONValue) throws -> CodeRemoteCommand {
         guard case .object(let object) = value,
             case .string(let id)? = object["id"],
             case .string(let sessionID)? = object["sessionID"],
             case .string(let kind)? = object["kind"],
             case .string(let status)? = object["status"]
         else { throw CodeRemoteError.malformedResponse }
-        var payload: [String: JSONValue] = [:]
+        var payload: [String: JunoJSONValue] = [:]
         if case .object(let raw)? = object["payload"] { payload = raw }
         return CodeRemoteCommand(
             id: id, sessionID: sessionID, kind: kind, payload: payload, status: status
         )
     }
 
-    private func decodeEvent(_ value: JSONValue) throws -> CodeRemoteSessionEvent {
+    private func decodeEvent(_ value: JunoJSONValue) throws -> CodeRemoteSessionEvent {
         guard case .object(let object) = value,
             let seq = object["seq"]?.numberValue,
             case .string(let kind)? = object["kind"],
             let createdAt = object["createdAt"]?.date
         else { throw CodeRemoteError.malformedResponse }
-        var payload: [String: JSONValue] = [:]
+        var payload: [String: JunoJSONValue] = [:]
         if case .object(let raw)? = object["payload"] { payload = raw }
         return CodeRemoteSessionEvent(
             seq: Int(seq), kind: kind, payload: payload, createdAt: createdAt
