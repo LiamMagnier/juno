@@ -428,6 +428,34 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var generationTask: Task<Void, Never>?
     private var activeGenerationID: String?
 
+    /// Steps the server has reported for the generation in flight, newest last.
+    ///
+    /// Deep research runs PLAN → SEARCH → READ for tens of seconds before a
+    /// single token of the report arrives, so without these the screen is an
+    /// empty bubble and a spinner for the whole prep phase. Cleared when a new
+    /// generation starts, because last turn's search steps above this turn's
+    /// answer would be actively misleading.
+    public private(set) var researchActivity: [NativeChatActivity] = []
+
+    /// The warning the server emits when research degrades to a plain answer.
+    /// Surfaced separately because it changes what the answer *is* — a reader
+    /// who asked for research and silently got plain chat has been misled.
+    public var researchDegradedWarning: String? {
+        researchActivity.last { $0.kind == .warning }?.detail
+            ?? researchActivity.last { $0.kind == .warning }?.title
+    }
+
+    private func recordActivity(_ activity: NativeChatActivity, conversationID: String) {
+        guard activeChatConversationID == conversationID else { return }
+        // The server re-sends an entry when it gains a detail, so replace in
+        // place rather than appending a near-duplicate step.
+        if let index = researchActivity.firstIndex(where: { $0.id == activity.id }) {
+            researchActivity[index] = activity
+        } else {
+            researchActivity.append(activity)
+        }
+    }
+
     private struct RetryContext: Sendable {
         let accountID: AccountID
         let conversationID: String
@@ -441,6 +469,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// retry of a *successful* append must not re-send them; this is only
         /// re-sent when the append itself never landed.
         let attachmentIDs: [String]
+        /// Carried through retries so a resend is still the research request the
+        /// reader asked for, rather than silently downgrading to plain chat.
+        let deepResearch: Bool
         var userMessageID: String?
         var userCreatedAt: Date
     }
@@ -668,7 +699,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         prompt: String,
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
-        attachmentIDs: [String] = []
+        attachmentIDs: [String] = [],
+        deepResearch: Bool = false
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -696,10 +728,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             modelID: modelID,
             reasoningEffort: reasoningEffort,
             attachmentIDs: attachmentIDs,
+            deepResearch: deepResearch,
             userMessageID: nil,
             userCreatedAt: now
         )
         retryContexts.removeValue(forKey: conversationID)
+        researchActivity = []
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = .appending
@@ -791,7 +825,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID,
                     modelID: context.modelID,
                     reasoningEffort: context.reasoningEffort,
-                    generationID: generationID
+                    generationID: generationID,
+                    deepResearch: context.deepResearch
                 ),
                 for: context.accountID
             )
@@ -820,6 +855,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     if chatPhase == .submitting { chatPhase = .reasoning }
                 case .sources(let sources):
                     updateAssistantSources(sources, conversationID: context.conversationID)
+                case .activity(let activity):
+                    recordActivity(activity, conversationID: context.conversationID)
                 case .completed(let message):
                     completeAssistant(message, conversationID: context.conversationID)
                     retryContexts.removeValue(forKey: context.conversationID)

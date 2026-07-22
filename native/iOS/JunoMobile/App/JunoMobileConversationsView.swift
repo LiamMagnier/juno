@@ -73,6 +73,7 @@ private struct JunoMobileConversationDetail: View {
     @State private var showingFileImporter = false
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var attachmentNotice: String?
+    @State private var deepResearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
 
@@ -261,6 +262,14 @@ private struct JunoMobileConversationDetail: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if deepResearch || !model.researchActivity.isEmpty {
+                JunoMobileResearchProgress(
+                    enabled: deepResearch,
+                    activity: model.researchActivity,
+                    degradedWarning: model.researchDegradedWarning,
+                    onDisable: { deepResearch = false }
+                )
+            }
             if let attachmentModel, !attachmentModel.attachments.isEmpty {
                 JunoMobileAttachmentChips(
                     attachments: attachmentModel.attachments,
@@ -424,6 +433,32 @@ private struct JunoMobileConversationDetail: View {
     /// with the current association checked and a "No project" row to clear it.
     private var composerActionsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Button {
+                deepResearch.toggle()
+                showingActions = false
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "binoculars").frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("research.title")
+                        Text("research.subtitle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if deepResearch {
+                        Image(systemName: "checkmark").foregroundStyle(.tint)
+                    }
+                }
+                .font(.callout)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("juno.mobile.deep-research-toggle")
+            .accessibilityAddTraits(deepResearch ? [.isSelected] : [])
+            Divider().padding(.vertical, 6)
             if attachmentModel != nil {
                 Text("attachments.section")
                     .font(.footnote.weight(.semibold))
@@ -610,7 +645,8 @@ private struct JunoMobileConversationDetail: View {
             prompt: value,
             modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
             reasoningEffort: reasoningEffort,
-            attachmentIDs: attachmentModel?.uploadedIDs ?? []
+            attachmentIDs: attachmentModel?.uploadedIDs ?? [],
+            deepResearch: deepResearch
         ) {
             prompt = ""
             attachmentModel?.clear()
