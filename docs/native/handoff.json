@@ -87,7 +87,7 @@
     "Production StoreKit mapping and APNs credentials require owner input"
   ],
   "updated": "2026-07-22",
-  "head": "3c7138ea33f3f101cf8a49fe5e5dc4a32bef980b",
+  "head": "93261dc",
   "worktree": "/Users/liammagnier/Desktop/workspace/.worktrees/juno-final-completion",
   "baseMain": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
   "deployedServerSHA": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
@@ -112,9 +112,7 @@
     "stage-2-signed-install"
   ],
   "stagesNotStarted": [
-    "stage-3",
     "stage-4",
-    "stage-5",
     "stage-6",
     "stage-7",
     "stage-8",
@@ -128,8 +126,15 @@
     "stage-16"
   ],
   "tests": {
-    "junoNativeKit": "63 executions, 0 failures",
-    "releaseGates": "all passed"
+    "junoNativeKit": "738 executions, 0 failures",
+    "backend": "131 pass, 0 fail",
+    "releaseGates": "all passed",
+    "macBuild": "succeeded"
   },
-  "nextAction": "Owner opens iPhone Settings > About > Diagnostics and reports Phase, Last HTTP status, Failure rows"
+  "nextAction": "Owner opens iPhone Settings > About > Diagnostics and reports Phase, Last HTTP status, Failure rows",
+  "stagesPartial": {
+    "stage-3": "failure classification + banner readability fixed with tests; real-device verification blocked",
+    "stage-5": "attachments implemented end to end (backend, transcoder, composer, claim); not exercised against production"
+  },
+  "pendingMigration": "20260722200000_attachment_idempotency_key (additive, not yet deployed)"
 }

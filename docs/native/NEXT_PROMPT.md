@@ -86,16 +86,46 @@ answer.
 
 ## What remains, honestly
 
-Stages 3–16 of the completion brief are **not** done. Nothing in them was
-started, and nothing about them should be assumed:
+**Stage 3 — partly done.** Three real defects found and fixed, with tests:
 
-- Stage 3 real-device sync fix — blocked on the observation above.
-- Stage 4 cross-client sync matrix — needs the real account.
-- Stages 5–11: Camera/Photos/Files, Deep Research, Canvas, Code Remote backend,
-  Mac remote host, mobile Remote, Cloud. All unbuilt.
-- Stages 12–13: design pass, accessibility, threat model. Not started.
-- macOS has **no** Diagnostics screen yet — only iOS does. Stage 16's
-  "server SHA = Mac SHA = iPhone SHA" check needs it.
+- `NativeArtifactStore` and `NativeProjectStore` classified failures with
+  `error is URLError`, which misreads the common case — a genuine outage arrives
+  as `retryLimitExceeded`, not a `URLError` — and treated a cancelled request as
+  an outage. The project store also set a phase *only* for `URLError`, leaving
+  every other failure showing an error banner over a `.ready` phase.
+- Both stores reported a failed outbox drain as a hard `.failed`, telling the
+  reader their queued changes had failed when they were queued safely.
+- The banner rendered `URLError.localizedDescription` verbatim, so a phone with
+  no signal read "The operation couldn't be completed. (NSURLErrorDomain error
+  -1009.)". Found by looking at the screen; the code reads fine.
+  Fixed: `docs/native/design/banner-offline-readable.png`.
+
+What is **not** done in Stage 3 is the real-device half — see the blocker above.
+
+**Stage 5 — attachments work end to end, unverified against production.**
+Backend `POST /api/v1/attachments` with shared validation, magic-byte sniffing,
+HEIC kept out, idempotency. Client transcoder (orientation baked into pixels,
+GPS stripped, output re-validated), upload client, composer model, and camera /
+photos / files pickers with per-file state. Uploads are claimed onto the message
+in the same transaction that creates it. Capture:
+`docs/native/design/composer-attach-ios.png`.
+
+Not verified: an actual upload against production, which needs the account.
+Camera was not exercised on the physical device.
+
+**Stages 4, 6–16 — not started.** Deep Research, Canvas, Code Remote backend,
+Mac remote host, mobile Remote, Cloud, the design pass, accessibility, the
+threat model, the release and the final installs. Nothing about them should be
+assumed. macOS still has **no** Diagnostics screen, which Stage 16's three-way
+SHA parity check needs.
+
+### The next concrete thing
+
+`prisma/migrations/20260722200000_attachment_idempotency_key` has **not been
+deployed**. It is additive and idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE
+UNIQUE INDEX IF NOT EXISTS`) and hand-written per the standing rule never to run
+`migrate dev` against the shared database — but nothing on this branch can ship
+until it is applied with `migrate deploy`.
 
 ## Repository state
 
