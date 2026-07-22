@@ -13,6 +13,7 @@ struct JunoMacRootView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var sidebarSearch = ""
 
     var body: some View {
@@ -35,11 +36,13 @@ struct JunoMacRootView: View {
                 Task { await conversationModel?.start(for: session.profile.id) }
                 Task { await projectModel?.start(for: session.profile.id) }
                 Task { await artifactModel?.start(for: session.profile.id) }
+                Task { await memorySettingsModel?.start(for: session.profile.id) }
             } else {
                 syncModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
                 artifactModel?.stop()
+                memorySettingsModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -47,11 +50,13 @@ struct JunoMacRootView: View {
             Task { await conversationModel?.synchronizationDidAdvance(to: generation) }
             Task { await projectModel?.synchronizationDidAdvance(to: generation) }
             Task { await artifactModel?.synchronizationDidAdvance(to: generation) }
+            Task { await memorySettingsModel?.synchronizationDidAdvance(to: generation) }
         }
         .onChange(of: syncModel?.phase) { _, _ in
             Task { await conversationModel?.reload() }
             Task { await projectModel?.reload() }
             Task { await artifactModel?.reload() }
+            Task { await memorySettingsModel?.reload() }
         }
     }
 
@@ -82,6 +87,7 @@ struct JunoMacRootView: View {
                 conversationModel: conversationModel,
                 projectModel: projectModel,
                 artifactModel: artifactModel,
+                memorySettingsModel: memorySettingsModel,
                 openConversation: { id in
                     conversationModel?.selectedConversationID = id
                     selection = .chat
@@ -199,12 +205,18 @@ private struct JunoMacDetailView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let openConversation: (String) -> Void
 
     @ViewBuilder
     var body: some View {
         if section == .chat, let conversationModel {
             JunoMacConversationsView(model: conversationModel)
+        } else if section == .settings, let memorySettingsModel {
+            JunoMacSettingsView(
+                model: memorySettingsModel,
+                conversationModel: conversationModel
+            )
         } else if section == .projects, let projectModel {
             JunoMacProjectsView(
                 model: projectModel,

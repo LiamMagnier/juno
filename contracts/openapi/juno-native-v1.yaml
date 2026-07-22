@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Juno Native API
-  version: 1.1.0
+  version: 1.2.0
   description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
 servers:
   - url: /api/v1
@@ -301,6 +301,35 @@ paths:
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeMemory
+      description: Existing owner-scoped memory entries plus the consolidated summary. Entry CRUD stays on /api/v1/mutations; this route only reads.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Optional case-insensitive content filter.
+      responses:
+        '200':
+          description: All saved memory entries and the consolidated summary, newest entries first.
+          content: { application/json: { schema: { $ref: '#/components/schemas/MemoryResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: eraseNativeMemory
+      description: Permanently removes every saved fact and the consolidated summary, and marks all conversations processed so backfill cannot re-learn them.
+      responses:
+        '200':
+          description: Memory was permanently erased.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties: { ok: { const: true } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
   /library:
     get:
       servers: [{ url: /api }]
@@ -791,6 +820,35 @@ components:
       required: [items]
       properties:
         items: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+    MemoryEntryItem:
+      type: object
+      additionalProperties: false
+      required: [id, content, source, kind, sourceRef, createdAt]
+      properties:
+        id: { type: string }
+        content: { type: string, maxLength: 20000 }
+        source: { type: string, enum: [AUTO, MANUAL] }
+        kind: { type: string, enum: [FACT, SUPPRESSION] }
+        sourceRef: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    MemorySummary:
+      type: object
+      additionalProperties: false
+      required: [content, updatedAt, entryCount]
+      properties:
+        content: { type: string }
+        updatedAt: { type: string, format: date-time }
+        entryCount: { type: integer, minimum: 0 }
+    MemoryResponse:
+      type: object
+      additionalProperties: false
+      required: [memories, summary]
+      properties:
+        memories: { type: array, items: { $ref: '#/components/schemas/MemoryEntryItem' } }
+        summary:
+          oneOf:
+            - { $ref: '#/components/schemas/MemorySummary' }
+            - { type: 'null' }
     ArtifactKind:
       type: string
       enum: [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID]

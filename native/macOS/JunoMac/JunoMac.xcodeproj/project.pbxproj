@@ -19,6 +19,7 @@
 		B3E1EF12AA66D0EA011572A3 /* JunoMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12913A1789B6010163FED0B /* JunoMacApp.swift */; };
 		B5F4857F03258F3F741BF104 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C2D8004C742B19972DF30644 /* Localizable.xcstrings */; };
 		CF89065E99B35AD9866160BA /* JunoMacSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DCEAE629C223440DD26294 /* JunoMacSection.swift */; };
+		D953EAE881C8E73915FE000A /* JunoMacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */; };
 		DD464F607343C815D5FF785A /* JunoMacNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C98DB955E5529F4E10D704B2 /* JunoMacNavigationTests.swift */; };
 		DD9FF7839BCA5995C1712EB6 /* JunoAPI in Frameworks */ = {isa = PBXBuildFile; productRef = 0495607619DAC9BDD525D797 /* JunoAPI */; };
 		E5EA45ACD5FBDA671F6F64D2 /* JunoMacWebAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC993F6407539891B6372C2E /* JunoMacWebAuthenticationClient.swift */; };
@@ -53,6 +54,7 @@
 		6DA713CF7CFE86C83B65FBC0 /* JunoMac-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Stable.xcconfig"; sourceTree = "<group>"; };
 		6EE1F2359F9FF2096C674FCA /* JunoMacLaunchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacLaunchUITests.swift; sourceTree = "<group>"; };
 		6F0F2DA8F7A94BA5DB61B9A4 /* JunoMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JunoMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSettingsView.swift; sourceTree = "<group>"; };
 		792B58E305A59E287E5A7808 /* JunoNativeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoNativeKit; path = ../../Packages/JunoNativeKit; sourceTree = SOURCE_ROOT; };
 		97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacRootView.swift; sourceTree = "<group>"; };
 		AA34D56D1D8034E67E11913E /* JunoMac-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Next.xcconfig"; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 				1A483F83EC28F197C398A201 /* JunoMacConversationsView.swift */,
 				97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */,
 				B7DCEAE629C223440DD26294 /* JunoMacSection.swift */,
+				70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */,
 				CC993F6407539891B6372C2E /* JunoMacWebAuthenticationClient.swift */,
 			);
 			path = App;
@@ -303,6 +306,7 @@
 				8A1B4E686A5D0DAA5DCC8890 /* JunoMacConversationsView.swift in Sources */,
 				426B2B13B00E82D73EF9C0DA /* JunoMacRootView.swift in Sources */,
 				CF89065E99B35AD9866160BA /* JunoMacSection.swift in Sources */,
+				D953EAE881C8E73915FE000A /* JunoMacSettingsView.swift in Sources */,
 				E5EA45ACD5FBDA671F6F64D2 /* JunoMacWebAuthenticationClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

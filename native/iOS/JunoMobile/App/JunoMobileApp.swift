@@ -15,6 +15,7 @@ struct JunoMobileApp: App {
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
@@ -24,6 +25,7 @@ struct JunoMobileApp: App {
         _conversationModel = State(initialValue: configuration.conversationModel)
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
+        _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         localStore = configuration.localStore
     }
 
@@ -34,7 +36,8 @@ struct JunoMobileApp: App {
                 syncModel: syncModel,
                 conversationModel: conversationModel,
                 projectModel: projectModel,
-                artifactModel: artifactModel
+                artifactModel: artifactModel,
+                memorySettingsModel: memorySettingsModel
             )
         }
     }
@@ -116,6 +119,13 @@ struct JunoMobileApp: App {
                     repository: localStore,
                     syncModel: syncModel,
                     sender: runtime
+                ),
+                memorySettingsModel: NativeMemorySettingsModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel,
+                    sender: runtime
                 )
             )
         } catch {
@@ -127,7 +137,8 @@ struct JunoMobileApp: App {
                 syncModel: nil,
                 conversationModel: nil,
                 projectModel: nil,
-                artifactModel: nil
+                artifactModel: nil,
+                memorySettingsModel: nil
             )
         }
     }
@@ -149,4 +160,5 @@ private struct JunoMobileConfiguration {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
 }
