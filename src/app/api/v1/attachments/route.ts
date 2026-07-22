@@ -16,12 +16,17 @@ export const maxDuration = 30;
 /**
  * Native attachment upload.
  *
- * The web already had `/api/upload`, but it authenticates from a session
- * cookie, which a native client does not have. Rather than loosen that route to
- * accept both, this is a separate bearer-authenticated entry point that reuses
- * the same validation helpers — `isAcceptedMime`, `sniffImageMime`,
- * `sanitizeFileName`, the plan size ceiling — so the two paths cannot drift
- * into having different ideas about what is safe to store.
+ * `/api/upload` does authenticate a bearer token — `getCurrentUser` accepts one
+ * ahead of the session cookie — so this route is not about authentication. It
+ * exists because that route answers in the *web's* shapes: bare
+ * `{ error: string }` with no contract header, no machine-readable code, no
+ * retryable flag and no idempotency. The native client decodes the v1 error
+ * envelope and drives its retry ladder off exactly those fields, so it needs a
+ * v1 entry point.
+ *
+ * The validation itself is shared with `/api/upload` through
+ * `planAttachmentUpload`, so the two paths cannot drift into different ideas
+ * about what is safe to store.
  *
  * Three properties are deliberate and load-bearing:
  *
