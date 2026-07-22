@@ -7,9 +7,9 @@ Updated: 2026-07-22 03:05 Europe/Paris
 - Branch: `agent/juno-native-claude-continuation` (PRs target `agent/juno-native`, never `main`)
 - Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
-- Current phase: real global search plus complete sidebar/navigation.
-- Current task: production memory and settings are complete.
-- Next exact action: reuse the JunoSearch local-search contract and the encrypted synchronized entities for real account-scoped search and full macOS/iOS sidebar navigation.
+- Current phase: mutation-conflict UI completion and offline/reconnect proof.
+- Current task: production memory/settings and offline global search are complete.
+- Next exact action: surface conflicted outbox items with per-item resolution in conversations and projects (matching the memory/settings pattern) and prove the durable outbox across relaunch/offline/reconnect.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -53,6 +53,10 @@ clean, restore, stage, or commit those files from this native worktree.
   permanent reset, and complete settings/memory forms on both apps. `/api/memory`
   published in OpenAPI 1.2.0 with `CONTRACT_VERSION` mirrored; no backend route
   was added.
+- Real offline global search: query-time projection of encrypted synchronized
+  entities through the JunoSearch contract in a throwaway index (no plaintext
+  persistence), with debounce, cancellation, grouped ranked results and
+  navigation on both apps.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -62,10 +66,10 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `native/Packages/JunoNativeKit/Sources/JunoSearch`
-2. the web sidebar/search behavior (read-only functional reference)
-3. `native/macOS/JunoMac/App/JunoMacRootView.swift`
-4. `native/iOS/JunoMobile/App/JunoMobileRootView.swift`
+1. `native/Packages/JunoNativeKit/Sources/JunoSync/PersistentMutationOutbox.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeProjectStore.swift`
+4. the memory/settings conflict banner in both apps (reference pattern)
 
 ## Commands to run next
 
@@ -100,7 +104,7 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 149/149 tests, including fifteen focused memory/settings tests.
+- Strict package suite: 154/154 tests, including fifteen memory/settings and five search tests.
 - Web `npx tsc --noEmit` and `tsx --test tests/native-contract.test.ts` (3/3).
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
@@ -143,7 +147,7 @@ and do not reset them or the independent main checkout.
 
 ## Remaining work
 
-- Search/sidebar and remaining mutation conflict UI.
+- Remaining mutation conflict UI.
 - Production search persistence and live-account offline/reconnect proof.
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.

@@ -16,8 +16,9 @@ Last updated: 2026-07-22 03:05 Europe/Paris
 ## Current phase
 
 Production auth, storage, sync, conversation/message UI, real chat streaming,
-projects/files, library/artifacts and memory/settings are complete. The next
-sequential unit is real global search plus complete sidebar/navigation.
+projects/files, library/artifacts, memory/settings and offline global search
+are complete. The next sequential unit is mutation-conflict UI completion and
+the live-account offline/reconnect proof.
 
 ## Actually completed
 
@@ -26,7 +27,7 @@ sequential unit is real global search plus complete sidebar/navigation.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 149 focused Swift package tests, all passing with warnings treated as errors
+- 154 focused Swift package tests, all passing with warnings treated as errors
   and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
@@ -82,6 +83,13 @@ sequential unit is real global search plus complete sidebar/navigation.
   1.2.0 (mirrored in `CONTRACT_VERSION`); no backend route or service was
   added. Unknown stored preference values remain selectable rather than being
   silently rewritten.
+- Real offline global search: query-time projection of the encrypted
+  synchronized conversations, messages, projects, files, artifacts and
+  memories through the JunoSearch normalization/scoring contract in a
+  throwaway in-memory index — nothing searchable is persisted in plaintext.
+  Both apps compose a real Search section with debounce, cancellation,
+  grouped ranked results, diacritic-insensitive matching and navigation into
+  chats, projects, library/files, artifacts and settings.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -96,7 +104,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Search/sidebar, remaining mutation conflict UI and live-account offline/reconnect proof.
+- Remaining mutation conflict UI and live-account offline/reconnect proof.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -107,7 +115,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 149/149 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 154/154 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -143,18 +151,19 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Implement real global search: reuse the existing local-search contract in
-`JunoSearch`, the encrypted synchronized entities (conversations, messages,
-projects, files, artifacts, memories) and the existing routes to build the
-account-scoped search surfaces plus the complete macOS/iOS sidebar navigation.
-Do not add a server route unless the targeted checks prove a gap.
+Complete the remaining mutation-conflict UI (surface conflicted outbox items
+with per-item keep-mine/use-server resolution in conversations and projects,
+matching the memory/settings pattern) and produce the live-account
+offline/reconnect proof for the durable outbox across app relaunches. Then
+proceed to Juno Code integration from PR #17 after rebasing it on the latest
+`agent/juno-native`.
 
 Open first:
 
-1. `native/Packages/JunoNativeKit/Sources/JunoSearch`
-2. `src/app/api/search` (if present) and the web sidebar search behavior
-3. `native/macOS/JunoMac/App/JunoMacRootView.swift` sidebar composition
-4. `native/iOS/JunoMobile/App/JunoMobileRootView.swift` sidebar composition
+1. `native/Packages/JunoNativeKit/Sources/JunoSync/PersistentMutationOutbox.swift`
+2. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeConversationStore.swift`
+3. `native/Packages/JunoNativeKit/Sources/JunoChatKit/NativeProjectStore.swift`
+4. the memory/settings conflict banner in both apps (reference pattern)
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
