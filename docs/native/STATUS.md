@@ -33,8 +33,12 @@ kept as minimum deployment targets via availability checks. Sequential units:
    scroll-to-latest control, Liquid Glass composer capsule on OS 26+, ⌘↩ send on
    macOS, explicit disabled/streaming states, crude free-text model editor
    removed. Attachments left out (no transport payload — recorded, not faked).
-3. Design system & Liquid Glass — in progress.
-4. Product screens + real states.
+3. Design system & Liquid Glass — **done** (`b1ed73c`): coral accent in both
+   apps' AccentColor assets (light/dark), adaptive `junoCanvas`/`junoSurface`/
+   `junoHairline`/`junoAccent` semantic colors, an SF Pro type hierarchy, and a
+   shared `JunoGlassBackground`/`junoFloatingGlass` helper (OS 26+ glass with a
+   material fallback) now used by both composers. Six design-system tests.
+4. Product screens + real states — in progress.
 5. Responsive, motion, accessibility, visual validation.
 
 **Visual-validation constraint:** unsigned simulator builds have no Keychain, so
