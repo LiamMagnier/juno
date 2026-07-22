@@ -3,7 +3,12 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// Settings › About & Diagnostics.
+/// Settings › About & Diagnostics, shared by both apps.
+///
+/// One implementation rather than two on purpose: the whole value of this
+/// screen is that the *same* facts can be compared across the Mac, the phone
+/// and the server, and two copies would eventually disagree about what they
+/// report or how they label it.
 ///
 /// This screen exists because of a specific dead end: a corrected build was
 /// produced, but there was no way to tell from the phone whether it was the
@@ -14,26 +19,38 @@ import SwiftUI
 /// Nothing on this screen is secret. It shows versions, a commit, a public
 /// base URL, HTTP status codes and error *kinds* — never a token, a header or
 /// a response body.
-struct JunoMobileDiagnosticsView: View {
-    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    let outbox: (any MutationOutboxRepository)?
-    let accountID: StorageAccountID?
+public struct NativeDiagnosticsView: View {
+    private let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    private let outbox: (any MutationOutboxRepository)?
+    private let accountID: StorageAccountID?
 
     private let build = JunoBuildInfo.current
     @State private var outboxCounts: NativeOutboxDiagnostics?
     @State private var outboxError: String?
 
-    var body: some View {
+    public init(
+        syncModel: NativeSyncModel<SQLiteAccountRepository>?,
+        outbox: (any MutationOutboxRepository)?,
+        accountID: StorageAccountID?
+    ) {
+        self.syncModel = syncModel
+        self.outbox = outbox
+        self.accountID = accountID
+    }
+
+    public var body: some View {
         Form {
             buildSection
             syncSection
             outboxSection
         }
         .navigationTitle("diagnostics.title")
+        #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
+        #endif
         .task(id: syncModel?.synchronizationGeneration) { await reloadOutbox() }
         .refreshable { await reloadOutbox() }
-        .accessibilityIdentifier("juno.mobile.diagnostics")
+        .accessibilityIdentifier("juno.diagnostics")
     }
 
     // MARK: - Build
@@ -85,7 +102,7 @@ struct JunoMobileDiagnosticsView: View {
             }
             if let syncModel {
                 Button("diagnostics.retry") { Task { await syncModel.refresh() } }
-                    .accessibilityIdentifier("juno.mobile.diagnostics.retry")
+                    .accessibilityIdentifier("juno.diagnostics.retry")
             }
         } header: {
             Text("diagnostics.section.sync")

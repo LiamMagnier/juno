@@ -41,7 +41,7 @@ struct JunoMobileSettingsView: View {
             JunoMobileMemoryView(model: model)
         }
         .navigationDestination(isPresented: $showDiagnosticsPage) {
-            JunoMobileDiagnosticsView(
+            NativeDiagnosticsView(
                 syncModel: syncModel,
                 outbox: outbox,
                 accountID: session.map { StorageAccountID($0.profile.id.rawValue) }

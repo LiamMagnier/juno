@@ -28,6 +28,7 @@ struct JunoMacApp: App {
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
+    private let outbox: (any MutationOutboxRepository)?
     private let chatTransport: (any NativeChatRequestSending)?
     /// Owned here, not by `JunoMacCodeView`, so switching modes does not
     /// rebuild the Code workspace list and session selection every time.
@@ -51,6 +52,7 @@ struct JunoMacApp: App {
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _searchModel = State(initialValue: configuration.searchModel)
         localStore = configuration.localStore
+        outbox = configuration.outbox
         chatTransport = configuration.chatTransport
     }
 
@@ -144,6 +146,7 @@ struct JunoMacApp: App {
             codeWorkbenchModel: $codeWorkbenchModel,
             authModel: authModel,
             syncModel: syncModel,
+            outbox: outbox,
             conversationModel: conversationModel,
             projectModel: projectModel,
             artifactModel: artifactModel,
@@ -273,6 +276,7 @@ struct JunoMacApp: App {
                     sender: runtime
                 ),
                 searchModel: NativeSearchModel(repository: localStore),
+                outbox: outbox,
                 chatTransport: runtime
             )
         } catch {
@@ -299,6 +303,7 @@ private struct JunoMacConfiguration {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let outbox: (any MutationOutboxRepository)?
     let chatTransport: (any NativeChatRequestSending)?
 
     /// No repository, no transport, no auth runtime — used both when
@@ -315,6 +320,7 @@ private struct JunoMacConfiguration {
             artifactModel: nil,
             memorySettingsModel: nil,
             searchModel: nil,
+            outbox: nil,
             chatTransport: nil
         )
     }

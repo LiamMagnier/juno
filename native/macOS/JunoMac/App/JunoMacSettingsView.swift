@@ -1,5 +1,7 @@
 import JunoChatKit
+import JunoCore
 import JunoStorage
+import JunoSync
 import SwiftUI
 
 /// Real account settings and memory management projected from the encrypted
@@ -7,6 +9,12 @@ import SwiftUI
 struct JunoMacSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    /// Passed through only so About › Diagnostics can report sync state and
+    /// outbox depth. Nothing else on this screen reads either.
+    var syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    var outbox: (any MutationOutboxRepository)?
+    var accountID: StorageAccountID?
+    @State private var showDiagnostics = false
 
     var body: some View {
         NavigationStack {
@@ -69,8 +77,38 @@ struct JunoMacSettingsView: View {
                 }
             }
             JunoMemorySections(model: model)
+            Section("settings.about") {
+                Button {
+                    showDiagnostics = true
+                } label: {
+                    HStack {
+                        Label("diagnostics.title", systemImage: "stethoscope")
+                        Spacer()
+                        Text(JunoBuildInfo.current.displayVersion)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mac.settings-diagnostics")
+            }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showDiagnostics) {
+            NavigationStack {
+                NativeDiagnosticsView(
+                    syncModel: syncModel,
+                    outbox: outbox,
+                    accountID: accountID
+                )
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("action.done") { showDiagnostics = false }
+                    }
+                }
+            }
+            .frame(minWidth: 460, minHeight: 560)
+        }
     }
 
     private var conflictBanner: some View {
