@@ -186,7 +186,11 @@ export function serializeDevice(device: CodeDevice, online?: boolean) {
     id: device.id,
     name: device.name,
     platform: device.platform,
+    appVersion: device.appVersion,
+    protocolVersion: device.protocolVersion,
     workspaces: device.workspaces,
+    sessionCount: device.sessionCount,
+    activeCount: device.activeCount,
     lastSeenAt: device.lastSeenAt.toISOString(),
   };
   return online === undefined ? base : { ...base, online };
@@ -204,6 +208,9 @@ export function serializeTask(task: CodeTask) {
     status: task.status,
     lastSeq: task.lastSeq,
     conversationId: task.conversationId,
+    parentSessionId: task.parentSessionId,
+    createsNewSession: task.createsNewSession,
+    origin: task.origin,
     // Cloud Juno Code: "device" (default) runs on a registered host; "cloud"
     // runs on a GitHub Actions runner against repoOwner/repoName and opens a PR.
     target: task.target,

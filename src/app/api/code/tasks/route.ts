@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
@@ -40,6 +41,10 @@ const postSchema = z.object({
   // The kind:"code" Conversation this task runs in (website sessions). Native
   // clients omit it and keep the pre-linkage behavior unchanged.
   conversationId: z.string().min(1).max(200).optional(),
+  parentSessionId: z.string().min(1).max(200).optional(),
+  createsNewSession: z.boolean().optional(),
+  origin: z.enum(["local", "remote", "cloud"]).optional(),
+  idempotencyKey: z.string().min(8).max(200).optional(),
   // Cloud Juno Code: run on a GitHub Actions runner instead of a device.
   target: z.enum(["device", "cloud"]).optional(),
   repo: z
@@ -124,11 +129,34 @@ export async function POST(req: Request) {
     prompt: rawPrompt,
     attachmentIds: rawAttachmentIds,
     conversationId,
+    parentSessionId,
+    createsNewSession: requestedCreatesNewSession,
+    origin,
+    idempotencyKey,
     target,
     repo,
     baseRef,
   } = parsed.data;
   const isCloud = target === "cloud";
+  // Existing-session tasks are explicit: the task and the local SwiftData
+  // Conversation share this stable id, and the host must never make another
+  // Conversation. Omitted flags preserve the legacy new-session behavior.
+  const createsNewSession = requestedCreatesNewSession ?? !conversationId;
+  if (!createsNewSession && !conversationId) {
+    return NextResponse.json({ error: "conversationId_required" }, { status: 400 });
+  }
+  // Idempotent create: a retried request carrying the same key must never spawn
+  // a second task, Conversation, cloud dispatch, or USER message. The DB unique
+  // index (userId, idempotencyKey) is the backstop; this pre-check turns the
+  // common sequential retry into a clean replay instead of a 500 (P2002).
+  if (idempotencyKey) {
+    const existing = await prisma.codeTask.findFirst({
+      where: { userId: user.id, idempotencyKey },
+    });
+    if (existing) {
+      return NextResponse.json({ task: serializeTask(existing), replay: true }, { status: 200 });
+    }
+  }
   const attachmentIds = [...new Set(rawAttachmentIds ?? [])];
   const prompt = rawPrompt.trim();
   // Fallback when the user only attached files — still need a non-empty title.
@@ -219,6 +247,10 @@ export async function POST(req: Request) {
             title: title ?? defaultTitle,
             prompt: agentPrompt,
             conversationId: conversationId ?? null,
+            parentSessionId: parentSessionId ?? null,
+            createsNewSession,
+            origin: origin ?? "cloud",
+            idempotencyKey: idempotencyKey ?? null,
           },
         });
       });
@@ -229,6 +261,20 @@ export async function POST(req: Request) {
           { error: `You already have ${n} cloud runs in progress. Let one finish first.` },
           { status: 429 },
         );
+      }
+      // Idempotency race (same key, concurrent) — return the winner, never a
+      // duplicate dispatch. The pre-check already handled sequential retries.
+      if (
+        idempotencyKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const existing = await prisma.codeTask.findFirst({
+          where: { userId: user.id, idempotencyKey },
+        });
+        if (existing) {
+          return NextResponse.json({ task: serializeTask(existing), replay: true }, { status: 200 });
+        }
       }
       throw err;
     }
@@ -265,18 +311,41 @@ export async function POST(req: Request) {
     });
     if (!device) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-    task = await prisma.codeTask.create({
-      data: {
-        userId: user.id,
-        deviceId,
-        workspacePath,
-        workspaceName: workspaceName ?? "",
-        workspaceKey: workspaceKey ?? null,
-        title: title ?? defaultTitle,
-        prompt: agentPrompt,
-        conversationId: conversationId ?? null,
-      },
-    });
+    try {
+      task = await prisma.codeTask.create({
+        data: {
+          userId: user.id,
+          deviceId,
+          workspacePath,
+          workspaceName: workspaceName ?? "",
+          workspaceKey: workspaceKey ?? null,
+          title: title ?? defaultTitle,
+          prompt: agentPrompt,
+          conversationId: conversationId ?? null,
+          parentSessionId: parentSessionId ?? null,
+          createsNewSession,
+          origin: origin ?? "remote",
+          idempotencyKey: idempotencyKey ?? null,
+        },
+      });
+    } catch (err) {
+      // Two identical requests raced past the idempotency pre-check: the unique
+      // (userId, idempotencyKey) index rejects the loser. Return the winner's
+      // task so the retry is a clean replay, never a duplicate or a 500.
+      if (
+        idempotencyKey &&
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002"
+      ) {
+        const existing = await prisma.codeTask.findFirst({
+          where: { userId: user.id, idempotencyKey },
+        });
+        if (existing) {
+          return NextResponse.json({ task: serializeTask(existing), replay: true }, { status: 200 });
+        }
+      }
+      throw err;
+    }
   }
 
   // Linked sessions persist the prompt as a normal USER message. For device
