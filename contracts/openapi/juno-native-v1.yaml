@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Juno Native API
-  version: 1.2.0
+  version: 1.3.0
   description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
 servers:
   - url: /api/v1
@@ -483,6 +483,57 @@ paths:
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
         '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/devices:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeDevices
+      description: Existing owner-scoped Juno Code hosts (Remote devices), most-recently-seen first. Already accepts the native bearer via getCurrentUser.
+      responses:
+        '200':
+          description: Registered hosts with online status derived from the heartbeat window.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeDevicesResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/workspaces:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeWorkspaces
+      description: Owner-scoped shared Code workspaces, newest-opened first. `path` is device-local metadata — native clients must address by `key`/`id` and never surface `path`.
+      responses:
+        '200':
+          description: Shared workspaces keyed by an opaque `key`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeWorkspacesResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/tasks:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeSessions
+      description: Owner-scoped Code sessions (tasks), newest first. `workspacePath` is device-local — native clients must not surface it (see CodeSession).
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [queued, running, awaiting_approval, completed, failed, cancelled] }
+      responses:
+        '200':
+          description: Code sessions for this account.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeSessionsResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/tasks/{taskId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeCodeSession
+      description: A Code session and its append-only event journal. Resume by comparing `lastSeq` against the last event `seq` already seen.
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Session state plus the ordered event journal.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeSessionDetailResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -849,6 +900,87 @@ components:
           oneOf:
             - { $ref: '#/components/schemas/MemorySummary' }
             - { type: 'null' }
+    CodeDevice:
+      type: object
+      additionalProperties: true
+      required: [id, name, platform, workspaces, lastSeenAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        platform: { type: string }
+        workspaces: { type: array, items: { type: string } }
+        lastSeenAt: { type: string, format: date-time }
+        online: { type: boolean }
+    CodeDevicesResponse:
+      type: object
+      additionalProperties: false
+      required: [devices]
+      properties:
+        devices: { type: array, items: { $ref: '#/components/schemas/CodeDevice' } }
+    CodeWorkspace:
+      type: object
+      additionalProperties: true
+      required: [id, key, name, path, lastOpenedAt]
+      properties:
+        id: { type: string }
+        key: { type: [string, 'null'] }
+        name: { type: string }
+        # Device-local absolute path. Native clients MUST NOT surface it; address
+        # a workspace by `key`/`id` only. Removing it from the native projection
+        # is tracked as GAP-022.
+        path: { type: string }
+        lastOpenedAt: { type: string, format: date-time }
+    CodeWorkspacesResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaces]
+      properties:
+        workspaces: { type: array, items: { $ref: '#/components/schemas/CodeWorkspace' } }
+    CodeSession:
+      type: object
+      additionalProperties: true
+      required: [id, deviceId, workspaceName, workspaceKey, title, prompt, status, lastSeq, target, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        deviceId: { type: [string, 'null'] }
+        # Device-local; native clients MUST NOT surface it (GAP-022).
+        workspacePath: { type: string }
+        workspaceName: { type: string }
+        workspaceKey: { type: [string, 'null'] }
+        title: { type: string }
+        prompt: { type: string }
+        status: { type: string, enum: [queued, running, awaiting_approval, completed, failed, cancelled] }
+        lastSeq: { type: integer, minimum: 0 }
+        conversationId: { type: [string, 'null'] }
+        target: { type: string, enum: [device, cloud] }
+        repoOwner: { type: [string, 'null'] }
+        repoName: { type: [string, 'null'] }
+        baseRef: { type: [string, 'null'] }
+        prUrl: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CodeSessionEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, kind, payload, createdAt]
+      properties:
+        seq: { type: integer, minimum: 0 }
+        kind: { type: string }
+        payload: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    CodeSessionsResponse:
+      type: object
+      additionalProperties: false
+      required: [tasks]
+      properties:
+        tasks: { type: array, items: { $ref: '#/components/schemas/CodeSession' } }
+    CodeSessionDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [task, events]
+      properties:
+        task: { $ref: '#/components/schemas/CodeSession' }
+        events: { type: array, items: { $ref: '#/components/schemas/CodeSessionEvent' } }
     ArtifactKind:
       type: string
       enum: [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID]
