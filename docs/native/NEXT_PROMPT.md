@@ -122,10 +122,19 @@ so `origin/<feature-branch>` remote-tracking refs do not exist. Compare with
   has no `application-identifier`, so iOS refuses Keychain access with -34018
   and the sign-in gate goes unavailable. `CODE_SIGNING_ALLOWED=NO` is a compile
   gate only. See `TESTING.md`.
-- **macOS UI tests and screenshots do not work in the agent sandbox.**
-  XCUITest cannot load its bundle; `screencapture` returns black. Use the live
-  accessibility tree instead: launch the app, set `AXEnhancedUserInterface` via
-  System Events, then walk `UI elements`. This found three real defects.
+- **macOS screenshots DO work** — an earlier note here said they returned black,
+  which was a transient, not a permission failure. Capture **by window id** so
+  the app is never fronted (this runs on the owner's active machine):
+  `CGWindowListCopyWindowInfo` → the window whose owner is `Juno` and height
+  > 200 → `screencapture -x -o -l<id>`. Launch with `open -n -g -a` (without
+  `-n`, a second launch re-activates the existing instance and no new window
+  appears), and allow ~10s with a retry loop before the window exists. Clear
+  `~/Library/Saved Application State/<bundle>.savedState` first or AppKit
+  restores the previous sidebar/split geometry and the shots are not comparable.
+- **macOS XCUITest still cannot run here** — the runner fails to load its bundle
+  under both unsigned and ad-hoc signing. Use the live accessibility tree for
+  structure: launch, set `AXEnhancedUserInterface` via System Events, walk
+  `UI elements`. That found three real defects a screenshot would not have.
 - **iOS simulator screenshots do work** (`xcrun simctl io … screenshot`) and are
   the best visual QA available here.
 - **`timeout` does not exist** on this macOS host.
