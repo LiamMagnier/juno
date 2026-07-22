@@ -125,14 +125,14 @@ private struct JunoMobileConversationDetail: View {
             }
             .onChange(of: streamSignature) { _, _ in
                 guard isNearBottom else { return }
-                withAnimation(.easeOut(duration: 0.18)) {
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
                     proxy.scrollTo(bottomAnchor, anchor: .bottom)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
                 if !isNearBottom && !messages.isEmpty {
                     Button {
-                        withAnimation(.easeOut(duration: 0.2)) {
+                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
                             proxy.scrollTo(bottomAnchor, anchor: .bottom)
                         }
                     } label: {
@@ -273,8 +273,8 @@ private struct JunoMobileConversationDetail: View {
                     composerActionButton.padding(5)
                 }
                 .accessibilityIdentifier("juno.mobile.chat-composer")
-                .animation(.snappy(duration: 0.2), value: sendDisabled)
-                .animation(.snappy(duration: 0.2), value: generatingHere)
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
 
             if model.canRetrySelectedConversation && !model.isGenerating {
                 HStack(spacing: 8) {
@@ -348,7 +348,7 @@ private struct JunoMobileConversationDetail: View {
                 .modifier(JunoComposerGlassCircle())
         }
         .buttonStyle(.plain)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showingActions)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showingActions)
         .accessibilityLabel("Add content or tools")
         .accessibilityIdentifier("juno.mobile.chat-plus")
         .popover(isPresented: $showingActions) {
@@ -626,7 +626,7 @@ private struct JunoReasoningDisclosure: View {
             .foregroundStyle(Color.junoAccent)
         }
         .tint(Color.junoAccent)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
+        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: expanded)
     }
 }
 

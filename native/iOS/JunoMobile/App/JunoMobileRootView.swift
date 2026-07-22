@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -210,7 +211,7 @@ struct JunoMobileRootView: View {
             .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 22, x: -1)
             .offset(x: sidebarOpen ? revealed : 0)
         }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: sidebarOpen)
+        .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: sidebarOpen)
         .gesture(
             DragGesture(minimumDistance: 18)
                 .onEnded { value in
@@ -224,7 +225,7 @@ struct JunoMobileRootView: View {
 
     private func setSidebar(_ open: Bool) {
         if reduceMotion { sidebarOpen = open }
-        else { withAnimation(.snappy(duration: 0.28)) { sidebarOpen = open } }
+        else { withAnimation(JunoMotion.emphasized) { sidebarOpen = open } }
     }
 
     // MARK: Sidebar
