@@ -41,6 +41,13 @@
     </array>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <!-- Required before either API is touched: iOS terminates the app on first
+         access if the matching string is absent, so a missing entry is a crash
+         rather than a denied permission. -->
+    <key>NSCameraUsageDescription</key>
+    <string>Juno uses the camera so you can attach a photo to a conversation.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Juno reads the photos you choose so you can attach them to a conversation.</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchScreen</key>

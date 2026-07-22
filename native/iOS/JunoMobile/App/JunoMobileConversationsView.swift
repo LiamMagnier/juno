@@ -2,6 +2,7 @@ import JunoChatKit
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -9,6 +10,7 @@ import UIKit
 /// an empty state that starts a new chat. The conversation list lives in the
 /// sidebar; this screen never owns a NavigationStack (the root provides one).
 struct JunoMobileChatDetailScreen: View {
+    var attachmentModel: NativeComposerAttachmentModel?
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     var projects: [NativeProject] = []
 
@@ -20,7 +22,12 @@ struct JunoMobileChatDetailScreen: View {
     var body: some View {
         Group {
             if let selected {
-                JunoMobileConversationDetail(model: model, conversation: selected, projects: projects)
+                JunoMobileConversationDetail(
+                    model: model,
+                    conversation: selected,
+                    projects: projects,
+                    attachmentModel: attachmentModel
+                )
             } else {
                 emptyState
             }
@@ -61,6 +68,11 @@ private struct JunoMobileConversationDetail: View {
     @State private var reasoningEffort: NativeReasoningEffort?
     @State private var isNearBottom = true
     @State private var showingActions = false
+    var attachmentModel: NativeComposerAttachmentModel?
+    @State private var showingCamera = false
+    @State private var showingFileImporter = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var attachmentNotice: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
 
@@ -198,6 +210,41 @@ private struct JunoMobileConversationDetail: View {
             }
         }
         .safeAreaInset(edge: .bottom) { composer }
+        .fullScreenCover(isPresented: $showingCamera) {
+            JunoCameraPicker { data, name in
+                attachmentModel?.add(
+                    data: data, fileName: name, mimeType: "image/jpeg",
+                    conversationID: conversation.id, isImage: true
+                )
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: JunoAttachmentTypes.allowed,
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let attachmentModel else { return }
+                JunoFileLoader.load(urls, into: attachmentModel, conversationID: conversation.id)
+            case .failure(let error):
+                attachmentNotice = error.localizedDescription
+            }
+        }
+        .onChange(of: photoSelection) { _, items in
+            guard let attachmentModel, !items.isEmpty else { return }
+            showingActions = false
+            Task {
+                await JunoPhotoLoader.load(
+                    items, into: attachmentModel, conversationID: conversation.id
+                )
+                photoSelection = []
+            }
+        }
+        .onChange(of: attachmentModel?.lastErrorDescription) { _, message in
+            if let message { attachmentNotice = message }
+        }
         .onAppear { configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
@@ -214,6 +261,20 @@ private struct JunoMobileConversationDetail: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if let attachmentModel, !attachmentModel.attachments.isEmpty {
+                JunoMobileAttachmentChips(
+                    attachments: attachmentModel.attachments,
+                    onRemove: { attachmentModel.remove($0) },
+                    onRetry: { attachmentModel.retry($0, conversationID: conversation.id) }
+                )
+            }
+            if let attachmentNotice {
+                Text(attachmentNotice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .accessibilityIdentifier("juno.mobile.attachment-notice")
+            }
             HStack(spacing: 10) {
                 if model.modelCatalog.isEmpty {
                     Label(junoDisplayModelName(conversation.model), systemImage: "cpu")
@@ -363,6 +424,47 @@ private struct JunoMobileConversationDetail: View {
     /// with the current association checked and a "No project" row to clear it.
     private var composerActionsPanel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if attachmentModel != nil {
+                Text("attachments.section")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 11)
+                    .padding(.bottom, 5)
+                VStack(spacing: 1) {
+                    attachmentActionRow(
+                        title: "attachments.camera", icon: "camera",
+                        // Shown but disabled when there is no camera, or when
+                        // access was denied or restricted: hiding the row would
+                        // leave the reader looking for a control that is simply
+                        // absent, with no idea why.
+                        disabledReason: JunoCameraAvailability.current().message
+                    ) { showingCamera = true }
+
+                    PhotosPicker(
+                        selection: $photoSelection,
+                        maxSelectionCount: NativeComposerAttachmentModel.maximumAttachments,
+                        matching: .images
+                    ) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "photo.on.rectangle").frame(width: 20)
+                            Text("attachments.photos")
+                            Spacer()
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("juno.mobile.attach-photos")
+
+                    attachmentActionRow(
+                        title: "attachments.files", icon: "folder", disabledReason: nil
+                    ) { showingFileImporter = true }
+                }
+                Divider().padding(.vertical, 6)
+            }
             Text("Add to project")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -390,6 +492,39 @@ private struct JunoMobileConversationDetail: View {
         .frame(width: 268)
         .padding(.bottom, 6)
         .accessibilityIdentifier("juno.mobile.composer-actions")
+    }
+
+    private func attachmentActionRow(
+        title: LocalizedStringKey,
+        icon: String,
+        disabledReason: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            if let disabledReason {
+                attachmentNotice = disabledReason
+            } else {
+                showingActions = false
+                action()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).frame(width: 20)
+                Text(title)
+                Spacer()
+                if disabledReason != nil {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(disabledReason == nil ? .primary : .secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func projectOptionRow(id: String?, name: String, icon: String, selected: Bool) -> some View {

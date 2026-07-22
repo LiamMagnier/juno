@@ -16,6 +16,9 @@ struct JunoMobileRootView: View {
     /// Passed through only so Settings › Diagnostics can report how much work
     /// is still queued. Nothing else on this screen reads it.
     var outbox: (any MutationOutboxRepository)?
+    /// Owns the composer's pending uploads. Held here rather than in the chat
+    /// screen so a queued attachment survives navigating away and back.
+    var attachmentModel: NativeComposerAttachmentModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
@@ -74,8 +77,10 @@ struct JunoMobileRootView: View {
                 Task { await artifactModel?.start(for: session.profile.id) }
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
                 searchModel?.start(for: session.profile.id)
+                attachmentModel?.start(for: session.profile.id)
             } else {
                 syncModel?.stop()
+                attachmentModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
                 artifactModel?.stop()
@@ -303,6 +308,7 @@ struct JunoMobileRootView: View {
         case .chat:
             if let conversationModel {
                 JunoMobileChatDetailScreen(
+                    attachmentModel: attachmentModel,
                     model: conversationModel,
                     projects: projectModel?.projects ?? []
                 )
