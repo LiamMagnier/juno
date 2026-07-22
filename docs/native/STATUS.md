@@ -29,10 +29,34 @@ iOS 27 simulator (light + dark) before commit:
   your request" status during generation; collapsible coral "Reasoning" control
   above the answer.
 
-Still open on PR #18 (not yet done this run): full Projects/Memory/Library/
-Artifacts screen redesigns (Phase 5), a shared motion system (Phase 6), the
-accessibility/responsive matrix and multi-device visual QA (Phases 7–8), and all
-backend/Remote/Cloud/security/release work (Phases 9–13). `prisma/` untouched.
+### Phase 5 product-screen pass (head `1f9c27d`)
+
+Continued on PR #18, each built Debug+Stable and inspected in the iOS 27
+simulator (light + dark):
+
+- `feat(mobile): redesign the projects list and detail` — compact plain list
+  (no inset-grouped card), favorite star, human counts, Favorite/Rename/Delete
+  context menu; detail gains a dedicated multiline "Edit instructions" editor
+  sheet with a saving indicator. Realistic fixture project/file names.
+- `feat(mobile): redesign the memory page around the web architecture` —
+  "What Juno remembers", Memory summary + refresh, Pause memory toggle,
+  collapsible "Manage edits", destructive Reset; single Back; no fabricated
+  Work/Personal split (native summary is one string) and no Export (none exists).
+- `feat(mobile): redesign library and artifacts lists` — plain lists with a
+  searchable filter and coral type glyphs; Library rows show the resolved
+  project name, not the raw `proj-…` id.
+- **Search** reviewed and left unchanged: already a compliant debounced,
+  grouped, accent-insensitive global search with all empty/error/loading states
+  and VoiceOver hints.
+
+**Next surface (Phase 5, item 6): Juno Code macOS.** Start at
+`native/macOS/JunoMac/App/JunoMacCodeView.swift` (and the standalone
+`native/macOS/JunoCode/App/JunoCodeApp.swift`). This needs a macOS build/QA loop
+(JunoMac Debug/Stable + macOS window screenshots), not the iOS-simulator loop
+used so far. Then Phases 6 (shared motion tokens), 7 (a11y/Dynamic Type/keyboard
+matrix) and 8 (full-scenario visual QA sweep). Backend/Remote/Cloud/security/
+release (Phases 9–13) remain untouched on PR #18. `prisma/` untouched; the
+release MUST take the migration verbatim from `origin/main` (see RELEASE.md).
 
 ## Repository state
 
