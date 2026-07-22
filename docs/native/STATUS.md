@@ -1,6 +1,38 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 03:05 Europe/Paris
+Last updated: 2026-07-22 15:45 Europe/Paris
+
+## Mobile UI refresh — session log (head `b5dbc98`)
+
+Screenshot-driven mobile corrections, all on `agent/juno-native-claude-continuation`
+(PR #18), each built Debug+Stable, package strict, and visually inspected in the
+iOS 27 simulator (light + dark) before commit:
+
+- `feat(mobile): replace tab bar with adaptive sidebar` → reveal-style drawer
+  (fixed sidebar layer; the full-size chat plate slides right with the iPhone
+  corner radius, no scale, no veil). Custom dense sidebar (no List/Form), Juno
+  header + glass Search, Projects/Library/Artifacts, pinned/recents, footer with
+  a glass profile button and a translucent accent "Chat" capsule. Fixes the
+  Library/Artifacts TabView-switch crashes (regression tests added).
+- `feat(mobile): present settings in native modal sheet` → large sheet from the
+  profile button, single NavigationStack, glass X (no root Back), Memory pushes
+  with one Back.
+- `feat(mobile): dock a liquid glass send button and humanize model names` →
+  Send inside the composer (coral glass, → Stop on stream); model shown as
+  "Claude Sonnet 4.6", never the raw id.
+- `fix(mobile): rebuild compact composer actions popover` → small glass popover
+  anchored to a "+" (morphs to ×). Only the wired **Add to project** action
+  (server-validated `conversation.update` projectId patch; new
+  `NativeConversation.projectId` + `setProject`). Camera/Photos/Files and Deep
+  Research/Canvas are omitted, documented as **GAP-022 / GAP-023**.
+- `feat(mobile): surface reasoning inline and above the answer` → "Thinking about
+  your request" status during generation; collapsible coral "Reasoning" control
+  above the answer.
+
+Still open on PR #18 (not yet done this run): full Projects/Memory/Library/
+Artifacts screen redesigns (Phase 5), a shared motion system (Phase 6), the
+accessibility/responsive matrix and multi-device visual QA (Phases 7–8), and all
+backend/Remote/Cloud/security/release work (Phases 9–13). `prisma/` untouched.
 
 ## Repository state
 
