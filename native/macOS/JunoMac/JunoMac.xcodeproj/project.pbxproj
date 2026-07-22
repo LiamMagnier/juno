@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1952292BD298BAA4E7A8D19F /* JunoMacModelSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C5A755809C82406FB49E332 /* JunoMacModelSelector.swift */; };
 		2F0DAD1CEF4D4C8C9C80722D /* JunoDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = DF192D2A4026E9D67ADE8354 /* JunoDesignSystem */; };
 		33AFB75B39862CCE4793DDA3 /* JunoMacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7BD74AC04FDE1F5C7E90BA /* JunoMacSearchView.swift */; };
 		426B2B13B00E82D73EF9C0DA /* JunoMacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */; };
@@ -26,6 +27,7 @@
 		B3E1EF12AA66D0EA011572A3 /* JunoMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12913A1789B6010163FED0B /* JunoMacApp.swift */; };
 		B5F4857F03258F3F741BF104 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C2D8004C742B19972DF30644 /* Localizable.xcstrings */; };
 		C2A8FC2470043AED9FD3C292 /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 134D80E0EB9662BE0FDF8B37 /* JunoPreviewSupport */; };
+		C911951529C26011A9ED41D1 /* JunoMacComposerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC8A8C79DEA5FCBF7DF247DA /* JunoMacComposerUITests.swift */; };
 		CB207D6DA33DE66538965BAC /* JunoMacCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4612912C0CA41ED1265D66A2 /* JunoMacCodeView.swift */; };
 		CB73E42FC51772A3A7660A61 /* JunoMacSidebarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543A887EC7B1818EAE7EB0E6 /* JunoMacSidebarChrome.swift */; };
 		CF89065E99B35AD9866160BA /* JunoMacSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DCEAE629C223440DD26294 /* JunoMacSection.swift */; };
@@ -61,6 +63,7 @@
 
 /* Begin PBXFileReference section */
 		018B7ED868EEE28D7F1C95EF /* JunoMac-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Debug.xcconfig"; sourceTree = "<group>"; };
+		0C5A755809C82406FB49E332 /* JunoMacModelSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacModelSelector.swift; sourceTree = "<group>"; };
 		16DBF974D3373278F7102398 /* JunoMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A483F83EC28F197C398A201 /* JunoMacConversationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacConversationsView.swift; sourceTree = "<group>"; };
 		2B25B6652DCD4815B9EAD948 /* JunoCode */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoCode; path = ../../Packages/JunoCode; sourceTree = SOURCE_ROOT; };
@@ -90,6 +93,7 @@
 		DAD6983FCF9F7C63E9BD9D2B /* JunoMacProductMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacProductMode.swift; sourceTree = "<group>"; };
 		E57A4CB2A8EACC6D5C304C14 /* JunoMacComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacComposer.swift; sourceTree = "<group>"; };
 		F12913A1789B6010163FED0B /* JunoMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacApp.swift; sourceTree = "<group>"; };
+		FC8A8C79DEA5FCBF7DF247DA /* JunoMacComposerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacComposerUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				49A1B6E603BC926BA6903005 /* JunoMacChatShellUITests.swift */,
+				FC8A8C79DEA5FCBF7DF247DA /* JunoMacComposerUITests.swift */,
 				6EE1F2359F9FF2096C674FCA /* JunoMacLaunchUITests.swift */,
 			);
 			path = UITests;
@@ -173,6 +178,7 @@
 				4612912C0CA41ED1265D66A2 /* JunoMacCodeView.swift */,
 				E57A4CB2A8EACC6D5C304C14 /* JunoMacComposer.swift */,
 				1A483F83EC28F197C398A201 /* JunoMacConversationsView.swift */,
+				0C5A755809C82406FB49E332 /* JunoMacModelSelector.swift */,
 				38C816B8CDF33F4C2C135972 /* JunoMacModeSwitcher.swift */,
 				DAD6983FCF9F7C63E9BD9D2B /* JunoMacProductMode.swift */,
 				97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */,
@@ -358,6 +364,7 @@
 				D75A56686D5C6740697E6CC4 /* JunoMacComposer.swift in Sources */,
 				8A1B4E686A5D0DAA5DCC8890 /* JunoMacConversationsView.swift in Sources */,
 				F10F88B89FB671AACCB7DB2A /* JunoMacModeSwitcher.swift in Sources */,
+				1952292BD298BAA4E7A8D19F /* JunoMacModelSelector.swift in Sources */,
 				F33BB5A51ECC66B092857090 /* JunoMacProductMode.swift in Sources */,
 				426B2B13B00E82D73EF9C0DA /* JunoMacRootView.swift in Sources */,
 				33AFB75B39862CCE4793DDA3 /* JunoMacSearchView.swift in Sources */,
@@ -374,6 +381,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				6A2738EFF4F02A729EB969C0 /* JunoMacChatShellUITests.swift in Sources */,
+				C911951529C26011A9ED41D1 /* JunoMacComposerUITests.swift in Sources */,
 				970F71E3346FF147E3E857A5 /* JunoMacLaunchUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

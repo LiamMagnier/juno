@@ -394,8 +394,22 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var conflictedMutationCount = 0
     public private(set) var lastErrorDescription: String?
     public private(set) var isMutating = false
+    /// Every streaming chat model the server published for this account, in the
+    /// server's display order — including ones the plan cannot call, so the
+    /// picker can show them disabled *with a reason* instead of hiding them and
+    /// leaving the user to wonder where a model went. Image/video generation
+    /// entries are not here: they are a different product, not a gated chat model.
     public private(set) var modelCatalog: [NativeChatModelOption] = []
     public private(set) var modelCatalogErrorDescription: String?
+
+    /// The subset that can actually be sent to right now.
+    public var selectableModels: [NativeChatModelOption] {
+        modelCatalog.filter(\.isAvailable)
+    }
+
+    public func model(withID id: String) -> NativeChatModelOption? {
+        modelCatalog.first { $0.id == id }
+    }
     public private(set) var chatPhase: NativeChatGenerationPhase = .idle
     public private(set) var chatErrorDescription: String?
     public private(set) var activeChatConversationID: String?
@@ -685,7 +699,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         do {
             let catalog = try await chatClient.modelCatalog(for: accountID)
             guard self.accountID == accountID else { return }
-            modelCatalog = catalog.models.filter(\.isAvailable)
+            modelCatalog = catalog.models.filter(\.isChatCapable)
             modelCatalogErrorDescription = nil
         } catch {
             guard self.accountID == accountID else { return }
@@ -1114,7 +1128,21 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     ) -> Bool {
         guard !modelID.isEmpty, modelID.utf8.count <= 200 else { return false }
         guard let model = modelCatalog.first(where: { $0.id == modelID }) else {
+            // An unknown id is only tolerated when the catalog never loaded —
+            // otherwise the server has told us this model does not exist.
             return modelCatalog.isEmpty
+        }
+        // The catalog now carries plan-gated and coming-soon models so they can
+        // be explained in the picker; they are still never sendable.
+        guard model.isAvailable else { return false }
+        // Auto routes its own thinking: an effort sent alongside it would be
+        // silently discarded by the server, so refuse it here instead.
+        guard !model.choosesReasoningAutomatically else { return effort == nil }
+        // On/off models publish no tiers; the route reads `high` as "on" for
+        // them, so that is the one effort they accept.
+        if model.isOnOffReasoningOnly {
+            guard let effort else { return model.canDisableReasoning }
+            return effort == .high
         }
         guard let effort else { return model.canDisableReasoning || model.supportedReasoningEfforts.isEmpty }
         return model.supportedReasoningEfforts.contains(effort)

@@ -488,6 +488,58 @@ Chat, projects, artifacts and settings inspected on iOS 27 and look native.
 Known minor issue: with six iOS sections the tab bar highlights "More" when an
 overflow tab (e.g. artifacts) is selected.
 
+### Composer, model selector and Thinking (iOS)
+
+The preview harness serves a synthetic model manifest (`PreviewModelCatalog`)
+covering every state the pickers must render — Auto, a full effort ladder, an
+always-on model, an on/off model, a non-reasoning model, a plan-gated model, a
+coming-soon model and a deliberately long name — so these screens can be
+screenshotted without an account. Additional launch arguments:
+
+| Argument | Effect |
+| --- | --- |
+| `--juno-preview-model-selector` | Opens the model picker on appear |
+| `--juno-preview-model-search <text>` | Prefills the picker's search field |
+| `--juno-preview-model-provider <id>` | Preselects a provider filter |
+| `--juno-preview-model <id>` | Forces the selected model (waits for the catalog) |
+| `--juno-preview-thinking` | Opens the Thinking popover on appear |
+| `--juno-preview-thinking-level <off\|minimal\|low\|medium\|high\|xhigh\|max>` | Forces the thinking level |
+| `--juno-preview-keyboard` | Focuses the composer, raising the keyboard |
+
+Example — the on/off model's two-stop slider, dark, with the keyboard up:
+
+```sh
+xcrun simctl launch <device> com.liammagnier.JunoMobile.debug \
+  --juno-ui-preview --juno-preview-tab chat \
+  --juno-preview-model anthropic:claude-haiku-4-5 \
+  --juno-preview-thinking --juno-preview-keyboard
+```
+
+Inspected on iPhone 17 Pro (iOS 27) and iPad Pro 13" (M5): composer control row,
+picker sheet (search / provider rail / rows / inline detail / plan-gated row /
+no results), the iPad three-region picker, the Thinking popover at several
+levels, dark mode and keyboard-open. Not yet inspected on a physical iPhone.
+
+**Picker ordering and grouping.** The manifest carries `modality`, `legacy` and
+`released`, and both clients render the server's order verbatim. Per lab that
+order is: current models before superseded ones, newest release first, then most
+capable first within a release — so a lab's newest generation leads and its
+siblings sort by power (5.6 Sol · Terra · Luna). Each picker is sectioned by
+modality (Chat · Image · Video) and collapses superseded models behind "Older
+models (n)", auto-expanded while searching. **Image and Video render empty in
+the iOS app**: generation goes through `/api/generate`, for which there is no
+native client, and listing models the app cannot call would violate the rule
+that the picker never offers an unusable selection.
+
+**A SwiftUI trap that cost two debugging rounds.** `accessibilityIdentifier`
+applied to a container is stamped onto every descendant element, silently
+overwriting theirs. The conversation screen's identifier was landing on every
+composer control, and the Thinking popover's was landing on its slider, which
+made both unaddressable from XCUITest (and identical to each other in an
+accessibility audit). Container-level identifiers are now scoped to the exact
+view that should carry them; `JunoMobileComposerUITests` would catch a
+regression.
+
 ## Actually completed
 
 - General repository/backend/OpenAPI/toolchain/prototype audit and official research; do not repeat while these documents remain current.
@@ -662,3 +714,27 @@ Open first:
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
+
+### macOS composer parity
+
+The Mac composer's two system `Picker` menus are replaced by the same controls
+the iPhone uses: a model chip opening a three-region picker (provider rail ·
+searchable list · detail) and a Thinking chip opening the discrete slider. The
+leaf views — provider mark, capability chips, grade bars, detail panel, chip
+flow layout, and the slider itself — now live in `JunoChatKit/JunoModelViews`
+and are shared by both apps; only the presentation shell differs (detent sheet
+on iPhone, anchored popover on Mac).
+
+**Both Mac popovers are fixed-size by construction.** The Thinking popover
+contains a `GeometryReader`, and a self-sizing AppKit popover around measuring
+content is what shipped as the 3.0.5 crash; `JunoThinkingPopover` therefore
+takes its width as a required parameter, and the Mac call site pins width *and*
+height. `JunoMacComposerUITests` opens both popovers and drives the slider, so a
+regression to self-sizing would be caught rather than shipped.
+
+`JunoMacUITests` needs `DEVELOPMENT_TEAM=58PVP763WX CODE_SIGN_STYLE=Automatic`
+on the xcodebuild invocation; without it the runner and the app get different
+Team IDs and the test bundle cannot be loaded (this affected the pre-existing
+`JunoMacChatShellUITests` too). This machine also intermittently launches the
+app with no window at all — the tests detect that and skip rather than report a
+false failure.

@@ -308,9 +308,9 @@ struct JunoMobileRootView: View {
         case .chat:
             if let conversationModel {
                 JunoMobileChatDetailScreen(
-                    attachmentModel: attachmentModel,
                     model: conversationModel,
-                    projects: projectModel?.projects ?? []
+                    projects: projectModel?.projects ?? [],
+                    attachmentModel: attachmentModel
                 )
             } else {
                 unavailable

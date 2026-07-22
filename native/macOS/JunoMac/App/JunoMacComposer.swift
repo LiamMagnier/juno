@@ -126,51 +126,23 @@ struct JunoMacComposer: View {
         .accessibilityIdentifier("juno.mac.composer-actions")
     }
 
-    @ViewBuilder
+    /// The model control. When the catalog has not loaded (still fetching, or
+    /// offline) it names the conversation's own model rather than sitting empty.
     private var modelPicker: some View {
-        if catalog.isEmpty {
-            // No catalog yet (still loading, or offline): show the
-            // conversation's own model humanized rather than an empty control.
-            Label(junoDisplayModelName(conversation.model), systemImage: "cpu")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-        } else {
-            Picker(selection: $selectedModelID) {
-                ForEach(catalog) { option in
-                    Text(option.displayName).tag(option.id)
-                }
-            } label: {
-                Text("chat.model")
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(Text("chat.model"))
-            .accessibilityIdentifier("juno.mac.model-picker")
-        }
+        JunoMacModelControl(
+            catalog: catalog,
+            selectedModelID: $selectedModelID,
+            fallbackName: junoDisplayModelName(conversation.model)
+        )
     }
 
     @ViewBuilder
     private var effortPicker: some View {
-        if let selectedModel, !selectedModel.supportedReasoningEfforts.isEmpty {
-            Picker(selection: $reasoningEffort) {
-                if selectedModel.canDisableReasoning {
-                    Text("chat.effort.instant").tag(nil as NativeReasoningEffort?)
-                }
-                ForEach(selectedModel.supportedReasoningEfforts) { effort in
-                    Text(effort.displayName).tag(effort as NativeReasoningEffort?)
-                }
-            } label: {
-                Text("chat.effort")
-            }
-            .labelsHidden()
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .fixedSize()
-            .accessibilityLabel(Text("chat.effort"))
-            .accessibilityIdentifier("juno.mac.effort-picker")
+        if let selectedModel {
+            JunoMacThinkingControl(
+                scale: NativeThinkingScale(model: selectedModel),
+                effort: $reasoningEffort
+            )
         }
     }
 

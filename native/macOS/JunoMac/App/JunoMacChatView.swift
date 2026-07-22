@@ -1,4 +1,7 @@
 import JunoChatKit
+#if DEBUG
+import JunoPreviewSupport
+#endif
 import JunoDesignSystem
 import JunoStorage
 import SwiftUI
@@ -99,6 +102,7 @@ struct JunoMacChatView: View {
         .onAppear { configureSelections() }
         .onChange(of: conversation?.id) { _, _ in configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
+        .task { await applyComposerPreviewFlags() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
     }
 
@@ -190,7 +194,7 @@ struct JunoMacChatView: View {
                 JunoMacComposer(
                     text: draft,
                     conversation: conversation,
-                    catalog: model.modelCatalog,
+                    catalog: model.selectableModels,
                     selectedModelID: $selectedModelID,
                     reasoningEffort: $reasoningEffort,
                     projectName: conversation.projectId.flatMap(projectName),
@@ -303,6 +307,27 @@ struct JunoMacChatView: View {
     /// Keeps the model and effort pickers pointing at values the current model
     /// actually supports; an unsupported effort is silently corrected rather
     /// than sent to a backend that would reject it.
+    /// Drives the composer into one exact state for visual QA, mirroring the
+    /// iPhone flags so a scenario reproduces identically on both. No effect —
+    /// and no code — outside DEBUG.
+    private func applyComposerPreviewFlags() async {
+        #if DEBUG
+        if let forced = JunoComposerPreviewFlags.forcedModelID {
+            // The catalog arrives asynchronously; without waiting, a scripted
+            // screenshot silently lands on whatever was selected by default.
+            for _ in 0..<20 where !model.modelCatalog.contains(where: { $0.id == forced }) {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            if model.modelCatalog.contains(where: { $0.id == forced }) {
+                selectedModelID = forced
+            }
+        }
+        if let level = JunoComposerPreviewFlags.forcedThinkingLevel {
+            reasoningEffort = level
+        }
+        #endif
+    }
+
     private func configureSelections() {
         guard let conversation else { return }
         if selectedModelID.isEmpty

@@ -63,7 +63,7 @@ struct JunoMacSettingsView: View {
             if let settings = model.settings {
                 JunoSettingsSections(
                     settings: settings,
-                    modelCatalog: conversationModel?.modelCatalog ?? [],
+                    modelCatalog: conversationModel?.selectableModels ?? [],
                     disabled: model.isMutating,
                     update: { patch in Task { await model.updateSettings(patch) } }
                 )
