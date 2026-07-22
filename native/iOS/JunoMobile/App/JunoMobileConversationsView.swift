@@ -664,28 +664,3 @@ private struct JunoComposerGlassCircle: ViewModifier {
         }
     }
 }
-
-/// Turns a raw model identifier such as `anthropic:claude-sonnet-4-6` into a
-/// human-friendly label like `Claude Sonnet 4.6`. The technical id is never
-/// shown directly in the chat surface.
-func junoDisplayModelName(_ raw: String) -> String {
-    let slug = raw.split(separator: ":").last.map(String.init) ?? raw
-    let tokens = slug.split(separator: "-").map(String.init)
-    guard !tokens.isEmpty else { return raw }
-    let acronyms: Set<String> = ["gpt", "llm", "ai", "xai"]
-    var parts: [String] = []
-    for token in tokens {
-        if token.allSatisfy(\.isNumber) {
-            if let last = parts.last, last.allSatisfy({ $0.isNumber || $0 == "." }) {
-                parts[parts.count - 1] = last + "." + token
-            } else {
-                parts.append(token)
-            }
-        } else if acronyms.contains(token.lowercased()) {
-            parts.append(token.uppercased())
-        } else {
-            parts.append(token.prefix(1).uppercased() + token.dropFirst())
-        }
-    }
-    return parts.joined(separator: " ")
-}

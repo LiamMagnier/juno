@@ -18,6 +18,9 @@ struct JunoMacRootView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// Inspector visibility is per-scene and restored across relaunches, the
+    /// same way the sidebar's own visibility is.
+    @SceneStorage("juno.mac.inspectorVisible") private var inspectorVisible = false
     #if DEBUG
     /// Set only by the local UI Preview harness to render the real authenticated
     /// shell without any authentication; nil in every normal run.
@@ -90,23 +93,21 @@ struct JunoMacRootView: View {
         }
     }
 
+    /// The two-column shell. Chat's own inspector is a third region owned by
+    /// `JunoMacChatView`, not a third `NavigationSplitView` column, so the
+    /// sidebar stays the single source list for the whole product.
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $selection) {
-                ForEach(JunoMacSection.Group.allCases) { group in
-                    Section(group.title) {
-                        ForEach(group.sections) { section in
-                            sidebarRow(section)
-                        }
-                    }
-                }
-            }
-            .listStyle(.sidebar)
-            .accessibilityIdentifier("juno.mac.sidebar")
-            .navigationTitle("Juno")
-            .navigationSplitViewColumnWidth(min: 216, ideal: 244, max: 340)
+            JunoMacSidebar(
+                selection: $selection,
+                conversationModel: conversationModel,
+                syncModel: syncModel,
+                accountName: session.profile.name ?? session.profile.email,
+                signOut: { Task { await authModel.signOut() } },
+                newChat: newChat
+            )
         } detail: {
             JunoMacDetailView(
                 section: selection,
@@ -117,9 +118,14 @@ struct JunoMacRootView: View {
                 searchModel: searchModel,
                 chatTransport: chatTransport,
                 accountID: session.profile.id,
+                inspectorVisible: $inspectorVisible,
                 openConversation: { id in
                     conversationModel?.selectedConversationID = id
                     selection = .chat
+                },
+                openArtifact: { id in
+                    artifactModel?.selectedArtifactID = id
+                    selection = .artifacts
                 },
                 openSearchResult: { result in
                     switch result.kind {
@@ -140,88 +146,20 @@ struct JunoMacRootView: View {
                     }
                 }
             )
-            .id(selection)
+            // Chat keeps its identity across conversation switches so the
+            // transcript's scroll position and drafts survive; every other
+            // section is rebuilt on selection.
+            .id(selection == .chat ? "chat" : selection.rawValue)
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem {
-                JunoMacSyncStatus(model: syncModel)
-            }
-            ToolbarItem {
-                Menu {
-                    Button("auth.sign-out", role: .destructive) {
-                        Task { await authModel.signOut() }
-                    }
-                } label: {
-                    Label(
-                        session.profile.name ?? session.profile.email,
-                        systemImage: "person.crop.circle"
-                    )
-                }
-                .accessibilityIdentifier("juno.mac.account-menu")
-            }
-        }
     }
 
-    @ViewBuilder
-    private func sidebarRow(_ section: JunoMacSection) -> some View {
-        Label(section.title, systemImage: section.systemImage)
-            .tag(section)
-            .accessibilityIdentifier("juno.mac.sidebar.\(section.rawValue)")
-            .contextMenu { sidebarContextMenu(section) }
-    }
-
-    @ViewBuilder
-    private func sidebarContextMenu(_ section: JunoMacSection) -> some View {
-        switch section {
-        case .chat:
-            Button {
-                Task {
-                    if let id = await conversationModel?.createConversation() {
-                        conversationModel?.selectedConversationID = id
-                        selection = .chat
-                    }
-                }
-            } label: {
-                Label("chat.new", systemImage: "square.and.pencil")
+    private func newChat() {
+        Task {
+            if let id = await conversationModel?.createConversation() {
+                conversationModel?.selectedConversationID = id
+                selection = .chat
             }
-            .disabled(conversationModel == nil)
-        case .search:
-            Button {
-                selection = .search
-            } label: {
-                Label("navigation.search", systemImage: "magnifyingglass")
-            }
-        default:
-            Button {
-                selection = section
-            } label: {
-                Label("sidebar.open", systemImage: "arrow.forward")
-            }
-        }
-    }
-}
-
-private struct JunoMacSyncStatus: View {
-    let model: NativeSyncModel<SQLiteAccountRepository>?
-
-    var body: some View {
-        if let model {
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                switch model.phase {
-                case .idle, .synchronizing:
-                    ProgressView().controlSize(.small)
-                case .live:
-                    Label("Synced", systemImage: "checkmark.circle.fill")
-                case .offline:
-                    Label("Offline", systemImage: "wifi.slash")
-                }
-            }
-            .buttonStyle(.plain)
-            .help(model.lastErrorDescription ?? "Refresh Juno")
-            .accessibilityIdentifier("juno.mac.sync-status")
         }
     }
 }
@@ -276,13 +214,23 @@ private struct JunoMacDetailView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
     let accountID: AccountID
+    @Binding var inspectorVisible: Bool
     let openConversation: (String) -> Void
+    let openArtifact: (String) -> Void
     let openSearchResult: (NativeSearchResult) -> Void
 
     @ViewBuilder
     var body: some View {
         if section == .chat, let conversationModel {
-            JunoMacConversationsView(model: conversationModel)
+            JunoMacChatView(
+                model: conversationModel,
+                artifactModel: artifactModel,
+                projectName: { id in
+                    projectModel?.projects.first { $0.id == id }?.name
+                },
+                openArtifact: openArtifact,
+                inspectorVisible: $inspectorVisible
+            )
         } else if section == .search, let searchModel {
             JunoMacSearchView(model: searchModel, open: openSearchResult)
         } else if section == .settings, let memorySettingsModel {
