@@ -192,7 +192,7 @@ struct JunoMacApp: App {
     @MainActor
     private static func makeConfiguration() -> JunoMacConfiguration {
         do {
-            guard let backendURL = URL(string: "https://chat.liams.dev") else {
+            guard let backendURL = URL(string: JunoBackend.productionURLString) else {
                 throw JunoMacAppConfigurationError.invalidBackendURL
             }
             let version = Bundle.main.object(

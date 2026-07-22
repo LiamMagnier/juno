@@ -21,6 +21,7 @@ struct JunoMobileApp: App {
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
+    private let outbox: (any MutationOutboxRepository)?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -32,6 +33,7 @@ struct JunoMobileApp: App {
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _searchModel = State(initialValue: configuration.searchModel)
         localStore = configuration.localStore
+        outbox = configuration.outbox
     }
 
     var body: some Scene {
@@ -65,6 +67,7 @@ struct JunoMobileApp: App {
         JunoMobileRootView(
             authModel: authModel,
             syncModel: syncModel,
+            outbox: outbox,
             conversationModel: conversationModel,
             projectModel: projectModel,
             artifactModel: artifactModel,
@@ -83,7 +86,7 @@ struct JunoMobileApp: App {
     @MainActor
     private static func makeConfiguration() -> JunoMobileConfiguration {
         do {
-            guard let backendURL = URL(string: "https://chat.liams.dev") else {
+            guard let backendURL = URL(string: JunoBackend.productionURLString) else {
                 throw JunoMobileAppConfigurationError.invalidBackendURL
             }
             let version = Bundle.main.object(
@@ -139,6 +142,7 @@ struct JunoMobileApp: App {
                 authModel: authModel,
                 localStore: localStore,
                 syncModel: syncModel,
+                outbox: outbox,
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
@@ -174,6 +178,7 @@ struct JunoMobileApp: App {
                 ),
                 localStore: nil,
                 syncModel: nil,
+                outbox: nil,
                 conversationModel: nil,
                 projectModel: nil,
                 artifactModel: nil,
@@ -197,6 +202,7 @@ private struct JunoMobileConfiguration {
     let authModel: NativeAuthModel
     let localStore: SQLiteAccountRepository?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let outbox: (any MutationOutboxRepository)?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?

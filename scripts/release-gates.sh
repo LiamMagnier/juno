@@ -101,14 +101,32 @@ if grep -rn "localhost\|127\.0\.0\.1\|ngrok\|\.local:" $NATIVE_APP_SOURCES >/dev
 else
     pass "no localhost or temporary host in native app sources"
 fi
+# The URL is declared once, in JunoBackend, and both apps dial that constant.
+# An earlier version of this gate grepped each app directory for the literal
+# host, which passed only while the URL was duplicated per app — exactly the
+# duplication that lets one client drift onto a different backend. It now
+# checks the single declaration and that each app actually uses it.
+BACKEND_CONST="native/Packages/JunoNativeKit/Sources/JunoCore/JunoBackend.swift"
+if grep -q 'productionURLString = "https://chat.liams.dev"' "$BACKEND_CONST" 2>/dev/null; then
+    pass "JunoBackend declares https://chat.liams.dev"
+else
+    fail "$BACKEND_CONST does not declare the production base URL"
+fi
 for app in JunoMac JunoMobile; do
     dir=$(echo $NATIVE_APP_SOURCES | tr ' ' '\n' | grep "$app")
-    if grep -rq "https://chat.liams.dev" "$dir" 2>/dev/null; then
-        pass "$app targets https://chat.liams.dev"
+    if grep -rq "JunoBackend.productionURLString" "$dir" 2>/dev/null; then
+        pass "$app dials JunoBackend.productionURLString"
     else
-        fail "$app does not reference the production base URL"
+        fail "$app does not use the shared production base URL"
     fi
 done
+# A hardcoded host anywhere in the app sources would bypass the constant.
+if grep -rn "https://chat.liams.dev" $NATIVE_APP_SOURCES >/dev/null 2>&1; then
+    fail "an app source hardcodes the backend host instead of using JunoBackend"
+    grep -rn "https://chat.liams.dev" $NATIVE_APP_SOURCES | sed 's/^/        /'
+else
+    pass "no app source hardcodes the backend host"
+fi
 echo
 
 # ---------------------------------------------------------------------------

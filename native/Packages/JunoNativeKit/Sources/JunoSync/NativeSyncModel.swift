@@ -36,7 +36,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
     ///   would report a real network outage as a hard failure.
     /// - `URLError.cancelled` is a control-flow signal, not a connectivity
     ///   verdict, so it is deliberately excluded.
-    public static func isConnectivityFailure(_ error: any Error) -> Bool {
+    nonisolated public static func isConnectivityFailure(_ error: any Error) -> Bool {
         if let coordinatorError = error as? NativeSyncCoordinatorError {
             return coordinatorError == .retryLimitExceeded
         }
@@ -45,23 +45,86 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         return urlError.code != .cancelled
     }
 
+    /// The HTTP status behind the last failure, when the server actually
+    /// answered. `nil` means the request never got a response — the distinction
+    /// between "refused with 401" and "never reached the server" is the whole
+    /// difference between a token problem and an outage, and Diagnostics has to
+    /// show which one happened rather than making the reader guess.
+    nonisolated public static func httpStatusCode(of error: any Error) -> Int? {
+        if case .server(let statusCode, _) = error as? NativeBootstrapError {
+            return statusCode
+        }
+        if case .server(let statusCode, _, _, _) = error as? NativeSyncAPIError {
+            return statusCode
+        }
+        return nil
+    }
+
+    /// A short, non-secret label for what went wrong, for the Diagnostics row.
+    /// Deliberately coarse: it names the *kind* of failure without ever
+    /// including a token, header or response body.
+    nonisolated public static func failureKind(of error: any Error) -> String {
+        switch error {
+        case let bootstrap as NativeBootstrapError:
+            switch bootstrap {
+            case .server(let status, let code):
+                return "bootstrap http \(status)\(code.map { " (\($0))" } ?? "")"
+            case .malformedResponse: return "bootstrap decode failure"
+            case .accountMismatch: return "bootstrap account mismatch"
+            case .contractVersionMismatch(let expected, let received):
+                return "contract mismatch — build \(expected), server \(received)"
+            case .invalidCursor: return "bootstrap invalid cursor"
+            case .invalidModelManifestVersion: return "bootstrap invalid model manifest"
+            }
+        case let sync as NativeSyncAPIError:
+            if case .server(let status, let code, _, _) = sync {
+                return "sync http \(status)\(code.map { " (\($0))" } ?? "")"
+            }
+            return "sync \(String(describing: sync).prefix(48))"
+        case let urlError as URLError:
+            return "transport \(urlError.code.rawValue)"
+        case let coordinator as NativeSyncCoordinatorError:
+            return "coordinator \(String(describing: coordinator))"
+        default:
+            return "unknown failure"
+        }
+    }
+
     public private(set) var phase: Phase = .idle
     public private(set) var cursor: String?
     public private(set) var lastErrorDescription: String?
     public private(set) var synchronizationGeneration = 0
+    /// When synchronization last completed. Survives a later failure on
+    /// purpose: "last succeeded four hours ago" is the single most useful fact
+    /// when a client is stuck, and clearing it on error would throw it away.
+    public private(set) var lastSuccessfulSyncAt: Date?
+    public private(set) var lastHTTPStatusCode: Int?
+    public private(set) var lastFailureKind: String?
 
     private let coordinator: NativeSyncCoordinator<Repository>
     private let monitor: NativeSyncMonitor<Repository>
+    private let now: @Sendable () -> Date
     private var task: Task<Void, Never>?
     private var activeAccountID: AccountID?
     private var runID: UUID?
 
     public init(
         coordinator: NativeSyncCoordinator<Repository>,
-        monitor: NativeSyncMonitor<Repository>
+        monitor: NativeSyncMonitor<Repository>,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.coordinator = coordinator
         self.monitor = monitor
+        self.now = now
+    }
+
+    /// Records what a failure was, without deciding how it is presented — the
+    /// phase assignment stays where it was so the `.offline` / `.failed` split
+    /// keeps its single definition.
+    private func recordFailure(_ error: any Error) {
+        lastErrorDescription = error.localizedDescription
+        lastHTTPStatusCode = Self.httpStatusCode(of: error)
+        lastFailureKind = Self.failureKind(of: error)
     }
 
     public func start(for accountID: AccountID) {
@@ -87,7 +150,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
                 return
             } catch {
                 guard runID == currentRunID else { return }
-                lastErrorDescription = error.localizedDescription
+                recordFailure(error)
                 phase = Self.isConnectivityFailure(error) ? .offline : .failed
                 task = nil
             }
@@ -106,7 +169,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
             recordSynchronization(result, runID: currentRunID)
         } catch {
             guard runID == currentRunID else { return }
-            lastErrorDescription = error.localizedDescription
+            recordFailure(error)
             phase = Self.isConnectivityFailure(error) ? .offline : .failed
         }
     }
@@ -118,6 +181,9 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         runID = nil
         cursor = nil
         lastErrorDescription = nil
+        lastSuccessfulSyncAt = nil
+        lastHTTPStatusCode = nil
+        lastFailureKind = nil
         phase = .idle
     }
 
@@ -129,6 +195,9 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         cursor = result.cursor
         synchronizationGeneration &+= 1
         lastErrorDescription = nil
+        lastHTTPStatusCode = nil
+        lastFailureKind = nil
+        lastSuccessfulSyncAt = now()
         phase = .live
     }
 

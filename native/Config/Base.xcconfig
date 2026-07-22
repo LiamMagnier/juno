@@ -5,7 +5,16 @@ CLANG_ENABLE_MODULES = YES
 ENABLE_USER_SCRIPT_SANDBOXING = YES
 LOCALIZATION_PREFERS_STRING_CATALOGS = YES
 DEVELOPMENT_LANGUAGE = en
-MARKETING_VERSION = 0.1.0
-CURRENT_PROJECT_VERSION = 1
+MARKETING_VERSION = 0.1.1
+CURRENT_PROJECT_VERSION = 2
 JUNO_AUTH_CALLBACK_SCHEME = com.liammagnier.juno
+
+// Build identity surfaced by Settings › Diagnostics. The whole point is to be
+// able to tell two installed builds apart from the device, which "0.1.0 (1)"
+// twice over could not. JUNO_GIT_SHA is overwritten per build by
+// native/Scripts/write-build-metadata.sh, which writes Generated-Build.xcconfig;
+// the include is optional so a plain checkout still builds, reporting "unknown".
+JUNO_GIT_SHA = unknown
+JUNO_CONTRACT_VERSION = 1.3.0
+#include? "Generated-Build.xcconfig"
 ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES

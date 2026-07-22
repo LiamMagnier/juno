@@ -13,6 +13,9 @@ import JunoPreviewSupport
 struct JunoMobileRootView: View {
     let authModel: NativeAuthModel
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    /// Passed through only so Settings › Diagnostics can report how much work
+    /// is still queued. Nothing else on this screen reads it.
+    var outbox: (any MutationOutboxRepository)?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
@@ -144,7 +147,9 @@ struct JunoMobileRootView: View {
                         model: memorySettingsModel,
                         conversationModel: conversationModel,
                         authModel: authModel,
-                        session: currentSession
+                        session: currentSession,
+                        syncModel: syncModel,
+                        outbox: outbox
                     )
                 } else {
                     unavailable
@@ -330,7 +335,9 @@ struct JunoMobileRootView: View {
                     model: memorySettingsModel,
                     conversationModel: conversationModel,
                     authModel: authModel,
-                    session: currentSession
+                    session: currentSession,
+                    syncModel: syncModel,
+                    outbox: outbox
                 )
             } else { unavailable }
         }
