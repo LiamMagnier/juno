@@ -42,7 +42,7 @@ struct JunoMacApp: App {
     #endif
 
     init() {
-        let configuration = Self.makeConfiguration()
+        let configuration = Self.resolvedConfiguration()
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
@@ -66,9 +66,15 @@ struct JunoMacApp: App {
                     )
                 )
                     .frame(minWidth: 900, minHeight: 560)
+                    .junoPreviewWindowSize()
                     .preferredColorScheme(
                         CommandLine.arguments.contains("--juno-preview-dark") ? .dark : nil
                     )
+                    .onAppear {
+                        if CommandLine.arguments.contains("--juno-preview-dark") {
+                            NSApp.appearance = NSAppearance(named: .darkAqua)
+                        }
+                    }
             } else if JunoPreviewEnvironment.isActive {
                 JunoPreviewContainer(
                     initialScenario: JunoPreviewEnvironment.initialScenario
@@ -153,6 +159,34 @@ struct JunoMacApp: App {
     private static let previewAuthModel = NativeAuthModel(
         configurationErrorDescription: "UI Preview"
     )
+    #endif
+
+    /// The configuration the app actually starts with.
+    ///
+    /// A preview launch gets the inert one. `init()` previously called
+    /// ``makeConfiguration()`` unconditionally, so a run started with
+    /// `--juno-code-ui-preview` — the mode whose whole claim is "no account,
+    /// Keychain, network, shell, or Git access" — had already opened
+    /// `accounts.sqlite3`, built the live `NativeAuthRuntime` against
+    /// `chat.liams.dev`, and constructed the sync coordinator, mutation drainer
+    /// and chat transport before the scene body chose the preview branch. The
+    /// preview view then discarded all of it, which made the claim false and,
+    /// in practice, meant two preview instances contended for the same SQLite
+    /// file and the second never reached a window.
+    @MainActor
+    private static func resolvedConfiguration() -> JunoMacConfiguration {
+        #if DEBUG
+        if isPreviewLaunch { return .inert }
+        #endif
+        return makeConfiguration()
+    }
+
+    #if DEBUG
+    /// True for every development-only preview entry point.
+    static var isPreviewLaunch: Bool {
+        CommandLine.arguments.contains(CodePreviewScenario.launchFlag)
+            || JunoPreviewEnvironment.isActive
+    }
     #endif
 
     @MainActor
@@ -242,19 +276,7 @@ struct JunoMacApp: App {
                 chatTransport: runtime
             )
         } catch {
-            return JunoMacConfiguration(
-                authModel: NativeAuthModel(
-                    configurationErrorDescription: error.localizedDescription
-                ),
-                localStore: nil,
-                syncModel: nil,
-                conversationModel: nil,
-                projectModel: nil,
-                artifactModel: nil,
-                memorySettingsModel: nil,
-                searchModel: nil,
-                chatTransport: nil
-            )
+            return .inert(describing: error.localizedDescription)
         }
     }
 }
@@ -278,6 +300,29 @@ private struct JunoMacConfiguration {
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
+
+    /// No repository, no transport, no auth runtime — used both when
+    /// configuration fails and for every preview launch, so a preview cannot
+    /// reach the account database or the network even by accident.
+    @MainActor
+    static func inert(describing reason: String) -> JunoMacConfiguration {
+        JunoMacConfiguration(
+            authModel: NativeAuthModel(configurationErrorDescription: reason),
+            localStore: nil,
+            syncModel: nil,
+            conversationModel: nil,
+            projectModel: nil,
+            artifactModel: nil,
+            memorySettingsModel: nil,
+            searchModel: nil,
+            chatTransport: nil
+        )
+    }
+
+    #if DEBUG
+    @MainActor
+    static var inert: JunoMacConfiguration { inert(describing: "UI Preview") }
+    #endif
 }
 
 private struct JunoMacNavigationCommands: Commands {

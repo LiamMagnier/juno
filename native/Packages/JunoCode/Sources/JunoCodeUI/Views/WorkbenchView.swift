@@ -43,10 +43,19 @@ public struct WorkbenchView<SidebarHeader: View>: View {
                         .inspectorColumnWidth(min: 260, ideal: 320, max: 520)
                 }
         }
-        .background(JunoCodeTheme.background)
+        .background(Color.junoCanvasWarm)
         .task {
             await model.bootstrap()
         }
+        #if DEBUG
+        // Responsive QA has to be able to screenshot both inspector states, and
+        // `@SceneStorage` is restored by AppKit before any of our code runs.
+        .onAppear {
+            if CommandLine.arguments.contains("--juno-preview-inspector") {
+                inspectorVisible = true
+            }
+        }
+        #endif
         .task(id: model.selectedSessionID) {
             if let previous = controller, previous.sessionID != model.selectedSessionID {
                 await previous.detach()

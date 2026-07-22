@@ -1,5 +1,6 @@
 import SwiftUI
 import JunoCodeCore
+import JunoDesignSystem
 
 enum InspectorTab: String, CaseIterable, Identifiable {
     case changes
@@ -38,30 +39,44 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .computer: return "display"
         }
     }
+
+    /// What this pane is for, in one line, for the tooltip and for VoiceOver.
+    var purpose: String {
+        switch self {
+        case .changes: return "Files the agent edited, with accept and reject"
+        case .diff: return "Line-by-line diff of one changed file"
+        case .terminal: return "Live command and test output"
+        case .tests: return "Detected test commands and the last run"
+        case .git: return "Branch, working tree status and recent commits"
+        case .files: return "Browse and filter the workspace"
+        case .context: return "What the agent knows about this session"
+        case .computer: return "Screen control (off)"
+        }
+    }
+
+    /// The four panes a reader opens the inspector *for*. The rest stay
+    /// reachable but do not get scarce horizontal room at 260pt.
+    static let primary: [InspectorTab] = [.changes, .diff, .terminal, .tests]
+    static let secondary: [InspectorTab] = [.git, .files, .context, .computer]
 }
 
-/// Right zone: the inspector with Changes/Diff/Terminal/Tests/Git/Files/
-/// Context/Computer tabs.
+/// Right zone: the inspector.
+///
+/// The tab strip was eight unlabelled 20pt glyphs in a segmented control — at
+/// 260pt each segment was 32pt wide, nothing said what any of them meant, and
+/// `display` versus `doc.text.magnifyingglass` is not a distinction anyone makes
+/// at that size. It is now four labelled primary tabs plus an overflow menu that
+/// names the other four, so every destination in the pane is readable.
 struct InspectorView: View {
     @Bindable var controller: SessionController
     @State private var tab: InspectorTab = .changes
     @State private var selectedDiffPath: String?
+    @State private var showsLabels = true
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Inspector tab", selection: $tab) {
-                ForEach(InspectorTab.allCases) { tab in
-                    Image(systemName: tab.systemImage)
-                        .help(tab.label)
-                        .tag(tab)
-                        .accessibilityLabel(tab.label)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(JunoCodeTheme.Spacing.compact)
-
-            Divider().overlay(JunoCodeTheme.separator)
+            tabStrip
+            Divider().overlay(Color.junoSeparator)
 
             // The tab content must fill the pane. Without this, a tab whose
             // body does not expand (any ContentUnavailableView empty state)
@@ -96,9 +111,110 @@ struct InspectorView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(JunoCodeTheme.surface)
+        .background(Color.junoRaised)
         .task(id: controller.sessionID) {
             await controller.refreshWorkspacePanels()
+        }
+    }
+
+    // MARK: - Tab strip
+
+    /// Below this the four labels no longer fit beside the overflow menu, so the
+    /// strip falls back to glyphs with tooltips. Measured rather than guessed:
+    /// "Terminal" + "Changes" + "Diff" + "Tests" at `.caption` with their glyphs
+    /// and padding comes to roughly 300pt, and the inspector's own minimum is
+    /// 260pt.
+    private static let labelledStripMinimumWidth: CGFloat = 330
+
+    private var tabStrip: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            ForEach(InspectorTab.primary) { candidate in
+                tabButton(candidate, badge: badge(for: candidate))
+            }
+
+            Spacer(minLength: 0)
+
+            Menu {
+                ForEach(InspectorTab.secondary) { candidate in
+                    Button {
+                        tab = candidate
+                    } label: {
+                        Label(candidate.label, systemImage: candidate.systemImage)
+                    }
+                }
+            } label: {
+                // The overflow shows the *selected* secondary tab rather than a
+                // generic ellipsis, so a reader in Git can see they are in Git.
+                if InspectorTab.secondary.contains(tab) {
+                    if showsLabels {
+                        Label(tab.label, systemImage: tab.systemImage)
+                            .labelStyle(.titleAndIcon)
+                    } else {
+                        Image(systemName: tab.systemImage)
+                    }
+                } else {
+                    Image(systemName: "ellipsis")
+                }
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .font(.caption)
+            .foregroundStyle(
+                InspectorTab.secondary.contains(tab) ? Color.junoAccent : Color.secondary
+            )
+            .padding(.horizontal, JunoSpace.tight)
+            .help("More inspector panes")
+            .accessibilityLabel("More panes")
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .padding(.vertical, JunoSpace.tight)
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+            showsLabels = width >= Self.labelledStripMinimumWidth
+        }
+    }
+
+    private func tabButton(_ candidate: InspectorTab, badge: Int?) -> some View {
+        let selected = tab == candidate
+        return Button {
+            tab = candidate
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: candidate.systemImage)
+                    .imageScale(.small)
+                // The label drops before the glyph as the pane narrows, so a
+                // 260pt inspector still shows four distinguishable targets.
+                if showsLabels {
+                    Text(candidate.label).lineLimit(1)
+                }
+                if let badge, badge > 0 {
+                    Text("\(badge)")
+                        .font(.caption2)
+                        .monospacedDigit()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(selected ? Color.junoAccent : Color.secondary)
+            .padding(.horizontal, JunoSpace.snug)
+            .padding(.vertical, JunoSpace.tight + 1)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                    .fill(selected ? Color.junoRowSelected : Color.clear)
+            )
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help(candidate.purpose)
+        .accessibilityLabel(candidate.label)
+        .accessibilityHint(candidate.purpose)
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+    }
+
+    private func badge(for candidate: InspectorTab) -> Int? {
+        switch candidate {
+        case .changes: return controller.changes.count
+        default: return nil
         }
     }
 }
@@ -114,7 +230,7 @@ struct ChangesTab: View {
             ContentUnavailableView(
                 "No changes yet",
                 systemImage: "plusminus.circle",
-                description: Text("Files the agent modifies appear here for review.")
+                description: Text("Files the agent edits appear here for review.")
             )
         } else {
             VStack(spacing: 0) {
@@ -122,31 +238,61 @@ struct ChangesTab: View {
                     changeRow(change)
                 }
                 .listStyle(.inset)
-                Divider().overlay(JunoCodeTheme.separator)
-                HStack {
-                    Text(summaryText)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Button("Reject All") {
-                        Task { await controller.rejectAll() }
+
+                Divider().overlay(Color.junoSeparator)
+
+                // Wraps at narrow inspector widths rather than clipping the
+                // buttons off the trailing edge.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: JunoSpace.snug) {
+                        summaryLabel
+                        Spacer(minLength: JunoSpace.snug)
+                        reviewButtons
                     }
-                    Button("Accept All") {
-                        controller.acceptAll()
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        summaryLabel
+                        HStack(spacing: JunoSpace.snug) {
+                            Spacer(minLength: 0)
+                            reviewButtons
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(JunoCodeTheme.accent)
                 }
-                .padding(JunoCodeTheme.Spacing.control)
+                .padding(JunoSpace.cozy)
             }
         }
     }
 
-    private var summaryText: String {
-        let added = controller.changes.reduce(0) { $0 + $1.linesAdded }
-        let removed = controller.changes.reduce(0) { $0 + $1.linesRemoved }
-        return "\(PathDisplay.fileCount(controller.changes.count)) · +\(added) −\(removed)"
+    private var summaryLabel: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Text(PathDisplay.fileCount(controller.changes.count))
+            DiffStat(added: totalAdded, removed: totalRemoved)
+        }
+        .junoCaption()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(PathDisplay.fileCount(controller.changes.count)), \(totalAdded) added, \(totalRemoved) removed"
+        )
     }
+
+    @ViewBuilder
+    private var reviewButtons: some View {
+        Button("Reject All") {
+            Task { await controller.rejectAll() }
+        }
+        .controlSize(.small)
+        .help("Restore every changed file from its checkpoint")
+
+        Button("Accept All") {
+            controller.acceptAll()
+        }
+        .controlSize(.small)
+        .buttonStyle(.borderedProminent)
+        .tint(Color.junoAccent)
+        .help("Mark every change reviewed and keep it")
+    }
+
+    private var totalAdded: Int { controller.changes.reduce(0) { $0 + $1.linesAdded } }
+    private var totalRemoved: Int { controller.changes.reduce(0) { $0 + $1.linesRemoved } }
 
     /// "modified · Sources/JunoCodeUI/Theme" — the directory truncates from the
     /// head so the innermost, most identifying folder stays visible.
@@ -158,11 +304,12 @@ struct ChangesTab: View {
     }
 
     private func changeRow(_ change: TrackedChange) -> some View {
-        HStack(spacing: JunoCodeTheme.Spacing.compact) {
+        HStack(spacing: JunoSpace.snug) {
             reviewIcon(change.reviewState)
+                .frame(width: 16)
             VStack(alignment: .leading, spacing: 1) {
                 Text(PathDisplay.fileName(change.path))
-                    .font(.junoMono)
+                    .junoCode()
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Text(changeSubtitle(change))
@@ -171,16 +318,16 @@ struct ChangesTab: View {
                     .lineLimit(1)
                     .truncationMode(.head)
             }
-            Spacer()
-            Text("+\(change.linesAdded)")
-                .font(.junoMonoSmall)
-                .foregroundStyle(JunoCodeTheme.success)
-            Text("−\(change.linesRemoved)")
-                .font(.junoMonoSmall)
-                .foregroundStyle(JunoCodeTheme.failure)
+            Spacer(minLength: JunoSpace.tight)
+            DiffStat(added: change.linesAdded, removed: change.linesRemoved)
         }
         .contentShape(Rectangle())
         .onTapGesture { openDiff(change.path) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(change.path), \(change.kind.rawValue), \(change.linesAdded) added, \(change.linesRemoved) removed"
+        )
+        .accessibilityHint("Opens the diff")
         .contextMenu {
             Button("Show Diff") { openDiff(change.path) }
             Divider()
@@ -195,11 +342,17 @@ struct ChangesTab: View {
     private func reviewIcon(_ state: TrackedChange.ReviewState) -> some View {
         switch state {
         case .pending:
-            Image(systemName: "circle.dotted").foregroundStyle(.secondary)
+            Image(systemName: "circle.dotted")
+                .foregroundStyle(.secondary)
+                .help("Not reviewed")
         case .accepted:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(JunoCodeTheme.success)
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(Color.junoSuccess)
+                .help("Accepted")
         case .rejected:
-            Image(systemName: "arrow.uturn.backward.circle").foregroundStyle(.secondary)
+            Image(systemName: "arrow.uturn.backward.circle")
+                .foregroundStyle(.secondary)
+                .help("Reverted")
         }
     }
 }
@@ -217,23 +370,18 @@ struct DiffTab: View {
                 ContentUnavailableView(
                     "No diff to show",
                     systemImage: "text.line.first.and.arrowtriangle.forward",
-                    description: Text("Select a changed file to see its diff.")
+                    description: Text("Change a file, or pick one in Changes.")
                 )
             } else {
-                Picker("File", selection: $selectedPath) {
-                    ForEach(controller.changes) { change in
-                        Text(PathDisplay.fileName(change.path))
-                            .tag(String?.some(change.path))
-                    }
-                }
-                .padding(JunoCodeTheme.Spacing.compact)
+                filePicker
+                Divider().overlay(Color.junoSeparator)
                 if let diff, !diff.isEmpty {
                     DiffContentView(diff: diff)
                 } else {
                     ContentUnavailableView(
                         "No differences",
                         systemImage: "equal.circle",
-                        description: Text("The file matches its original content.")
+                        description: Text("This file matches its original content.")
                     )
                 }
             }
@@ -248,9 +396,49 @@ struct DiffTab: View {
             diff = await controller.diff(for: path)
         }
     }
+
+    /// A menu rather than a `Picker`: at 260pt a pop-up button showing a long
+    /// filename clips, and the menu can carry the directory as a subtitle where
+    /// two files share a name — `Package.swift` twice told the reader nothing.
+    private var filePicker: some View {
+        Menu {
+            ForEach(controller.changes) { change in
+                Button {
+                    selectedPath = change.path
+                } label: {
+                    if let directory = PathDisplay.directory(change.path) {
+                        Text("\(PathDisplay.fileName(change.path)) — \(directory)")
+                    } else {
+                        Text(PathDisplay.fileName(change.path))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.tight) {
+                Text(selectedPath.map(PathDisplay.fileName) ?? "Select a file")
+                    .junoCode()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .imageScale(.small)
+                    .foregroundStyle(.tertiary)
+                Spacer(minLength: 0)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityLabel("Diff file")
+        .accessibilityValue(selectedPath.map(PathDisplay.fileName) ?? "None selected")
+    }
 }
 
 /// Line-by-line diff rendering with gutters.
+///
+/// The gutters are a fixed 34pt each and the marker column 14pt, so line
+/// numbers stay column-aligned into four digits; past that the number is
+/// allowed to run rather than the row re-flowing.
 struct DiffContentView: View {
     let diff: TextDiff
 
@@ -259,38 +447,54 @@ struct DiffContentView: View {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(diff.hunks.enumerated()), id: \.offset) { _, hunk in
                     Text(hunk.header)
-                        .font(.junoMonoSmall)
+                        .junoCodeSmall()
                         .foregroundStyle(.tertiary)
-                        .padding(.vertical, JunoCodeTheme.Spacing.tight)
-                        .padding(.horizontal, JunoCodeTheme.Spacing.compact)
+                        .padding(.vertical, JunoSpace.hairline)
+                        .padding(.horizontal, JunoSpace.snug)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.junoRowHover)
                     ForEach(Array(hunk.lines.enumerated()), id: \.offset) { _, line in
                         diffLine(line)
                     }
                 }
             }
-            .padding(.vertical, JunoCodeTheme.Spacing.compact)
+            .padding(.bottom, JunoSpace.snug)
         }
-        .background(JunoCodeTheme.well)
+        .background(Color.junoTerminal)
     }
 
     private func diffLine(_ line: DiffLine) -> some View {
         HStack(spacing: 0) {
             Text(line.oldLineNumber.map(String.init) ?? "")
-                .frame(width: 40, alignment: .trailing)
+                .frame(width: 34, alignment: .trailing)
                 .foregroundStyle(.tertiary)
             Text(line.newLineNumber.map(String.init) ?? "")
-                .frame(width: 40, alignment: .trailing)
+                .frame(width: 34, alignment: .trailing)
                 .foregroundStyle(.tertiary)
             Text(marker(for: line.kind))
-                .frame(width: 16)
+                .frame(width: 14)
                 .foregroundStyle(markerColor(for: line.kind))
             Text(line.text.isEmpty ? " " : line.text)
                 .foregroundStyle(line.kind == .context ? .secondary : .primary)
-            Spacer(minLength: 0)
+                .textSelection(.enabled)
+            Spacer(minLength: JunoSpace.cozy)
         }
-        .font(.junoMonoSmall)
+        .junoCodeSmall()
+        .monospacedDigit()
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(background(for: line.kind))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityText(for: line))
+    }
+
+    private func accessibilityText(for line: DiffLine) -> String {
+        switch line.kind {
+        case .context: return "Unchanged: \(line.text)"
+        case .added: return "Added: \(line.text)"
+        case .removed: return "Removed: \(line.text)"
+        }
     }
 
     private func marker(for kind: DiffLineKind) -> String {
@@ -304,16 +508,16 @@ struct DiffContentView: View {
     private func markerColor(for kind: DiffLineKind) -> Color {
         switch kind {
         case .context: return .secondary
-        case .added: return JunoCodeTheme.success
-        case .removed: return JunoCodeTheme.failure
+        case .added: return .junoSuccess
+        case .removed: return .junoDanger
         }
     }
 
     private func background(for kind: DiffLineKind) -> Color {
         switch kind {
         case .context: return .clear
-        case .added: return JunoCodeTheme.diffAddedBackground
-        case .removed: return JunoCodeTheme.diffRemovedBackground
+        case .added: return .junoDiffAdded
+        case .removed: return .junoDiffRemoved
         }
     }
 }
@@ -340,11 +544,11 @@ struct TerminalTab: View {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(controller.terminal) { line in
                             Text(line.text)
-                                .font(.junoMonoSmall)
+                                .junoCodeSmall()
                                 .foregroundStyle(
                                     line.channel == .stderr
-                                        ? JunoCodeTheme.failure
-                                        : .primary
+                                        ? AnyShapeStyle(Color.junoDanger)
+                                        : AnyShapeStyle(.primary)
                                 )
                                 .textSelection(.enabled)
                                 .lineLimit(1)
@@ -353,9 +557,9 @@ struct TerminalTab: View {
                                 .id(line.id)
                         }
                     }
-                    .padding(JunoCodeTheme.Spacing.compact)
+                    .padding(JunoSpace.snug)
                 }
-                .background(JunoCodeTheme.well)
+                .background(Color.junoTerminal)
                 .onChange(of: controller.terminal.count) {
                     if let last = controller.terminal.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
@@ -376,44 +580,59 @@ struct TestsTab: View {
         List {
             if let lastRun = controller.lastTestRun {
                 Section("Last run") {
-                    HStack {
-                        Image(systemName: lastRun.passed ? "checkmark.seal.fill" : "xmark.seal.fill")
-                            .foregroundStyle(
-                                lastRun.passed ? JunoCodeTheme.success : JunoCodeTheme.failure
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        HStack(spacing: JunoSpace.snug) {
+                            Image(
+                                systemName: lastRun.passed
+                                    ? "checkmark.seal.fill"
+                                    : "xmark.seal.fill"
                             )
-                        VStack(alignment: .leading) {
-                            Text(lastRun.command).font(.junoMono)
-                            Text(detail(lastRun))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            .foregroundStyle(lastRun.passed ? Color.junoSuccess : Color.junoDanger)
+                            Text(lastRun.passed ? "Passed" : "Failed")
+                                .font(.system(.callout, weight: .medium))
+                            Spacer(minLength: JunoSpace.snug)
+                            Button("Re-run") { run(lastRun.command) }
+                                .controlSize(.small)
+                                .disabled(running || controller.isRunning)
                         }
-                        Spacer()
-                        Button("Re-run") {
-                            run(lastRun.command)
-                        }
-                        .disabled(running || controller.isRunning)
+                        Text(lastRun.command)
+                            .junoCode()
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
+                        Text(detail(lastRun))
+                            .junoCaption()
                     }
+                    .padding(.vertical, JunoSpace.hairline)
+                    .accessibilityElement(children: .combine)
                 }
             }
+
             Section("Detected test commands") {
                 if controller.testSuggestions.isEmpty {
                     Text("No test toolchain detected in this workspace.")
-                        .foregroundStyle(.secondary)
+                        .junoCaption()
                 } else {
                     ForEach(controller.testSuggestions) { suggestion in
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(suggestion.command).font(.junoMono)
+                        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                            HStack(spacing: JunoSpace.snug) {
                                 Text(suggestion.toolchain)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .font(.system(.callout, weight: .medium))
+                                Spacer(minLength: JunoSpace.snug)
+                                Button("Run") { run(suggestion.command) }
+                                    .controlSize(.small)
+                                    .disabled(running || controller.isRunning)
                             }
-                            Spacer()
-                            Button("Run") {
-                                run(suggestion.command)
-                            }
-                            .disabled(running || controller.isRunning)
+                            Text(suggestion.command)
+                                .junoCode()
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
                         }
+                        .padding(.vertical, JunoSpace.hairline)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel("\(suggestion.toolchain): \(suggestion.command)")
                     }
                 }
             }
@@ -421,15 +640,15 @@ struct TestsTab: View {
         .listStyle(.inset)
         .overlay(alignment: .bottom) {
             if running {
-                HStack {
+                HStack(spacing: JunoSpace.snug) {
                     ProgressView().controlSize(.small)
-                    Text("Running tests…")
-                        .font(.caption)
+                    Text("Running tests…").font(.caption)
                 }
-                .padding(JunoCodeTheme.Spacing.control)
-                .background(.ultraThinMaterial)
-                .clipShape(Capsule())
-                .padding()
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .junoFloatingGlass(cornerRadius: 20)
+                .padding(JunoSpace.cozy)
+                .accessibilityLabel("Running tests")
             }
         }
     }
