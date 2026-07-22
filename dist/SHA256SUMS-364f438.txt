@@ -1,0 +1,4 @@
+# Juno artifacts — 364f438684 (deployed)
+
+dad7d0ffae7f5365841fb676730dc1547aea5dc32c3f2391172081f585d33099  iPhone  JunoMobile
+d3c9d9b78c5b389874d8f4f227155146087fc9d7110a8b43333f544614bd077f  Mac     JunoMac
