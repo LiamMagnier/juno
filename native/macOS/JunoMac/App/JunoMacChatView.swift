@@ -136,7 +136,7 @@ struct JunoMacChatView: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 320)
                 } else {
-                    LazyVStack(alignment: .leading, spacing: JunoSpacing.section) {
+                    LazyVStack(alignment: .leading, spacing: JunoSpace.section + 4) {
                         ForEach(messages) { message in
                             JunoMacMessageView(
                                 message: message,
@@ -150,23 +150,23 @@ struct JunoMacChatView: View {
                     }
                     // A comfortable measure: long lines are harder to read than
                     // a narrower column, however wide the window gets.
-                    .frame(maxWidth: 760, alignment: .leading)
+                    .frame(maxWidth: 820, alignment: .leading)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, JunoSpacing.section)
-                    .padding(.top, JunoSpacing.section)
+                    .padding(.horizontal, JunoSpace.region)
+                    .padding(.top, JunoSpace.section)
                     // Clears the floating composer so the final line is never
                     // parked underneath it.
-                    .padding(.bottom, 132)
+                    .padding(.bottom, 124)
                     Color.clear.frame(height: 1).id(bottomAnchor)
                 }
             }
-            .background(Color.junoCanvas)
+            .background(Color.junoCanvasWarm)
             // Marks the transcript itself, not the whole workspace: an
             // identifier on the container propagates to every descendant that
             // lacks one and silently overrides the ones that have it, which
             // made the composer and Send button unaddressable.
             .accessibilityIdentifier("juno.mac.conversation-detail")
-            .defaultScrollAnchor(.bottom)
+            .defaultScrollAnchor(messages.count > 4 ? .bottom : .top)
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 let distance = geometry.contentSize.height
                     - geometry.contentOffset.y
@@ -364,13 +364,17 @@ private struct JunoMacMessageView: View {
                 }
             }
         }
-        .padding(.horizontal, JunoSpacing.content)
-        .padding(.vertical, JunoSpacing.control + 1)
+        .padding(.horizontal, JunoSpace.cozy + 2)
+        .padding(.vertical, JunoSpace.snug + 2)
         .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.panel, style: .continuous)
-                .fill(Color.junoAccent.opacity(0.12))
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .fill(Color.junoAccent.opacity(0.085))
         )
-        .frame(maxWidth: 560, alignment: .trailing)
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoAccent.opacity(0.16))
+        )
+        .frame(maxWidth: 460, alignment: .trailing)
         .overlay(alignment: .bottomLeading) { copyButton.offset(x: -30) }
     }
 
@@ -383,8 +387,8 @@ private struct JunoMacMessageView: View {
                         .padding(.top, JunoSpacing.compact)
                 } label: {
                     Label("chat.reasoning", systemImage: "sparkles")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(Color.junoAccent)
+                        .font(.system(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
                 }
                 .accessibilityIdentifier("juno.mac.message-reasoning")
             }

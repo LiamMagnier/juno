@@ -34,17 +34,14 @@ struct JunoMacModeSwitcher: View {
     @Binding var mode: JunoMacProductMode
 
     var body: some View {
-        VStack(spacing: 0) {
-            JunoMacSegmentedModeControl(mode: $mode)
-                .frame(height: 24)
-                .padding(.horizontal, JunoSpacing.control)
-                .padding(.vertical, JunoSpacing.compact + 2)
-            Divider()
-        }
-        // Matches the sidebar behind it rather than painting its own slab:
-        // Liquid Glass belongs to the control, not to a container around it.
-        .background(.bar)
-        .accessibilityIdentifier("juno.mac.mode-switcher")
+        // No band, no divider, no background. The rejected build wrapped this
+        // in a `.bar` strip with a rule under it, which made the switch read as
+        // something bolted above the sidebar. It now sits directly on the
+        // sidebar material inside the header region, on the same horizontal
+        // grid as the rows below it.
+        JunoMacSegmentedModeControl(mode: $mode)
+            .frame(height: 22)
+            .accessibilityIdentifier("juno.mac.mode-switcher")
     }
 }
 
@@ -59,7 +56,7 @@ private struct JunoMacSegmentedModeControl: NSViewRepresentable {
         // The reason this type exists: equal shares of the available width.
         control.segmentDistribution = .fillEqually
         control.segmentStyle = .automatic
-        control.controlSize = .regular
+        control.controlSize = .small
         control.target = context.coordinator
         control.action = #selector(Coordinator.selectionChanged(_:))
         // Let the control take the width the sidebar offers instead of hugging

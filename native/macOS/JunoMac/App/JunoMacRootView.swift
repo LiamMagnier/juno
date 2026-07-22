@@ -129,7 +129,7 @@ struct JunoMacRootView: View {
                 transport: chatTransport,
                 accountID: session.profile.id,
                 model: workbenchModel(transport: chatTransport, session: session),
-                sidebarHeader: { JunoMacModeSwitcher(mode: $productMode) }
+                sidebarHeader: { JunoMacSidebarHeader(mode: $productMode) }
             )
         } else {
             unavailableShell

@@ -72,10 +72,13 @@ struct JunoMacSidebar: View {
             historySections
         }
         .listStyle(.sidebar)
-        // Pinned above the scrolling list, so the product switch stays put
-        // however far the conversation history is scrolled.
+        .environment(\.defaultMinListRowHeight, 26)
+        // The header region is pinned above the scrolling list so the mark and
+        // the mode switch stay put however far the history is scrolled. It
+        // paints no background of its own, so the system's sidebar material
+        // shows through and the whole column reads as one native source list.
         .safeAreaInset(edge: .top, spacing: 0) {
-            JunoMacModeSwitcher(mode: $productMode)
+            JunoMacSidebarHeader(mode: $productMode)
         }
         .navigationTitle("Juno")
         .navigationSplitViewColumnWidth(min: 208, ideal: 252, max: 360)
@@ -110,10 +113,15 @@ struct JunoMacSidebar: View {
     private var topSection: some View {
         Section {
             Button(action: newChat) {
-                Label("chat.new", systemImage: "square.and.pencil")
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
+                // The one accented row in the sidebar: coral marks the action,
+                // not the navigation around it.
+                JunoMacNavigationRow(
+                    title: "chat.new",
+                    systemImage: "square.and.pencil",
+                    isAccented: true
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .disabled(conversationModel == nil)
@@ -125,10 +133,12 @@ struct JunoMacSidebar: View {
 
     @ViewBuilder
     private var destinationsSection: some View {
-        Section("sidebar.group.content") {
+        Section {
             destinationRow(.projects)
             destinationRow(.library)
             destinationRow(.artifacts)
+        } header: {
+            Text("sidebar.group.content").junoSidebarSection()
         }
     }
 
@@ -140,12 +150,14 @@ struct JunoMacSidebar: View {
                     DisclosureGroup(isExpanded: $showArchived) {
                         ForEach(group.conversations) { conversationRow($0) }
                     } label: {
-                        Text(Self.title(for: .archived)).junoSectionHeader()
+                        Text(Self.title(for: .archived)).junoSidebarSection()
                     }
                 }
             } else {
-                Section(Self.title(for: group.bucket)) {
+                Section {
                     ForEach(group.conversations) { conversationRow($0) }
+                } header: {
+                    Text(Self.title(for: group.bucket)).junoSidebarSection()
                 }
             }
         }
@@ -192,26 +204,27 @@ struct JunoMacSidebar: View {
     // MARK: - Rows
 
     private func destinationRow(_ section: JunoMacSection) -> some View {
-        Label(section.title, systemImage: section.systemImage)
+        JunoMacNavigationRow(title: section.title, systemImage: section.systemImage)
             .tag(JunoMacSidebarItem.section(section))
             .accessibilityIdentifier("juno.mac.sidebar.\(section.rawValue)")
     }
 
     private func conversationRow(_ conversation: NativeConversation) -> some View {
-        HStack(spacing: JunoSpacing.compact) {
+        HStack(spacing: JunoSpace.tight) {
             if conversation.pinned {
                 Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(Color.junoAccent)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             }
             Text(conversation.title)
+                .junoRowLabel()
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Spacer(minLength: JunoSpacing.compact)
+            Spacer(minLength: JunoSpace.hairline)
             if conversation.isPending {
                 Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.caption2)
+                    .font(.system(size: 9))
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("sync.pending")
             }
@@ -265,43 +278,20 @@ struct JunoMacSidebar: View {
     // MARK: - Footer
 
     private var footer: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: JunoSpacing.compact) {
-                Menu {
-                    Button("navigation.settings") { selection = .settings }
-                    Divider()
-                    Button("auth.sign-out", role: .destructive, action: signOut)
-                } label: {
-                    HStack(spacing: JunoSpacing.compact) {
-                        Image(systemName: "person.crop.circle")
-                        Text(accountName)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .accessibilityIdentifier("juno.mac.account-menu")
-
-                Spacer(minLength: 0)
-                JunoMacSyncIndicator(model: syncModel)
-
-                Button {
-                    selection = .settings
-                } label: {
-                    Label("navigation.settings", systemImage: "gearshape")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help(Text("navigation.settings"))
-                .accessibilityIdentifier("juno.mac.sidebar.settings")
+        JunoMacSidebarFooter(
+            accountName: accountName,
+            openSettings: { selection = .settings },
+            signOut: signOut
+        ) {
+            JunoMacSyncIndicator(model: syncModel)
+            JunoMacIconButton(
+                title: "navigation.settings",
+                systemImage: "gearshape"
+            ) {
+                selection = .settings
             }
-            .padding(.horizontal, JunoSpacing.control)
-            .padding(.vertical, JunoSpacing.compact + 2)
+            .accessibilityIdentifier("juno.mac.sidebar.settings")
         }
-        .background(.bar)
     }
 }
 

@@ -26,6 +26,7 @@
 		B5F4857F03258F3F741BF104 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C2D8004C742B19972DF30644 /* Localizable.xcstrings */; };
 		C2A8FC2470043AED9FD3C292 /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 134D80E0EB9662BE0FDF8B37 /* JunoPreviewSupport */; };
 		CB207D6DA33DE66538965BAC /* JunoMacCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4612912C0CA41ED1265D66A2 /* JunoMacCodeView.swift */; };
+		CB73E42FC51772A3A7660A61 /* JunoMacSidebarChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 543A887EC7B1818EAE7EB0E6 /* JunoMacSidebarChrome.swift */; };
 		CF89065E99B35AD9866160BA /* JunoMacSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7DCEAE629C223440DD26294 /* JunoMacSection.swift */; };
 		D75A56686D5C6740697E6CC4 /* JunoMacComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = E57A4CB2A8EACC6D5C304C14 /* JunoMacComposer.swift */; };
 		D953EAE881C8E73915FE000A /* JunoMacSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */; };
@@ -67,6 +68,7 @@
 		4612912C0CA41ED1265D66A2 /* JunoMacCodeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacCodeView.swift; sourceTree = "<group>"; };
 		49A1B6E603BC926BA6903005 /* JunoMacChatShellUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacChatShellUITests.swift; sourceTree = "<group>"; };
 		4C9EBC8D50855FD9DCD13445 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		543A887EC7B1818EAE7EB0E6 /* JunoMacSidebarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSidebarChrome.swift; sourceTree = "<group>"; };
 		5D7BD74AC04FDE1F5C7E90BA /* JunoMacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSearchView.swift; sourceTree = "<group>"; };
 		670EED34A6F6BAA7930ECE91 /* JunoMacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSidebar.swift; sourceTree = "<group>"; };
 		6DA713CF7CFE86C83B65FBC0 /* JunoMac-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Stable.xcconfig"; sourceTree = "<group>"; };
@@ -175,6 +177,7 @@
 				B7DCEAE629C223440DD26294 /* JunoMacSection.swift */,
 				70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */,
 				670EED34A6F6BAA7930ECE91 /* JunoMacSidebar.swift */,
+				543A887EC7B1818EAE7EB0E6 /* JunoMacSidebarChrome.swift */,
 				CC993F6407539891B6372C2E /* JunoMacWebAuthenticationClient.swift */,
 			);
 			path = App;
@@ -357,6 +360,7 @@
 				CF89065E99B35AD9866160BA /* JunoMacSection.swift in Sources */,
 				D953EAE881C8E73915FE000A /* JunoMacSettingsView.swift in Sources */,
 				DE64197E8ABD3C6D606BF267 /* JunoMacSidebar.swift in Sources */,
+				CB73E42FC51772A3A7660A61 /* JunoMacSidebarChrome.swift in Sources */,
 				E5EA45ACD5FBDA671F6F64D2 /* JunoMacWebAuthenticationClient.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
