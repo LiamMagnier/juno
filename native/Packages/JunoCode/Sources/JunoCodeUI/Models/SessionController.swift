@@ -49,8 +49,25 @@ public struct TerminalLine: Identifiable, Sendable, Equatable {
 @MainActor
 @Observable
 public final class SessionController {
+    /// Everything that can touch the machine: the opened workspace and the
+    /// actors driving it. Bundling it in one optional is what makes the DEBUG
+    /// preview harness inert *by construction* — with no `Live`, there is no
+    /// executor, checkpoint store, Git service or model transport to reach,
+    /// rather than a live one the UI merely declines to call.
+    struct Live {
+        let context: WorkspaceContext
+        let store: CodeSessionStore
+        let permissions: PermissionCoordinator
+        let orchestrator: AgentOrchestrator
+    }
+
     public let sessionID: CodeSessionID
-    public let context: WorkspaceContext
+    let live: Live?
+
+    /// The opened workspace, or `nil` in the preview harness. Views must not
+    /// reach through this; use the surface accessors below so preview mode
+    /// stays renderable without a workspace.
+    public var context: WorkspaceContext? { live?.context }
 
     public private(set) var session: CodeSession
     public private(set) var events: [SessionEvent] = []
@@ -67,12 +84,23 @@ public final class SessionController {
     public var composerText = ""
     public private(set) var transientError: String?
 
-    private let store: CodeSessionStore
-    private let permissions: PermissionCoordinator
-    private let orchestrator: AgentOrchestrator
     private var storeObserver: UUID?
     private var terminalLineCounter = 0
     private var reviewStates: [String: TrackedChange.ReviewState] = [:]
+    /// Workspace facts the views render. Stored rather than read through
+    /// `context` so the inspector and canvas need no workspace in preview.
+    private let workspaceSurface: WorkspaceSurface
+    #if DEBUG
+    /// Diffs and file listings the preview serves instead of reading disk.
+    private var previewFixture: CodePreviewFixture?
+    #endif
+
+    /// The workspace facts the UI displays: never a capability, only text.
+    struct WorkspaceSurface {
+        var displayName: String
+        var localPathHint: String
+        var isGitRepository: Bool
+    }
 
     public init(
         session: CodeSession,
@@ -82,25 +110,65 @@ public final class SessionController {
     ) {
         self.sessionID = session.id
         self.session = session
-        self.context = context
-        self.store = store
         let permissions = PermissionCoordinator(
             sessionID: session.id,
             mode: session.configuration.permissionMode
         )
-        self.permissions = permissions
-        self.orchestrator = AgentOrchestrator(
-            sessionID: session.id,
-            model: modelClient,
-            registry: context.registry,
-            permissions: permissions,
+        self.live = Live(
+            context: context,
             store: store,
-            configuration: AgentOrchestrator.Configuration(
-                systemPrompt: context.systemPrompt()
-            ),
-            modelID: session.configuration.modelID,
-            reasoningEffort: session.configuration.reasoningEffort
+            permissions: permissions,
+            orchestrator: AgentOrchestrator(
+                sessionID: session.id,
+                model: modelClient,
+                registry: context.registry,
+                permissions: permissions,
+                store: store,
+                configuration: AgentOrchestrator.Configuration(
+                    systemPrompt: context.systemPrompt()
+                ),
+                modelID: session.configuration.modelID,
+                reasoningEffort: session.configuration.reasoningEffort
+            )
         )
+        self.workspaceSurface = WorkspaceSurface(
+            displayName: context.record.descriptor.displayName,
+            localPathHint: context.record.descriptor.localPathHint,
+            isGitRepository: context.record.descriptor.isGitRepository
+        )
+    }
+
+    // MARK: - Workspace surface for views
+
+    /// The workspace name shown in the header, canvas and Context tab.
+    public var workspaceDisplayName: String { workspaceSurface.displayName }
+
+    /// The workspace location, abbreviated with a tilde for display. The raw
+    /// absolute path never reaches the UI.
+    public var workspacePathDisplay: String {
+        (workspaceSurface.localPathHint as NSString).abbreviatingWithTildeInPath
+    }
+
+    public var isGitRepository: Bool { workspaceSurface.isGitRepository }
+
+    /// Name search for the Files tab. Routed through the controller so views
+    /// never hold the workspace index directly.
+    public func findFiles(nameContains fragment: String, limit: Int) async -> [FileEntry] {
+        guard let live else {
+            #if DEBUG
+            let needle = fragment.lowercased()
+            return (previewFixture?.allEntries ?? [])
+                .filter { !$0.isDirectory && $0.path.value.lowercased().contains(needle) }
+                .prefix(limit)
+                .map { $0 }
+            #else
+            return []
+            #endif
+        }
+        return (try? await live.context.index.findFiles(
+            nameContains: fragment,
+            limit: limit
+        )) ?? []
     }
 
     public var isRunning: Bool {
@@ -115,27 +183,30 @@ public final class SessionController {
     // MARK: - Lifecycle
 
     /// Loads the persisted transcript and wires live observation. Idempotent.
+    /// A preview controller is already fully seeded, so this is a no-op there.
     public func attach() async {
+        guard let live else { return }
         guard storeObserver == nil else { return }
         let sessionID = self.sessionID
-        storeObserver = await store.addObserver { [weak self] update in
+        storeObserver = await live.store.addObserver { [weak self] update in
             Task { @MainActor [weak self] in
                 self?.apply(update, own: sessionID)
             }
         }
-        let restored = await store.events(for: sessionID)
+        let restored = await live.store.events(for: sessionID)
         events = restored
         rebuildDerivedState()
-        if let current = try? await store.session(id: sessionID) {
+        if let current = try? await live.store.session(id: sessionID) {
             session = current
         }
-        pendingApprovals = await permissions.pendingApprovals
+        pendingApprovals = await live.permissions.pendingApprovals
         await refreshWorkspacePanels()
     }
 
     public func detach() async {
+        guard let live else { return }
         if let token = storeObserver {
-            await store.removeObserver(token)
+            await live.store.removeObserver(token)
             storeObserver = nil
         }
     }
@@ -147,9 +218,15 @@ public final class SessionController {
         guard !prompt.isEmpty else { return }
         composerText = ""
         transientError = nil
+        guard let live else {
+            #if DEBUG
+            previewSend(prompt)
+            #endif
+            return
+        }
         runStartedAt = Date()
         do {
-            try await orchestrator.submit(prompt: prompt)
+            try await live.orchestrator.submit(prompt: prompt)
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
         } catch {
@@ -158,20 +235,42 @@ public final class SessionController {
     }
 
     public func stop() async {
-        await orchestrator.stop()
+        guard let live else {
+            #if DEBUG
+            previewStop()
+            #endif
+            return
+        }
+        await live.orchestrator.stop()
     }
 
     public func approve(_ approvalID: String) async {
-        await permissions.resolve(approvalID: approvalID, decision: .approved)
+        guard let live else {
+            #if DEBUG
+            previewResolve(approvalID, decision: .approved)
+            #endif
+            return
+        }
+        await live.permissions.resolve(approvalID: approvalID, decision: .approved)
     }
 
     public func deny(_ approvalID: String) async {
-        await permissions.resolve(approvalID: approvalID, decision: .denied)
+        guard let live else {
+            #if DEBUG
+            previewResolve(approvalID, decision: .denied)
+            #endif
+            return
+        }
+        await live.permissions.resolve(approvalID: approvalID, decision: .denied)
     }
 
     public func setPermissionMode(_ mode: PermissionMode) async {
-        await permissions.setMode(mode)
-        _ = try? await store.updateSession(id: sessionID) { session in
+        guard let live else {
+            session.configuration.permissionMode = mode
+            return
+        }
+        await live.permissions.setMode(mode)
+        _ = try? await live.store.updateSession(id: sessionID) { session in
             session.configuration.permissionMode = mode
         }
     }
@@ -193,12 +292,18 @@ public final class SessionController {
     /// Rejects a change by restoring its checkpoints, newest first.
     public func rejectChange(path: String) async {
         guard let change = changes.first(where: { $0.path == path }) else { return }
+        guard let live else {
+            // No checkpoint store in preview: record the review state only.
+            reviewStates[path] = .rejected
+            rebuildDerivedState()
+            return
+        }
         for checkpointID in change.checkpointIDs.reversed() {
             do {
-                try await context.checkpoints.restore(id: checkpointID, force: false)
+                try await live.context.checkpoints.restore(id: checkpointID, force: false)
             } catch {
                 do {
-                    try await context.checkpoints.restore(id: checkpointID, force: true)
+                    try await live.context.checkpoints.restore(id: checkpointID, force: true)
                 } catch {
                     transientError = "Could not undo \(path): \(error)"
                     return
@@ -218,14 +323,21 @@ public final class SessionController {
     /// Current diff for one tracked change, computed against its oldest
     /// checkpoint's pre-content.
     public func diff(for path: String) async -> TextDiff? {
+        guard let live else {
+            #if DEBUG
+            return previewFixture?.diffs[path]
+            #else
+            return nil
+            #endif
+        }
         guard let change = changes.first(where: { $0.path == path }),
               let oldestID = change.checkpointIDs.first,
-              let checkpoint = await context.checkpoints.checkpoint(id: oldestID),
+              let checkpoint = await live.context.checkpoints.checkpoint(id: oldestID),
               let workspacePath = try? WorkspacePath(path)
         else { return nil }
         let before = checkpoint.preContent ?? ""
         let after: String
-        if let url = try? context.access.resolveForReading(workspacePath),
+        if let url = try? live.context.access.resolveForReading(workspacePath),
            let current = try? String(contentsOf: url, encoding: .utf8)
         {
             after = current
@@ -237,24 +349,38 @@ public final class SessionController {
 
     // MARK: - Inspector data
 
+    /// Refreshes the inspector panels from the workspace. A preview controller
+    /// carries its panels as fixtures, so there is nothing to reload.
     public func refreshWorkspacePanels() async {
-        testSuggestions = await context.tests.detectSuggestions()
-        instructionFiles = await context.instructionFiles()
-        rootEntries = (try? await context.index.listDirectory(nil)) ?? []
-        if context.record.descriptor.isGitRepository {
-            gitStatus = try? await context.git.status()
-            gitHistory = (try? await context.git.log(limit: 20)) ?? []
+        guard let live else { return }
+        testSuggestions = await live.context.tests.detectSuggestions()
+        instructionFiles = await live.context.instructionFiles()
+        rootEntries = (try? await live.context.index.listDirectory(nil)) ?? []
+        if live.context.record.descriptor.isGitRepository {
+            gitStatus = try? await live.context.git.status()
+            gitHistory = (try? await live.context.git.log(limit: 20)) ?? []
         }
     }
 
     public func listDirectory(_ path: WorkspacePath?) async -> [FileEntry] {
-        (try? await context.index.listDirectory(path)) ?? []
+        guard let live else {
+            #if DEBUG
+            return previewFixture?.children(of: path) ?? []
+            #else
+            return []
+            #endif
+        }
+        return (try? await live.context.index.listDirectory(path)) ?? []
     }
 
     public func runTest(command: String) async {
         transientError = nil
+        guard let live else {
+            transientError = "Preview mode does not run tests: no command executor is attached."
+            return
+        }
         do {
-            _ = try await context.registry.invoke(
+            _ = try await live.context.registry.invoke(
                 toolName: "run_tests",
                 input: ["command": .string(command)],
                 context: ToolContext(
@@ -264,7 +390,7 @@ public final class SessionController {
                         await self?.appendManualTerminal(channel: channel, text: text)
                     }
                 ),
-                permissions: permissions
+                permissions: live.permissions
             )
         } catch {
             transientError = "Test run failed: \(error)"
@@ -274,15 +400,19 @@ public final class SessionController {
 
     public func commit(message: String) async -> Bool {
         transientError = nil
+        guard let live else {
+            transientError = "Preview mode does not run Git: no repository is attached."
+            return false
+        }
         do {
-            let status = try await context.git.status()
+            let status = try await live.context.git.status()
             let paths = status.files.map(\.path)
             guard !paths.isEmpty else {
                 transientError = "Nothing to commit."
                 return false
             }
-            try await context.git.stage(paths: paths)
-            _ = try await context.git.commit(message: message)
+            try await live.context.git.stage(paths: paths)
+            _ = try await live.context.git.commit(message: message)
             await refreshWorkspacePanels()
             return true
         } catch {
@@ -371,4 +501,80 @@ public final class SessionController {
             return change
         }
     }
+
+    #if DEBUG
+    // MARK: - DEBUG preview harness
+
+    /// A controller backed entirely by a local fixture, for `--juno-code-ui-preview`.
+    ///
+    /// It is built without a `Live` bundle, so there is no `WorkspaceContext`,
+    /// no `CommandExecutionService`, no `GitService`, no `CheckpointStore`, no
+    /// `CodeSessionStore` and no model transport anywhere in the object graph.
+    /// Preview inertness is therefore a property of the type, not a set of call
+    /// sites that remembered to check a flag — and no production security check
+    /// is relaxed to achieve it.
+    init(previewFixture fixture: CodePreviewFixture) {
+        self.sessionID = fixture.session.id
+        self.live = nil
+        self.session = fixture.session
+        self.workspaceSurface = WorkspaceSurface(
+            displayName: fixture.workspaceDisplayName,
+            localPathHint: fixture.workspacePathHint,
+            isGitRepository: fixture.isGitRepository
+        )
+        self.previewFixture = fixture
+        self.events = fixture.events
+        self.pendingApprovals = fixture.pendingApprovals
+        self.terminal = fixture.terminal
+        self.terminalLineCounter = fixture.terminal.last?.id ?? 0
+        self.lastTestRun = fixture.lastTestRun
+        self.gitStatus = fixture.gitStatus
+        self.gitHistory = fixture.gitHistory
+        self.testSuggestions = fixture.testSuggestions
+        self.rootEntries = fixture.rootEntries
+        self.instructionFiles = fixture.instructionFiles
+        self.transientError = fixture.transientError
+        self.composerText = fixture.composerText
+        self.runStartedAt = fixture.runStartedAt
+        rebuildDerivedState()
+    }
+
+    /// Appends the prompt so the transcript and scroll behaviour can be
+    /// inspected, then says plainly that no agent will answer it.
+    private func previewSend(_ prompt: String) {
+        appendPreviewEvent(.userPrompt(UserPromptEvent(text: prompt)))
+        transientError = "Preview mode does not run the agent: no model transport is attached."
+    }
+
+    private func previewStop() {
+        session.status = .cancelled
+        runStartedAt = nil
+    }
+
+    private func previewResolve(_ approvalID: String, decision: ApprovalDecision) {
+        guard pendingApprovals.contains(where: { $0.id == approvalID }) else { return }
+        pendingApprovals.removeAll { $0.id == approvalID }
+        appendPreviewEvent(
+            .approvalResolved(ApprovalResolvedEvent(approvalID: approvalID, decision: decision))
+        )
+        if pendingApprovals.isEmpty, session.status == .waitingForApproval {
+            session.status = decision == .approved ? .running : .cancelled
+        }
+    }
+
+    /// Appends to the in-memory transcript only. There is no store to write to.
+    private func appendPreviewEvent(_ payload: SessionEventPayload) {
+        let next = (events.last?.sequence ?? 0) + 1
+        events.append(
+            SessionEvent(
+                id: "preview-event-\(sessionID.value)-\(next)",
+                sessionID: sessionID,
+                sequence: next,
+                timestamp: Date(),
+                payload: payload
+            )
+        )
+        rebuildDerivedState()
+    }
+    #endif
 }

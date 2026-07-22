@@ -41,10 +41,14 @@ struct JunoMacApp: App {
     var body: some Scene {
         WindowGroup("Juno") {
             #if DEBUG
-            if CommandLine.arguments.contains("--juno-code-ui-preview") {
+            if CommandLine.arguments.contains(CodePreviewScenario.launchFlag) {
                 // Juno Code workbench over local synthetic fixtures only: no
                 // account, Keychain, network, shell, or Git access.
-                WorkbenchView(model: .preview())
+                WorkbenchView(
+                    model: .preview(
+                        scenario: CodePreviewScenario.fromArguments(CommandLine.arguments)
+                    )
+                )
                     .frame(minWidth: 900, minHeight: 560)
                     .preferredColorScheme(
                         CommandLine.arguments.contains("--juno-preview-dark") ? .dark : nil

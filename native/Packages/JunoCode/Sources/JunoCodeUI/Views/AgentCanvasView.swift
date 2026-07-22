@@ -29,7 +29,7 @@ struct AgentCanvasView: View {
                 Text(controller.session.title)
                     .font(.headline)
                 HStack(spacing: JunoCodeTheme.Spacing.tight) {
-                    Text(controller.context.record.descriptor.displayName)
+                    Text(controller.workspaceDisplayName)
                     if let branch = controller.session.gitBranch {
                         Text("·")
                         Image(systemName: "arrow.triangle.branch").imageScale(.small)
@@ -138,7 +138,7 @@ struct AgentCanvasView: View {
     private var preRunSuggestions: some View {
         VStack(spacing: JunoCodeTheme.Spacing.content) {
             Spacer()
-            Text(controller.context.record.descriptor.displayName)
+            Text(controller.workspaceDisplayName)
                 .font(.system(size: 30, weight: .semibold))
             Text("What should the agent work on?")
                 .foregroundStyle(.secondary)

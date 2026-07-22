@@ -228,6 +228,11 @@ public final class WorkbenchModel {
 
     /// The live controller for a session, created on first use.
     public func controller(for sessionID: CodeSessionID) async -> SessionController? {
+        #if DEBUG
+        // Preview sessions get a fixture controller with no runtime attached;
+        // the live path below is never taken.
+        if isPreview { return previewController(for: sessionID) }
+        #endif
         if let existing = controllers[sessionID] {
             return existing
         }
@@ -321,11 +326,21 @@ public final class WorkbenchModel {
     // MARK: - DEBUG preview harness
 
     /// Builds a workbench seeded with local, synthetic fixtures for visual QA
-    /// (`--juno-code-ui-preview`). It never touches the production session store
-    /// (storage points at a throwaway temp directory), never registers a real
-    /// workspace, never runs a shell command or Git operation, and uses the
-    /// unconfigured model client so no agent turn can start.
-    public static func preview() -> WorkbenchModel {
+    /// (`--juno-code-ui-preview`).
+    ///
+    /// Inertness is structural, not conditional. Storage points at a throwaway
+    /// temp directory, no workspace is ever registered, and every session's
+    /// controller is built through `SessionController.init(previewFixture:)`,
+    /// which has no `WorkspaceContext` at all — so there is no
+    /// `CommandExecutionService`, `GitService`, `CheckpointStore` or model
+    /// transport anywhere in the graph to reach. No production security check
+    /// is relaxed to achieve this.
+    ///
+    /// `scenario` only chooses the initially selected session; every scenario
+    /// is present in the sidebar and reachable by clicking.
+    public static func preview(
+        scenario: CodePreviewScenario = .transcript
+    ) -> WorkbenchModel {
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("juno-code-preview-\(UUID().uuidString)", isDirectory: true)
         let model = WorkbenchModel(
@@ -339,92 +354,24 @@ public final class WorkbenchModel {
             )
         )
         model.isPreview = true
-        model.workspaces = Self.previewWorkspaces
-        model.sessions = Self.previewSessions
+        model.workspaces = CodePreviewData.workspaces
+        model.sessions = CodePreviewData.sessions
+        model.selectedSessionID = scenario.sessionID
         return model
     }
 
-    private static func previewWorkspace(
-        _ name: String,
-        _ path: String,
-        git: Bool
-    ) -> WorkspaceRecord {
-        WorkspaceRecord(
-            descriptor: WorkspaceDescriptor(
-                id: WorkspaceID(value: "ws-\(name)"),
-                displayName: name,
-                localPathHint: path,
-                isGitRepository: git,
-                lastOpenedAt: Date()
-            ),
-            bookmarkData: Data()
+    /// Builds this session's preview controller from its fixture, cached so
+    /// selection changes do not discard local edits made during QA.
+    private func previewController(for sessionID: CodeSessionID) -> SessionController? {
+        if let existing = controllers[sessionID] { return existing }
+        guard let scenario = CodePreviewScenario.allCases.first(
+            where: { $0.sessionID == sessionID }
+        ) else { return nil }
+        let controller = SessionController(
+            previewFixture: CodePreviewData.fixture(for: scenario)
         )
-    }
-
-    static let previewWorkspaces: [WorkspaceRecord] = [
-        previewWorkspace("juno", "~/Developer/juno", git: true),
-        previewWorkspace("JunoNativeKit", "~/Developer/juno/native/Packages/JunoNativeKit", git: true),
-        previewWorkspace("design-notes", "~/Documents/design-notes", git: false),
-    ]
-
-    /// Stable identifier slug. `hashValue` is seeded per process, so it would
-    /// hand out different session IDs on every launch and break selection
-    /// restore, screenshots and UI tests.
-    private static func previewSlug(_ title: String) -> String {
-        let mapped = title.lowercased().map { character -> Character in
-            character.isLetter || character.isNumber ? character : "-"
-        }
-        return String(mapped).split(separator: "-").joined(separator: "-")
-    }
-
-    private static func previewSession(
-        _ title: String,
-        workspace: Int,
-        status: SessionStatus,
-        favorite: Bool = false,
-        branch: String? = nil,
-        pendingApproval: Bool = false,
-        error: String? = nil,
-        minutesAgo: Double
-    ) -> CodeSession {
-        CodeSession(
-            id: CodeSessionID(value: "sess-\(previewSlug(title))"),
-            workspaceID: previewWorkspaces[workspace].id,
-            title: title,
-            status: status,
-            configuration: AgentConfiguration(modelID: "claude-sonnet-5"),
-            isFavorite: favorite,
-            gitBranch: branch,
-            hasPendingApproval: pendingApproval,
-            lastErrorSummary: error,
-            createdAt: Date().addingTimeInterval(-minutesAgo * 60 - 3_600),
-            updatedAt: Date().addingTimeInterval(-minutesAgo * 60)
-        )
-    }
-
-    /// Sessions covering every status the sidebar renders, plus favorites and
-    /// enough volume to exercise grouping and scrolling.
-    static var previewSessions: [CodeSession] {
-        [
-            previewSession("Refactor the sync coordinator", workspace: 0, status: .running,
-                           favorite: true, branch: "feat/sync-refactor", minutesAgo: 1),
-            previewSession("Add attachment upload contract", workspace: 0,
-                           status: .waitingForApproval, favorite: true,
-                           branch: "feat/attachments", pendingApproval: true, minutesAgo: 4),
-            previewSession("Fix the outbox replay test", workspace: 1, status: .failed,
-                           branch: "fix/outbox-replay",
-                           error: "swift test exited with code 1", minutesAgo: 26),
-            previewSession("Tidy the design tokens", workspace: 1, status: .completed,
-                           branch: "chore/tokens", minutesAgo: 95),
-            previewSession("Explore the artifact schema", workspace: 0, status: .cancelled,
-                           branch: "main", minutesAgo: 1_500),
-            previewSession("Draft the release checklist", workspace: 2, status: .idle,
-                           minutesAgo: 2_900),
-            previewSession("Audit permission prompts", workspace: 0, status: .completed,
-                           branch: "main", minutesAgo: 4_400),
-            previewSession("Rename the workspace registry", workspace: 1, status: .completed,
-                           branch: "chore/registry", minutesAgo: 10_200),
-        ]
+        controllers[sessionID] = controller
+        return controller
     }
     #endif
 }

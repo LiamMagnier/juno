@@ -9,7 +9,7 @@ struct GitTab: View {
     @State private var committing = false
 
     var body: some View {
-        if !controller.context.record.descriptor.isGitRepository {
+        if !controller.isGitRepository {
             ContentUnavailableView(
                 "Not a Git repository",
                 systemImage: "arrow.triangle.branch",
@@ -156,10 +156,10 @@ struct FilesTab: View {
             }
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
-            searchResults = (try? await controller.context.index.findFiles(
+            searchResults = await controller.findFiles(
                 nameContains: searchText,
                 limit: 100
-            )) ?? []
+            )
         }
     }
 }
@@ -210,16 +210,9 @@ struct ContextTab: View {
     var body: some View {
         List {
             Section("Workspace") {
-                LabeledContent("Name", value: controller.context.record.descriptor.displayName)
-                LabeledContent(
-                    "Path",
-                    value: (controller.context.record.descriptor.localPathHint as NSString)
-                        .abbreviatingWithTildeInPath
-                )
-                LabeledContent(
-                    "Git",
-                    value: controller.context.record.descriptor.isGitRepository ? "Yes" : "No"
-                )
+                LabeledContent("Name", value: controller.workspaceDisplayName)
+                LabeledContent("Path", value: controller.workspacePathDisplay)
+                LabeledContent("Git", value: controller.isGitRepository ? "Yes" : "No")
             }
             Section("Detected toolchains") {
                 if controller.testSuggestions.isEmpty {
