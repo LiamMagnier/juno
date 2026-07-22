@@ -1,15 +1,18 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "d48f41f",
+  "currentCommit": "37db1af",
   "workingTreeClean": true,
-  "currentPhase": "ui-ux-refresh",
-  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done; unit 4 chat done; debug UI Preview mode done (69f0463, --juno-ui-preview); Juno Code preview harness done (d48f41f, --juno-code-ui-preview). Now: Block 1 remainder — expand the Code fixtures to cover transcript/tool calls/terminal/diffs/tests/approvals, then the full accessibility + responsive matrix (Phase 7) and the exhaustive visual-QA sweep (Phase 8). The apparent sidebar clipping under the pinned New Code Session button was checked and is NOT a defect; safeAreaInset already reserves the space. Then Phase 11 backend (Juno Code Remote/Cloud) on the stacked branch agent/juno-code-remote-backend.",
+  "currentPhase": "block1-juno-code-preview-and-visual-qa",
+  "currentTask": "Block 1A done (a571c3d): SessionController gained a DEBUG init(previewFixture:) that builds without its Live bundle, so WorkspaceContext, CommandExecutionService, GitService, CheckpointStore, WorkspaceIndexService, ToolRegistry and the model transport are absent from the object graph rather than merely uncalled. Ten scenarios (transcript/streaming/approval/terminal/diffs/tests/longText/error/disconnected/empty) cover every renderable state; all are sidebar sessions so one launch reaches them all, and --juno-code-preview-scenario only preselects. 17 tests assert inertness, determinism and render-matrix coverage. Block 1B (37db1af) swept all ten scenarios in light and dark at three window sizes and fixed five real defects: inspector vertical-centring on non-expanding tabs, terminal soft-wrapping, filename-destroying path truncation, '1 files' pluralisation, and tail-truncated sidebar workspace paths; plus a fixture bug that hid a raw home-path leak. NEXT: finish Block 1B (narrow/wide sidebar, inspector open/closed, full screen, Git/Files/Context tabs under error+disconnected), then Block 1C accessibility (VoiceOver, Dynamic Type, keyboard focus, Reduce Motion, EN/FR) on JunoMobile and JunoMac. Then Phase 11 backend on the stacked branch agent/juno-code-remote-backend (worktree still needs creating; branch is at cedc264 and is checked out nowhere).",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
-    "native/macOS/JunoMac/App",
-    "native/iOS/JunoMobile/App"
+    "native/Packages/JunoCode/Sources/JunoCodeUI/Preview/CodePreviewFixtures.swift",
+    "native/Packages/JunoCode/Sources/JunoCodeUI/Views/Inspector/InspectorView.swift",
+    "native/iOS/JunoMobile/App",
+    "native/macOS/JunoMac/App"
   ],
   "completed": [
+    "Fixture-backed DEBUG Juno Code preview in a571c3d: SessionController.init(previewFixture:) omits the Live bundle so the whole local runtime and model transport are structurally unreachable; views use workspaceDisplayName/workspacePathDisplay/isGitRepository/findFiles instead of reaching through controller.context; ten deterministic scenarios behind --juno-code-preview-scenario; 17 inertness/determinism/coverage tests",
+    "Juno Code macOS visual sweep in 37db1af: ten scenarios in light and dark at 1000x640, 1280x800 and 1600x1000 with inspector tabs exercised; fixed inspector vertical-centring, terminal soft-wrapping, filename-destroying path truncation, file-count pluralisation, sidebar path tail-truncation, and a fixture bug that masked a raw home-path leak",
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
@@ -26,7 +29,6 @@
     "Real encrypted memory and settings with optimistic durable mutations, conflict resolution, summary hydration, explicit permanent reset and full native forms in 778a47d; /api/memory published in OpenAPI 1.2.0",
     "Real offline global search over encrypted synchronized entities via the JunoSearch contract with a throwaway index, debounce, cancellation, grouped ranked results and native navigation on both apps",
     "Mutation-conflict resolution across conversations and projects with keep-mine/use-server banners, plus a durable offline/reconnect proof (offline enqueue survives relaunch, submits once on reconnect with the original idempotency key, ambiguous loss replays the same key as a no-op) in 01c6a74",
-    "Deterministic DEBUG Juno Code preview harness (--juno-code-ui-preview) in d48f41f: inert by construction (throwaway storage, bootstrap short-circuit, unregistered bookmark-less fixture workspaces so SessionController and CommandExecutionService are unreachable, UnconfiguredModelClient), slug-based stable session IDs, inspected light and dark",
     "Juno Code macOS integration merged from PR #17 in 677d781: JunoCode package (Core/Local/Runtime/UI/Bridge, 179 strict tests), standalone JunoCode app, and a Code section in JunoMac via JunoMacCodeView on the authenticated model transport; Cloud/Remote Code disabled pending backend routes (GAP-021)",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
@@ -51,7 +53,8 @@
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (156/156)",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (179/179)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (198/198)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoCode --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (confirms the DEBUG preview harness is excluded from Release)",
     "JunoCode standalone Debug unsigned xcodebuild",
     "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",

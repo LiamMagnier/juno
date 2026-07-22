@@ -1,15 +1,42 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 03:05 Europe/Paris
+Updated: 2026-07-22 17:35 Europe/Paris
 
 ## Resume here
 
 - Branch: `agent/juno-native-claude-continuation` (PRs target `agent/juno-native`, never `main`)
-- Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`)
+- Current completed implementation commit: `37db1af` (`fix(code): correct five workbench defects found in the visual sweep`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
-- Current phase: post Juno Code macOS integration; Cloud/Remote Code blocked on backend (GAP-021).
-- Current task: memory/settings, search, conflict resolution, offline proof, and the Juno Code macOS merge (PR #17) are complete and validated.
-- Next exact action: Cloud/Remote Code needs backend Code-session routes that do not exist (GAP-021) — escalate that backend design to the owner, or proceed to the unblocked UI/UX refresh and accessibility work and return to Cloud/Remote once the routes exist.
+- Current phase: Block 1 (Juno Code preview harness + visual QA). Cloud/Remote Code still blocked on backend (GAP-021).
+- Current task: Block 1A (fixture-backed DEBUG `SessionController`, ten scenarios, seventeen
+  inertness/determinism tests) is **done** in `a571c3d`. Block 1B's macOS visual sweep found
+  and fixed five real defects in `37db1af`.
+- Next exact action: finish Block 1B's remaining matrix — narrow/wide sidebar widths,
+  inspector open vs closed, full-screen, and the Git/Files/Context/Computer inspector tabs
+  under the `error` and `disconnected` scenarios — then Block 1C (VoiceOver, Dynamic Type,
+  keyboard focus, Reduce Motion, EN/FR) across JunoMobile and JunoMac.
+
+### Reproducing the visual sweep
+
+```bash
+# Build once.
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+  -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac \
+  -configuration Debug -destination 'platform=macOS' \
+  -derivedDataPath /tmp/juno-mac-preview-dd CODE_SIGNING_ALLOWED=NO build
+
+# Launch any scenario. All ten are in the sidebar; the argument only preselects one.
+open -n /tmp/juno-mac-preview-dd/Build/Products/Debug/JunoMac.app --args \
+  --juno-code-ui-preview --juno-code-preview-scenario diffs   # add --juno-preview-dark
+```
+
+Scenarios: `transcript` `streaming` `approval` `terminal` `diffs` `tests` `longText`
+`error` `disconnected` `empty`.
+
+Two traps when scripting this: the app can take up to ~15s to create its window after
+`open -n`, so poll `CGWindowListCopyWindowInfo` for a layer-0 window rather than sleeping a
+fixed interval; and capture that window by its `CGWindowID` (`screencapture -l`) rather
+than a screen region, which would otherwise photograph the user's desktop.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -67,6 +94,22 @@ clean, restore, stage, or commit those files from this native worktree.
   and a Code section in `JunoMac` via `JunoMacCodeView` on the authenticated
   model transport. Cloud/Remote Code stay disabled pending backend routes
   (GAP-021).
+- Fixture-backed DEBUG Juno Code preview in `a571c3d`: `SessionController`
+  gained `init(previewFixture:)`, which builds without the optional `Live`
+  bundle holding `WorkspaceContext`, `CodeSessionStore`, `PermissionCoordinator`
+  and `AgentOrchestrator`. `CommandExecutionService`, `GitService`,
+  `CheckpointStore`, `WorkspaceIndexService`, `ToolRegistry` and the model
+  transport are therefore **absent from the object graph**, not present and
+  uncalled — inertness is a property of the type, and no production security
+  check was weakened. Ten deterministic scenarios cover every renderable state,
+  all reachable in one launch; seventeen tests assert unreachability,
+  determinism and render-matrix coverage.
+- Juno Code macOS visual sweep in `37db1af`: five real defects found by actually
+  looking at all ten scenarios in light and dark at three window sizes —
+  inspector vertical-centring on non-expanding tabs, terminal soft-wrapping,
+  filename-destroying path truncation, "1 files" pluralisation, and
+  tail-truncated sidebar workspace paths — plus a fixture bug that was masking a
+  raw home-path leak in the sidebar and Context tab.
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -76,10 +119,15 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. `docs/native/API_GAPS.md` GAP-021 (Cloud/Remote Code backend routes)
-2. `docs/native/JUNO_CODE_HANDOFF.md` ("Not implemented yet" + "Backend needs")
-3. `native/Packages/JunoCode/Sources/JunoCodeBridge`
-4. the UI/UX refresh + accessibility work (unblocked) if Cloud/Remote stays blocked
+1. Block 1B remainder: narrow/wide sidebar widths, inspector open vs closed, full
+   screen, and the Git/Files/Context/Computer inspector tabs under the `error`
+   and `disconnected` scenarios
+2. Block 1C accessibility: VoiceOver labels and order, keyboard focus, Dynamic
+   Type, Reduce Motion, contrast, and EN/FR across JunoMobile and JunoMac
+3. `agent/juno-code-remote-backend` (at `cedc264`, checked out in no worktree —
+   the worktree still has to be created) for Phase 11
+4. `docs/native/API_GAPS.md` GAP-021 (Cloud/Remote Code backend routes)
+5. `docs/native/JUNO_CODE_HANDOFF.md` ("Not implemented yet" + "Backend needs")
 
 ## Commands to run next
 
@@ -115,7 +163,10 @@ Passing:
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
 - Strict JunoNativeKit suite: 156/156 tests, including fifteen memory/settings, five search, and two offline/reconnect proof tests.
-- Strict JunoCode suite: 179/179 tests (Core 68, Local 56, Runtime 30, UI 7, Bridge 18).
+- Strict JunoCode suite: 198/198 tests, including the seventeen preview-harness
+  inertness, determinism and coverage tests.
+- Strict JunoCode Release build, which confirms the DEBUG preview harness is
+  compiled out of shipping builds entirely.
 - JunoCode standalone Debug unsigned build.
 - Web `npx tsc --noEmit` and `tsx --test tests/native-contract.test.ts` (3/3).
 - JunoMac Debug and Stable unsigned builds.
@@ -125,6 +176,16 @@ Passing:
 - Earlier Web typecheck/lint/test baseline and callback contract tests.
 
 Failed, unrun, or pre-existing:
+
+- **`JunoAuthTests` hangs in this session.** `swift test` on `JunoNativeKit` reaches
+  `JunoAuthTests` and stops there: a `sample` of the process shows the main thread parked in
+  `XCTWaiter._synchronouslyWaitForTimeInterval` inside `waitForExpectations`, with
+  `KeychainCircle` loaded — an expectation that never fulfils, most likely a Keychain-backed
+  test that cannot complete in a non-interactive context. 99 tests pass before it hangs.
+  Re-running with `--skip JunoAuthTests` passes **134/134, exit 0**, so the hang is confined
+  to that one suite and the rest of the package is green. This is unrelated to the
+  Juno Code work in `a571c3d`/`37db1af`, which touches only the `JunoCode` package and the
+  two app entry points. **Diagnose before trusting the "156/156" figure recorded earlier.**
 
 - Live account completion was not run because it requires an interactive browser session; the sign-in gate UI tests pass 1/1 on macOS and 1/1 on iOS.
 - Next configurations were generated/inspected but not compiled separately.

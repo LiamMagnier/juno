@@ -1,8 +1,8 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 17:05 Europe/Paris
+Last updated: 2026-07-22 17:35 Europe/Paris
 
-## Concurrent-session recovery (head `d48f41f`)
+## Concurrent-session recovery (head `37db1af`)
 
 A second agent session was editing this worktree in parallel and was stopped. The
 in-flight work was inspected and recovered rather than discarded:
@@ -27,23 +27,119 @@ path and re-check `git status` before every commit.
 
 ### Preview harness — what it does and does not cover
 
-`--juno-code-ui-preview` (macOS, DEBUG only, `--juno-preview-dark` for dark mode) is inert
-by construction: throwaway temp storage, `bootstrap()` short-circuits so the session store
-is never read, fixture workspaces are never registered and carry no security-scoped
-bookmark — so `context(for:)` yields nil, `SessionController` is never built, and
-`CommandExecutionService` is unreachable. The model client throws immediately.
+`--juno-code-ui-preview` (macOS, DEBUG only; `--juno-preview-dark` for dark mode;
+`--juno-code-preview-scenario <name>` to choose the initially selected session) is inert
+**by construction**, not by flag checks.
 
-It currently exercises the **sidebar only**: workspaces, tilde-abbreviated paths, git vs
-non-git glyphs, favorites, all six status glyphs, and Today/Yesterday/This week/Earlier
-grouping. Because no controller is ever created, it does **not** yet cover transcript,
-reasoning, tool calls, terminal output, stderr, diffs, tests, checkpoints or approvals —
-those need fixture-backed controllers and are the next Block 1 unit.
+`SessionController` holds every capability-bearing dependency — `WorkspaceContext`,
+`CodeSessionStore`, `PermissionCoordinator`, `AgentOrchestrator` — in a single optional
+`Live` bundle. `SessionController.init(previewFixture:)` builds without it, so
+`CommandExecutionService`, `GitService`, `CheckpointStore`, `WorkspaceIndexService`,
+`ToolRegistry` and the model transport are **absent from the object graph** rather than
+present and merely uncalled. No production security check is relaxed, and no call site can
+forget to check a flag. Storage still points at a throwaway temp path that is never
+created, and fixture workspaces carry no security-scoped bookmark.
+
+Closing that boundary required the views to stop reaching through `controller.context`
+into the runtime. They now use `workspaceDisplayName`, `workspacePathDisplay`,
+`isGitRepository` and `findFiles(nameContains:limit:)`.
+
+Ten scenarios — `transcript`, `streaming`, `approval`, `terminal`, `diffs`, `tests`,
+`longText`, `error`, `disconnected`, `empty` — cover every renderable state: all seven
+session statuses, every tool-call outcome (succeeded/failed/denied/cancelled), created/
+modified/deleted changes, stdout/stderr/log, pending/approved/denied requests, passing and
+failing test runs, clean and conflicted Git, recoverable and fatal errors, checkpoint-
+labelled changes, and deliberately oversized prompts, answers, paths and terminal output.
+Each scenario owns a sidebar session, so **all of them are reachable in one launch**; the
+launch argument only preselects one.
+
+Identifiers derive from scenario names, never `UUID()` or `hashValue` (both seeded per
+process). Timestamps are offsets from one process-wide anchor, because the sidebar groups
+by recency — structure and identity are byte-identical between launches; only the absolute
+wall clock moves.
+
+Seventeen tests in `CodePreviewHarnessTests` assert the runtime is unreachable, the storage
+root is never created, `send`/`runTest`/`commit`/`rejectChange` cannot execute anything,
+the fixtures cover the full render matrix, and no tool call is left unrenderable.
+
+**Not covered.** There is no first-class *disconnected* state in the local Code UI — the
+`disconnected` scenario models it as a `.stopping` session with a recoverable transport
+error and a reconnect banner, which is all the current UI can express. A real
+connection-state model belongs to Remote/Cloud sessions and is blocked on GAP-021.
+
+### Visual sweep — defects found and fixed
+
+Launching all ten scenarios (light and dark, 1000×640 / 1280×800 / 1600×1000, inspector
+tabs Changes/Diff/Terminal/Tests/Git/Files/Context) surfaced five real defects, fixed in
+`37db1af`:
+
+1. **Inspector centred itself vertically** — picker included — whenever the selected tab's
+   body did not expand, which is every `ContentUnavailableView` empty state. Tab content
+   now fills the pane and the stack is pinned top.
+2. **Terminal output soft-wrapped**, destroying column alignment and doubling every line's
+   height. It now scrolls horizontally. Same defect and fix in the expanded tool-call row.
+3. **Whole-path middle truncation ate the filename** (`native/Packages/…figuration.swift`).
+   Paths now split into filename + directory, the directory truncating from the head.
+4. **"1 files"** in the Changes summary and the run-finished row.
+5. **Sidebar workspace paths truncated at the tail**, discarding the identifying folders.
+
+The fixtures hid a sixth: they hard-coded `/Users/preview/…`, and
+`abbreviatingWithTildeInPath` only rewrites the *real* user's home, so the sidebar and
+Context tab silently skipped abbreviation and would have shown a raw home path in
+production. Two fixture workspaces now sit under the real home so the `~` path is
+exercised, one stays outside it, and a test asserts both.
 
 **Checked, not a defect:** the last sidebar row looks clipped by the pinned "New Code
 Session" button at the initial scroll position. Scrolling to the bottom shows the final row
 fully clear of the button — `SidebarView` already applies `.safeAreaInset(edge: .bottom)`
 and it reserves the space correctly. Verified at 1180×760 in both light and dark. Recorded
 so it is not "fixed" twice.
+
+## Backend worktree — created 2026-07-22
+
+`agent/juno-code-remote-backend` had no worktree. Verified it was checked out nowhere
+(`git worktree list`, `git branch -vv`) and that local matched remote (`cedc264`), then:
+
+```bash
+git worktree add /Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend \
+  agent/juno-code-remote-backend
+```
+
+The worktree is clean at `cedc264`, equal to `origin/agent/juno-code-remote-backend`. Note
+that `.git` for every worktree lives at `/Users/liammagnier/Desktop/workspace/juno/.git`,
+and the fetch refspec is **`+refs/heads/main:refs/remotes/origin/main` only** — so
+`origin/<feature-branch>` remote-tracking refs do not exist. Compare against a feature
+branch with `git ls-remote origin refs/heads/<branch>`, not `git rev-parse origin/<branch>`,
+which fails with "unknown revision".
+
+Relative to `origin/main` the branch is 281 files / +46 975 lines, and its backend
+contribution is the **contract** (`contracts/openapi/juno-native-v1.yaml`,
+`CODE_REMOTE_AUDIT.md`) plus the stacked native UI commits — it adds no
+`src/app/api/code/**` route. The orphaned uncommitted work on `main` is a candidate
+*implementation* of that contract; the two are complementary, and the implementation must
+be checked against the published contract rather than assumed to match it.
+
+### Migration hazard — confirmed, see D-015
+
+`prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql` differs between
+this branch and `origin/main`, and the difference is invisible to a line-count check:
+
+| | lines | `NULL::timestamp` | bare `NULL` |
+|---|---|---|---|
+| `agent/juno-code-remote-backend` | 44 | **0** | **22** |
+| `origin/main` (deployed) | 44 | **22** | **0** |
+
+Identical statements, identical length — only the NULL typing differs. The bare-`NULL`
+form is the one that already failed, because an untyped NULL in the `INSERT ... SELECT`
+gives Postgres no column type to infer. **Take this file verbatim from `origin/main` at
+integration; never resolve a conflict on it by keeping the branch copy.** The file was not
+modified in either worktree.
+
+A second, separate hazard still stands: `20260719120000_remote_code_sessions` (untracked on
+`main`, captured in the scratchpad backup) sorts *before* the already-applied
+`20260721120000_…`. Do not rename, apply or deploy it until it is established whether it
+ever ran anywhere, whether its `ALTER TABLE`s are safe against the current schema, and
+whether its unique indexes can be built against existing rows.
 
 ## Mobile UI refresh — session log (head `b5dbc98`)
 
