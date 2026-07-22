@@ -121,7 +121,25 @@ struct JunoMacConversationsView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if model.phase == .offline || model.lastErrorDescription != nil {
+            if model.conflictedMutationCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                    Text("A conversation changed on another device.")
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Keep mine") {
+                        Task { await model.resolveConflicts(keepLocalChanges: true) }
+                    }
+                    Button("Use server") {
+                        Task { await model.resolveConflicts(keepLocalChanges: false) }
+                    }
+                }
+                .font(.caption)
+                .padding(10)
+                .background(.bar)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("juno.mac.conversation-conflict")
+            } else if model.phase == .offline || model.lastErrorDescription != nil {
                 HStack(spacing: 8) {
                     Image(systemName: model.phase == .offline ? "wifi.slash" : "exclamationmark.circle")
                     Text(model.lastErrorDescription ?? "Offline — showing saved conversations.")

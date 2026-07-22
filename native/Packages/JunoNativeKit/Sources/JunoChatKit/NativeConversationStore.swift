@@ -1138,6 +1138,36 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             phase = .failed
         }
     }
+
+    /// Resolves every conflicted conversation mutation at once: retry replays
+    /// the local change against the freshly synced revision, discard keeps the
+    /// server version and drops the local edit.
+    public func resolveConflicts(keepLocalChanges: Bool) async {
+        guard let accountID else { return }
+        if keepLocalChanges { await syncModel.refresh() }
+        do {
+            let storageAccountID = StorageAccountID(accountID.rawValue)
+            let mutations = try await outbox.mutations(accountID: storageAccountID)
+            for mutation in mutations
+                where mutation.draft.entity.namespace == "conversation"
+            {
+                guard case .conflicted = mutation.state else { continue }
+                try await outbox.resolveConflict(
+                    id: mutation.draft.id,
+                    accountID: storageAccountID,
+                    resolution: keepLocalChanges
+                        ? .retry : .discard(reason: "use_server_version"),
+                    now: Date()
+                )
+            }
+            await reload()
+            if keepLocalChanges { await reconcilePendingMutations() }
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = error.localizedDescription
+            phase = .failed
+        }
+    }
 }
 
 private struct ConversationWire: Decodable {

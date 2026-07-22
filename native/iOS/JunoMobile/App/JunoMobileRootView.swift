@@ -359,7 +359,9 @@ private struct JunoMobileProjectsView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                if model.phase == .offline || model.lastErrorDescription != nil {
+                if model.conflictedMutationCount > 0 {
+                    JunoMobileProjectConflict(model: model)
+                } else if model.phase == .offline || model.lastErrorDescription != nil {
                     JunoMobileProjectStatus(model: model)
                 }
             }
@@ -397,6 +399,35 @@ private struct JunoMobileProjectStatus: View {
         .font(.caption)
         .padding(10)
         .background(.bar)
+    }
+}
+
+private struct JunoMobileProjectConflict: View {
+    @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                Text("A project changed on another device.")
+                    .lineLimit(2)
+                Spacer()
+            }
+            HStack {
+                Button("Keep mine") {
+                    Task { await model.resolveConflicts(keepLocalChanges: true) }
+                }
+                Spacer()
+                Button("Use server version") {
+                    Task { await model.resolveConflicts(keepLocalChanges: false) }
+                }
+            }
+        }
+        .font(.caption)
+        .padding(10)
+        .background(.bar)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("juno.mobile.project-conflict")
     }
 }
 
