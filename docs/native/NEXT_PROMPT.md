@@ -84,48 +84,75 @@ Diagnostics, and report the Phase, Last HTTP status and Failure rows. That is
 the exact input Stage 3 needs, and the screen was built to make it a five-second
 answer.
 
-## What remains, honestly
+## Stage-by-stage state
 
-**Stage 3 — partly done.** Three real defects found and fixed, with tests:
+| stage | state |
+|---|---|
+| 1 Diagnostics | **done** — Settings › About › Diagnostics, iOS |
+| 2 Signed install | **done** — 0.1.1 (2), `03c90248be`, on the physical iPhone |
+| 3 Sync fix | **partly** — three defects fixed with tests; real-device half blocked |
+| 4 Cross-client matrix | **not done** — needs the owner's account |
+| 5 Camera/Photos/Files | **done** — unverified against production |
+| 6 Deep Research | **done** — unverified against production |
+| 7 Canvas | **already existed** — verified, not rebuilt |
+| 8 Code Remote backend | **not started** |
+| 9 Mac remote host | **not started** |
+| 10 Mobile Remote | **not started** |
+| 11 Cloud | **done** — audited, safe, stays enabled. `CLOUD_AUDIT.md` |
+| 12 Design pass | **not done** as a sweep |
+| 13 Accessibility / threat model | **not done** as a sweep |
+| 14 Test matrix | **passing** for everything that exists |
+| 15 Release + deploy | **not done** — see below |
+| 16 Final builds | **partly** — iPhone carries `03c90248be`; Mac has no Diagnostics screen |
+
+### Stage 3 — what was actually fixed
 
 - `NativeArtifactStore` and `NativeProjectStore` classified failures with
-  `error is URLError`, which misreads the common case — a genuine outage arrives
-  as `retryLimitExceeded`, not a `URLError` — and treated a cancelled request as
-  an outage. The project store also set a phase *only* for `URLError`, leaving
-  every other failure showing an error banner over a `.ready` phase.
-- Both stores reported a failed outbox drain as a hard `.failed`, telling the
-  reader their queued changes had failed when they were queued safely.
-- The banner rendered `URLError.localizedDescription` verbatim, so a phone with
-  no signal read "The operation couldn't be completed. (NSURLErrorDomain error
-  -1009.)". Found by looking at the screen; the code reads fine.
-  Fixed: `docs/native/design/banner-offline-readable.png`.
+  `error is URLError`, which misreads the common case: a real outage arrives as
+  `retryLimitExceeded`, not a `URLError`. Cancellation was misread as an outage.
+  The project store set a phase *only* for `URLError`, leaving every other
+  failure showing an error banner over a `.ready` phase.
+- Both reported a failed outbox drain as a hard failure, when the changes were
+  queued safely and would go out on reconnect.
+- The banner printed `The operation couldn't be completed. (NSURLErrorDomain
+  error -1009.)` with no signal. Found by looking at the screen; the code reads
+  fine. `docs/native/design/banner-offline-readable.png`.
 
-What is **not** done in Stage 3 is the real-device half — see the blocker above.
+### Stage 7 — Canvas was already built
 
-**Stage 5 — attachments work end to end, unverified against production.**
-Backend `POST /api/v1/attachments` with shared validation, magic-byte sniffing,
-HEIC kept out, idempotency. Client transcoder (orientation baked into pixels,
-GPS stripped, output re-validated), upload client, composer model, and camera /
-photos / files pickers with per-file state. Uploads are claimed onto the message
-in the same transaction that creates it. Capture:
-`docs/native/design/composer-attach-ios.png`.
+Open, edit, save, version history, restore, rename, delete and export all exist
+in `NativeArtifactModel` and the mobile UI, from earlier sessions. Verified in
+the simulator rather than rebuilt. Note that "create Canvas from the composer"
+is **not** web parity: artifacts are created by the model during a turn
+(`src/lib/artifacts-store.ts`), and the web has no manual-create path either.
 
-Not verified: an actual upload against production, which needs the account.
-Camera was not exercised on the physical device.
+## The two blockers, both external
 
-**Stages 4, 6–16 — not started.** Deep Research, Canvas, Code Remote backend,
-Mac remote host, mobile Remote, Cloud, the design pass, accessibility, the
-threat model, the release and the final installs. Nothing about them should be
-assumed. macOS still has **no** Diagnostics screen, which Stage 16's three-way
-SHA parity check needs.
+1. **The iPhone is locked.** `0.1.1 (2)` commit `03c90248be` is installed —
+   `devicectl device info apps` confirms it — but launching is refused with
+   `FBSOpenApplicationErrorDomain error 7: the device was not, or could not be,
+   unlocked`. Unlock the phone and open Juno.
+2. **Sign-in needs the owner.** Everything downstream — Stage 4's cross-client
+   matrix, a real upload, a real research run — needs an authenticated session,
+   and credentials must not be handled here.
 
-### The next concrete thing
+**The one thing to report back:** iPhone → Settings → About → Diagnostics, and
+read out **Phase**, **Last HTTP status** and **Failure**.
 
-`prisma/migrations/20260722200000_attachment_idempotency_key` has **not been
-deployed**. It is additive and idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE
-UNIQUE INDEX IF NOT EXISTS`) and hand-written per the standing rule never to run
-`migrate dev` against the shared database — but nothing on this branch can ship
-until it is applied with `migrate deploy`.
+## Deploy is the remaining gated step
+
+Nothing on this branch has shipped. `prisma/migrations/20260722200000_attachment_idempotency_key`
+is additive and idempotent (`ADD COLUMN IF NOT EXISTS`, `CREATE UNIQUE INDEX IF
+NOT EXISTS`) and hand-written per the standing rule against `migrate dev` on the
+shared database — but it has not been applied.
+
+```bash
+git checkout main && git merge --ff-only agent/juno-final-completion && git push origin main
+```
+
+GitHub Actions deploys on push to main and runs `prisma migrate deploy`. Watch
+the run, then re-check `x-juno-contract-version` and pm2 before calling it
+healthy.
 
 ## Repository state
 
