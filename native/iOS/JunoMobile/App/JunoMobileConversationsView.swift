@@ -204,12 +204,12 @@ private struct JunoMobileConversationDetail: View {
         VStack(spacing: 8) {
             HStack(spacing: 10) {
                 if model.modelCatalog.isEmpty {
-                    Label(conversation.model, systemImage: "cpu")
+                    Label(junoDisplayModelName(conversation.model), systemImage: "cpu")
                         .lineLimit(1)
                 } else {
                     Picker("Model", selection: $selectedModelID) {
                         ForEach(model.modelCatalog) { option in
-                            Text("\(option.providerName) · \(option.displayName)")
+                            Text(option.displayName)
                                 .tag(option.id)
                         }
                     }
@@ -246,41 +246,22 @@ private struct JunoMobileConversationDetail: View {
             }
             .font(.caption)
 
-            HStack(alignment: .bottom, spacing: 8) {
+            ZStack(alignment: .bottomTrailing) {
                 TextField("Message Juno", text: $prompt, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
                     .focused($composerFocused)
-                    .padding(.horizontal, 14)
+                    .padding(.leading, 16)
+                    .padding(.trailing, 48)
                     .padding(.vertical, 11)
-                    .background(JunoGlassBackground(cornerRadius: 20))
+                    .background(JunoGlassBackground(cornerRadius: 22))
                     .accessibilityIdentifier("juno.mobile.chat-composer")
 
-                if generatingHere {
-                    Button {
-                        model.stopGeneration()
-                    } label: {
-                        Image(systemName: "stop.fill")
-                            .frame(width: 26, height: 26)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .clipShape(Circle())
-                    .accessibilityLabel("Stop generation")
-                    .accessibilityIdentifier("juno.mobile.chat-stop")
-                } else {
-                    Button(action: send) {
-                        Image(systemName: "arrow.up")
-                            .font(.body.weight(.semibold))
-                            .frame(width: 26, height: 26)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .clipShape(Circle())
-                    .disabled(sendDisabled)
-                    .accessibilityLabel("Send message")
-                    .accessibilityIdentifier("juno.mobile.chat-send")
-                }
+                composerActionButton
+                    .padding(5)
             }
+            .animation(.snappy(duration: 0.2), value: sendDisabled)
+            .animation(.snappy(duration: 0.2), value: generatingHere)
 
             if model.canRetrySelectedConversation && !model.isGenerating {
                 HStack(spacing: 8) {
@@ -336,6 +317,42 @@ private struct JunoMobileConversationDetail: View {
         case .failed: "exclamationmark.circle"
         case .stopping: "stop.circle"
         default: "sparkles"
+        }
+    }
+
+    /// The send / stop control, docked inside the composer's trailing edge as a
+    /// circular coral Liquid Glass button. It fades to a discreet disabled state
+    /// when there is nothing to send and swaps to a Stop button while streaming.
+    @ViewBuilder
+    private var composerActionButton: some View {
+        if generatingHere {
+            Button {
+                model.stopGeneration()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .modifier(JunoComposerSendBackground(active: true))
+            }
+            .buttonStyle(.plain)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Stop generation")
+            .accessibilityIdentifier("juno.mobile.chat-stop")
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
+                    .scaleEffect(sendDisabled ? 0.92 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(sendDisabled)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Send message")
+            .accessibilityIdentifier("juno.mobile.chat-send")
         }
     }
 
@@ -417,7 +434,7 @@ private struct JunoMobileMessageRow: View {
                 }
                 HStack(spacing: 8) {
                     if let model = message.model, !model.isEmpty {
-                        Text(model).font(.caption2).foregroundStyle(.tertiary)
+                        Text(junoDisplayModelName(model)).font(.caption2).foregroundStyle(.tertiary)
                     }
                     if message.isPending {
                         ProgressView().controlSize(.small)
@@ -446,4 +463,49 @@ private struct JunoMobileMessageRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isUser ? "You said" : "Juno replied")
     }
+}
+
+/// A circular coral Liquid Glass background for the composer's send/stop button,
+/// with a material fallback below OS 26. When inactive the coral tint fades to a
+/// discreet level so the disabled state stays legible without shouting.
+private struct JunoComposerSendBackground: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.tint(Color.junoAccent.opacity(active ? 0.95 : 0.32)).interactive(),
+                    in: Circle()
+                )
+        } else {
+            content
+                .background(Color.junoAccent.opacity(active ? 1 : 0.35), in: Circle())
+        }
+    }
+}
+
+/// Turns a raw model identifier such as `anthropic:claude-sonnet-4-6` into a
+/// human-friendly label like `Claude Sonnet 4.6`. The technical id is never
+/// shown directly in the chat surface.
+func junoDisplayModelName(_ raw: String) -> String {
+    let slug = raw.split(separator: ":").last.map(String.init) ?? raw
+    let tokens = slug.split(separator: "-").map(String.init)
+    guard !tokens.isEmpty else { return raw }
+    let acronyms: Set<String> = ["gpt", "llm", "ai", "xai"]
+    var parts: [String] = []
+    for token in tokens {
+        if token.allSatisfy(\.isNumber) {
+            if let last = parts.last, last.allSatisfy({ $0.isNumber || $0 == "." }) {
+                parts[parts.count - 1] = last + "." + token
+            } else {
+                parts.append(token)
+            }
+        } else if acronyms.contains(token.lowercased()) {
+            parts.append(token.uppercased())
+        } else {
+            parts.append(token.prefix(1).uppercased() + token.dropFirst())
+        }
+    }
+    return parts.joined(separator: " ")
 }
