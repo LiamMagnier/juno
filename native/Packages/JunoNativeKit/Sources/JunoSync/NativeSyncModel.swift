@@ -10,7 +10,39 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         case idle
         case synchronizing
         case live
+        /// The device could not reach the server. Retrying is the right response.
         case offline
+        /// The server was reached and refused, or answered something this build
+        /// cannot use — a contract-version mismatch, a rejected token, a decode
+        /// failure. Retrying the same request cannot fix any of these, so this is
+        /// deliberately *not* `.offline`: presenting it as a network problem
+        /// hands the reader a Retry button that can never succeed.
+        case failed
+    }
+
+    /// Whether a failure means "the network is unavailable" as opposed to "the
+    /// server answered and we cannot proceed".
+    ///
+    /// Transport failures count. Everything else — including
+    /// `NativeBootstrapError.contractVersionMismatch`, HTTP 4xx/5xx surfaced as
+    /// `.server`, and decoding errors — is a real, non-transient failure that the
+    /// reader has to be told about.
+    ///
+    /// Two cases are easy to get wrong, and both were:
+    ///
+    /// - `retryLimitExceeded` is what a genuine outage actually surfaces.
+    ///   `synchronizeWithRetry` swallows the underlying `URLError` across six
+    ///   attempts and then throws *its own* error, so matching only `URLError`
+    ///   would report a real network outage as a hard failure.
+    /// - `URLError.cancelled` is a control-flow signal, not a connectivity
+    ///   verdict, so it is deliberately excluded.
+    public static func isConnectivityFailure(_ error: any Error) -> Bool {
+        if let coordinatorError = error as? NativeSyncCoordinatorError {
+            return coordinatorError == .retryLimitExceeded
+        }
+        if let syncError = error as? NativeSyncAPIError { return syncError.isRetryable }
+        guard let urlError = error as? URLError else { return false }
+        return urlError.code != .cancelled
     }
 
     public private(set) var phase: Phase = .idle
@@ -56,7 +88,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
             } catch {
                 guard runID == currentRunID else { return }
                 lastErrorDescription = error.localizedDescription
-                phase = .offline
+                phase = Self.isConnectivityFailure(error) ? .offline : .failed
                 task = nil
             }
         }
@@ -75,7 +107,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         } catch {
             guard runID == currentRunID else { return }
             lastErrorDescription = error.localizedDescription
-            phase = .offline
+            phase = Self.isConnectivityFailure(error) ? .offline : .failed
         }
     }
 

@@ -312,13 +312,27 @@ struct JunoMacSyncIndicator: View {
                     Image(systemName: "checkmark.circle")
                 case .offline:
                     Image(systemName: "wifi.slash")
+                case .failed:
+                    // Reached the server and cannot proceed — not a wifi problem,
+                    // so it must not borrow the wifi glyph.
+                    Image(systemName: "exclamationmark.triangle")
                 }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(model.phase == .offline ? Color.orange : Color.secondary)
+            .foregroundStyle(syncStatusTint(model.phase))
             .help(helpText(model))
             .accessibilityLabel(helpText(model))
             .accessibilityIdentifier("juno.mac.sync-status")
+        }
+    }
+
+    private func syncStatusTint(
+        _ phase: NativeSyncModel<SQLiteAccountRepository>.Phase
+    ) -> Color {
+        switch phase {
+        case .offline: Color.orange
+        case .failed: Color.red
+        case .idle, .synchronizing, .live: Color.secondary
         }
     }
 
@@ -327,6 +341,7 @@ struct JunoMacSyncIndicator: View {
         return switch model.phase {
         case .live: Text("sync.state.synced")
         case .offline: Text("sync.state.offline")
+        case .failed: Text("sync.state.failed")
         case .idle, .synchronizing: Text("sync.state.syncing")
         }
     }

@@ -783,7 +783,20 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             conflictedMutationCount = snapshot.conflictedMutationCount
             lastErrorDescription = snapshot.conflictedMutationCount == 0
                 ? nil : "An account change needs your attention."
-            phase = syncModel.phase == .offline ? .offline : .ready
+            switch syncModel.phase {
+            case .offline:
+                phase = .offline
+            case .failed:
+                // Local data loaded, but synchronization is refusing. Reporting
+                // `.ready` here is what let a hard protocol failure read as a
+                // finished load with stale content and no explanation.
+                phase = .failed
+                if snapshot.conflictedMutationCount == 0 {
+                    lastErrorDescription = syncModel.lastErrorDescription
+                }
+            case .idle, .synchronizing, .live:
+                phase = .ready
+            }
         } catch {
             guard self.accountID == accountID else { return }
             lastErrorDescription = error.localizedDescription
@@ -926,13 +939,14 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             phase = .ready
         } catch {
             guard self.accountID == accountID else { return }
-            if error is URLError || syncModel.phase == .offline {
-                phase = .offline
-                if summary == nil { lastErrorDescription = error.localizedDescription }
-            } else if summary == nil {
-                lastErrorDescription = error.localizedDescription
-                phase = .failed
-            }
+            // A cached summary is not a reason to hide why the refresh failed.
+            // Suppressing the description here is exactly what produced
+            // "Offline — showing saved settings" on a working network, with a
+            // Retry button that re-ran the same doomed request forever.
+            lastErrorDescription = error.localizedDescription
+            phase = NativeSyncModel<Repository>.isConnectivityFailure(error) || syncModel.phase == .offline
+                ? .offline
+                : .failed
         }
     }
 
@@ -1025,11 +1039,9 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
 
     private func record(_ error: any Error) {
         lastErrorDescription = error.localizedDescription
-        if error is URLError || syncModel.phase == .offline {
-            phase = .offline
-        } else {
-            phase = .failed
-        }
+        phase = NativeSyncModel<Repository>.isConnectivityFailure(error) || syncModel.phase == .offline
+            ? .offline
+            : .failed
     }
 }
 

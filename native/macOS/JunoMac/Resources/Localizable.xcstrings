@@ -1569,6 +1569,22 @@
         }
       }
     },
+    "sync.state.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno cannot synchronize with the server."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno ne peut pas se synchroniser avec le serveur."
+          }
+        }
+      }
+    },
     "sync.state.offline": {
       "localizations": {
         "en": {
