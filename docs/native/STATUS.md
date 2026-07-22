@@ -1,6 +1,47 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 15:45 Europe/Paris
+Last updated: 2026-07-22 17:05 Europe/Paris
+
+## Concurrent-session recovery (head `d48f41f`)
+
+A second agent session was editing this worktree in parallel and was stopped. The
+in-flight work was inspected and recovered rather than discarded:
+
+- **Kept** — `WorkbenchModel.swift` + `JunoMacApp.swift`: the `--juno-code-ui-preview`
+  harness, committed as `d48f41f` after two corrections. Session IDs were derived from
+  `hashValue`, which is seeded per process and handed out different IDs on every launch;
+  they are now slugged from the title. `context(for:)` fell through to the workspace
+  reopen path under preview and surfaced a reopen error the user cannot act on; it now
+  returns nil.
+- **Reverted** — `JunoMobile.xcodeproj/project.pbxproj`: Xcode serialization churn
+  (`lastKnownFileType` → `explicitFileType`, key reordering) **plus a leaked local
+  `DEVELOPMENT_TEAM` signing identity**, which must never be committed.
+- **Reverted** — `JunoMobile/Resources/Localizable.xcstrings`: an Xcode String Catalog
+  rewrite that reformatted all 518 lines, marked 24 real translated keys
+  `extractionState: "stale"`, and injected 242 auto-extracted keys with **no French
+  values**. Committing it would have damaged the EN/FR catalog that Phase 7 must validate.
+
+Both reverted diffs are preserved outside the repository in the session scratchpad.
+Xcode is open against this worktree and will re-dirty `project.pbxproj`; stage by explicit
+path and re-check `git status` before every commit.
+
+### Preview harness — what it does and does not cover
+
+`--juno-code-ui-preview` (macOS, DEBUG only, `--juno-preview-dark` for dark mode) is inert
+by construction: throwaway temp storage, `bootstrap()` short-circuits so the session store
+is never read, fixture workspaces are never registered and carry no security-scoped
+bookmark — so `context(for:)` yields nil, `SessionController` is never built, and
+`CommandExecutionService` is unreachable. The model client throws immediately.
+
+It currently exercises the **sidebar only**: workspaces, tilde-abbreviated paths, git vs
+non-git glyphs, favorites, all six status glyphs, and Today/Yesterday/This week/Earlier
+grouping. Because no controller is ever created, it does **not** yet cover transcript,
+reasoning, tool calls, terminal output, stderr, diffs, tests, checkpoints or approvals —
+those need fixture-backed controllers and are the next Block 1 unit.
+
+**Known open defect:** the session list scrolls under the pinned "New Code Session" button
+without a bottom content inset, clipping the last row mid-height. Reproduced in both light
+and dark at 1180×760.
 
 ## Mobile UI refresh — session log (head `b5dbc98`)
 
