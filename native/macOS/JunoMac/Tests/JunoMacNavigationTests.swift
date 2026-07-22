@@ -11,7 +11,7 @@ final class JunoMacNavigationTests: XCTestCase {
     func testNavigationIdentifiersAreStableAndUnique() {
         XCTAssertEqual(
             JunoMacSection.allCases.map(\.id),
-            ["chat", "search", "projects", "library", "artifacts", "code", "settings"]
+            ["chat", "search", "projects", "library", "artifacts", "settings"]
         )
         XCTAssertEqual(
             Set(JunoMacSection.allCases.map(\.id)).count,
@@ -20,8 +20,9 @@ final class JunoMacNavigationTests: XCTestCase {
     }
 
     /// Chat is the product's default destination. `JunoMacApp` seeds its
-    /// `@SceneStorage` from this case, so first launch lands on Chat and never
-    /// on Juno Code.
+    /// `@SceneStorage` from this case, so first launch lands on Chat. Juno Code
+    /// is a `JunoMacProductMode` rather than a section — see
+    /// `JunoMacProductModeTests`.
     func testChatIsTheFirstDestination() {
         XCTAssertEqual(JunoMacSection.allCases.first, .chat)
     }
@@ -39,7 +40,9 @@ final class JunoMacNavigationTests: XCTestCase {
     }
 
     func testKeyboardShortcutsAreUnique() {
-        let shortcuts = JunoMacSection.allCases.map(\.keyboardShortcut.character)
+        let shortcuts = JunoMacSection.allCases.map {
+            "\($0.keyboardShortcut.character)\($0.keyboardModifiers)"
+        }
         XCTAssertEqual(Set(shortcuts).count, shortcuts.count)
     }
 }

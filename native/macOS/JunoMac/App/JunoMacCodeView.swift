@@ -7,30 +7,26 @@ import SwiftUI
 
 /// Hosts the Juno Code workbench inside the main app, wired to the real
 /// authenticated backend model transport for the signed-in account.
-struct JunoMacCodeView: View {
+///
+/// The `WorkbenchModel` is **owned by the app**, not by this view. Switching to
+/// Chat and back unmounts this view; if the model lived here as `@State` the
+/// workspace list, the session selection and the store observer would all be
+/// rebuilt on every switch. Held above, the selected session survives and
+/// `bootstrap()` is a cheap idempotent refresh.
+struct JunoMacCodeView<SidebarHeader: View>: View {
     let transport: any NativeChatRequestSending
     let accountID: AccountID
-
-    @State private var model: WorkbenchModel?
+    let model: WorkbenchModel
+    @ViewBuilder let sidebarHeader: () -> SidebarHeader
 
     var body: some View {
-        Group {
-            if let model {
-                WorkbenchView(model: model)
-            } else {
-                ProgressView("Preparing Juno Code…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+        WorkbenchView(model: model, sidebarHeader: sidebarHeader)
+            .task(id: accountID) {
+                await refreshModelCatalog()
             }
-        }
-        .task(id: accountID) {
-            if model == nil {
-                model = Self.makeModel(transport: transport, accountID: accountID)
-            }
-            await refreshModelCatalog()
-        }
     }
 
-    private static func makeModel(
+    static func makeModel(
         transport: any NativeChatRequestSending,
         accountID: AccountID
     ) -> WorkbenchModel {
@@ -38,7 +34,7 @@ struct JunoMacCodeView: View {
         return WorkbenchModel(
             dependencies: .standard(
                 modelClient: client,
-                availableModels: fallbackModels
+                availableModels: JunoMacCodeFallback.models
             )
         )
     }
@@ -47,7 +43,6 @@ struct JunoMacCodeView: View {
     /// Code can currently run. Falls back silently to the static list on error
     /// so the section stays usable offline.
     private func refreshModelCatalog() async {
-        guard let model else { return }
         do {
             let catalog = try await NativeChatAPIClient(transport: transport)
                 .modelCatalog(for: accountID)
@@ -62,8 +57,12 @@ struct JunoMacCodeView: View {
             // Keep the fallback list; runs still surface their own errors.
         }
     }
+}
 
-    private static let fallbackModels: [ModelOption] = [
+/// Outside the view because a generic type cannot hold static stored
+/// properties, and the list is per-app rather than per-instantiation.
+private enum JunoMacCodeFallback {
+    static let models: [ModelOption] = [
         ModelOption(modelID: "claude-sonnet-5", displayName: "Claude Sonnet 5"),
         ModelOption(modelID: "claude-opus-4-8", displayName: "Claude Opus 4.8"),
     ]

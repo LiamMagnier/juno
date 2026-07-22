@@ -22,6 +22,7 @@ enum JunoMacSidebarItem: Hashable {
 /// height and halves how much history is reachable without scrolling.
 struct JunoMacSidebar: View {
     @Binding var selection: JunoMacSection
+    @Binding var productMode: JunoMacProductMode
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let accountName: String
@@ -71,6 +72,11 @@ struct JunoMacSidebar: View {
             historySections
         }
         .listStyle(.sidebar)
+        // Pinned above the scrolling list, so the product switch stays put
+        // however far the conversation history is scrolled.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            JunoMacModeSwitcher(mode: $productMode)
+        }
         .navigationTitle("Juno")
         .navigationSplitViewColumnWidth(min: 208, ideal: 252, max: 360)
         .accessibilityIdentifier("juno.mac.sidebar")
@@ -123,7 +129,6 @@ struct JunoMacSidebar: View {
             destinationRow(.projects)
             destinationRow(.library)
             destinationRow(.artifacts)
-            destinationRow(.code)
         }
     }
 

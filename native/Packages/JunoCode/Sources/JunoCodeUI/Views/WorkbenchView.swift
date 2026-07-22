@@ -3,19 +3,33 @@ import JunoCodeCore
 
 /// The Juno Code three-zone workbench: sessions sidebar, agent canvas, and
 /// the inspector pane.
-public struct WorkbenchView: View {
+public struct WorkbenchView<SidebarHeader: View>: View {
     @Bindable private var model: WorkbenchModel
     @State private var controller: SessionController?
-    @State private var inspectorVisible = true
+    /// Scene-restored so it survives being unmounted — the host app can swap
+    /// this whole view out for another product mode and back, and the reader
+    /// should find the inspector as they left it.
+    @SceneStorage("juno.code.inspectorVisible") private var inspectorVisible = true
     @State private var showingNewSession = false
+    private let sidebarHeader: SidebarHeader
 
-    public init(model: WorkbenchModel) {
+    /// - Parameter sidebarHeader: pinned above the session list. The host app
+    ///   uses it for its product switch; the standalone Code app passes nothing.
+    public init(
+        model: WorkbenchModel,
+        @ViewBuilder sidebarHeader: () -> SidebarHeader
+    ) {
         self.model = model
+        self.sidebarHeader = sidebarHeader()
     }
 
     public var body: some View {
         NavigationSplitView {
             SidebarView(model: model, showingNewSession: $showingNewSession)
+                // Outside the sidebar's own `.searchable`, so the host's switch
+                // sits above the search field rather than between it and the
+                // session list.
+                .safeAreaInset(edge: .top, spacing: 0) { sidebarHeader }
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 400)
         } detail: {
             detailContent
@@ -106,5 +120,12 @@ struct EmptyCanvasView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(JunoCodeTheme.background)
+    }
+}
+
+public extension WorkbenchView where SidebarHeader == EmptyView {
+    /// The standalone Juno Code app has no product switch to host.
+    init(model: WorkbenchModel) {
+        self.init(model: model, sidebarHeader: { EmptyView() })
     }
 }

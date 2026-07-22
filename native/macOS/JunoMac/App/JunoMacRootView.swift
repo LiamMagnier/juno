@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeUI
 import JunoCore
 import JunoStorage
 import JunoSync
@@ -9,6 +10,10 @@ import UniformTypeIdentifiers
 
 struct JunoMacRootView: View {
     @Binding var selection: JunoMacSection
+    @Binding var productMode: JunoMacProductMode
+    /// Built on first entry into Code and then kept alive by the app, so
+    /// switching modes preserves the workspace list and session selection.
+    @Binding var codeWorkbenchModel: WorkbenchModel?
     let authModel: NativeAuthModel
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -57,6 +62,11 @@ struct JunoMacRootView: View {
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
                 searchModel?.start(for: session.profile.id)
             } else {
+                // Signing out must not leave the window inside Juno Code with a
+                // live workbench holding the previous account's sessions.
+                productMode = .chat
+                selection = .chat
+                codeWorkbenchModel = nil
                 syncModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
@@ -96,12 +106,68 @@ struct JunoMacRootView: View {
     /// The two-column shell. Chat's own inspector is a third region owned by
     /// `JunoMacChatView`, not a third `NavigationSplitView` column, so the
     /// sidebar stays the single source list for the whole product.
+    @ViewBuilder
     private func authenticatedContent(
+        session: NativeAuthenticatedSession
+    ) -> some View {
+        switch productMode {
+        case .chat:
+            chatShell(session: session)
+        case .code:
+            codeShell(session: session)
+        }
+    }
+
+    /// Juno Code brings its own sidebar, workspace and inspector, so a mode
+    /// switch replaces the whole split view rather than swapping the detail
+    /// column. Only one shell is mounted at a time — there is never a second
+    /// live navigation stack behind the visible one.
+    @ViewBuilder
+    private func codeShell(session: NativeAuthenticatedSession) -> some View {
+        if let chatTransport {
+            JunoMacCodeView(
+                transport: chatTransport,
+                accountID: session.profile.id,
+                model: workbenchModel(transport: chatTransport, session: session),
+                sidebarHeader: { JunoMacModeSwitcher(mode: $productMode) }
+            )
+        } else {
+            unavailableShell
+        }
+    }
+
+    /// Creates the workbench model on first use and hands back the existing one
+    /// afterwards. Writing to the binding during `body` is deliberate and safe:
+    /// it happens at most once per launch, and the alternative — an `onAppear`
+    /// hop — renders one empty frame first.
+    private func workbenchModel(
+        transport: any NativeChatRequestSending,
+        session: NativeAuthenticatedSession
+    ) -> WorkbenchModel {
+        if let existing = codeWorkbenchModel { return existing }
+        let created = JunoMacCodeView<EmptyView>.makeModel(
+            transport: transport,
+            accountID: session.profile.id
+        )
+        Task { @MainActor in codeWorkbenchModel = created }
+        return created
+    }
+
+    private var unavailableShell: some View {
+        ContentUnavailableView {
+            Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text("shell.unavailable.description")
+        }
+    }
+
+    private func chatShell(
         session: NativeAuthenticatedSession
     ) -> some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             JunoMacSidebar(
                 selection: $selection,
+                productMode: $productMode,
                 conversationModel: conversationModel,
                 syncModel: syncModel,
                 accountName: session.profile.name ?? session.profile.email,
@@ -251,8 +317,6 @@ private struct JunoMacDetailView: View {
                 model: artifactModel,
                 openConversation: openConversation
             )
-        } else if section == .code, let chatTransport {
-            JunoMacCodeView(transport: chatTransport, accountID: accountID)
         } else {
             // Reached only when a store failed to open at launch (a genuine
             // configuration error), never as a placeholder for an unbuilt

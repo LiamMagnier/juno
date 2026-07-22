@@ -1,13 +1,14 @@
+import AppKit
 import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
 #if DEBUG
-import JunoCodeUI
 import JunoPreviewSupport
 #endif
 
@@ -15,6 +16,10 @@ import JunoPreviewSupport
 struct JunoMacApp: App {
     // Restores the last-viewed section across relaunches (per scene).
     @SceneStorage("juno.mac.selectedSection") private var selectedSection = JunoMacSection.chat
+    /// The last product mode, restored per scene. Stored as a raw string so an
+    /// unrecognized value (an older or newer build wrote it) degrades to Chat
+    /// instead of failing to decode.
+    @SceneStorage("juno.mac.productMode") private var productModeRawValue = JunoMacProductMode.chat.rawValue
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -24,6 +29,17 @@ struct JunoMacApp: App {
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
     private let chatTransport: (any NativeChatRequestSending)?
+    /// Owned here, not by `JunoMacCodeView`, so switching modes does not
+    /// rebuild the Code workspace list and session selection every time.
+    /// Built once on the first entry into Code, so a reader who never opens
+    /// Code never pays for it.
+    @State private var codeWorkbenchModel: WorkbenchModel?
+    #if DEBUG
+    /// Preview runs seed the mode from `--juno-preview-mode` and keep it in
+    /// plain `@State`, so a QA launch lands where it was asked to and the
+    /// control still works when clicked.
+    @State private var previewProductMode = JunoMacProductMode.previewLaunchMode
+    #endif
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -59,6 +75,8 @@ struct JunoMacApp: App {
                 ) { world in
                     JunoMacRootView(
                         selection: $selectedSection,
+                        productMode: $previewProductMode,
+                        codeWorkbenchModel: $codeWorkbenchModel,
                         authModel: Self.previewAuthModel,
                         syncModel: world.syncModel,
                         conversationModel: world.conversationModel,
@@ -71,6 +89,24 @@ struct JunoMacApp: App {
                     )
                 }
                 .frame(minWidth: 760, minHeight: 520)
+                // `--juno-preview-dark` previously only affected the Juno Code
+                // preview, so a dark-mode QA pass of the main shell silently
+                // rendered light.
+                //
+                // Both of these are needed. `preferredColorScheme` drives
+                // SwiftUI's environment, but AppKit-resolved tints — notably the
+                // accent applied to sidebar `Label` icons — come from the
+                // window's `NSAppearance`, which it does not touch. Setting only
+                // the color scheme produced a dark sidebar whose icons resolved
+                // against the *light* accent and disappeared entirely.
+                .preferredColorScheme(
+                    CommandLine.arguments.contains("--juno-preview-dark") ? .dark : nil
+                )
+                .onAppear {
+                    if CommandLine.arguments.contains("--juno-preview-dark") {
+                        NSApp.appearance = NSAppearance(named: .darkAqua)
+                    }
+                }
             } else {
                 rootView
             }
@@ -81,13 +117,25 @@ struct JunoMacApp: App {
         .defaultSize(width: 1_180, height: 760)
         .commands {
             SidebarCommands()
-            JunoMacNavigationCommands(selection: $selectedSection)
+            JunoMacNavigationCommands(
+                selection: $selectedSection,
+                productMode: productMode
+            )
         }
+    }
+
+    private var productMode: Binding<JunoMacProductMode> {
+        Binding(
+            get: { JunoMacProductMode.restored(from: productModeRawValue) },
+            set: { productModeRawValue = $0.rawValue }
+        )
     }
 
     private var rootView: some View {
         JunoMacRootView(
             selection: $selectedSection,
+            productMode: productMode,
+            codeWorkbenchModel: $codeWorkbenchModel,
             authModel: authModel,
             syncModel: syncModel,
             conversationModel: conversationModel,
@@ -234,18 +282,42 @@ private struct JunoMacConfiguration {
 
 private struct JunoMacNavigationCommands: Commands {
     @Binding var selection: JunoMacSection
+    @Binding var productMode: JunoMacProductMode
 
     var body: some Commands {
         CommandMenu("menu.navigate") {
+            // The product switch first, on plain ⌘1/⌘2, mirroring the sidebar
+            // control. Selecting Chat from here also returns to the Chat
+            // section, so the menu never leaves the app on a mode whose
+            // destination is stale.
+            Section {
+                ForEach(JunoMacProductMode.allCases) { mode in
+                    Button {
+                        productMode = mode
+                        if mode == .chat, selection == .settings { selection = .chat }
+                    } label: {
+                        Label(mode.title, systemImage: mode.systemImage)
+                    }
+                    .keyboardShortcut(mode.keyboardShortcut, modifiers: .command)
+                }
+            }
+
             ForEach(JunoMacSection.Group.allCases) { group in
                 Section {
                     ForEach(group.sections) { section in
                         Button {
+                            // A Chat destination implies Chat mode; picking one
+                            // from the menu while in Code must switch back
+                            // rather than silently do nothing.
+                            productMode = .chat
                             selection = section
                         } label: {
                             Label(section.title, systemImage: section.systemImage)
                         }
-                        .keyboardShortcut(section.keyboardShortcut, modifiers: .command)
+                        .keyboardShortcut(
+                            section.keyboardShortcut,
+                            modifiers: section.keyboardModifiers
+                        )
                     }
                 }
             }

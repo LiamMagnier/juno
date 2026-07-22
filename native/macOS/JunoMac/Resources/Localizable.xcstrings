@@ -1281,6 +1281,54 @@
         }
       }
     },
+    "mode.chat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        }
+      }
+    },
+    "mode.code": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Code"
+          }
+        }
+      }
+    },
+    "mode.switcher.label": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno product"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Produit Juno"
+          }
+        }
+      }
+    },
     "navigation.artifacts": {
       "localizations": {
         "en": {
@@ -1309,22 +1357,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Chat"
-          }
-        }
-      }
-    },
-    "navigation.code": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Juno Code"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Juno Code"
           }
         }
       }
@@ -1453,22 +1485,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Bibliothèque"
-          }
-        }
-      }
-    },
-    "sidebar.group.develop": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Develop"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Développer"
           }
         }
       }
