@@ -48,11 +48,15 @@ kept as minimum deployment targets via availability checks. Sequential units:
    build so each can be inspected, since the states live behind the auth gate.
 5. Responsive, motion, accessibility, visual validation.
 
-**Visual-validation constraint:** unsigned simulator builds have no Keychain, so
-the Keychain-derived SQLite key fails and no signed-in surface can load; every
-authenticated screen therefore needs a signed build with a live session for
-visual QA. Builds compile against the OS 27 SDK (adopting Liquid Glass) and the
-sign-in surface renders on an iOS 27 simulator.
+**Visual QA is now unblocked** by the debug-only UI Preview mode (`69f0463`):
+`--juno-ui-preview` renders the real authenticated screens over an isolated
+in-memory store with synthetic fixtures — no auth, network, token, Keychain, or
+production data. Launch a specific state headless with
+`--juno-preview-scenario <normal|manyItems|empty|loading|offline|error|conflict|mutating|longText|streaming>`
+and `--juno-preview-tab <chat|search|projects|library|artifacts|settings>`.
+Chat, projects, artifacts and settings inspected on iOS 27 and look native.
+Known minor issue: with six iOS sections the tab bar highlights "More" when an
+overflow tab (e.g. artifacts) is selected.
 
 ## Actually completed
 

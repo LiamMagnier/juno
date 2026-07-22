@@ -1,9 +1,9 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "214849a",
+  "currentCommit": "69f0463",
   "workingTreeClean": true,
   "currentPhase": "ui-ux-refresh",
-  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done; unit 4 chat surface done (message rows + canvas). Remaining unit-4 screens (projects/files, library, artifacts, memory, settings, search, Juno Code) already carry real states and need the same design-system visual pass, best done with a signed build for per-screen visual QA. Then unit 5 (responsive/motion/accessibility).",
+  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done; unit 4 chat done; debug UI Preview mode done (69f0463, --juno-ui-preview). Now: QA-sweep the remaining screens (projects/files, library, artifacts, memory, settings, search, Juno Code) in light+dark and every scenario via the preview harness, fix visual issues, then units 5+ (responsive/motion/accessibility). Then Phase 11 backend (Juno Code Remote/Cloud) on a NEW stacked branch agent/juno-code-remote-backend.",
   "nextFiles": [
     "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
     "native/macOS/JunoMac/App",
