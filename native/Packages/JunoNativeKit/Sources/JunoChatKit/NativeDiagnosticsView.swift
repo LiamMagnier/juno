@@ -84,12 +84,22 @@ public struct NativeDiagnosticsView: View {
                 row("diagnostics.cursor", cursor, monospaced: true)
             }
             row("diagnostics.last-sync", lastSyncDescription)
-            if let status = syncModel?.lastHTTPStatusCode {
-                row("diagnostics.http-status", String(status), monospaced: true)
-            }
-            if let kind = syncModel?.lastFailureKind {
-                row("diagnostics.failure-kind", kind, monospaced: true)
-            }
+            // Always shown, never conditional. Hiding these when healthy was a
+            // real mistake: the owner read the screen, found no HTTP status and
+            // no failure row, and could not tell whether that meant "nothing has
+            // failed" or "this screen is broken". An absent row is ambiguous;
+            // "None" is an answer.
+            row(
+                "diagnostics.http-status",
+                syncModel?.lastHTTPStatusCode.map(String.init)
+                    ?? String(localized: "diagnostics.none"),
+                monospaced: true
+            )
+            row(
+                "diagnostics.failure-kind",
+                syncModel?.lastFailureKind ?? String(localized: "diagnostics.none"),
+                monospaced: true
+            )
             if let message = syncModel?.lastErrorDescription {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("diagnostics.last-error")

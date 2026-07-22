@@ -609,6 +609,22 @@
         }
       }
     },
+    "diagnostics.none": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune"
+          }
+        }
+      }
+    },
     "diagnostics.outbox.conflicted": {
       "localizations": {
         "en": {
