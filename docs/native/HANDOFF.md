@@ -1,6 +1,6 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 (late) Europe/Paris
+Updated: 2026-07-22 (night) Europe/Paris
 
 > **Read `docs/native/NEXT_PROMPT.md` first.** It is the self-contained
 > continuation prompt: exact worktree, branch, head, first command, next task
@@ -8,10 +8,18 @@ Updated: 2026-07-22 (late) Europe/Paris
 
 ## Resume here
 
-- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
-- Branch: `agent/juno-native-claude-continuation` (PR #18 → `agent/juno-native`; PRs never target `main`)
-- Head: `d19e924` (`feat(code): redesign the Juno Code developer surfaces onto the shared design system`) — tree clean
-- `main` untouched; `origin/main` is `173be21`; production live and unchanged at `https://chat.liams.dev`
+- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend`
+- Branch: `agent/juno-code-remote-backend` — **equal to `main`, equal to `2f07804`** — tree clean
+- **`2f07804` is deployed and live at `https://chat.liams.dev`, serving contract `1.3.0`.**
+  `JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh` → all gates pass.
+- The deploy applied **no migrations** (`41 migrations found. No pending migrations to apply.`).
+- The `main` *checkout* at `/Users/liammagnier/Desktop/workspace/juno` was not
+  touched and is still dirty. Its work is now safely committed on
+  `agent/juno-code-remote-orphan-recovery` (`2b353f6`), so reverting that
+  checkout is finally safe — but that is the owner's call.
+- Blocked on the owner: macOS visual QA needs Screen Recording permission **and**
+  a login-session restart. See `MACOS_DESIGN_REVIEW.md` §9 — the older
+  `killall cfprefsd` explanation is disproved.
 - Next task: **PR #19** — rebase `agent/juno-code-remote-backend` (`cedc264`,
   four commits) onto the final PR #18, then triage the orphaned backend work in
   `scratchpad/main-dirty-backup/` file by file
