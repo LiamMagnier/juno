@@ -460,19 +460,18 @@ private struct JunoMobileSidebarDrawer: View {
     // MARK: Bottom bar — profile (glass circle) + New Chat (accent glass capsule)
 
     private var bottomBar: some View {
-        VStack(spacing: 5) {
+        HStack(spacing: 10) {
+            profileButton
+            Spacer(minLength: 0)
+            newChatButton
+        }
+        .overlay(alignment: .center) {
             if isPreview {
                 Text("Preview")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.leading, 4)
+                    .foregroundStyle(.tertiary)
                     .accessibilityLabel("Debug preview build")
-            }
-            HStack(spacing: 10) {
-                profileButton
-                Spacer(minLength: 0)
-                newChatButton
+                    .allowsHitTesting(false)
             }
         }
         .padding(.horizontal, 14)
