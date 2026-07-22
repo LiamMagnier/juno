@@ -53,6 +53,10 @@ struct JunoMobileSettingsView: View {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 showMemoryPage = true
             }
+            if CommandLine.arguments.contains("--juno-preview-diagnostics") {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                showDiagnosticsPage = true
+            }
             #endif
         }
         .safeAreaInset(edge: .bottom) {
