@@ -1,9 +1,9 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "b1ed73c",
+  "currentCommit": "214849a",
   "workingTreeClean": true,
   "currentPhase": "ui-ux-refresh",
-  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done (navigation, chat/composer, design system). Now unit 4 (product screens + real states) applying the design system tokens/glass/typography, then unit 5 (responsive/motion/accessibility). Authenticated-surface visual QA needs a signed build with a live session.",
+  "currentTask": "UI/UX refresh for OS 27 SDK. Units 1-3 done; unit 4 chat surface done (message rows + canvas). Remaining unit-4 screens (projects/files, library, artifacts, memory, settings, search, Juno Code) already carry real states and need the same design-system visual pass, best done with a signed build for per-screen visual QA. Then unit 5 (responsive/motion/accessibility).",
   "nextFiles": [
     "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoDesignTokens.swift",
     "native/macOS/JunoMac/App",

@@ -38,7 +38,14 @@ kept as minimum deployment targets via availability checks. Sequential units:
    `junoHairline`/`junoAccent` semantic colors, an SF Pro type hierarchy, and a
    shared `JunoGlassBackground`/`junoFloatingGlass` helper (OS 26+ glass with a
    material fallback) now used by both composers. Six design-system tests.
-4. Product screens + real states — in progress.
+4. Product screens + real states — in progress. Chat surface done (`214849a`):
+   redesigned message rows (assistant spark + `junoSurface` bubble, user accent
+   bubble, design-system typography, grouped sources, per-message Copy,
+   VoiceOver labels) on a `junoCanvas` transcript. Remaining screens (projects/
+   files, library, artifacts, memory, settings, search, Juno Code) already carry
+   real loading/empty/error/offline/conflict states from the functional units;
+   they still need the same design-system visual pass — best done with a signed
+   build so each can be inspected, since the states live behind the auth gate.
 5. Responsive, motion, accessibility, visual validation.
 
 **Visual-validation constraint:** unsigned simulator builds have no Keychain, so
