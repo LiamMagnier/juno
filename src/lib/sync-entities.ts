@@ -16,7 +16,11 @@ import type { EntityIndexCursor } from "@/lib/sync-entity-index";
 
 export const MAX_ENTITY_IDS = 100;
 
-type EntityData = Record<string, unknown>;
+import {
+  buildEntityEnvelopes,
+  type EntityData,
+  type EntityEnvelope,
+} from "@/lib/sync-entity-envelope";
 
 /** Loads owned rows for one entity type, keyed by entity id. Every loader
  *  enforces ownership in the query itself — an id belonging to another
@@ -430,13 +434,8 @@ export function isSyncEntityType(type: string): boolean {
   return Object.prototype.hasOwnProperty.call(loaders, type);
 }
 
-export type EntityEnvelope = {
-  type: string;
-  id: string;
-  revision: number;
-  deletedAt: string | null;
-  data: EntityData | null;
-};
+export type { EntityEnvelope, EntityRevisionRow, EntityData } from "@/lib/sync-entity-envelope";
+export { buildEntityEnvelopes } from "@/lib/sync-entity-envelope";
 
 export type EntityIndexItem = {
   type: string;
@@ -494,22 +493,8 @@ export async function loadEntities(accountId: string, type: string, ids: string[
     loader(accountId, ids),
     prisma.entityRevision.findMany({
       where: { accountId, entityType: type, entityId: { in: ids } },
-      select: { entityId: true, revision: true, deletedAt: true },
+      select: { entityId: true, revision: true, deletedAt: true, updatedAt: true },
     }),
   ]);
-  const revisionById = new Map(revisions.map((row) => [row.entityId, row]));
-  const entities: EntityEnvelope[] = [];
-  for (const id of ids) {
-    const row = data.get(id) ?? null;
-    const revision = revisionById.get(id);
-    if (!row && !revision) continue; // unknown or foreign id — nothing to report
-    entities.push({
-      type,
-      id,
-      revision: revision?.revision ?? 0,
-      deletedAt: row ? null : (revision?.deletedAt?.toISOString() ?? null),
-      data: row,
-    });
-  }
-  return entities;
+  return buildEntityEnvelopes(type, ids, data, revisions);
 }

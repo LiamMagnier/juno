@@ -81,6 +81,61 @@ final class NativeSyncAPIClientTests: XCTestCase {
         XCTAssertNil(object["url"])
     }
 
+    // MARK: - Real-device regression: the tombstone/live invariant
+    //
+    // The physical iPhone stalled its initial sync on "Juno returned malformed
+    // synchronization data". Production was emitting `data: null` together with
+    // `deletedAt: null` for artifacts whose rows had cascade-deleted while their
+    // EntityRevision stayed live. The client was right to refuse that; these
+    // tests pin both halves so neither side drifts.
+
+    func testRejectsEntityWithNullDataAndNullDeletedAt() async throws {
+        // The exact production payload shape, sanitized.
+        let sender = SyncQueueSender(responses: [response(
+            #"{"entities":[{"type":"artifact","id":"a1","revision":1,"deletedAt":null,"data":null}]}"#
+        )])
+        let client = NativeSyncAPIClient(sender: sender)
+
+        do {
+            _ = try await client.entities(type: "artifact", ids: ["a1"], for: try AccountID("account-a"))
+            XCTFail("an envelope that is neither live nor tombstoned must be refused")
+        } catch let error as NativeSyncAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
+    func testAcceptsProperTombstone() async throws {
+        // What the corrected server now sends for the same entity.
+        let sender = SyncQueueSender(responses: [response(
+            #"{"entities":[{"type":"artifact","id":"a1","revision":1,"deletedAt":"2026-07-19T09:14:22.000Z","data":null}]}"#
+        )])
+        let client = NativeSyncAPIClient(sender: sender)
+
+        let entities = try await client.entities(
+            type: "artifact", ids: ["a1"], for: try AccountID("account-a")
+        )
+
+        XCTAssertEqual(entities.count, 1)
+        XCTAssertNil(entities[0].data, "a tombstone carries no data")
+        XCTAssertNotNil(entities[0].deletedAt)
+    }
+
+    func testRejectsLiveEntityCarryingBothDataAndDeletedAt() async throws {
+        // The opposite malformation must stay rejected too — the guard is an
+        // equivalence, not a one-way check.
+        let sender = SyncQueueSender(responses: [response(
+            #"{"entities":[{"type":"artifact","id":"a1","revision":1,"deletedAt":"2026-07-19T09:14:22.000Z","data":{"id":"a1"}}]}"#
+        )])
+        let client = NativeSyncAPIClient(sender: sender)
+
+        do {
+            _ = try await client.entities(type: "artifact", ids: ["a1"], for: try AccountID("account-a"))
+            XCTFail("an envelope claiming to be both live and deleted must be refused")
+        } catch let error as NativeSyncAPIError {
+            XCTAssertEqual(error, .malformedResponse)
+        }
+    }
+
     private func response(_ body: String, status: Int = 200) -> HTTPResponse {
         HTTPResponse(statusCode: status, headers: HTTPHeaders(), body: Data(body.utf8))
     }
