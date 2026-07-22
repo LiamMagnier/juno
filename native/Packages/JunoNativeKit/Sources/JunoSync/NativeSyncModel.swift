@@ -20,29 +20,13 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         case failed
     }
 
-    /// Whether a failure means "the network is unavailable" as opposed to "the
-    /// server answered and we cannot proceed".
-    ///
-    /// Transport failures count. Everything else — including
-    /// `NativeBootstrapError.contractVersionMismatch`, HTTP 4xx/5xx surfaced as
-    /// `.server`, and decoding errors — is a real, non-transient failure that the
-    /// reader has to be told about.
-    ///
-    /// Two cases are easy to get wrong, and both were:
-    ///
-    /// - `retryLimitExceeded` is what a genuine outage actually surfaces.
-    ///   `synchronizeWithRetry` swallows the underlying `URLError` across six
-    ///   attempts and then throws *its own* error, so matching only `URLError`
-    ///   would report a real network outage as a hard failure.
-    /// - `URLError.cancelled` is a control-flow signal, not a connectivity
-    ///   verdict, so it is deliberately excluded.
+    /// Kept as a spelling of `NativeFailureClassification.isConnectivityFailure`
+    /// so the many existing call sites read unchanged. The implementation moved
+    /// out of this generic class because it never depended on `Repository`, and
+    /// callers outside the sync layer were having to name a placeholder type
+    /// just to ask the question.
     nonisolated public static func isConnectivityFailure(_ error: any Error) -> Bool {
-        if let coordinatorError = error as? NativeSyncCoordinatorError {
-            return coordinatorError == .retryLimitExceeded
-        }
-        if let syncError = error as? NativeSyncAPIError { return syncError.isRetryable }
-        guard let urlError = error as? URLError else { return false }
-        return urlError.code != .cancelled
+        NativeFailureClassification.isConnectivityFailure(error)
     }
 
     /// The HTTP status behind the last failure, when the server actually

@@ -20,6 +20,28 @@ import JunoCore
 /// transport errors, which carry domain codes, get replaced. The precise
 /// technical detail is not lost — it is on the Diagnostics screen, as the
 /// failure kind and the HTTP status.
+public enum NativeFailureClassification {
+    /// Whether a failure means "the network is unavailable" as opposed to "the
+    /// server answered and we cannot proceed".
+    ///
+    /// Two cases are easy to get wrong, and both were:
+    ///
+    /// - `retryLimitExceeded` is what a genuine outage actually surfaces.
+    ///   `synchronizeWithRetry` swallows the underlying `URLError` across six
+    ///   attempts and then throws *its own* error, so matching only `URLError`
+    ///   would report a real network outage as a hard failure.
+    /// - `URLError.cancelled` is a control-flow signal, not a connectivity
+    ///   verdict, so it is deliberately excluded.
+    public static func isConnectivityFailure(_ error: any Error) -> Bool {
+        if let coordinatorError = error as? NativeSyncCoordinatorError {
+            return coordinatorError == .retryLimitExceeded
+        }
+        if let syncError = error as? NativeSyncAPIError { return syncError.isRetryable }
+        guard let urlError = error as? URLError else { return false }
+        return urlError.code != .cancelled
+    }
+}
+
 public enum NativeFailureMessage {
     public static func presentable(_ error: any Error) -> String {
         if let coordinator = error as? NativeSyncCoordinatorError,
