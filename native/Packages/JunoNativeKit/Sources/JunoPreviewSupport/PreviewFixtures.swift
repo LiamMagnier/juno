@@ -148,6 +148,16 @@ public enum PreviewFixtures {
         "Vacation itinerary", "Accessibility checklist",
     ]
 
+    /// Realistic, varied project names for the dense-list scenario.
+    private static let manyProjectNames = [
+        "Astro research", "Native apps", "Portfolio site", "Q3 planning",
+        "Recipe collection", "Home renovation", "Reading notes", "Trip logistics",
+        "Design system", "Interview prep", "Side project", "Budget tracker",
+        "Machine learning", "Marketing site", "Open source", "Course notes",
+        "Client work", "Personal wiki", "Photo archive", "Music theory",
+        "Fitness plan", "Book draft", "Garden log", "Language study",
+    ]
+
     private static func manyRecords(_ a: StorageAccountID) -> [StoredRecord] {
         var out: [StoredRecord] = [settings(a), memorySummary(a)]
         for i in 0..<40 {
@@ -157,13 +167,16 @@ public enum PreviewFixtures {
             """))
         }
         for i in 0..<24 {
+            let name = manyProjectNames[i % manyProjectNames.count]
             out.append(record(a, "project", "proj-\(i)", UInt64(i + 1), """
-            {"id":"proj-\(i)","name":"Project \(i)","nameSource":"user","instructions":"Instructions for project \(i).","starred":\(i % 5 == 0),"createdAt":"\(iso(-Double(i) * 7200))","updatedAt":"\(iso(-Double(i) * 120))"}
+            {"id":"proj-\(i)","name":"\(name)","nameSource":"user","instructions":"Keep answers concise and cite sources for \(name).","starred":\(i % 5 == 0),"createdAt":"\(iso(-Double(i) * 7200))","updatedAt":"\(iso(-Double(i) * 120))"}
             """))
         }
         for i in 0..<30 {
+            let names = ["diagram", "report", "notes", "budget", "spec", "mockup", "export", "brief"]
+            let name = "\(names[i % names.count])-\(i)"
             out.append(record(a, "attachment", "file-\(i)", UInt64(i + 1), """
-            {"id":"file-\(i)","conversationId":null,"messageId":null,"projectId":"proj-\(i % 24)","kind":"\(i % 3 == 0 ? "IMAGE" : "FILE")","fileName":"document-\(i).\(i % 3 == 0 ? "png" : "pdf")","mimeType":"\(i % 3 == 0 ? "image/png" : "application/pdf")","size":\(10000 + i * 5000),"width":null,"height":null,"createdAt":"\(iso(-Double(i) * 3600))"}
+            {"id":"file-\(i)","conversationId":null,"messageId":null,"projectId":"proj-\(i % 24)","kind":"\(i % 3 == 0 ? "IMAGE" : "FILE")","fileName":"\(name).\(i % 3 == 0 ? "png" : "pdf")","mimeType":"\(i % 3 == 0 ? "image/png" : "application/pdf")","size":\(10000 + i * 5000),"width":null,"height":null,"createdAt":"\(iso(-Double(i) * 3600))"}
             """))
         }
         for i in 0..<20 {

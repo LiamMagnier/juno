@@ -716,6 +716,9 @@ private struct JunoMobileProjectsView: View {
     @State private var showingCreate = false
     @State private var createName = ""
     @State private var createInstructions = ""
+    @State private var renameTarget: NativeProject?
+    @State private var renameValue = ""
+    @State private var deleteTarget: NativeProject?
 
     var body: some View {
         Group {
@@ -730,28 +733,25 @@ private struct JunoMobileProjectsView: View {
                 )
             case .ready where model.projects.isEmpty,
                  .offline where model.projects.isEmpty:
-                ContentUnavailableView(
-                    "No projects",
-                    systemImage: "folder",
-                    description: Text("Create a project to group conversations and files.")
-                )
+                ContentUnavailableView {
+                    Label("No projects", systemImage: "folder")
+                } description: {
+                    Text("Create a project to group conversations and files.")
+                } actions: {
+                    Button("New project") { startCreate() }
+                        .buttonStyle(.borderedProminent)
+                }
             default:
                 List {
                     ForEach(model.projects) { project in
                         NavigationLink(value: project.id) {
                             projectRow(project)
                         }
-                        .contextMenu {
-                            Button {
-                                Task { await model.updateProject(id: project.id, starred: !project.starred) }
-                            } label: {
-                                Label(project.starred ? "Unfavorite" : "Favorite",
-                                      systemImage: project.starred ? "star.slash" : "star")
-                            }
-                        }
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
+                        .contextMenu { projectMenu(project) }
                     }
                 }
-                .listStyle(.insetGrouped)
+                .listStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.project-list")
             }
         }
@@ -759,12 +759,8 @@ private struct JunoMobileProjectsView: View {
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    createName = ""
-                    createInstructions = ""
-                    showingCreate = true
-                } label: {
-                    Label("New project", systemImage: "folder.badge.plus")
+                Button { startCreate() } label: {
+                    Label("New project", systemImage: "square.and.pencil")
                 }
                 .disabled(model.isMutating)
                 .accessibilityIdentifier("juno.mobile.project-new")
@@ -803,17 +799,75 @@ private struct JunoMobileProjectsView: View {
         } message: {
             Text("Project instructions are included in every linked conversation.")
         }
+        .alert("Rename project", isPresented: Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )) {
+            TextField("Name", text: $renameValue)
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") {
+                if let target = renameTarget {
+                    Task { await model.updateProject(id: target.id, name: renameValue) }
+                }
+                renameTarget = nil
+            }
+        }
+        .confirmationDialog(
+            "Delete this project?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete project", role: .destructive) {
+                if let target = deleteTarget {
+                    Task { await model.deleteProject(id: target.id) }
+                }
+                deleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("Conversations are kept and unlinked; project files are removed.")
+        }
+    }
+
+    @ViewBuilder
+    private func projectMenu(_ project: NativeProject) -> some View {
+        Button {
+            Task { await model.updateProject(id: project.id, starred: !project.starred) }
+        } label: {
+            Label(project.starred ? "Remove favorite" : "Favorite",
+                  systemImage: project.starred ? "star.slash" : "star")
+        }
+        Button {
+            renameValue = project.name
+            renameTarget = project
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        Button(role: .destructive) {
+            deleteTarget = project
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    private func startCreate() {
+        createName = ""
+        createInstructions = ""
+        showingCreate = true
     }
 
     private func projectRow(_ project: NativeProject) -> some View {
         let conversations = model.conversationsByProject[project.id]?.count ?? 0
         let files = model.filesByProject[project.id]?.count ?? 0
         return HStack(spacing: 12) {
-            Image(systemName: project.starred ? "star.fill" : "folder")
-                .font(.title3)
-                .foregroundStyle(project.starred ? Color.yellow : Color.junoAccent)
+            Image(systemName: "folder")
+                .font(.system(size: 20))
+                .foregroundStyle(Color.junoAccent)
                 .frame(width: 28)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(project.name).font(.body.weight(.medium)).lineLimit(1)
                     if project.isPending {
@@ -826,6 +880,13 @@ private struct JunoMobileProjectsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if project.starred {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.junoAccent)
+                    .accessibilityLabel("Favorite")
             }
         }
         .padding(.vertical, 3)
@@ -885,9 +946,10 @@ private struct JunoMobileProjectDetail: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let project: NativeProject
     let openConversation: (String) -> Void
-    @State private var showingEdit = false
+    @State private var showingRename = false
     @State private var editName = ""
-    @State private var editInstructions = ""
+    @State private var showingInstructions = false
+    @State private var instructionsDraft = ""
     @State private var showingDelete = false
     @State private var showingImporter = false
     @State private var renameFileID: String?
@@ -897,10 +959,22 @@ private struct JunoMobileProjectDetail: View {
 
     var body: some View {
         List {
-            Section("Instructions") {
+            Section {
                 Text(project.instructions.isEmpty
-                    ? "No project instructions" : project.instructions)
+                    ? "No project instructions yet." : project.instructions)
                     .foregroundStyle(project.instructions.isEmpty ? .secondary : .primary)
+                Button {
+                    instructionsDraft = project.instructions
+                    showingInstructions = true
+                } label: {
+                    Label("Edit instructions", systemImage: "pencil")
+                }
+                .disabled(project.isPending || model.isMutating)
+                .accessibilityIdentifier("juno.mobile.project-edit-instructions")
+            } header: {
+                Text("Instructions")
+            } footer: {
+                Text("Included in every conversation linked to this project.")
             }
             Section("Conversations") {
                 if model.selectedConversations.isEmpty {
@@ -976,10 +1050,9 @@ private struct JunoMobileProjectDetail: View {
                 }
                 .disabled(project.isPending || model.isMutating)
                 Menu {
-                    Button("Edit") {
+                    Button("Rename") {
                         editName = project.name
-                        editInstructions = project.instructions
-                        showingEdit = true
+                        showingRename = true
                     }
                     Button("Delete", role: .destructive) { showingDelete = true }
                 } label: {
@@ -988,19 +1061,42 @@ private struct JunoMobileProjectDetail: View {
                 .disabled(project.isPending || model.isMutating)
             }
         }
-        .alert("Edit project", isPresented: $showingEdit) {
+        .alert("Rename project", isPresented: $showingRename) {
             TextField("Name", text: $editName)
-            TextField("Instructions", text: $editInstructions)
             Button("Cancel", role: .cancel) {}
             Button("Save") {
-                Task {
-                    await model.updateProject(
-                        id: project.id,
-                        name: editName,
-                        instructions: editInstructions
-                    )
-                }
+                Task { await model.updateProject(id: project.id, name: editName) }
             }
+        }
+        .sheet(isPresented: $showingInstructions) {
+            NavigationStack {
+                TextEditor(text: $instructionsDraft)
+                    .font(.body)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .navigationTitle("Instructions")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showingInstructions = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            if model.isMutating {
+                                ProgressView()
+                            } else {
+                                Button("Save") {
+                                    Task {
+                                        await model.updateProject(
+                                            id: project.id, instructions: instructionsDraft
+                                        )
+                                        showingInstructions = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete project?", isPresented: $showingDelete) {
             Button("Cancel", role: .cancel) {}
