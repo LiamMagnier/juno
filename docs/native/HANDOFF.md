@@ -1,6 +1,48 @@
 # Juno Native — Operational Handoff
 
-Updated: 2026-07-22 17:35 Europe/Paris
+Updated: 2026-07-22 18:25 Europe/Paris
+
+> **Read `docs/native/NEXT_PROMPT.md` first.** It is the self-contained
+> continuation prompt: exact worktree, branch, head, first command, next task
+> and live hazards. This file is the operational detail behind it.
+
+## Resume here
+
+- Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
+- Branch: `agent/juno-native-claude-continuation` (PR #18 → `agent/juno-native`; PRs never target `main`)
+- Head: `043051b` (`fix(auth): report the real Keychain status instead of an enum case index`) — pushed, tree clean
+- `main` untouched; `origin/main` is `173be21`; production live and unchanged at `https://chat.liams.dev`
+- Next task: **phase 5, backend reconciliation** — triage the uncommitted
+  Remote-session work still sitting unstaged in the `main` checkout, then rebase
+  PR #19 (`agent/juno-code-remote-backend`, `cedc264`) onto PR #18
+
+## Corrections to what this file used to say
+
+- `gh` auth **is valid** (`repo`, `workflow`). Pushing works. The earlier
+  "stored token is invalid" note was wrong.
+- `CODE_SIGNING_ALLOWED=NO` builds **cannot sign in** — no
+  `application-identifier` means no Keychain access group, so iOS returns
+  `errSecMissingEntitlement` (-34018). Those commands are compile gates only.
+  Anything touching auth, tokens, sync or an authenticated screen needs a signed
+  build. See `TESTING.md`.
+- `JunoMacTests` was **failing**, not 2/2 — a count assertion against a
+  seven-case enum. Now 5/5.
+- The "hanging JunoAuthTests" **does not reproduce**; the suite passes in ~18 ms.
+
+## Sandbox limitations that shape how to verify
+
+- macOS `screencapture` returns black (no Screen Recording grant) and the
+  macOS XCUITest runner cannot load its bundle. Verify macOS UI by walking the
+  running app's **accessibility tree** (System Events, after setting
+  `AXEnhancedUserInterface`). This found three real defects.
+- iOS simulator screenshots **do** work: `xcrun simctl io … screenshot`.
+- `timeout` does not exist on this host.
+- Copying a signed `.app` into this worktree breaks its signature (Desktop/iCloud
+  file provider attaches Finder metadata); run `xattr -cr` afterwards.
+
+---
+
+## Earlier handoff detail
 
 ## Resume here
 

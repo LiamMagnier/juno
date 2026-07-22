@@ -1,5 +1,96 @@
 # Juno Native — Status
 
+Last updated: 2026-07-22 18:25 Europe/Paris
+
+> **Start a new session at `docs/native/NEXT_PROMPT.md`.** It carries the exact
+> worktree, branch, head, next task and the live hazards. This file is the
+> longer history behind it.
+
+## Session 2026-07-22 (evening) — Mac Chat workspace, head `043051b`
+
+The Mac app opened on a list of destinations, with Chat buried behind a *second*
+`NavigationSplitView` nested inside the detail column. History was two clicks
+deep and Juno Code — one section — read as the whole product. That is fixed.
+
+`JunoMac` is now one three-region native workspace that opens on Chat, verified
+in the running app rather than in the source: a single sidebar carrying the
+destinations *and* the recency-grouped conversation history, a borderless
+Markdown transcript, a native resizable inspector (⌥⌘I), and a floating Liquid
+Glass composer with per-conversation drafts. Glass is confined to the composer
+and the scroll-to-latest control; the reading surface stays opaque.
+
+### Corrections to earlier entries in this file
+
+Three claims recorded below were wrong, and are corrected here rather than
+edited out:
+
+- **"JunoMacTests 2/2"** — `JunoMacNavigationTests` asserted
+  `identifiers.count == 9` against a seven-case enum and had been failing. It
+  now asserts the destinations by name, that Chat is first, that each belongs to
+  exactly one sidebar group, and that the shortcuts are unique. 5/5.
+- **"GitHub CLI: the stored token is invalid"** — it is valid, with `repo` and
+  `workflow` scopes. Pushing works.
+- **Every "passing command" using `CODE_SIGNING_ALLOWED=NO`** — those verify
+  that the apps *compile*, not that they *run*. An unsigned build has no
+  `application-identifier`, which iOS uses as the default Keychain access group,
+  so every Keychain call fails with `errSecMissingEntitlement` (-34018), no
+  token can be stored, and the sign-in gate goes `.unavailable` with its button
+  hidden. Rebuilt with signing enabled, the same configuration reaches a working
+  sign-in gate. See `TESTING.md`.
+
+A fourth item in the mission brief — "the hanging JunoAuthTests" — **does not
+reproduce**. The suite finishes in ~18 ms, all passing, at `69cf7df` and since.
+
+### Defects found by reading the live accessibility tree
+
+`screencapture` returns an all-black image (Screen Recording not granted) and
+the macOS XCUITest runner cannot load its bundle here, so macOS visual QA was
+done by walking the running app's accessibility tree. It surfaced three real
+defects that a screenshot would not have:
+
+1. `.accessibilityIdentifier` on the workspace container propagated to every
+   descendant and **overrode** the composer's and Send button's own, leaving
+   them unaddressable by any UI test. It now marks the transcript alone.
+2. Icon-only buttons built from a bare `Image` reached VoiceOver **unnamed**,
+   and SwiftUI fell back to the SF Symbol id (`doc.on.doc`) as the accessibility
+   identifier. Now `Label` + `.labelStyle(.iconOnly)`.
+3. The window subtitle rendered the raw `anthropic:claude-sonnet-4-6`. Mobile
+   already had a humanizer as a private free function inside a view file; it is
+   now `junoDisplayModelName` in `JunoChatKit` with 9 tests, used by both apps,
+   and the mobile copy is deleted rather than duplicated.
+
+### Artifacts
+
+Built and verified in `dist/` (binaries gitignored, docs tracked):
+
+- `Juno-0.1.0-macOS.dmg` and `.app` — universal, hardened runtime, **Apple
+  Development** signed. Gatekeeper rejects it: no Developer ID certificate, no
+  notarization.
+- `Juno-0.1.0-iOS-development.ipa` — development signed, **one registered
+  device**, profile expires **2026-07-29**.
+- `Juno-0.1.0-iOS-Simulator.app.zip` — signed on purpose; an unsigned simulator
+  build cannot sign in.
+- `SHA256SUMS.txt`, `INSTALL.md`, `RELEASE_NOTES.md`, `DELIVERY_REPORT.md`.
+
+Release builds contain **no preview code**: zero preview launch-flag literals
+and zero `JunoPreviewSupport`/`JunoPreviewContainer`/`CodePreviewScenario` code
+symbols in the Stable binary.
+
+### Not done this session
+
+Phases 5–16 and 18 of the delivery mission: backend reconciliation, the full
+test matrix (no JS/backend suite was run), release integration, production
+deployment, and authenticated end-to-end smoke tests. `main` was not touched and
+`origin/main` is still `173be21`. Attachments, Deep Research, Canvas and all of
+Remote/Cloud remain unimplemented — GAP-021/022/023 stand.
+
+Tests: package **220/220** (was 169 at session start), `JunoMacTests` 5/5,
+JunoMac Debug/Stable/archive, JunoMobile Debug/Stable/archive/export.
+
+---
+
+## Earlier history
+
 Last updated: 2026-07-22 17:35 Europe/Paris
 
 ## Concurrent-session recovery (head `37db1af`)
