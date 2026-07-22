@@ -13,43 +13,42 @@ struct JunoMobileSettingsView: View {
     @State private var showingSignOut = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("Loading settings…")
-                case .failed where model.settings == nil && model.memories.isEmpty:
-                    ContentUnavailableView {
-                        Label("Settings unavailable", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(model.lastErrorDescription ?? "Try again.")
-                    } actions: {
-                        Button("Retry") { Task { await model.refresh() } }
-                    }
-                default:
-                    settingsForm
+        Group {
+            switch model.phase {
+            case .idle, .loading:
+                ProgressView("Loading settings…")
+            case .failed where model.settings == nil && model.memories.isEmpty:
+                ContentUnavailableView {
+                    Label("Settings unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(model.lastErrorDescription ?? "Try again.")
+                } actions: {
+                    Button("Retry") { Task { await model.refresh() } }
                 }
+            default:
+                settingsForm
             }
-            .navigationTitle("Settings")
-            .safeAreaInset(edge: .bottom) {
-                if model.conflictedMutationCount > 0 {
-                    conflictBanner
-                } else if model.phase == .offline || model.lastErrorDescription != nil {
-                    statusBanner
-                }
+        }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) {
+            if model.conflictedMutationCount > 0 {
+                conflictBanner
+            } else if model.phase == .offline || model.lastErrorDescription != nil {
+                statusBanner
             }
-            .confirmationDialog(
-                "auth.sign-out.confirm.title",
-                isPresented: $showingSignOut,
-                titleVisibility: .visible
-            ) {
-                Button("auth.sign-out", role: .destructive) {
-                    Task { await authModel?.signOut() }
-                }
-                Button("action.cancel", role: .cancel) {}
-            } message: {
-                Text("auth.sign-out.confirm.message")
+        }
+        .confirmationDialog(
+            "auth.sign-out.confirm.title",
+            isPresented: $showingSignOut,
+            titleVisibility: .visible
+        ) {
+            Button("auth.sign-out", role: .destructive) {
+                Task { await authModel?.signOut() }
             }
+            Button("action.cancel", role: .cancel) {}
+        } message: {
+            Text("auth.sign-out.confirm.message")
         }
         .accessibilityIdentifier("juno.mobile.settings")
     }

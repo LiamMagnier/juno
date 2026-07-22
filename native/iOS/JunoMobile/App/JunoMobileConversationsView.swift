@@ -5,184 +5,47 @@ import JunoSync
 import SwiftUI
 import UIKit
 
-/// Compact synchronization indicator; tapping it forces a refresh.
-struct JunoMobileSyncButton: View {
-    let model: NativeSyncModel<SQLiteAccountRepository>
-
-    var body: some View {
-        Button {
-            Task { await model.refresh() }
-        } label: {
-            switch model.phase {
-            case .idle, .synchronizing:
-                ProgressView().controlSize(.small)
-            case .live:
-                Image(systemName: "checkmark.icloud")
-            case .offline:
-                Image(systemName: "icloud.slash")
-            }
-        }
-        .accessibilityLabel(model.phase == .offline ? Text("sync.offline") : Text("sync.synced"))
-        .accessibilityIdentifier("juno.mobile.sync-status")
-    }
-}
-
-struct JunoMobileConversationsView: View {
+/// The chat destination: the selected conversation's transcript + composer, or
+/// an empty state that starts a new chat. The conversation list lives in the
+/// sidebar; this screen never owns a NavigationStack (the root provides one).
+struct JunoMobileChatDetailScreen: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
-    var syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    @State private var path: [String] = []
+
+    private var selected: NativeConversation? {
+        guard let id = model.selectedConversationID else { return nil }
+        return model.conversations.first { $0.id == id }
+    }
 
     var body: some View {
-        NavigationStack(path: $path) {
-            Group {
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("Loading conversations…")
-                case .failed where model.conversations.isEmpty:
-                    ContentUnavailableView(
-                        "Conversations unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(model.lastErrorDescription ?? "Try again.")
-                    )
-                case .ready where model.conversations.isEmpty,
-                     .offline where model.conversations.isEmpty:
-                    ContentUnavailableView(
-                        "No conversations",
-                        systemImage: "bubble.left",
-                        description: Text("Create a conversation to begin.")
-                    )
-                default:
-                    conversationList
-                }
+        Group {
+            if let selected {
+                JunoMobileConversationDetail(model: model, conversation: selected)
+            } else {
+                emptyState
             }
-            .navigationTitle("Conversations")
-            .toolbar {
-                if let syncModel {
-                    ToolbarItem(placement: .topBarLeading) {
-                        JunoMobileSyncButton(model: syncModel)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await model.createConversation() }
-                    } label: {
-                        Label("New conversation", systemImage: "square.and.pencil")
-                    }
-                    .disabled(model.isMutating)
-                    .accessibilityIdentifier("juno.mobile.conversation-new")
-                }
-            }
-            .navigationDestination(for: String.self) { conversationID in
-                if let conversation = model.conversations.first(where: { $0.id == conversationID }) {
-                    JunoMobileConversationDetail(model: model, conversation: conversation)
-                        .onAppear { model.selectedConversationID = conversationID }
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if model.conflictedMutationCount > 0 {
-                    VStack(spacing: 8) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
-                            Text("A conversation changed on another device.")
-                                .lineLimit(2)
-                            Spacer()
-                        }
-                        HStack {
-                            Button("Keep mine") {
-                                Task { await model.resolveConflicts(keepLocalChanges: true) }
-                            }
-                            Spacer()
-                            Button("Use server version") {
-                                Task { await model.resolveConflicts(keepLocalChanges: false) }
-                            }
-                        }
-                    }
-                    .font(.caption)
-                    .padding(10)
-                    .background(.bar)
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("juno.mobile.conversation-conflict")
-                } else if model.phase == .offline || model.lastErrorDescription != nil {
-                    HStack(spacing: 8) {
-                        Image(systemName: model.phase == .offline ? "wifi.slash" : "exclamationmark.circle")
-                        Text(model.lastErrorDescription ?? "Offline — showing saved conversations.")
-                            .lineLimit(2)
-                        Spacer()
-                        Button("Retry") { Task { await model.reload() } }
-                    }
-                    .font(.caption)
-                    .padding(10)
-                    .background(.bar)
-                }
-            }
-        }
-        .onAppear {
-            if let id = model.selectedConversationID, path.last != id {
-                path = [id]
-            }
-        }
-        .onChange(of: model.selectedConversationID) { _, id in
-            guard let id, path.last != id else { return }
-            path = [id]
         }
     }
 
-    private var conversationList: some View {
-        List {
-            let active = model.conversations.filter { !$0.isArchived }
-            let archived = model.conversations.filter(\.isArchived)
-            Section {
-                ForEach(active) { conversationRow($0) }
-            }
-            if !archived.isEmpty {
-                Section("Archived") {
-                    ForEach(archived) { conversationRow($0) }
-                }
-            }
-        }
-        .accessibilityIdentifier("juno.mobile.conversation-list")
-    }
-
-    private func conversationRow(_ conversation: NativeConversation) -> some View {
-        NavigationLink(value: conversation.id) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    if conversation.pinned { Image(systemName: "pin.fill").font(.caption2) }
-                    Text(conversation.title).lineLimit(1)
-                    Spacer()
-                    if conversation.isPending {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .foregroundStyle(.secondary)
-                            .accessibilityLabel("Waiting to sync")
-                    }
-                }
-                HStack {
-                    Text(conversation.model).lineLimit(1)
-                    Spacer()
-                    Text(conversation.lastMessageAt, style: .relative)
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .swipeActions(edge: .leading) {
-            Button {
-                Task { await model.setPinned(id: conversation.id, pinned: !conversation.pinned) }
-            } label: {
-                Label(conversation.pinned ? "Unpin" : "Pin", systemImage: "pin")
-            }
-            .tint(.orange)
-        }
-        .swipeActions(edge: .trailing) {
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("chat.empty.title", systemImage: "bubble.left.and.text.bubble.right")
+        } description: {
+            Text("chat.empty.description")
+        } actions: {
             Button {
                 Task {
-                    await model.setArchived(id: conversation.id, archived: !conversation.isArchived)
+                    if let id = await model.createConversation() {
+                        model.selectedConversationID = id
+                    }
                 }
             } label: {
-                Label(conversation.isArchived ? "Unarchive" : "Archive", systemImage: "archivebox")
+                Label("chat.new", systemImage: "square.and.pencil")
             }
-            .tint(.indigo)
+            .buttonStyle(.borderedProminent)
+            .disabled(model.isMutating)
         }
+        .navigationTitle("navigation.chat")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

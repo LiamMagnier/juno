@@ -209,6 +209,54 @@
         }
       }
     },
+    "chat.empty.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a chat from the sidebar, or start a new one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un chat dans la barre latérale, ou démarrez-en un nouveau."
+          }
+        }
+      }
+    },
+    "chat.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a conversation"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrer une conversation"
+          }
+        }
+      }
+    },
+    "chat.new": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle discussion"
+          }
+        }
+      }
+    },
     "navigation.artifacts": {
       "localizations": {
         "en": {
@@ -397,6 +445,38 @@
           "stringUnit": {
             "state": "translated",
             "value": "Espace de travail"
+          }
+        }
+      }
+    },
+    "sidebar.pinned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épinglés"
+          }
+        }
+      }
+    },
+    "sidebar.recents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recents"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récents"
           }
         }
       }

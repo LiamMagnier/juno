@@ -72,6 +72,33 @@ final class PreviewWorldTests: XCTestCase {
         XCTAssertNotNil(world.memorySettingsModel.settings)
     }
 
+    /// Regression guard for the Library and Artifacts destinations: both must
+    /// seed real, navigable content so their screens render instead of crashing
+    /// or falling back to an empty/unavailable state.
+    func testLibraryAndArtifactsDestinationsHaveNavigableContent() async throws {
+        for scenario in [PreviewScenario.normal, .manyItems] {
+            let world = try PreviewWorld(scenario: scenario)
+            await world.activate()
+            XCTAssertFalse(
+                world.artifactModel.artifacts.isEmpty,
+                "Artifacts destination has no content in \(scenario)"
+            )
+            XCTAssertFalse(
+                world.projectModel.files.isEmpty,
+                "Library destination has no files in \(scenario)"
+            )
+        }
+    }
+
+    func testManyItemsScenarioUsesRealisticVariedConversationTitles() async throws {
+        let world = try PreviewWorld(scenario: .manyItems)
+        await world.activate()
+        let titles = world.conversationModel.conversations.map(\.title)
+        XCTAssertFalse(titles.contains { $0.contains("Conversation number") },
+                       "Fixtures must use realistic titles, not placeholders")
+        XCTAssertTrue(titles.contains("Designing the native sidebar"))
+    }
+
     func testActivationIsIdempotent() async throws {
         let world = try PreviewWorld(scenario: .normal)
         await world.activate()

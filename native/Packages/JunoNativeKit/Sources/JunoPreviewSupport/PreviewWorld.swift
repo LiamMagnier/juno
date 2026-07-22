@@ -127,6 +127,13 @@ public final class PreviewWorld {
         await artifactModel.start(for: accountID)
         await memorySettingsModel.start(for: accountID)
         searchModel.start(for: accountID)
+
+        // Select a conversation so the chat destination shows a real transcript
+        // rather than the empty state during QA.
+        if conversationModel.selectedConversationID == nil {
+            conversationModel.selectedConversationID =
+                conversationModel.conversations.first(where: { !$0.isArchived })?.id
+        }
     }
 
     private func seedRepository() async {

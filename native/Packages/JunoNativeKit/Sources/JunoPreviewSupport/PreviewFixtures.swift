@@ -137,11 +137,23 @@ public enum PreviewFixtures {
         return out
     }
 
+    /// Realistic, varied conversation titles for the dense-list scenario.
+    private static let manyTitles = [
+        "Designing the native sidebar", "Astro report draft", "Weekend trip planning",
+        "Swift optionals deep dive", "Portfolio redesign", "SQLite migration plan",
+        "Liquid Glass experiments", "Quarterly OKRs", "Dinner recipe ideas",
+        "Refactoring the sync engine", "SwiftUI layout bugs", "Marketing copy review",
+        "Reading list for July", "API contract questions", "Onboarding flow rewrite",
+        "Dark mode color audit", "Interview prep notes", "Bug triage backlog",
+        "Vacation itinerary", "Accessibility checklist",
+    ]
+
     private static func manyRecords(_ a: StorageAccountID) -> [StoredRecord] {
         var out: [StoredRecord] = [settings(a), memorySummary(a)]
         for i in 0..<40 {
+            let title = manyTitles[i % manyTitles.count]
             out.append(record(a, "conversation", "conv-\(i)", UInt64(i + 1), """
-            {"id":"conv-\(i)","title":"Conversation number \(i) about native UI details","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(i < 2),"archivedAt":null,"createdAt":"\(iso(-Double(i) * 3600))","updatedAt":"\(iso(-Double(i) * 60))","lastMessageAt":"\(iso(-Double(i) * 60))"}
+            {"id":"conv-\(i)","title":"\(title)","model":"anthropic:claude-sonnet-4-6","kind":"chat","pinned":\(i < 2),"archivedAt":null,"createdAt":"\(iso(-Double(i) * 3600))","updatedAt":"\(iso(-Double(i) * 60))","lastMessageAt":"\(iso(-Double(i) * 60))"}
             """))
         }
         for i in 0..<24 {
