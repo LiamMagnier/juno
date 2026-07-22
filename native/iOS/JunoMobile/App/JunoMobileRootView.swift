@@ -145,21 +145,25 @@ struct JunoMobileRootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .background(Color.junoCanvas.ignoresSafeArea())
 
-            detail(for: selection)
-                .allowsHitTesting(!sidebarOpen)
-                .overlay {
-                    if sidebarOpen {
-                        Rectangle()
-                            .fill(.clear)
-                            .contentShape(Rectangle())
-                            .onTapGesture { setSidebar(false) }
-                            .accessibilityLabel("Close sidebar")
-                            .accessibilityAddTraits(.isButton)
-                    }
+            ZStack {
+                Color(uiColor: .systemBackground)
+                detail(for: selection)
+                    .allowsHitTesting(!sidebarOpen)
+            }
+            .overlay {
+                if sidebarOpen {
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture { setSidebar(false) }
+                        .accessibilityLabel("Close sidebar")
+                        .accessibilityAddTraits(.isButton)
                 }
-                .clipShape(RoundedRectangle(cornerRadius: sidebarOpen ? 22 : 0, style: .continuous))
-                .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 22, x: -1)
-                .offset(x: sidebarOpen ? revealed : 0)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: sidebarOpen ? 52 : 0, style: .continuous))
+            .ignoresSafeArea()
+            .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 22, x: -1)
+            .offset(x: sidebarOpen ? revealed : 0)
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: sidebarOpen)
         .gesture(
@@ -467,8 +471,8 @@ private struct JunoMobileSidebarDrawer: View {
             }
             HStack(spacing: 10) {
                 profileButton
-                newChatButton
                 Spacer(minLength: 0)
+                newChatButton
             }
         }
         .padding(.horizontal, 14)
