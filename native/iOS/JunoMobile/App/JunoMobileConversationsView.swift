@@ -495,6 +495,12 @@ private struct JunoMobileMessageRow: View {
 
     private var isUser: Bool { message.role == .user }
 
+    /// The assistant is working but has not started writing the answer yet — the
+    /// moment to show the inline "Thinking about your request" status.
+    private var showThinking: Bool {
+        !isUser && message.isPending && message.content.isEmpty
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             if isUser { Spacer(minLength: 40) }
@@ -508,21 +514,21 @@ private struct JunoMobileMessageRow: View {
             }
             VStack(alignment: .leading, spacing: 7) {
                 Text(isUser ? "You" : "Juno").junoMetadata()
-                Text(message.content)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                if let reasoning = message.reasoning, !reasoning.isEmpty {
-                    DisclosureGroup {
-                        Text(reasoning)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.top, 4)
-                    } label: {
-                        Label("Reasoning", systemImage: "brain").junoMetadata()
-                    }
+
+                // Reasoning sits above the answer as a collapsible control, not
+                // as a forgotten note beneath it.
+                if !isUser, let reasoning = message.reasoning, !reasoning.isEmpty {
+                    JunoReasoningDisclosure(text: reasoning)
                 }
+
+                if showThinking {
+                    JunoThinkingIndicator()
+                } else if !message.content.isEmpty {
+                    Text(message.content)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 if !message.sources.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Sources").junoMetadata()
@@ -535,14 +541,18 @@ private struct JunoMobileMessageRow: View {
                         }
                     }
                 }
-                HStack(spacing: 8) {
-                    if let model = message.model, !model.isEmpty {
-                        Text(junoDisplayModelName(model)).font(.caption2).foregroundStyle(.tertiary)
-                    }
-                    if message.isPending {
-                        ProgressView().controlSize(.small)
+
+                if (message.model?.isEmpty == false) || (message.isPending && !showThinking) {
+                    HStack(spacing: 8) {
+                        if let model = message.model, !model.isEmpty {
+                            Text(junoDisplayModelName(model)).font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        if message.isPending && !showThinking {
+                            ProgressView().controlSize(.mini)
+                        }
                     }
                 }
+
                 if let error = message.errorDescription {
                     Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
@@ -565,6 +575,58 @@ private struct JunoMobileMessageRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isUser ? "You said" : "Juno replied")
+    }
+}
+
+/// The inline "Thinking about your request" status shown before the assistant's
+/// answer begins. Uses a subtle, self-limiting symbol pulse that is suppressed
+/// under Reduce Motion.
+private struct JunoThinkingIndicator: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "sparkles")
+                .font(.callout)
+                .foregroundStyle(Color.junoAccent)
+                .symbolEffect(.pulse, isActive: !reduceMotion)
+            Text("Thinking about your request")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Thinking about your request")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// The post-completion reasoning trace, presented as a compact expandable
+/// control (chevron, coral label) rather than a metadata footnote. VoiceOver
+/// announces the expanded/collapsed state via `DisclosureGroup`.
+private struct JunoReasoningDisclosure: View {
+    let text: String
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, 6)
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "brain")
+                    .font(.caption)
+                Text("Reasoning")
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(Color.junoAccent)
+        }
+        .tint(Color.junoAccent)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: expanded)
     }
 }
 
