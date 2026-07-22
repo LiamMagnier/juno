@@ -1,19 +1,19 @@
 {
-  "branch": "agent/juno-code-remote-backend (== main == 2f07804, deployed)",
+  "branch": "agent/juno-final-completion",
   "currentCommit": "2f07804",
   "deployedToProduction": true,
   "productionBaseUrl": "https://chat.liams.dev",
   "productionContractVersion": "1.3.0",
   "workingTreeClean": true,
   "currentPhase": "release-deployed-and-verified; next is phase-5, exercising Chat end to end from a native client against production",
-  "currentTask": "The release is DEPLOYED. main is 2f07804 and that commit is live at https://chat.liams.dev. All release gates pass including JUNO_CHECK_LIVE_CONTRACT=1. Verified by request after the deploy: production serves x-juno-contract-version 1.3.0 (was 1.0.1), homepage 200, /api/v1/auth/session + /api/v1/bootstrap + /api/v1/entities/index all 401 unauthenticated so the routes exist and auth is enforced, prisma migrate deploy reported '41 migrations found. No pending migrations to apply.' (the release adds NO migrations, so production schema is untouched), and pm2 shows juno-backend, juno-voice-relay and juno-scheduler online. Integration detail worth keeping: origin/main carried 8e7b898, the SQUASH merge of PR #15, which had landed an earlier snapshot of this same native lineage as brand-new files — that is why 35 of 39 conflicts were add/add even though this branch is a strict continuation. Every conflict resolved to the branch side, then checked rather than assumed: profile/page.tsx is byte-identical to origin/main so main's e0d1285 fix survived, and the migration set matches main's exactly. The bare-NULL migration hazard is CLOSED on both feature branches — the file is byte-identical to origin/main with all 22 NULL::timestamp. DO NOT read the deploy as 'the product works end to end': what is proven is that the backend is live at 1.3.0 and the native clients build against it. Chat, attachments, Deep Research, Canvas and Remote have not been exercised against production from a native client. BLOCKED, NEEDS THE OWNER: all macOS visual QA. (1) Screen Recording is not granted — a full-screen screencapture returns a pure black image, and -l<winid> / -R<rect> are refused outright; ScreenCaptureKit from a CLI binary fails with SCStreamErrorDomain -3811. (2) Every Xcode-built Juno target launches, runs a normal event loop and creates ZERO windows, confirmed by CGWindowList including off-screen and by the accessibility tree after 60s; reproduced on pre-redesign commit 2075a5c so it is NOT a redesign regression, while a hand-built minimal SwiftUI app in the same directory does get a window. The earlier 'killall cfprefsd broke window creation' diagnosis is WRONG — TextEdit launches and gets a window fine in this same login session.",
+  "currentTask": "The release is DEPLOYED. main is 2f07804 and that commit is live at https://chat.liams.dev. All release gates pass including JUNO_CHECK_LIVE_CONTRACT=1. Verified by request after the deploy: production serves x-juno-contract-version 1.3.0 (was 1.0.1), homepage 200, /api/v1/auth/session + /api/v1/bootstrap + /api/v1/entities/index all 401 unauthenticated so the routes exist and auth is enforced, prisma migrate deploy reported '41 migrations found. No pending migrations to apply.' (the release adds NO migrations, so production schema is untouched), and pm2 shows juno-backend, juno-voice-relay and juno-scheduler online. Integration detail worth keeping: origin/main carried 8e7b898, the SQUASH merge of PR #15, which had landed an earlier snapshot of this same native lineage as brand-new files \u2014 that is why 35 of 39 conflicts were add/add even though this branch is a strict continuation. Every conflict resolved to the branch side, then checked rather than assumed: profile/page.tsx is byte-identical to origin/main so main's e0d1285 fix survived, and the migration set matches main's exactly. The bare-NULL migration hazard is CLOSED on both feature branches \u2014 the file is byte-identical to origin/main with all 22 NULL::timestamp. DO NOT read the deploy as 'the product works end to end': what is proven is that the backend is live at 1.3.0 and the native clients build against it. Chat, attachments, Deep Research, Canvas and Remote have not been exercised against production from a native client. BLOCKED, NEEDS THE OWNER: all macOS visual QA. (1) Screen Recording is not granted \u2014 a full-screen screencapture returns a pure black image, and -l<winid> / -R<rect> are refused outright; ScreenCaptureKit from a CLI binary fails with SCStreamErrorDomain -3811. (2) Every Xcode-built Juno target launches, runs a normal event loop and creates ZERO windows, confirmed by CGWindowList including off-screen and by the accessibility tree after 60s; reproduced on pre-redesign commit 2075a5c so it is NOT a redesign regression, while a hand-built minimal SwiftUI app in the same directory does get a window. The earlier 'killall cfprefsd broke window creation' diagnosis is WRONG \u2014 TextEdit launches and gets a window fine in this same login session.",
   "nextFiles": [
     "docs/native/NEXT_PROMPT.md",
     "native/Packages/JunoCode/Sources/JunoCodeUI/Views/WorkbenchView.swift",
     "docs/native/CODE_REMOTE_AUDIT.md",
     "scripts/release-gates.sh"
   ],
-  "orphanRecoveryBranch": "agent/juno-code-remote-orphan-recovery (2b353f6, pushed) — the previously uncommitted Code session relay, preserved byte-identically and deliberately NOT shipped: its routes are not in the published contract, it has no native callers, and its migration sorts before already-applied history",
+  "orphanRecoveryBranch": "agent/juno-code-remote-orphan-recovery (2b353f6, pushed) \u2014 the previously uncommitted Code session relay, preserved byte-identically and deliberately NOT shipped: its routes are not in the published contract, it has no native callers, and its migration sorts before already-applied history",
   "completed": [
     "Juno Code developer surfaces redesigned onto the shared design system in d19e924: JunoCodeTheme reduced to an alias layer, new shared JunoStatus.swift tokens, one ActivityRow shape for every transcript event, Markdown assistant turns, visible checkpoints, risk-tinted ApprovalCard, permission-mode menu in the composer, labelled inspector tab strip with overflow and VoiceOver purposes; also fixed JunoMacApp building the live configuration for DEBUG preview launches",
     "macOS design system + Chat/Code shell redesign in b3f069a after owner rejection; fixed the all-coral navigation and invisible dark-mode icons (one root cause), inspector no longer dominates Code, New Session integrated",
@@ -85,5 +85,51 @@
   "blockers": [
     "Apple bundle identifiers, Team/signing/provisioning, App Store Connect, Developer ID and notarization inputs unavailable",
     "Production StoreKit mapping and APNs credentials require owner input"
-  ]
+  ],
+  "updated": "2026-07-22",
+  "head": "3c7138ea33f3f101cf8a49fe5e5dc4a32bef980b",
+  "worktree": "/Users/liammagnier/Desktop/workspace/.worktrees/juno-final-completion",
+  "baseMain": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
+  "deployedServerSHA": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
+  "nativeContractVersion": "1.3.0",
+  "appVersion": "0.1.1",
+  "appBuild": "2",
+  "iphone": {
+    "deviceIdentifier": "07200C91-0B36-5908-9083-7511BEF3A003",
+    "bundleId": "com.liammagnier.JunoMobile",
+    "installedVersion": "0.1.1",
+    "installedBuild": "2",
+    "installedGitSHA": "3c7138ea33",
+    "installMode": "upgrade-in-place (container and outbox preserved)",
+    "launched": true,
+    "processObservedRunning": true,
+    "screenObserved": false,
+    "screenObservationBlocker": "devicectl cannot screenshot or drive a physical device; simulator tooling refuses physical devices; idevicesyslog not installed"
+  },
+  "stagesComplete": [
+    "audit",
+    "stage-1-diagnostics",
+    "stage-2-signed-install"
+  ],
+  "stagesNotStarted": [
+    "stage-3",
+    "stage-4",
+    "stage-5",
+    "stage-6",
+    "stage-7",
+    "stage-8",
+    "stage-9",
+    "stage-10",
+    "stage-11",
+    "stage-12",
+    "stage-13",
+    "stage-14-full",
+    "stage-15",
+    "stage-16"
+  ],
+  "tests": {
+    "junoNativeKit": "63 executions, 0 failures",
+    "releaseGates": "all passed"
+  },
+  "nextAction": "Owner opens iPhone Settings > About > Diagnostics and reports Phase, Last HTTP status, Failure rows"
 }
