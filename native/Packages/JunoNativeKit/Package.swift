@@ -19,6 +19,9 @@ let package = Package(
         .library(name: "JunoChatKit", targets: ["JunoChatKit"]),
         .library(name: "JunoCodeKit", targets: ["JunoCodeKit"]),
         .library(name: "JunoVoiceKit", targets: ["JunoVoiceKit"]),
+        // Development-only: every source file is wrapped in `#if DEBUG`, so this
+        // target contributes nothing to Release builds.
+        .library(name: "JunoPreviewSupport", targets: ["JunoPreviewSupport"]),
     ],
     targets: [
         .target(name: "JunoCore"),
@@ -48,6 +51,13 @@ let package = Package(
         .target(
             name: "JunoVoiceKit",
             dependencies: ["JunoCore", "JunoAPI", "JunoAuth", "JunoDesignSystem"]
+        ),
+        .target(
+            name: "JunoPreviewSupport",
+            dependencies: [
+                "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
+                "JunoSearch", "JunoChatKit", "JunoCodeKit", "JunoDesignSystem",
+            ]
         ),
         .testTarget(name: "JunoCoreTests", dependencies: ["JunoCore"]),
         .testTarget(name: "JunoAPITests", dependencies: ["JunoAPI"]),
@@ -81,6 +91,13 @@ let package = Package(
         .testTarget(
             name: "JunoVoiceKitTests",
             dependencies: ["JunoVoiceKit"]
+        ),
+        .testTarget(
+            name: "JunoPreviewSupportTests",
+            dependencies: [
+                "JunoPreviewSupport", "JunoCore", "JunoAPI", "JunoAuth",
+                "JunoStorage", "JunoSync",
+            ]
         ),
     ],
     swiftLanguageModes: [.v6]

@@ -7,6 +7,9 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 import UIKit
+#if DEBUG
+import JunoPreviewSupport
+#endif
 
 @main
 struct JunoMobileApp: App {
@@ -33,17 +36,49 @@ struct JunoMobileApp: App {
 
     var body: some Scene {
         WindowGroup {
-            JunoMobileRootView(
-                authModel: authModel,
-                syncModel: syncModel,
-                conversationModel: conversationModel,
-                projectModel: projectModel,
-                artifactModel: artifactModel,
-                memorySettingsModel: memorySettingsModel,
-                searchModel: searchModel
-            )
+            #if DEBUG
+            if JunoPreviewEnvironment.isActive {
+                JunoPreviewContainer(
+                    initialScenario: JunoPreviewEnvironment.initialScenario
+                ) { world in
+                    JunoMobileRootView(
+                        authModel: Self.previewAuthModel,
+                        syncModel: world.syncModel,
+                        conversationModel: world.conversationModel,
+                        projectModel: world.projectModel,
+                        artifactModel: world.artifactModel,
+                        memorySettingsModel: world.memorySettingsModel,
+                        searchModel: world.searchModel,
+                        previewSession: world.session
+                    )
+                }
+            } else {
+                rootView
+            }
+            #else
+            rootView
+            #endif
         }
     }
+
+    private var rootView: some View {
+        JunoMobileRootView(
+            authModel: authModel,
+            syncModel: syncModel,
+            conversationModel: conversationModel,
+            projectModel: projectModel,
+            artifactModel: artifactModel,
+            memorySettingsModel: memorySettingsModel,
+            searchModel: searchModel
+        )
+    }
+
+    #if DEBUG
+    @MainActor
+    private static let previewAuthModel = NativeAuthModel(
+        configurationErrorDescription: "UI Preview"
+    )
+    #endif
 
     @MainActor
     private static func makeConfiguration() -> JunoMobileConfiguration {

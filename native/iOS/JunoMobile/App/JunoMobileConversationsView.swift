@@ -244,13 +244,17 @@ private struct JunoMobileConversationDetail: View {
             }
             .background(Color.junoCanvas)
             .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                geometry.contentSize.height
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                let distance = geometry.contentSize.height
                     - geometry.contentOffset.y
                     - geometry.containerSize.height
-                    + geometry.contentInsets.bottom
-            } action: { _, distanceFromBottom in
-                isNearBottom = distanceFromBottom < 120
+                // Non-scrollable (content fits) counts as "at bottom" so the
+                // jump-to-latest control never shows when there is nothing to
+                // scroll to.
+                return geometry.contentSize.height <= geometry.containerSize.height
+                    || distance < 120
+            } action: { _, nearBottom in
+                isNearBottom = nearBottom
             }
             .onChange(of: streamSignature) { _, _ in
                 guard isNearBottom else { return }

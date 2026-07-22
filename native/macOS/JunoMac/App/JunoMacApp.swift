@@ -6,6 +6,9 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
+#if DEBUG
+import JunoPreviewSupport
+#endif
 
 @main
 struct JunoMacApp: App {
@@ -36,18 +39,31 @@ struct JunoMacApp: App {
 
     var body: some Scene {
         WindowGroup("Juno") {
-            JunoMacRootView(
-                selection: $selectedSection,
-                authModel: authModel,
-                syncModel: syncModel,
-                conversationModel: conversationModel,
-                projectModel: projectModel,
-                artifactModel: artifactModel,
-                memorySettingsModel: memorySettingsModel,
-                searchModel: searchModel,
-                chatTransport: chatTransport
-            )
+            #if DEBUG
+            if JunoPreviewEnvironment.isActive {
+                JunoPreviewContainer(
+                    initialScenario: JunoPreviewEnvironment.initialScenario
+                ) { world in
+                    JunoMacRootView(
+                        selection: $selectedSection,
+                        authModel: Self.previewAuthModel,
+                        syncModel: world.syncModel,
+                        conversationModel: world.conversationModel,
+                        projectModel: world.projectModel,
+                        artifactModel: world.artifactModel,
+                        memorySettingsModel: world.memorySettingsModel,
+                        searchModel: world.searchModel,
+                        chatTransport: world.chatTransport,
+                        previewSession: world.session
+                    )
+                }
                 .frame(minWidth: 760, minHeight: 520)
+            } else {
+                rootView
+            }
+            #else
+            rootView
+            #endif
         }
         .defaultSize(width: 1_180, height: 760)
         .commands {
@@ -55,6 +71,28 @@ struct JunoMacApp: App {
             JunoMacNavigationCommands(selection: $selectedSection)
         }
     }
+
+    private var rootView: some View {
+        JunoMacRootView(
+            selection: $selectedSection,
+            authModel: authModel,
+            syncModel: syncModel,
+            conversationModel: conversationModel,
+            projectModel: projectModel,
+            artifactModel: artifactModel,
+            memorySettingsModel: memorySettingsModel,
+            searchModel: searchModel,
+            chatTransport: chatTransport
+        )
+        .frame(minWidth: 760, minHeight: 520)
+    }
+
+    #if DEBUG
+    @MainActor
+    private static let previewAuthModel = NativeAuthModel(
+        configurationErrorDescription: "UI Preview"
+    )
+    #endif
 
     @MainActor
     private static func makeConfiguration() -> JunoMacConfiguration {

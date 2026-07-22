@@ -18,22 +18,34 @@ struct JunoMacRootView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    #if DEBUG
+    /// Set only by the local UI Preview harness to render the real authenticated
+    /// shell without any authentication; nil in every normal run.
+    var previewSession: NativeAuthenticatedSession?
+    #endif
 
     var body: some View {
         Group {
-            switch authModel.phase {
-            case .signedIn(let session):
-                authenticatedContent(session: session)
-            case .restoring:
-                ProgressView("auth.restoring")
-            case .signedOut, .signingIn, .unavailable:
-                JunoMacSignInView(authModel: authModel)
+            #if DEBUG
+            if let previewSession {
+                authenticatedContent(session: previewSession)
+            } else {
+                phaseContent
             }
+            #else
+            phaseContent
+            #endif
         }
         .task {
+            #if DEBUG
+            if previewSession != nil { return }
+            #endif
             await authModel.restore()
         }
         .onChange(of: authModel.phase) { _, phase in
+            #if DEBUG
+            if previewSession != nil { return }
+            #endif
             if case .signedIn(let session) = phase {
                 syncModel?.start(for: session.profile.id)
                 Task { await conversationModel?.start(for: session.profile.id) }
@@ -63,6 +75,18 @@ struct JunoMacRootView: View {
             Task { await projectModel?.reload() }
             Task { await artifactModel?.reload() }
             Task { await memorySettingsModel?.reload() }
+        }
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch authModel.phase {
+        case .signedIn(let session):
+            authenticatedContent(session: session)
+        case .restoring:
+            ProgressView("auth.restoring")
+        case .signedOut, .signingIn, .unavailable:
+            JunoMacSignInView(authModel: authModel)
         }
     }
 

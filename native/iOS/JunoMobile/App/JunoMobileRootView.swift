@@ -5,6 +5,9 @@ import JunoSync
 import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
+#if DEBUG
+import JunoPreviewSupport
+#endif
 
 struct JunoMobileRootView: View {
     let authModel: NativeAuthModel
@@ -16,22 +19,40 @@ struct JunoMobileRootView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     // Restores the last-viewed tab across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
+    #if DEBUG
+    /// Set only by the local UI Preview harness to render the real authenticated
+    /// shell without any authentication; nil in every normal run.
+    var previewSession: NativeAuthenticatedSession?
+    #endif
 
     var body: some View {
         Group {
-            switch authModel.phase {
-            case .signedIn(let session):
-                authenticatedContent(session: session)
-            case .restoring:
-                ProgressView("auth.restoring")
-            case .signedOut, .signingIn, .unavailable:
-                JunoMobileSignInView(authModel: authModel)
+            #if DEBUG
+            if let previewSession {
+                authenticatedContent(session: previewSession)
+            } else {
+                phaseContent
             }
+            #else
+            phaseContent
+            #endif
         }
         .task {
+            #if DEBUG
+            if previewSession != nil {
+                if let raw = JunoPreviewEnvironment.initialDestination,
+                    let section = JunoMobileSection(rawValue: raw) {
+                    selection = section
+                }
+                return
+            }
+            #endif
             await authModel.restore()
         }
         .onChange(of: authModel.phase) { _, phase in
+            #if DEBUG
+            if previewSession != nil { return }
+            #endif
             if case .signedIn(let session) = phase {
                 syncModel?.start(for: session.profile.id)
                 Task { await conversationModel?.start(for: session.profile.id) }
@@ -61,6 +82,18 @@ struct JunoMobileRootView: View {
             Task { await projectModel?.reload() }
             Task { await artifactModel?.reload() }
             Task { await memorySettingsModel?.reload() }
+        }
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch authModel.phase {
+        case .signedIn(let session):
+            authenticatedContent(session: session)
+        case .restoring:
+            ProgressView("auth.restoring")
+        case .signedOut, .signingIn, .unavailable:
+            JunoMobileSignInView(authModel: authModel)
         }
     }
 

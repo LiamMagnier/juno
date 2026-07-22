@@ -244,12 +244,14 @@ private struct JunoMacConversationDetail: View {
                 }
                 .background(Color.junoCanvas)
                 .defaultScrollAnchor(.bottom)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentSize.height
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    let distance = geometry.contentSize.height
                         - geometry.contentOffset.y
                         - geometry.containerSize.height
-                } action: { _, distanceFromBottom in
-                    isNearBottom = distanceFromBottom < 120
+                    return geometry.contentSize.height <= geometry.containerSize.height
+                        || distance < 120
+                } action: { _, nearBottom in
+                    isNearBottom = nearBottom
                 }
                 .onChange(of: streamSignature) { _, _ in
                     guard isNearBottom else { return }

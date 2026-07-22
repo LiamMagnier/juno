@@ -19,6 +19,7 @@
 		7D6CF61A7C6BC98485DF9F98 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 263173540341BD6A4CF6F923 /* Assets.xcassets */; };
 		81410B22A832D6417CB0F1D3 /* JunoMobileSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F1F2D82A0FD412668291481 /* JunoMobileSettingsView.swift */; };
 		8FE41C06BD0740693C5608C8 /* JunoMobileNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ADEDC5B4FBF00B7F6F68EF8 /* JunoMobileNavigationTests.swift */; };
+		AE1097E4C92FBB84FEE89856 /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 14B0A6A3E97D8F39ADCB7B0D /* JunoPreviewSupport */; };
 		BD7ADFECA76F50A40658C95B /* JunoMobileLaunchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1E8580B3F4DBC67391C51C /* JunoMobileLaunchUITests.swift */; };
 		C3EDBC00CDEE4224CE418C50 /* JunoMobileWebAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B98928C759F49693FFE8CB52 /* JunoMobileWebAuthenticationClient.swift */; };
 		D44A721E25F3AA5AAD3A40DB /* JunoSync in Frameworks */ = {isa = PBXBuildFile; productRef = F81434780A363C6AAB06DA09 /* JunoSync */; };
@@ -79,6 +80,7 @@
 				1CFB7663D4D8F5A5A5717D1C /* JunoDesignSystem in Frameworks */,
 				0018278BF7A67D0668145C7B /* JunoStorage in Frameworks */,
 				D44A721E25F3AA5AAD3A40DB /* JunoSync in Frameworks */,
+				AE1097E4C92FBB84FEE89856 /* JunoPreviewSupport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -235,6 +237,7 @@
 				80C41C8CC4232C2DA96E0D8B /* JunoDesignSystem */,
 				D0882F26D7E19F0B6AAC7C2D /* JunoStorage */,
 				F81434780A363C6AAB06DA09 /* JunoSync */,
+				14B0A6A3E97D8F39ADCB7B0D /* JunoPreviewSupport */,
 			);
 			productName = JunoMobile;
 			productReference = 51F5144F04041806FCB5E2F9 /* JunoMobile.app */;
@@ -711,6 +714,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		14B0A6A3E97D8F39ADCB7B0D /* JunoPreviewSupport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoPreviewSupport;
+		};
 		587829A8A0C26A1DE4FEDD99 /* JunoCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = JunoCore;

@@ -41,6 +41,10 @@ targets:
         product: JunoStorage
       - package: JunoNativeKit
         product: JunoSync
+      # Development-only visual QA harness; its symbols are all #if DEBUG, so it
+      # contributes nothing to Stable/Release builds.
+      - package: JunoNativeKit
+        product: JunoPreviewSupport
     configFiles:
       Debug: ../../Config/JunoMobile-Debug.xcconfig
       Stable: ../../Config/JunoMobile-Stable.xcconfig
