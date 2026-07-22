@@ -213,7 +213,7 @@ private struct JunoMobileSettingsSections: View {
                 selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) }
             ) {
                 if !modelCatalog.contains(where: { $0.id == settings.defaultModel }) {
-                    Text(settings.defaultModel).tag(settings.defaultModel)
+                    Text(junoDisplayModelName(settings.defaultModel)).tag(settings.defaultModel)
                 }
                 ForEach(modelCatalog) { option in
                     Text(option.displayName).tag(option.id)

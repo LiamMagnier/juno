@@ -20,6 +20,7 @@ struct JunoMobileRootView: View {
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
+    @State private var showingSettings = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
@@ -49,6 +50,9 @@ struct JunoMobileRootView: View {
                 }
                 if CommandLine.arguments.contains("--juno-preview-sidebar") {
                     sidebarOpen = true
+                }
+                if CommandLine.arguments.contains("--juno-preview-settings") {
+                    showingSettings = true
                 }
                 return
             }
@@ -109,17 +113,59 @@ struct JunoMobileRootView: View {
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        if sizeClass == .compact {
-            compactDrawer(session: session)
-        } else {
-            NavigationSplitView {
-                sidebar(session: session)
-                    .navigationBarTitleDisplayMode(.inline)
-            } detail: {
-                detail(for: selection)
+        Group {
+            if sizeClass == .compact {
+                compactDrawer(session: session)
+            } else {
+                NavigationSplitView {
+                    sidebar(session: session)
+                        .navigationBarTitleDisplayMode(.inline)
+                } detail: {
+                    detail(for: selection)
+                }
+                .navigationSplitViewStyle(.balanced)
             }
-            .navigationSplitViewStyle(.balanced)
         }
+        .sheet(isPresented: $showingSettings) { settingsSheet }
+    }
+
+    /// Settings is presented as a large modal sheet over the current screen —
+    /// the app stays visible and dimmed behind it, and dismissing restores the
+    /// exact screen underneath. The sheet owns a single NavigationStack so
+    /// subpages (Memory, …) push with one Back and the root shows only a close
+    /// button.
+    @ViewBuilder
+    private var settingsSheet: some View {
+        NavigationStack {
+            Group {
+                if let memorySettingsModel {
+                    JunoMobileSettingsView(
+                        model: memorySettingsModel,
+                        conversationModel: conversationModel,
+                        authModel: authModel,
+                        session: currentSession
+                    )
+                } else {
+                    unavailable
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSettings = false } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 30, height: 30)
+                            .modifier(JunoGlassCircle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close settings")
+                    .accessibilityIdentifier("juno.mobile.settings-close")
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
     }
 
     // MARK: iPhone drawer
@@ -196,9 +242,15 @@ struct JunoMobileRootView: View {
     }
 
     private func openSidebarDestination(_ destination: JunoMobileSection) {
+        setSidebar(false)
+        // Settings is a modal sheet over the current screen, never a pushed
+        // destination that replaces it.
+        guard destination != .settings else {
+            showingSettings = true
+            return
+        }
         selection = destination
         if destination != .chat { conversationModel?.selectedConversationID = nil }
-        setSidebar(false)
     }
 
     private func openSidebarConversation(_ id: String) {
@@ -315,7 +367,7 @@ struct JunoMobileRootView: View {
             artifactModel?.selectedArtifactID = result.entityID
             selection = .artifacts
         case .memory:
-            selection = .settings
+            showingSettings = true
         }
     }
 }
