@@ -1,14 +1,14 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "01c6a74",
+  "currentCommit": "677d781",
   "workingTreeClean": true,
-  "currentPhase": "juno-code-integration",
-  "currentTask": "Update this branch onto the latest agent/juno-native, then compose JunoCodeKit and the generated Code/Remote contracts into real native Cloud Code and Remote host surfaces.",
+  "currentPhase": "post-juno-code-integration",
+  "currentTask": "Juno Code macOS (PR #17) is merged and validated. Cloud/Remote Code needs backend Code-session routes that do not exist (GAP-021); escalate that backend design or proceed to the unblocked UI/UX refresh and accessibility work.",
   "nextFiles": [
-    "native/Packages/JunoNativeKit/Sources/JunoCodeKit",
-    "src/lib/cloud-code.ts",
-    "src/lib/code-remote.ts",
-    "src/app/api/v1"
+    "docs/native/API_GAPS.md",
+    "docs/native/JUNO_CODE_HANDOFF.md",
+    "native/Packages/JunoCode/Sources/JunoCodeBridge",
+    "contracts/openapi/juno-native-v1.yaml"
   ],
   "completed": [
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
@@ -27,6 +27,7 @@
     "Real encrypted memory and settings with optimistic durable mutations, conflict resolution, summary hydration, explicit permanent reset and full native forms in 778a47d; /api/memory published in OpenAPI 1.2.0",
     "Real offline global search over encrypted synchronized entities via the JunoSearch contract with a throwaway index, debounce, cancellation, grouped ranked results and native navigation on both apps",
     "Mutation-conflict resolution across conversations and projects with keep-mine/use-server banners, plus a durable offline/reconnect proof (offline enqueue survives relaunch, submits once on reconnect with the original idempotency key, ambiguous loss replays the same key as a no-op) in 01c6a74",
+    "Juno Code macOS integration merged from PR #17 in 677d781: JunoCode package (Core/Local/Runtime/UI/Bridge, 179 strict tests), standalone JunoCode app, and a Code section in JunoMac via JunoMacCodeView on the authenticated model transport; Cloud/Remote Code disabled pending backend routes (GAP-021)",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -37,7 +38,7 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Juno Code integration (PR #17), Cloud Code and Remote host",
+    "Juno Code Remote Host, Cloud Code and Remote mobile (blocked on GAP-021 backend Code-session routes)",
     "Live-account interactive completion (device browser, connected-device management)",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
@@ -50,6 +51,8 @@
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (156/156)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (179/179)",
+    "JunoCode standalone Debug unsigned xcodebuild",
     "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",

@@ -243,6 +243,37 @@ it in the current transaction, mirrors it in OpenAPI, and has acceptance/rejecti
 coverage in the mutation contract tests. No new route or duplicate project
 service was added.
 
+### GAP-021 — no backend routes exist for Juno Code Cloud/Remote sessions
+
+Juno Code macOS (PR #17, merged in `677d781`) runs its **local** agent loop
+against the authenticated backend model transport, but Cloud and Remote Host
+Code sessions have no server contract. `docs/native/JUNO_CODE_HANDOFF.md`
+records this explicitly: the event model (`JunoCodeCore.SessionEventPayload`)
+and the `JunoCodeBridge` adapters are ready, and the new-session sheet shows
+both Cloud and Remote modes disabled because nothing in
+`contracts/openapi/juno-native-v1.yaml` can back them.
+
+What is missing (documented, not yet designed or built):
+
+- Create/resume a Code session bound to an account and workspace.
+- Ordered, resumable session events (a cursor-addressable event log so a
+  reconnecting client replays from its last seen sequence).
+- Idempotent session commands: prompt, approve, deny, stop.
+- Remote Host addressing by opaque workspace ID (Mac-authoritative), so a
+  mobile client can drive a session hosted on the user's Mac.
+
+Why this is not resolved in this branch: unlike GAP-020, this is not a minimal
+extension to an existing route or mutation — it is a new backend surface
+(routes, Prisma migrations, auth scoping, streaming/event durability, and a
+Remote Host addressing/relay model). The native continuation mandate is to
+extend existing contracts minimally and never duplicate services, so this gap
+needs an explicit owner-approved backend design before native Cloud/Remote Code
+can be built. The local Code experience is fully functional without it.
+
+Status: open. Blocks the "Juno Code Remote Host", "Cloud Code", and "Remote
+mobile" units. The `SessionEventPayload` model was shaped so these payloads map
+1:1 once the routes land.
+
 ## P1 — blocks commerce, release and production download
 
 ### GAP-014 — StoreKit 2 and server reconciliation are absent

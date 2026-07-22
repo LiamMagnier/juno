@@ -7,9 +7,9 @@ Updated: 2026-07-22 03:05 Europe/Paris
 - Branch: `agent/juno-native-claude-continuation` (PRs target `agent/juno-native`, never `main`)
 - Current completed implementation commit: `778a47d` (`feat(native): add real memory and settings`)
 - Worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude`
-- Current phase: Juno Code integration (PR #17), Cloud Code and Remote host.
-- Current task: memory/settings, offline global search, mutation-conflict resolution and the durable offline/reconnect proof are complete.
-- Next exact action: update this branch onto the latest `agent/juno-native`, then compose `JunoCodeKit` and the generated Code/Remote contracts into real native Cloud Code and Remote surfaces.
+- Current phase: post Juno Code macOS integration; Cloud/Remote Code blocked on backend (GAP-021).
+- Current task: memory/settings, search, conflict resolution, offline proof, and the Juno Code macOS merge (PR #17) are complete and validated.
+- Next exact action: Cloud/Remote Code needs backend Code-session routes that do not exist (GAP-021) — escalate that backend design to the owner, or proceed to the unblocked UI/UX refresh and accessibility work and return to Cloud/Remote once the routes exist.
 
 The main checkout at `/Users/liammagnier/Desktop/workspace/juno` is independently
 on `main` at `e0d1285` with pre-existing Remote Session changes. Never reset,
@@ -62,6 +62,11 @@ clean, restore, stage, or commit those files from this native worktree.
   mutation survives relaunch, submits once on reconnect with its original
   idempotency key, and ambiguous loss replays the same key as a server-side
   no-op.
+- Juno Code macOS integration (PR #17 merged in `677d781`): `JunoCode` package
+  (Core/Local/Runtime/UI/Bridge, 179 strict tests), standalone `JunoCode` app,
+  and a Code section in `JunoMac` via `JunoMacCodeView` on the authenticated
+  model transport. Cloud/Remote Code stay disabled pending backend routes
+  (GAP-021).
 - Independent macOS and iOS projects with Debug/Stable/Next configs, EN/FR catalogs, privacy manifests, callback scheme, skeleton entitlements, unit/UI test targets, and app assets.
 - Debug and Stable unsigned builds pass for both projects; macOS Stable is universal.
 - macOS unit tests 2/2 and iOS unit tests 2/2 pass.
@@ -71,10 +76,10 @@ This is a compile-verified foundation, not a feature-complete app or release.
 
 ## Open next
 
-1. PR #17 (`gh pr view 17`) and the current `agent/juno-native` head
-2. `native/Packages/JunoNativeKit/Sources/JunoCodeKit`
-3. `src/app/api/v1` Code/Remote routes and `src/lib/cloud-code.ts`, `src/lib/code-remote.ts`
-4. the web Code surfaces (read-only functional reference)
+1. `docs/native/API_GAPS.md` GAP-021 (Cloud/Remote Code backend routes)
+2. `docs/native/JUNO_CODE_HANDOFF.md` ("Not implemented yet" + "Backend needs")
+3. `native/Packages/JunoCode/Sources/JunoCodeBridge`
+4. the UI/UX refresh + accessibility work (unblocked) if Cloud/Remote stays blocked
 
 ## Commands to run next
 
@@ -109,7 +114,9 @@ Passing:
 
 - `npm run native:contract:check`.
 - Strict Release package build with `-warnings-as-errors`.
-- Strict package suite: 156/156 tests, including fifteen memory/settings, five search, and two offline/reconnect proof tests.
+- Strict JunoNativeKit suite: 156/156 tests, including fifteen memory/settings, five search, and two offline/reconnect proof tests.
+- Strict JunoCode suite: 179/179 tests (Core 68, Local 56, Runtime 30, UI 7, Bridge 18).
+- JunoCode standalone Debug unsigned build.
 - Web `npx tsc --noEmit` and `tsx --test tests/native-contract.test.ts` (3/3).
 - JunoMac Debug and Stable unsigned builds.
 - JunoMobile Debug and Stable simulator builds.
@@ -152,7 +159,7 @@ and do not reset them or the independent main checkout.
 
 ## Remaining work
 
-- Juno Code integration (PR #17), Cloud Code and Remote host.
+- Juno Code Remote Host, Cloud Code, and Remote mobile (blocked on GAP-021 backend routes).
 - Live-account interactive completion (device browser, connected-device management).
 - Full typed chat/upload/account/Code/Remote/voice/push contracts.
 - Functional feature UI on macOS and iOS/iPadOS.

@@ -17,9 +17,12 @@ Last updated: 2026-07-22 03:05 Europe/Paris
 
 Production auth, storage, sync, conversation/message UI, real chat streaming,
 projects/files, library/artifacts, memory/settings, offline global search,
-mutation-conflict resolution across conversations/projects and the durable
-offline/reconnect proof are complete. The next sequential unit is the Juno
-Code integration from PR #17, rebased on the latest `agent/juno-native`.
+mutation-conflict resolution, the durable offline/reconnect proof, and the
+Juno Code macOS integration (PR #17 merged) are complete. Local Juno Code runs
+against the authenticated backend model transport; Cloud/Remote Code sessions
+remain gated on backend Code-session routes that do not yet exist (see
+`docs/native/JUNO_CODE_HANDOFF.md` and `API_GAPS.md`). The next sequential unit
+is Juno Code Remote Host, which is blocked on that same backend surface.
 
 ## Actually completed
 
@@ -28,8 +31,8 @@ Code integration from PR #17, rebased on the latest `agent/juno-native`.
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 156 focused Swift package tests, all passing with warnings treated as errors
-  and complete strict-concurrency checking.
+- 156 focused JunoNativeKit tests plus 179 JunoCode tests, all passing with
+  warnings treated as errors and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
   malformed-data failure, and an injectable Security client.
@@ -100,6 +103,14 @@ Code integration from PR #17, rebased on the latest `agent/juno-native`.
   repository), submits exactly once on reconnect with its original idempotency
   key, and that ambiguous response loss replays the same clientMutationId so
   the server receipt makes it a no-op rather than a duplicate.
+- Juno Code macOS integration (PR #17 merged in `677d781`): the `JunoCode`
+  Swift package (Core/Local/Runtime/UI/Bridge, 179 strict tests), the
+  standalone `JunoCode` app, and a Code section composed into `JunoMac` via
+  `JunoMacCodeView` driven by the authenticated `NativeChatRequestSending`
+  transport. The merge kept both sides' additive wiring
+  (`memorySettingsModel`/`searchModel` and `chatTransport`/`accountID`) and
+  regenerated `JunoMac.xcodeproj` from the merged `project.yml`. No
+  JunoNativeKit, backend, iOS, prisma, or contract file was changed by PR #17.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -114,7 +125,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Juno Code integration (PR #17), Cloud Code and Remote host.
+- Juno Code Remote Host, Cloud Code, and Remote mobile — all gated on backend Code-session routes that do not yet exist (see `API_GAPS.md` GAP-021).
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -128,6 +139,8 @@ applications and not downloadable releases.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 156/156 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 179/179 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoCode/JunoCode.xcodeproj -scheme JunoCode -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-code-standalone-debug CODE_SIGNING_ALLOWED=NO build`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same iOS project/scheme with `-configuration Stable` and `/tmp/juno-mobile-stable-derived`.
 - `JunoMacTests` 2/2 and `JunoMobileTests` 2/2 through `xcodebuild test`.
@@ -161,18 +174,27 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Integrate Juno Code from PR #17: update this branch onto the latest
-`agent/juno-native`, then compose the existing `JunoCodeKit` reducers and the
-generated Code/Remote contracts into real native Cloud Code and Remote host
-surfaces. Do not add a server route unless the targeted checks prove a gap and
-it is recorded in `API_GAPS.md`.
+Juno Code Remote Host and Cloud/Remote Code are gated on backend Code-session
+routes that do not exist yet (GAP-021): create/resume a Code session, ordered
+resumable session events, idempotent commands (prompt/approve/deny/stop), and
+Remote Host addressing by opaque workspace ID. The local `JunoCodeCore`
+`SessionEventPayload` model was shaped for a 1:1 mapping when those routes land.
+
+Because this exceeds the "minimal extension to an existing route/mutation"
+constraint and needs a real backend design (routes, migrations, auth,
+streaming) plus owner sign-off, do not invent it unilaterally. Either:
+
+1. escalate GAP-021 to the owner for a backend contract decision, then map the
+   existing `JunoCodeBridge` payloads onto the new routes; or
+2. proceed to the UI/UX refresh (macOS + iPhone) and accessibility work, which
+   is unblocked, and return to Cloud/Remote Code once the routes exist.
 
 Open first:
 
-1. PR #17 (`gh pr view 17` / its diff) and the current `agent/juno-native` head
-2. `native/Packages/JunoNativeKit/Sources/JunoCodeKit`
-3. `src/app/api/v1` Code/Remote routes and `src/lib/cloud-code.ts`, `src/lib/code-remote.ts`
-4. the web Code surfaces (read-only functional reference)
+1. `docs/native/JUNO_CODE_HANDOFF.md` ("Not implemented yet" + "Backend needs")
+2. `docs/native/API_GAPS.md` GAP-021
+3. `native/Packages/JunoCode/Sources/JunoCodeBridge`
+4. `contracts/openapi/juno-native-v1.yaml`
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
