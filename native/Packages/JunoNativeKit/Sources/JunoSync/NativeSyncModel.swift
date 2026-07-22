@@ -122,7 +122,7 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
     /// phase assignment stays where it was so the `.offline` / `.failed` split
     /// keeps its single definition.
     private func recordFailure(_ error: any Error) {
-        lastErrorDescription = error.localizedDescription
+        lastErrorDescription = NativeFailureMessage.presentable(error)
         lastHTTPStatusCode = Self.httpStatusCode(of: error)
         lastFailureKind = Self.failureKind(of: error)
     }

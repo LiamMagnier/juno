@@ -282,7 +282,7 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
             }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -445,7 +445,7 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
     }
 
     private func record(_ error: any Error) {
-        lastErrorDescription = error.localizedDescription
+        lastErrorDescription = NativeFailureMessage.presentable(error)
         // `error is URLError` is not the same question. A genuine outage
         // surfaces as `NativeSyncCoordinatorError.retryLimitExceeded` once the
         // retry ladder gives up — the underlying `URLError` is swallowed — so

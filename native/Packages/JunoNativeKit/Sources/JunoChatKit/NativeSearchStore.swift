@@ -2,6 +2,7 @@ import Foundation
 import JunoCore
 import JunoSearch
 import JunoStorage
+import JunoSync
 import Observation
 
 public enum NativeSearchResultKind: String, CaseIterable, Equatable, Sendable {
@@ -319,7 +320,7 @@ public final class NativeSearchModel<Repository: AccountScopedRepository> {
                 guard !Task.isCancelled, self.accountID == accountID,
                     self.query == value
                 else { return }
-                lastErrorDescription = error.localizedDescription
+                lastErrorDescription = NativeFailureMessage.presentable(error)
                 phase = .failed
             }
         }

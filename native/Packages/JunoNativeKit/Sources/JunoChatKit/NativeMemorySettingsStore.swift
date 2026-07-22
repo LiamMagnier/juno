@@ -799,7 +799,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -943,7 +943,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             // Suppressing the description here is exactly what produced
             // "Offline — showing saved settings" on a working network, with a
             // Retry button that re-ran the same doomed request forever.
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = NativeSyncModel<Repository>.isConnectivityFailure(error) || syncModel.phase == .offline
                 ? .offline
                 : .failed
@@ -1038,7 +1038,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
     }
 
     private func record(_ error: any Error) {
-        lastErrorDescription = error.localizedDescription
+        lastErrorDescription = NativeFailureMessage.presentable(error)
         phase = NativeSyncModel<Repository>.isConnectivityFailure(error) || syncModel.phase == .offline
             ? .offline
             : .failed

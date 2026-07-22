@@ -518,7 +518,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             phase = syncModel.phase == .offline ? .offline : .ready
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -1138,7 +1138,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             await reconcilePendingMutations()
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -1165,7 +1165,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             // Draining is a network call, so losing connectivity here is an
             // outage, not a refusal. Reporting it as `.failed` told the reader
             // their queued changes had hard-failed when they were still safely
@@ -1202,7 +1202,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             if keepLocalChanges { await reconcilePendingMutations() }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
