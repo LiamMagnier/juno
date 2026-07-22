@@ -242,6 +242,7 @@ private struct JunoMacConversationDetail: View {
                         Color.clear.frame(height: 1).id(bottomAnchor)
                     }
                 }
+                .background(Color.junoCanvas)
                 .defaultScrollAnchor(.bottom)
                 .onScrollGeometryChange(for: CGFloat.self) { geometry in
                     geometry.contentSize.height
@@ -447,43 +448,88 @@ private struct JunoMacConversationDetail: View {
 private struct JunoMacMessageRow: View {
     let message: NativeChatMessage
 
+    private var isUser: Bool { message.role == .user }
+
     var body: some View {
-        HStack {
-            if message.role == .user { Spacer(minLength: 80) }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(message.role == .user ? "You" : "Juno")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+        HStack(alignment: .top, spacing: 12) {
+            if isUser { Spacer(minLength: 72) }
+            if !isUser {
+                Image(systemName: "sparkle")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Color.junoAccent)
+                    .frame(width: 22, height: 22)
+                    .padding(.top, 3)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(isUser ? "You" : "Juno").junoMetadata()
                 Text(message.content)
                     .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 if let reasoning = message.reasoning, !reasoning.isEmpty {
-                    DisclosureGroup("Reasoning") {
+                    DisclosureGroup {
                         Text(reasoning)
                             .font(.callout)
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 4)
+                    } label: {
+                        Label("Reasoning", systemImage: "brain")
+                            .junoMetadata()
                     }
                 }
-                ForEach(message.sources, id: \.url) { source in
-                    Link(source.title, destination: source.url)
-                        .font(.caption)
+                if !message.sources.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Sources").junoMetadata()
+                        ForEach(message.sources, id: \.url) { source in
+                            Link(destination: source.url) {
+                                Label(source.title, systemImage: "link")
+                                    .font(.caption)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
                 }
-                if let model = message.model, !model.isEmpty {
-                    Text(model).font(.caption2).foregroundStyle(.tertiary)
-                }
-                if message.isPending {
-                    ProgressView().controlSize(.small)
+                HStack(spacing: 8) {
+                    if let model = message.model, !model.isEmpty {
+                        Text(model).font(.caption2).foregroundStyle(.tertiary)
+                    }
+                    if message.isPending {
+                        ProgressView().controlSize(.small)
+                    }
                 }
                 if let error = message.errorDescription {
-                    Label(error, systemImage: "exclamationmark.triangle")
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.orange)
                 }
             }
-            .padding(12)
-            .background(message.role == .user ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            if message.role != .user { Spacer(minLength: 80) }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            .background(bubbleBackground)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .contextMenu {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(message.content, forType: .string)
+                } label: {
+                    Label("Copy", systemImage: "doc.on.doc")
+                }
+                .disabled(message.content.isEmpty)
+            }
+            if !isUser { Spacer(minLength: 72) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isUser ? "You said" : "Juno replied")
+    }
+
+    @ViewBuilder
+    private var bubbleBackground: some View {
+        if isUser {
+            Color.junoAccent.opacity(0.14)
+        } else {
+            Color.junoSurface
         }
     }
 }
