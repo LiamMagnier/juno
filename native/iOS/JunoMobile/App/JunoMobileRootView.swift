@@ -427,7 +427,7 @@ private struct JunoMobileSidebarDrawer: View {
             .accessibilityLabel("navigation.search")
         }
         .padding(.horizontal, 16)
-        .frame(height: 56)
+        .frame(height: 44)
     }
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
