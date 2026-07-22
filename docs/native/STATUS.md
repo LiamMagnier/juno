@@ -49,14 +49,43 @@ simulator (light + dark):
   grouped, accent-insensitive global search with all empty/error/loading states
   and VoiceOver hints.
 
-**Next surface (Phase 5, item 6): Juno Code macOS.** Start at
-`native/macOS/JunoMac/App/JunoMacCodeView.swift` (and the standalone
-`native/macOS/JunoCode/App/JunoCodeApp.swift`). This needs a macOS build/QA loop
-(JunoMac Debug/Stable + macOS window screenshots), not the iOS-simulator loop
-used so far. Then Phases 6 (shared motion tokens), 7 (a11y/Dynamic Type/keyboard
-matrix) and 8 (full-scenario visual QA sweep). Backend/Remote/Cloud/security/
-release (Phases 9–13) remain untouched on PR #18. `prisma/` untouched; the
-release MUST take the migration verbatim from `origin/main` (see RELEASE.md).
+### Juno Code macOS review + Phase 6 motion (head `cbd19cf`)
+
+- **Juno Code macOS** (`JunoCodeUI` `WorkbenchView` + `SidebarView`,
+  `AgentCanvasView`, `InspectorView`) was fully code-reviewed and found already
+  compliant and high-quality: native resizable three-pane split, every run state
+  (idle/running/waiting/failed/completed/cancelled), approvals with keyboard
+  shortcuts, gutter diffs, stderr-coloured terminal, test detection/re-run,
+  Git/Files/Context/Computer tabs, tilde-abbreviated paths (no raw paths/ids),
+  no fake actions, full accessibility labels and ⌘N/⌘./⌘⏎/⌘⇧O/⌘⌥I shortcuts.
+  **No changes warranted** (churning good code would risk regressions).
+  Validated: JunoMac Debug ✓, JunoMac Stable ✓, JunoCode strict compile ✓.
+  Populated-session visual QA needs a live workspace/runtime (the preview
+  harness ships no Code workspaces), so it was validated by review + builds.
+- `feat(native): add a shared JunoMotion token system` — `JunoMotion`
+  (fast/standard/emphasized/spring + Reduce-Motion `reduced(_:when:)`) in the
+  design system, applied across every mobile interaction (sidebar reveal,
+  +→×, Send/Stop, reasoning disclosure, scroll-to-latest).
+
+**Still open on PR #18:** Phase 7 (full a11y/Dynamic Type/keyboard + device
+matrix across iPhone sizes, iPad split, macOS windows, FR/EN) and Phase 8 (a
+complete visual-QA sweep of every surface × every preview scenario × light/dark).
+Substantial per-surface visual QA was already done inline for each unit this
+session, but the exhaustive matrix remains. **Phases 9–13** (attachments/parity
+resolving GAP-022/023, Deep Research, Canvas, Juno Code Remote Host, Cloud
+isolation, security threat model, release integration) are untouched on PR #18;
+Remote/Cloud belong on the stacked backend branch (PR #19), not here.
+
+`prisma/` untouched all session; the release MUST take the backfill migration
+verbatim from `origin/main` (typed `NULL::timestamp`) — see RELEASE.md.
+
+**Exact next step:** Phase 7/8 exhaustive QA on the mobile surfaces (start by
+capturing `empty`, `offline`, `error`, `conflict`, `longText` scenarios for
+chat/projects/memory/library/artifacts in light+dark and fixing any truncation/
+overlap/contrast found), then move to the backend worktree
+`/Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend`
+(branch `agent/juno-code-remote-backend`, PR #19) and rebase it onto
+`origin/agent/juno-native-claude-continuation` before resuming Phase 9.
 
 ## Repository state
 
