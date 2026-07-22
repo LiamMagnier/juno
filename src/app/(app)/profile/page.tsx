@@ -764,35 +764,44 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
               By model
             </p>
-            <ul className="mt-3 space-y-2.5">
-              {byModel.slice(0, 6).map((row) => {
-                const info = resolveModel(row.model);
-                const share = row.costMicroUsd / maxModelCost;
-                return (
-                  <li key={row.model} className="min-w-0">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="flex min-w-0 items-center gap-2">
-                        {info ? <ProviderLogo provider={info.provider} className="h-4 w-4 shrink-0" /> : null}
-                        <span className="truncate text-sm">{info?.name ?? row.model}</span>
-                      </span>
-                      <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
-                        {formatLifetimeCost(row.costMicroUsd)}
-                        <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
-                      </span>
-                    </div>
-                    <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/80">
-                      {compactNumber(row.tokensIn)} in · {compactNumber(row.tokensOut)} out
-                    </p>
-                    <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
-                      <div
-                        className="h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft"
-                        style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
-                      />
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+            {/* Compact scroll region — keeps the card short while all models stay reachable. */}
+            <div className="relative mt-3">
+              <ul className="max-h-[11.5rem] space-y-2.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-width:thin]">
+                {byModel.map((row) => {
+                  const info = resolveModel(row.model);
+                  const share = row.costMicroUsd / maxModelCost;
+                  return (
+                    <li key={row.model} className="min-w-0">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="flex min-w-0 items-center gap-2">
+                          {info ? <ProviderLogo provider={info.provider} className="h-4 w-4 shrink-0" /> : null}
+                          <span className="truncate text-sm">{info?.name ?? row.model}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground">
+                          {formatLifetimeCost(row.costMicroUsd)}
+                          <span className="text-muted-foreground/70"> · {row.count.toLocaleString()}</span>
+                        </span>
+                      </div>
+                      <p className="mt-0.5 font-mono text-[10px] tabular-nums text-muted-foreground/80">
+                        {compactNumber(row.tokensIn)} in · {compactNumber(row.tokensOut)} out
+                      </p>
+                      <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-muted ring-1 ring-inset ring-foreground/10">
+                        <div
+                          className="h-full rounded-full bg-foreground/70 transition-[width] duration-base ease-out-soft"
+                          style={{ width: `${Math.max(share * 100, row.costMicroUsd > 0 ? 3 : 0)}%` }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {byModel.length > 3 ? (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-card to-transparent"
+                />
+              ) : null}
+            </div>
           </div>
         ) : null}
 

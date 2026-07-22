@@ -1,10 +1,86 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 18:25 Europe/Paris
+Last updated: 2026-07-22 21:15 Europe/Paris
 
 > **Start a new session at `docs/native/NEXT_PROMPT.md`.** It carries the exact
 > worktree, branch, head, next task and the live hazards. This file is the
 > longer history behind it.
+
+## Session 2026-07-22 (night) — the release is deployed, head `2f07804`
+
+`main` is `2f07804` and that exact commit is **live** at
+`https://chat.liams.dev`. `JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh`
+reports **all release gates passed**, which it could not do in any previous
+session.
+
+Verified after the deploy by asking production, not by assuming:
+
+| check | result |
+|---|---|
+| `x-juno-contract-version` | `1.3.0` (was `1.0.1`) |
+| homepage | HTTP 200 |
+| `/api/v1/auth/session`, `/api/v1/bootstrap`, `/api/v1/entities/index` | HTTP 401 unauthenticated — routes exist, auth enforced |
+| `prisma migrate deploy` | `41 migrations found. No pending migrations to apply.` |
+| pm2 | `juno-backend`, `juno-voice-relay`, `juno-scheduler` all online |
+
+**The deploy made no schema change.** The release adds no migrations at all,
+which is most of why it was safe to ship. The real production delta was three
+files — the contract version bump plus small additions to the v1 mutations route
+and `sync-mutations` — because `#15` had already shipped the rest.
+
+### The two hazards, both closed
+
+**The bare-`NULL` backfill migration.** This was not a hypothetical. The feature
+branches *created* `20260721120000_backfill_entity_revisions` at `48d6969` with
+bare `NULL`, and never inherited `origin/main`'s fix from `173be21` (#16), so a
+merge into main genuinely would have reintroduced the form that already failed
+in production. Both feature branches now carry the file **byte-identical to
+origin/main**, all 22 `NULL::timestamp` intact, and `release-gates.sh` asserts
+the count mechanically.
+
+**The contract standoff.** Production served `1.0.1` while the build required
+`1.3.0`, so the client's own version check refused every native sign-in. Only
+deploying could resolve it, and it did.
+
+### The integration, and the trap in it
+
+`origin/main` carried `8e7b898`, the **squash merge** of PR #15, which had landed
+an *earlier snapshot* of this same native lineage as brand-new files. A squash
+keeps no history, so git saw 35 of 39 conflicts as add/add even though the branch
+is a strict continuation — it contains `agent/juno-native` (`31225f7`) and has
+274 native files to main's 129.
+
+Every conflict resolved to the branch side, but a squash merge is exactly the
+shape that silently reverts shipped work, so the result was checked rather than
+trusted: `profile/page.tsx` came out **byte-identical to origin/main**, so main's
+`e0d1285` fix survived, and the migration set matches main's exactly.
+
+### The orphaned backend work is no longer at risk
+
+It had been sitting uncommitted on the `main` *checkout*, with its only backup in
+a `/private/tmp` scratchpad that does not survive a reboot. It is now committed
+verbatim on `agent/juno-code-remote-orphan-recovery` (`2b353f6`, pushed),
+verified file-by-file against the live checkout with SHA-256 prefixes matching
+the capture manifest. The `main` checkout itself was **not touched**.
+
+It is deliberately **not** in the release: its `/api/code/devices/{deviceId}/**`
+routes are not in the published contract, it has no native callers, and its
+migration sorts before already-applied history. Two of the manifest's three open
+questions are now answered from the SQL — the `CodeTask_userId_idempotencyKey_key`
+unique index *is* safe against existing rows (nullable column, and Postgres
+treats NULLs as distinct), and the `ALTER TABLE`s are *not* idempotent. Whether
+that migration ever ran anywhere still needs a `_prisma_migrations` query.
+
+### What this does not mean
+
+**The product is not verified end to end.** What is proven is that the backend is
+live at contract 1.3.0 and the native clients build against it. Chat,
+attachments, Deep Research, Canvas and Remote were not exercised against
+production from a native client, and phases 6–13 remain unbuilt features.
+
+macOS visual QA is blocked on two owner actions — Screen Recording permission,
+and a login-session restart — and the previous session's `killall cfprefsd`
+explanation for the second one is **wrong**. See `MACOS_DESIGN_REVIEW.md` §9.
 
 ## Session 2026-07-22 (late) — Juno Code developer surfaces, head `d19e924`
 

@@ -230,17 +230,94 @@ screenshot the preview, not by reading the code.
 
 - **The capture matrix is incomplete.** Only 1180×760 light and dark were
   captured. 900×650, 1440×900, full screen, and inspector-open/closed pairs were
-  not, because window creation for newly launched apps broke in this login
-  session (self-inflicted: the capture harness ran `killall cfprefsd`, which took
-  down the session's preferences daemon; the harness now carries a comment
-  forbidding it). The responsive behaviour is implemented and reasoned about —
+  not. The responsive behaviour is implemented and reasoned about —
   `ViewThatFits` on the header, the 330pt strip threshold — but it is *not*
-  screenshot-verified at those sizes. Re-run `scratchpad/shoot.sh` from a fresh
-  login session to finish it.
+  screenshot-verified at those sizes. See §9 for why, and for the correction to
+  the cause this section originally gave.
 - **The Code sidebar has a confirmed, unfixed layout defect.** At 1180×760 in
   both appearances the session list collapses to the bottom edge: the
   "Workspaces" section header collides with the "New session" footer and the
   wordmark, and no session rows are visible. It is visible in both committed
   captures. `SidebarView.swift` was not touched in this pass, so this is
   pre-existing rather than a regression. It is deliberately left unfixed: with no
-  way to launch the app, any fix would be a guess presented as a repair.
+  way to launch the app, any fix would be a guess presented as a repair. §9 adds
+  a lead that narrows where it lives.
+
+## 9. Correction — why macOS visual QA is actually blocked
+
+Written 2026-07-22, replacing the cause given in §8.
+
+**§8's explanation was wrong.** It attributed the missing captures to the
+harness having run `killall cfprefsd`, which supposedly stopped newly launched
+apps from getting windows for the rest of the login session. That was tested and
+disproved: **TextEdit launches and gets a window normally in this same login
+session** (the machine has not been restarted since; boot was 2026-07-20). Do
+not spend time on the cfprefsd theory. Never run that command anyway — but it is
+not the cause.
+
+There are two independent blockers, both needing the owner:
+
+**1. Screen Recording is not granted, so there are no pixel captures at all.**
+
+| attempt | result |
+|---|---|
+| `screencapture -x full.png` | succeeds, but the PNG is **entirely black** |
+| `screencapture -x -o -l<windowid>` | `could not create image from window` |
+| `screencapture -x -R<x,y,w,h>` | `could not create image from rect` |
+| ScreenCaptureKit `SCScreenshotManager` from a CLI binary | `SCStreamErrorDomain -3811` |
+
+A black full-screen image is TCC's denial behaviour, not a rendering fault. Fix:
+grant Screen Recording to the controlling app in System Settings ▸ Privacy &
+Security ▸ Screen Recording.
+
+**2. `CODE_SIGNING_ALLOWED=NO` builds create zero windows on launch.**
+
+> **Narrowed 2026-07-22, later the same day.** This was first written as "every
+> Xcode-built Juno target", which is too broad. A **properly signed `Stable`
+> build launches and gets a real 1512×859 window**, verified with
+> `CGWindowListCopyWindowInfo` and an accessibility window count of 1. The
+> failure is specific to builds made with `CODE_SIGNING_ALLOWED=NO`, which are
+> only *linker*-signed and leave `Info.plist=not bound`. Re-signing such a build
+> after the fact with ad-hoc `codesign -s - --force --deep` does **not** rescue
+> it — the signature has to be applied by the build. So: to run or screenshot
+> the app, build a signed configuration (`-configuration Stable
+> -allowProvisioningUpdates DEVELOPMENT_TEAM=58PVP763WX`) rather than the
+> unsigned Debug shortcut. Everything below still holds for unsigned builds.
+
+
+JunoMac and the standalone JunoCode both launch, stay alive, and run an ordinary
+AppKit event loop — a `sample` of the main thread shows it parked in
+`-[NSApplication run]` → `_DPSNextEvent`, not hung — yet produce no window.
+Confirmed two ways: `CGWindowListCopyWindowInfo` finds none even *including*
+off-screen windows, and the accessibility tree reports `count of windows = 0`
+for a process whose `background only` is `false`, still zero after 60 seconds.
+
+What this is **not**:
+
+- Not a regression from the redesign. A build of pre-redesign commit `2075a5c`
+  fails identically.
+- Not specific to one target. JunoMac and standalone JunoCode both fail.
+- Not a signing problem. `xcodebuild CODE_SIGNING_ALLOWED=NO` does leave the
+  bundle only linker-signed with `Info.plist=not bound`, but re-signing properly
+  with `codesign -s - --force --deep` does not restore windows.
+- Not a location problem. Copying the app out of `/private/tmp` into the home
+  directory changes nothing.
+- Not the app's own code. A hand-built minimal SwiftUI app placed in the same
+  directory does get a window.
+
+A reopen (`open -g -a` on the running app) followed by File ▸ New Window does
+sometimes force a real on-screen window — that is how the window geometry above
+was read at all — but it is not reliable enough to drive a capture matrix. Fix:
+restart the login session, then re-test.
+
+### A lead on the sidebar defect that §8 missed
+
+The healthy `after-code-light.png` is the **JunoMac shell** — it has the Juno
+header and the Chat/Code switcher. The two broken captures are the
+`--juno-code-ui-preview` branch, which renders `WorkbenchView` with
+`sidebarHeader == EmptyView`. So the defect belongs to the **no-sidebar-header
+composition**, not to `SidebarView` in general, which is why the JunoMac shell
+looks fine at a comparable size. Start at `WorkbenchView.swift:37`: it applies
+`.safeAreaInset(edge: .top, spacing: 0)` with an `EmptyView`, above a `List`
+that also carries `.searchable(placement: .sidebar)` and its own bottom
+`.safeAreaInset`. Confirm against a running app before changing anything.

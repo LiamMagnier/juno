@@ -3,197 +3,217 @@
 Read this file first, then `STATUS.md` for the longer history. Everything below
 was verified on 2026-07-22, not remembered.
 
+## The headline: the release is deployed and production is healthy
+
+`main` is `2f07804` and that exact commit is live at `https://chat.liams.dev`.
+Both release blockers that previous sessions recorded are **closed**.
+
+```
+JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh
+→ All release gates passed.
+```
+
+Verified after the deploy, by request rather than by assumption:
+
+| check | result |
+|---|---|
+| `x-juno-contract-version` from production | `1.3.0` (was `1.0.1`) |
+| homepage | HTTP 200 |
+| `/api/v1/auth/session`, `/api/v1/bootstrap`, `/api/v1/entities/index` | HTTP 401 unauthenticated — routes exist, auth enforced |
+| `prisma migrate deploy` | `41 migrations found. No pending migrations to apply.` |
+| pm2 | `juno-backend`, `juno-voice-relay`, `juno-scheduler` all online |
+
+The deploy changed **no database schema at all** — the release adds no
+migrations, which is a large part of why it was safe to ship.
+
 ## Exact starting point
 
 ```
-worktree  /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude
-branch    agent/juno-native-claude-continuation   (PR #18 → agent/juno-native)
-head      d19e924  — Juno Code developer surfaces on the shared design system
+worktree  /Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend
+branch    agent/juno-code-remote-backend   (== main == 2f07804)
 tree      clean, no merge/rebase/cherry-pick in progress
 ```
 
-`main` was not touched. `origin/main` is `173be21`. Production is live and
-unchanged at `https://chat.liams.dev`.
-
-## First command
-
 ```bash
-cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude && \
+cd /Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend && \
 git status --short && git log --oneline -3
 ```
 
-## What just landed
+## What this session actually did
 
-`JunoMac` is one three-region native product that opens on Chat (verified in the
-running app). Sidebar carries the destinations *and* the recency-grouped
-conversation history; the canvas renders real Markdown; there is a native
-inspector and a floating glass composer. Plus a shared model-name humanizer, a
-Keychain error that names its OSStatus, and four real defects fixed. See
-`dist/DELIVERY_REPORT.md` for the full account.
+1. **Closed the migration hazard for good.** The feature branches *created*
+   `20260721120000_backfill_entity_revisions` at 48d6969 with bare `NULL`, and
+   never inherited `origin/main`'s fix from 173be21 (#16) — so merging them into
+   main really would have reintroduced the form that already failed in
+   production. Both feature branches now carry the file **byte-identical to
+   origin/main**, all 22 `NULL::timestamp` present, and `release-gates.sh`
+   asserts the count mechanically.
 
-Artifacts exist in `dist/` (macOS `.app` + `.dmg`, development `.ipa`, signed
-simulator `.app.zip`) with checksums. The binaries are gitignored; the docs are
-tracked.
+2. **Merged PR #18 into PR #19** (`38f2a40`) rather than rebasing, so the four
+   PR #19 commits keep their identities and nothing needed a force-push. One
+   conflict, `docs/native/handoff.json`; `API_GAPS.md` auto-merged.
 
-## Design work still open (owner rejected the previous visuals once)
+3. **Integrated and shipped the release** (`2f07804`). `origin/main` carried
+   `8e7b898`, the **squash merge** of PR #15, which had landed an earlier
+   snapshot of this same native lineage as brand-new files — that is why 35 of
+   39 conflicts were add/add even though the branch is a strict continuation (it
+   contains `agent/juno-native` 31225f7; 274 native files against main's 129).
+   Every conflict resolved to the branch side, then checked rather than assumed:
+   `profile/page.tsx` came out byte-identical to origin/main, so main's e0d1285
+   fix survived, and the migration set is identical to main's.
 
-`docs/native/MACOS_DESIGN_REVIEW.md` is the source of truth: diagnosis,
-before/after screenshots in `docs/native/design/`, and an explicit limitations
-section per pass. §8 covers the Code surfaces, done in `d19e924`.
+4. **Rescued the orphaned backend work** onto
+   `agent/juno-code-remote-orphan-recovery` (`2b353f6`, pushed). It had been
+   sitting uncommitted on the `main` *checkout*, and its only backup was in a
+   `/private/tmp` scratchpad that does not survive a reboot. Recovered
+   byte-identically — verified file by file against the live checkout, and the
+   SHA-256 prefixes match the capture manifest.
 
-Fixed and verified across the two passes: the all-coral navigation and the
-invisible dark-mode sidebar icons (one root cause — an unstated icon colour
-inheriting AppKit's implicit sidebar accent tint); the whole Code transcript,
-approvals, terminal, diff, tests, Git, composer and inspector navigation.
+The `main` checkout at `/Users/liammagnier/Desktop/workspace/juno` was **not
+touched** and still holds that same uncommitted work. It can now be reverted
+safely, because the work is committed and pushed — but that is the owner's call.
 
-What is still **not** done, and must not be read as done:
+## Two macOS blockers that need the owner, and a correction
 
-- **the capture matrix.** Only 1180×760 light and dark exist. 900×650,
-  1440×900, full screen and the inspector-open/closed pairs were never taken,
-  because window creation for newly launched apps broke in that login session —
-  the capture harness had run `killall cfprefsd`, which kills the login
-  session's preferences daemon and stops newly launched apps getting windows at
-  all. **Never run it.** Re-run `scratchpad/shoot.sh` from a fresh login session
-  to finish the matrix.
-- **the Code sidebar layout defect.** At 1180×760 in both appearances the
-  session list collapses to the bottom edge: "Workspaces" collides with the
-  "New session" footer and the wordmark, and no session rows are visible. It is
-  in both committed captures. `SidebarView.swift` was not touched in the pass
-  that found it, so it is pre-existing. Fix it from a session that can launch
-  the app and confirm the repair, not by guessing.
-- the extended Chat/Code preview scenario matrix from the brief.
+**The previous diagnosis was wrong.** The old `NEXT_PROMPT.md` said window
+creation broke because the capture harness ran `killall cfprefsd`. That is not
+what is happening: **TextEdit launches and gets a window fine in this same login
+session.** Do not spend time on the cfprefsd theory. (Still never run that
+command — but it is not the cause.)
 
-Known and accepted: in Code the switcher sits below the system search field,
-because `.searchable(placement: .sidebar)` owns that slot.
+What is actually true, both established by experiment:
 
-## Release gates — run before any release build
+1. **Screen Recording is not granted**, so there are no pixel captures at all.
+   A full-screen `screencapture -x` returns a **pure black image**;
+   `screencapture -l<windowid>` and `-R<rect>` are refused outright with "could
+   not create image from window/rect"; ScreenCaptureKit from a CLI binary fails
+   with `SCStreamErrorDomain -3811`. **Owner action:** grant Screen Recording to
+   the controlling app in System Settings ▸ Privacy & Security ▸ Screen Recording.
 
-```bash
-JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh [path/to/JunoMac.app]
-```
+2. **~~Every Xcode-built Juno target~~ `CODE_SIGNING_ALLOWED=NO` builds create
+   zero windows on launch. — SOLVED, no owner action needed.** Unsigned builds
+   (JunoMac and standalone JunoCode alike) launch, run a normal AppKit event
+   loop and never produce a window, confirmed by `CGWindowListCopyWindowInfo`
+   including off-screen windows and by an accessibility window count of 0 after
+   60s. But a **properly signed `Stable` build launches fine** and gets a real
+   1512×859 window. The cause is that `CODE_SIGNING_ALLOWED=NO` leaves the
+   bundle only *linker*-signed with `Info.plist=not bound`; re-signing it
+   afterwards with ad-hoc `codesign` does **not** rescue it — the signature must
+   be applied by the build.
 
-Two gates currently **fail**, both release-blocking:
-
-1. this branch carries the bare-`NULL` backfill migration (0 typed
-   `NULL::timestamp`, expected 22);
-2. production serves contract **1.0.1** while the build requires **1.2.0**, so
-   every native sign-in is refused by the client's own version check with
-   "This version of Juno is not compatible with the server".
-
-`docs/native/RELEASE_LAYOUT.md` holds the owner's final source-layout,
-same-commit and end-to-end requirements, why none of the filesystem work has
-been done yet (all of it is gated on a deployment that has not happened, and the
-`main` checkout still holds the only copy of the uncommitted backend work), and
-the exact order to execute it in once the release is live.
-
-## Next task — Phase 5, backend reconciliation
-
-This is the blocker for everything downstream (release integration, deploy).
-Nothing about it has been started.
-
-1. **Triage the uncommitted backend work in the `main` checkout.** It is still
-   sitting there, untouched and unstaged, in
-   `/Users/liammagnier/Desktop/workspace/juno`:
-
-   ```
-   M  prisma/schema.prisma
-   M  src/app/api/code/devices/route.ts
-   M  src/app/api/code/tasks/route.ts
-   M  src/lib/code-remote.ts
-   ?? prisma/migrations/20260719120000_remote_code_sessions/
-   ?? src/app/api/code/devices/[deviceId]/
-   ?? src/lib/code-remote-sessions.ts
-   ?? src/lib/code-session-command-route.ts
-   ?? tests/code-remote-sessions.test.ts
+   ```bash
+   DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+     -project native/macOS/JunoMac/JunoMac.xcodeproj \
+     -scheme JunoMac -configuration Stable \
+     -derivedDataPath /private/tmp/juno-mac-stable \
+     -allowProvisioningUpdates DEVELOPMENT_TEAM=58PVP763WX build
    ```
 
-   A backup exists outside the repository (`tracked.patch` + `untracked.tgz` in
-   the session scratchpad), but **do not rely on it** — re-back-up first, then
-   work from the checkout. Do not apply the patch wholesale. Classify each file
-   against `origin/main`, the published contract in
-   `contracts/openapi/juno-native-v1.yaml`, and `CODE_REMOTE_AUDIT.md`, then
-   port what is useful through reviewed atomic commits.
+So only **blocker 1 (Screen Recording) is still open**. The app itself runs. The
+capture matrix (900×650 / 1180×760 / 1440×900 / full screen × light/dark ×
+Chat/Code × inspector open/closed) still cannot be taken because every capture
+comes back black, but the Code sidebar defect **can** now be diagnosed live
+against a signed build using the accessibility tree, which reports real
+positions and sizes.
 
-2. **Update PR #19 onto PR #18.** `agent/juno-code-remote-backend` is at
-   `cedc264` with a worktree at
-   `/Users/liammagnier/Desktop/workspace/.worktrees/juno-code-remote-backend`.
-   It is based on an obsolete native checkpoint. Inspect its unique commits and
-   preserve the contract/audit work. No unreviewed force-push.
+### The Code sidebar defect is real — and here is a lead the old notes missed
 
-Note the fetch refspec is `+refs/heads/main:refs/remotes/origin/main` **only**,
-so `origin/<feature-branch>` remote-tracking refs do not exist. Compare with
-`git ls-remote origin refs/heads/<branch>`, not `git rev-parse origin/<branch>`.
+Re-reading the two committed captures confirms the symptom: in
+`after-code-transcript-light.png` and `-dark.png` the sidebar shows **no session
+rows at all**, and "Workspaces", the "New session" footer and a wordmark are
+stacked on top of each other at the bottom-left edge.
 
-## Two hazards that are still live
+The narrowing detail: the healthy `after-code-light.png` is the **JunoMac shell**
+(it has the Juno header and the Chat/Code switcher), while the two broken
+captures are the `--juno-code-ui-preview` branch, which renders `WorkbenchView`
+with `sidebarHeader == EmptyView`. So the defect belongs to the
+**no-sidebar-header composition**, not to `SidebarView` in general. Start at
+`WorkbenchView.swift:37`, which applies `.safeAreaInset(edge: .top, spacing: 0)`
+with an `EmptyView`, above a `List` that also carries
+`.searchable(placement: .sidebar)` and a bottom `.safeAreaInset`.
 
-1. **The backfill migration.**
-   `prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql`
-   differs between the feature branches and `origin/main` in a way no
-   line-count check catches — same 44 lines, same statements:
+## What is genuinely still unbuilt
 
-   | | typed `NULL::timestamp` | bare `NULL` |
-   |---|---|---|
-   | `origin/main` (deployed) | **22** | 0 |
-   | feature branches | 0 | **22** |
+Phases 6–13 remain features, not finishing passes: attachments
+(camera/photos/files), Deep Research, Canvas, the Juno Code Remote control
+plane, the Mac Remote host, mobile Remote, Cloud isolation, and the security
+threat model. GAP-021/022/023 stand.
 
-   Re-verified 2026-07-22. The bare-`NULL` form already failed in production.
-   **Take this file verbatim from `origin/main` at every integration.** Never
-   resolve a conflict on it by keeping the branch copy. Add a release assertion
-   that counts the 22 occurrences.
+**Do not read the deploy as "the product works end to end."** What is proven is
+that the web backend is live at contract 1.3.0 and the native clients build
+against it. Chat, attachments, Deep Research, Canvas and Remote have **not** been
+exercised against production from a native client in this session.
 
-2. **`20260719120000_remote_code_sessions`** (untracked on `main`) sorts
-   *before* the already-applied `20260721120000_…`. Do not apply, rename or
-   commit it until you establish whether it ever ran anywhere, whether its
-   `ALTER TABLE`s are safe against the current schema, and whether its unique
-   indexes can be built against existing rows. A new forward-only migration is
-   probably the correct answer.
+## The orphaned relay: triaged, deliberately not shipped
+
+`agent/juno-code-remote-orphan-recovery` holds three new Prisma models, seven
+route handlers under `/api/code/devices/{deviceId}/**`, and a test file. It is
+**not** in the release, for three reasons:
+
+1. Those routes are **not in the published contract**. PR #19 published only the
+   *read* surface of the already-existing task-based control plane
+   (`/code/devices`, `/code/workspaces`, `/code/tasks`, `/code/tasks/{taskId}`)
+   and changed no backend route. Shipping the relay would put un-contracted
+   routes into production.
+2. It has no native callers, so it would add production schema and attack
+   surface for behaviour no client can reach.
+3. Its migration `20260719120000_remote_code_sessions` is dated *before*
+   `20260721120000_backfill_entity_revisions`, which is already applied in
+   production, so it sorts behind applied history.
+
+Two of the three open questions from the manifest can now be answered by reading
+the SQL:
+
+- The unique index `CodeTask_userId_idempotencyKey_key` **is safe** against
+  existing rows: `idempotencyKey` is added nullable with no default, and
+  Postgres treats NULLs as distinct in a unique index.
+- The `ALTER TABLE`s are **not idempotent** (plain `ADD COLUMN`, no
+  `IF NOT EXISTS`), so they would fail on a second run. That is fine under
+  `migrate deploy`, which never reapplies a recorded migration, and a hazard for
+  any manual replay.
+
+Still unanswered, and it needs the database: **was this migration ever applied
+anywhere?** Query `_prisma_migrations` before doing anything else with it. A new
+forward-only migration with a current timestamp is very likely the right answer.
+
+## Signing credentials — still the hard blocker for distributable builds
+
+Available: exactly one identity, `Apple Development: liam.magnier25@icloud.com`,
+team `58PVP763WX`. Each of these needs a one-time action in the Apple Developer
+account and cannot be worked around:
+
+1. **Developer ID Application certificate** — for a Gatekeeper-accepted macOS build.
+2. **App Store Connect API key** (Issuer ID + Key ID + `.p8`) — for `notarytool`.
+3. **Apple Distribution certificate** + profile for `com.liammagnier.JunoMobile`
+   — for a distributable `.ipa`.
+
+Also: `/Applications/Juno.app` **does not exist**. The older note about a "stale
+installed build" to avoid reusing is out of date.
 
 ## Environment facts worth not rediscovering
 
 - **Signed builds are required to test anything behind auth.** An unsigned build
-  has no `application-identifier`, so iOS refuses Keychain access with -34018
-  and the sign-in gate goes unavailable. `CODE_SIGNING_ALLOWED=NO` is a compile
-  gate only. See `TESTING.md`.
-- **macOS screenshots DO work** — an earlier note here said they returned black,
-  which was a transient, not a permission failure. Capture **by window id** so
-  the app is never fronted (this runs on the owner's active machine):
-  `CGWindowListCopyWindowInfo` → the window whose owner is `Juno` and height
-  > 200 → `screencapture -x -o -l<id>`. Launch with `open -n -g -a` (without
-  `-n`, a second launch re-activates the existing instance and no new window
-  appears), and allow ~10s with a retry loop before the window exists. Clear
-  `~/Library/Saved Application State/<bundle>.savedState` first or AppKit
-  restores the previous sidebar/split geometry and the shots are not comparable.
-- **macOS XCUITest still cannot run here** — the runner fails to load its bundle
-  under both unsigned and ad-hoc signing. Use the live accessibility tree for
-  structure: launch, set `AXEnhancedUserInterface` via System Events, walk
-  `UI elements`. That found three real defects a screenshot would not have.
+  has no `application-identifier`, so iOS refuses Keychain access with -34018.
+  `CODE_SIGNING_ALLOWED=NO` is a compile gate only.
+- **`xcodebuild ... CODE_SIGNING_ALLOWED=NO` produces a linker-signed app whose
+  `Info.plist` is *not bound*** — `codesign -dv` reports `Identifier=JunoCode`
+  rather than the bundle id. Re-sign with `codesign -s - --force --deep` before
+  testing anything signature-sensitive.
 - **iOS simulator screenshots do work** (`xcrun simctl io … screenshot`) and are
-  the best visual QA available here.
+  the best visual QA available while macOS capture is blocked.
 - **`timeout` does not exist** on this macOS host.
 - **Xcode:** always prefix with
   `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer`.
-- **Copying a signed `.app` into this worktree breaks its signature** — the
-  Desktop/iCloud file provider attaches Finder metadata. `xattr -cr` afterwards.
-- **`gh` auth is valid** (scopes `repo`, `workflow`), contrary to the older note
-  in STATUS.md. Pushing works.
+- Keep derived data **off** the iCloud Desktop; `/private/tmp/...` works.
+- The fetch refspec is `+refs/heads/main:refs/remotes/origin/main` **only**, so
+  `origin/<feature-branch>` remote-tracking refs do not exist. Compare with
+  `git ls-remote origin refs/heads/<branch>`, not `git rev-parse origin/<branch>`.
 
-## Signing credentials — what exists and what does not
+## Suggested next task
 
-Available: exactly one identity, `Apple Development: liam.magnier25@icloud.com`,
-team `58PVP763WX`.
-
-Missing, each needing a one-time action in the Apple Developer account:
-
-1. **Developer ID Application certificate** — for a Gatekeeper-accepted macOS
-   build.
-2. **App Store Connect API key** (Issuer ID + Key ID + `.p8`) — for `notarytool`
-   and TestFlight.
-3. **Apple Distribution certificate** + App Store/Ad Hoc profile for
-   `com.liammagnier.JunoMobile` — for a distributable `.ipa`.
-
-## Still unimplemented
-
-Phases 6–13 in full: attachments (camera/photos/files), Deep Research, Canvas,
-the Juno Code Remote control plane, the Mac Remote host, mobile Remote, Cloud
-isolation, and the security threat model. GAP-021/022/023 stand. Do not treat
-any of these as a finishing pass — each is a feature.
+With production live at 1.3.0, the highest-value work that needs **no** owner
+action is Phase 5: exercise Chat end to end from a native client against
+production — sign-in, conversation list, send, stream, Stop, retry, and the
+Web ↔ Mac ↔ iPhone sync path — using the iOS simulator, which can still be
+screenshotted. That is what converts "the backend is deployed" into "the product
+works", which is the actual goal.
