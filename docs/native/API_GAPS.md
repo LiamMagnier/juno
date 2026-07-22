@@ -270,9 +270,36 @@ extend existing contracts minimally and never duplicate services, so this gap
 needs an explicit owner-approved backend design before native Cloud/Remote Code
 can be built. The local Code experience is fully functional without it.
 
-Status: open. Blocks the "Juno Code Remote Host", "Cloud Code", and "Remote
-mobile" units. The `SessionEventPayload` model was shaped so these payloads map
-1:1 once the routes land.
+Status: **substantially reframed** by the Phase-11 audit
+(`docs/native/CODE_REMOTE_AUDIT.md`, branch `agent/juno-code-remote-backend`).
+The earlier assessment was wrong: the Code control plane already exists in the
+web backend AND already accepts the native bearer. Every `/api/code/*` owner
+route authenticates a native bearer via `getCurrentUser()`, and
+`CodeDevice`/`CodeWorkspace`/`CodeTask`/`CodeTaskEvent` already model hosts,
+opaque-keyed workspaces, sessions (with a `lastSeq` event cursor + one-time
+cloud handoff), and an append-only `(taskId, seq)` event journal, with
+claim/respond/cancel/queue and a GitHub-Actions cloud runner. So this is not a
+missing backend service.
+
+Remaining work (native integration, not backend invention):
+- Publish the `/api/code/*` surface in the native contract. **Done** for the
+  read surface (`0719f59`, contract 1.3.0: devices, workspaces, sessions,
+  session+events). The mutating command surface (create/respond/cancel) is next.
+- Build the native clients: the `JunoCodeBridge` typed transport, the macOS
+  Remote Host coordinator on the existing runtime/permissions, and the mobile
+  Remote controller/screens.
+
+### GAP-022 — the Code task/workspace serializers leak the device-local path
+
+`serializeTask` returns `workspacePath` and `serializeWorkspace` returns `path`,
+both device-local absolute paths. Native mobile clients must never surface these
+(address by `workspaceKey`/`id`). The native contract marks these fields as
+must-not-surface, but the correct fix is a path-free native projection on the
+server — a minimal, additive change (a native-bearer serialization variant), not
+a new route or service.
+
+Status: open. Low-risk minimal server extension, to land with the native Remote
+mobile client so the path never crosses to the phone.
 
 ## P1 — blocks commerce, release and production download
 
