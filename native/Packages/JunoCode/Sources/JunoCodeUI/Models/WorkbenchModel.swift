@@ -86,6 +86,11 @@ public final class WorkbenchModel {
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
     private var controllers: [CodeSessionID: SessionController] = [:]
     private var storeObserver: UUID?
+    #if DEBUG
+    /// True only for the local `--juno-code-ui-preview` harness, which seeds
+    /// in-memory fixtures and must not read the on-disk session store.
+    private var isPreview = false
+    #endif
 
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -101,6 +106,10 @@ public final class WorkbenchModel {
     // MARK: - Bootstrap
 
     public func bootstrap() async {
+        #if DEBUG
+        // The preview harness seeds fixtures in memory; never read the store.
+        if isPreview { return }
+        #endif
         if storeObserver == nil {
             storeObserver = await sessionStore.addObserver { [weak self] update in
                 Task { @MainActor [weak self] in
@@ -160,6 +169,13 @@ public final class WorkbenchModel {
         if let existing = contexts[workspaceID] {
             return existing
         }
+        #if DEBUG
+        // Preview fixtures are never registered in the workspace directory and
+        // carry no security-scoped bookmark, so there is nothing to reopen.
+        // Returning nil keeps the runtime unreachable without surfacing a
+        // reopen failure the user cannot act on.
+        if isPreview { return nil }
+        #endif
         do {
             let (record, access) = try await workspaceDirectory.open(id: workspaceID)
             let context = WorkspaceContext(
@@ -300,4 +316,115 @@ public final class WorkbenchModel {
     public func workspaceName(for id: WorkspaceID) -> String {
         workspaces.first { $0.id == id }?.descriptor.displayName ?? "Workspace"
     }
+
+    #if DEBUG
+    // MARK: - DEBUG preview harness
+
+    /// Builds a workbench seeded with local, synthetic fixtures for visual QA
+    /// (`--juno-code-ui-preview`). It never touches the production session store
+    /// (storage points at a throwaway temp directory), never registers a real
+    /// workspace, never runs a shell command or Git operation, and uses the
+    /// unconfigured model client so no agent turn can start.
+    public static func preview() -> WorkbenchModel {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-code-preview-\(UUID().uuidString)", isDirectory: true)
+        let model = WorkbenchModel(
+            dependencies: Dependencies(
+                storageRootURL: scratch,
+                modelClient: UnconfiguredModelClient(),
+                availableModels: [
+                    ModelOption(modelID: "claude-sonnet-5", displayName: "Claude Sonnet 5"),
+                    ModelOption(modelID: "claude-opus-4-8", displayName: "Claude Opus 4.8"),
+                ]
+            )
+        )
+        model.isPreview = true
+        model.workspaces = Self.previewWorkspaces
+        model.sessions = Self.previewSessions
+        return model
+    }
+
+    private static func previewWorkspace(
+        _ name: String,
+        _ path: String,
+        git: Bool
+    ) -> WorkspaceRecord {
+        WorkspaceRecord(
+            descriptor: WorkspaceDescriptor(
+                id: WorkspaceID(value: "ws-\(name)"),
+                displayName: name,
+                localPathHint: path,
+                isGitRepository: git,
+                lastOpenedAt: Date()
+            ),
+            bookmarkData: Data()
+        )
+    }
+
+    static let previewWorkspaces: [WorkspaceRecord] = [
+        previewWorkspace("juno", "~/Developer/juno", git: true),
+        previewWorkspace("JunoNativeKit", "~/Developer/juno/native/Packages/JunoNativeKit", git: true),
+        previewWorkspace("design-notes", "~/Documents/design-notes", git: false),
+    ]
+
+    /// Stable identifier slug. `hashValue` is seeded per process, so it would
+    /// hand out different session IDs on every launch and break selection
+    /// restore, screenshots and UI tests.
+    private static func previewSlug(_ title: String) -> String {
+        let mapped = title.lowercased().map { character -> Character in
+            character.isLetter || character.isNumber ? character : "-"
+        }
+        return String(mapped).split(separator: "-").joined(separator: "-")
+    }
+
+    private static func previewSession(
+        _ title: String,
+        workspace: Int,
+        status: SessionStatus,
+        favorite: Bool = false,
+        branch: String? = nil,
+        pendingApproval: Bool = false,
+        error: String? = nil,
+        minutesAgo: Double
+    ) -> CodeSession {
+        CodeSession(
+            id: CodeSessionID(value: "sess-\(previewSlug(title))"),
+            workspaceID: previewWorkspaces[workspace].id,
+            title: title,
+            status: status,
+            configuration: AgentConfiguration(modelID: "claude-sonnet-5"),
+            isFavorite: favorite,
+            gitBranch: branch,
+            hasPendingApproval: pendingApproval,
+            lastErrorSummary: error,
+            createdAt: Date().addingTimeInterval(-minutesAgo * 60 - 3_600),
+            updatedAt: Date().addingTimeInterval(-minutesAgo * 60)
+        )
+    }
+
+    /// Sessions covering every status the sidebar renders, plus favorites and
+    /// enough volume to exercise grouping and scrolling.
+    static var previewSessions: [CodeSession] {
+        [
+            previewSession("Refactor the sync coordinator", workspace: 0, status: .running,
+                           favorite: true, branch: "feat/sync-refactor", minutesAgo: 1),
+            previewSession("Add attachment upload contract", workspace: 0,
+                           status: .waitingForApproval, favorite: true,
+                           branch: "feat/attachments", pendingApproval: true, minutesAgo: 4),
+            previewSession("Fix the outbox replay test", workspace: 1, status: .failed,
+                           branch: "fix/outbox-replay",
+                           error: "swift test exited with code 1", minutesAgo: 26),
+            previewSession("Tidy the design tokens", workspace: 1, status: .completed,
+                           branch: "chore/tokens", minutesAgo: 95),
+            previewSession("Explore the artifact schema", workspace: 0, status: .cancelled,
+                           branch: "main", minutesAgo: 1_500),
+            previewSession("Draft the release checklist", workspace: 2, status: .idle,
+                           minutesAgo: 2_900),
+            previewSession("Audit permission prompts", workspace: 0, status: .completed,
+                           branch: "main", minutesAgo: 4_400),
+            previewSession("Rename the workspace registry", workspace: 1, status: .completed,
+                           branch: "chore/registry", minutesAgo: 10_200),
+        ]
+    }
+    #endif
 }

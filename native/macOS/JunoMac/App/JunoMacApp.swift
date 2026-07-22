@@ -7,6 +7,7 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 #if DEBUG
+import JunoCodeUI
 import JunoPreviewSupport
 #endif
 
@@ -40,7 +41,15 @@ struct JunoMacApp: App {
     var body: some Scene {
         WindowGroup("Juno") {
             #if DEBUG
-            if JunoPreviewEnvironment.isActive {
+            if CommandLine.arguments.contains("--juno-code-ui-preview") {
+                // Juno Code workbench over local synthetic fixtures only: no
+                // account, Keychain, network, shell, or Git access.
+                WorkbenchView(model: .preview())
+                    .frame(minWidth: 900, minHeight: 560)
+                    .preferredColorScheme(
+                        CommandLine.arguments.contains("--juno-preview-dark") ? .dark : nil
+                    )
+            } else if JunoPreviewEnvironment.isActive {
                 JunoPreviewContainer(
                     initialScenario: JunoPreviewEnvironment.initialScenario
                 ) { world in
