@@ -11,6 +11,7 @@ struct JunoMobileRootView: View {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var selection: JunoMobileSection? = .chat
     @State private var sidebarSearch = ""
 
@@ -33,20 +34,24 @@ struct JunoMobileRootView: View {
                 syncModel?.start(for: session.profile.id)
                 Task { await conversationModel?.start(for: session.profile.id) }
                 Task { await projectModel?.start(for: session.profile.id) }
+                Task { await artifactModel?.start(for: session.profile.id) }
             } else {
                 syncModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
+                artifactModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
             guard let generation else { return }
             Task { await conversationModel?.synchronizationDidAdvance(to: generation) }
             Task { await projectModel?.synchronizationDidAdvance(to: generation) }
+            Task { await artifactModel?.synchronizationDidAdvance(to: generation) }
         }
         .onChange(of: syncModel?.phase) { _, _ in
             Task { await conversationModel?.reload() }
             Task { await projectModel?.reload() }
+            Task { await artifactModel?.reload() }
         }
     }
 
@@ -76,6 +81,7 @@ struct JunoMobileRootView: View {
                     section: selection,
                     conversationModel: conversationModel,
                     projectModel: projectModel,
+                    artifactModel: artifactModel,
                     openConversation: { id in
                         conversationModel?.selectedConversationID = id
                         self.selection = .chat
@@ -191,6 +197,7 @@ private struct JunoMobileDetailView: View {
     let section: JunoMobileSection
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let openConversation: (String) -> Void
 
     @ViewBuilder
@@ -205,6 +212,11 @@ private struct JunoMobileDetailView: View {
             )
         } else if section == .files, let projectModel {
             JunoMobileFilesView(model: projectModel)
+        } else if section == .artifacts, let artifactModel {
+            JunoMobileArtifactsView(
+                model: artifactModel,
+                openConversation: openConversation
+            )
         } else {
             NavigationStack {
                 ContentUnavailableView {
@@ -697,5 +709,288 @@ private enum JunoMobileFilePreview {
             try data.write(to: url, options: [.atomic])
             return url
         }
+    }
+}
+
+private struct JunoMobileArtifactsView: View {
+    @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
+    let openConversation: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch model.phase {
+                case .idle, .loading:
+                    ProgressView("Loading artifacts…")
+                case .failed where model.artifacts.isEmpty:
+                    ContentUnavailableView(
+                        "Artifacts unavailable",
+                        systemImage: "exclamationmark.triangle",
+                        description: Text(model.lastErrorDescription ?? "Try again.")
+                    )
+                case .ready where model.artifacts.isEmpty,
+                     .offline where model.artifacts.isEmpty:
+                    ContentUnavailableView(
+                        "No artifacts",
+                        systemImage: "square.stack.3d.up",
+                        description: Text("Artifacts generated in conversations appear here.")
+                    )
+                default:
+                    List(model.artifacts) { artifact in
+                        NavigationLink(value: artifact.id) {
+                            HStack(spacing: 12) {
+                                Image(systemName: artifactIcon(artifact.kind))
+                                    .frame(width: 28)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(artifact.title).lineLimit(1)
+                                    HStack {
+                                        Text(artifact.conversationTitle).lineLimit(1)
+                                        Spacer()
+                                        Text("v\(artifact.currentVersion)")
+                                    }
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                    .accessibilityIdentifier("juno.mobile.artifact-list")
+                }
+            }
+            .navigationTitle("Artifacts")
+            .navigationDestination(for: String.self) { id in
+                if let artifact = model.artifacts.first(where: { $0.id == id }) {
+                    JunoMobileArtifactDetail(
+                        model: model,
+                        artifact: artifact,
+                        openConversation: openConversation
+                    )
+                    .id(artifact.id)
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                if model.phase == .offline || model.lastErrorDescription != nil {
+                    HStack(spacing: 8) {
+                        Image(systemName: model.phase == .offline
+                            ? "wifi.slash" : "exclamationmark.circle")
+                        Text(model.lastErrorDescription ?? "Offline — showing saved artifacts.")
+                            .lineLimit(2)
+                        Spacer()
+                        Button("Retry") { Task { await model.reload() } }
+                    }
+                    .font(.caption)
+                    .padding(10)
+                    .background(.bar)
+                }
+            }
+        }
+    }
+
+    private func artifactIcon(_ kind: NativeArtifactKind) -> String {
+        switch kind {
+        case .html: "globe"
+        case .react: "atom"
+        case .code: "chevron.left.forwardslash.chevron.right"
+        case .markdown: "doc.text"
+        case .svg: "scribble.variable"
+        case .mermaid: "flowchart"
+        }
+    }
+}
+
+private struct JunoMobileArtifactDetail: View {
+    @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
+    let artifact: NativeArtifact
+    let openConversation: (String) -> Void
+    @State private var selectedVersion = 0
+    @State private var displayMode = NativeArtifactDisplayMode.preview
+    @State private var showingRename = false
+    @State private var renameValue = ""
+    @State private var showingEditor = false
+    @State private var editValue = ""
+    @State private var showingDelete = false
+    @State private var exportURL: URL?
+    @State private var localError: String?
+
+    private var version: NativeArtifactVersion? {
+        let target = selectedVersion == 0 ? artifact.currentVersion : selectedVersion
+        return artifact.versions.first { $0.version == target }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Button(artifact.conversationTitle) {
+                        openConversation(artifact.conversationID)
+                    }
+                    .lineLimit(1)
+                    Spacer()
+                    if artifact.versions.count > 1 {
+                        Picker("Version", selection: $selectedVersion) {
+                            ForEach(artifact.versions.reversed()) { version in
+                                Text("v\(version.version)").tag(version.version)
+                            }
+                        }
+                    }
+                }
+                if artifact.kind.supportsRenderedPreview {
+                    Picker("View", selection: $displayMode) {
+                        Text("Preview").tag(NativeArtifactDisplayMode.preview)
+                        Text("Source").tag(NativeArtifactDisplayMode.source)
+                    }
+                    .pickerStyle(.segmented)
+                }
+                HStack {
+                    ShareLink(item: version?.content ?? "") {
+                        Label("Share source", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(version == nil)
+                    if let exportURL {
+                        Spacer()
+                        ShareLink(item: exportURL) {
+                            Label("Share export", systemImage: "doc.badge.arrow.up")
+                        }
+                    }
+                }
+                .font(.caption)
+            }
+            .padding()
+            Divider()
+            if let version {
+                NativeArtifactPreview(
+                    kind: artifact.kind,
+                    content: version.content,
+                    mode: displayMode
+                )
+            } else {
+                ContentUnavailableView(
+                    "Version unavailable",
+                    systemImage: "clock.arrow.circlepath",
+                    description: Text("Reconnect to hydrate the latest artifact content.")
+                )
+            }
+        }
+        .navigationTitle(artifact.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if let version, version.version != artifact.currentVersion {
+                    Button("Restore") {
+                        Task {
+                            await model.restoreArtifact(
+                                id: artifact.id,
+                                version: version.version
+                            )
+                        }
+                    }
+                    .disabled(model.isMutating)
+                }
+                Menu {
+                    Button("Edit") {
+                        editValue = artifact.currentContent ?? ""
+                        showingEditor = true
+                    }
+                    .disabled(artifact.currentContent == nil)
+                    Button("Rename") {
+                        renameValue = artifact.title
+                        showingRename = true
+                    }
+                    if !model.availableExportFormats.isEmpty {
+                        Section("Export") {
+                            ForEach(model.availableExportFormats, id: \.rawValue) { format in
+                                Button(format.rawValue.uppercased()) { export(format) }
+                            }
+                        }
+                    }
+                    Button("Delete", role: .destructive) { showingDelete = true }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .disabled(model.isMutating || model.isExporting)
+            }
+        }
+        .onAppear {
+            selectedVersion = artifact.currentVersion
+            displayMode = artifact.kind.supportsRenderedPreview ? .preview : .source
+            Task { await model.openArtifact(id: artifact.id) }
+        }
+        .onChange(of: artifact.currentVersion) { _, value in
+            selectedVersion = value
+        }
+        .alert("Rename artifact", isPresented: $showingRename) {
+            TextField("Title", text: $renameValue)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                Task { await model.renameArtifact(id: artifact.id, title: renameValue) }
+            }
+        }
+        .alert("Delete artifact?", isPresented: $showingDelete) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                Task { await model.deleteArtifact(id: artifact.id) }
+            }
+        } message: {
+            Text("All versions of this artifact will be removed.")
+        }
+        .alert("Artifact unavailable", isPresented: Binding(
+            get: { localError != nil },
+            set: { if !$0 { localError = nil } }
+        )) {
+            Button("OK") { localError = nil }
+        } message: {
+            Text(localError ?? "Try again.")
+        }
+        .sheet(isPresented: $showingEditor) {
+            NavigationStack {
+                TextEditor(text: $editValue)
+                    .font(.system(.body, design: .monospaced))
+                    .padding(8)
+                    .navigationTitle("Edit artifact")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showingEditor = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Save") {
+                                showingEditor = false
+                                Task {
+                                    await model.saveArtifact(
+                                        id: artifact.id,
+                                        content: editValue
+                                    )
+                                }
+                            }
+                        }
+                    }
+            }
+        }
+    }
+
+    private func export(_ format: NativeArtifactExportFormat) {
+        Task {
+            guard let result = await model.exportArtifact(id: artifact.id, format: format)
+            else { return }
+            do {
+                exportURL = try JunoMobileExportFile.write(
+                    data: result.data,
+                    fileName: result.fileName
+                )
+            } catch {
+                localError = error.localizedDescription
+            }
+        }
+    }
+}
+
+private enum JunoMobileExportFile {
+    static func write(data: Data, fileName: String) throws -> URL {
+        let safeName = fileName.replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "\\", with: "_")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-\(UUID().uuidString)-\(safeName)")
+        try data.write(to: url, options: [.atomic])
+        return url
     }
 }

@@ -301,6 +301,159 @@ paths:
         '400': { $ref: '#/components/responses/GeneralRouteError' }
         '401': { $ref: '#/components/responses/GeneralRouteError' }
         '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /library:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeLibraryItems
+      description: Existing owner-scoped attachment library, capped at 300 newest items.
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string, enum: [IMAGE, FILE] }
+      responses:
+        '200':
+          description: Signed access URLs are short-lived and must never be persisted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/LibraryResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /library/attach:
+    post:
+      servers: [{ url: /api }]
+      operationId: cloneNativeLibraryAttachments
+      description: Clone owned attachment metadata for a future message without duplicating bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attachmentIds]
+              properties:
+                attachmentIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items: { type: string }
+      responses:
+        '201':
+          description: Fresh unlinked attachment rows in request order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachments]
+                properties:
+                  attachments: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeArtifacts
+      description: Existing owner-scoped artifact index across all conversations.
+      responses:
+        '200':
+          description: Up to 200 artifacts ordered by most recent update.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactIndexResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts/{artifactId}:
+    parameters:
+      - in: path
+        name: artifactId
+        required: true
+        schema: { type: string }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeArtifact
+      responses:
+        '200':
+          description: Full artifact and append-only version history.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: appendNativeArtifactVersion
+      description: Append a manual edit or restore with optimistic base-version protection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content: { type: string, maxLength: 200000 }
+                baseVersion: { type: integer, minimum: 1 }
+                origin: { type: string, enum: [edit, restore], default: edit }
+      responses:
+        '200':
+          description: Artifact with the newly appended version.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409':
+          description: The base version is stale; the response includes the latest artifact.
+          content: { application/json: { schema: { $ref: '#/components/schemas/StaleArtifactResponse' } } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: renameNativeArtifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties: { title: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200':
+          description: Renamed artifact with full version history.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeArtifact
+      responses:
+        '200':
+          description: Artifact and its versions were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties: { ok: { const: true } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts/{artifactId}/export:
+    get:
+      servers: [{ url: /api }]
+      operationId: exportNativeArtifact
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: format
+          schema: { type: string, enum: [docx, xlsx, pptx] }
+          description: Omit to detect the formats available for the latest Markdown version.
+      responses:
+        '200':
+          description: Available-format JSON when format is omitted, otherwise the generated Office binary.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ArtifactExportFormats' } }
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -617,6 +770,100 @@ components:
         receiptState: { type: string, enum: [claimed, accepted, running, completed, failed] }
         finishReason: { type: [string, 'null'] }
         failureCode: { type: [string, 'null'] }
+    LibraryAttachment:
+      type: object
+      additionalProperties: false
+      required: [id, kind, fileName, mimeType, size, url, width, height]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [IMAGE, FILE] }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer, minimum: 0 }
+        url: { type: string }
+        width: { type: [integer, 'null'], minimum: 0 }
+        height: { type: [integer, 'null'], minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        conversationId: { type: [string, 'null'] }
+    LibraryResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+    ArtifactKind:
+      type: string
+      enum: [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID]
+    ArtifactVersion:
+      type: object
+      additionalProperties: false
+      required: [version, content, origin, createdAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        content: { type: string, maxLength: 200000 }
+        origin: { type: [string, 'null'], enum: [generated, edit, restore, null] }
+        createdAt: { type: string, format: date-time }
+    Artifact:
+      type: object
+      additionalProperties: false
+      required: [id, identifier, type, title, language, currentVersion, content, versions, messageId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        identifier: { type: string }
+        type: { $ref: '#/components/schemas/ArtifactKind' }
+        title: { type: string }
+        language: { type: [string, 'null'] }
+        currentVersion: { type: integer, minimum: 1 }
+        content: { type: string, maxLength: 200000 }
+        versions: { type: array, items: { $ref: '#/components/schemas/ArtifactVersion' } }
+        messageId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [artifact]
+      properties: { artifact: { $ref: '#/components/schemas/Artifact' } }
+    StaleArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [error, artifact]
+      properties:
+        error: { const: stale }
+        artifact:
+          oneOf:
+            - { $ref: '#/components/schemas/Artifact' }
+            - { type: 'null' }
+    ArtifactIndexItem:
+      type: object
+      additionalProperties: false
+      required: [id, identifier, title, type, language, version, conversationId, conversationTitle, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        identifier: { type: string }
+        title: { type: string }
+        type: { $ref: '#/components/schemas/ArtifactKind' }
+        language: { type: [string, 'null'] }
+        version: { type: integer, minimum: 1 }
+        conversationId: { type: string }
+        conversationTitle: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ArtifactIndexResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ArtifactIndexItem' } }
+    ArtifactExportFormats:
+      type: object
+      additionalProperties: false
+      required: [formats]
+      properties:
+        formats:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [docx, xlsx, pptx] }
     EntityEnvelope:
       type: object
       additionalProperties: false

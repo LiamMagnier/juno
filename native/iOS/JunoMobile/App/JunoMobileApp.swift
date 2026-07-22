@@ -14,6 +14,7 @@ struct JunoMobileApp: App {
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
@@ -22,6 +23,7 @@ struct JunoMobileApp: App {
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
         _projectModel = State(initialValue: configuration.projectModel)
+        _artifactModel = State(initialValue: configuration.artifactModel)
         localStore = configuration.localStore
     }
 
@@ -31,7 +33,8 @@ struct JunoMobileApp: App {
                 authModel: authModel,
                 syncModel: syncModel,
                 conversationModel: conversationModel,
-                projectModel: projectModel
+                projectModel: projectModel,
+                artifactModel: artifactModel
             )
         }
     }
@@ -108,6 +111,11 @@ struct JunoMobileApp: App {
                     drainer: drainer,
                     syncModel: syncModel,
                     sender: runtime
+                ),
+                artifactModel: NativeArtifactModel(
+                    repository: localStore,
+                    syncModel: syncModel,
+                    sender: runtime
                 )
             )
         } catch {
@@ -118,7 +126,8 @@ struct JunoMobileApp: App {
                 localStore: nil,
                 syncModel: nil,
                 conversationModel: nil,
-                projectModel: nil
+                projectModel: nil,
+                artifactModel: nil
             )
         }
     }
@@ -139,4 +148,5 @@ private struct JunoMobileConfiguration {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
 }

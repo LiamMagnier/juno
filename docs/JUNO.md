@@ -934,7 +934,13 @@ the client rehydrates the attachment entity immediately before previewing it.
 `/[id]` (versioned save with optimistic concurrency; rename; delete), `/[id]/export`
 (Office export — **Markdown artifacts only** — to `.docx`/`.xlsx`/`.pptx` via `docx`,
 `exceljs`, `pptxgenjs`, with format detection so the heavy converters aren't bundled
-client-side). Rendered in the opaque-origin `SandboxFrame` (§4.3).
+client-side). Rendered in the opaque-origin `SandboxFrame` (§4.3). Native macOS and
+iOS clients project the existing `artifact` and `artifact_version` sync entities into
+encrypted, account-scoped SQLite for offline history. An opened artifact refreshes
+through the existing bearer route before editing; edits/restores send `baseVersion`,
+surface 409 conflicts without overwriting, and reuse the existing rename/delete/export
+operations. HTML/SVG previews use an ephemeral WKWebView with external main-frame
+navigation and popups denied; source and Markdown remain selectable native content.
 
 **Sharing.** `/api/share` (create/list), `/[id]` (revoke). A `Share` is a **snapshot
 pointer**: the public `share/[token]` page (`force-dynamic`, `noindex`) renders only
@@ -958,7 +964,9 @@ Shipped), trending sort by an HN-style gravity score.
 **Library & prompts** (two distinct things sharing only the word "library"): the
 **Library** page browses the user's `Attachment`s (`/api/library`, re-attachable to a new
 message via `/attach` without re-uploading bytes); **prompts** are reusable `SavedPrompt`
-snippets (`/api/prompts`) surfaced in a composer dialog, ordered by recent-use.
+snippets (`/api/prompts`) surfaced in a composer dialog, ordered by recent-use. Native
+Library/Files surfaces reuse the synchronized attachment projection and hydrate a fresh
+signed URL only when the user opens an item; signed URLs are never stored locally.
 
 **Profile / import / export / compare.** Avatar upload (`/api/profile/avatar`, 5 MB,
 served via a stable `/api/files/...` proxy path), activity stats and a spend mirror.

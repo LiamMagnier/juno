@@ -3,7 +3,7 @@ import Foundation
 
 public enum JunoNativeContract {
     public static let version = "1.1.0"
-    public static let digest = "9d8fef04f23c1223d26358471c6cbb8bd3df1f56bd2bb6fde1d60b86a9d700b5"
+    public static let digest = "2a8883c886d6c8c52b9e198c26ac66f976624dce7c218c69a395743fcf13472a"
     public static let canonicalRedirectURI = "com.liammagnier.juno://auth/callback"
     public static let acceptedRedirectURIs: Set<String> = [canonicalRedirectURI, "juno://auth/callback"]
 }
