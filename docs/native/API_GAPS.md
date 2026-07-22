@@ -42,9 +42,10 @@ nonce/code validation are implemented in `7e80d8e`.
   default and enumerates only the canonical and legacy values.
 - `docs/JUNO.md` describes the canonical `com.liammagnier.juno://` lineage.
 
-Completed: the contract is version 1.0.1, the server reports the same version,
-generation is deterministic and self-contained, focused tests verify the exact
-allowlist, and new app configurations register only the canonical scheme.
+Completed: the authentication/callback correction shipped in contract 1.0.1;
+the current 1.1.0 contract and server still report the same version, generation
+is deterministic and self-contained, focused tests verify the exact allowlist,
+and new app configurations register only the canonical scheme.
 Remaining project work: run an interactive signed-in browser return/cancellation
 matrix on both platforms. Removing the legacy URI server-side would still break
 existing builds.
@@ -139,6 +140,9 @@ used by native clients without breaking existing Web callers.
 
 ### GAP-007 — native chat and upload contracts are not explicit
 
+Status: chat contract and transport resolved in the current native chat unit;
+upload/attachment contract work remains.
+
 The Web has production chat SSE, receipts, cancellation and uploads, and its
 session gate can support bearer requests. The exact native request headers,
 idempotency behavior, SSE resume semantics, attachment claim flow, cancellation
@@ -146,6 +150,15 @@ and typed event schema are not captured in OpenAPI or tested as native contracts
 
 Required resolution: publish and test the authoritative bearer flow before
 building native chat transports.
+
+Resolution for chat: OpenAPI 1.1.0 now publishes the existing bearer-capable
+transcript append, `/api/chat` SSE, cancellation and receipt routes with typed
+request/response/event schemas. The Swift transport uses the old application's
+production SSE protocol, idempotently appends an existing-conversation user turn,
+then regenerates from that persisted row. It never automatically re-POSTs after an
+ambiguous stream loss; it reconciles the persisted assistant through the account
+change feed. Focused transport tests cover fragmented SSE, the regenerate envelope
+and exactly-one-POST recovery behavior. No backend chat route or service was added.
 
 ## P1 — blocks complete Juno Code and mobile behavior
 
@@ -216,6 +229,78 @@ missing compatibility metadata.
 Required resolution: add typed per-platform minimum/recommended versions,
 contract/protocol capabilities, feature flags and maintenance/update messaging.
 
+### GAP-020 — project favorites are absent from the native mutation union
+
+Targeted project-route inspection confirmed that the synchronized `project`
+entity and the existing bearer-capable `PATCH /api/projects/{id}` route both
+support `starred`, while `project.update` in `/api/v1/mutations` accepts only
+`name` and `instructions`. That prevents an offline native favorite change from
+using the same revision and idempotency guarantees as other project edits.
+
+Status: resolved in the current projects/files lot. The existing
+`project.update` operation now has an optional boolean `starred` field, applies
+it in the current transaction, mirrors it in OpenAPI, and has acceptance/rejection
+coverage in the mutation contract tests. No new route or duplicate project
+service was added.
+
+### GAP-021 — no backend routes exist for Juno Code Cloud/Remote sessions
+
+Juno Code macOS (PR #17, merged in `677d781`) runs its **local** agent loop
+against the authenticated backend model transport, but Cloud and Remote Host
+Code sessions have no server contract. `docs/native/JUNO_CODE_HANDOFF.md`
+records this explicitly: the event model (`JunoCodeCore.SessionEventPayload`)
+and the `JunoCodeBridge` adapters are ready, and the new-session sheet shows
+both Cloud and Remote modes disabled because nothing in
+`contracts/openapi/juno-native-v1.yaml` can back them.
+
+What is missing (documented, not yet designed or built):
+
+- Create/resume a Code session bound to an account and workspace.
+- Ordered, resumable session events (a cursor-addressable event log so a
+  reconnecting client replays from its last seen sequence).
+- Idempotent session commands: prompt, approve, deny, stop.
+- Remote Host addressing by opaque workspace ID (Mac-authoritative), so a
+  mobile client can drive a session hosted on the user's Mac.
+
+Why this is not resolved in this branch: unlike GAP-020, this is not a minimal
+extension to an existing route or mutation — it is a new backend surface
+(routes, Prisma migrations, auth scoping, streaming/event durability, and a
+Remote Host addressing/relay model). The native continuation mandate is to
+extend existing contracts minimally and never duplicate services, so this gap
+needs an explicit owner-approved backend design before native Cloud/Remote Code
+can be built. The local Code experience is fully functional without it.
+
+Status: **substantially reframed** by the Phase-11 audit
+(`docs/native/CODE_REMOTE_AUDIT.md`, branch `agent/juno-code-remote-backend`).
+The earlier assessment was wrong: the Code control plane already exists in the
+web backend AND already accepts the native bearer. Every `/api/code/*` owner
+route authenticates a native bearer via `getCurrentUser()`, and
+`CodeDevice`/`CodeWorkspace`/`CodeTask`/`CodeTaskEvent` already model hosts,
+opaque-keyed workspaces, sessions (with a `lastSeq` event cursor + one-time
+cloud handoff), and an append-only `(taskId, seq)` event journal, with
+claim/respond/cancel/queue and a GitHub-Actions cloud runner. So this is not a
+missing backend service.
+
+Remaining work (native integration, not backend invention):
+- Publish the `/api/code/*` surface in the native contract. **Done** for the
+  read surface (`0719f59`, contract 1.3.0: devices, workspaces, sessions,
+  session+events). The mutating command surface (create/respond/cancel) is next.
+- Build the native clients: the `JunoCodeBridge` typed transport, the macOS
+  Remote Host coordinator on the existing runtime/permissions, and the mobile
+  Remote controller/screens.
+
+### GAP-022 — the Code task/workspace serializers leak the device-local path
+
+`serializeTask` returns `workspacePath` and `serializeWorkspace` returns `path`,
+both device-local absolute paths. Native mobile clients must never surface these
+(address by `workspaceKey`/`id`). The native contract marks these fields as
+must-not-surface, but the correct fix is a path-free native projection on the
+server — a minimal, additive change (a native-bearer serialization variant), not
+a new route or service.
+
+Status: open. Low-risk minimal server extension, to land with the native Remote
+mobile client so the path never crosses to the phone.
+
 ## P1 — blocks commerce, release and production download
 
 ### GAP-014 — StoreKit 2 and server reconciliation are absent
@@ -284,6 +369,37 @@ and user-facing disclosures are not fully defined.
 
 Required resolution: document and enforce these policies consistently in host,
 server, mobile UI and deletion/export flows.
+
+### GAP-022 — chat message attachments are absent from the native contract
+
+The Web composer attaches images and files to a message, but the native chat
+send path (`POST /api/v1/chat`, projected by `NativeConversationModel.sendMessage`)
+accepts only `conversationId`, `prompt`, `modelId` and `reasoningEffort`, and
+`NativeChatMessage` has no attachment fields. Uploads exist only at the **project**
+level (`/api/attachments`, `NativeProjectModel.uploadFile`), not per-message.
+
+Consequence: the composer "+" popover deliberately does **not** show Camera,
+Photos or Files. They are omitted (not shown disabled) until the contract exists.
+
+Required resolution (stacked backend branch): add a native message-attachment
+contract — signed upload, per-message attachment references on send, attachment
+projection on `NativeChatMessage` — then wire native pickers and previews.
+
+### GAP-023 — Deep Research and Canvas have no native contract surface
+
+Web exposes Deep Research and Canvas modes, but there is no native `/api/v1`
+route, request flag or manifest capability for either. They are therefore
+**omitted** from the production composer menu (never shown as disabled rows) and
+belong in a DEBUG-only panel at most.
+
+Required resolution: define native request flags / capability manifest entries
+for these modes (reusing the existing artifact/canvas model for Canvas) before
+any native UI enables them.
+
+The one composer action that **is** wired today is **Add to project**: it reuses
+the server-validated `conversation.update` mutation with a `projectId` patch
+(ownership-checked; `null` clears the association), surfaced through the new
+`NativeConversation.projectId` projection and `NativeConversationModel.setProject`.
 
 ## Contract exit criteria
 

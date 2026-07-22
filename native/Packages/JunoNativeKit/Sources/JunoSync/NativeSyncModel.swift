@@ -99,4 +99,15 @@ public final class NativeSyncModel<Repository: AccountScopedRepository> {
         lastErrorDescription = nil
         phase = .live
     }
+
+    #if DEBUG
+    /// Development-only: force a phase without touching the network, so the
+    /// local UI Preview harness can present live/offline states. Never called by
+    /// the shipping app.
+    public func previewConfigure(phase: Phase, errorDescription: String? = nil) {
+        self.phase = phase
+        self.lastErrorDescription = errorDescription
+        synchronizationGeneration &+= 1
+    }
+    #endif
 }

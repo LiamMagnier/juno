@@ -17,4 +17,27 @@ final class JunoDesignTokensTests: XCTestCase {
         let preferences = JunoAccessibilityPreferences(reduceTransparency: true)
         XCTAssertTrue(preferences.usesOpaqueTransientSurfaces)
     }
+
+    func testPaletteTokensAreWithinRange() {
+        let tokens: [JunoColorToken] = [
+            .accentLight, .accentDark, .canvasLight, .canvasDark,
+            .surfaceLight, .surfaceDark, .hairlineLight, .hairlineDark,
+        ]
+        for token in tokens {
+            for component in [token.red, token.green, token.blue, token.opacity] {
+                XCTAssertTrue((0...1).contains(component))
+            }
+        }
+    }
+
+    func testLightAndDarkSurfacesDiffer() {
+        XCTAssertNotEqual(JunoColorToken.canvasLight, JunoColorToken.canvasDark)
+        XCTAssertNotEqual(JunoColorToken.surfaceLight, JunoColorToken.surfaceDark)
+        XCTAssertNotEqual(JunoColorToken.accentLight, JunoColorToken.accentDark)
+    }
+
+    func testHairlinesAreTranslucent() {
+        XCTAssertLessThan(JunoColorToken.hairlineLight.opacity, 1)
+        XCTAssertLessThan(JunoColorToken.hairlineDark.opacity, 1)
+    }
 }

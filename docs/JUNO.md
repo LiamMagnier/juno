@@ -373,6 +373,16 @@ Each frame is `data: {json}\n\n`. Event `type` values:
 | `done` | terminal success — final `message`, `artifacts`, `memoryUpdated`, `quota`, `finishReason`, `title?` |
 | `error` | terminal failure — `message`, `failureCode`, `receiptState:"failed"`, stable ids, `preservePartial?` |
 
+Native clients authenticate these existing routes with the same short-lived bearer
+used by `/api/v1`; `getCurrentUser()` treats an Authorization header as authoritative.
+For an existing saved conversation, the native client first idempotently appends the
+USER turn to `POST /api/conversations/{conversationId}/messages` using its stable
+`clientId`, then calls `POST /api/chat` with `regenerate:true` and no `message`. This
+generates from the authoritative persisted final user row. A lost stream is reconciled
+through `/api/v1/changes`; the client never automatically repeats the ambiguous chat
+POST, preventing duplicate generations and billing. This bearer flow, cancellation,
+receipt lookup and the SSE event union are published in the native OpenAPI contract.
+
 Artifacts and quota ride on `done`/`error` (not separate events); the client detects
 a streaming artifact from accumulated `delta` text. `send()` swallows enqueue errors
 so **generation and persistence continue after the client disconnects** (the provider
@@ -913,13 +923,24 @@ that lazily fetches `/versions`. Feedback (👍/👎) via `/feedback`.
 
 **Projects** (`/api/projects`) bundle instructions + reference files. The project's
 instructions and each reference file's extracted text are injected into the system prompt
-for every turn in a project conversation.
+for every turn in a project conversation. Native macOS and iOS clients project the
+authoritative `project`, `conversation`, and `attachment` entities from encrypted SQLite;
+create/edit/favorite/delete use the existing idempotent `/api/v1/mutations` outbox.
+Reference uploads reuse bearer-capable `POST /api/upload` with `projectId`, while rename
+and delete reuse `/api/attachments/{id}`. Expiring attachment URLs are never persisted:
+the client rehydrates the attachment entity immediately before previewing it.
 
 **Artifacts / Canvas.** `/api/artifacts` (library index across all conversations),
 `/[id]` (versioned save with optimistic concurrency; rename; delete), `/[id]/export`
 (Office export — **Markdown artifacts only** — to `.docx`/`.xlsx`/`.pptx` via `docx`,
 `exceljs`, `pptxgenjs`, with format detection so the heavy converters aren't bundled
-client-side). Rendered in the opaque-origin `SandboxFrame` (§4.3).
+client-side). Rendered in the opaque-origin `SandboxFrame` (§4.3). Native macOS and
+iOS clients project the existing `artifact` and `artifact_version` sync entities into
+encrypted, account-scoped SQLite for offline history. An opened artifact refreshes
+through the existing bearer route before editing; edits/restores send `baseVersion`,
+surface 409 conflicts without overwriting, and reuse the existing rename/delete/export
+operations. HTML/SVG previews use an ephemeral WKWebView with external main-frame
+navigation and popups denied; source and Markdown remain selectable native content.
 
 **Sharing.** `/api/share` (create/list), `/[id]` (revoke). A `Share` is a **snapshot
 pointer**: the public `share/[token]` page (`force-dynamic`, `noindex`) renders only
@@ -943,7 +964,9 @@ Shipped), trending sort by an HN-style gravity score.
 **Library & prompts** (two distinct things sharing only the word "library"): the
 **Library** page browses the user's `Attachment`s (`/api/library`, re-attachable to a new
 message via `/attach` without re-uploading bytes); **prompts** are reusable `SavedPrompt`
-snippets (`/api/prompts`) surfaced in a composer dialog, ordered by recent-use.
+snippets (`/api/prompts`) surfaced in a composer dialog, ordered by recent-use. Native
+Library/Files surfaces reuse the synchronized attachment projection and hydrate a fresh
+signed URL only when the user opens an item; signed URLs are never stored locally.
 
 **Profile / import / export / compare.** Avatar upload (`/api/profile/avatar`, 5 MB,
 served via a stable `/api/files/...` proxy path), activity stats and a spend mirror.
@@ -1022,7 +1045,7 @@ data export.
 
 ## 16. Native sync API (`/api/v1`)
 
-A versioned (`CONTRACT_VERSION = 1.0.0`) bearer-authenticated contract that native
+A versioned (`CONTRACT_VERSION = 1.1.0`) bearer-authenticated contract that native
 clients use to mirror an account offline. Every response carries `X-Juno-Request-Id` +
 `X-Juno-Contract-Version`; errors are a typed envelope `{ error: { code, message,
 requestId, retryable, retryAfterMs } }`. The canonical source is
@@ -1054,8 +1077,12 @@ generates Swift models from it and fails the build on drift.
   `baseRevision` concurrency (mismatch → **409** `revision_conflict`; reused key with a
   different hash → **409** `idempotency_key_reused`). Mutable types: conversation, folder,
   project, memory, settings. Conversation updates include title, pin, sticky model,
-  project/folder placement and archive state.
+  project/folder placement and archive state. Project updates include name, instructions
+  and the boolean favorite state (`starred`).
 - **`GET /models`** — the native model catalog (ETag'd).
+- **Existing general chat routes** — operation-level `/api` servers in the same
+  contract publish the bearer-capable transcript append, chat SSE, cancellation and
+  first-submission receipt operations without duplicating their production services.
 
 **Change capture is done entirely by Postgres triggers**
 (`prisma/migrations/.../account_change_log`), so *any* write — web or native — to a tracked

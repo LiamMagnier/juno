@@ -1,0 +1,91 @@
+name: JunoCode
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "15.0"
+  developmentLanguage: en
+  knownRegions:
+    - en
+    - fr
+  minimumXcodeGenVersion: 2.46.0
+configs:
+  Debug: debug
+  Stable: release
+  Next: release
+packages:
+  JunoCode:
+    path: ../../Packages/JunoCode
+targets:
+  JunoCode:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Resources
+        excludes:
+          - Info.plist
+          - JunoCode.entitlements
+        buildPhase: resources
+    dependencies:
+      - package: JunoCode
+        product: JunoCodeCore
+      - package: JunoCode
+        product: JunoCodeLocal
+      - package: JunoCode
+        product: JunoCodeRuntime
+      - package: JunoCode
+        product: JunoCodeUI
+    configFiles:
+      Debug: ../../Config/JunoCode-Debug.xcconfig
+      Stable: ../../Config/JunoCode-Stable.xcconfig
+      Next: ../../Config/JunoCode-Next.xcconfig
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: Resources/JunoCode.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+  JunoCodeTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: JunoCode
+    configFiles:
+      Debug: ../../Config/JunoCode-Debug.xcconfig
+      Stable: ../../Config/JunoCode-Stable.xcconfig
+      Next: ../../Config/JunoCode-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoCode.tests
+schemes:
+  JunoCode:
+    build:
+      targets:
+        JunoCode: all
+        JunoCodeTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - JunoCodeTests
+    profile:
+      config: Stable
+    analyze:
+      config: Debug
+    archive:
+      config: Stable
+  JunoCode-Next:
+    build:
+      targets:
+        JunoCode: all
+    run:
+      config: Next
+    profile:
+      config: Next
+    analyze:
+      config: Next
+    archive:
+      config: Next

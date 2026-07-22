@@ -19,8 +19,10 @@ public enum HTTPValidationError: Error, Equatable, Sendable {
 
 public struct HTTPMessageLimits: Equatable, Sendable {
     public static let standard = HTTPMessageLimits(
-        validatedRequestBodyBytes: 10 * 1_024 * 1_024,
-        responseBodyBytes: 20 * 1_024 * 1_024,
+        // The existing native upload route permits 50 MB on paid plans. Keep
+        // multipart overhead bounded while allowing that production contract.
+        validatedRequestBodyBytes: 51 * 1_024 * 1_024,
+        responseBodyBytes: 51 * 1_024 * 1_024,
         headerCount: 64,
         headerBytes: 64 * 1_024
     )

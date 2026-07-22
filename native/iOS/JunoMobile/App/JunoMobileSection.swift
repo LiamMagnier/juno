@@ -1,15 +1,15 @@
 import SwiftUI
 
+/// Every top-level destination in the iOS/iPadOS app. Each case maps to a real,
+/// working surface — Juno Code Cloud/Remote and the unbuilt Tasks/Connections
+/// sections are intentionally absent until their backends exist (GAP-021), so
+/// there is no navigation that leads nowhere.
 enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
     case search
     case projects
-    case files
+    case library
     case artifacts
-    case tasks
-    case connections
-    case codeCloud
-    case codeRemote
     case settings
 
     var id: String { rawValue }
@@ -19,28 +19,46 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .chat: "navigation.chat"
         case .search: "navigation.search"
         case .projects: "navigation.projects"
-        case .files: "navigation.files"
+        case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
-        case .tasks: "navigation.tasks"
-        case .connections: "navigation.connections"
-        case .codeCloud: "navigation.codeCloud"
-        case .codeRemote: "navigation.codeRemote"
         case .settings: "navigation.settings"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .chat: "bubble.left.and.bubble.right"
+        case .chat: "square.and.pencil"
         case .search: "magnifyingglass"
         case .projects: "folder"
-        case .files: "doc.on.doc"
+        case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
-        case .tasks: "checklist"
-        case .connections: "link"
-        case .codeCloud: "cloud"
-        case .codeRemote: "laptopcomputer.and.iphone"
         case .settings: "gearshape"
+        }
+    }
+
+    /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
+    /// tab bar shows the flat set.
+    enum Group: String, CaseIterable, Identifiable {
+        case workspace
+        case content
+        case account
+
+        var id: String { rawValue }
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .workspace: "sidebar.group.workspace"
+            case .content: "sidebar.group.content"
+            case .account: "sidebar.group.account"
+            }
+        }
+
+        var sections: [JunoMobileSection] {
+            switch self {
+            case .workspace: [.chat, .search]
+            case .content: [.projects, .library, .artifacts]
+            case .account: [.settings]
+            }
         }
     }
 }

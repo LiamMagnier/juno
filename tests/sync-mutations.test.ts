@@ -55,6 +55,19 @@ test("settings.update accepts the email preference fields the web settings API s
   assert.ok(!mutationOperationSchema.safeParse({ type: "settings.update", patch: { emailBudgetAlerts: "yes" } }).success);
 });
 
+test("project.update accepts a typed favorite and rejects malformed values", () => {
+  assert.ok(mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    starred: true,
+  }).success);
+  assert.ok(!mutationOperationSchema.safeParse({
+    type: "project.update",
+    entityId: "project-1",
+    starred: "yes",
+  }).success);
+});
+
 test("mutation request keeps idempotency envelope requirements", () => {
   const valid = {
     clientMutationId: randomUUID(),

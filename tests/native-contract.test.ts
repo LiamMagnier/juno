@@ -17,6 +17,22 @@ test("native OpenAPI and backend expose the same version and exact callback allo
   assert.doesNotMatch(contract, /redirectUri:\s*\{[^\n]*const:/);
 });
 
+test("native OpenAPI publishes the existing bearer chat flow", async () => {
+  const contract = await readFile("contracts/openapi/juno-native-v1.yaml", "utf8");
+  for (const operation of [
+    "appendNativeConversationMessages",
+    "streamNativeChat",
+    "cancelNativeChatGeneration",
+    "getNativeChatReceipt",
+  ]) {
+    assert.match(contract, new RegExp(`operationId: ${operation}`));
+  }
+  assert.match(contract, /servers: \[\{ url: \/api \}\]/);
+  assert.match(contract, /regenerate: \{ const: true \}/);
+  assert.match(contract, /x-juno-event-schema: '#\/components\/schemas\/ChatSSEEvent'/);
+  assert.match(contract, /must not\n\s+automatically repeat this POST/);
+});
+
 test("native Swift contract generation is deterministic and self-contained", async () => {
   const directory = await mkdtemp(join(tmpdir(), "juno-native-contract-"));
   const firstOutput = join(directory, "First.swift");

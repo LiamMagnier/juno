@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Juno Native API
-  version: 1.0.1
+  version: 1.3.0
   description: Canonical web-to-native contract. Auth.js cookies are never native credentials.
 servers:
   - url: /api/v1
@@ -200,6 +200,340 @@ paths:
         '409':
           description: Revision conflict or mutation identifier reused with different content.
           content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+  /conversations/{conversationId}/messages:
+    post:
+      servers: [{ url: /api }]
+      operationId: appendNativeConversationMessages
+      summary: Idempotently append finalized native turns
+      description: >-
+        The existing account-scoped transcript endpoint. Each clientId is
+        idempotent within the conversation: an identical retry returns the
+        persisted row and never creates a duplicate. Native chat appends its
+        user turn here before starting a regenerate request through /chat.
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AppendMessagesRequest' }
+      responses:
+        '200':
+          description: Persisted rows in request order, including rows recovered by an idempotent retry.
+          content: { application/json: { schema: { $ref: '#/components/schemas/AppendMessagesResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409': { $ref: '#/components/responses/GeneralRouteError' }
+        '413': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /chat:
+    post:
+      servers: [{ url: /api }]
+      operationId: streamNativeChat
+      summary: Generate a response over the production Juno SSE stream
+      description: >-
+        Existing production chat route with native bearer authentication. The
+        native saved-conversation flow first appends one USER turn through the
+        idempotent messages endpoint, then submits this request with
+        regenerate=true and no message. The server generates from the
+        authoritative final user row. If transport is lost after acceptance,
+        clients must reconcile through the account change feed and must not
+        automatically repeat this POST, because ordinary regenerate requests
+        do not have a durable first-submission receipt. Every SSE frame is
+        encoded as `data: {json}\n\n`; ping frames are heartbeats and done or
+        error is terminal.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NativeChatGenerationRequest' }
+      responses:
+        '200':
+          description: >-
+            Progressive chat events. The JSON payload of each data frame matches
+            ChatSSEEvent (meta, activity, delta, reasoning, sources, ping,
+            done or error).
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                x-juno-event-schema: '#/components/schemas/ChatSSEEvent'
+        default: { $ref: '#/components/responses/GeneralRouteError' }
+  /chat/cancel:
+    post:
+      servers: [{ url: /api }]
+      operationId: cancelNativeChatGeneration
+      description: Account-scoped best-effort cancellation of an in-process generation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChatCancellationRequest' }
+      responses:
+        '200':
+          description: The request was valid; cancelled is false if no owned live generation was registered.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ChatCancellationResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /chat/receipt:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeChatReceipt
+      description: >-
+        Least-privilege recovery for the durable first submission of a new
+        conversation. Supply exactly one lookup key. Existing-conversation
+        regenerate requests have no receipt and recover through /api/v1/changes.
+      parameters:
+        - in: query
+          name: clientRequestId
+          schema: { type: string, minLength: 8, maxLength: 120 }
+        - in: query
+          name: generationId
+          schema: { type: string, minLength: 8, maxLength: 120 }
+      responses:
+        '200':
+          description: Current durable submission state without prompt content.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ChatReceiptResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /memory:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeMemory
+      description: Existing owner-scoped memory entries plus the consolidated summary. Entry CRUD stays on /api/v1/mutations; this route only reads.
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+          description: Optional case-insensitive content filter.
+      responses:
+        '200':
+          description: All saved memory entries and the consolidated summary, newest entries first.
+          content: { application/json: { schema: { $ref: '#/components/schemas/MemoryResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: eraseNativeMemory
+      description: Permanently removes every saved fact and the consolidated summary, and marks all conversations processed so backfill cannot re-learn them.
+      responses:
+        '200':
+          description: Memory was permanently erased.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties: { ok: { const: true } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /library:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeLibraryItems
+      description: Existing owner-scoped attachment library, capped at 300 newest items.
+      parameters:
+        - in: query
+          name: kind
+          schema: { type: string, enum: [IMAGE, FILE] }
+      responses:
+        '200':
+          description: Signed access URLs are short-lived and must never be persisted.
+          content: { application/json: { schema: { $ref: '#/components/schemas/LibraryResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /library/attach:
+    post:
+      servers: [{ url: /api }]
+      operationId: cloneNativeLibraryAttachments
+      description: Clone owned attachment metadata for a future message without duplicating bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [attachmentIds]
+              properties:
+                attachmentIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items: { type: string }
+      responses:
+        '201':
+          description: Fresh unlinked attachment rows in request order.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [attachments]
+                properties:
+                  attachments: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeArtifacts
+      description: Existing owner-scoped artifact index across all conversations.
+      responses:
+        '200':
+          description: Up to 200 artifacts ordered by most recent update.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactIndexResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts/{artifactId}:
+    parameters:
+      - in: path
+        name: artifactId
+        required: true
+        schema: { type: string }
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeArtifact
+      responses:
+        '200':
+          description: Full artifact and append-only version history.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    post:
+      servers: [{ url: /api }]
+      operationId: appendNativeArtifactVersion
+      description: Append a manual edit or restore with optimistic base-version protection.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [content]
+              properties:
+                content: { type: string, maxLength: 200000 }
+                baseVersion: { type: integer, minimum: 1 }
+                origin: { type: string, enum: [edit, restore], default: edit }
+      responses:
+        '200':
+          description: Artifact with the newly appended version.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '409':
+          description: The base version is stale; the response includes the latest artifact.
+          content: { application/json: { schema: { $ref: '#/components/schemas/StaleArtifactResponse' } } }
+    patch:
+      servers: [{ url: /api }]
+      operationId: renameNativeArtifact
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties: { title: { type: string, minLength: 1, maxLength: 200 } }
+      responses:
+        '200':
+          description: Renamed artifact with full version history.
+          content: { application/json: { schema: { $ref: '#/components/schemas/ArtifactResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+    delete:
+      servers: [{ url: /api }]
+      operationId: deleteNativeArtifact
+      responses:
+        '200':
+          description: Artifact and its versions were deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties: { ok: { const: true } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+  /artifacts/{artifactId}/export:
+    get:
+      servers: [{ url: /api }]
+      operationId: exportNativeArtifact
+      parameters:
+        - in: path
+          name: artifactId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: format
+          schema: { type: string, enum: [docx, xlsx, pptx] }
+          description: Omit to detect the formats available for the latest Markdown version.
+      responses:
+        '200':
+          description: Available-format JSON when format is omitted, otherwise the generated Office binary.
+          content:
+            application/json: { schema: { $ref: '#/components/schemas/ArtifactExportFormats' } }
+            application/octet-stream: { schema: { type: string, format: binary } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
+        '429': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/devices:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeDevices
+      description: Existing owner-scoped Juno Code hosts (Remote devices), most-recently-seen first. Already accepts the native bearer via getCurrentUser.
+      responses:
+        '200':
+          description: Registered hosts with online status derived from the heartbeat window.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeDevicesResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/workspaces:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeWorkspaces
+      description: Owner-scoped shared Code workspaces, newest-opened first. `path` is device-local metadata — native clients must address by `key`/`id` and never surface `path`.
+      responses:
+        '200':
+          description: Shared workspaces keyed by an opaque `key`.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeWorkspacesResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/tasks:
+    get:
+      servers: [{ url: /api }]
+      operationId: listNativeCodeSessions
+      description: Owner-scoped Code sessions (tasks), newest first. `workspacePath` is device-local — native clients must not surface it (see CodeSession).
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [queued, running, awaiting_approval, completed, failed, cancelled] }
+      responses:
+        '200':
+          description: Code sessions for this account.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeSessionsResponse' } } }
+        '400': { $ref: '#/components/responses/GeneralRouteError' }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+  /code/tasks/{taskId}:
+    get:
+      servers: [{ url: /api }]
+      operationId: getNativeCodeSession
+      description: A Code session and its append-only event journal. Resume by comparing `lastSeq` against the last event `seq` already seen.
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Session state plus the ordered event journal.
+          content: { application/json: { schema: { $ref: '#/components/schemas/CodeSessionDetailResponse' } } }
+        '401': { $ref: '#/components/responses/GeneralRouteError' }
+        '404': { $ref: '#/components/responses/GeneralRouteError' }
 components:
   securitySchemes:
     nativeBearer: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -213,6 +547,9 @@ components:
     NotFound:
       description: Resource not found within the authenticated account.
       content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    GeneralRouteError:
+      description: Legacy general-route error; normalization is tracked by GAP-006.
+      content: { application/json: { schema: { $ref: '#/components/schemas/GeneralRouteErrorEnvelope' } } }
   schemas:
     TokenExchangeRequest:
       type: object
@@ -325,12 +662,398 @@ components:
         baseRevision: { type: integer, minimum: 0 }
         operation:
           type: object
+          description: >-
+            Strict operation union implemented by the server. project.update accepts
+            entityId plus optional name, instructions, and starred fields.
           required: [type]
           additionalProperties: true
           properties:
             type:
               type: string
               enum: [conversation.create, conversation.rename, conversation.update, conversation.archive, conversation.delete, folder.create, folder.rename, folder.delete, project.create, project.update, project.delete, memory.create, memory.update, memory.delete, settings.update]
+    AppendMessagesRequest:
+      type: object
+      additionalProperties: false
+      required: [turns]
+      properties:
+        turns:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: { $ref: '#/components/schemas/AppendMessageTurn' }
+    AppendMessageTurn:
+      type: object
+      additionalProperties: false
+      required: [clientId, role, content]
+      properties:
+        clientId: { type: string, minLength: 8, maxLength: 64, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]*$' }
+        role: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string, minLength: 1 }
+        createdAt: { type: string, format: date-time }
+        model: { type: string, minLength: 1, maxLength: 200 }
+        promptTokens: { type: integer, minimum: 0 }
+        completionTokens: { type: integer, minimum: 0 }
+    AppendMessagesResponse:
+      type: object
+      additionalProperties: false
+      required: [conversationId, messages]
+      properties:
+        conversationId: { type: string }
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/AppendedMessage' }
+    AppendedMessage:
+      type: object
+      additionalProperties: false
+      required: [clientId, id, role, content, model, promptTokens, completionTokens, createdAt, created]
+      properties:
+        clientId: { type: string }
+        id: { type: string }
+        role: { type: string, enum: [USER, ASSISTANT] }
+        content: { type: string }
+        model: { type: [string, 'null'] }
+        promptTokens: { type: [integer, 'null'], minimum: 0 }
+        completionTokens: { type: [integer, 'null'], minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        created: { type: boolean }
+    NativeChatGenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [conversationId, model, regenerate, generationId, client]
+      properties:
+        conversationId: { type: string }
+        model: { type: string, minLength: 1, maxLength: 200 }
+        regenerate: { const: true }
+        reasoningEffort: { type: string, enum: [minimal, low, medium, high, xhigh, max] }
+        generationId: { type: string, minLength: 8, maxLength: 120 }
+        client: { const: app }
+    ChatSource:
+      type: object
+      additionalProperties: true
+      required: [title, url, snippet]
+      properties:
+        title: { type: string }
+        url: { type: string, format: uri }
+        snippet: { type: string }
+    ChatMessage:
+      type: object
+      additionalProperties: true
+      required: [id, role, content, createdAt]
+      properties:
+        id: { type: string }
+        role: { type: string, enum: [ASSISTANT] }
+        content: { type: string }
+        reasoning: { type: [string, 'null'] }
+        model: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        sources: { type: array, items: { $ref: '#/components/schemas/ChatSource' } }
+        finishReason: { type: [string, 'null'] }
+    ChatSSEEvent:
+      oneOf:
+        - { $ref: '#/components/schemas/ChatMetaEvent' }
+        - { $ref: '#/components/schemas/ChatActivityEvent' }
+        - { $ref: '#/components/schemas/ChatDeltaEvent' }
+        - { $ref: '#/components/schemas/ChatReasoningEvent' }
+        - { $ref: '#/components/schemas/ChatSourcesEvent' }
+        - { $ref: '#/components/schemas/ChatPingEvent' }
+        - { $ref: '#/components/schemas/ChatDoneEvent' }
+        - { $ref: '#/components/schemas/ChatErrorEvent' }
+      discriminator: { propertyName: type }
+    ChatMetaEvent:
+      type: object
+      additionalProperties: true
+      required: [type, conversationId, userMessageId, title, generationId]
+      properties:
+        type: { const: meta }
+        conversationId: { type: string }
+        userMessageId: { type: [string, 'null'] }
+        title: { type: string }
+        titleSource: { type: string }
+        generationId: { type: string }
+        receiptState: { type: string }
+    ChatActivityEvent:
+      type: object
+      additionalProperties: true
+      required: [type, event]
+      properties:
+        type: { const: activity }
+        event: { type: object, additionalProperties: true }
+    ChatDeltaEvent:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { const: delta }
+        text: { type: string }
+    ChatReasoningEvent:
+      type: object
+      additionalProperties: false
+      required: [type, text]
+      properties:
+        type: { const: reasoning }
+        text: { type: string }
+        part: { type: integer, minimum: 0 }
+    ChatSourcesEvent:
+      type: object
+      additionalProperties: false
+      required: [type, sources]
+      properties:
+        type: { const: sources }
+        sources: { type: array, items: { $ref: '#/components/schemas/ChatSource' } }
+    ChatPingEvent:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties: { type: { const: ping } }
+    ChatDoneEvent:
+      type: object
+      additionalProperties: true
+      required: [type, message, finishReason]
+      properties:
+        type: { const: done }
+        message: { $ref: '#/components/schemas/ChatMessage' }
+        finishReason: { type: string }
+        title: { type: string }
+    ChatErrorEvent:
+      type: object
+      additionalProperties: true
+      required: [type, message, finishReason]
+      properties:
+        type: { const: error }
+        message: { type: string }
+        finishReason: { type: string }
+        conversationId: { type: string }
+        userMessageId: { type: string }
+        generationId: { type: string }
+        receiptState: { type: string }
+        failureCode: { type: string }
+    ChatCancellationRequest:
+      type: object
+      additionalProperties: false
+      required: [generationId]
+      properties: { generationId: { type: string, minLength: 8, maxLength: 120 } }
+    ChatCancellationResponse:
+      type: object
+      additionalProperties: false
+      required: [ok, cancelled]
+      properties:
+        ok: { const: true }
+        cancelled: { type: boolean }
+    ChatReceiptResponse:
+      type: object
+      additionalProperties: false
+      required: [conversationId, userMessageId, generationId, receiptState, finishReason, failureCode]
+      properties:
+        conversationId: { type: string }
+        userMessageId: { type: string }
+        generationId: { type: string }
+        receiptState: { type: string, enum: [claimed, accepted, running, completed, failed] }
+        finishReason: { type: [string, 'null'] }
+        failureCode: { type: [string, 'null'] }
+    LibraryAttachment:
+      type: object
+      additionalProperties: false
+      required: [id, kind, fileName, mimeType, size, url, width, height]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [IMAGE, FILE] }
+        fileName: { type: string }
+        mimeType: { type: string }
+        size: { type: integer, minimum: 0 }
+        url: { type: string }
+        width: { type: [integer, 'null'], minimum: 0 }
+        height: { type: [integer, 'null'], minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        conversationId: { type: [string, 'null'] }
+    LibraryResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/LibraryAttachment' } }
+    MemoryEntryItem:
+      type: object
+      additionalProperties: false
+      required: [id, content, source, kind, sourceRef, createdAt]
+      properties:
+        id: { type: string }
+        content: { type: string, maxLength: 20000 }
+        source: { type: string, enum: [AUTO, MANUAL] }
+        kind: { type: string, enum: [FACT, SUPPRESSION] }
+        sourceRef: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    MemorySummary:
+      type: object
+      additionalProperties: false
+      required: [content, updatedAt, entryCount]
+      properties:
+        content: { type: string }
+        updatedAt: { type: string, format: date-time }
+        entryCount: { type: integer, minimum: 0 }
+    MemoryResponse:
+      type: object
+      additionalProperties: false
+      required: [memories, summary]
+      properties:
+        memories: { type: array, items: { $ref: '#/components/schemas/MemoryEntryItem' } }
+        summary:
+          oneOf:
+            - { $ref: '#/components/schemas/MemorySummary' }
+            - { type: 'null' }
+    CodeDevice:
+      type: object
+      additionalProperties: true
+      required: [id, name, platform, workspaces, lastSeenAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        platform: { type: string }
+        workspaces: { type: array, items: { type: string } }
+        lastSeenAt: { type: string, format: date-time }
+        online: { type: boolean }
+    CodeDevicesResponse:
+      type: object
+      additionalProperties: false
+      required: [devices]
+      properties:
+        devices: { type: array, items: { $ref: '#/components/schemas/CodeDevice' } }
+    CodeWorkspace:
+      type: object
+      additionalProperties: true
+      required: [id, key, name, path, lastOpenedAt]
+      properties:
+        id: { type: string }
+        key: { type: [string, 'null'] }
+        name: { type: string }
+        # Device-local absolute path. Native clients MUST NOT surface it; address
+        # a workspace by `key`/`id` only. Removing it from the native projection
+        # is tracked as GAP-022.
+        path: { type: string }
+        lastOpenedAt: { type: string, format: date-time }
+    CodeWorkspacesResponse:
+      type: object
+      additionalProperties: false
+      required: [workspaces]
+      properties:
+        workspaces: { type: array, items: { $ref: '#/components/schemas/CodeWorkspace' } }
+    CodeSession:
+      type: object
+      additionalProperties: true
+      required: [id, deviceId, workspaceName, workspaceKey, title, prompt, status, lastSeq, target, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        deviceId: { type: [string, 'null'] }
+        # Device-local; native clients MUST NOT surface it (GAP-022).
+        workspacePath: { type: string }
+        workspaceName: { type: string }
+        workspaceKey: { type: [string, 'null'] }
+        title: { type: string }
+        prompt: { type: string }
+        status: { type: string, enum: [queued, running, awaiting_approval, completed, failed, cancelled] }
+        lastSeq: { type: integer, minimum: 0 }
+        conversationId: { type: [string, 'null'] }
+        target: { type: string, enum: [device, cloud] }
+        repoOwner: { type: [string, 'null'] }
+        repoName: { type: [string, 'null'] }
+        baseRef: { type: [string, 'null'] }
+        prUrl: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    CodeSessionEvent:
+      type: object
+      additionalProperties: false
+      required: [seq, kind, payload, createdAt]
+      properties:
+        seq: { type: integer, minimum: 0 }
+        kind: { type: string }
+        payload: { type: object, additionalProperties: true }
+        createdAt: { type: string, format: date-time }
+    CodeSessionsResponse:
+      type: object
+      additionalProperties: false
+      required: [tasks]
+      properties:
+        tasks: { type: array, items: { $ref: '#/components/schemas/CodeSession' } }
+    CodeSessionDetailResponse:
+      type: object
+      additionalProperties: false
+      required: [task, events]
+      properties:
+        task: { $ref: '#/components/schemas/CodeSession' }
+        events: { type: array, items: { $ref: '#/components/schemas/CodeSessionEvent' } }
+    ArtifactKind:
+      type: string
+      enum: [HTML, REACT, CODE, MARKDOWN, SVG, MERMAID]
+    ArtifactVersion:
+      type: object
+      additionalProperties: false
+      required: [version, content, origin, createdAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        content: { type: string, maxLength: 200000 }
+        origin: { type: [string, 'null'], enum: [generated, edit, restore, null] }
+        createdAt: { type: string, format: date-time }
+    Artifact:
+      type: object
+      additionalProperties: false
+      required: [id, identifier, type, title, language, currentVersion, content, versions, messageId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        identifier: { type: string }
+        type: { $ref: '#/components/schemas/ArtifactKind' }
+        title: { type: string }
+        language: { type: [string, 'null'] }
+        currentVersion: { type: integer, minimum: 1 }
+        content: { type: string, maxLength: 200000 }
+        versions: { type: array, items: { $ref: '#/components/schemas/ArtifactVersion' } }
+        messageId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [artifact]
+      properties: { artifact: { $ref: '#/components/schemas/Artifact' } }
+    StaleArtifactResponse:
+      type: object
+      additionalProperties: false
+      required: [error, artifact]
+      properties:
+        error: { const: stale }
+        artifact:
+          oneOf:
+            - { $ref: '#/components/schemas/Artifact' }
+            - { type: 'null' }
+    ArtifactIndexItem:
+      type: object
+      additionalProperties: false
+      required: [id, identifier, title, type, language, version, conversationId, conversationTitle, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        identifier: { type: string }
+        title: { type: string }
+        type: { $ref: '#/components/schemas/ArtifactKind' }
+        language: { type: [string, 'null'] }
+        version: { type: integer, minimum: 1 }
+        conversationId: { type: string }
+        conversationTitle: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ArtifactIndexResponse:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/ArtifactIndexItem' } }
+    ArtifactExportFormats:
+      type: object
+      additionalProperties: false
+      required: [formats]
+      properties:
+        formats:
+          type: array
+          uniqueItems: true
+          items: { type: string, enum: [docx, xlsx, pptx] }
     EntityEnvelope:
       type: object
       additionalProperties: false
@@ -378,3 +1101,12 @@ components:
             requestId: { type: string }
             retryable: { type: boolean }
             retryAfterMs: { type: [integer, 'null'] }
+    GeneralRouteErrorEnvelope:
+      type: object
+      additionalProperties: true
+      required: [error]
+      properties:
+        error: { type: string }
+        message: { type: string }
+        code: { type: string }
+        retryable: { type: boolean }

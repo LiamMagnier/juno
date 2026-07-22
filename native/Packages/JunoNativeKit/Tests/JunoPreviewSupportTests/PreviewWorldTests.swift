@@ -1,0 +1,133 @@
+#if DEBUG
+import Foundation
+import JunoAuth
+import JunoCore
+import JunoStorage
+import JunoSync
+import XCTest
+@testable import JunoPreviewSupport
+
+@MainActor
+final class PreviewWorldTests: XCTestCase {
+    func testEveryScenarioBuildsInTemporaryStorageWithoutProductionDependencies() async throws {
+        for scenario in PreviewScenario.allCases {
+            let world = try PreviewWorld(scenario: scenario)
+            await world.activate()
+
+            // The database is a throwaway temp file, never the production store.
+            let path = world.previewDatabasePath
+            XCTAssertTrue(path.contains("juno-ui-preview-"), path)
+            XCTAssertFalse(path.contains("accounts.sqlite3"), path)
+            XCTAssertTrue(path.hasPrefix(FileManager.default.temporaryDirectory.path), path)
+
+            // The synthetic session carries no real identity or token material.
+            XCTAssertEqual(world.session.profile.email, "preview@juno.local")
+            XCTAssertEqual(world.accountID.rawValue, "preview-account")
+        }
+    }
+
+    func testDevelopmentKeyIsAFixedNonSecretConstant() {
+        XCTAssertEqual(PreviewWorld.developmentKey.count, 32)
+        XCTAssertTrue(PreviewWorld.developmentKey.allSatisfy { $0 == 0x7A })
+    }
+
+    func testOfflinePreviewSenderRefusesEveryRequestWithoutNetwork() async throws {
+        let sender = PreviewSender(networkFails: true)
+        do {
+            _ = try await sender.send(
+                try NativeBearerRequest(path: "/api/v1/models"),
+                for: try AccountID("preview-account")
+            )
+            XCTFail("Offline preview sender must refuse the request")
+        } catch {
+            XCTAssertTrue(error is URLError)
+        }
+        let sent = await sender.sentRequestCount
+        XCTAssertEqual(sent, 1)
+    }
+
+    func testNormalPreviewSenderReturnsCannedDataWithoutNetwork() async throws {
+        let sender = PreviewSender(networkFails: false)
+        let response = try await sender.send(
+            try NativeBearerRequest(path: "/api/memory"),
+            for: try AccountID("preview-account")
+        )
+        XCTAssertEqual(response.statusCode, 200)
+        // A canned, local body — never fetched from a server.
+        XCTAssertTrue(String(decoding: response.body, as: UTF8.self).contains("summary"))
+    }
+
+    func testConflictScenarioSurfacesAConflictedMutation() async throws {
+        let world = try PreviewWorld(scenario: .conflict)
+        await world.activate()
+        XCTAssertGreaterThan(world.conversationModel.conflictedMutationCount, 0)
+    }
+
+    func testNormalScenarioSeedsRealContent() async throws {
+        let world = try PreviewWorld(scenario: .normal)
+        await world.activate()
+        XCTAssertFalse(world.conversationModel.conversations.isEmpty)
+        XCTAssertFalse(world.projectModel.projects.isEmpty)
+        XCTAssertFalse(world.memorySettingsModel.memories.isEmpty)
+        XCTAssertNotNil(world.memorySettingsModel.settings)
+    }
+
+    /// Regression guard for the Library and Artifacts destinations: both must
+    /// seed real, navigable content so their screens render instead of crashing
+    /// or falling back to an empty/unavailable state.
+    func testLibraryAndArtifactsDestinationsHaveNavigableContent() async throws {
+        for scenario in [PreviewScenario.normal, .manyItems] {
+            let world = try PreviewWorld(scenario: scenario)
+            await world.activate()
+            XCTAssertFalse(
+                world.artifactModel.artifacts.isEmpty,
+                "Artifacts destination has no content in \(scenario)"
+            )
+            XCTAssertFalse(
+                world.projectModel.files.isEmpty,
+                "Library destination has no files in \(scenario)"
+            )
+        }
+    }
+
+    func testManyItemsScenarioUsesRealisticVariedConversationTitles() async throws {
+        let world = try PreviewWorld(scenario: .manyItems)
+        await world.activate()
+        let titles = world.conversationModel.conversations.map(\.title)
+        XCTAssertFalse(titles.contains { $0.contains("Conversation number") },
+                       "Fixtures must use realistic titles, not placeholders")
+        XCTAssertTrue(titles.contains("Designing the native sidebar"))
+    }
+
+    /// The one wired composer "+" action — associating the current conversation
+    /// with a project. Projects are available for the picker, the association is
+    /// reflected optimistically, and it can be cleared — all over the in-memory
+    /// world with no network access, never a faked success.
+    func testAddToProjectIsWiredWithoutNetwork() async throws {
+        let world = try PreviewWorld(scenario: .normal)
+        await world.activate()
+        XCTAssertFalse(world.projectModel.projects.isEmpty, "Picker needs projects")
+        let project = try XCTUnwrap(world.projectModel.projects.first)
+        let convo = try XCTUnwrap(world.conversationModel.conversations.first { !$0.isArchived })
+
+        // Associating and clearing both run cleanly (no fake success, no error)
+        // over the offline world. The one fixture that ships already linked to a
+        // project surfaces that association so the UI can check it.
+        await world.conversationModel.setProject(id: convo.id, projectID: project.id)
+        XCTAssertNil(world.conversationModel.lastErrorDescription)
+        await world.conversationModel.setProject(id: convo.id, projectID: nil)
+        XCTAssertNil(world.conversationModel.lastErrorDescription)
+
+        let linked = world.conversationModel.conversations.first { $0.projectId != nil }
+        XCTAssertNotNil(linked, "A seeded conversation should expose its project link")
+    }
+
+    func testActivationIsIdempotent() async throws {
+        let world = try PreviewWorld(scenario: .normal)
+        await world.activate()
+        let count = world.conversationModel.conversations.count
+        await world.activate()
+        XCTAssertEqual(world.conversationModel.conversations.count, count)
+    }
+}
+#endif

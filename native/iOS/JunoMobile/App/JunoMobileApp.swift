@@ -7,12 +7,19 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 import UIKit
+#if DEBUG
+import JunoPreviewSupport
+#endif
 
 @main
 struct JunoMobileApp: App {
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     private let localStore: SQLiteAccountRepository?
 
     init() {
@@ -20,18 +27,58 @@ struct JunoMobileApp: App {
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
+        _projectModel = State(initialValue: configuration.projectModel)
+        _artifactModel = State(initialValue: configuration.artifactModel)
+        _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
+        _searchModel = State(initialValue: configuration.searchModel)
         localStore = configuration.localStore
     }
 
     var body: some Scene {
         WindowGroup {
-            JunoMobileRootView(
-                authModel: authModel,
-                syncModel: syncModel,
-                conversationModel: conversationModel
-            )
+            #if DEBUG
+            if JunoPreviewEnvironment.isActive {
+                JunoPreviewContainer(
+                    initialScenario: JunoPreviewEnvironment.initialScenario
+                ) { world in
+                    JunoMobileRootView(
+                        authModel: Self.previewAuthModel,
+                        syncModel: world.syncModel,
+                        conversationModel: world.conversationModel,
+                        projectModel: world.projectModel,
+                        artifactModel: world.artifactModel,
+                        memorySettingsModel: world.memorySettingsModel,
+                        searchModel: world.searchModel,
+                        previewSession: world.session
+                    )
+                }
+            } else {
+                rootView
+            }
+            #else
+            rootView
+            #endif
         }
     }
+
+    private var rootView: some View {
+        JunoMobileRootView(
+            authModel: authModel,
+            syncModel: syncModel,
+            conversationModel: conversationModel,
+            projectModel: projectModel,
+            artifactModel: artifactModel,
+            memorySettingsModel: memorySettingsModel,
+            searchModel: searchModel
+        )
+    }
+
+    #if DEBUG
+    @MainActor
+    private static let previewAuthModel = NativeAuthModel(
+        configurationErrorDescription: "UI Preview"
+    )
+    #endif
 
     @MainActor
     private static func makeConfiguration() -> JunoMobileConfiguration {
@@ -83,6 +130,11 @@ struct JunoMobileApp: App {
                 )
             )
             let outbox = PersistentMutationOutbox(repository: localStore)
+            let drainer = NativeMutationDrainer(
+                repository: localStore,
+                outbox: outbox,
+                sender: runtime
+            )
             return JunoMobileConfiguration(
                 authModel: authModel,
                 localStore: localStore,
@@ -90,13 +142,30 @@ struct JunoMobileApp: App {
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
-                    drainer: NativeMutationDrainer(
-                        repository: localStore,
-                        outbox: outbox,
-                        sender: runtime
-                    ),
-                    syncModel: syncModel
-                )
+                    drainer: drainer,
+                    syncModel: syncModel,
+                    chatClient: NativeChatAPIClient(transport: runtime)
+                ),
+                projectModel: NativeProjectModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel,
+                    sender: runtime
+                ),
+                artifactModel: NativeArtifactModel(
+                    repository: localStore,
+                    syncModel: syncModel,
+                    sender: runtime
+                ),
+                memorySettingsModel: NativeMemorySettingsModel(
+                    repository: localStore,
+                    outbox: outbox,
+                    drainer: drainer,
+                    syncModel: syncModel,
+                    sender: runtime
+                ),
+                searchModel: NativeSearchModel(repository: localStore)
             )
         } catch {
             return JunoMobileConfiguration(
@@ -105,7 +174,11 @@ struct JunoMobileApp: App {
                 ),
                 localStore: nil,
                 syncModel: nil,
-                conversationModel: nil
+                conversationModel: nil,
+                projectModel: nil,
+                artifactModel: nil,
+                memorySettingsModel: nil,
+                searchModel: nil
             )
         }
     }
@@ -125,4 +198,8 @@ private struct JunoMobileConfiguration {
     let localStore: SQLiteAccountRepository?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    let projectModel: NativeProjectModel<SQLiteAccountRepository>?
+    let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
 }

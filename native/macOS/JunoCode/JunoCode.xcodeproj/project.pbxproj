@@ -1,0 +1,581 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		14C1AD0C7B349050ABE19CFB /* JunoCodeAppTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87D2B3C4320FE60827C5ADC3 /* JunoCodeAppTests.swift */; };
+		150BB813C066FF6D2DB5E53E /* JunoCodeLocal in Frameworks */ = {isa = PBXBuildFile; productRef = 45F4FAF8B814E48C0830A50E /* JunoCodeLocal */; };
+		2B842F367054E1A1B54D4260 /* JunoCodeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */; };
+		878ABD301599AD805244E0F5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 7F651A0C98754284907BCED9 /* Assets.xcassets */; };
+		9D08DEF3901E1975A2D1B79A /* JunoCodeUI in Frameworks */ = {isa = PBXBuildFile; productRef = F19C705C6E21F54BCAED807C /* JunoCodeUI */; };
+		EE89505F54EB4148F9509A86 /* JunoCodeCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6E2F48E763A001FB902909AC /* JunoCodeCore */; };
+		F219A4D8B2E525299CB05DA0 /* JunoCodeRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 7063A214F68154405E72954E /* JunoCodeRuntime */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FCEDFF0B8A66C2DDC81502AD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6AE1B39F73131DC97BE9058C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1FEA13FB0206DCFAD1FCA9D1;
+			remoteInfo = JunoCode;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoCodeApp.swift; sourceTree = "<group>"; };
+		0AEBC1F2A5E60C8B4361EC54 /* JunoCode.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = JunoCode.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		0E6AE01A288EF33F32C98EAF /* JunoCode */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoCode; path = ../../Packages/JunoCode; sourceTree = SOURCE_ROOT; };
+		335BDC1F54EA827113877872 /* JunoCode-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Stable.xcconfig"; sourceTree = "<group>"; };
+		79F6505BB64106229756E7E1 /* JunoCode-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Next.xcconfig"; sourceTree = "<group>"; };
+		7F651A0C98754284907BCED9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		83847BB8B28F7DE9DA6AA817 /* JunoCode-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoCode-Debug.xcconfig"; sourceTree = "<group>"; };
+		87D2B3C4320FE60827C5ADC3 /* JunoCodeAppTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoCodeAppTests.swift; sourceTree = "<group>"; };
+		E68E367C01880330F74F0D54 /* JunoCodeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoCodeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		C2C49E49EA9265EA6372AD4D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EE89505F54EB4148F9509A86 /* JunoCodeCore in Frameworks */,
+				150BB813C066FF6D2DB5E53E /* JunoCodeLocal in Frameworks */,
+				F219A4D8B2E525299CB05DA0 /* JunoCodeRuntime in Frameworks */,
+				9D08DEF3901E1975A2D1B79A /* JunoCodeUI in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0A81582DCE5DDC33D2841D3F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				0AEBC1F2A5E60C8B4361EC54 /* JunoCode.app */,
+				E68E367C01880330F74F0D54 /* JunoCodeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		1742ABF2CE528FEC49D24E6F /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				83847BB8B28F7DE9DA6AA817 /* JunoCode-Debug.xcconfig */,
+				79F6505BB64106229756E7E1 /* JunoCode-Next.xcconfig */,
+				335BDC1F54EA827113877872 /* JunoCode-Stable.xcconfig */,
+			);
+			path = Config;
+			sourceTree = "<group>";
+		};
+		22703D6CB5E87049E84F290D = {
+			isa = PBXGroup;
+			children = (
+				977A9ACB493E5B4194D41623 /* App */,
+				7879B3EFFF93534D681DD27E /* native */,
+				E48F2352DC5E7CD833F868BF /* Packages */,
+				466C491D878FBEBDF83C1A47 /* Resources */,
+				98B44941F9A774894EB4C44C /* Tests */,
+				0A81582DCE5DDC33D2841D3F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		466C491D878FBEBDF83C1A47 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				7F651A0C98754284907BCED9 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		7879B3EFFF93534D681DD27E /* native */ = {
+			isa = PBXGroup;
+			children = (
+				1742ABF2CE528FEC49D24E6F /* Config */,
+			);
+			name = native;
+			path = ../..;
+			sourceTree = "<group>";
+		};
+		977A9ACB493E5B4194D41623 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				037FC1D8B504B9E75A3E893D /* JunoCodeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		98B44941F9A774894EB4C44C /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				87D2B3C4320FE60827C5ADC3 /* JunoCodeAppTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		E48F2352DC5E7CD833F868BF /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				0E6AE01A288EF33F32C98EAF /* JunoCode */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1FEA13FB0206DCFAD1FCA9D1 /* JunoCode */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 5E726FE06152A458699C626B /* Build configuration list for PBXNativeTarget "JunoCode" */;
+			buildPhases = (
+				4F4B73CA5A14972C5497DC4C /* Sources */,
+				AC22ABDE682ECFEE33E4B587 /* Resources */,
+				C2C49E49EA9265EA6372AD4D /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = JunoCode;
+			packageProductDependencies = (
+				6E2F48E763A001FB902909AC /* JunoCodeCore */,
+				45F4FAF8B814E48C0830A50E /* JunoCodeLocal */,
+				7063A214F68154405E72954E /* JunoCodeRuntime */,
+				F19C705C6E21F54BCAED807C /* JunoCodeUI */,
+			);
+			productName = JunoCode;
+			productReference = 0AEBC1F2A5E60C8B4361EC54 /* JunoCode.app */;
+			productType = "com.apple.product-type.application";
+		};
+		9F44B32DCD5772B52028B27E /* JunoCodeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 08B98B15CB961FB51F79B2ED /* Build configuration list for PBXNativeTarget "JunoCodeTests" */;
+			buildPhases = (
+				BFB83A8B653C03C72FB820FD /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2CC3A07BC4AFBCE566E75CA4 /* PBXTargetDependency */,
+			);
+			name = JunoCodeTests;
+			packageProductDependencies = (
+			);
+			productName = JunoCodeTests;
+			productReference = E68E367C01880330F74F0D54 /* JunoCodeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		6AE1B39F73131DC97BE9058C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = EAB455C5002A45B2C5E5447B /* Build configuration list for PBXProject "JunoCode" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 22703D6CB5E87049E84F290D;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				81309F07A7C0812A3FCE16E0 /* XCLocalSwiftPackageReference "../../Packages/JunoCode" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0A81582DCE5DDC33D2841D3F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1FEA13FB0206DCFAD1FCA9D1 /* JunoCode */,
+				9F44B32DCD5772B52028B27E /* JunoCodeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AC22ABDE682ECFEE33E4B587 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				878ABD301599AD805244E0F5 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		4F4B73CA5A14972C5497DC4C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2B842F367054E1A1B54D4260 /* JunoCodeApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BFB83A8B653C03C72FB820FD /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				14C1AD0C7B349050ABE19CFB /* JunoCodeAppTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		2CC3A07BC4AFBCE566E75CA4 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1FEA13FB0206DCFAD1FCA9D1 /* JunoCode */;
+			targetProxy = FCEDFF0B8A66C2DDC81502AD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		03B6EDF702F407528DD563E3 /* Next */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 79F6505BB64106229756E7E1 /* JunoCode-Next.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoCode.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoCode.app/Contents/MacOS/JunoCode";
+			};
+			name = Next;
+		};
+		2241848ACA516850A6F4AC91 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		257B6DC0FFCE8A0F04754423 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83847BB8B28F7DE9DA6AA817 /* JunoCode-Debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoCode.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+			name = Debug;
+		};
+		51F8A2C25201B93D4E92AFC1 /* Stable */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 335BDC1F54EA827113877872 /* JunoCode-Stable.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoCode.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+			name = Stable;
+		};
+		7091CDBC3F2354FD3B1D2EFC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 83847BB8B28F7DE9DA6AA817 /* JunoCode-Debug.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoCode.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoCode.app/Contents/MacOS/JunoCode";
+			};
+			name = Debug;
+		};
+		8B8B95778EAFC3AE9B568C0B /* Next */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 79F6505BB64106229756E7E1 /* JunoCode-Next.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Resources/JunoCode.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+			};
+			name = Next;
+		};
+		A1E961529CDAA2CB788EFEDD /* Stable */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 335BDC1F54EA827113877872 /* JunoCode-Stable.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoCode.tests;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/JunoCode.app/Contents/MacOS/JunoCode";
+			};
+			name = Stable;
+		};
+		D37BEEAF6D4146DBC5288CAF /* Next */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Next;
+		};
+		DA0C18C1B544451E60F897C6 /* Stable */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Stable;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		08B98B15CB961FB51F79B2ED /* Build configuration list for PBXNativeTarget "JunoCodeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7091CDBC3F2354FD3B1D2EFC /* Debug */,
+				03B6EDF702F407528DD563E3 /* Next */,
+				A1E961529CDAA2CB788EFEDD /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		5E726FE06152A458699C626B /* Build configuration list for PBXNativeTarget "JunoCode" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				257B6DC0FFCE8A0F04754423 /* Debug */,
+				8B8B95778EAFC3AE9B568C0B /* Next */,
+				51F8A2C25201B93D4E92AFC1 /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EAB455C5002A45B2C5E5447B /* Build configuration list for PBXProject "JunoCode" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2241848ACA516850A6F4AC91 /* Debug */,
+				D37BEEAF6D4146DBC5288CAF /* Next */,
+				DA0C18C1B544451E60F897C6 /* Stable */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		81309F07A7C0812A3FCE16E0 /* XCLocalSwiftPackageReference "../../Packages/JunoCode" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../Packages/JunoCode;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		45F4FAF8B814E48C0830A50E /* JunoCodeLocal */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeLocal;
+		};
+		6E2F48E763A001FB902909AC /* JunoCodeCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeCore;
+		};
+		7063A214F68154405E72954E /* JunoCodeRuntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeRuntime;
+		};
+		F19C705C6E21F54BCAED807C /* JunoCodeUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JunoCodeUI;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 6AE1B39F73131DC97BE9058C /* Project object */;
+}

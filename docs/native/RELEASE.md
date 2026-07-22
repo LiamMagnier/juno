@@ -164,3 +164,20 @@ the publication gate.
 
 Continue all unprivileged development and validation before asking the owner for
 proprietary inputs. Never replace a missing release gate with a success claim.
+
+## Prisma migration — MANDATORY release constraint
+
+`prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql` differs
+between branches and MUST NOT be reconciled by taking this UI branch's copy:
+
+- **This UI branch (`agent/juno-native-claude-continuation`)** still carries the
+  older backfill using bare, untyped `NULL` values.
+- **`origin/main`** carries the production hotfix using explicit `NULL::timestamp`
+  casts.
+
+Bare `NULL` is **not** equivalent to or as safe as the typed `NULL::timestamp`
+cast (Postgres type inference in the multi-branch `INSERT … SELECT UNION` can
+resolve the untyped column differently). During final release integration the
+migration file MUST be taken **verbatim from `origin/main`** — never from this UI
+branch. Do not modify this migration inside any UI unit, and never deploy this
+branch's version.
