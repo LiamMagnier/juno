@@ -91,10 +91,19 @@ struct TranscriptRow: View {
         HStack(spacing: JunoCodeTheme.Spacing.compact) {
             Image(systemName: iconName(for: change.kind))
                 .foregroundStyle(JunoCodeTheme.accent)
-            Text(change.path.value)
-                .font(.junoMono)
-                .lineLimit(1)
-                .truncationMode(.middle)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(PathDisplay.fileName(change.path.value))
+                    .font(.junoMono)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let directory = PathDisplay.directory(change.path.value) {
+                    Text(directory)
+                        .font(.junoMonoSmall)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            }
             Spacer()
             if change.linesAdded > 0 {
                 Text("+\(change.linesAdded)")
@@ -154,7 +163,10 @@ struct TranscriptRow: View {
                     .foregroundStyle(.secondary)
             }
             HStack(spacing: JunoCodeTheme.Spacing.content) {
-                Label("\(completed.filesChanged) files changed", systemImage: "doc.badge.gearshape")
+                Label(
+                    "\(PathDisplay.fileCount(completed.filesChanged)) changed",
+                    systemImage: "doc.badge.gearshape"
+                )
                 if let testsPassed = completed.testsPassed {
                     Label(
                         testsPassed ? "Tests green" : "Tests failing",
@@ -267,7 +279,9 @@ struct ToolActivityRow: View {
                             .textSelection(.enabled)
                     }
                     if !output.isEmpty {
-                        ScrollView {
+                        // Same rule as the Terminal tab: fixed-width output
+                        // scrolls sideways rather than wrapping.
+                        ScrollView([.vertical, .horizontal]) {
                             VStack(alignment: .leading, spacing: 1) {
                                 ForEach(Array(output.enumerated()), id: \.offset) { _, chunk in
                                     Text(chunk.text)
@@ -278,6 +292,8 @@ struct ToolActivityRow: View {
                                                 : .secondary
                                         )
                                         .textSelection(.enabled)
+                                        .lineLimit(1)
+                                        .fixedSize(horizontal: true, vertical: false)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                             }

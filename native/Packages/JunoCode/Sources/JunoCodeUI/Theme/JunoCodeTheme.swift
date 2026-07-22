@@ -1,5 +1,30 @@
 import SwiftUI
 
+/// Display helpers for workspace-relative paths.
+///
+/// Middle-truncating a whole path is the worst of both worlds: on a path like
+/// `native/Packages/.../MutationOutboxDrainerConfiguration.swift` it eats the
+/// filename and leaves `native/Packages/…figuration.swift`, which identifies
+/// nothing. Split instead, so the filename is always readable and only the
+/// directory is allowed to truncate.
+enum PathDisplay {
+    static func fileName(_ path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
+
+    /// The parent directory, or `nil` for a file at the workspace root.
+    static func directory(_ path: String) -> String? {
+        let components = path.split(separator: "/")
+        guard components.count > 1 else { return nil }
+        return components.dropLast().joined(separator: "/")
+    }
+
+    /// "3 files" / "1 file".
+    static func fileCount(_ count: Int) -> String {
+        count == 1 ? "1 file" : "\(count) files"
+    }
+}
+
 /// Juno Code visual language: deep graphite surfaces in dark mode, near-white
 /// in light mode, SF Pro type, and the Juno terracotta accent used sparingly
 /// for primary actions and running state only.

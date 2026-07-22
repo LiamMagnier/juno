@@ -124,14 +124,21 @@ enum CodePreviewData {
 
     // MARK: Workspaces
 
+    /// Two workspaces live under the real home directory so the `~`
+    /// abbreviation in the sidebar and Context tab is genuinely exercised —
+    /// `abbreviatingWithTildeInPath` only rewrites the *current* user's home,
+    /// so a hard-coded `/Users/preview/…` would silently skip that code path
+    /// and hide a home-path leak. The third stays outside the home on purpose,
+    /// to cover the un-abbreviated case. This is stable per machine, which is
+    /// what screenshot and UI-test determinism needs.
     static let workspaces: [WorkspaceRecord] = [
-        workspace("juno", "/Users/preview/Developer/juno", git: true),
+        workspace("juno", "\(NSHomeDirectory())/Developer/juno", git: true),
         workspace(
             "JunoNativeKit",
-            "/Users/preview/Developer/juno/native/Packages/JunoNativeKit",
+            "\(NSHomeDirectory())/Developer/juno/native/Packages/JunoNativeKit",
             git: true
         ),
-        workspace("design-notes", "/Users/preview/Documents/design-notes", git: false),
+        workspace("design-notes", "/Volumes/Team/design-notes", git: false),
     ]
 
     private static func workspace(

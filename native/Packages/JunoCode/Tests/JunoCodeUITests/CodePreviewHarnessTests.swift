@@ -451,15 +451,49 @@ final class CodePreviewHarnessTests: XCTestCase {
     }
 
     /// The workspace path shown in the Context tab must be abbreviated, never a
-    /// raw absolute home path.
+    /// raw absolute home path. The `.transcript` fixture deliberately lives
+    /// under the real home so this actually exercises the abbreviation.
     func testWorkspacePathIsAbbreviatedForDisplay() throws {
         let controller = SessionController(
             previewFixture: CodePreviewData.fixture(for: .transcript)
         )
         XCTAssertFalse(controller.workspaceDisplayName.isEmpty)
-        XCTAssertFalse(
-            controller.workspacePathDisplay.hasPrefix("/Users/\(NSUserName())/"),
-            "the current user's home directory must be abbreviated to ~"
+        XCTAssertTrue(
+            controller.workspacePathDisplay.hasPrefix("~/"),
+            """
+            expected a tilde-abbreviated path, got \(controller.workspacePathDisplay). \
+            A home path must never be shown raw.
+            """
         )
+        XCTAssertFalse(controller.workspacePathDisplay.contains(NSHomeDirectory()))
+
+        // A workspace outside the home stays absolute, which is correct.
+        let outside = SessionController(
+            previewFixture: CodePreviewData.fixture(for: .longText)
+        )
+        XCTAssertEqual(outside.workspacePathDisplay, "/Volumes/Team/design-notes")
+    }
+
+    // MARK: - Path presentation
+
+    /// Middle-truncating a whole path eats the filename, which is the only part
+    /// that identifies the file. Splitting keeps it readable at any width.
+    func testPathDisplaySplitsFilenameFromDirectory() {
+        let long = "native/Packages/JunoNativeKit/Sources/JunoSync/Internal/Coordination/MutationOutboxDrainerConfiguration.swift"
+        XCTAssertEqual(PathDisplay.fileName(long), "MutationOutboxDrainerConfiguration.swift")
+        XCTAssertEqual(
+            PathDisplay.directory(long),
+            "native/Packages/JunoNativeKit/Sources/JunoSync/Internal/Coordination"
+        )
+
+        // A root-level file has no directory line to show.
+        XCTAssertEqual(PathDisplay.fileName("README.md"), "README.md")
+        XCTAssertNil(PathDisplay.directory("README.md"))
+    }
+
+    func testFileCountIsPluralised() {
+        XCTAssertEqual(PathDisplay.fileCount(0), "0 files")
+        XCTAssertEqual(PathDisplay.fileCount(1), "1 file")
+        XCTAssertEqual(PathDisplay.fileCount(2), "2 files")
     }
 }

@@ -73,10 +73,13 @@ struct SidebarView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(record.descriptor.displayName)
                             .lineLimit(1)
+                        // Truncate from the head: the trailing folders identify
+                        // the workspace, the leading ones are shared noise.
                         Text(abbreviatedPath(record.descriptor.localPathHint))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
+                            .truncationMode(.head)
                     }
                 } icon: {
                     Image(systemName: record.descriptor.isGitRepository

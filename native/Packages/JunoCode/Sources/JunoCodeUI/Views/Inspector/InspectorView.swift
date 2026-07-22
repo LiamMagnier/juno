@@ -63,31 +63,39 @@ struct InspectorView: View {
 
             Divider().overlay(JunoCodeTheme.separator)
 
-            switch tab {
-            case .changes:
-                ChangesTab(
-                    controller: controller,
-                    openDiff: { path in
-                        selectedDiffPath = path
-                        tab = .diff
-                    }
-                )
-            case .diff:
-                DiffTab(controller: controller, selectedPath: $selectedDiffPath)
-            case .terminal:
-                TerminalTab(controller: controller)
-            case .tests:
-                TestsTab(controller: controller)
-            case .git:
-                GitTab(controller: controller)
-            case .files:
-                FilesTab(controller: controller)
-            case .context:
-                ContextTab(controller: controller)
-            case .computer:
-                ComputerTab()
+            // The tab content must fill the pane. Without this, a tab whose
+            // body does not expand (any ContentUnavailableView empty state)
+            // shrinks the whole VStack and SwiftUI centres it vertically,
+            // dragging the tab picker into the middle of the inspector.
+            Group {
+                switch tab {
+                case .changes:
+                    ChangesTab(
+                        controller: controller,
+                        openDiff: { path in
+                            selectedDiffPath = path
+                            tab = .diff
+                        }
+                    )
+                case .diff:
+                    DiffTab(controller: controller, selectedPath: $selectedDiffPath)
+                case .terminal:
+                    TerminalTab(controller: controller)
+                case .tests:
+                    TestsTab(controller: controller)
+                case .git:
+                    GitTab(controller: controller)
+                case .files:
+                    FilesTab(controller: controller)
+                case .context:
+                    ContextTab(controller: controller)
+                case .computer:
+                    ComputerTab()
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(JunoCodeTheme.surface)
         .task(id: controller.sessionID) {
             await controller.refreshWorkspacePanels()
@@ -137,20 +145,31 @@ struct ChangesTab: View {
     private var summaryText: String {
         let added = controller.changes.reduce(0) { $0 + $1.linesAdded }
         let removed = controller.changes.reduce(0) { $0 + $1.linesRemoved }
-        return "\(controller.changes.count) files · +\(added) −\(removed)"
+        return "\(PathDisplay.fileCount(controller.changes.count)) · +\(added) −\(removed)"
+    }
+
+    /// "modified · Sources/JunoCodeUI/Theme" — the directory truncates from the
+    /// head so the innermost, most identifying folder stays visible.
+    private func changeSubtitle(_ change: TrackedChange) -> String {
+        guard let directory = PathDisplay.directory(change.path) else {
+            return change.kind.rawValue
+        }
+        return "\(change.kind.rawValue) · \(directory)"
     }
 
     private func changeRow(_ change: TrackedChange) -> some View {
         HStack(spacing: JunoCodeTheme.Spacing.compact) {
             reviewIcon(change.reviewState)
             VStack(alignment: .leading, spacing: 1) {
-                Text(change.path)
+                Text(PathDisplay.fileName(change.path))
                     .font(.junoMono)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(change.kind.rawValue)
+                Text(changeSubtitle(change))
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.head)
             }
             Spacer()
             Text("+\(change.linesAdded)")
@@ -203,7 +222,8 @@ struct DiffTab: View {
             } else {
                 Picker("File", selection: $selectedPath) {
                     ForEach(controller.changes) { change in
-                        Text(change.path).tag(String?.some(change.path))
+                        Text(PathDisplay.fileName(change.path))
+                            .tag(String?.some(change.path))
                     }
                 }
                 .padding(JunoCodeTheme.Spacing.compact)
@@ -312,7 +332,11 @@ struct TerminalTab: View {
             )
         } else {
             ScrollViewReader { proxy in
-                ScrollView {
+                // Command output is column-aligned, fixed-width text. Soft
+                // wrapping breaks the alignment and doubles the height of every
+                // line, so the pane scrolls horizontally instead — the way a
+                // terminal does.
+                ScrollView([.vertical, .horizontal]) {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(controller.terminal) { line in
                             Text(line.text)
@@ -323,6 +347,8 @@ struct TerminalTab: View {
                                         : .primary
                                 )
                                 .textSelection(.enabled)
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .id(line.id)
                         }
