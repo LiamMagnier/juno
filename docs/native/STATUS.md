@@ -1,11 +1,11 @@
 # Juno Native — Status
 
-Last updated: 2026-07-22 01:49 Europe/Paris
+Last updated: 2026-07-22 02:12 Europe/Paris
 
 ## Repository state
 
 - Branch: `agent/juno-native`
-- Current completed implementation commit: `35fce4a04f41ffc3d252e988950c6eec03743bc7` (`feat(native): add real projects and files`).
+- Current completed implementation commit: `719db31c4ae96c4ee18244230d0a768f69bb04f0` (`feat(native): add real library and artifacts`).
 - Native worktree: `/Users/liammagnier/Desktop/workspace/.worktrees/juno-native-primary`.
 - Known unstaged Xcode 27 project/scheme and String Catalog rewrites remain
   preserved outside the implementation commits; inspect rather than resetting them.
@@ -16,7 +16,8 @@ Last updated: 2026-07-22 01:49 Europe/Paris
 ## Current phase
 
 Production auth, storage, sync, conversation/message UI, real chat streaming,
-projects and files are complete. The next sequential unit is library and artifacts.
+projects/files, library and artifacts are complete. The next sequential unit is
+memory and settings.
 
 ## Actually completed
 
@@ -25,7 +26,7 @@ projects and files are complete. The next sequential unit is library and artifac
 - Canonical callback/version alignment and deterministic Swift contract generation in `b903159`.
 - Acyclic Swift 6 package `JunoNativeKit` with ten products: Core, API, Auth, Storage, Sync, Search, DesignSystem, ChatKit, CodeKit, and VoiceKit.
 - Strict-concurrency API validation, PKCE/token coordination, account-scoped storage abstractions, cursor/outbox logic, local-search contract, and chat/code/voice reducers.
-- 126 focused Swift package tests, all passing with warnings treated as errors
+- 134 focused Swift package tests, all passing with warnings treated as errors
   and complete strict-concurrency checking.
 - Security.framework-backed token persistence with device-local accessibility,
   disabled Keychain sync, account/device validation, serialized rotation/removal,
@@ -64,6 +65,12 @@ projects and files are complete. The next sequential unit is library and artifac
   and loading/empty/error/offline states. The only server change extends the
   existing native `project.update` mutation with the already-supported
   `starred` field recorded as GAP-020; no route or project service was added.
+- Real library and artifacts in `719db31`: synchronized encrypted attachment
+  browsing and file actions, account-scoped offline artifact/version history,
+  direct bearer refresh, optimistic edit/restore conflicts, rename/delete,
+  detected Office export and native HTML/SVG/Markdown/source previews on both
+  apps. Existing `/api/library` and `/api/artifacts` routes were published in
+  the native OpenAPI contract; no backend route or service was added.
 - Deterministic checked-in Swift contract plus `npm run native:contract:check` drift command.
 - Independent `JunoMac.xcodeproj` and `JunoMobile.xcodeproj`, generated from separate XcodeGen specifications.
 - Debug, Stable, and Next configuration layers; canonical callback scheme, EN/FR String Catalogs, privacy manifests, empty skeleton entitlements, and app icon catalogs.
@@ -78,7 +85,7 @@ applications and not downloadable releases.
 ## Remaining
 
 - Interactive live-account browser completion and connected-device management UI.
-- Library/artifacts, mutation conflict UI and live-account offline/reconnect proof.
+- Memory/settings, search/sidebar, remaining mutation conflict UI and live-account offline/reconnect proof.
 - Complete generated API/chat/upload/account/Code/Remote/voice/notification contracts and native transport integration.
 - Functional macOS and iOS/iPadOS chat, search, settings, Cloud Code, Remote, approvals, and accessibility behavior.
 - Native CI, UI/E2E/accessibility/performance suites, Release/archive dry runs, dependency/secret scans, and artifact provenance.
@@ -89,7 +96,7 @@ applications and not downloadable releases.
 
 - `npm run native:contract:check`
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete`
-- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 126/126 tests.
+- `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path "$(mktemp -d)" -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete` — 134/134 tests.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/macOS/JunoMac/JunoMac.xcodeproj -scheme JunoMac -configuration Debug -destination 'platform=macOS' -derivedDataPath /tmp/juno-mac-foundation-derived CODE_SIGNING_ALLOWED=NO build`
 - Same macOS project/scheme with `-configuration Stable` and `/tmp/juno-mac-stable-derived`.
 - `DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj -scheme JunoMobile -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/juno-mobile-foundation-derived CODE_SIGNING_ALLOWED=NO build`
@@ -125,16 +132,16 @@ applications and not downloadable releases.
 
 ## Next exact action
 
-Reuse the existing library and artifact routes, sync entities and old native
-clients to implement the real saved-item and versioned-artifact surfaces in both
-apps. Do not add a server route unless the targeted checks prove a gap.
+Reuse the existing memory/settings routes, sync entities and old native clients
+to implement the real account-scoped memory and settings surfaces in both apps.
+Do not add a server route unless the targeted checks prove a gap.
 
 Open first:
 
-1. `src/app/api/library`
-2. `src/app/api/artifacts`
+1. `src/app/api/memory`
+2. `src/app/api/settings`
 3. `src/lib/sync-entities.ts`
-4. the old native project's library/artifact clients (read-only source lineage)
+4. the old native project's memory/settings clients (read-only source lineage)
 
 Keep the backend unchanged unless route/contract/old-client inspection proves a
 real gap and records it in `API_GAPS.md`.
