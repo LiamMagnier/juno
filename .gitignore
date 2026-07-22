@@ -46,3 +46,11 @@ relay/dist
 # vendored agent core for the Cloud Code runner (built in CI)
 runner/agent-core/node_modules
 runner/agent-core/dist
+
+# Release artifacts: the build products themselves are large binaries and are
+# reproducible from a tagged commit. The delivery documentation and checksums
+# in dist/ are tracked; the .app/.dmg/.ipa/.zip are not.
+dist/*.app/
+dist/*.dmg
+dist/*.ipa
+dist/*.zip

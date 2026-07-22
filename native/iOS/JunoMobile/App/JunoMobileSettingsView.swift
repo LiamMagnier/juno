@@ -11,45 +11,56 @@ struct JunoMobileSettingsView: View {
     var authModel: NativeAuthModel?
     var session: NativeAuthenticatedSession?
     @State private var showingSignOut = false
+    @State private var showMemoryPage = false
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("Loading settings…")
-                case .failed where model.settings == nil && model.memories.isEmpty:
-                    ContentUnavailableView {
-                        Label("Settings unavailable", systemImage: "exclamationmark.triangle")
-                    } description: {
-                        Text(model.lastErrorDescription ?? "Try again.")
-                    } actions: {
-                        Button("Retry") { Task { await model.refresh() } }
-                    }
-                default:
-                    settingsForm
+        Group {
+            switch model.phase {
+            case .idle, .loading:
+                ProgressView("Loading settings…")
+            case .failed where model.settings == nil && model.memories.isEmpty:
+                ContentUnavailableView {
+                    Label("Settings unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(model.lastErrorDescription ?? "Try again.")
+                } actions: {
+                    Button("Retry") { Task { await model.refresh() } }
                 }
+            default:
+                settingsForm
             }
-            .navigationTitle("Settings")
-            .safeAreaInset(edge: .bottom) {
-                if model.conflictedMutationCount > 0 {
-                    conflictBanner
-                } else if model.phase == .offline || model.lastErrorDescription != nil {
-                    statusBanner
-                }
+        }
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationDestination(isPresented: $showMemoryPage) {
+            JunoMobileMemoryView(model: model)
+        }
+        .task {
+            #if DEBUG
+            if CommandLine.arguments.contains("--juno-preview-memory") {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                showMemoryPage = true
             }
-            .confirmationDialog(
-                "auth.sign-out.confirm.title",
-                isPresented: $showingSignOut,
-                titleVisibility: .visible
-            ) {
-                Button("auth.sign-out", role: .destructive) {
-                    Task { await authModel?.signOut() }
-                }
-                Button("action.cancel", role: .cancel) {}
-            } message: {
-                Text("auth.sign-out.confirm.message")
+            #endif
+        }
+        .safeAreaInset(edge: .bottom) {
+            if model.conflictedMutationCount > 0 {
+                conflictBanner
+            } else if model.phase == .offline || model.lastErrorDescription != nil {
+                statusBanner
             }
+        }
+        .confirmationDialog(
+            "auth.sign-out.confirm.title",
+            isPresented: $showingSignOut,
+            titleVisibility: .visible
+        ) {
+            Button("auth.sign-out", role: .destructive) {
+                Task { await authModel?.signOut() }
+            }
+            Button("action.cancel", role: .cancel) {}
+        } message: {
+            Text("auth.sign-out.confirm.message")
         }
         .accessibilityIdentifier("juno.mobile.settings")
     }
@@ -98,31 +109,21 @@ struct JunoMobileSettingsView: View {
                 }
             }
             Section("Memory") {
-                Toggle(
-                    "Remember details from chats",
-                    isOn: Binding(
-                        get: { model.settings?.memoryEnabled ?? true },
-                        set: { value in
-                            Task {
-                                await model.updateSettings(
-                                    NativeSettingsPatch(memoryEnabled: value)
-                                )
-                            }
-                        }
-                    )
-                )
-                .disabled(model.isMutating || model.settings == nil)
-                .accessibilityIdentifier("juno.mobile.settings-memory-toggle")
-                NavigationLink {
-                    JunoMobileMemoryView(model: model)
+                Button {
+                    showMemoryPage = true
                 } label: {
                     HStack {
-                        Text("Manage memory")
+                        Label("Memory", systemImage: "brain")
                         Spacer()
-                        Text("\(model.memories.count)")
+                        Text("^[\(model.memories.count) memory](inflect: true)")
                             .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.settings-memory-link")
             }
         }
@@ -214,7 +215,7 @@ private struct JunoMobileSettingsSections: View {
                 selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) }
             ) {
                 if !modelCatalog.contains(where: { $0.id == settings.defaultModel }) {
-                    Text(settings.defaultModel).tag(settings.defaultModel)
+                    Text(junoDisplayModelName(settings.defaultModel)).tag(settings.defaultModel)
                 }
                 ForEach(modelCatalog) { option in
                     Text(option.displayName).tag(option.id)
@@ -406,51 +407,94 @@ private struct JunoMobileMemoryView: View {
 
     var body: some View {
         List {
-            if let summary = model.summary, !summary.content.isEmpty {
-                Section {
+            Section {
+                Text("Juno remembers helpful details from your chats so it can give you better, more personalized answers.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                if let summary = model.summary, !summary.content.isEmpty {
                     Text(summary.content)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.primary)
                         .textSelection(.enabled)
-                } header: {
-                    HStack {
-                        Text("What Juno remembers")
-                        Spacer()
+                    HStack(spacing: 6) {
+                        Text("Updated \(summary.updatedAt.formatted(.relative(presentation: .named)))")
+                        Spacer(minLength: 0)
+                        Text("^[\(summary.entryCount) memory](inflect: true)")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text("No summary yet — Juno builds this from what it learns in chats.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                HStack {
+                    Text("Memory summary")
+                    Spacer()
+                    Button {
+                        Task { await model.refresh() }
+                    } label: {
                         if model.isRefreshingSummary {
                             ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
                         }
-                        Text("\(summary.entryCount) memories")
                     }
+                    .disabled(model.isRefreshingSummary)
+                    .accessibilityLabel("Refresh summary")
                 }
             }
 
-            Section("Add a memory") {
-                HStack {
-                    TextField("Something Juno should remember", text: $newMemory)
-                        .onSubmit(addMemory)
-                        .accessibilityIdentifier("juno.mobile.settings-memory-input")
-                    Button("Add", action: addMemory)
-                        .disabled(
-                            model.isMutating
-                                || newMemory.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    .isEmpty
-                        )
-                        .accessibilityIdentifier("juno.mobile.settings-memory-add")
-                }
+            Section {
+                Toggle("Pause memory", isOn: Binding(
+                    get: { !(model.settings?.memoryEnabled ?? true) },
+                    set: { paused in
+                        Task {
+                            await model.updateSettings(NativeSettingsPatch(memoryEnabled: !paused))
+                        }
+                    }
+                ))
+                .disabled(model.isMutating || model.settings == nil)
+                .accessibilityIdentifier("juno.mobile.memory-pause")
+            } footer: {
+                Text("While paused, Juno won't save new details from your chats. Existing memories are kept.")
             }
 
-            Section("Saved memories") {
-                if model.memories.isEmpty {
-                    Text("No saved memories yet. Facts Juno learns in chats appear here.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(model.memories) { memory in
-                        memoryRow(memory)
+            Section {
+                DisclosureGroup {
+                    HStack {
+                        TextField("Something Juno should remember", text: $newMemory)
+                            .onSubmit(addMemory)
+                            .accessibilityIdentifier("juno.mobile.settings-memory-input")
+                        Button("Add", action: addMemory)
+                            .disabled(
+                                model.isMutating
+                                    || newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
+                            .accessibilityIdentifier("juno.mobile.settings-memory-add")
+                    }
+                    if model.memories.isEmpty {
+                        Text("No saved memories yet. Facts Juno learns in chats appear here.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.memories) { memory in
+                            memoryRow(memory)
+                        }
+                    }
+                } label: {
+                    HStack {
+                        Text("Manage edits")
+                        Spacer()
+                        Text("^[\(model.memories.count) memory](inflect: true)")
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
 
             Section {
-                Button("Erase all memory…", role: .destructive) {
+                Button("Reset memory…", role: .destructive) {
                     showingEraseAll = true
                 }
                 .disabled(model.isErasing || model.isMutating)
@@ -462,7 +506,7 @@ private struct JunoMobileMemoryView: View {
                     }
                 }
             } footer: {
-                Text("Erasing memory permanently removes every saved fact and the summary, and old chats are not re-learned.")
+                Text("Resetting permanently removes every saved fact and the summary, and old chats are not re-learned.")
             }
         }
         .navigationTitle("Memory")

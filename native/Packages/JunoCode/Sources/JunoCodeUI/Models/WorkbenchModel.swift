@@ -86,6 +86,11 @@ public final class WorkbenchModel {
     private var contexts: [WorkspaceID: WorkspaceContext] = [:]
     private var controllers: [CodeSessionID: SessionController] = [:]
     private var storeObserver: UUID?
+    #if DEBUG
+    /// True only for the local `--juno-code-ui-preview` harness, which seeds
+    /// in-memory fixtures and must not read the on-disk session store.
+    private var isPreview = false
+    #endif
 
     public init(dependencies: Dependencies) {
         self.dependencies = dependencies
@@ -101,6 +106,10 @@ public final class WorkbenchModel {
     // MARK: - Bootstrap
 
     public func bootstrap() async {
+        #if DEBUG
+        // The preview harness seeds fixtures in memory; never read the store.
+        if isPreview { return }
+        #endif
         if storeObserver == nil {
             storeObserver = await sessionStore.addObserver { [weak self] update in
                 Task { @MainActor [weak self] in
@@ -160,6 +169,13 @@ public final class WorkbenchModel {
         if let existing = contexts[workspaceID] {
             return existing
         }
+        #if DEBUG
+        // Preview fixtures are never registered in the workspace directory and
+        // carry no security-scoped bookmark, so there is nothing to reopen.
+        // Returning nil keeps the runtime unreachable without surfacing a
+        // reopen failure the user cannot act on.
+        if isPreview { return nil }
+        #endif
         do {
             let (record, access) = try await workspaceDirectory.open(id: workspaceID)
             let context = WorkspaceContext(
@@ -212,6 +228,11 @@ public final class WorkbenchModel {
 
     /// The live controller for a session, created on first use.
     public func controller(for sessionID: CodeSessionID) async -> SessionController? {
+        #if DEBUG
+        // Preview sessions get a fixture controller with no runtime attached;
+        // the live path below is never taken.
+        if isPreview { return previewController(for: sessionID) }
+        #endif
         if let existing = controllers[sessionID] {
             return existing
         }
@@ -300,4 +321,57 @@ public final class WorkbenchModel {
     public func workspaceName(for id: WorkspaceID) -> String {
         workspaces.first { $0.id == id }?.descriptor.displayName ?? "Workspace"
     }
+
+    #if DEBUG
+    // MARK: - DEBUG preview harness
+
+    /// Builds a workbench seeded with local, synthetic fixtures for visual QA
+    /// (`--juno-code-ui-preview`).
+    ///
+    /// Inertness is structural, not conditional. Storage points at a throwaway
+    /// temp directory, no workspace is ever registered, and every session's
+    /// controller is built through `SessionController.init(previewFixture:)`,
+    /// which has no `WorkspaceContext` at all — so there is no
+    /// `CommandExecutionService`, `GitService`, `CheckpointStore` or model
+    /// transport anywhere in the graph to reach. No production security check
+    /// is relaxed to achieve this.
+    ///
+    /// `scenario` only chooses the initially selected session; every scenario
+    /// is present in the sidebar and reachable by clicking.
+    public static func preview(
+        scenario: CodePreviewScenario = .transcript
+    ) -> WorkbenchModel {
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("juno-code-preview-\(UUID().uuidString)", isDirectory: true)
+        let model = WorkbenchModel(
+            dependencies: Dependencies(
+                storageRootURL: scratch,
+                modelClient: UnconfiguredModelClient(),
+                availableModels: [
+                    ModelOption(modelID: "claude-sonnet-5", displayName: "Claude Sonnet 5"),
+                    ModelOption(modelID: "claude-opus-4-8", displayName: "Claude Opus 4.8"),
+                ]
+            )
+        )
+        model.isPreview = true
+        model.workspaces = CodePreviewData.workspaces
+        model.sessions = CodePreviewData.sessions
+        model.selectedSessionID = scenario.sessionID
+        return model
+    }
+
+    /// Builds this session's preview controller from its fixture, cached so
+    /// selection changes do not discard local edits made during QA.
+    private func previewController(for sessionID: CodeSessionID) -> SessionController? {
+        if let existing = controllers[sessionID] { return existing }
+        guard let scenario = CodePreviewScenario.allCases.first(
+            where: { $0.sessionID == sessionID }
+        ) else { return nil }
+        let controller = SessionController(
+            previewFixture: CodePreviewData.fixture(for: scenario)
+        )
+        controllers[sessionID] = controller
+        return controller
+    }
+    #endif
 }

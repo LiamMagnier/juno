@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -17,8 +18,12 @@ struct JunoMobileRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
-    // Restores the last-viewed tab across relaunches (per scene).
+    // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
+    @State private var sidebarOpen = false
+    @State private var showingSettings = false
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
     /// Set only by the local UI Preview harness to render the real authenticated
     /// shell without any authentication; nil in every normal run.
@@ -43,6 +48,12 @@ struct JunoMobileRootView: View {
                 if let raw = JunoPreviewEnvironment.initialDestination,
                     let section = JunoMobileSection(rawValue: raw) {
                     selection = section
+                }
+                if CommandLine.arguments.contains("--juno-preview-sidebar") {
+                    sidebarOpen = true
+                }
+                if CommandLine.arguments.contains("--juno-preview-settings") {
+                    showingSettings = true
                 }
                 return
             }
@@ -97,50 +108,248 @@ struct JunoMobileRootView: View {
         }
     }
 
-    /// Size-adaptive top-level navigation: a tab bar on iPhone and a sidebar on
-    /// iPad/large widths, from one declaration. Every tab hosts a real surface.
+    /// Size-adaptive navigation. iPhone uses a real sliding sidebar drawer
+    /// (hamburger + veil), iPad/large uses a persistent NavigationSplitView.
+    @ViewBuilder
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        TabView(selection: $selection) {
-            Tab(value: JunoMobileSection.chat) {
-                chatTab
-            } label: {
-                Label("navigation.chat", systemImage: JunoMobileSection.chat.systemImage)
-            }
-
-            Tab(value: JunoMobileSection.search, role: .search) {
-                searchTab
-            } label: {
-                Label("navigation.search", systemImage: JunoMobileSection.search.systemImage)
-            }
-
-            TabSection("sidebar.group.content") {
-                Tab(value: JunoMobileSection.projects) {
-                    projectsTab
-                } label: {
-                    Label("navigation.projects", systemImage: JunoMobileSection.projects.systemImage)
+        Group {
+            if sizeClass == .compact {
+                compactDrawer(session: session)
+            } else {
+                NavigationSplitView {
+                    sidebar(session: session)
+                        .navigationBarTitleDisplayMode(.inline)
+                } detail: {
+                    detail(for: selection)
                 }
-                Tab(value: JunoMobileSection.library) {
-                    libraryTab
-                } label: {
-                    Label("navigation.library", systemImage: JunoMobileSection.library.systemImage)
-                }
-                Tab(value: JunoMobileSection.artifacts) {
-                    artifactsTab
-                } label: {
-                    Label("navigation.artifacts", systemImage: JunoMobileSection.artifacts.systemImage)
-                }
-            }
-
-            Tab(value: JunoMobileSection.settings) {
-                settingsTab(session: session)
-            } label: {
-                Label("navigation.settings", systemImage: JunoMobileSection.settings.systemImage)
+                .navigationSplitViewStyle(.balanced)
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
-        .accessibilityIdentifier("juno.mobile.tabs")
+        .sheet(isPresented: $showingSettings) { settingsSheet }
+    }
+
+    /// Settings is presented as a large modal sheet over the current screen —
+    /// the app stays visible and dimmed behind it, and dismissing restores the
+    /// exact screen underneath. The sheet owns a single NavigationStack so
+    /// subpages (Memory, …) push with one Back and the root shows only a close
+    /// button.
+    @ViewBuilder
+    private var settingsSheet: some View {
+        NavigationStack {
+            Group {
+                if let memorySettingsModel {
+                    JunoMobileSettingsView(
+                        model: memorySettingsModel,
+                        conversationModel: conversationModel,
+                        authModel: authModel,
+                        session: currentSession
+                    )
+                } else {
+                    unavailable
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingSettings = false } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.primary)
+                            .frame(width: 30, height: 30)
+                            .modifier(JunoGlassCircle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close settings")
+                    .accessibilityIdentifier("juno.mobile.settings-close")
+                }
+            }
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: iPhone drawer
+
+    /// The "reveal" interaction: the sidebar is a fixed layer *behind* the main
+    /// window, and opening slides the whole chat plate to the right to uncover
+    /// it — no panel slides over the chat, and there is no dimming veil. Depth
+    /// comes from the plate's rounded corners, a soft shadow and a subtle scale.
+    private func compactDrawer(session: NativeAuthenticatedSession) -> some View {
+        let revealed = min(UIScreen.main.bounds.width * 0.80, 340)
+        return ZStack(alignment: .leading) {
+            JunoMobileSidebarDrawer(
+                selection: $selection,
+                conversationModel: conversationModel,
+                session: session,
+                canCreateChat: conversationModel != nil,
+                openDestination: openSidebarDestination,
+                openConversation: openSidebarConversation,
+                newChat: startNewChat
+            )
+            .frame(width: revealed, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(Color.junoCanvas.ignoresSafeArea())
+
+            ZStack {
+                Color(uiColor: .systemBackground)
+                detail(for: selection)
+                    .allowsHitTesting(!sidebarOpen)
+            }
+            .overlay {
+                if sidebarOpen {
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onTapGesture { setSidebar(false) }
+                        .accessibilityLabel("Close sidebar")
+                        .accessibilityAddTraits(.isButton)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: sidebarOpen ? 52 : 0, style: .continuous))
+            .ignoresSafeArea()
+            .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 22, x: -1)
+            .offset(x: sidebarOpen ? revealed : 0)
+        }
+        .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: sidebarOpen)
+        .gesture(
+            DragGesture(minimumDistance: 18)
+                .onEnded { value in
+                    if value.translation.width < -60 { setSidebar(false) }
+                    else if value.translation.width > 60 && value.startLocation.x < 32 {
+                        setSidebar(true)
+                    }
+                }
+        )
+    }
+
+    private func setSidebar(_ open: Bool) {
+        if reduceMotion { sidebarOpen = open }
+        else { withAnimation(JunoMotion.emphasized) { sidebarOpen = open } }
+    }
+
+    // MARK: Sidebar
+
+    @ViewBuilder
+    private func sidebar(session: NativeAuthenticatedSession) -> some View {
+        JunoMobileSidebarDrawer(
+            selection: $selection,
+            conversationModel: conversationModel,
+            session: session,
+            openDestination: openSidebarDestination,
+            openConversation: openSidebarConversation,
+            newChat: startNewChat
+        )
+    }
+
+    private func openSidebarDestination(_ destination: JunoMobileSection) {
+        setSidebar(false)
+        // Settings is a modal sheet over the current screen, never a pushed
+        // destination that replaces it.
+        guard destination != .settings else {
+            showingSettings = true
+            return
+        }
+        selection = destination
+        if destination != .chat { conversationModel?.selectedConversationID = nil }
+    }
+
+    private func openSidebarConversation(_ id: String) {
+        conversationModel?.selectedConversationID = id
+        selection = .chat
+        setSidebar(false)
+    }
+
+    private func startNewChat() {
+        Task {
+            if let id = await conversationModel?.createConversation() {
+                conversationModel?.selectedConversationID = id
+            }
+            selection = .chat
+            setSidebar(false)
+        }
+    }
+
+    // MARK: Detail
+
+    @ViewBuilder
+    private func detail(for destination: JunoMobileSection) -> some View {
+        NavigationStack {
+            destinationRoot(destination)
+                .toolbar {
+                    if sizeClass == .compact {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button {
+                                setSidebar(true)
+                            } label: {
+                                JunoMenuGlyph()
+                            }
+                            .accessibilityLabel("Open sidebar")
+                            .accessibilityIdentifier("juno.mobile.menu")
+                        }
+                    }
+                }
+        }
+    }
+
+    @ViewBuilder
+    private func destinationRoot(_ destination: JunoMobileSection) -> some View {
+        switch destination {
+        case .chat:
+            if let conversationModel {
+                JunoMobileChatDetailScreen(
+                    model: conversationModel,
+                    projects: projectModel?.projects ?? []
+                )
+            } else {
+                unavailable
+            }
+        case .search:
+            if let searchModel {
+                JunoMobileSearchView(model: searchModel, open: openSearchResult)
+            } else { unavailable }
+        case .projects:
+            if let projectModel {
+                JunoMobileProjectsView(
+                    model: projectModel,
+                    conversationModel: conversationModel,
+                    openConversation: openConversation
+                )
+            } else { unavailable }
+        case .library:
+            if let projectModel {
+                JunoMobileFilesView(model: projectModel)
+            } else { unavailable }
+        case .artifacts:
+            if let artifactModel {
+                JunoMobileArtifactsView(model: artifactModel, openConversation: openConversation)
+            } else { unavailable }
+        case .settings:
+            if let memorySettingsModel {
+                JunoMobileSettingsView(
+                    model: memorySettingsModel,
+                    conversationModel: conversationModel,
+                    authModel: authModel,
+                    session: currentSession
+                )
+            } else { unavailable }
+        }
+    }
+
+    private var currentSession: NativeAuthenticatedSession? {
+        #if DEBUG
+        if let previewSession { return previewSession }
+        #endif
+        if case .signedIn(let s) = authModel.phase { return s }
+        return nil
+    }
+
+    private var unavailable: some View {
+        ContentUnavailableView {
+            Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text("shell.unavailable.description")
+        }
     }
 
     private func openConversation(_ id: String) {
@@ -162,85 +371,301 @@ struct JunoMobileRootView: View {
             artifactModel?.selectedArtifactID = result.entityID
             selection = .artifacts
         case .memory:
-            selection = .settings
-        }
-    }
-
-    @ViewBuilder
-    private var chatTab: some View {
-        if let conversationModel {
-            JunoMobileConversationsView(model: conversationModel, syncModel: syncModel)
-        } else {
-            JunoMobileUnavailableTab()
-        }
-    }
-
-    @ViewBuilder
-    private var searchTab: some View {
-        if let searchModel {
-            JunoMobileSearchView(model: searchModel, open: openSearchResult)
-        } else {
-            JunoMobileUnavailableTab()
-        }
-    }
-
-    @ViewBuilder
-    private var projectsTab: some View {
-        if let projectModel {
-            JunoMobileProjectsView(
-                model: projectModel,
-                conversationModel: conversationModel,
-                openConversation: openConversation
-            )
-        } else {
-            JunoMobileUnavailableTab()
-        }
-    }
-
-    @ViewBuilder
-    private var libraryTab: some View {
-        if let projectModel {
-            JunoMobileFilesView(model: projectModel)
-        } else {
-            JunoMobileUnavailableTab()
-        }
-    }
-
-    @ViewBuilder
-    private var artifactsTab: some View {
-        if let artifactModel {
-            JunoMobileArtifactsView(model: artifactModel, openConversation: openConversation)
-        } else {
-            JunoMobileUnavailableTab()
-        }
-    }
-
-    @ViewBuilder
-    private func settingsTab(session: NativeAuthenticatedSession) -> some View {
-        if let memorySettingsModel {
-            JunoMobileSettingsView(
-                model: memorySettingsModel,
-                conversationModel: conversationModel,
-                authModel: authModel,
-                session: session
-            )
-        } else {
-            JunoMobileUnavailableTab()
+            showingSettings = true
         }
     }
 }
 
-/// Honest fallback shown only when a store failed to open at launch — never a
-/// placeholder for an unbuilt feature.
-private struct JunoMobileUnavailableTab: View {
+/// A fully custom iPhone/iPad sidebar drawer — deliberately **not** built on
+/// `List`/`Form`/`Section`, whose grouped metrics read like a Settings page.
+/// A compact header, a scrolling `LazyVStack` of dense rows, and a fixed footer
+/// reproduce the proportions and density of a modern chat drawer.
+private struct JunoMobileSidebarDrawer: View {
+    @Binding var selection: JunoMobileSection
+    let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    let session: NativeAuthenticatedSession
+    var canCreateChat: Bool = true
+    let openDestination: (JunoMobileSection) -> Void
+    let openConversation: (String) -> Void
+    let newChat: () -> Void
+
+    private var pinned: [NativeConversation] {
+        (conversationModel?.conversations ?? [])
+            .filter { $0.pinned && !$0.isArchived }
+    }
+
+    private var recents: [NativeConversation] {
+        (conversationModel?.conversations ?? [])
+            .filter { !$0.pinned && !$0.isArchived }
+            .sorted { $0.lastMessageAt > $1.lastMessageAt }
+            .prefix(30)
+            .map { $0 }
+    }
+
     var body: some View {
-        NavigationStack {
-            ContentUnavailableView {
-                Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text("shell.unavailable.description")
+        VStack(spacing: 0) {
+            header
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    JunoMobileSidebarRow(
+                        icon: JunoMobileSection.projects.systemImage,
+                        title: "navigation.projects",
+                        selected: selection == .projects,
+                        action: { openDestination(.projects) }
+                    )
+                    JunoMobileSidebarRow(
+                        icon: JunoMobileSection.library.systemImage,
+                        title: "navigation.library",
+                        selected: selection == .library,
+                        action: { openDestination(.library) }
+                    )
+                    JunoMobileSidebarRow(
+                        icon: JunoMobileSection.artifacts.systemImage,
+                        title: "navigation.artifacts",
+                        selected: selection == .artifacts,
+                        action: { openDestination(.artifacts) }
+                    )
+
+                    if !pinned.isEmpty {
+                        sectionLabel("sidebar.pinned")
+                        ForEach(pinned) { conversation in
+                            JunoMobileConversationRow(
+                                title: conversation.title,
+                                pinned: true,
+                                pending: conversation.isPending,
+                                action: { openConversation(conversation.id) }
+                            )
+                        }
+                    }
+
+                    if !recents.isEmpty {
+                        sectionLabel("sidebar.recents")
+                        ForEach(recents) { conversation in
+                            JunoMobileConversationRow(
+                                title: conversation.title,
+                                pinned: false,
+                                pending: conversation.isPending,
+                                action: { openConversation(conversation.id) }
+                            )
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.bottom, 12)
             }
+            .scrollIndicators(.hidden)
+
+            bottomBar
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .accessibilityIdentifier("juno.mobile.sidebar")
+    }
+
+    // Compact brand header — Juno wordmark left, circular glass Search right.
+    private var header: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "circle.hexagongrid.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(Color.junoAccent)
+                .accessibilityHidden(true)
+            Text("Juno")
+                .font(.system(size: 22, weight: .semibold))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: 0)
+            Button(action: { openDestination(.search) }) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .frame(width: 46, height: 46)
+                    .modifier(JunoGlassCircle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("navigation.search")
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 44)
+    }
+
+    private func sectionLabel(_ key: LocalizedStringKey) -> some View {
+        Text(key)
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.top, 14)
+            .padding(.bottom, 4)
+    }
+
+    // MARK: Bottom bar — profile (glass circle) + New Chat (accent glass capsule)
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            profileButton
+            Spacer(minLength: 0)
+            newChatButton
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+    }
+
+    private var profileName: String { session.profile.name ?? session.profile.email }
+
+    private var profileInitials: String {
+        let source = session.profile.name ?? session.profile.email
+        let parts = source.split(separator: " ").prefix(2)
+        let letters = parts.compactMap { $0.first }.map(String.init).joined()
+        return letters.isEmpty ? String(source.prefix(1)).uppercased() : letters.uppercased()
+    }
+
+    private var profileButton: some View {
+        Button(action: { openDestination(.settings) }) {
+            Group {
+                if let url = session.profile.imageURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Text(profileInitials).font(.system(size: 16, weight: .semibold))
+                    }
+                } else {
+                    Text(profileInitials)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.primary)
+                }
+            }
+            .frame(width: 46, height: 46)
+            .clipShape(Circle())
+            .modifier(JunoGlassCircle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open settings for \(profileName)")
+    }
+
+    private var newChatButton: some View {
+        Button(action: newChat) {
+            HStack(spacing: 7) {
+                Image(systemName: "square.and.pencil")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("navigation.chat")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 20)
+            .frame(height: 46)
+            .modifier(JunoAccentGlassCapsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!canCreateChat)
+        .opacity(canCreateChat ? 1 : 0.5)
+        .accessibilityLabel("chat.new")
+    }
+}
+
+/// A single destination / action row: constant icon column, 44pt tall, with a
+/// restrained accent wash only when selected.
+private struct JunoMobileSidebarRow: View {
+    let icon: String
+    let title: LocalizedStringKey
+    var selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 19))
+                    .frame(width: 26)
+                    .foregroundStyle(.primary)
+                Text(title)
+                    .font(.system(size: 17, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 44)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(selected ? Color.primary.opacity(0.06) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(JunoSidebarPressStyle())
+    }
+}
+
+/// A dense single-line conversation row (~40pt) with tail truncation and no
+/// background or separator, so many rows stay visible at once.
+private struct JunoMobileConversationRow: View {
+    let title: String
+    var pinned: Bool
+    var pending: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if pinned {
+                    Image(systemName: "pin.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                Text(title)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Spacer(minLength: 0)
+                if pending {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 40)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(JunoSidebarPressStyle())
+    }
+}
+
+/// A circular Liquid Glass container (OS 26+) with a material fallback, used for
+/// the sidebar's Search and profile buttons.
+private struct JunoGlassCircle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
+        }
+    }
+}
+
+/// An accent-tinted Liquid Glass capsule (OS 26+) with an opaque accent fallback,
+/// used for the primary "New Chat" control.
+private struct JunoAccentGlassCapsule: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content
+                .glassEffect(.regular.tint(Color.junoAccent.opacity(0.72)).interactive(), in: Capsule())
+        } else {
+            content
+                .background(Color.junoAccent.opacity(0.82), in: Capsule())
+        }
+    }
+}
+
+/// A subtle pressed-state wash shared by sidebar rows.
+private struct JunoSidebarPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(configuration.isPressed ? Color.primary.opacity(0.06) : .clear)
+            )
     }
 }
 
@@ -292,93 +717,72 @@ private struct JunoMobileProjectsView: View {
     @State private var showingCreate = false
     @State private var createName = ""
     @State private var createInstructions = ""
+    @State private var renameTarget: NativeProject?
+    @State private var renameValue = ""
+    @State private var deleteTarget: NativeProject?
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("Loading projects…")
-                case .failed where model.projects.isEmpty:
-                    ContentUnavailableView(
-                        "Projects unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(model.lastErrorDescription ?? "Try again.")
-                    )
-                case .ready where model.projects.isEmpty,
-                     .offline where model.projects.isEmpty:
-                    ContentUnavailableView(
-                        "No projects",
-                        systemImage: "folder",
-                        description: Text("Create a project to group conversations and files.")
-                    )
-                default:
-                    List(model.projects) { project in
+        Group {
+            switch model.phase {
+            case .idle, .loading:
+                ProgressView("Loading projects…")
+            case .failed where model.projects.isEmpty:
+                ContentUnavailableView(
+                    "Projects unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(model.lastErrorDescription ?? "Try again.")
+                )
+            case .ready where model.projects.isEmpty,
+                 .offline where model.projects.isEmpty:
+                ContentUnavailableView {
+                    Label("No projects", systemImage: "folder")
+                } description: {
+                    Text("Create a project to group conversations and files.")
+                } actions: {
+                    Button("New project") { startCreate() }
+                        .buttonStyle(.borderedProminent)
+                }
+            default:
+                List {
+                    ForEach(model.projects) { project in
                         NavigationLink(value: project.id) {
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    if project.starred {
-                                        Image(systemName: "star.fill")
-                                            .foregroundStyle(.yellow)
-                                    }
-                                    Text(project.name).lineLimit(1)
-                                    Spacer()
-                                    if project.isPending {
-                                        Image(systemName: "arrow.triangle.2.circlepath")
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                HStack {
-                                    Label(
-                                        "\(model.conversationsByProject[project.id]?.count ?? 0)",
-                                        systemImage: "bubble.left"
-                                    )
-                                    Label(
-                                        "\(model.filesByProject[project.id]?.count ?? 0)",
-                                        systemImage: "doc"
-                                    )
-                                    Spacer()
-                                    Text(project.updatedAt, style: .relative)
-                                }
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            }
+                            projectRow(project)
                         }
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
+                        .contextMenu { projectMenu(project) }
                     }
-                    .accessibilityIdentifier("juno.mobile.project-list")
                 }
+                .listStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.project-list")
             }
-            .navigationTitle("Projects")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        createName = ""
-                        createInstructions = ""
-                        showingCreate = true
-                    } label: {
-                        Label("New project", systemImage: "folder.badge.plus")
-                    }
-                    .disabled(model.isMutating)
-                    .accessibilityIdentifier("juno.mobile.project-new")
+        }
+        .navigationTitle("Projects")
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { startCreate() } label: {
+                    Label("New project", systemImage: "square.and.pencil")
                 }
+                .disabled(model.isMutating)
+                .accessibilityIdentifier("juno.mobile.project-new")
             }
-            .navigationDestination(for: String.self) { projectID in
-                if let project = model.projects.first(where: { $0.id == projectID }) {
-                    JunoMobileProjectDetail(
-                        model: model,
-                        conversationModel: conversationModel,
-                        project: project,
-                        openConversation: openConversation
-                    )
-                    .onAppear { model.selectedProjectID = projectID }
-                }
+        }
+        .navigationDestination(for: String.self) { projectID in
+            if let project = model.projects.first(where: { $0.id == projectID }) {
+                JunoMobileProjectDetail(
+                    model: model,
+                    conversationModel: conversationModel,
+                    project: project,
+                    openConversation: openConversation
+                )
+                .onAppear { model.selectedProjectID = projectID }
             }
-            .safeAreaInset(edge: .bottom) {
-                if model.conflictedMutationCount > 0 {
-                    JunoMobileProjectConflict(model: model)
-                } else if model.phase == .offline || model.lastErrorDescription != nil {
-                    JunoMobileProjectStatus(model: model)
-                }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if model.conflictedMutationCount > 0 {
+                JunoMobileProjectConflict(model: model)
+            } else if model.phase == .offline || model.lastErrorDescription != nil {
+                JunoMobileProjectStatus(model: model)
             }
         }
         .alert("New project", isPresented: $showingCreate) {
@@ -396,6 +800,98 @@ private struct JunoMobileProjectsView: View {
         } message: {
             Text("Project instructions are included in every linked conversation.")
         }
+        .alert("Rename project", isPresented: Binding(
+            get: { renameTarget != nil },
+            set: { if !$0 { renameTarget = nil } }
+        )) {
+            TextField("Name", text: $renameValue)
+            Button("Cancel", role: .cancel) { renameTarget = nil }
+            Button("Save") {
+                if let target = renameTarget {
+                    Task { await model.updateProject(id: target.id, name: renameValue) }
+                }
+                renameTarget = nil
+            }
+        }
+        .confirmationDialog(
+            "Delete this project?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete project", role: .destructive) {
+                if let target = deleteTarget {
+                    Task { await model.deleteProject(id: target.id) }
+                }
+                deleteTarget = nil
+            }
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text("Conversations are kept and unlinked; project files are removed.")
+        }
+    }
+
+    @ViewBuilder
+    private func projectMenu(_ project: NativeProject) -> some View {
+        Button {
+            Task { await model.updateProject(id: project.id, starred: !project.starred) }
+        } label: {
+            Label(project.starred ? "Remove favorite" : "Favorite",
+                  systemImage: project.starred ? "star.slash" : "star")
+        }
+        Button {
+            renameValue = project.name
+            renameTarget = project
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        Button(role: .destructive) {
+            deleteTarget = project
+        } label: {
+            Label("Delete", systemImage: "trash")
+        }
+    }
+
+    private func startCreate() {
+        createName = ""
+        createInstructions = ""
+        showingCreate = true
+    }
+
+    private func projectRow(_ project: NativeProject) -> some View {
+        let conversations = model.conversationsByProject[project.id]?.count ?? 0
+        let files = model.filesByProject[project.id]?.count ?? 0
+        return HStack(spacing: 12) {
+            Image(systemName: "folder")
+                .font(.system(size: 20))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(project.name).font(.body.weight(.medium)).lineLimit(1)
+                    if project.isPending {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.caption2).foregroundStyle(.secondary)
+                            .accessibilityLabel("Waiting to sync")
+                    }
+                }
+                Text("^[\(conversations) conversation](inflect: true) · ^[\(files) file](inflect: true) · \(project.updatedAt.formatted(.relative(presentation: .named)))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if project.starred {
+                Image(systemName: "star.fill")
+                    .font(.caption)
+                    .foregroundStyle(Color.junoAccent)
+                    .accessibilityLabel("Favorite")
+            }
+        }
+        .padding(.vertical, 3)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -451,9 +947,10 @@ private struct JunoMobileProjectDetail: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let project: NativeProject
     let openConversation: (String) -> Void
-    @State private var showingEdit = false
+    @State private var showingRename = false
     @State private var editName = ""
-    @State private var editInstructions = ""
+    @State private var showingInstructions = false
+    @State private var instructionsDraft = ""
     @State private var showingDelete = false
     @State private var showingImporter = false
     @State private var renameFileID: String?
@@ -463,10 +960,22 @@ private struct JunoMobileProjectDetail: View {
 
     var body: some View {
         List {
-            Section("Instructions") {
+            Section {
                 Text(project.instructions.isEmpty
-                    ? "No project instructions" : project.instructions)
+                    ? "No project instructions yet." : project.instructions)
                     .foregroundStyle(project.instructions.isEmpty ? .secondary : .primary)
+                Button {
+                    instructionsDraft = project.instructions
+                    showingInstructions = true
+                } label: {
+                    Label("Edit instructions", systemImage: "pencil")
+                }
+                .disabled(project.isPending || model.isMutating)
+                .accessibilityIdentifier("juno.mobile.project-edit-instructions")
+            } header: {
+                Text("Instructions")
+            } footer: {
+                Text("Included in every conversation linked to this project.")
             }
             Section("Conversations") {
                 if model.selectedConversations.isEmpty {
@@ -542,10 +1051,9 @@ private struct JunoMobileProjectDetail: View {
                 }
                 .disabled(project.isPending || model.isMutating)
                 Menu {
-                    Button("Edit") {
+                    Button("Rename") {
                         editName = project.name
-                        editInstructions = project.instructions
-                        showingEdit = true
+                        showingRename = true
                     }
                     Button("Delete", role: .destructive) { showingDelete = true }
                 } label: {
@@ -554,19 +1062,42 @@ private struct JunoMobileProjectDetail: View {
                 .disabled(project.isPending || model.isMutating)
             }
         }
-        .alert("Edit project", isPresented: $showingEdit) {
+        .alert("Rename project", isPresented: $showingRename) {
             TextField("Name", text: $editName)
-            TextField("Instructions", text: $editInstructions)
             Button("Cancel", role: .cancel) {}
             Button("Save") {
-                Task {
-                    await model.updateProject(
-                        id: project.id,
-                        name: editName,
-                        instructions: editInstructions
-                    )
-                }
+                Task { await model.updateProject(id: project.id, name: editName) }
             }
+        }
+        .sheet(isPresented: $showingInstructions) {
+            NavigationStack {
+                TextEditor(text: $instructionsDraft)
+                    .font(.body)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .navigationTitle("Instructions")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Cancel") { showingInstructions = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            if model.isMutating {
+                                ProgressView()
+                            } else {
+                                Button("Save") {
+                                    Task {
+                                        await model.updateProject(
+                                            id: project.id, instructions: instructionsDraft
+                                        )
+                                        showingInstructions = false
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
         }
         .alert("Delete project?", isPresented: $showingDelete) {
             Button("Cancel", role: .cancel) {}
@@ -662,39 +1193,56 @@ private struct JunoMobileFilesView: View {
     @State private var renameValue = ""
     @State private var previewURL: URL?
     @State private var localError: String?
+    @State private var searchText = ""
+
+    private var filteredFiles: [NativeProjectFile] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.files }
+        return model.files.filter { $0.fileName.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                if model.phase == .loading || model.phase == .idle {
-                    ProgressView("Loading files…")
-                } else if model.files.isEmpty {
-                    ContentUnavailableView(
-                        "No files",
-                        systemImage: "doc.on.doc",
-                        description: Text("Files uploaded to Juno will appear here offline.")
+        Group {
+            if model.phase == .loading || model.phase == .idle {
+                ProgressView("Loading files…")
+            } else if model.files.isEmpty {
+                ContentUnavailableView(
+                    "No files",
+                    systemImage: "doc.on.doc",
+                    description: Text("Files uploaded to Juno will appear here offline.")
+                )
+            } else {
+                List(filteredFiles) { file in
+                    JunoMobileProjectFileRow(
+                        file: file,
+                        busy: model.isPerformingFileAction,
+                        projectName: file.projectID.flatMap { pid in
+                            model.projects.first { $0.id == pid }?.name
+                        },
+                        open: { openFile(file) },
+                        rename: {
+                            renameValue = file.fileName
+                            renameFileID = file.id
+                        },
+                        delete: { Task { await model.deleteFile(id: file.id) } }
                     )
-                } else {
-                    List(model.files) { file in
-                        JunoMobileProjectFileRow(
-                            file: file,
-                            busy: model.isPerformingFileAction,
-                            open: { openFile(file) },
-                            rename: {
-                                renameValue = file.fileName
-                                renameFileID = file.id
-                            },
-                            delete: { Task { await model.deleteFile(id: file.id) } }
-                        )
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
+                }
+                .listStyle(.plain)
+                .overlay {
+                    if filteredFiles.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
                     }
-                    .accessibilityIdentifier("juno.mobile.file-list")
                 }
+                .accessibilityIdentifier("juno.mobile.file-list")
             }
-            .navigationTitle("Files")
-            .safeAreaInset(edge: .bottom) {
-                if model.phase == .offline || model.lastErrorDescription != nil {
-                    JunoMobileProjectStatus(model: model)
-                }
+        }
+        .navigationTitle("navigation.library")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search files")
+        .safeAreaInset(edge: .bottom) {
+            if model.phase == .offline || model.lastErrorDescription != nil {
+                JunoMobileProjectStatus(model: model)
             }
         }
         .alert("Rename file", isPresented: Binding(
@@ -738,6 +1286,7 @@ private struct JunoMobileFilesView: View {
 private struct JunoMobileProjectFileRow: View {
     let file: NativeProjectFile
     let busy: Bool
+    var projectName: String? = nil
     let open: () -> Void
     let rename: () -> Void
     let delete: () -> Void
@@ -745,25 +1294,28 @@ private struct JunoMobileProjectFileRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: file.kind == "IMAGE" ? "photo" : "doc")
-                .frame(width: 24)
+                .font(.system(size: 20))
+                .foregroundStyle(Color.junoAccent)
+                .frame(width: 26)
             Button(action: open) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(file.fileName).lineLimit(1)
-                    HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(file.fileName).font(.body).lineLimit(1).truncationMode(.middle)
+                    HStack(spacing: 5) {
                         Text(ByteCountFormatter.string(
                             fromByteCount: Int64(file.size),
                             countStyle: .file
                         ))
-                        if let projectID = file.projectID {
-                            Text("• \(projectID)").lineLimit(1)
+                        if let projectName, !projectName.isEmpty {
+                            Text("· \(projectName)").lineLimit(1)
                         }
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Spacer()
             if busy { ProgressView().controlSize(.small) }
             Menu {
                 Button("Open", action: open)
@@ -771,6 +1323,7 @@ private struct JunoMobileProjectFileRow: View {
                 Button("Delete", role: .destructive, action: delete)
             } label: {
                 Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(Color.junoAccent)
             }
         }
     }
@@ -800,73 +1353,93 @@ private enum JunoMobileFilePreview {
 private struct JunoMobileArtifactsView: View {
     @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
     let openConversation: (String) -> Void
+    @State private var searchText = ""
+
+    private var filteredArtifacts: [NativeArtifact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return model.artifacts }
+        return model.artifacts.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+                || $0.conversationTitle.localizedCaseInsensitiveContains(query)
+        }
+    }
 
     var body: some View {
-        NavigationStack {
-            Group {
-                switch model.phase {
-                case .idle, .loading:
-                    ProgressView("Loading artifacts…")
-                case .failed where model.artifacts.isEmpty:
-                    ContentUnavailableView(
-                        "Artifacts unavailable",
-                        systemImage: "exclamationmark.triangle",
-                        description: Text(model.lastErrorDescription ?? "Try again.")
-                    )
-                case .ready where model.artifacts.isEmpty,
-                     .offline where model.artifacts.isEmpty:
-                    ContentUnavailableView(
-                        "No artifacts",
-                        systemImage: "square.stack.3d.up",
-                        description: Text("Artifacts generated in conversations appear here.")
-                    )
-                default:
-                    List(model.artifacts) { artifact in
-                        NavigationLink(value: artifact.id) {
-                            HStack(spacing: 12) {
-                                Image(systemName: artifactIcon(artifact.kind))
-                                    .frame(width: 28)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(artifact.title).lineLimit(1)
-                                    HStack {
-                                        Text(artifact.conversationTitle).lineLimit(1)
-                                        Spacer()
-                                        Text("v\(artifact.currentVersion)")
-                                    }
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+        Group {
+            switch model.phase {
+            case .idle, .loading:
+                ProgressView("Loading artifacts…")
+            case .failed where model.artifacts.isEmpty:
+                ContentUnavailableView(
+                    "Artifacts unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(model.lastErrorDescription ?? "Try again.")
+                )
+            case .ready where model.artifacts.isEmpty,
+                 .offline where model.artifacts.isEmpty:
+                ContentUnavailableView(
+                    "No artifacts",
+                    systemImage: "square.stack.3d.up",
+                    description: Text("Artifacts generated in conversations appear here.")
+                )
+            default:
+                List(filteredArtifacts) { artifact in
+                    NavigationLink(value: artifact.id) {
+                        HStack(spacing: 12) {
+                            Image(systemName: artifactIcon(artifact.kind))
+                                .font(.system(size: 20))
+                                .foregroundStyle(Color.junoAccent)
+                                .frame(width: 28)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(artifact.title).font(.body.weight(.medium)).lineLimit(1)
+                                HStack(spacing: 6) {
+                                    Text(artifact.conversationTitle).lineLimit(1)
+                                    Spacer(minLength: 0)
+                                    Text("v\(artifact.currentVersion)").monospacedDigit()
                                 }
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                             }
                         }
+                        .padding(.vertical, 3)
                     }
-                    .accessibilityIdentifier("juno.mobile.artifact-list")
+                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
                 }
-            }
-            .navigationTitle("Artifacts")
-            .navigationDestination(for: String.self) { id in
-                if let artifact = model.artifacts.first(where: { $0.id == id }) {
-                    JunoMobileArtifactDetail(
-                        model: model,
-                        artifact: artifact,
-                        openConversation: openConversation
-                    )
-                    .id(artifact.id)
-                }
-            }
-            .safeAreaInset(edge: .bottom) {
-                if model.phase == .offline || model.lastErrorDescription != nil {
-                    HStack(spacing: 8) {
-                        Image(systemName: model.phase == .offline
-                            ? "wifi.slash" : "exclamationmark.circle")
-                        Text(model.lastErrorDescription ?? "Offline — showing saved artifacts.")
-                            .lineLimit(2)
-                        Spacer()
-                        Button("Retry") { Task { await model.reload() } }
+                .listStyle(.plain)
+                .overlay {
+                    if filteredArtifacts.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
                     }
-                    .font(.caption)
-                    .padding(10)
-                    .background(.bar)
                 }
+                .accessibilityIdentifier("juno.mobile.artifact-list")
+            }
+        }
+        .navigationTitle("Artifacts")
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(text: $searchText, prompt: "Search artifacts")
+        .navigationDestination(for: String.self) { id in
+            if let artifact = model.artifacts.first(where: { $0.id == id }) {
+                JunoMobileArtifactDetail(
+                    model: model,
+                    artifact: artifact,
+                    openConversation: openConversation
+                )
+                .id(artifact.id)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if model.phase == .offline || model.lastErrorDescription != nil {
+                HStack(spacing: 8) {
+                    Image(systemName: model.phase == .offline
+                        ? "wifi.slash" : "exclamationmark.circle")
+                    Text(model.lastErrorDescription ?? "Offline — showing saved artifacts.")
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Retry") { Task { await model.reload() } }
+                }
+                .font(.caption)
+                .padding(10)
+                .background(.bar)
             }
         }
     }
@@ -1077,5 +1650,18 @@ private enum JunoMobileExportFile {
             .appendingPathComponent("juno-\(UUID().uuidString)-\(safeName)")
         try data.write(to: url, options: [.atomic])
         return url
+    }
+}
+
+/// The menu affordance for opening the mobile drawer. Two left-aligned bars —
+/// a longer top bar over a shorter bottom bar — matching the iOS convention for
+/// a slide-in navigation menu rather than the macOS `sidebar.leading` rectangle.
+private struct JunoMenuGlyph: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5.5) {
+            Capsule().fill(Color.primary).frame(width: 20, height: 2.5)
+            Capsule().fill(Color.primary).frame(width: 13, height: 2.5)
+        }
+        .frame(width: 24, height: 24, alignment: .center)
     }
 }

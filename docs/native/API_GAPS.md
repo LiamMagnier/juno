@@ -370,6 +370,37 @@ and user-facing disclosures are not fully defined.
 Required resolution: document and enforce these policies consistently in host,
 server, mobile UI and deletion/export flows.
 
+### GAP-022 — chat message attachments are absent from the native contract
+
+The Web composer attaches images and files to a message, but the native chat
+send path (`POST /api/v1/chat`, projected by `NativeConversationModel.sendMessage`)
+accepts only `conversationId`, `prompt`, `modelId` and `reasoningEffort`, and
+`NativeChatMessage` has no attachment fields. Uploads exist only at the **project**
+level (`/api/attachments`, `NativeProjectModel.uploadFile`), not per-message.
+
+Consequence: the composer "+" popover deliberately does **not** show Camera,
+Photos or Files. They are omitted (not shown disabled) until the contract exists.
+
+Required resolution (stacked backend branch): add a native message-attachment
+contract — signed upload, per-message attachment references on send, attachment
+projection on `NativeChatMessage` — then wire native pickers and previews.
+
+### GAP-023 — Deep Research and Canvas have no native contract surface
+
+Web exposes Deep Research and Canvas modes, but there is no native `/api/v1`
+route, request flag or manifest capability for either. They are therefore
+**omitted** from the production composer menu (never shown as disabled rows) and
+belong in a DEBUG-only panel at most.
+
+Required resolution: define native request flags / capability manifest entries
+for these modes (reusing the existing artifact/canvas model for Canvas) before
+any native UI enables them.
+
+The one composer action that **is** wired today is **Add to project**: it reuses
+the server-validated `conversation.update` mutation with a `projectId` patch
+(ownership-checked; `null` clears the association), surfaced through the new
+`NativeConversation.projectId` projection and `NativeConversationModel.setProject`.
+
 ## Contract exit criteria
 
 The API gap phase is complete only when:

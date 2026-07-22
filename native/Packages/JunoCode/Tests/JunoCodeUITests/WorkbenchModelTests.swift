@@ -135,7 +135,8 @@ final class WorkbenchModelTests: XCTestCase {
             configuration: AgentConfiguration(modelID: "test-model")
         )!
         let controller = await model.controller(for: session.id)!
-        let context = controller.context
+        // A live controller always has its workspace; only preview omits it.
+        let context = try XCTUnwrap(controller.context)
 
         // Two mutations to the same file through the file service, recorded
         // as transcript events the way the orchestrator does it.

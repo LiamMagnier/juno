@@ -1,0 +1,4 @@
+6ba05be04da422dd0fff1a81c0964871f58974b919eb49904ba945667b44f01f  Juno-0.1.0-macOS.dmg
+805563f834dc6b56832c4645f29fb9461c5d77e0c89707a76a99a7798840e547  Juno-0.1.0-iOS-development.ipa
+c5322102692483ff81d55e7c95b4d20ff9ab67c54c5bbe657871e14d4dfe9fb8  Juno-0.1.0-iOS-Simulator.app.zip
+0cb08f77e5675e6f0d5af4060e6db33277cb393c0cd49d3e8cf07e04dd461ad4  Juno-0.1.0-macOS.app/Contents/MacOS/JunoMac

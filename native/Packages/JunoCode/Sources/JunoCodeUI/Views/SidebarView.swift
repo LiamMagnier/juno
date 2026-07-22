@@ -1,4 +1,5 @@
 import AppKit
+import JunoDesignSystem
 import SwiftUI
 import JunoCodeCore
 
@@ -28,6 +29,7 @@ struct SidebarView: View {
             }
         }
         .listStyle(.sidebar)
+        .environment(\.defaultMinListRowHeight, 26)
         .searchable(text: $model.sessionSearchText, placement: .sidebar, prompt: "Search sessions")
         .safeAreaInset(edge: .bottom) {
             newSessionButton
@@ -73,10 +75,13 @@ struct SidebarView: View {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(record.descriptor.displayName)
                             .lineLimit(1)
+                        // Truncate from the head: the trailing folders identify
+                        // the workspace, the leading ones are shared noise.
                         Text(abbreviatedPath(record.descriptor.localPathHint))
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
+                            .truncationMode(.head)
                     }
                 } icon: {
                     Image(systemName: record.descriptor.isGitRepository
@@ -209,20 +214,37 @@ struct SidebarView: View {
         return parts.joined(separator: ", ")
     }
 
+    /// A compact footer action rather than a full-width prominent capsule.
+    ///
+    /// The previous treatment was the visually heaviest element in the entire
+    /// window — a large filled coral bar pinned to the sidebar's bottom edge,
+    /// competing with the content it was meant to support. It now reads as one
+    /// more sidebar row, accented rather than filled, sharing the row metrics
+    /// used everywhere else.
     private var newSessionButton: some View {
-        Button {
-            showingNewSession = true
-        } label: {
-            Label("New Code Session", systemImage: "plus")
-                .frame(maxWidth: .infinity)
+        VStack(spacing: 0) {
+            Divider().overlay(Color.junoSeparator)
+            Button {
+                showingNewSession = true
+            } label: {
+                Label {
+                    Text("New session").junoRowLabel()
+                } icon: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 16)
+                }
+                .foregroundStyle(Color.junoAccent)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: .command)
+            .accessibilityLabel("New code session")
+            .accessibilityIdentifier("juno.code.new-session")
         }
-        .controlSize(.large)
-        .buttonStyle(.borderedProminent)
-        .tint(JunoCodeTheme.accent)
-        .keyboardShortcut("n", modifiers: .command)
-        .padding(JunoCodeTheme.Spacing.control)
-        .background(.ultraThinMaterial)
-        .accessibilityLabel("New code session")
     }
 
     private func abbreviatedPath(_ path: String) -> String {

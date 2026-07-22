@@ -28,6 +28,27 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-tab", env: "JUNO_PREVIEW_TAB")
     }
 
+    /// Optional fixed window size from `--juno-preview-size <width>x<height>` or
+    /// `JUNO_PREVIEW_SIZE`.
+    ///
+    /// Responsive QA needs the *same* window at a known size on every run.
+    /// Resizing the window from outside needs Accessibility permission the
+    /// capture shell does not always have, and `defaultSize` loses to AppKit's
+    /// restored state. Pinning the size from inside the preview is the only
+    /// method that is reproducible without granting the automation a way to
+    /// drive arbitrary applications.
+    public static var windowSize: CGSize? {
+        guard let raw = value(for: "--juno-preview-size", env: "JUNO_PREVIEW_SIZE") else {
+            return nil
+        }
+        let parts = raw.lowercased().split(separator: "x")
+        guard parts.count == 2,
+              let width = Double(parts[0]), let height = Double(parts[1]),
+              width > 0, height > 0
+        else { return nil }
+        return CGSize(width: width, height: height)
+    }
+
     private static func value(for flag: String, env: String) -> String? {
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: flag), index + 1 < arguments.count {
@@ -37,9 +58,64 @@ public enum JunoPreviewEnvironment {
     }
 }
 
-/// Hosts the real authenticated screens over a ``PreviewWorld`` and adds a
-/// discreet "UI Preview" badge plus a scenario switcher. Switching scenarios
-/// rebuilds the world from fresh in-memory fixtures.
+public extension View {
+    /// Pins the preview window to `--juno-preview-size WxH` when one is given,
+    /// and otherwise leaves sizing alone.
+    ///
+    /// This sets the size on the `NSWindow` rather than wrapping the content in
+    /// a fixed `.frame`. A fixed frame does not decide how large SwiftUI makes
+    /// the window: with `.frame(width: 1000, height: 700)` the window still
+    /// opened at the split view's own ideal (1180×760), so every "responsive"
+    /// capture in an earlier pass was silently taken at the same size.
+    func junoPreviewWindowSize() -> some View {
+        modifier(JunoPreviewWindowSize())
+    }
+}
+
+private struct JunoPreviewWindowSize: ViewModifier {
+    func body(content: Content) -> some View {
+        #if canImport(AppKit)
+        content.background(JunoWindowSizer(size: JunoPreviewEnvironment.windowSize))
+        #else
+        content
+        #endif
+    }
+}
+
+#if canImport(AppKit)
+import AppKit
+
+/// Reaches the hosting `NSWindow` and sets its content size once.
+private struct JunoWindowSizer: NSViewRepresentable {
+    let size: CGSize?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        guard let size else { return view }
+        DispatchQueue.main.async { [weak view] in
+            guard let window = view?.window else { return }
+            // The content minimum has to come down too, or a window whose
+            // content declares `minWidth: 900` refuses anything narrower.
+            window.contentMinSize = CGSize(
+                width: min(window.contentMinSize.width, size.width),
+                height: min(window.contentMinSize.height, size.height)
+            )
+            window.setContentSize(size)
+            window.center()
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
+#endif
+
+/// Hosts the real authenticated screens over a ``PreviewWorld``. The world is
+/// rebuilt from fresh in-memory fixtures whenever the scenario changes. There is
+/// deliberately **no floating chrome**: the "Preview" indicator lives inside the
+/// app's own UI (e.g. the sidebar footer) so nothing ever overlays real
+/// navigation, and scenarios are selected by relaunching with
+/// `--juno-preview-scenario <name>`.
 public struct JunoPreviewContainer<Content: View>: View {
     @State private var scenario: PreviewScenario
     @State private var world: PreviewWorld?
@@ -54,62 +130,21 @@ public struct JunoPreviewContainer<Content: View>: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            Group {
-                if let world {
-                    content(world)
-                        .id(world.scenario)
-                        .task(id: world.scenario) { await world.activate() }
-                } else {
-                    ProgressView("Building preview…")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+        Group {
+            if let world {
+                content(world)
+                    .id(world.scenario)
+                    .task(id: world.scenario) { await world.activate() }
+            } else {
+                ProgressView("Building preview…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // A compact, movable dev control that stays clear of navigation
-            // bars, tab bars and composers so it never masks real chrome.
-            badge
-                .padding(.trailing, 12)
-                .padding(.bottom, bottomInset)
         }
+        .junoPreviewWindowSize()
         .onAppear { if world == nil { world = try? PreviewWorld(scenario: scenario) } }
         .onChange(of: scenario) { _, newValue in
             world = try? PreviewWorld(scenario: newValue)
         }
-    }
-
-    // Lift the badge clear of the tab bar / composer so it never overlaps them.
-    private var bottomInset: CGFloat {
-        #if os(iOS)
-        return 150
-        #else
-        return 40
-        #endif
-    }
-
-    /// A compact circular control so the dev overlay occupies the smallest
-    /// possible footprint; the current scenario shows a checkmark in its menu.
-    private var badge: some View {
-        Menu {
-            Section("UI Preview scenario") {
-                Picker("Scenario", selection: $scenario) {
-                    ForEach(PreviewScenario.allCases) { option in
-                        Text(option.title).tag(option)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "eye.trianglebadge.exclamationmark.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(.black)
-                .frame(width: 34, height: 34)
-                .background(.yellow.opacity(0.92), in: Circle())
-                .shadow(radius: 4, y: 1)
-        }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
-        .fixedSize()
-        .accessibilityLabel("UI Preview, scenario \(scenario.title)")
-        .accessibilityIdentifier("juno.preview.badge")
     }
 }
 #endif

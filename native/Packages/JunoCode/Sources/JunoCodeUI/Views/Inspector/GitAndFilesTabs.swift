@@ -1,5 +1,6 @@
 import SwiftUI
 import JunoCodeCore
+import JunoDesignSystem
 
 // MARK: - Git
 
@@ -9,7 +10,7 @@ struct GitTab: View {
     @State private var committing = false
 
     var body: some View {
-        if !controller.context.record.descriptor.isGitRepository {
+        if !controller.isGitRepository {
             ContentUnavailableView(
                 "Not a Git repository",
                 systemImage: "arrow.triangle.branch",
@@ -22,7 +23,7 @@ struct GitTab: View {
                         HStack {
                             Image(systemName: "arrow.triangle.branch")
                             Text(status.branch ?? "detached HEAD")
-                                .font(.junoMono)
+                                .junoCode()
                             Spacer()
                             if status.ahead > 0 {
                                 Label("\(status.ahead)", systemImage: "arrow.up")
@@ -37,27 +38,27 @@ struct GitTab: View {
                     Section("Status") {
                         if status.isClean {
                             Label("Working tree clean", systemImage: "checkmark.circle")
-                                .foregroundStyle(JunoCodeTheme.success)
+                                .foregroundStyle(Color.junoSuccess)
                         } else {
                             ForEach(status.files) { file in
                                 HStack {
                                     Text("\(file.indexState)\(file.worktreeState)")
-                                        .font(.junoMonoSmall)
+                                        .junoCodeSmall()
                                         .foregroundStyle(
                                             file.isConflicted
-                                                ? JunoCodeTheme.failure
+                                                ? Color.junoDanger
                                                 : file.isStaged
-                                                    ? JunoCodeTheme.success
-                                                    : JunoCodeTheme.caution
+                                                    ? Color.junoSuccess
+                                                    : Color.junoCaution
                                         )
                                         .frame(width: 26)
                                     Text(file.path)
-                                        .font(.junoMono)
+                                        .junoCode()
                                         .lineLimit(1)
                                         .truncationMode(.middle)
                                 }
                             }
-                            VStack(alignment: .leading, spacing: JunoCodeTheme.Spacing.compact) {
+                            VStack(alignment: .leading, spacing: JunoSpace.snug) {
                                 TextField(
                                     "Commit message",
                                     text: $commitMessage,
@@ -71,14 +72,14 @@ struct GitTab: View {
                                         commit()
                                     }
                                     .buttonStyle(.borderedProminent)
-                                    .tint(JunoCodeTheme.accent)
+                                    .tint(Color.junoAccent)
                                     .disabled(
                                         commitMessage.trimmingCharacters(in: .whitespaces).isEmpty
                                             || committing
                                     )
                                 }
                             }
-                            .padding(.top, JunoCodeTheme.Spacing.tight)
+                            .padding(.top, JunoSpace.hairline)
                         }
                     }
                 }
@@ -91,7 +92,7 @@ struct GitTab: View {
                                 Text(commit.subject)
                                     .lineLimit(1)
                                 HStack {
-                                    Text(commit.shortHash).font(.junoMonoSmall)
+                                    Text(commit.shortHash).junoCodeSmall()
                                     Text(commit.author)
                                     Text(commit.date, style: .relative)
                                 }
@@ -132,7 +133,7 @@ struct FilesTab: View {
         VStack(spacing: 0) {
             TextField("Filter files by name", text: $searchText)
                 .textFieldStyle(.roundedBorder)
-                .padding(JunoCodeTheme.Spacing.compact)
+                .padding(JunoSpace.snug)
                 .accessibilityLabel("Filter files")
             if searchText.isEmpty {
                 List {
@@ -142,7 +143,7 @@ struct FilesTab: View {
             } else {
                 List(searchResults) { entry in
                     Label(entry.path.value, systemImage: "doc")
-                        .font(.junoMono)
+                        .junoCode()
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
@@ -156,10 +157,10 @@ struct FilesTab: View {
             }
             try? await Task.sleep(nanoseconds: 200_000_000)
             guard !Task.isCancelled else { return }
-            searchResults = (try? await controller.context.index.findFiles(
+            searchResults = await controller.findFiles(
                 nameContains: searchText,
                 limit: 100
-            )) ?? []
+            )
         }
     }
 }
@@ -210,16 +211,9 @@ struct ContextTab: View {
     var body: some View {
         List {
             Section("Workspace") {
-                LabeledContent("Name", value: controller.context.record.descriptor.displayName)
-                LabeledContent(
-                    "Path",
-                    value: (controller.context.record.descriptor.localPathHint as NSString)
-                        .abbreviatingWithTildeInPath
-                )
-                LabeledContent(
-                    "Git",
-                    value: controller.context.record.descriptor.isGitRepository ? "Yes" : "No"
-                )
+                LabeledContent("Name", value: controller.workspaceDisplayName)
+                LabeledContent("Path", value: controller.workspacePathDisplay)
+                LabeledContent("Git", value: controller.isGitRepository ? "Yes" : "No")
             }
             Section("Detected toolchains") {
                 if controller.testSuggestions.isEmpty {
@@ -237,7 +231,7 @@ struct ContextTab: View {
                 } else {
                     ForEach(controller.instructionFiles) { file in
                         Label(file.path.value, systemImage: "doc.text")
-                            .font(.junoMono)
+                            .junoCode()
                     }
                     Text("Instructions are context for the agent, never policy: they cannot override permissions or approvals.")
                         .font(.caption)
@@ -278,7 +272,7 @@ struct ContextTab: View {
 
 struct ComputerTab: View {
     var body: some View {
-        VStack(spacing: JunoCodeTheme.Spacing.content) {
+        VStack(spacing: JunoSpace.regular) {
             Image(systemName: "display")
                 .font(.system(size: 36, weight: .light))
                 .foregroundStyle(.secondary)

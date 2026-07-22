@@ -79,6 +79,28 @@ public enum JunoCornerRadius {
     public static let floating: Double = 22
 }
 
+/// The shared motion language for JunoMobile and JunoMac. A small, named set of
+/// durations/springs so every surface animates with the same intent instead of
+/// ad-hoc per-call values. All are short and purposeful; spatial motion is
+/// dropped under Reduce Motion via ``reduced(_:when:)``.
+public enum JunoMotion {
+    /// Immediate feedback: taps, toggles, icon morphs (e.g. + → ×), Send/Stop.
+    public static let fast = Animation.snappy(duration: 0.18)
+    /// Standard transitions: selection, disclosure, popovers, sheets.
+    public static let standard = Animation.snappy(duration: 0.26)
+    /// Emphasized transitions: larger spatial moves like the sidebar reveal.
+    public static let emphasized = Animation.snappy(duration: 0.32)
+    /// Interactive, gesture-following spring for drag-driven surfaces.
+    public static let spring = Animation.interactiveSpring(response: 0.32, dampingFraction: 0.85)
+
+    /// Returns `animation` normally, or `nil` (instant) when Reduce Motion is on
+    /// so spatial transitions collapse instead of sliding. Use as the value for
+    /// `.animation(_:value:)` and `withAnimation(_:)`.
+    public static func reduced(_ animation: Animation, when reduceMotion: Bool) -> Animation? {
+        reduceMotion ? nil : animation
+    }
+}
+
 public struct JunoAccessibilityPreferences: Equatable, Sendable {
     public var reduceMotion: Bool
     public var reduceTransparency: Bool

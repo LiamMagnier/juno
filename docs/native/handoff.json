@@ -1,16 +1,24 @@
 {
-  "branch": "agent/juno-code-remote-backend (stacked on agent/juno-native-claude-continuation)",
-  "currentCommit": "d08198e",
+  "branch": "agent/juno-code-remote-backend (PR #19; now contains all of PR #18's agent/juno-native-claude-continuation)",
+  "currentCommit": "see git rev-parse HEAD",
   "workingTreeClean": true,
-  "currentPhase": "code-remote-backend",
-  "currentTask": "Phase 11 Juno Code Remote/Cloud on stacked branch agent/juno-code-remote-backend (PR #19). Audit found the Code control plane already exists and accepts native bearer; read contract published (1.3.0). NEXT: publish mutating command routes (create/respond/cancel), build JunoCodeBridge bearer transport mapping CodeTaskEvent.payload->SessionEventPayload, macOS Remote Host coordinator on the existing runtime, mobile Remote controller/screens, and the GAP-022 path-free projection. See docs/native/CODE_REMOTE_AUDIT.md.",
+  "currentPhase": "pr18-merged-into-pr19; next is the migration correction, then the Stage-4 orphan triage, then release integration",
+  "currentTask": "PR #18 was merged into PR #19 rather than rebased, so the four PR #19 commits (8dd231c, 0719f59, d08198e, cedc264) keep their identities and no force-push is needed. The merge had exactly one conflict, docs/native/handoff.json, resolved here; docs/native/API_GAPS.md auto-merged. Verified after the merge: the native and backend contracts both still read 1.3.0 (PR #19's bump wins over PR #18's 1.2.0), and all 27 OpenAPI paths survive including the four /code ones. IMPORTANT AND NOT YET DONE: prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql on this branch is still the bare-NULL form (0 typed NULL::timestamp, must be 22) — it has to be taken verbatim from origin/main before any release. Stage-4 finding: the orphaned backend work sitting uncommitted on the main checkout implements /api/code/devices/{deviceId}/sessions/** — a session-relay surface that is NOT in the published contract at all. PR #19 published only the READ surface of the ALREADY EXISTING task-based control plane and changed no backend route. So the orphan is a candidate implementation of a different, unpublished surface, and porting it wholesale would ship un-contracted routes. BLOCKED, NEEDS THE OWNER: all macOS visual QA. Screen Recording is not granted to the controlling process (a full-screen screencapture returns pure black; -l<winid> and -R<rect> are refused outright), and every Xcode-built Juno target launches, runs a normal event loop and creates ZERO windows — reproduced on pre-redesign commit 2075a5c, so it is NOT a redesign regression, while a hand-built minimal SwiftUI app in the same directory does get a window. The earlier 'killall cfprefsd broke window creation' diagnosis is wrong: TextEdit launches fine in this same session.",
   "nextFiles": [
+    "prisma/migrations/20260721120000_backfill_entity_revisions/migration.sql",
     "docs/native/CODE_REMOTE_AUDIT.md",
-    "src/app/api/code/tasks/[id]/respond/route.ts",
-    "native/Packages/JunoCode/Sources/JunoCodeBridge",
-    "contracts/openapi/juno-native-v1.yaml"
+    "contracts/openapi/juno-native-v1.yaml",
+    "scripts/release-gates.sh"
   ],
   "completed": [
+    "Juno Code developer surfaces redesigned onto the shared design system in d19e924: JunoCodeTheme reduced to an alias layer, new shared JunoStatus.swift tokens, one ActivityRow shape for every transcript event, Markdown assistant turns, visible checkpoints, risk-tinted ApprovalCard, permission-mode menu in the composer, labelled inspector tab strip with overflow and VoiceOver purposes; also fixed JunoMacApp building the live configuration for DEBUG preview launches",
+    "macOS design system + Chat/Code shell redesign in b3f069a after owner rejection; fixed the all-coral navigation and invisible dark-mode icons (one root cause), inspector no longer dominates Code, New Session integrated",
+    "Mac Chat workspace rebuilt in 98bb5da: three-region shell (unified sidebar with recency-grouped history, borderless Markdown canvas, native inspector, floating glass composer); Chat is the verified launch destination and Juno Code is one row among the others",
+    "JunoMarkdown block parser and renderer plus NativeConversationGrouping in 20de81f, 35 tests; parser is total over streaming prefixes",
+    "Keychain errors carry their OSStatus in 043051b, which established that CODE_SIGNING_ALLOWED=NO builds cannot use the Keychain at all and so cannot sign in",
+    "macOS .app/.dmg, development .ipa and signed simulator .app.zip built and verified in dist/ with checksums, INSTALL.md, RELEASE_NOTES.md and DELIVERY_REPORT.md",
+    "Fixture-backed DEBUG Juno Code preview in a571c3d: SessionController.init(previewFixture:) omits the Live bundle so the whole local runtime and model transport are structurally unreachable; views use workspaceDisplayName/workspacePathDisplay/isGitRepository/findFiles instead of reaching through controller.context; ten deterministic scenarios behind --juno-code-preview-scenario; 17 inertness/determinism/coverage tests",
+    "Juno Code macOS visual sweep in 37db1af: ten scenarios in light and dark at 1000x640, 1280x800 and 1600x1000 with inspector tabs exercised; fixed inspector vertical-centring, terminal soft-wrapping, filename-destroying path truncation, file-count pluralisation, sidebar path tail-truncation, and a fixture bug that masked a raw home-path leak",
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
@@ -51,7 +59,8 @@
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (156/156)",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (179/179)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (198/198)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoCode --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (confirms the DEBUG preview harness is excluded from Release)",
     "JunoCode standalone Debug unsigned xcodebuild",
     "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",
@@ -66,10 +75,10 @@
   "failingCommands": [
     "Default Swift package scratch under the Desktop/File Provider worktree can fail signing because Finder metadata/resource forks are attached; isolated /tmp scratch paths pass",
     "xcodebuild without DEVELOPER_DIR fails because xcode-select points to CommandLineTools",
-    "Separate monolithic prototype iOS build fails at AuthSession.swift:73 because Host.current() is unavailable and platform is hardcoded macOS"
+    "Separate monolithic prototype iOS build fails at AuthSession.swift:73 because Host.current() is unavailable and platform is hardcoded macOS",
+    "Screenshot capture of newly launched apps, in any login session where killall cfprefsd has been run: the preferences daemon takes the window server's app registration with it and newly launched apps never get a main window. Never run it. Recover by logging out and back in."
   ],
   "blockers": [
-    "GitHub CLI token invalid; gh auth login required before push, PR, tag or release",
     "Apple bundle identifiers, Team/signing/provisioning, App Store Connect, Developer ID and notarization inputs unavailable",
     "Production StoreKit mapping and APNs credentials require owner input"
   ]

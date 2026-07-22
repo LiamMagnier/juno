@@ -36,12 +36,21 @@ final class JunoMobileWebAuthenticationClient: NSObject,
         guard session == nil else {
             throw JunoMobileWebAuthenticationError.alreadyInProgress
         }
+        let latch = WebAuthenticationResumeLatch()
         return try await withCheckedThrowingContinuation { continuation in
             let session = ASWebAuthenticationSession(
                 url: authorizationURL,
                 callback: .customScheme(callbackScheme)
-            ) { [weak self] callbackURL, error in
+            ) { @Sendable [weak self] callbackURL, error in
+                // `@Sendable` is load-bearing. AuthenticationServices invokes
+                // this on an XPC reply queue, not the main thread. This type is
+                // `@MainActor`, so without `@Sendable` the closure inherits that
+                // isolation, Swift emits an executor check at its entry point,
+                // and the check aborts the process before the body runs —
+                // before the `Task { @MainActor }` hop below can help. The same
+                // defect crashed the macOS app at sign-in.
                 Task { @MainActor in
+                    guard latch.claim() else { return }
                     self?.session = nil
                     if let error {
                         let nsError = error as NSError
@@ -71,6 +80,9 @@ final class JunoMobileWebAuthenticationClient: NSObject,
             self.session = session
             guard session.start() else {
                 self.session = nil
+                // `start()` can deliver a completion inline, so this path must
+                // not assume it owns the continuation.
+                guard latch.claim() else { return }
                 continuation.resume(
                     throwing: JunoMobileWebAuthenticationError.unavailable
                 )

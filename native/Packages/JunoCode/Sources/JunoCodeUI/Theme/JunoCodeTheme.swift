@@ -1,95 +1,98 @@
 import SwiftUI
+import JunoDesignSystem
 
-/// Juno Code visual language: deep graphite surfaces in dark mode, near-white
-/// in light mode, SF Pro type, and the Juno terracotta accent used sparingly
-/// for primary actions and running state only.
+/// Display helpers for workspace-relative paths.
+///
+/// Middle-truncating a whole path is the worst of both worlds: on a path like
+/// `native/Packages/.../MutationOutboxDrainerConfiguration.swift` it eats the
+/// filename and leaves `native/Packages/…figuration.swift`, which identifies
+/// nothing. Split instead, so the filename is always readable and only the
+/// directory is allowed to truncate.
+enum PathDisplay {
+    static func fileName(_ path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
+
+    /// The parent directory, or `nil` for a file at the workspace root.
+    static func directory(_ path: String) -> String? {
+        let components = path.split(separator: "/")
+        guard components.count > 1 else { return nil }
+        return components.dropLast().joined(separator: "/")
+    }
+
+    /// "3 files" / "1 file".
+    static func fileCount(_ count: Int) -> String {
+        count == 1 ? "1 file" : "\(count) files"
+    }
+}
+
+/// Juno Code's semantic colour roles.
+///
+/// Every value here now **derives from `JunoDesignSystem`** rather than
+/// restating it. Code previously carried its own graphite palette, its own
+/// 7/10/14 radius scale and its own 2/4/8/12/16 spacing scale, all a few points
+/// off Chat's. Two products in one window cannot each have their own idea of
+/// what a card looks like, so the private scales are gone and the colours are
+/// aliases. New code should reach for `JunoSpace`, `JunoRadius` and the shared
+/// `Color.juno…` tokens directly; this type remains for the roles that are
+/// genuinely Code-specific.
 public enum JunoCodeTheme {
     // MARK: - Accent
 
-    /// Juno terracotta, aligned with the shared brand token (0.93, 0.36, 0.27).
-    public static let accent = Color(red: 0.93, green: 0.36, blue: 0.27)
+    /// Juno coral, from the shared brand token.
+    public static let accent = Color.junoAccent
 
     // MARK: - Surfaces
 
-    /// Window background: deep graphite / near-white.
-    public static let background = adaptive(
-        light: Color(red: 0.985, green: 0.985, blue: 0.98),
-        dark: Color(red: 0.115, green: 0.115, blue: 0.125)
-    )
+    /// Window background: the shared reading canvas.
+    public static let background = Color.junoCanvasWarm
 
-    /// Raised panels (inspector, cards).
-    public static let surface = adaptive(
-        light: Color.white,
-        dark: Color(red: 0.155, green: 0.155, blue: 0.17)
-    )
+    /// Raised panels (inspector cards, transcript cards).
+    public static let surface = Color.junoRaised
 
-    /// Subtle inset wells (terminal, diff background).
-    public static let well = adaptive(
-        light: Color(red: 0.965, green: 0.965, blue: 0.96),
-        dark: Color(red: 0.09, green: 0.09, blue: 0.10)
-    )
+    /// Inset wells for machine output (terminal, diff).
+    public static let well = Color.junoTerminal
 
     /// Hairline separators; used sparingly.
-    public static let separator = adaptive(
-        light: Color.black.opacity(0.08),
-        dark: Color.white.opacity(0.10)
-    )
+    public static let separator = Color.junoSeparator
 
     // MARK: - Status
 
-    public static let success = adaptive(
-        light: Color(red: 0.13, green: 0.55, blue: 0.28),
-        dark: Color(red: 0.36, green: 0.78, blue: 0.5)
-    )
-    public static let failure = adaptive(
-        light: Color(red: 0.78, green: 0.16, blue: 0.16),
-        dark: Color(red: 0.95, green: 0.42, blue: 0.4)
-    )
-    public static let caution = adaptive(
-        light: Color(red: 0.72, green: 0.5, blue: 0.05),
-        dark: Color(red: 0.95, green: 0.72, blue: 0.3)
-    )
+    public static let success = Color.junoSuccess
+    public static let failure = Color.junoDanger
+    public static let caution = Color.junoCaution
 
     // MARK: - Diff
 
-    public static let diffAddedBackground = adaptive(
-        light: Color(red: 0.87, green: 0.96, blue: 0.88),
-        dark: Color(red: 0.12, green: 0.24, blue: 0.15)
-    )
-    public static let diffRemovedBackground = adaptive(
-        light: Color(red: 0.99, green: 0.9, blue: 0.9),
-        dark: Color(red: 0.28, green: 0.13, blue: 0.13)
-    )
+    public static let diffAddedBackground = Color.junoDiffAdded
+    public static let diffRemovedBackground = Color.junoDiffRemoved
 
-    // MARK: - Spacing grid
+    // MARK: - Scale bridges
 
+    /// Bridges onto `JunoSpace`. Kept so the surfaces not yet migrated keep
+    /// compiling; the values are the shared ones, not Code's old ones.
     public enum Spacing {
-        public static let hairline: CGFloat = 2
-        public static let tight: CGFloat = 4
-        public static let compact: CGFloat = 8
-        public static let control: CGFloat = 12
-        public static let content: CGFloat = 16
-        public static let section: CGFloat = 24
-        public static let spacious: CGFloat = 32
+        public static let hairline = JunoSpace.hairline
+        public static let tight = JunoSpace.hairline
+        public static let compact = JunoSpace.snug
+        public static let control = JunoSpace.cozy
+        public static let content = JunoSpace.regular
+        public static let section = JunoSpace.section
+        public static let spacious = JunoSpace.region
     }
 
+    /// Bridges onto `JunoRadius`.
     public enum Radius {
-        public static let control: CGFloat = 7
-        public static let card: CGFloat = 10
-        public static let panel: CGFloat = 14
-    }
-
-    // MARK: - Helpers
-
-    private static func adaptive(light: Color, dark: Color) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            return NSColor(isDark ? dark : light)
-        })
+        public static let control = JunoRadius.control
+        public static let card = JunoRadius.row
+        public static let panel = JunoRadius.panel
     }
 }
 
 public extension Font {
-    static let junoMono = Font.system(size: 12, design: .monospaced)
-    static let junoMonoSmall = Font.system(size: 11, design: .monospaced)
+    /// Deprecated spelling of ``Font/junoCode``; kept so unmigrated call sites
+    /// still resolve to the shared monospaced scale.
+    static let junoMono = Font.junoCode
+    /// Deprecated spelling of ``Font/junoCodeSmall``.
+    static let junoMonoSmall = Font.junoCodeSmall
 }

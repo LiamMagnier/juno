@@ -72,6 +72,56 @@ final class PreviewWorldTests: XCTestCase {
         XCTAssertNotNil(world.memorySettingsModel.settings)
     }
 
+    /// Regression guard for the Library and Artifacts destinations: both must
+    /// seed real, navigable content so their screens render instead of crashing
+    /// or falling back to an empty/unavailable state.
+    func testLibraryAndArtifactsDestinationsHaveNavigableContent() async throws {
+        for scenario in [PreviewScenario.normal, .manyItems] {
+            let world = try PreviewWorld(scenario: scenario)
+            await world.activate()
+            XCTAssertFalse(
+                world.artifactModel.artifacts.isEmpty,
+                "Artifacts destination has no content in \(scenario)"
+            )
+            XCTAssertFalse(
+                world.projectModel.files.isEmpty,
+                "Library destination has no files in \(scenario)"
+            )
+        }
+    }
+
+    func testManyItemsScenarioUsesRealisticVariedConversationTitles() async throws {
+        let world = try PreviewWorld(scenario: .manyItems)
+        await world.activate()
+        let titles = world.conversationModel.conversations.map(\.title)
+        XCTAssertFalse(titles.contains { $0.contains("Conversation number") },
+                       "Fixtures must use realistic titles, not placeholders")
+        XCTAssertTrue(titles.contains("Designing the native sidebar"))
+    }
+
+    /// The one wired composer "+" action — associating the current conversation
+    /// with a project. Projects are available for the picker, the association is
+    /// reflected optimistically, and it can be cleared — all over the in-memory
+    /// world with no network access, never a faked success.
+    func testAddToProjectIsWiredWithoutNetwork() async throws {
+        let world = try PreviewWorld(scenario: .normal)
+        await world.activate()
+        XCTAssertFalse(world.projectModel.projects.isEmpty, "Picker needs projects")
+        let project = try XCTUnwrap(world.projectModel.projects.first)
+        let convo = try XCTUnwrap(world.conversationModel.conversations.first { !$0.isArchived })
+
+        // Associating and clearing both run cleanly (no fake success, no error)
+        // over the offline world. The one fixture that ships already linked to a
+        // project surfaces that association so the UI can check it.
+        await world.conversationModel.setProject(id: convo.id, projectID: project.id)
+        XCTAssertNil(world.conversationModel.lastErrorDescription)
+        await world.conversationModel.setProject(id: convo.id, projectID: nil)
+        XCTAssertNil(world.conversationModel.lastErrorDescription)
+
+        let linked = world.conversationModel.conversations.first { $0.projectId != nil }
+        XCTAssertNotNil(linked, "A seeded conversation should expose its project link")
+    }
+
     func testActivationIsIdempotent() async throws {
         let world = try PreviewWorld(scenario: .normal)
         await world.activate()

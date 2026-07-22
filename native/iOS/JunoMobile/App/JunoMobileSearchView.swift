@@ -8,19 +8,18 @@ struct JunoMobileSearchView: View {
     let open: (NativeSearchResult) -> Void
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Search")
-                .searchable(
-                    text: Binding(
-                        get: { model.query },
-                        set: { model.setQuery($0) }
-                    ),
-                    placement: .navigationBarDrawer(displayMode: .always),
-                    prompt: "Chats, messages, projects, files…"
-                )
-        }
-        .accessibilityIdentifier("juno.mobile.search")
+        content
+            .navigationTitle("Search")
+            .navigationBarTitleDisplayMode(.inline)
+            .searchable(
+                text: Binding(
+                    get: { model.query },
+                    set: { model.setQuery($0) }
+                ),
+                placement: .navigationBarDrawer(displayMode: .always),
+                prompt: "Chats, messages, projects, files…"
+            )
+            .accessibilityIdentifier("juno.mobile.search")
     }
 
     @ViewBuilder

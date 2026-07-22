@@ -23,7 +23,12 @@ let package = Package(
         .target(name: "JunoCodeRuntime", dependencies: ["JunoCodeCore"]),
         .target(
             name: "JunoCodeUI",
-            dependencies: ["JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime"]
+            dependencies: [
+                "JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime",
+                // Shared design tokens, so Code and Chat cannot drift apart on
+                // spacing, radii, surfaces or type.
+                .product(name: "JunoDesignSystem", package: "JunoNativeKit"),
+            ]
         ),
         .target(
             name: "JunoCodeBridge",
