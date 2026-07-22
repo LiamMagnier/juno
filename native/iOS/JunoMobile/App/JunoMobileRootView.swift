@@ -296,7 +296,10 @@ struct JunoMobileRootView: View {
         switch destination {
         case .chat:
             if let conversationModel {
-                JunoMobileChatDetailScreen(model: conversationModel)
+                JunoMobileChatDetailScreen(
+                    model: conversationModel,
+                    projects: projectModel?.projects ?? []
+                )
             } else {
                 unavailable
             }

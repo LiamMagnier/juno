@@ -10,6 +10,7 @@ import UIKit
 /// sidebar; this screen never owns a NavigationStack (the root provides one).
 struct JunoMobileChatDetailScreen: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    var projects: [NativeProject] = []
 
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
@@ -19,7 +20,7 @@ struct JunoMobileChatDetailScreen: View {
     var body: some View {
         Group {
             if let selected {
-                JunoMobileConversationDetail(model: model, conversation: selected)
+                JunoMobileConversationDetail(model: model, conversation: selected, projects: projects)
             } else {
                 emptyState
             }
@@ -52,12 +53,15 @@ struct JunoMobileChatDetailScreen: View {
 private struct JunoMobileConversationDetail: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
+    var projects: [NativeProject] = []
     @State private var showingRename = false
     @State private var editValue = ""
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
     @State private var isNearBottom = true
+    @State private var showingActions = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
 
     private let bottomAnchor = "juno.chat.bottom"
@@ -197,6 +201,14 @@ private struct JunoMobileConversationDetail: View {
         .onAppear { configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
+        .task {
+            #if DEBUG
+            if CommandLine.arguments.contains("--juno-preview-composer-actions") {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                showingActions = true
+            }
+            #endif
+        }
         .accessibilityIdentifier("juno.mobile.conversation-detail")
     }
 
@@ -246,22 +258,23 @@ private struct JunoMobileConversationDetail: View {
             }
             .font(.caption)
 
-            ZStack(alignment: .bottomTrailing) {
-                TextField("Message Juno", text: $prompt, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .focused($composerFocused)
-                    .padding(.leading, 16)
-                    .padding(.trailing, 48)
-                    .padding(.vertical, 11)
-                    .background(JunoGlassBackground(cornerRadius: 22))
-                    .accessibilityIdentifier("juno.mobile.chat-composer")
-
-                composerActionButton
-                    .padding(5)
-            }
-            .animation(.snappy(duration: 0.2), value: sendDisabled)
-            .animation(.snappy(duration: 0.2), value: generatingHere)
+            TextField("Message Juno", text: $prompt, axis: .vertical)
+                .lineLimit(1...6)
+                .textFieldStyle(.plain)
+                .focused($composerFocused)
+                .padding(.leading, 48)
+                .padding(.trailing, 48)
+                .padding(.vertical, 11)
+                .background(JunoGlassBackground(cornerRadius: 22))
+                .overlay(alignment: .bottomLeading) {
+                    composerPlusButton.padding(5)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    composerActionButton.padding(5)
+                }
+                .accessibilityIdentifier("juno.mobile.chat-composer")
+                .animation(.snappy(duration: 0.2), value: sendDisabled)
+                .animation(.snappy(duration: 0.2), value: generatingHere)
 
             if model.canRetrySelectedConversation && !model.isGenerating {
                 HStack(spacing: 8) {
@@ -318,6 +331,96 @@ private struct JunoMobileConversationDetail: View {
         case .stopping: "stop.circle"
         default: "sparkles"
         }
+    }
+
+    /// The "+" control, docked inside the composer's leading edge. A neutral
+    /// glass circle (never accent — that stays reserved for Send) that morphs to
+    /// an "×" and presents a compact anchored actions panel.
+    private var composerPlusButton: some View {
+        Button {
+            showingActions = true
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 34, height: 34)
+                .rotationEffect(.degrees(showingActions ? 45 : 0))
+                .modifier(JunoComposerGlassCircle())
+        }
+        .buttonStyle(.plain)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: showingActions)
+        .accessibilityLabel("Add content or tools")
+        .accessibilityIdentifier("juno.mobile.chat-plus")
+        .popover(isPresented: $showingActions) {
+            composerActionsPanel
+                .presentationCompactAdaptation(.popover)
+        }
+    }
+
+    /// A compact popover anchored to the "+" button. Only genuinely wired
+    /// actions appear here — today that is associating the current conversation
+    /// with a project (server-validated), so the panel is the project picker
+    /// with the current association checked and a "No project" row to clear it.
+    private var composerActionsPanel: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Add to project")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.top, 11)
+                .padding(.bottom, 5)
+
+            ScrollView {
+                VStack(spacing: 1) {
+                    projectOptionRow(
+                        id: nil, name: "No project", icon: "tray",
+                        selected: conversation.projectId == nil
+                    )
+                    ForEach(projects) { project in
+                        projectOptionRow(
+                            id: project.id, name: project.name, icon: "folder",
+                            selected: conversation.projectId == project.id
+                        )
+                    }
+                }
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(maxHeight: 244)
+        }
+        .frame(width: 268)
+        .padding(.bottom, 6)
+        .accessibilityIdentifier("juno.mobile.composer-actions")
+    }
+
+    private func projectOptionRow(id: String?, name: String, icon: String, selected: Bool) -> some View {
+        Button {
+            Task {
+                await model.setProject(id: conversation.id, projectID: id)
+                showingActions = false
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.system(size: 18))
+                    .frame(width: 24)
+                    .foregroundStyle(selected ? Color.junoAccent : .primary)
+                Text(name)
+                    .font(.system(size: 16))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.junoAccent)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(selected ? "\(name), selected" : name)
     }
 
     /// The send / stop control, docked inside the composer's trailing edge as a
@@ -481,6 +584,21 @@ private struct JunoComposerSendBackground: ViewModifier {
         } else {
             content
                 .background(Color.junoAccent.opacity(active ? 1 : 0.35), in: Circle())
+        }
+    }
+}
+
+/// A neutral (non-accent) circular Liquid Glass background for the composer's
+/// "+" button, with a material fallback below OS 26.
+private struct JunoComposerGlassCircle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: Circle())
+        } else {
+            content
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
         }
     }
 }
