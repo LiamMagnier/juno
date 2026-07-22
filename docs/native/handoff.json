@@ -87,10 +87,10 @@
     "Production StoreKit mapping and APNs credentials require owner input"
   ],
   "updated": "2026-07-22",
-  "head": "364f438",
+  "head": "c37010f",
   "worktree": "/Users/liammagnier/Desktop/workspace/.worktrees/juno-final-completion",
   "baseMain": "40dc9b47bea7b119a67f49b3dcd75c0f4a42b0ae",
-  "deployedServerSHA": "364f438684",
+  "deployedServerSHA": "c37010f8a1",
   "nativeContractVersion": "1.3.0",
   "appVersion": "0.1.1",
   "appBuild": "2",
@@ -117,12 +117,11 @@
   ],
   "stagesNotStarted": [
     "stage-4",
-    "stage-12",
-    "stage-13"
+    "stage-12"
   ],
   "tests": {
-    "junoNativeKit": "804 executions, 0 failures",
-    "backend": "150 pass",
+    "junoNativeKit": "825 executions, 0 failures",
+    "backend": "154 pass",
     "releaseGates": "all passed"
   },
   "nextAction": "Owner opens iPhone Settings > About > Diagnostics and reports Phase, Last HTTP status, Failure rows",
@@ -130,8 +129,9 @@
     "stage-5": "attachments end to end; unverified against production",
     "stage-6": "Deep Research parity; unverified against production",
     "stage-7": "Canvas already existed; verified",
-    "stage-9": "relay client + host loop with tests; no registration/heartbeat, executor not bound to JunoCode runtime",
-    "stage-10": "relay client only; no mobile Remote UI"
+    "stage-9": "relay client + host loop, tested; NO registration, NO heartbeat, executor not bound to JunoCode runtime",
+    "stage-10": "relay client + browser model, tested; NO SwiftUI screens",
+    "stage-13": "one real finding fixed (device-list path disclosure); no systematic sweep"
   },
   "pendingMigration": "20260722200000_attachment_idempotency_key (additive, not yet deployed)",
   "pendingMigrations": [
@@ -139,9 +139,9 @@
     "20260722210000_remote_code_sessions"
   ],
   "parity": {
-    "server": "364f438684",
-    "iPhone": "364f438684",
-    "mac": "364f438684",
+    "server": "c37010f8a1",
+    "iPhone": "c37010f8a1",
+    "mac": "c37010f8a1",
     "contract": "1.3.0"
   },
   "stage3Resolution": "Phase Live confirmed on the physical iPhone against production \u2014 bootstrap succeeds, contract matches, sync loop running"
