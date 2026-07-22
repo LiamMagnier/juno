@@ -27,7 +27,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .chat: "bubble.left.and.bubble.right"
+        case .chat: "square.and.pencil"
         case .search: "magnifyingglass"
         case .projects: "folder"
         case .library: "books.vertical"

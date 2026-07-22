@@ -159,7 +159,6 @@ struct JunoMobileRootView: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: sidebarOpen ? 22 : 0, style: .continuous))
                 .shadow(color: .black.opacity(sidebarOpen ? 0.22 : 0), radius: 22, x: -1)
-                .scaleEffect(sidebarOpen ? 0.95 : 1, anchor: .center)
                 .offset(x: sidebarOpen ? revealed : 0)
         }
         .animation(reduceMotion ? nil : .snappy(duration: 0.32), value: sidebarOpen)
@@ -432,9 +431,9 @@ private struct JunoMobileSidebarDrawer: View {
             Spacer(minLength: 0)
             Button(action: { openDestination(.search) }) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(.primary)
-                    .frame(width: 36, height: 36)
+                    .frame(width: 46, height: 46)
                     .modifier(JunoGlassCircle())
             }
             .buttonStyle(.plain)
@@ -469,6 +468,7 @@ private struct JunoMobileSidebarDrawer: View {
             HStack(spacing: 10) {
                 profileButton
                 newChatButton
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 14)
@@ -513,12 +513,12 @@ private struct JunoMobileSidebarDrawer: View {
             HStack(spacing: 7) {
                 Image(systemName: "square.and.pencil")
                     .font(.system(size: 16, weight: .semibold))
-                Text("chat.new")
+                Text("navigation.chat")
                     .font(.system(size: 16, weight: .semibold))
             }
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity)
-            .frame(height: 48)
+            .padding(.horizontal, 20)
+            .frame(height: 46)
             .modifier(JunoAccentGlassCapsule())
         }
         .buttonStyle(.plain)
@@ -534,7 +534,6 @@ private struct JunoMobileSidebarRow: View {
     let icon: String
     let title: LocalizedStringKey
     var selected: Bool
-    var forcedTint: Color? = nil
     let action: () -> Void
 
     var body: some View {
@@ -543,17 +542,21 @@ private struct JunoMobileSidebarRow: View {
                 Image(systemName: icon)
                     .font(.system(size: 19))
                     .frame(width: 26)
-                    .foregroundStyle(forcedTint ?? (selected ? Color.junoAccent : .primary))
+                    .foregroundStyle(.primary)
                 Text(title)
                     .font(.system(size: 17, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(forcedTint ?? (selected ? Color.junoAccent : .primary))
+                    .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
             .frame(height: 44)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(selected ? Color.junoAccent.opacity(0.08) : .clear)
+                    .fill(selected ? Color.primary.opacity(0.04) : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(selected ? Color.primary.opacity(0.18) : .clear, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
@@ -618,10 +621,10 @@ private struct JunoAccentGlassCapsule: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             content
-                .glassEffect(.regular.tint(Color.junoAccent).interactive(), in: Capsule())
+                .glassEffect(.regular.tint(Color.junoAccent.opacity(0.72)).interactive(), in: Capsule())
         } else {
             content
-                .background(Color.junoAccent, in: Capsule())
+                .background(Color.junoAccent.opacity(0.82), in: Capsule())
         }
     }
 }
