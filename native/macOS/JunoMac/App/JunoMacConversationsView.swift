@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import SwiftUI
 
@@ -341,7 +342,7 @@ private struct JunoMacConversationDetail: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 140)
                     .padding(8)
-                    .background(composerFieldBackground)
+                    .background(JunoGlassBackground(cornerRadius: 14))
                     .accessibilityLabel("Message")
                     .accessibilityIdentifier("juno.mac.chat-composer")
 
@@ -399,16 +400,6 @@ private struct JunoMacConversationDetail: View {
             reasoningEffort: reasoningEffort
         ) {
             prompt = ""
-        }
-    }
-
-    @ViewBuilder
-    private var composerFieldBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
-        if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(.quaternary.opacity(0.5))
         }
     }
 

@@ -28,6 +28,15 @@ public struct JunoColorToken: Hashable, Sendable {
         self.opacity = opacity
     }
 
+    /// Package-internal constructor for the curated palette tokens, whose
+    /// components are known-valid literals.
+    init(unchecked red: Double, _ green: Double, _ blue: Double, _ opacity: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.opacity = opacity
+    }
+
     public static let coral = JunoColorToken(
         uncheckedRed: 0.93,
         green: 0.36,

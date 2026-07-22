@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
@@ -383,7 +384,7 @@ private struct JunoMobileConversationDetail: View {
                     .focused($composerFocused)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 11)
-                    .background(composerFieldBackground)
+                    .background(JunoGlassBackground(cornerRadius: 20))
                     .accessibilityIdentifier("juno.mobile.chat-composer")
 
                 if generatingHere {
@@ -444,16 +445,6 @@ private struct JunoMobileConversationDetail: View {
         switch model.chatPhase {
         case .appending, .submitting, .reasoning, .streaming, .reconnecting: true
         case .idle, .stopping, .failed: false
-        }
-    }
-
-    @ViewBuilder
-    private var composerFieldBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        if #available(iOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: shape)
-        } else {
-            shape.fill(.quaternary.opacity(0.5))
         }
     }
 
