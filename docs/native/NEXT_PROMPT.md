@@ -54,6 +54,26 @@ AppKit's implicit sidebar accent tint).
 Known and accepted: in Code the switcher sits below the system search field,
 because `.searchable(placement: .sidebar)` owns that slot.
 
+## Release gates — run before any release build
+
+```bash
+JUNO_CHECK_LIVE_CONTRACT=1 ./scripts/release-gates.sh [path/to/JunoMac.app]
+```
+
+Two gates currently **fail**, both release-blocking:
+
+1. this branch carries the bare-`NULL` backfill migration (0 typed
+   `NULL::timestamp`, expected 22);
+2. production serves contract **1.0.1** while the build requires **1.2.0**, so
+   every native sign-in is refused by the client's own version check with
+   "This version of Juno is not compatible with the server".
+
+`docs/native/RELEASE_LAYOUT.md` holds the owner's final source-layout,
+same-commit and end-to-end requirements, why none of the filesystem work has
+been done yet (all of it is gated on a deployment that has not happened, and the
+`main` checkout still holds the only copy of the uncommitted backend work), and
+the exact order to execute it in once the release is live.
+
 ## Next task — Phase 5, backend reconciliation
 
 This is the blocker for everything downstream (release integration, deploy).
