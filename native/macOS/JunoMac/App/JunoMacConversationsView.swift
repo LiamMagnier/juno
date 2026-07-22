@@ -6,7 +6,6 @@ struct JunoMacConversationsView: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     @State private var showingArchived = false
     @State private var showingRename = false
-    @State private var showingModel = false
     @State private var editValue = ""
 
     private var active: [NativeConversation] {
@@ -39,7 +38,6 @@ struct JunoMacConversationsView: View {
                     model: model,
                     conversation: conversation,
                     rename: beginRename,
-                    editModel: beginModelEdit,
                     togglePin: {
                         Task {
                             await model.setPinned(
@@ -71,16 +69,6 @@ struct JunoMacConversationsView: View {
                 guard let id = model.selectedConversationID else { return }
                 Task { await model.renameConversation(id: id, title: editValue) }
             }
-        }
-        .alert("Conversation model", isPresented: $showingModel) {
-            TextField("provider:model", text: $editValue)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                guard let id = model.selectedConversationID else { return }
-                Task { await model.setModel(id: id, model: editValue) }
-            }
-        } message: {
-            Text("Use a model identifier from your Juno model catalog.")
         }
     }
 
@@ -194,23 +182,20 @@ struct JunoMacConversationsView: View {
         editValue = model.selectedConversation?.title ?? ""
         showingRename = true
     }
-
-    private func beginModelEdit() {
-        editValue = model.selectedConversation?.model ?? ""
-        showingModel = true
-    }
 }
 
 private struct JunoMacConversationDetail: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
     let rename: () -> Void
-    let editModel: () -> Void
     let togglePin: () -> Void
     let toggleArchive: () -> Void
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
+    @State private var isNearBottom = true
+
+    private let bottomAnchor = "juno.chat.bottom"
 
     private var messages: [NativeChatMessage] {
         model.messages(for: conversation.id)
@@ -224,26 +209,72 @@ private struct JunoMacConversationDetail: View {
         model.isGenerating && model.activeChatConversationID == conversation.id
     }
 
+    /// Changes whenever streamed content grows or a message is added, driving
+    /// the follow-the-stream auto-scroll.
+    private var streamSignature: Int {
+        let last = messages.last
+        return messages.count
+            + (last?.content.count ?? 0)
+            + (last?.reasoning?.count ?? 0)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                if messages.isEmpty {
-                    ContentUnavailableView(
-                        "No messages yet",
-                        systemImage: "bubble.left",
-                        description: Text("This conversation is ready for its first message.")
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 360)
-                } else {
-                    LazyVStack(spacing: 18) {
-                        ForEach(messages) { message in
-                            JunoMacMessageRow(message: message)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    if messages.isEmpty {
+                        ContentUnavailableView(
+                            "No messages yet",
+                            systemImage: "bubble.left.and.text.bubble.right",
+                            description: Text("This conversation is ready for its first message.")
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 360)
+                    } else {
+                        LazyVStack(spacing: 18) {
+                            ForEach(messages) { message in
+                                JunoMacMessageRow(message: message)
+                            }
                         }
+                        .padding(24)
+                        .frame(maxWidth: 900, alignment: .center)
+                        .frame(maxWidth: .infinity)
+                        Color.clear.frame(height: 1).id(bottomAnchor)
                     }
-                    .padding(24)
+                }
+                .defaultScrollAnchor(.bottom)
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height
+                        - geometry.contentOffset.y
+                        - geometry.containerSize.height
+                } action: { _, distanceFromBottom in
+                    isNearBottom = distanceFromBottom < 120
+                }
+                .onChange(of: streamSignature) { _, _ in
+                    guard isNearBottom else { return }
+                    withAnimation(.easeOut(duration: 0.18)) {
+                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    }
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if !isNearBottom && !messages.isEmpty {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .padding(10)
+                        }
+                        .buttonStyle(.borderless)
+                        .background(.regularMaterial, in: Circle())
+                        .overlay(Circle().strokeBorder(.separator))
+                        .padding(20)
+                        .transition(.scale.combined(with: .opacity))
+                        .help("Scroll to latest")
+                        .accessibilityLabel("Scroll to latest")
+                    }
                 }
             }
-            .defaultScrollAnchor(.bottom)
             Divider()
             composer
         }
@@ -252,7 +283,6 @@ private struct JunoMacConversationDetail: View {
             ToolbarItem {
                 Menu {
                     Button("Rename", action: rename)
-                    Button("Change model", action: editModel)
                     Divider()
                     Button(conversation.pinned ? "Unpin" : "Pin", action: togglePin)
                     Button(conversation.isArchived ? "Unarchive" : "Archive", action: toggleArchive)
@@ -311,8 +341,7 @@ private struct JunoMacConversationDetail: View {
                     .scrollContentBackground(.hidden)
                     .frame(minHeight: 54, maxHeight: 140)
                     .padding(8)
-                    .background(.quaternary.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .background(composerFieldBackground)
                     .accessibilityLabel("Message")
                     .accessibilityIdentifier("juno.mac.chat-composer")
 
@@ -326,34 +355,23 @@ private struct JunoMacConversationDetail: View {
                     .tint(.red)
                     .accessibilityIdentifier("juno.mac.chat-stop")
                 } else {
-                    Button {
-                        let value = prompt
-                        if model.sendMessage(
-                            conversationID: conversation.id,
-                            prompt: value,
-                            modelID: selectedModelID.isEmpty
-                                ? conversation.model : selectedModelID,
-                            reasoningEffort: reasoningEffort
-                        ) {
-                            prompt = ""
-                        }
-                    } label: {
+                    Button(action: send) {
                         Label("Send", systemImage: "arrow.up.circle.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(
-                        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || model.isGenerating || conversation.isPending
-                    )
+                    .keyboardShortcut(.return, modifiers: .command)
+                    .disabled(sendDisabled)
                     .accessibilityIdentifier("juno.mac.chat-send")
                 }
             }
 
             if model.canRetrySelectedConversation && !model.isGenerating {
-                HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                     Text(model.chatErrorDescription ?? "The response was interrupted.")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(.secondary)
                     Spacer()
                     Button("Retry response") {
                         model.retryLastMessage(conversationID: conversation.id)
@@ -364,6 +382,34 @@ private struct JunoMacConversationDetail: View {
         }
         .padding(14)
         .background(.bar)
+    }
+
+    private var sendDisabled: Bool {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || model.isGenerating
+            || conversation.isPending
+    }
+
+    private func send() {
+        let value = prompt
+        if model.sendMessage(
+            conversationID: conversation.id,
+            prompt: value,
+            modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
+            reasoningEffort: reasoningEffort
+        ) {
+            prompt = ""
+        }
+    }
+
+    @ViewBuilder
+    private var composerFieldBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            shape.fill(.quaternary.opacity(0.5))
+        }
     }
 
     private var chatPhaseLabel: String {

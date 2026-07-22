@@ -188,14 +188,26 @@ private struct JunoMobileConversationDetail: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
     @State private var showingRename = false
-    @State private var showingModel = false
     @State private var editValue = ""
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
+    @State private var isNearBottom = true
+    @FocusState private var composerFocused: Bool
+
+    private let bottomAnchor = "juno.chat.bottom"
 
     private var messages: [NativeChatMessage] {
         model.messages(for: conversation.id)
+    }
+
+    /// Changes whenever streamed content grows or a message is added, driving
+    /// the follow-the-stream auto-scroll.
+    private var streamSignature: Int {
+        let last = messages.last
+        return messages.count
+            + (last?.content.count ?? 0)
+            + (last?.reasoning?.count ?? 0)
     }
 
     private var selectedModel: NativeChatModelOption? {
@@ -207,50 +219,96 @@ private struct JunoMobileConversationDetail: View {
     }
 
     var body: some View {
-        ScrollView {
-            if messages.isEmpty {
-                ContentUnavailableView(
-                    "No messages yet",
-                    systemImage: "bubble.left",
-                    description: Text("This conversation is ready for its first message.")
-                )
-                .frame(maxWidth: .infinity, minHeight: 360)
-            } else {
-                LazyVStack(spacing: 14) {
-                    ForEach(messages) { message in
-                        JunoMobileMessageRow(message: message)
+        ScrollViewReader { proxy in
+            ScrollView {
+                if messages.isEmpty {
+                    ContentUnavailableView(
+                        "No messages yet",
+                        systemImage: "bubble.left.and.text.bubble.right",
+                        description: Text("This conversation is ready for its first message.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 360)
+                } else {
+                    LazyVStack(spacing: 14) {
+                        ForEach(messages) { message in
+                            JunoMobileMessageRow(message: message)
+                        }
                     }
+                    .padding()
+                    Color.clear
+                        .frame(height: 1)
+                        .id(bottomAnchor)
                 }
-                .padding()
+            }
+            .defaultScrollAnchor(.bottom)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentSize.height
+                    - geometry.contentOffset.y
+                    - geometry.containerSize.height
+                    + geometry.contentInsets.bottom
+            } action: { _, distanceFromBottom in
+                isNearBottom = distanceFromBottom < 120
+            }
+            .onChange(of: streamSignature) { _, _ in
+                guard isNearBottom else { return }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if !isNearBottom && !messages.isEmpty {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                        }
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.body.weight(.semibold))
+                            .padding(12)
+                    }
+                    .background(.regularMaterial, in: Circle())
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 8)
+                    .transition(.scale.combined(with: .opacity))
+                    .accessibilityLabel("Scroll to latest")
+                    .accessibilityIdentifier("juno.mobile.chat-scroll-bottom")
+                }
             }
         }
-        .defaultScrollAnchor(.bottom)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Rename") {
+                    Button {
                         editValue = conversation.title
                         showingRename = true
-                    }
-                    Button("Change model") {
-                        editValue = conversation.model
-                        showingModel = true
+                    } label: {
+                        Label("Rename", systemImage: "pencil")
                     }
                     Divider()
-                    Button(conversation.pinned ? "Unpin" : "Pin") {
+                    Button {
                         Task {
                             await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
                         }
+                    } label: {
+                        Label(
+                            conversation.pinned ? "Unpin" : "Pin",
+                            systemImage: conversation.pinned ? "pin.slash" : "pin"
+                        )
                     }
-                    Button(conversation.isArchived ? "Unarchive" : "Archive") {
+                    Button {
                         Task {
                             await model.setArchived(
                                 id: conversation.id,
                                 archived: !conversation.isArchived
                             )
                         }
+                    } label: {
+                        Label(
+                            conversation.isArchived ? "Unarchive" : "Archive",
+                            systemImage: conversation.isArchived ? "tray.and.arrow.up" : "archivebox"
+                        )
                     }
                 } label: {
                     Label("Conversation actions", systemImage: "ellipsis.circle")
@@ -265,15 +323,6 @@ private struct JunoMobileConversationDetail: View {
                 Task { await model.renameConversation(id: conversation.id, title: editValue) }
             }
         }
-        .alert("Conversation model", isPresented: $showingModel) {
-            TextField("provider:model", text: $editValue)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                Task { await model.setModel(id: conversation.id, model: editValue) }
-            }
-        } message: {
-            Text("Use a model identifier from your Juno model catalog.")
-        }
         .safeAreaInset(edge: .bottom) { composer }
         .onAppear { configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
@@ -283,7 +332,7 @@ private struct JunoMobileConversationDetail: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 if model.modelCatalog.isEmpty {
                     Label(conversation.model, systemImage: "cpu")
                         .lineLimit(1)
@@ -295,6 +344,7 @@ private struct JunoMobileConversationDetail: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .accessibilityIdentifier("juno.mobile.chat-model")
                 }
                 if let selectedModel, !selectedModel.supportedReasoningEfforts.isEmpty {
                     Picker("Effort", selection: $reasoningEffort) {
@@ -307,12 +357,21 @@ private struct JunoMobileConversationDetail: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .accessibilityIdentifier("juno.mobile.chat-effort")
                 }
                 Spacer(minLength: 0)
                 if model.chatPhase != .idle {
-                    Image(systemName: phaseSymbol)
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(phaseLabel)
+                    HStack(spacing: 5) {
+                        if isStreamingPhase {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Image(systemName: phaseSymbol)
+                        }
+                        Text(phaseLabel)
+                    }
+                    .foregroundStyle(.secondary)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(phaseLabel)
                 }
             }
             .font(.caption)
@@ -321,19 +380,18 @@ private struct JunoMobileConversationDetail: View {
                 TextField("Message Juno", text: $prompt, axis: .vertical)
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(.quaternary.opacity(0.5))
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .focused($composerFocused)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 11)
+                    .background(composerFieldBackground)
                     .accessibilityIdentifier("juno.mobile.chat-composer")
-                    .onSubmit { send() }
 
                 if generatingHere {
                     Button {
                         model.stopGeneration()
                     } label: {
                         Image(systemName: "stop.fill")
-                            .frame(width: 24, height: 24)
+                            .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.red)
@@ -343,36 +401,60 @@ private struct JunoMobileConversationDetail: View {
                 } else {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
-                            .frame(width: 24, height: 24)
+                            .font(.body.weight(.semibold))
+                            .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.borderedProminent)
                     .clipShape(Circle())
-                    .disabled(
-                        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            || model.isGenerating || conversation.isPending
-                    )
+                    .disabled(sendDisabled)
                     .accessibilityLabel("Send message")
                     .accessibilityIdentifier("juno.mobile.chat-send")
                 }
             }
 
             if model.canRetrySelectedConversation && !model.isGenerating {
-                HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
                     Text(model.chatErrorDescription ?? "The response was interrupted.")
                         .lineLimit(2)
-                        .foregroundStyle(.red)
-                    Spacer()
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 8)
                     Button("Retry") {
                         model.retryLastMessage(conversationID: conversation.id)
                     }
+                    .buttonStyle(.bordered)
                     .accessibilityIdentifier("juno.mobile.chat-retry")
                 }
                 .font(.caption)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .background(.bar)
+    }
+
+    private var sendDisabled: Bool {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || model.isGenerating
+            || conversation.isPending
+    }
+
+    private var isStreamingPhase: Bool {
+        switch model.chatPhase {
+        case .appending, .submitting, .reasoning, .streaming, .reconnecting: true
+        case .idle, .stopping, .failed: false
+        }
+    }
+
+    @ViewBuilder
+    private var composerFieldBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        if #available(iOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            shape.fill(.quaternary.opacity(0.5))
+        }
     }
 
     private var phaseLabel: String {
