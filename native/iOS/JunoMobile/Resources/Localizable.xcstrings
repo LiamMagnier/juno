@@ -1,162 +1,518 @@
 {
-  "sourceLanguage" : "en",
-  "strings" : {
-    "auth.error.cancelled" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign-in was cancelled." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La connexion a été annulée." } }
+  "sourceLanguage": "en",
+  "strings": {
+    "action.cancel": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler"
+          }
+        }
       }
     },
-    "auth.error.configuration" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Juno could not configure its secure connection." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Juno n’a pas pu configurer sa connexion sécurisée." } }
+    "auth.error.cancelled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in was cancelled."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La connexion a été annulée."
+          }
+        }
       }
     },
-    "auth.error.in-progress" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "A sign-in is already in progress." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Une connexion est déjà en cours." } }
+    "auth.error.configuration": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno could not configure its secure connection."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno n’a pas pu configurer sa connexion sécurisée."
+          }
+        }
       }
     },
-    "auth.error.invalid-callback" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "The sign-in response was invalid." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "La réponse de connexion était invalide." } }
+    "auth.error.in-progress": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A sign-in is already in progress."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une connexion est déjà en cours."
+          }
+        }
       }
     },
-    "auth.error.unavailable" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "The system browser is unavailable." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Le navigateur système est indisponible." } }
+    "auth.error.invalid-callback": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The sign-in response was invalid."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La réponse de connexion était invalide."
+          }
+        }
       }
     },
-    "auth.restoring" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Restoring your Juno session…" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Restauration de votre session Juno…" } }
+    "auth.error.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system browser is unavailable."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le navigateur système est indisponible."
+          }
+        }
       }
     },
-    "auth.sign-in" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Continue in browser" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Continuer dans le navigateur" } }
+    "auth.restoring": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restoring your Juno session…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Restauration de votre session Juno…"
+          }
+        }
       }
     },
-    "auth.sign-out" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Sign out" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Se déconnecter" } }
+    "auth.sign-in": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue in browser"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuer dans le navigateur"
+          }
+        }
       }
     },
-    "auth.welcome.description" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Use your Juno account to securely sync conversations, projects, and settings." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Utilisez votre compte Juno pour synchroniser en toute sécurité vos conversations, projets et réglages." } }
+    "auth.sign-out": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign out"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se déconnecter"
+          }
+        }
       }
     },
-    "auth.welcome.title" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Welcome to Juno" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Bienvenue dans Juno" } }
+    "auth.sign-out.confirm.message": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your local data stays on this device and syncs again when you sign back in."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos données locales restent sur cet appareil et se resynchronisent à la reconnexion."
+          }
+        }
       }
     },
-    "navigation.artifacts" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Artifacts" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Artefacts" } }
+    "auth.sign-out.confirm.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign out of Juno?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se déconnecter de Juno ?"
+          }
+        }
       }
     },
-    "navigation.chat" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Chat" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chat" } }
+    "auth.welcome.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use your Juno account to securely sync conversations, projects, and settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez votre compte Juno pour synchroniser en toute sécurité vos conversations, projets et réglages."
+          }
+        }
       }
     },
-    "navigation.codeCloud" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code Cloud" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code Cloud" } }
+    "auth.welcome.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Juno"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bienvenue dans Juno"
+          }
+        }
       }
     },
-    "navigation.codeRemote" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code Remote" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Juno Code Remote" } }
+    "chat.empty.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pick a chat from the sidebar, or start a new one."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choisissez un chat dans la barre latérale, ou démarrez-en un nouveau."
+          }
+        }
       }
     },
-    "navigation.connections" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Connections" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Connexions" } }
+    "chat.empty.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start a conversation"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Démarrer une conversation"
+          }
+        }
       }
     },
-    "navigation.files" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Files" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fichiers" } }
+    "chat.new": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nouvelle discussion"
+          }
+        }
       }
     },
-    "navigation.projects" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Projects" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Projets" } }
+    "navigation.artifacts": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifacts"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artefacts"
+          }
+        }
       }
     },
-    "navigation.search" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Recherche" } }
+    "navigation.chat": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        }
       }
     },
-    "navigation.settings" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Settings" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Réglages" } }
+    "navigation.library": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothèque"
+          }
+        }
       }
     },
-    "navigation.tasks" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Tasks" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Tâches" } }
+    "navigation.projects": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projects"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Projets"
+          }
+        }
       }
     },
-    "section.account" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Account" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Compte" } }
+    "navigation.search": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recherche"
+          }
+        }
       }
     },
-    "section.code" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Code" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Code" } }
+    "navigation.settings": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Réglages"
+          }
+        }
       }
     },
-    "section.product" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Product" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Produit" } }
+    "settings.account": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte"
+          }
+        }
       }
     },
-    "shell.choose.title" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Choose an area" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Choisissez un espace" } }
+    "shell.unavailable.description": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno couldn’t open this section. Restart Juno, or sign out and back in."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno n’a pas pu ouvrir cette section. Redémarrez Juno, ou déconnectez-vous puis reconnectez-vous."
+          }
+        }
       }
     },
-    "shell.foundation.description" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "This native area will become available after authentication and synchronization are connected." } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Cet espace natif sera disponible après le raccordement de l’authentification et de la synchronisation." } }
+    "shell.unavailable.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Something went wrong"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une erreur est survenue"
+          }
+        }
       }
     },
-    "sidebar.search.prompt" : {
-      "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "Search Juno" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Rechercher dans Juno" } }
+    "sidebar.group.account": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Account"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte"
+          }
+        }
+      }
+    },
+    "sidebar.group.content": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bibliothèque"
+          }
+        }
+      }
+    },
+    "sidebar.group.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Workspace"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espace de travail"
+          }
+        }
+      }
+    },
+    "sidebar.pinned": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pinned"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Épinglés"
+          }
+        }
+      }
+    },
+    "sidebar.recents": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recents"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Récents"
+          }
+        }
+      }
+    },
+    "sync.offline": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Offline"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hors ligne"
+          }
+        }
+      }
+    },
+    "sync.synced": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synced"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Synchronisé"
+          }
+        }
       }
     }
   },
-  "version" : "1.0"
+  "version": "1.0"
 }

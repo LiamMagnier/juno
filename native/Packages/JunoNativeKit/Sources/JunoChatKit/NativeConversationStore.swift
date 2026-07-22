@@ -30,6 +30,8 @@ public struct NativeConversation: Identifiable, Equatable, Sendable {
     public var lastMessageAt: Date
     public let revision: UInt64
     public var isPending: Bool
+    /// The project this conversation is associated with, if any.
+    public var projectId: String?
 
     public var isArchived: Bool { archivedAt != nil }
 
@@ -44,7 +46,8 @@ public struct NativeConversation: Identifiable, Equatable, Sendable {
         updatedAt: Date,
         lastMessageAt: Date,
         revision: UInt64,
-        isPending: Bool = false
+        isPending: Bool = false,
+        projectId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -57,6 +60,7 @@ public struct NativeConversation: Identifiable, Equatable, Sendable {
         self.lastMessageAt = lastMessageAt
         self.revision = revision
         self.isPending = isPending
+        self.projectId = projectId
     }
 }
 
@@ -244,7 +248,8 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             createdAt: createdAt,
             updatedAt: updatedAt,
             lastMessageAt: lastMessageAt,
-            revision: record.revision
+            revision: record.revision,
+            projectId: wire.projectId
         )
     }
 
@@ -294,7 +299,8 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
                 updatedAt: now,
                 lastMessageAt: now,
                 revision: 0,
-                isPending: true
+                isPending: true,
+                projectId: object["projectId"] as? String
             )
         case "conversation.rename":
             guard let title = object["title"] as? String else {
@@ -314,6 +320,10 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             }
             if let pinned = patch["pinned"] as? Bool {
                 conversations[mutation.draft.entity.id]?.pinned = pinned
+            }
+            if patch.keys.contains("projectId") {
+                // Present with a String value associates; present as null removes.
+                conversations[mutation.draft.entity.id]?.projectId = patch["projectId"] as? String
             }
             conversations[mutation.draft.entity.id]?.isPending = true
         case "conversation.archive":
@@ -593,6 +603,27 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             object: [
                 "type": "conversation.update", "entityId": id,
                 "patch": ["pinned": pinned],
+            ]
+        )
+    }
+
+    /// Associates the conversation with a project, or removes the association
+    /// when `projectID` is nil. Reuses the server-validated `conversation.update`
+    /// mutation (the server checks project ownership and accepts a null to clear).
+    public func setProject(id: String, projectID: String?) async {
+        if let projectID {
+            guard !projectID.isEmpty, projectID.utf8.count <= 200 else {
+                lastErrorDescription = NativeConversationStoreError.invalidMutation.localizedDescription
+                return
+            }
+        }
+        let patchValue: Any = projectID ?? NSNull()
+        await mutateExisting(
+            id: id,
+            operation: "conversation.update",
+            object: [
+                "type": "conversation.update", "entityId": id,
+                "patch": ["projectId": patchValue],
             ]
         )
     }
@@ -1138,6 +1169,36 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             phase = .failed
         }
     }
+
+    /// Resolves every conflicted conversation mutation at once: retry replays
+    /// the local change against the freshly synced revision, discard keeps the
+    /// server version and drops the local edit.
+    public func resolveConflicts(keepLocalChanges: Bool) async {
+        guard let accountID else { return }
+        if keepLocalChanges { await syncModel.refresh() }
+        do {
+            let storageAccountID = StorageAccountID(accountID.rawValue)
+            let mutations = try await outbox.mutations(accountID: storageAccountID)
+            for mutation in mutations
+                where mutation.draft.entity.namespace == "conversation"
+            {
+                guard case .conflicted = mutation.state else { continue }
+                try await outbox.resolveConflict(
+                    id: mutation.draft.id,
+                    accountID: storageAccountID,
+                    resolution: keepLocalChanges
+                        ? .retry : .discard(reason: "use_server_version"),
+                    now: Date()
+                )
+            }
+            await reload()
+            if keepLocalChanges { await reconcilePendingMutations() }
+        } catch {
+            guard self.accountID == accountID else { return }
+            lastErrorDescription = error.localizedDescription
+            phase = .failed
+        }
+    }
 }
 
 private struct ConversationWire: Decodable {
@@ -1150,6 +1211,7 @@ private struct ConversationWire: Decodable {
     let createdAt: String
     let updatedAt: String
     let lastMessageAt: String
+    let projectId: String?
 }
 
 private struct MessageWire: Decodable {

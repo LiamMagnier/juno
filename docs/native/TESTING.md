@@ -13,6 +13,59 @@
 | Prototype iOS Debug Simulator build | Fail | `AuthSession.swift:73` calls macOS-only `Host.current()` and hardcodes `platform: "macOS"`. This is a pre-existing prototype topology defect. |
 | Prototype iOS tests | Not run | Build must compile first. |
 
+## 2026-07-22 — signing is a functional requirement, not a packaging step
+
+Every build command recorded in this file and in STATUS.md passes
+`CODE_SIGNING_ALLOWED=NO`. Those commands verify that the apps **compile**. They
+do not verify that the apps **run**.
+
+An unsigned build carries no `application-identifier`. iOS uses that entitlement
+as an app's default Keychain access group, so without it every Keychain call
+returns `errSecMissingEntitlement` (-34018): no token can be stored, and the
+sign-in gate drops to `.unavailable` with its button hidden. Confirmed in the
+iOS 27 simulator on both Debug and Stable.
+
+Rebuilding the same configuration **with signing enabled** produces a working
+sign-in gate:
+
+```bash
+DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer \
+xcodebuild -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+  -scheme JunoMobile -configuration Stable \
+  -destination 'generic/platform=iOS Simulator' \
+  -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic \
+  DEVELOPMENT_TEAM=58PVP763WX build
+```
+
+Use the unsigned form for compile gates only. Any test that exercises auth,
+token storage, sync or an authenticated screen must use a signed build, or it is
+testing the failure path.
+
+The macOS app is unaffected (not sandboxed, and its Keychain access does not
+depend on an access group), as is the device `.ipa`, which gets
+`application-identifier` from its provisioning profile.
+
+## 2026-07-22 — JunoAuthTests does not hang
+
+Recorded because a mission brief listed "fix the hanging JunoAuthTests" as a
+task. At `69cf7df` and at every commit since, the suite completes in ~18 ms with
+all cases passing. The symptom is not reproducible in this worktree. Nothing was
+skipped, weakened, or disabled.
+
+## 2026-07-22 — macOS UI tests and screenshots cannot run in the agent sandbox
+
+- `JunoMacUITests` fails with `Failed to load the test bundle … dlopen` under
+  both `CODE_SIGNING_ALLOWED=NO` and ad-hoc signing. The runner needs a session
+  where it can be granted Accessibility control.
+- `screencapture` returns an all-black image — Screen Recording is not granted.
+
+macOS visual QA was therefore done by reading the **live accessibility tree** of
+the running app (`osascript` + System Events, after setting
+`AXEnhancedUserInterface`). That is what surfaced the overridden accessibility
+identifiers, the unnamed icon-only buttons and the raw model id in the window
+subtitle. It is a genuine substitute for structure, labels and ordering; it says
+nothing about spacing, colour or contrast.
+
 ## Canonical local toolchain
 
 The global developer directory points at Command Line Tools. Prefix native commands with:

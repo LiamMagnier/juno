@@ -14,9 +14,46 @@ public struct SecurityKeychainItem: Equatable, Hashable, Sendable {
     }
 }
 
-public enum SecurityKeychainClientError: Error, Equatable, Sendable {
+public enum SecurityKeychainClientError: Error, Equatable, Sendable, LocalizedError {
     case unexpectedStatus(Int32)
     case invalidResult
+
+    /// Without this, Foundation renders the enum as
+    /// "JunoAuth.SecurityKeychainClientError error 0." — the *case index*, with
+    /// the OSStatus silently discarded. The sign-in gate surfaces this string
+    /// directly, so a Keychain failure reached the user as a meaningless
+    /// number and reached a bug report with the one diagnostic fact removed.
+    public var errorDescription: String? {
+        switch self {
+        case .unexpectedStatus(let status):
+            let explanation = Self.explanation(for: status)
+            return "Keychain error \(status)\(explanation.map { " — \($0)" } ?? "")."
+        case .invalidResult:
+            return "The Keychain returned an item in an unexpected format."
+        }
+    }
+
+    /// Plain-language text for the statuses this store can realistically hit.
+    /// `SecCopyErrorMessageString` exists but is unavailable on iOS, so the few
+    /// that matter are named here and anything else falls back to the number.
+    static func explanation(for status: Int32) -> String? {
+        switch status {
+        case errSecMissingEntitlement:
+            "the app is not entitled to use the Keychain"
+        case errSecInteractionNotAllowed:
+            "the device is locked"
+        case errSecAuthFailed:
+            "authentication failed"
+        case errSecDecode:
+            "the stored item could not be decoded"
+        case errSecNotAvailable:
+            "no Keychain is available"
+        case errSecUserCanceled:
+            "the request was cancelled"
+        default:
+            nil
+        }
+    }
 }
 
 /// A narrow, injectable boundary around Security.framework.

@@ -1,5 +1,7 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeUI
+import JunoCore
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -8,38 +10,69 @@ import UniformTypeIdentifiers
 
 struct JunoMacRootView: View {
     @Binding var selection: JunoMacSection
+    @Binding var productMode: JunoMacProductMode
+    /// Built on first entry into Code and then kept alive by the app, so
+    /// switching modes preserves the workspace list and session selection.
+    @Binding var codeWorkbenchModel: WorkbenchModel?
     let authModel: NativeAuthModel
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
-    @State private var sidebarSearch = ""
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
+    @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// Inspector visibility is per-scene and restored across relaunches, the
+    /// same way the sidebar's own visibility is.
+    @SceneStorage("juno.mac.inspectorVisible") private var inspectorVisible = false
+    #if DEBUG
+    /// Set only by the local UI Preview harness to render the real authenticated
+    /// shell without any authentication; nil in every normal run.
+    var previewSession: NativeAuthenticatedSession?
+    #endif
 
     var body: some View {
         Group {
-            switch authModel.phase {
-            case .signedIn(let session):
-                authenticatedContent(session: session)
-            case .restoring:
-                ProgressView("auth.restoring")
-            case .signedOut, .signingIn, .unavailable:
-                JunoMacSignInView(authModel: authModel)
+            #if DEBUG
+            if let previewSession {
+                authenticatedContent(session: previewSession)
+            } else {
+                phaseContent
             }
+            #else
+            phaseContent
+            #endif
         }
         .task {
+            #if DEBUG
+            if previewSession != nil { return }
+            #endif
             await authModel.restore()
         }
         .onChange(of: authModel.phase) { _, phase in
+            #if DEBUG
+            if previewSession != nil { return }
+            #endif
             if case .signedIn(let session) = phase {
                 syncModel?.start(for: session.profile.id)
                 Task { await conversationModel?.start(for: session.profile.id) }
                 Task { await projectModel?.start(for: session.profile.id) }
                 Task { await artifactModel?.start(for: session.profile.id) }
+                Task { await memorySettingsModel?.start(for: session.profile.id) }
+                searchModel?.start(for: session.profile.id)
             } else {
+                // Signing out must not leave the window inside Juno Code with a
+                // live workbench holding the previous account's sessions.
+                productMode = .chat
+                selection = .chat
+                codeWorkbenchModel = nil
                 syncModel?.stop()
                 conversationModel?.stop()
                 projectModel?.stop()
                 artifactModel?.stop()
+                memorySettingsModel?.stop()
+                searchModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -47,108 +80,152 @@ struct JunoMacRootView: View {
             Task { await conversationModel?.synchronizationDidAdvance(to: generation) }
             Task { await projectModel?.synchronizationDidAdvance(to: generation) }
             Task { await artifactModel?.synchronizationDidAdvance(to: generation) }
+            Task { await memorySettingsModel?.synchronizationDidAdvance(to: generation) }
+            searchModel?.synchronizationDidAdvance(to: generation)
         }
         .onChange(of: syncModel?.phase) { _, _ in
             Task { await conversationModel?.reload() }
             Task { await projectModel?.reload() }
             Task { await artifactModel?.reload() }
+            Task { await memorySettingsModel?.reload() }
         }
     }
 
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch authModel.phase {
+        case .signedIn(let session):
+            authenticatedContent(session: session)
+        case .restoring:
+            ProgressView("auth.restoring")
+        case .signedOut, .signingIn, .unavailable:
+            JunoMacSignInView(authModel: authModel)
+        }
+    }
+
+    /// The two-column shell. Chat's own inspector is a third region owned by
+    /// `JunoMacChatView`, not a third `NavigationSplitView` column, so the
+    /// sidebar stays the single source list for the whole product.
+    @ViewBuilder
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        NavigationSplitView {
-            List(selection: $selection) {
-                Section("section.product") {
-                    rows(for: [.chat, .projects, .library, .artifacts, .tasks, .connections])
-                }
+        switch productMode {
+        case .chat:
+            chatShell(session: session)
+        case .code:
+            codeShell(session: session)
+        }
+    }
 
-                Section("section.intelligence") {
-                    rows(for: [.search, .code])
-                }
+    /// Juno Code brings its own sidebar, workspace and inspector, so a mode
+    /// switch replaces the whole split view rather than swapping the detail
+    /// column. Only one shell is mounted at a time — there is never a second
+    /// live navigation stack behind the visible one.
+    @ViewBuilder
+    private func codeShell(session: NativeAuthenticatedSession) -> some View {
+        if let chatTransport {
+            JunoMacCodeView(
+                transport: chatTransport,
+                accountID: session.profile.id,
+                model: workbenchModel(transport: chatTransport, session: session),
+                sidebarHeader: { JunoMacSidebarHeader(mode: $productMode) }
+            )
+        } else {
+            unavailableShell
+        }
+    }
 
-                Section("section.account") {
-                    rows(for: [.settings])
-                }
-            }
-            .accessibilityIdentifier("juno.mac.sidebar")
-            .navigationTitle("Juno")
-            .searchable(text: $sidebarSearch, prompt: "sidebar.search.prompt")
-            .navigationSplitViewColumnWidth(min: 210, ideal: 250, max: 340)
+    /// Creates the workbench model on first use and hands back the existing one
+    /// afterwards. Writing to the binding during `body` is deliberate and safe:
+    /// it happens at most once per launch, and the alternative — an `onAppear`
+    /// hop — renders one empty frame first.
+    private func workbenchModel(
+        transport: any NativeChatRequestSending,
+        session: NativeAuthenticatedSession
+    ) -> WorkbenchModel {
+        if let existing = codeWorkbenchModel { return existing }
+        let created = JunoMacCodeView<EmptyView>.makeModel(
+            transport: transport,
+            accountID: session.profile.id
+        )
+        Task { @MainActor in codeWorkbenchModel = created }
+        return created
+    }
+
+    private var unavailableShell: some View {
+        ContentUnavailableView {
+            Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
+        } description: {
+            Text("shell.unavailable.description")
+        }
+    }
+
+    private func chatShell(
+        session: NativeAuthenticatedSession
+    ) -> some View {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
+            JunoMacSidebar(
+                selection: $selection,
+                productMode: $productMode,
+                conversationModel: conversationModel,
+                syncModel: syncModel,
+                accountName: session.profile.name ?? session.profile.email,
+                signOut: { Task { await authModel.signOut() } },
+                newChat: newChat
+            )
         } detail: {
             JunoMacDetailView(
                 section: selection,
                 conversationModel: conversationModel,
                 projectModel: projectModel,
                 artifactModel: artifactModel,
+                memorySettingsModel: memorySettingsModel,
+                searchModel: searchModel,
+                chatTransport: chatTransport,
+                accountID: session.profile.id,
+                inspectorVisible: $inspectorVisible,
                 openConversation: { id in
                     conversationModel?.selectedConversationID = id
                     selection = .chat
+                },
+                openArtifact: { id in
+                    artifactModel?.selectedArtifactID = id
+                    selection = .artifacts
+                },
+                openSearchResult: { result in
+                    switch result.kind {
+                    case .conversation, .message:
+                        conversationModel?.selectedConversationID =
+                            result.conversationID ?? result.entityID
+                        selection = .chat
+                    case .project:
+                        projectModel?.selectedProjectID = result.entityID
+                        selection = .projects
+                    case .file:
+                        selection = .library
+                    case .artifact:
+                        artifactModel?.selectedArtifactID = result.entityID
+                        selection = .artifacts
+                    case .memory:
+                        selection = .settings
+                    }
                 }
             )
-                .id(selection)
+            // Chat keeps its identity across conversation switches so the
+            // transcript's scroll position and drafts survive; every other
+            // section is rebuilt on selection.
+            .id(selection == .chat ? "chat" : selection.rawValue)
         }
         .navigationSplitViewStyle(.balanced)
-        .toolbar {
-            ToolbarItem {
-                JunoMacSyncStatus(model: syncModel)
-            }
-            ToolbarItem {
-                Menu {
-                    Button("auth.sign-out", role: .destructive) {
-                        Task { await authModel.signOut() }
-                    }
-                } label: {
-                    Label(
-                        session.profile.name ?? session.profile.email,
-                        systemImage: "person.crop.circle"
-                    )
-                }
-                .accessibilityIdentifier("juno.mac.account-menu")
-            }
-        }
     }
 
-    @ViewBuilder
-    private func rows(for sections: [JunoMacSection]) -> some View {
-        ForEach(filtered(sections)) { section in
-            NavigationLink(value: section) {
-                Label(section.title, systemImage: section.systemImage)
+    private func newChat() {
+        Task {
+            if let id = await conversationModel?.createConversation() {
+                conversationModel?.selectedConversationID = id
+                selection = .chat
             }
-        }
-    }
-
-    private func filtered(_ sections: [JunoMacSection]) -> [JunoMacSection] {
-        guard !sidebarSearch.isEmpty else { return sections }
-        return sections.filter { section in
-            String(localized: String.LocalizationValue(section.rawValue))
-                .localizedStandardContains(sidebarSearch)
-                || section.rawValue.localizedStandardContains(sidebarSearch)
-        }
-    }
-}
-
-private struct JunoMacSyncStatus: View {
-    let model: NativeSyncModel<SQLiteAccountRepository>?
-
-    var body: some View {
-        if let model {
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                switch model.phase {
-                case .idle, .synchronizing:
-                    ProgressView().controlSize(.small)
-                case .live:
-                    Label("Synced", systemImage: "checkmark.circle.fill")
-                case .offline:
-                    Label("Offline", systemImage: "wifi.slash")
-                }
-            }
-            .buttonStyle(.plain)
-            .help(model.lastErrorDescription ?? "Refresh Juno")
-            .accessibilityIdentifier("juno.mac.sync-status")
         }
     }
 }
@@ -199,12 +276,34 @@ private struct JunoMacDetailView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
+    let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let chatTransport: (any NativeChatRequestSending)?
+    let accountID: AccountID
+    @Binding var inspectorVisible: Bool
     let openConversation: (String) -> Void
+    let openArtifact: (String) -> Void
+    let openSearchResult: (NativeSearchResult) -> Void
 
     @ViewBuilder
     var body: some View {
         if section == .chat, let conversationModel {
-            JunoMacConversationsView(model: conversationModel)
+            JunoMacChatView(
+                model: conversationModel,
+                artifactModel: artifactModel,
+                projectName: { id in
+                    projectModel?.projects.first { $0.id == id }?.name
+                },
+                openArtifact: openArtifact,
+                inspectorVisible: $inspectorVisible
+            )
+        } else if section == .search, let searchModel {
+            JunoMacSearchView(model: searchModel, open: openSearchResult)
+        } else if section == .settings, let memorySettingsModel {
+            JunoMacSettingsView(
+                model: memorySettingsModel,
+                conversationModel: conversationModel
+            )
         } else if section == .projects, let projectModel {
             JunoMacProjectsView(
                 model: projectModel,
@@ -219,11 +318,14 @@ private struct JunoMacDetailView: View {
                 openConversation: openConversation
             )
         } else {
+            // Reached only when a store failed to open at launch (a genuine
+            // configuration error), never as a placeholder for an unbuilt
+            // feature — every section above maps to a real surface.
             NavigationStack {
                 ContentUnavailableView {
-                    Label(section.title, systemImage: section.systemImage)
+                    Label("shell.unavailable.title", systemImage: "exclamationmark.triangle")
                 } description: {
-                    Text("shell.foundation.description")
+                    Text("shell.unavailable.description")
                 }
                 .accessibilityIdentifier("juno.mac.detail")
                 .navigationTitle(section.title)
@@ -321,7 +423,25 @@ private struct JunoMacProjectsView: View {
             Text("Project instructions are included in every linked conversation.")
         }
         .safeAreaInset(edge: .bottom) {
-            if model.phase == .offline || model.lastErrorDescription != nil {
+            if model.conflictedMutationCount > 0 {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                    Text("A project changed on another device.")
+                        .lineLimit(2)
+                    Spacer()
+                    Button("Keep mine") {
+                        Task { await model.resolveConflicts(keepLocalChanges: true) }
+                    }
+                    Button("Use server") {
+                        Task { await model.resolveConflicts(keepLocalChanges: false) }
+                    }
+                }
+                .font(.caption)
+                .padding(10)
+                .background(.bar)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("juno.mac.project-conflict")
+            } else if model.phase == .offline || model.lastErrorDescription != nil {
                 HStack(spacing: 8) {
                     Image(systemName: model.phase == .offline
                         ? "wifi.slash" : "exclamationmark.circle")

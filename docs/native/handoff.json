@@ -1,17 +1,24 @@
 {
-  "branch": "agent/juno-native",
-  "currentCommit": "719db31c4ae96c4ee18244230d0a768f69bb04f0",
-  "workingTreeClean": false,
-  "currentPhase": "memory-and-settings",
-  "currentTask": "Reuse existing memory and settings routes, sync entities and old native clients for real account memory and settings surfaces.",
+  "branch": "agent/juno-native-claude-continuation",
+  "currentCommit": "d19e924",
+  "workingTreeClean": true,
+  "currentPhase": "macos-redesign-complete-except-capture-matrix; next is PR #18 finalisation then PR #19 / phase-5-backend-reconciliation",
+  "currentTask": "The Code developer surfaces are redesigned in d19e924, which closes the 'STILL NOT REDESIGNED' list below except for the capture matrix. JunoCodeTheme is now an alias layer over JunoDesignSystem instead of a second design system; new JunoStatus.swift holds the shared status/diff/monospace tokens; every non-message transcript event is one ActivityRow; assistant turns render through JunoMarkdownText; checkpointed edits show they can be reverted; ApprovalBanner became a risk-tinted ApprovalCard; permission mode is a labelled menu in the composer; the inspector tab strip is labelled above a 330pt threshold with an overflow menu and per-tab VoiceOver purposes. Fixed a real preview-isolation defect: JunoMacApp.init() built the live configuration unconditionally, so DEBUG preview launches opened the live account store and built the live auth runtime against chat.liams.dev; preview launches now resolve .inert. NOT DONE, DO NOT READ AS DONE: the 900x650 / 1440x900 / fullscreen / inspector-open capture matrix (window creation for newly launched apps broke after the harness ran killall cfprefsd — never do that), and a confirmed pre-existing SidebarView defect where the Code session list collapses to the bottom edge. Both are recorded in MACOS_DESIGN_REVIEW.md section 8. PRIOR ENTRY: Owner rejected the shipped Chat/Code visuals; design system rebuilt and both shells redesigned in b3f069a. JunoSurfaces.swift adds semantic surfaces, JunoSpace/JunoRadius scales and a type scale, shared with JunoCodeUI. Root cause found for two rejected defects at once: Label(_:systemImage:) in a .sidebar List inherits AppKit's implicit accent tint, which made every nav icon coral in light and made them invisible in dark; icons now state their colour via JunoMacNavigationRow. Sidebar gained a real header region (no painted background, so the system sidebar material shows), tighter rows, redesigned footer. Canvas anchors short threads to the top; user turn narrower and outlined. Composer opens one line tall with a focus ring. Code: inspector starts closed (was eating a third of the window while empty), New Session is a compact row not a giant coral capsule, empty canvas is a suggestions card. STILL NOT REDESIGNED: Code transcript/terminal/diff/tests/Git/approvals, Code composer, inspector tab labels, 900x650 + 1440x900 + fullscreen captures, extended preview scenarios. See docs/native/MACOS_DESIGN_REVIEW.md.",
   "nextFiles": [
-    "src/app/api/memory",
-    "src/app/api/settings",
-    "src/lib/sync-entities.ts",
-    "native/Packages/JunoNativeKit/Sources/JunoSync",
-    "/Users/liammagnier/Desktop/workspace/.worktrees/juno-app-rebuild"
+    "docs/native/NEXT_PROMPT.md",
+    "scratchpad/main-dirty-backup/MANIFEST.md",
+    "prisma/migrations/20260719120000_remote_code_sessions/migration.sql",
+    "native/Packages/JunoCode/Sources/JunoCodeUI/Views/SidebarView.swift"
   ],
   "completed": [
+    "Juno Code developer surfaces redesigned onto the shared design system in d19e924: JunoCodeTheme reduced to an alias layer, new shared JunoStatus.swift tokens, one ActivityRow shape for every transcript event, Markdown assistant turns, visible checkpoints, risk-tinted ApprovalCard, permission-mode menu in the composer, labelled inspector tab strip with overflow and VoiceOver purposes; also fixed JunoMacApp building the live configuration for DEBUG preview launches",
+    "macOS design system + Chat/Code shell redesign in b3f069a after owner rejection; fixed the all-coral navigation and invisible dark-mode icons (one root cause), inspector no longer dominates Code, New Session integrated",
+    "Mac Chat workspace rebuilt in 98bb5da: three-region shell (unified sidebar with recency-grouped history, borderless Markdown canvas, native inspector, floating glass composer); Chat is the verified launch destination and Juno Code is one row among the others",
+    "JunoMarkdown block parser and renderer plus NativeConversationGrouping in 20de81f, 35 tests; parser is total over streaming prefixes",
+    "Keychain errors carry their OSStatus in 043051b, which established that CODE_SIGNING_ALLOWED=NO builds cannot use the Keychain at all and so cannot sign in",
+    "macOS .app/.dmg, development .ipa and signed simulator .app.zip built and verified in dist/ with checksums, INSTALL.md, RELEASE_NOTES.md and DELIVERY_REPORT.md",
+    "Fixture-backed DEBUG Juno Code preview in a571c3d: SessionController.init(previewFixture:) omits the Live bundle so the whole local runtime and model transport are structurally unreachable; views use workspaceDisplayName/workspacePathDisplay/isGitRepository/findFiles instead of reaching through controller.context; ten deterministic scenarios behind --juno-code-preview-scenario; 17 inertness/determinism/coverage tests",
+    "Juno Code macOS visual sweep in 37db1af: ten scenarios in light and dark at 1000x640, 1280x800 and 1600x1000 with inspector tabs exercised; fixed inspector vertical-centring, terminal soft-wrapping, filename-destroying path truncation, file-count pluralisation, sidebar path tail-truncation, and a fixture bug that masked a raw home-path leak",
     "General repository/backend/OpenAPI/toolchain/prototype audit and persistent handoff baseline in 1de5cda",
     "Canonical callback and backend/OpenAPI/deterministic Swift generation alignment in b903159",
     "Acyclic Swift 6 JunoNativeKit package with ten products",
@@ -25,6 +32,10 @@
     "Real native chat with model and effort selection, production SSE, stop, retry, reconnect and duplicate prevention in 6e20050",
     "Real encrypted projects and files with durable mutations, linked conversations, uploads, fresh file access and native surfaces in 35fce4a",
     "Real encrypted library and artifact surfaces with offline version history, optimistic edits, exports and native previews in 719db31",
+    "Real encrypted memory and settings with optimistic durable mutations, conflict resolution, summary hydration, explicit permanent reset and full native forms in 778a47d; /api/memory published in OpenAPI 1.2.0",
+    "Real offline global search over encrypted synchronized entities via the JunoSearch contract with a throwaway index, debounce, cancellation, grouped ranked results and native navigation on both apps",
+    "Mutation-conflict resolution across conversations and projects with keep-mine/use-server banners, plus a durable offline/reconnect proof (offline enqueue survives relaunch, submits once on reconnect with the original idempotency key, ambiguous loss replays the same key as a no-op) in 01c6a74",
+    "Juno Code macOS integration merged from PR #17 in 677d781: JunoCode package (Core/Local/Runtime/UI/Bridge, 179 strict tests), standalone JunoCode app, and a Code section in JunoMac via JunoMacCodeView on the authenticated model transport; Cloud/Remote Code disabled pending backend routes (GAP-021)",
     "Real EN/FR auth gates wired into both apps with passing macOS and iOS UI tests",
     "Deterministic checked-in Swift contract with local drift command",
     "Account-scoped storage abstractions, in-memory test adapter, cursor/outbox primitives and local-search contract",
@@ -35,8 +46,8 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
-    "Real native memory and settings",
-    "Search and sidebar completion plus mutation conflict UI and live-account offline and reconnect proof",
+    "Juno Code Remote Host, Cloud Code and Remote mobile (blocked on GAP-021 backend Code-session routes)",
+    "Live-account interactive completion (device browser, connected-device management)",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
     "Functional macOS and iOS/iPadOS feature UI",
     "UI, end-to-end, accessibility, performance, dependency and secret gates",
@@ -47,7 +58,11 @@
   "passingCommands": [
     "npm run native:contract:check",
     "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoNativeKit --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete",
-    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (134/134)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoNativeKit --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (156/156)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift test --package-path native/Packages/JunoCode --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (198/198)",
+    "DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer swift build --package-path native/Packages/JunoCode --configuration release --scratch-path isolated-temp -Xswiftc -warnings-as-errors -Xswiftc -strict-concurrency=complete (confirms the DEBUG preview harness is excluded from Release)",
+    "JunoCode standalone Debug unsigned xcodebuild",
+    "npx tsc --noEmit and npx tsx --test tests/native-contract.test.ts (3/3)",
     "JunoMac Debug unsigned xcodebuild",
     "JunoMac Stable unsigned xcodebuild, universal arm64+x86_64",
     "JunoMobile Debug generic iOS Simulator xcodebuild",
@@ -60,10 +75,10 @@
   "failingCommands": [
     "Default Swift package scratch under the Desktop/File Provider worktree can fail signing because Finder metadata/resource forks are attached; isolated /tmp scratch paths pass",
     "xcodebuild without DEVELOPER_DIR fails because xcode-select points to CommandLineTools",
-    "Separate monolithic prototype iOS build fails at AuthSession.swift:73 because Host.current() is unavailable and platform is hardcoded macOS"
+    "Separate monolithic prototype iOS build fails at AuthSession.swift:73 because Host.current() is unavailable and platform is hardcoded macOS",
+    "Screenshot capture of newly launched apps, in any login session where killall cfprefsd has been run: the preferences daemon takes the window server's app registration with it and newly launched apps never get a main window. Never run it. Recover by logging out and back in."
   ],
   "blockers": [
-    "GitHub CLI token invalid; gh auth login required before push, PR, tag or release",
     "Apple bundle identifiers, Team/signing/provisioning, App Store Connect, Developer ID and notarization inputs unavailable",
     "Production StoreKit mapping and APNs credentials require owner input"
   ]

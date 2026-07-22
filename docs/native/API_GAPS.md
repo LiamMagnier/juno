@@ -243,6 +243,37 @@ it in the current transaction, mirrors it in OpenAPI, and has acceptance/rejecti
 coverage in the mutation contract tests. No new route or duplicate project
 service was added.
 
+### GAP-021 — no backend routes exist for Juno Code Cloud/Remote sessions
+
+Juno Code macOS (PR #17, merged in `677d781`) runs its **local** agent loop
+against the authenticated backend model transport, but Cloud and Remote Host
+Code sessions have no server contract. `docs/native/JUNO_CODE_HANDOFF.md`
+records this explicitly: the event model (`JunoCodeCore.SessionEventPayload`)
+and the `JunoCodeBridge` adapters are ready, and the new-session sheet shows
+both Cloud and Remote modes disabled because nothing in
+`contracts/openapi/juno-native-v1.yaml` can back them.
+
+What is missing (documented, not yet designed or built):
+
+- Create/resume a Code session bound to an account and workspace.
+- Ordered, resumable session events (a cursor-addressable event log so a
+  reconnecting client replays from its last seen sequence).
+- Idempotent session commands: prompt, approve, deny, stop.
+- Remote Host addressing by opaque workspace ID (Mac-authoritative), so a
+  mobile client can drive a session hosted on the user's Mac.
+
+Why this is not resolved in this branch: unlike GAP-020, this is not a minimal
+extension to an existing route or mutation — it is a new backend surface
+(routes, Prisma migrations, auth scoping, streaming/event durability, and a
+Remote Host addressing/relay model). The native continuation mandate is to
+extend existing contracts minimally and never duplicate services, so this gap
+needs an explicit owner-approved backend design before native Cloud/Remote Code
+can be built. The local Code experience is fully functional without it.
+
+Status: open. Blocks the "Juno Code Remote Host", "Cloud Code", and "Remote
+mobile" units. The `SessionEventPayload` model was shaped so these payloads map
+1:1 once the routes land.
+
 ## P1 — blocks commerce, release and production download
 
 ### GAP-014 — StoreKit 2 and server reconciliation are absent
@@ -311,6 +342,37 @@ and user-facing disclosures are not fully defined.
 
 Required resolution: document and enforce these policies consistently in host,
 server, mobile UI and deletion/export flows.
+
+### GAP-022 — chat message attachments are absent from the native contract
+
+The Web composer attaches images and files to a message, but the native chat
+send path (`POST /api/v1/chat`, projected by `NativeConversationModel.sendMessage`)
+accepts only `conversationId`, `prompt`, `modelId` and `reasoningEffort`, and
+`NativeChatMessage` has no attachment fields. Uploads exist only at the **project**
+level (`/api/attachments`, `NativeProjectModel.uploadFile`), not per-message.
+
+Consequence: the composer "+" popover deliberately does **not** show Camera,
+Photos or Files. They are omitted (not shown disabled) until the contract exists.
+
+Required resolution (stacked backend branch): add a native message-attachment
+contract — signed upload, per-message attachment references on send, attachment
+projection on `NativeChatMessage` — then wire native pickers and previews.
+
+### GAP-023 — Deep Research and Canvas have no native contract surface
+
+Web exposes Deep Research and Canvas modes, but there is no native `/api/v1`
+route, request flag or manifest capability for either. They are therefore
+**omitted** from the production composer menu (never shown as disabled rows) and
+belong in a DEBUG-only panel at most.
+
+Required resolution: define native request flags / capability manifest entries
+for these modes (reusing the existing artifact/canvas model for Canvas) before
+any native UI enables them.
+
+The one composer action that **is** wired today is **Add to project**: it reuses
+the server-validated `conversation.update` mutation with a `projectId` patch
+(ownership-checked; `null` clears the association), surfaced through the new
+`NativeConversation.projectId` projection and `NativeConversationModel.setProject`.
 
 ## Contract exit criteria
 
