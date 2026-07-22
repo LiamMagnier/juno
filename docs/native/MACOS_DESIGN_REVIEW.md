@@ -270,7 +270,20 @@ A black full-screen image is TCC's denial behaviour, not a rendering fault. Fix:
 grant Screen Recording to the controlling app in System Settings ▸ Privacy &
 Security ▸ Screen Recording.
 
-**2. Every Xcode-built Juno target creates zero windows on launch.**
+**2. `CODE_SIGNING_ALLOWED=NO` builds create zero windows on launch.**
+
+> **Narrowed 2026-07-22, later the same day.** This was first written as "every
+> Xcode-built Juno target", which is too broad. A **properly signed `Stable`
+> build launches and gets a real 1512×859 window**, verified with
+> `CGWindowListCopyWindowInfo` and an accessibility window count of 1. The
+> failure is specific to builds made with `CODE_SIGNING_ALLOWED=NO`, which are
+> only *linker*-signed and leave `Info.plist=not bound`. Re-signing such a build
+> after the fact with ad-hoc `codesign -s - --force --deep` does **not** rescue
+> it — the signature has to be applied by the build. So: to run or screenshot
+> the app, build a signed configuration (`-configuration Stable
+> -allowProvisioningUpdates DEVELOPMENT_TEAM=58PVP763WX`) rather than the
+> unsigned Debug shortcut. Everything below still holds for unsigned builds.
+
 
 JunoMac and the standalone JunoCode both launch, stay alive, and run an ordinary
 AppKit event loop — a `sample` of the main thread shows it parked in

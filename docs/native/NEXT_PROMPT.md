@@ -90,20 +90,31 @@ What is actually true, both established by experiment:
    with `SCStreamErrorDomain -3811`. **Owner action:** grant Screen Recording to
    the controlling app in System Settings ▸ Privacy & Security ▸ Screen Recording.
 
-2. **Every Xcode-built Juno target creates zero windows on launch.** JunoMac and
-   standalone JunoCode both launch, run a normal AppKit event loop, and never
-   produce a window — confirmed by `CGWindowListCopyWindowInfo` (including
-   off-screen windows) *and* by the accessibility tree reporting
-   `count of windows = 0` on a non-background app, still zero after 60s. This is
-   **not a regression from the redesign**: a build of pre-redesign commit
-   `2075a5c` fails identically, while a hand-built minimal SwiftUI app in the
-   same directory does get a window. Proper ad-hoc signing does not fix it. A
-   reopen followed by File ▸ New Window sometimes forces a real window, but not
-   reliably. **Owner action:** restart the login session, then re-test.
+2. **~~Every Xcode-built Juno target~~ `CODE_SIGNING_ALLOWED=NO` builds create
+   zero windows on launch. — SOLVED, no owner action needed.** Unsigned builds
+   (JunoMac and standalone JunoCode alike) launch, run a normal AppKit event
+   loop and never produce a window, confirmed by `CGWindowListCopyWindowInfo`
+   including off-screen windows and by an accessibility window count of 0 after
+   60s. But a **properly signed `Stable` build launches fine** and gets a real
+   1512×859 window. The cause is that `CODE_SIGNING_ALLOWED=NO` leaves the
+   bundle only *linker*-signed with `Info.plist=not bound`; re-signing it
+   afterwards with ad-hoc `codesign` does **not** rescue it — the signature must
+   be applied by the build.
 
-Until both are cleared, the capture matrix (900×650 / 1180×760 / 1440×900 /
-full screen × light/dark × Chat/Code × inspector open/closed) cannot be taken,
-and the Code sidebar defect cannot be diagnosed by running the app.
+   ```bash
+   DEVELOPER_DIR=/Applications/Xcode-beta.app/Contents/Developer xcodebuild \
+     -project native/macOS/JunoMac/JunoMac.xcodeproj \
+     -scheme JunoMac -configuration Stable \
+     -derivedDataPath /private/tmp/juno-mac-stable \
+     -allowProvisioningUpdates DEVELOPMENT_TEAM=58PVP763WX build
+   ```
+
+So only **blocker 1 (Screen Recording) is still open**. The app itself runs. The
+capture matrix (900×650 / 1180×760 / 1440×900 / full screen × light/dark ×
+Chat/Code × inspector open/closed) still cannot be taken because every capture
+comes back black, but the Code sidebar defect **can** now be diagnosed live
+against a signed build using the accessibility tree, which reports real
+positions and sizes.
 
 ### The Code sidebar defect is real — and here is a lead the old notes missed
 
