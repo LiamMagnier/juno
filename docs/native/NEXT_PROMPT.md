@@ -8,7 +8,7 @@ was verified on 2026-07-22, not remembered.
 ```
 worktree  /Users/liammagnier/Desktop/workspace/.worktrees/juno-native-claude
 branch    agent/juno-native-claude-continuation   (PR #18 → agent/juno-native)
-head      043051b253c9b0ac61bab2649bcf1ee5ec248c73   (pushed)
+head      b3f069a  (pushed)  — macOS design-system rebuild + Chat/Code redesign
 tree      clean, no merge/rebase/cherry-pick in progress
 ```
 
@@ -34,6 +34,25 @@ Keychain error that names its OSStatus, and four real defects fixed. See
 Artifacts exist in `dist/` (macOS `.app` + `.dmg`, development `.ipa`, signed
 simulator `.app.zip`) with checksums. The binaries are gitignored; the docs are
 tracked.
+
+## Design work still open (owner rejected the previous visuals once)
+
+`docs/native/MACOS_DESIGN_REVIEW.md` is the source of truth: diagnosis,
+before/after screenshots in `docs/native/design/`, and an explicit "remaining
+limitations" section. What is still **not** redesigned:
+
+- Code's transcript, terminal, diff, tests, Git and approvals surfaces
+- Code's composer (still a plain field)
+- the Code inspector's tab strip (unlabelled glyphs)
+- window sizes 900×650, 1440×900 and full screen were never captured
+- the extended Chat/Code preview scenario matrix from the brief
+
+Fixed and verified this pass: the all-coral navigation and the invisible
+dark-mode sidebar icons (same root cause — an unstated icon colour inheriting
+AppKit's implicit sidebar accent tint).
+
+Known and accepted: in Code the switcher sits below the system search field,
+because `.searchable(placement: .sidebar)` owns that slot.
 
 ## Next task — Phase 5, backend reconciliation
 

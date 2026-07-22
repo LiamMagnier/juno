@@ -1,16 +1,17 @@
 {
   "branch": "agent/juno-native-claude-continuation",
-  "currentCommit": "043051b",
+  "currentCommit": "b3f069a",
   "workingTreeClean": true,
-  "currentPhase": "mac-chat-workspace-complete; next is phase-5-backend-reconciliation",
-  "currentTask": "JunoMac rebuilt as one three-region native product opening on Chat (043051b): unified sidebar carrying destinations plus recency-grouped conversation history, borderless Markdown transcript (new JunoMarkdown block parser, 24 tests), native resizable inspector, floating glass composer with per-conversation drafts. Shared junoDisplayModelName replaces a mobile-local copy so no raw model id reaches either UI. Four defects fixed and verified in the running app via its live accessibility tree (screencapture and macOS XCUITest are both unavailable in this sandbox): container accessibilityIdentifier silently overriding the composer's and Send's own, icon-only buttons unnamed for VoiceOver with SF Symbol ids leaking as identifiers, raw model id in the window subtitle, and JunoMacNavigationTests asserting count==9 against a seven-case enum (it had been failing; STATUS.md's 'JunoMacTests 2/2' was stale). Keychain errors now carry their OSStatus, which revealed that every CODE_SIGNING_ALLOWED=NO build cannot sign in at all (-34018 errSecMissingEntitlement) - those commands were compile gates, not run gates. Artifacts built in dist/: macOS .app+.dmg (Apple Development signed, hardened runtime, universal), development .ipa (1 device, profile expires 2026-07-29), signed simulator .app.zip, checksums. NOT DONE: phases 5-16 and 18. No deploy, main untouched, origin/main still 173be21. NEXT: phase 5 backend reconciliation - triage the uncommitted Remote-session work still sitting in the main checkout, then rebase PR #19 onto PR #18. See docs/native/NEXT_PROMPT.md.",
+  "currentPhase": "macos-redesign-partial; next is remaining Code surfaces, then phase-5-backend-reconciliation",
+  "currentTask": "Owner rejected the shipped Chat/Code visuals; design system rebuilt and both shells redesigned in b3f069a. JunoSurfaces.swift adds semantic surfaces, JunoSpace/JunoRadius scales and a type scale, shared with JunoCodeUI. Root cause found for two rejected defects at once: Label(_:systemImage:) in a .sidebar List inherits AppKit's implicit accent tint, which made every nav icon coral in light and made them invisible in dark; icons now state their colour via JunoMacNavigationRow. Sidebar gained a real header region (no painted background, so the system sidebar material shows), tighter rows, redesigned footer. Canvas anchors short threads to the top; user turn narrower and outlined. Composer opens one line tall with a focus ring. Code: inspector starts closed (was eating a third of the window while empty), New Session is a compact row not a giant coral capsule, empty canvas is a suggestions card. STILL NOT REDESIGNED: Code transcript/terminal/diff/tests/Git/approvals, Code composer, inspector tab labels, 900x650 + 1440x900 + fullscreen captures, extended preview scenarios. See docs/native/MACOS_DESIGN_REVIEW.md.",
   "nextFiles": [
-    "docs/native/NEXT_PROMPT.md",
-    "/Users/liammagnier/Desktop/workspace/juno (dirty main checkout: src/lib/code-remote-sessions.ts, src/app/api/code/**)",
-    "contracts/openapi/juno-native-v1.yaml",
-    "docs/native/CODE_REMOTE_AUDIT.md"
+    "docs/native/MACOS_DESIGN_REVIEW.md",
+    "native/Packages/JunoCode/Sources/JunoCodeUI/Views/InspectorView.swift",
+    "native/Packages/JunoCode/Sources/JunoCodeUI/Views/AgentCanvasView.swift",
+    "docs/native/NEXT_PROMPT.md"
   ],
   "completed": [
+    "macOS design system + Chat/Code shell redesign in b3f069a after owner rejection; fixed the all-coral navigation and invisible dark-mode icons (one root cause), inspector no longer dominates Code, New Session integrated",
     "Mac Chat workspace rebuilt in 98bb5da: three-region shell (unified sidebar with recency-grouped history, borderless Markdown canvas, native inspector, floating glass composer); Chat is the verified launch destination and Juno Code is one row among the others",
     "JunoMarkdown block parser and renderer plus NativeConversationGrouping in 20de81f, 35 tests; parser is total over streaming prefixes",
     "Keychain errors carry their OSStatus in 043051b, which established that CODE_SIGNING_ALLOWED=NO builds cannot use the Keychain at all and so cannot sign in",
