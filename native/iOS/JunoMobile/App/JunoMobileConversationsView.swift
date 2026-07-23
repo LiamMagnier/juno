@@ -328,7 +328,10 @@ private struct JunoMobileMessageRow: View {
                         // Real Markdown: headings, lists, tables, code. A reply
                         // rendered as one flat string was losing every structure
                         // the model actually produced.
-                        JunoMarkdownText(message.content)
+                        // Strips `<juno:memory>` and clarification wizards —
+                        // markup addressed to Juno, not prose for the reader.
+                        // The website does the same in `cleanForDisplay`.
+                        JunoMarkdownText(NativeMessageContent.cleanForDisplay(message.content))
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }

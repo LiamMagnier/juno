@@ -23,6 +23,7 @@ struct JunoMobileApp: App {
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
     @State private var codeModel: CodeRemoteBrowserModel?
     @State private var workspaceExtrasModel: NativeWorkspaceExtrasModel?
+    private let loadAvatar: ((URL) async -> Data?)?
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
@@ -38,6 +39,7 @@ struct JunoMobileApp: App {
         _searchModel = State(initialValue: configuration.searchModel)
         _codeModel = State(initialValue: configuration.codeModel)
         _workspaceExtrasModel = State(initialValue: configuration.workspaceExtrasModel)
+        loadAvatar = configuration.loadAvatar
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -61,6 +63,7 @@ struct JunoMobileApp: App {
                         searchModel: world.searchModel,
                         codeModel: world.codeModel,
                         workspaceExtrasModel: world.workspaceExtrasModel,
+                        loadAvatar: nil,
                         previewSession: world.session
                     )
                 }
@@ -85,7 +88,8 @@ struct JunoMobileApp: App {
             memorySettingsModel: memorySettingsModel,
             searchModel: searchModel,
             codeModel: codeModel,
-            workspaceExtrasModel: workspaceExtrasModel
+            workspaceExtrasModel: workspaceExtrasModel,
+            loadAvatar: loadAvatar
         )
     }
 
@@ -166,6 +170,16 @@ struct JunoMobileApp: App {
                     tasks: NativeTasksClient(sender: runtime),
                     connections: NativeConnectionsClient(sender: runtime)
                 ),
+                // The avatar lives behind an authenticated route, so it is
+                // fetched with the same bearer transport as everything else.
+                loadAvatar: { [accountID = authModel] url in
+                    guard case .signedIn(let session) = await accountID.phase else { return nil }
+                    let path = url.path.isEmpty ? url.absoluteString : url.path
+                    guard let request = try? NativeBearerRequest(path: path) else { return nil }
+                    let response = try? await runtime.send(request, for: session.profile.id)
+                    guard let response, (200..<300).contains(response.statusCode) else { return nil }
+                    return response.body
+                },
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
@@ -205,6 +219,7 @@ struct JunoMobileApp: App {
                 attachmentModel: nil,
                 codeModel: nil,
                 workspaceExtrasModel: nil,
+                loadAvatar: nil,
                 conversationModel: nil,
                 projectModel: nil,
                 artifactModel: nil,
@@ -234,6 +249,7 @@ private struct JunoMobileConfiguration {
     /// live transcript. Nil when the app could not build its runtime at all.
     let codeModel: CodeRemoteBrowserModel?
     let workspaceExtrasModel: NativeWorkspaceExtrasModel?
+    let loadAvatar: ((URL) async -> Data?)?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?

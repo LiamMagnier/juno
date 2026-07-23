@@ -28,6 +28,10 @@ struct JunoMobileRootView: View {
     let codeModel: CodeRemoteBrowserModel?
     /// Scheduled tasks and connections, both on the website's own routes.
     let workspaceExtrasModel: NativeWorkspaceExtrasModel?
+    /// Fetches the account avatar through the authenticated transport.
+    /// `/api/files/<key>` requires a signed-in caller, which `AsyncImage`
+    /// cannot be.
+    var loadAvatar: ((URL) async -> Data?)?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -160,6 +164,7 @@ struct JunoMobileRootView: View {
             Group {
                 if let memorySettingsModel {
                     JunoMobileSettingsView(
+                        loadAvatar: loadAvatar,
                         model: memorySettingsModel,
                         conversationModel: conversationModel,
                         authModel: authModel,
@@ -209,7 +214,8 @@ struct JunoMobileRootView: View {
                 canCreateChat: conversationModel != nil,
                 openDestination: openSidebarDestination,
                 openConversation: openSidebarConversation,
-                newChat: startNewChat
+                newChat: startNewChat,
+                loadAvatar: loadAvatar
             )
             .frame(width: revealed, alignment: .leading)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -435,6 +441,7 @@ private struct JunoMobileSidebarDrawer: View {
     let openDestination: (JunoMobileSection) -> Void
     let openConversation: (String) -> Void
     let newChat: () -> Void
+    var loadAvatar: ((URL) async -> Data?)?
     @State private var renameTarget: NativeConversation?
     @State private var renameValue = ""
 
@@ -663,7 +670,8 @@ private struct JunoMobileSidebarDrawer: View {
             JunoAvatar(
                 imageURL: session.profile.imageURL,
                 name: session.profile.name,
-                size: 46
+                size: 46,
+                load: loadAvatar
             )
             .modifier(JunoGlassCircle())
         }

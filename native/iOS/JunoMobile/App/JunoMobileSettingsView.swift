@@ -9,6 +9,7 @@ import SwiftUI
 /// Real account settings and memory management projected from the encrypted
 /// local database, with durable optimistic mutations and conflict resolution.
 struct JunoMobileSettingsView: View {
+    var loadAvatar: ((URL) async -> Data?)?
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     var authModel: NativeAuthModel?
@@ -93,7 +94,8 @@ struct JunoMobileSettingsView: View {
                         JunoAvatar(
                             imageURL: session.profile.imageURL,
                             name: session.profile.name,
-                            size: 52
+                            size: 52,
+                            load: loadAvatar
                         )
                         VStack(alignment: .leading, spacing: 2) {
                             Text(session.profile.name ?? session.profile.email)

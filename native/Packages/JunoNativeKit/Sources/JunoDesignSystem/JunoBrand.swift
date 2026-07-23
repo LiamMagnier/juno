@@ -1,5 +1,23 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+public typealias JunoPlatformImage = UIImage
+#elseif canImport(AppKit)
+import AppKit
+public typealias JunoPlatformImage = NSImage
+#endif
+
+extension Image {
+    init(junoPlatformImage image: JunoPlatformImage) {
+        #if canImport(UIKit)
+        self.init(uiImage: image)
+        #else
+        self.init(nsImage: image)
+        #endif
+    }
+}
+
 /// Juno's mark: the chat-bubble glyph the website renders at every entry point.
 ///
 /// The asset is the very same `public/juno-mark.png` the web serves, imported
@@ -92,47 +110,91 @@ public struct JunoIconView: View {
     }
 }
 
+/// Why an avatar cannot simply be an `AsyncImage`.
+///
+/// Juno stores an uploaded avatar at `/api/files/<key>`, and that route calls
+/// `getCurrentUser()` — it is **authenticated**. A browser satisfies it with the
+/// session cookie it already holds. `AsyncImage` sends neither cookie nor bearer
+/// token, so it receives a 401 and renders its failure case, which is
+/// indistinguishable from an account that has no photo at all.
+///
+/// The avatar therefore has to be fetched through the same authenticated
+/// transport as everything else, which is what the `load` closure carries.
+public enum JunoAvatarLoading {}
+
 /// The signed-in account's real photo, with initials only as a genuine fallback.
 ///
 /// The image URL is the same `user.image` the web renders in its user menu,
 /// carried on the native profile from `/api/v1/bootstrap`. Initials appear only
 /// when the account truly has no photo — never as a placeholder while one loads,
 /// which would flash the wrong identity on every launch.
+/// Why an avatar cannot simply be an `AsyncImage`.
+///
+/// Juno stores an uploaded avatar at `/api/files/<key>`, and that route calls
+/// `getCurrentUser()` — it is **authenticated**. A browser satisfies it with the
+/// session cookie it already holds. `AsyncImage` sends neither cookie nor bearer
+/// token, so it receives a 401 and renders its failure case, which is
+/// indistinguishable from an account that has no photo at all.
+///
+/// The avatar therefore has to be fetched through the same authenticated
+/// transport as every other request, which is what `load` carries.
 public struct JunoAvatar: View {
     private let imageURL: URL?
     private let name: String?
     private let size: CGFloat
+    private let load: ((URL) async -> Data?)?
 
-    public init(imageURL: URL?, name: String?, size: CGFloat = 32) {
+    /// - Parameter load: fetches the image through the app's authenticated
+    ///   transport. Passing nil falls back to an unauthenticated fetch, which is
+    ///   correct only for a genuinely public URL.
+    public init(
+        imageURL: URL?,
+        name: String?,
+        size: CGFloat = 32,
+        load: ((URL) async -> Data?)? = nil
+    ) {
         self.imageURL = imageURL
         self.name = name
         self.size = size
+        self.load = load
     }
+
+    @State private var loaded: JunoPlatformImage?
+    @State private var failed = false
 
     public var body: some View {
         Group {
-            if let imageURL {
-                AsyncImage(url: imageURL) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    case .failure:
-                        initials
-                    case .empty:
-                        // Neutral while loading: showing initials here would
-                        // flash a different identity before the photo lands.
-                        Color.junoMuted
-                    @unknown default:
-                        initials
-                    }
-                }
-            } else {
+            if let loaded {
+                Image(junoPlatformImage: loaded).resizable().scaledToFill()
+            } else if imageURL == nil || failed {
                 initials
+            } else {
+                // Neutral while loading: showing initials here would flash a
+                // different identity before the photo lands.
+                Color.junoMuted
             }
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        .task(id: imageURL) { await fetch() }
         .accessibilityLabel(name.map { "Account, \($0)" } ?? "Account")
+    }
+
+    private func fetch() async {
+        guard let imageURL else { return }
+        loaded = nil
+        failed = false
+        let data: Data?
+        if let load {
+            data = await load(imageURL)
+        } else {
+            data = try? await URLSession.shared.data(from: imageURL).0
+        }
+        guard let data, let image = JunoPlatformImage(data: data) else {
+            failed = true
+            return
+        }
+        loaded = image
     }
 
     private var initials: some View {
