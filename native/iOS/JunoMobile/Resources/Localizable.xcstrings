@@ -2122,6 +2122,74 @@
         }
       }
     },
+    "memory.explanation": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno keeps helpful details from your chats so its answers fit you. You can pause it, edit anything it has learned, or erase it all."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno conserve des détails utiles de vos conversations pour mieux vous répondre. Vous pouvez mettre en pause, modifier ce qu'il a appris, ou tout effacer."
+          }
+        }
+      }
+    },
+    "memory.heading": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What Juno remembers"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce dont Juno se souvient"
+          }
+        }
+      }
+    },
+    "memory.state.active": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Learning from your chats"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apprend de vos conversations"
+          }
+        }
+      }
+    },
+    "memory.state.paused": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paused — nothing new is saved"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En pause — rien n'est enregistré"
+          }
+        }
+      }
+    },
     "navigation.artifacts": {
       "localizations": {
         "en": {

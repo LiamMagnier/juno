@@ -464,6 +464,16 @@ private struct JunoMobileFavoriteModelsView: View {
     }
 }
 
+/// A tight dot-plus-label, so the state reads as one badge rather than a row.
+private struct JunoMobileMemoryStateLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon.imageScale(.small)
+            configuration.title
+        }
+    }
+}
+
 private struct JunoMobileMemoryView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     @State private var newMemory = ""
@@ -474,10 +484,39 @@ private struct JunoMobileMemoryView: View {
 
     var body: some View {
         List {
+            // The website's hierarchy: the page states what it is in its own
+            // editorial voice, and the explanation sits under it as a caption
+            // rather than as a floating grey card with no heading — which is
+            // what made this read as a generic panel.
             Section {
-                Text("Juno remembers helpful details from your chats so it can give you better, more personalized answers.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text("memory.heading")
+                        .font(JunoSerif.pageHeading(compact: true))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("memory.explanation")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    // The live state, said plainly. Whether Juno is currently
+                    // learning is the first thing you come here to check.
+                    Label(
+                        (model.settings?.memoryEnabled ?? true)
+                            ? "memory.state.active" : "memory.state.paused",
+                        systemImage: (model.settings?.memoryEnabled ?? true)
+                            ? "circle.fill" : "pause.circle"
+                    )
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(
+                        (model.settings?.memoryEnabled ?? true)
+                            ? Color.junoSuccess : Color.junoCaution
+                    )
+                    .labelStyle(JunoMobileMemoryStateLabelStyle())
+                }
+                .padding(.vertical, JunoSpace.tight)
+                .listRowSeparator(.hidden)
+                .accessibilityElement(children: .combine)
             }
 
             Section {

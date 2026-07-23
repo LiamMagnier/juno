@@ -1550,6 +1550,31 @@ private struct JunoMobileFilesView: View {
     }
 }
 
+/// Maps a file to a glyph that says what it is.
+///
+/// The previous row drew one of two icons — image or document — for every file
+/// in the Library, so a PDF, a spreadsheet and a zip were indistinguishable
+/// while scanning. The extension is what a person actually recognises, so it
+/// drives the choice, with `kind` as the fallback the server already provides.
+enum JunoMobileFileGlyph {
+    static func symbol(for file: NativeProjectFile) -> String {
+        switch file.fileName.split(separator: ".").last?.lowercased() {
+        case "pdf": return "doc.richtext"
+        case "png", "jpg", "jpeg", "gif", "heic", "webp", "svg": return "photo"
+        case "mp4", "mov", "m4v", "webm": return "film"
+        case "mp3", "wav", "m4a", "aac": return "waveform"
+        case "zip", "gz", "tar", "7z": return "archivebox"
+        case "csv", "xlsx", "xls", "numbers": return "tablecells"
+        case "md", "txt", "rtf": return "doc.text"
+        case "json", "yaml", "yml", "xml", "toml": return "curlybraces"
+        case "swift", "ts", "tsx", "js", "jsx", "py", "rb", "go", "rs", "java", "c", "cpp", "h":
+            return "chevron.left.forwardslash.chevron.right"
+        default:
+            return file.kind == "IMAGE" ? "photo" : "doc"
+        }
+    }
+}
+
 private struct JunoMobileProjectFileRow: View {
     let file: NativeProjectFile
     let busy: Bool
@@ -1560,9 +1585,12 @@ private struct JunoMobileProjectFileRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: file.kind == "IMAGE" ? "photo" : "doc")
+            // The glyph says what the file *is*, and it is not coral: colouring
+            // every row's icon with the accent is what made these lists read as
+            // a wall of orange with no hierarchy.
+            Image(systemName: JunoMobileFileGlyph.symbol(for: file))
                 .font(.system(size: 20))
-                .foregroundStyle(Color.junoAccent)
+                .foregroundStyle(.secondary)
                 .frame(width: 26)
             Button(action: open) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1575,6 +1603,8 @@ private struct JunoMobileProjectFileRow: View {
                         if let projectName, !projectName.isEmpty {
                             Text("· \(projectName)").lineLimit(1)
                         }
+                        Text("· \(file.createdAt.formatted(.relative(presentation: .named)))")
+                            .lineLimit(1)
                     }
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -1590,7 +1620,7 @@ private struct JunoMobileProjectFileRow: View {
                 Button("Delete", role: .destructive, action: delete)
             } label: {
                 Image(systemName: "ellipsis")
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(.secondary)
             }
         }
     }
@@ -1653,9 +1683,12 @@ private struct JunoMobileArtifactsView: View {
                 List(filteredArtifacts) { artifact in
                     NavigationLink(value: artifact.id) {
                         HStack(spacing: 12) {
+                            // Secondary, not coral. The kind is what the glyph
+                            // communicates; the accent has to stay meaningful,
+                            // and it cannot if every row wears it.
                             Image(systemName: artifactIcon(artifact.kind))
                                 .font(.system(size: 20))
-                                .foregroundStyle(Color.junoAccent)
+                                .foregroundStyle(.secondary)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(artifact.title).font(.body.weight(.medium)).lineLimit(1)
