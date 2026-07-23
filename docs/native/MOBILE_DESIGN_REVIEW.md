@@ -58,6 +58,66 @@ and a control that does nothing is worse than one that is absent.
 `/api/v1/models` and the bootstrap payload became plan-aware, reusing the web's
 own `sortModelsForDisplay` and `getUserPlan`.
 
+## Phase 3 — Home (done)
+
+The generic "No messages yet" is gone. Home is the website's: the time-of-day
+greeting in Newsreader with the first name in coral italic, the composer as the
+centre of gravity, and the Write/Learn/Build/Decide/Compare modes — each a real
+opening instruction, so tapping one starts a conversation that has already begun.
+Captured at 02:54 showing "Moonlight chat" and at 02:58 showing "The world's
+asleep", both from the web's 0–5 bucket, which also confirms the phrase varies.
+
+**Newsreader is confirmed rendering on device**, in both appearances.
+
+## Phase 5 — messages and reasoning (done)
+
+The assistant's answer is borderless and takes the full column — it *is* the
+reading surface, and the large rounded card the owner rejected is gone. Only the
+user's words keep a surface: a compact warm bubble that stops short of full
+width. Replies render real Markdown rather than one flat string. Reasoning is a
+quiet secondary disclosure with no coral and no brain glyph.
+
+## Phase 6 — top navigation (done)
+
+The overflow drew its own ring: it was the `ellipsis.circle` SF Symbol, whose
+circle is part of the glyph. Now `ellipsis`, in all four places. The remaining
+ring on toolbar buttons is iOS 26's own toolbar treatment, not drawn by this code.
+
+## Phase 8 — Projects (done)
+
+Cards, not folder rows: name in the editorial serif, a one-line instruction
+preview, chat and file counts, changed-at, favourite state. Deliberately *not*
+Liquid Glass — glass belongs to chrome that floats over content, and a scrolling
+wall of it would put a blur behind every title for nothing.
+
+## Phase 9 — Project instructions (done)
+
+The screen printed the whole prompt — 6,000 characters on the owner's own
+project — before anything else. Now a three-line excerpt with a character and
+line count and an explicit Edit, matching the web. The excerpt collapses blank
+lines first so a spaced prompt does not spend its budget on whitespace. The full
+editor and its sync path are untouched.
+
+## Phase 15 — Code (done)
+
+Hosts → sessions → live transcript, on the real relay. `hosts` had never been
+populated: the model had the field but the client had no device call, so every
+other method needed a `deviceID` nobody could type. `/api/code/devices` already
+served the web and authenticates through `getCurrentUser`, which treats a bearer
+as authoritative — so the phone reaches it with **no backend change**. Hosts sort
+online-first. Two lifecycle bugs were found by looking at the screen rather than
+the code: the model was never started on sign-in, and in the preview harness it
+started after the view's task had run. Either leaves the screen stuck loading
+forever, because a model with no account returns early and never retries.
+
+## Known gap: the dark canvas is pure black
+
+Dark mode is legible and the brand colours are right, but the background is the
+system's near-black rather than Juno's warm `--background: 28 9% 9%`. The token
+is correct (`JunoColorToken.warmBlack`, and `Color.junoCanvasWarm`); the screens
+simply do not apply it — they inherit the system grouped background. Applying it
+touches every destination, so it is called out here rather than half-done.
+
 ## Not yet started
 
 Phases 3 (Home greeting — `JunoGreeting` is built and tested, not yet wired to a
