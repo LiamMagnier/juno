@@ -112,12 +112,24 @@ struct JunoMacRootView: View {
     private func authenticatedContent(
         session: NativeAuthenticatedSession
     ) -> some View {
-        switch productMode {
-        case .chat:
-            chatShell(session: session)
-        case .code:
-            codeShell(session: session)
+        // `.id(productMode)` is load-bearing. Each shell owns a whole
+        // `NavigationSplitView`, and a bare `switch` lets SwiftUI treat the two
+        // as the *same* view being reconfigured: for one layout pass the window
+        // holds both split views, AppKit's two-pass constraint update re-enters
+        // itself, and the app dies with an NSException from
+        // `_postWindowNeedsUpdateConstraints` — two
+        // `_NSConstraintBasedLayoutHostingView` frames in the trace, one per
+        // container. Distinct identities force the outgoing shell to be torn
+        // down before the incoming one is built.
+        Group {
+            switch productMode {
+            case .chat:
+                chatShell(session: session)
+            case .code:
+                codeShell(session: session)
+            }
         }
+        .id(productMode)
     }
 
     /// Juno Code brings its own sidebar, workspace and inspector, so a mode
