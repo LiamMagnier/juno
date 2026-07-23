@@ -323,7 +323,7 @@ function GridItemPreview({ item }: { item: LibItem }) {
           ) : (
             <FileText className="size-7 transition-transform duration-base ease-out-soft group-hover/preview:-translate-y-0.5 motion-reduce:transition-none" strokeWidth={1.45} />
           )}
-          <span className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-foreground/70">
+          <span className="font-mono text-[10px] font-medium text-foreground/70">
             {typeLabel(item)}
           </span>
         </span>
@@ -614,7 +614,7 @@ export default function LibraryPage() {
               >
                 <ArrowLeft className="size-4 transition-transform duration-fast ease-out-soft group-hover/back:-translate-x-0.5 motion-reduce:transition-none" />
               </Button>
-              <span className="inline-flex items-center gap-1.5 font-mono text-label uppercase tracking-[0.2em] text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 font-mono text-label text-muted-foreground">
                 <AppIcons.library className="size-3.5" strokeWidth={1.75} aria-hidden />
                 Library
               </span>
@@ -800,7 +800,7 @@ export default function LibraryPage() {
             <div
               className={cn(
                 browserGrid,
-                "h-10 border-b border-border/55 bg-muted/20 px-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground sm:px-4"
+                "h-10 border-b border-border/55 bg-muted/20 px-3 font-mono text-[10px] text-muted-foreground sm:px-4"
               )}
             >
               <SelectCheck

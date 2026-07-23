@@ -23,7 +23,7 @@ export default async function CodePullsPage() {
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Code</span>
+          <span className="font-mono text-label text-muted-foreground">Code</span>
         </div>
         <h1 className="font-serif text-display font-medium tracking-tight">Pull requests</h1>
         <p className="mb-6 mt-1 text-sm text-muted-foreground">

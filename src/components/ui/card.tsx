@@ -41,11 +41,11 @@ const CardTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivE
 );
 CardTitle.displayName = "CardTitle";
 
-/** Mono uppercase eyebrow for card sections — the Juno label voice. */
+/** Mono eyebrow for card sections — the Juno label voice. */
 const CardEyebrow = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLParagraphElement>>(
   ({ className, ...props }, ref) => (
     // text-label metrics spelled out — twMerge misreads `text-label` as a color and drops it next to text-muted-foreground.
-    <p ref={ref} className={cn("font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground", className)} {...props} />
+    <p ref={ref} className={cn("font-mono text-xs font-medium text-muted-foreground", className)} {...props} />
   )
 );
 CardEyebrow.displayName = "CardEyebrow";

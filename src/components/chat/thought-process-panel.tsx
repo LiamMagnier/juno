@@ -320,7 +320,7 @@ export function useRunClock(events: ClientActivityEvent[], streaming?: boolean) 
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/65">{children}</span>
+    <span className="font-mono text-[10px] font-medium text-muted-foreground/65">{children}</span>
   );
 }
 
@@ -545,7 +545,7 @@ export function ThoughtProcessPanel({
               <ul className="flex flex-col rounded-xl border border-warning/20 bg-warning/5 px-3">
                 {warnings.map((c) => (
                   <li key={c.id} className={cn(ROW, "motion-safe:animate-fade-in-up")}>
-                    <span className="font-mono text-caption uppercase tracking-[0.1em] text-warning">{c.label}</span>
+                    <span className="font-mono text-caption text-warning">{c.label}</span>
                     <span className="min-w-0 break-words text-body text-warning">{c.object}</span>
                     <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">
                       {c.offsetMs === null ? "—" : `+${formatSpan(c.offsetMs)}`}
@@ -603,7 +603,7 @@ export function ThoughtProcessPanel({
                 >
                   <span className="min-w-0 flex-1">
                     <span className="block text-body leading-5 text-foreground/82">Full thinking</span>
-                    <span className="block font-mono text-[9px] uppercase tracking-[0.1em] text-muted-foreground/55">Model-provided reasoning</span>
+                    <span className="block font-mono text-[9px] text-muted-foreground/55">Model-provided reasoning</span>
                   </span>
                   <ChevronRight aria-hidden="true" className={cn("size-3.5 text-muted-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none", rawOpen && "rotate-90")} />
                 </button>
@@ -662,7 +662,7 @@ export function ThoughtProcessPanel({
               <ul className="flex flex-col rounded-xl border border-border/45 bg-card/60 px-3">
                 {tools.map((call) => (
                   <li key={call.id} className={cn(ROW, "motion-safe:animate-fade-in")}>
-                    <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/65">{call.label}</span>
+                    <span className="font-mono text-caption text-muted-foreground/65">{call.label}</span>
                     <span className="min-w-0 truncate text-body text-foreground/80">{call.object}</span>
                     <span className="shrink-0 font-mono text-caption tabular-nums text-muted-foreground/55">{call.offsetMs === null ? "—" : `+${formatSpan(call.offsetMs)}`}</span>
                   </li>
@@ -679,7 +679,7 @@ export function ThoughtProcessPanel({
               <dl className="grid grid-cols-[4rem_minmax(0,1fr)] gap-x-3 gap-y-2 rounded-xl border border-border/45 bg-card/60 px-3 py-3">
                 {run.facts.map((f) => (
                   <React.Fragment key={f.label}>
-                    <dt className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground/60">{f.label}</dt>
+                    <dt className="font-mono text-caption text-muted-foreground/60">{f.label}</dt>
                     <dd className="min-w-0 break-words text-body text-foreground/80">{f.value}</dd>
                   </React.Fragment>
                 ))}

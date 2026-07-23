@@ -247,7 +247,7 @@ export function ReasoningSlider({
   return (
     <div className={cn("select-none", className)}>
       <div className="mb-2 flex min-h-7 items-center gap-2">
-        <span className="mr-auto font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Thinking</span>
+        <span className="mr-auto font-mono text-[10px] text-muted-foreground">Thinking</span>
         <span
           className="font-mono text-[11px] font-medium tracking-tight transition-colors duration-base ease-out-soft"
           style={isTop ? { color: ULTRA } : undefined}

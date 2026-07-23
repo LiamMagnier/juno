@@ -261,7 +261,7 @@ function Section({ label, source }: { label: string; source: string }) {
   const blocks = React.useMemo(() => findLearningBlocks(source), [source]);
   return (
     <section className="flex flex-col gap-1">
-      <h2 className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">{label}</h2>
+      <h2 className="font-mono text-[11px] font-semibold text-muted-foreground">{label}</h2>
       <div className="prose-juno">
         {blocks.map((block) => (
           <VisualLearningBlockRenderer key={block.blockId} parsed={block} />
@@ -276,7 +276,7 @@ export function LearningGallery() {
   return (
     <main className="mx-auto flex w-full max-w-[720px] flex-col gap-10 px-4 py-10">
       <header>
-        <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">Dev gallery</p>
+        <p className="font-mono text-[11px] font-semibold text-primary">Dev gallery</p>
         <h1 className="pt-1 font-serif text-2xl font-semibold tracking-tight">Inline learning blocks</h1>
         <p className="pt-1 text-sm text-muted-foreground">
           Rendered through the real parser + renderer path at chat width (720px). Resize for mobile; toggle dark mode from the OS.

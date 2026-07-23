@@ -29,7 +29,7 @@ export function Pricing() {
             <div className="flex items-baseline justify-between gap-2">
               <h3 className="font-serif text-heading font-medium">{plan.name}</h3>
               {plan.id === "PRO" && (
-                <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">Most popular</span>
+                <span className="font-mono text-[10px] text-primary">Most popular</span>
               )}
             </div>
             <p className="mt-3 flex items-baseline gap-1.5">

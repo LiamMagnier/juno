@@ -93,7 +93,7 @@ export function SourceFavicon({
           404 or a slow icon costs nothing but a fade. */}
       <span
         className={cn(
-          "absolute inset-0 grid place-items-center font-mono font-semibold uppercase leading-none text-muted-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
+          "absolute inset-0 grid place-items-center font-mono font-semibold leading-none text-muted-foreground transition-opacity duration-base ease-out-soft motion-reduce:transition-none",
           v.glyph,
           loaded && "opacity-0"
         )}

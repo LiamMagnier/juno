@@ -41,7 +41,7 @@ export function SharedArtifactViewer({
           {hasPreview && <TabsTrigger value="preview">Preview</TabsTrigger>}
           <TabsTrigger value="code">Code</TabsTrigger>
         </TabsList>
-        <span className="ml-auto shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
           {rt.label}
           {version > 1 ? ` · v${version}` : ""}
         </span>

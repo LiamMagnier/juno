@@ -34,7 +34,7 @@ export function CookieConsent() {
       aria-label="Cookie preferences"
       className="fixed bottom-4 left-4 z-50 w-[min(21rem,calc(100vw-2rem))] rounded-[18px] border border-border/60 bg-popover/80 p-4 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-rise-in"
     >
-      <p className="font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Cookies</p>
+      <p className="font-mono text-xs font-medium text-muted-foreground">Cookies</p>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
         Juno only uses essential cookies to keep you signed in — no analytics, no trackers. Your
         choice here also covers anything we might add later.{" "}

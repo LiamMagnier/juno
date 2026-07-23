@@ -43,7 +43,7 @@ function MenuRow({
 }) {
   const rowCls = "group h-9 gap-2.5 rounded-md px-2.5";
   const iconCls = cn(
-    "flex h-4 w-4 shrink-0 items-center justify-center transition-transform duration-150 ease-out-soft group-data-[highlighted]:scale-110",
+    "flex h-4 w-4 shrink-0 items-center justify-center transition-transform duration-fast ease-out-soft group-data-[highlighted]:scale-110",
     accent ? "text-primary" : "text-muted-foreground"
   );
   const inner = (
@@ -118,7 +118,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
               <span className="min-w-0 truncate text-sm font-medium text-foreground">
                 {user.name ?? user.email?.split("@")[0]}
               </span>
-              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium uppercase leading-none tracking-[0.14em] text-primary">
+              <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 font-mono text-[10px] font-medium leading-none text-primary">
                 {plan.name}
               </span>
             </div>
@@ -129,7 +129,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
         {/* Usage — a calm read of the same quota data, in the dot signature. */}
         <div className="mx-1 rounded-[10px] bg-muted/40 px-2.5 py-2">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Messages</span>
+            <span className="font-mono text-[10px] text-muted-foreground">Messages</span>
             <span className="truncate font-mono text-[11px] tracking-wide text-foreground">
               {quota.limit == null ? "No cap" : `${quota.used} / ${quota.limit}`}
             </span>
@@ -184,9 +184,9 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
             door as it goes. */}
         <DropdownMenuItem
           onSelect={() => void signOutToSignIn()}
-          className="group h-9 gap-2.5 rounded-md px-2.5 text-destructive transition-colors duration-150 ease-out-soft focus:bg-destructive focus:text-destructive-foreground data-[highlighted]:bg-destructive data-[highlighted]:text-destructive-foreground"
+          className="group h-9 gap-2.5 rounded-md px-2.5 text-destructive transition-colors duration-fast ease-out-soft focus:bg-destructive focus:text-destructive-foreground data-[highlighted]:bg-destructive data-[highlighted]:text-destructive-foreground"
         >
-          <LogOut className="h-4 w-4 shrink-0 transition-transform duration-150 ease-out-soft group-data-[highlighted]:translate-x-0.5" />
+          <LogOut className="h-4 w-4 shrink-0 transition-transform duration-fast ease-out-soft group-data-[highlighted]:translate-x-0.5" />
           <span>Sign out</span>
         </DropdownMenuItem>
       </DropdownMenuContent>

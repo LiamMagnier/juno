@@ -516,7 +516,7 @@ export default function ProjectDetailPage() {
                 </>
               )}
             </div>
-            <p className="mt-2 font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+            <p className="mt-2 font-mono text-caption text-muted-foreground">
               {plural(data.conversations.length, "chat")} · {plural(workspaceFiles.length, "file")} · Updated{" "}
               {timeAgo(data.project.updatedAt)}
             </p>
@@ -646,7 +646,7 @@ export default function ProjectDetailPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end" className="w-56">
-                                <p className="px-2 py-1.5 font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+                                <p className="px-2 py-1.5 font-mono text-caption text-muted-foreground">
                                   Move to project
                                 </p>
                                 <DropdownMenuSeparator />
@@ -703,7 +703,7 @@ export default function ProjectDetailPage() {
                       className="group flex h-24 w-full flex-col items-center justify-center border-b border-dashed bg-muted/20 transition-colors duration-fast ease-out-soft hover:bg-muted/40 motion-reduce:transition-none"
                     >
                       <Plus className="mb-1 h-5 w-5 text-muted-foreground/60 transition-transform duration-base ease-out-soft group-hover:scale-110 motion-reduce:transition-none" />
-                      <span className="font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+                      <span className="font-mono text-caption text-muted-foreground">
                         Add project image
                       </span>
                     </button>
@@ -729,7 +729,7 @@ export default function ProjectDetailPage() {
                           <CardEyebrow>Memory</CardEyebrow>
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption uppercase tracking-[0.1em] text-muted-foreground">
+                          <span className="rounded-full bg-muted px-2 py-0.5 font-mono text-caption text-muted-foreground">
                             Only you
                           </span>
                           <button

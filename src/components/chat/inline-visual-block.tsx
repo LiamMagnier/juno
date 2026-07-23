@@ -216,11 +216,11 @@ function Header({ block }: { block: VisualBlock }) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-md border bg-muted/45 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="rounded-md border bg-muted/45 px-2 py-1 font-mono text-[10px] text-muted-foreground">
               {typeLabel(block.type)}
             </span>
             {count > 0 && (
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+              <span className="font-mono text-[10px] text-muted-foreground/70">
                 {count} {count === 1 ? "part" : "parts"}
               </span>
             )}
@@ -267,7 +267,7 @@ function CardsBlock({ block }: { block: VisualBlock }) {
       </div>
       {/* Keyed so the focus panel animates on each selection. */}
       <div key={active} className="rounded-lg border bg-muted/30 p-4 motion-safe:animate-fade-in">
-        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           <Maximize2 className="h-3.5 w-3.5" /> Focus
         </div>
         <h4 className="mt-3 text-base font-semibold leading-6">{itemTitle(selected, "Selected card")}</h4>
@@ -318,7 +318,7 @@ function FlowBlock({ block }: { block: VisualBlock }) {
       </div>
       {/* Keyed so the detail panel animates on each selection. */}
       <div key={active} className="rounded-lg border bg-muted/30 p-4 motion-safe:animate-fade-in">
-        <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           <CornerDownRight className="h-3.5 w-3.5 text-primary" /> Selected node
         </div>
         <h4 className="mt-3 text-lg font-semibold leading-tight">{itemTitle(selected, `Node ${active + 1}`)}</h4>
@@ -354,7 +354,7 @@ function ComparisonBlock({ block }: { block: VisualBlock }) {
         className="grid gap-2"
         style={{ gridTemplateColumns: `minmax(7rem, 0.8fr) repeat(${columns.length}, minmax(9rem, 1fr))` }}
       >
-        <div className="rounded-lg border bg-muted/45 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="rounded-lg border bg-muted/45 px-3 py-2 font-mono text-[10px] text-muted-foreground">
           Focus
         </div>
         {columns.map((col) => (
@@ -391,7 +391,7 @@ function QuizBlock({ block }: { block: VisualBlock }) {
   return (
     <div className="space-y-3 p-4">
       <div>
-        <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-muted-foreground">Quick check</p>
+        <p className="font-mono text-[10px] text-muted-foreground">Quick check</p>
         <h4 className="mt-1 text-base font-semibold leading-snug">{block.question ?? block.title ?? "Which option fits best?"}</h4>
       </div>
       <div className="grid gap-2">

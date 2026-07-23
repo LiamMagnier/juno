@@ -12,7 +12,7 @@ import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
 import { Composer } from "@/components/chat/composer";
-import { EmptyGreeting, SuggestionPills } from "@/components/chat/empty-state";
+import { EmptyGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
@@ -135,6 +135,22 @@ function titleMessages(messages: ClientMessage[]): { role: "USER" | "ASSISTANT";
     .filter((m) => (m.role === "USER" || m.role === "ASSISTANT") && m.content.trim())
     .slice(0, 8)
     .map((m) => ({ role: m.role as "USER" | "ASSISTANT", content: m.content.slice(0, 4000) }));
+}
+
+/* Normal ↔ incognito is a cross-fade between two layers stacked in the same
+ * grid cell. Fading both on the same curve leaves a beat where each sits at
+ * half opacity and the two read as one smeared layer, so the outgoing one
+ * leaves on `fast` and the incoming one arrives on `slow` a frame later.
+ * Only opacity/transform animate — never `all`, which used to drag layout
+ * properties into the same 500ms and stutter the whole transcript. */
+function modeLayer(shown: boolean) {
+  return cn(
+    "col-start-1 row-start-1 flex w-full flex-col items-center justify-center",
+    "transition-[opacity,transform] ease-out-soft motion-reduce:transition-none",
+    shown
+      ? "scale-100 opacity-100 duration-slow [transition-delay:90ms]"
+      : "pointer-events-none scale-[0.97] opacity-0 duration-fast [transition-delay:0ms]"
+  );
 }
 
 function PrivateGhostMark({ className }: { className?: string }) {
@@ -1385,8 +1401,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       {/* Model parameters + incognito ghost, top-right in normal mode. */}
       <div
         className={cn(
-          "absolute right-3 top-3 z-20 flex items-center gap-0.5 md:right-4 md:top-4 transition-all duration-500 ease-out-soft",
-          privateMode ? "pointer-events-none scale-90 opacity-0" : "scale-100 opacity-100"
+          "absolute right-3 top-3 z-20 flex items-center gap-0.5 md:right-4 md:top-4",
+          "transition-[opacity,transform] ease-out-soft motion-reduce:transition-none",
+          privateMode
+            ? "pointer-events-none scale-95 opacity-0 duration-fast"
+            : "scale-100 opacity-100 duration-slow [transition-delay:90ms]"
         )}
       >
         {/* Share — saved, non-private chats with at least one message. */}
@@ -1451,7 +1470,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10">
                 <AppIcons.projects className="h-3 w-3 text-primary" />
               </span>
-              <span className="hidden font-mono text-label uppercase text-muted-foreground sm:inline">
+              <span className="hidden font-mono text-label text-muted-foreground sm:inline">
                 Project
               </span>
               <span aria-hidden className="hidden h-3 w-px shrink-0 bg-border/70 sm:block" />
@@ -1502,16 +1521,21 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <span className="absolute inline-flex h-full w-full rounded-full bg-primary opacity-70 motion-safe:animate-ping" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-primary" />
               </span>
-              <span className="font-mono text-label uppercase text-muted-foreground">Memory updated</span>
+              <span className="font-mono text-label text-muted-foreground">Memory updated</span>
             </span>
           </div>
         )}
 
-        {/* Incognito Header Bar */}
+        {/* Incognito header bar — the only layer that genuinely changes layout,
+            so it owns the height animation alone and everything else in the
+            morph sticks to opacity/transform. */}
         <div
           className={cn(
-            "overflow-hidden transition-all duration-500 ease-out-soft",
-            privateMode ? "h-12 opacity-100 border-b bg-background/95" : "h-0 opacity-0 border-b-transparent pointer-events-none"
+            "overflow-hidden border-b border-transparent",
+            "transition-[height,opacity,border-color] duration-slow ease-out-soft motion-reduce:transition-none",
+            privateMode
+              ? "h-12 border-border bg-background/95 opacity-100"
+              : "pointer-events-none h-0 opacity-0"
           )}
         >
           <div className="flex h-12 shrink-0 items-center justify-between px-4 text-sm text-foreground/80 sm:px-5">
@@ -1521,7 +1545,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 <span className="min-w-0 truncate">
                   Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
                 </span>
-                <span className="shrink-0 font-mono text-label uppercase text-muted-foreground">
+                <span className="shrink-0 font-mono text-label text-muted-foreground">
                   {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
                 </span>
               </div>
@@ -1543,13 +1567,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </div>
         </div>
 
-        {/* Main Content Area Container (morphs into rounded card in incognito mode) */}
+        {/* Main content area — morphs into an inset dashed card in incognito.
+            The property list is explicit: `transition-all` also animated the
+            flex sizing, which reflowed the whole transcript on every frame.
+            The margin is the one layout property left, so it runs on `base`
+            rather than a half-second. */}
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-all duration-500 ease-out-soft",
+            "flex min-h-0 flex-1 flex-col overflow-hidden border border-transparent",
+            "transition-[margin,border-radius,border-color,background-color,box-shadow] duration-base ease-out-soft motion-reduce:transition-none",
             privateMode
-              ? "m-2 border border-dashed border-foreground/25 bg-background text-foreground rounded-[18px] sm:m-3 sm:rounded-[22px] shadow-soft"
-              : "m-0 border-transparent bg-transparent rounded-none"
+              ? "m-2 rounded-lg border-dashed border-border bg-background shadow-soft sm:m-3 sm:rounded-panel"
+              : "m-0 rounded-none bg-transparent"
           )}
         >
           {hasMessages ? (
@@ -1587,8 +1616,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               )}
               <div
                 className={cn(
-                  "w-full transition-all duration-500 ease-out-soft",
-                  privateMode ? "px-2 sm:px-4 pb-1" : "px-0 pb-1"
+                  "w-full pb-1 transition-[padding] duration-base ease-out-soft motion-reduce:transition-none",
+                  privateMode ? "px-2 sm:px-4" : "px-0"
                 )}
               >
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
@@ -1608,27 +1637,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             <div className="min-h-0 flex-1 overflow-y-auto relative h-full flex flex-col">
               <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
                 <div className="relative w-full flex flex-col items-center justify-center">
-                  {/* Headers cross-fade (CSS Grid overlap) */}
-                  <div className="grid grid-cols-1 grid-rows-1 w-full justify-items-center mb-5 sm:mb-6">
-                    {/* Normal Mode Greeting */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode || chat.pendingClarification) ? "pointer-events-none scale-95 opacity-0" : "scale-100 opacity-100"
-                      )}
-                    >
+                  {/* Greeting ↔ incognito heading, stacked in one grid cell. */}
+                  <div className="mb-5 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-6">
+                    <div className={modeLayer(!privateMode && !chat.pendingClarification)}>
                       <EmptyGreeting />
                     </div>
 
-                    {/* Private Mode Header */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode && !chat.pendingClarification) ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
-                      )}
-                    >
+                    <div className={modeLayer(privateMode && !chat.pendingClarification)}>
+                      {/* Same ghost as the toggle and the header bar — the
+                          heading used to sprout an unrelated ✳ instead. */}
                       <h1 className="flex items-center gap-3 font-serif text-3xl font-normal tracking-tight text-foreground sm:text-display">
-                        <span className="text-primary">✳</span>
+                        <PrivateGhostMark className="h-7 w-7 shrink-0 text-primary sm:h-8 sm:w-8" />
                         You&apos;re incognito
                       </h1>
                     </div>
@@ -1637,7 +1656,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   {/* Composer */}
                   <div
                     className={cn(
-                      "w-full transition-all duration-500 ease-out-soft z-10",
+                      "z-10 w-full transition-[max-width] duration-base ease-out-soft motion-reduce:transition-none",
                       privateMode ? "max-w-[42.5rem]" : "max-w-[44rem]"
                     )}
                   >
@@ -1646,29 +1665,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     {composer}
                   </div>
 
-                  {/* Footer options/pills cross-fade (CSS Grid overlap) */}
-                  <div className="grid grid-cols-1 grid-rows-1 w-full justify-items-center mt-3 sm:mt-4">
-                    {/* Normal Mode Suggestion Pills */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode || chat.pendingClarification) ? "pointer-events-none scale-95 opacity-0" : "scale-100 opacity-100"
-                      )}
-                    >
-                      <SuggestionPills onPick={(t) => void sendFromComposer(t, [])} />
-                    </div>
-
-                    {/* Private Mode Info */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode && !chat.pendingClarification) ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
-                      )}
-                    >
-                      <p className="max-w-md text-center text-sm leading-6 text-muted-foreground sm:text-base">
-                        Incognito chats aren&apos;t saved, added to memory, or used to train models.
-                      </p>
-                    </div>
+                  {/* Incognito's standing promise — the only thing under the
+                      composer now that the starter pills are gone. */}
+                  <div
+                    className={cn(
+                      "mt-3 w-full transition-[opacity,transform] ease-out-soft motion-reduce:transition-none sm:mt-4",
+                      privateMode && !chat.pendingClarification
+                        ? "scale-100 opacity-100 duration-slow [transition-delay:90ms]"
+                        : "pointer-events-none scale-[0.97] opacity-0 duration-fast [transition-delay:0ms]"
+                    )}
+                  >
+                    <p className="mx-auto max-w-md text-center text-sm leading-6 text-muted-foreground sm:text-base">
+                      Incognito chats aren&apos;t saved, added to memory, or used to train models.
+                    </p>
                   </div>
 
                 </div>
@@ -1677,8 +1686,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
               <p
                 className={cn(
-                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45 transition-opacity duration-500 ease-out-soft",
-                  privateMode ? "pointer-events-none opacity-0" : "opacity-100"
+                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45",
+                  "transition-opacity ease-out-soft motion-reduce:transition-none",
+                  privateMode
+                    ? "pointer-events-none opacity-0 duration-fast"
+                    : "opacity-100 duration-slow [transition-delay:90ms]"
                 )}
               >
                 Juno can be wrong — worth a second look on anything that matters.

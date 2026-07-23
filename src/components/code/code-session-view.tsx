@@ -559,7 +559,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
         {dragging && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
-            <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
+            <span className="font-mono text-label text-primary">Drop to attach</span>
           </div>
         )}
 
@@ -658,7 +658,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                  <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+                  <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
                       <Paperclip className="text-muted-foreground" />
@@ -688,7 +688,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
                 device-local path is honest secondary metadata, on hover. */}
             <span
               title={isCloud ? cloudRepoFull ?? undefined : workspacePath ?? undefined}
-              className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label uppercase text-muted-foreground"
+              className="flex min-w-0 flex-1 items-center gap-1.5 truncate font-mono text-label text-muted-foreground"
             >
               {isCloud && <Cloud className="h-3 w-3 shrink-0" aria-hidden="true" />}
               <span className="min-w-0 truncate">{isCloud ? cloudRepoFull ?? workspaceName : workspaceName}</span>
@@ -821,7 +821,7 @@ export function CodeSessionView({ conversation, initialMessages }: CodeSessionVi
             )}
         <span className="flex-1" />
         {taskChip && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground motion-safe:animate-fade-in">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-[10px] text-muted-foreground motion-safe:animate-fade-in">
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full",
@@ -929,7 +929,7 @@ function AgentCards({ agents }: { agents: CodeAgentState[] }) {
       aria-label="Helper agents"
       className="mx-1 mb-2 rounded-xl border border-border/70 bg-muted/40 px-3 py-2 motion-safe:animate-rise-in"
     >
-      <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+      <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
         <span
           className={cn(
             "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -952,7 +952,7 @@ function AgentCards({ agents }: { agents: CodeAgentState[] }) {
               <span className="flex items-baseline gap-2">
                 <span className="font-medium capitalize text-foreground/90">{agent.role}</span>
                 <span className="truncate text-foreground/80">{agent.title}</span>
-                <span className={cn("ml-auto shrink-0 font-mono text-[10px] uppercase", tone)}>
+                <span className={cn("ml-auto shrink-0 font-mono text-[10px]", tone)}>
                   {status.replace("_", " ")}
                 </span>
               </span>
@@ -1030,7 +1030,7 @@ function ApprovalCard({
         {(risk === "destructive" || risk === "outside") && (
           <span
             className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em]",
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10px]",
               risk === "destructive"
                 ? "border-destructive/40 bg-destructive/10 text-destructive"
                 : "border-warning/40 bg-warning/10 text-warning-foreground"

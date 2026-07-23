@@ -450,7 +450,7 @@ const TERMINAL_STYLE = `<style>
 :root{color-scheme:dark}
 html,body{margin:0;height:100%;background:#0b0b0e;color:#e7e7ea}
 #wrap{display:flex;flex-direction:column;height:100%;font:13px/1.65 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
-#bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #1e1e24;background:#111117;color:#9a9aa4;font-size:11px;letter-spacing:.08em;text-transform:uppercase;flex:0 0 auto}
+#bar{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #1e1e24;background:#111117;color:#9a9aa4;font-size:11px;letter-spacing:.02em;flex:0 0 auto}
 #dot{width:8px;height:8px;border-radius:50%;background:#f5a524;box-shadow:0 0 8px currentColor}
 #term{flex:1 1 auto;overflow:auto;padding:12px 14px;white-space:pre-wrap;word-break:break-word}
 .ln{display:block;padding:1px 0}

@@ -69,7 +69,7 @@ export function SharedLinksCard() {
       <div className="mb-4 flex items-end justify-between gap-3">
         <CardEyebrow>Shared links</CardEyebrow>
         {shares && shares.length > 0 && (
-          <p className="shrink-0 font-mono text-caption uppercase text-muted-foreground">
+          <p className="shrink-0 font-mono text-caption text-muted-foreground">
             {shares.length} active
           </p>
         )}

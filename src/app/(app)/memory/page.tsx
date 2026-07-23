@@ -311,7 +311,7 @@ export default function MemoryPage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Memory</span>
+          <span className="font-mono text-label text-muted-foreground">Memory</span>
         </div>
         <h1 className="font-serif text-display font-medium tracking-tight">What Juno remembers</h1>
         <p className="mb-6 mt-1 text-sm text-muted-foreground">

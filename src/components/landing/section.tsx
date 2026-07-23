@@ -22,7 +22,7 @@ export function Section({
 }) {
   return (
     <section id={id} className={cn("mx-auto w-full max-w-6xl px-6 py-14 sm:py-16", className)}>
-      <p className="font-mono text-label uppercase text-muted-foreground">{eyebrow}</p>
+      <p className="font-mono text-label text-muted-foreground">{eyebrow}</p>
       <h2 className="mt-3 max-w-2xl text-balance font-serif text-display font-medium tracking-tight">{heading}</h2>
       {lede && <p className="mt-3 max-w-2xl text-pretty text-body-lg text-muted-foreground">{lede}</p>}
       {children}

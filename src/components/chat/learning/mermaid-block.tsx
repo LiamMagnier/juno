@@ -36,7 +36,7 @@ export const MermaidBlock = React.memo(function MermaidBlock({ code }: { code: s
   return (
     <div className="my-4 overflow-hidden rounded-[18px] border border-border/70 bg-card/90 shadow-pop">
       <div className="flex items-center justify-between border-b border-border/60 bg-[linear-gradient(180deg,hsl(var(--sheen)),transparent)] px-3 py-2 backdrop-blur-md">
-        <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+        <span className="font-mono text-[10px] font-semibold text-muted-foreground">
           Diagram · Mermaid
         </span>
         <button

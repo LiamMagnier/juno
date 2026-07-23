@@ -21,7 +21,7 @@ export function AdminNav({ current, reviewCount = 0 }: { current: AdminSection; 
           href={tab.href}
           aria-current={tab.id === current ? "page" : undefined}
           className={cn(
-            "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-mono text-xs font-medium uppercase tracking-[0.14em] transition-colors duration-fast ease-out-soft",
+            "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 font-mono text-xs font-medium transition-colors duration-fast ease-out-soft",
             tab.id === current
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"

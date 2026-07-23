@@ -234,7 +234,7 @@ export default function ArtifactsPage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Canvas</span>
+          <span className="font-mono text-label text-muted-foreground">Canvas</span>
         </div>
         <div className="flex items-baseline justify-between gap-4">
           <h1 className="flex items-center gap-2.5 font-serif text-display font-medium tracking-tight">
@@ -274,7 +274,7 @@ export default function ArtifactsPage() {
                       onClick={() => setTypeFilter(t)}
                       aria-pressed={selected}
                       className={cn(
-                        "pressable rounded-full border px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em]",
+                        "pressable rounded-full border px-2.5 py-1 font-mono text-[10px]",
                         selected
                           ? "border-primary/40 bg-primary/10 text-primary"
                           : "border-border/60 text-muted-foreground hover:border-border hover:text-foreground"
@@ -360,7 +360,7 @@ export default function ArtifactsPage() {
                     className="min-w-0 flex-1 outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:rounded-[16px] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-primary/40"
                   >
                     <span className="block truncate text-sm font-medium leading-5">{item.title || "Untitled artifact"}</span>
-                    <span className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                    <span className="mt-0.5 flex min-w-0 items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
                       <span className="shrink-0">{rt.label}</span>
                       {item.version > 1 && (
                         <>

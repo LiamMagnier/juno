@@ -32,7 +32,7 @@ function ArtifactChip({ title, type }: { title: string; type: ArtifactType }) {
       </span>
       <div className="min-w-0">
         <p className="truncate text-sm font-semibold">{title}</p>
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <p className="font-mono text-[10px] text-muted-foreground">
           {runtimeFor(type).label} artifact
         </p>
       </div>
@@ -47,7 +47,7 @@ function AssistantMessage({ message, artifactsByIdentifier }: { message: SharedC
   return (
     <div>
       {modelName && (
-        <p className="mb-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{modelName}</p>
+        <p className="mb-1.5 font-mono text-[10px] text-muted-foreground">{modelName}</p>
       )}
       <div className="space-y-1">
         {parts.map((part, i) => {

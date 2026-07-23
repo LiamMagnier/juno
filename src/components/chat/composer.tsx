@@ -258,7 +258,7 @@ function snapPaletteToRow(list: HTMLElement | null, limit: number) {
 function PaletteEyebrow({ label, counter }: { label: string; counter?: string }) {
   return (
     <div aria-hidden className="flex items-baseline justify-between gap-2 px-2 pb-1 pt-1.5">
-      <span className="font-mono text-label uppercase text-muted-foreground">{label}</span>
+      <span className="font-mono text-label text-muted-foreground">{label}</span>
       {counter && <span className="font-mono text-caption tabular-nums text-muted-foreground/60">{counter}</span>}
     </div>
   );
@@ -1307,7 +1307,7 @@ export function Composer({
   // Voice mode's TOOLS group is a single row (research), so it stays a plain
   // label — a disclosure over one item is just a lid.
   const toolsLabel = (
-    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label uppercase">
+    <DropdownMenuLabel className="flex items-center gap-1.5 font-mono text-label">
       <Blocks className="h-3.5 w-3.5" />
       Tools
     </DropdownMenuLabel>
@@ -1339,7 +1339,7 @@ export function Composer({
       {/* Matches the sibling ADD eyebrow exactly — DropdownMenuLabel resolves to
           text-muted-foreground, so a /70 here made the two group headers read as
           different levels of the hierarchy when they are peers. */}
-      <span className="min-w-0 flex-1 truncate font-mono text-label uppercase text-muted-foreground">Tools</span>
+      <span className="min-w-0 flex-1 truncate font-mono text-label text-muted-foreground">Tools</span>
       <span
         aria-hidden
         className={cn(
@@ -1446,7 +1446,7 @@ export function Composer({
         {dragging && !privateMode && (
           <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
             <FileUp className="h-6 w-6 text-primary" />
-            <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
+            <span className="font-mono text-label text-primary">Drop to attach</span>
           </div>
         )}
 
@@ -1539,7 +1539,7 @@ export function Composer({
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="shrink-0 font-mono text-label uppercase text-primary">
+                <span className="shrink-0 font-mono text-label text-primary">
                   {quote.mode === "modify" ? "Modify" : "Ask"}
                 </span>
                 <span className="min-w-0 truncate text-sm font-medium">{quote.title}</span>
@@ -1853,7 +1853,7 @@ export function Composer({
                   </>
                 ) : (
                   <>
-                    <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+                    <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
 
                     {/* Photos + files + library are one gesture ("give Juno something
                         to look at"), so they collapse behind a single row. */}

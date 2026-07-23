@@ -186,8 +186,16 @@ whole UI; **JetBrains Mono** is metadata/code. Tailwind's `font-sans` *and*
 `font-serif` both resolve to Newsreader (serif-first UI). Type scale is size-driven
 (3× jumps), not weight-driven: `text-hero`, `text-display`, `text-title` (22px),
 `text-heading` (18px), `text-body` (15px), `text-label` (12px eyebrow),
-`text-caption` (11px). Eyebrows pair `text-label`/`text-caption` with
-`font-mono uppercase` (e.g. `MEMORY`, `THINKING`, `SOURCE`, `TOKENS`).
+`text-caption` (11px). Eyebrows pair `text-label`/`text-caption` with `font-mono`
+in **sentence case** (e.g. `Memory`, `Thinking`, `Source`, `Tokens`).
+
+**No all-caps anywhere in the UI.** The `uppercase` utility and the wide
+letter-spacing that propped it up (`tracking-[0.14em]` and friends) are gone from
+every component, page and email template — mono, size and color already separate
+a label from body text, and shouting on top of that just made the interface
+loud. Mono keeps its wide tracking in exactly one place: the `AsciiWordmark`
+logotype. Acronyms that are genuinely capitalized (file extensions, `CGU`,
+provider names) are literal strings, not a text transform.
 
 ### 3.3 Motion, radius, elevation
 
@@ -209,6 +217,18 @@ Warm-glass is for **chrome only** (menus, popovers, dialogs, toasts, composer sh
 — never on reading surfaces. It carries a warm `--card`/`--popover` tint and reuses
 Juno's own `--sheen` specular highlight, never a cool system rim.
 
+**One surface per layer type.** Every modal starts from `dialogSurfaceClassName`
+and every self-drawn close button from `dialogCloseClassName`, both exported by
+`src/components/ui/dialog.tsx`. Callers pass size and position only. The panels
+that used to opt out — the announcement popup, the image editor, the onboarding
+card, the composer's clarification popover, the command palette — each carried
+its own radius, border weight, fill and blur, which is what made some dialogs
+look a generation behind the others. Floating layers below dialog rank
+(dictation transcript, onboarding's model list, the cookie card) use the popover
+recipe instead: `rounded-[18px]`/`[14px]` + `border-border/60` + `bg-popover/80`
++ `.glass-raised`. Toasts are popovers that show up on their own, so they share
+the popover's 18px and material rather than inventing a third.
+
 ### 3.4 Signature language
 
 The dot/ASCII constellation (`src/components/signature/`): `DotField` (interactive
@@ -216,8 +236,11 @@ cursor-reactive background grid), `DotMatrixMark` (5×5 logo), `ThinkingDots` (3
 grid with one moving dark point — the "Juno is thinking" affordance),
 `DotIdenticon`-style deterministic avatars, dot-fill quota bars, `DottedDivider`,
 and the particle `VoiceOrb`. The new-chat empty state is a serif `EmptyGreeting`
-(personalized) with category starter pills. Dots breathe at rest;
-coral is the only saturated color in the dot systems.
+(personalized) and the composer — nothing else. It used to carry a row of
+Write/Learn/Build/Decide starter pills that expanded into three canned prompts
+each; they were removed, along with their bespoke icon-animation CSS. Compare
+still has a home in the command palette. Dots breathe at rest; coral is the only
+saturated color in the dot systems.
 
 ### 3.5 The flat-transcript law
 
@@ -455,6 +478,15 @@ the model (see §6.3).
   "private"`), no memory, no attachments (**400** `PRIVATE_ATTACHMENTS_UNSUPPORTED`),
   no connectors, no regenerate; but budget, quota, and moderation still apply and
   spend is still recorded.
+  Visually it is a **cross-fade, not a re-render**: the greeting and the incognito
+  heading occupy the same grid cell (`modeLayer()` in `chat-view.tsx`), the
+  outgoing layer leaves on `duration-fast` and the incoming one arrives on
+  `duration-slow` 90 ms later so the two are never both at half opacity. Every
+  layer animates `opacity`/`transform` only and gates on `motion-reduce`. The
+  inset dashed card is the single exception that touches layout, so its margin
+  runs on `duration-base`; it used to be `transition-all duration-500`, which
+  dragged the flex sizing into the animation and stuttered the whole transcript.
+  The heading, the header bar and the toggle all use the same ghost mark.
 - **Artifacts** are emitted by the model as `<juno:artifact …>…</juno:artifact>` tags
   and persisted on completion (`persistArtifacts`); reusing an identifier appends a new
   version. Targeted canvas edits use an optimistic compare-and-bump patch protocol.

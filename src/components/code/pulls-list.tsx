@@ -195,14 +195,14 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
   if (items.length === 0) {
     return emptyNote ? (
       <section>
-        <h2 className="mb-2 font-mono text-label uppercase text-muted-foreground">{label}</h2>
+        <h2 className="mb-2 font-mono text-label text-muted-foreground">{label}</h2>
         <p className="text-sm text-muted-foreground">{emptyNote}</p>
       </section>
     ) : null;
   }
   return (
     <section>
-      <h2 className="mb-2 font-mono text-label uppercase text-muted-foreground">{label}</h2>
+      <h2 className="mb-2 font-mono text-label text-muted-foreground">{label}</h2>
       <div className="space-y-5">
         {groupByRepo(items).map(([repo, pulls]) => (
           <div key={repo}>
@@ -238,7 +238,7 @@ function PullSection({ label, items, emptyNote }: { label: string; items: PullIt
                     </span>
                     <span className="flex shrink-0 items-center gap-2">
                       {pr.updatedAt && (
-                        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                        <span className="font-mono text-[10px] text-muted-foreground">
                           {timeAgo(pr.updatedAt)}
                         </span>
                       )}

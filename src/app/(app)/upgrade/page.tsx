@@ -96,7 +96,7 @@ export default function UpgradePage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Plans</span>
+          <span className="font-mono text-label text-muted-foreground">Plans</span>
         </div>
         <h1 className="font-serif text-display font-medium tracking-tight">
           Pick the plan that <span className="italic text-primary">fits you</span>.
@@ -165,7 +165,7 @@ export default function UpgradePage() {
                       aria-selected={active}
                       onClick={() => setMaxTier(t.id)}
                       className={cn(
-                        "rounded-full px-3 py-1 font-mono text-caption uppercase tracking-wide transition-colors duration-fast ease-out-soft",
+                        "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
                         active
                           ? "bg-card text-foreground shadow-pop"
                           : "text-muted-foreground hover:text-foreground"
@@ -225,7 +225,7 @@ function PlanCard({
       )}
     >
       {popular && (
-        <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 font-mono text-label uppercase text-primary-foreground shadow-soft">
+        <div className="absolute -top-3 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-primary px-3 py-1 font-mono text-label text-primary-foreground shadow-soft">
           ◆ Most popular
         </div>
       )}

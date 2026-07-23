@@ -108,7 +108,7 @@ export function SubmitDialog({
 
           {similar.length > 0 && (
             <div className="rounded-lg border border-border/70 bg-muted/40 p-3">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+              <p className="mb-2 font-mono text-[10px] text-muted-foreground">
                 Similar requests — vote instead?
               </p>
               <ul className="space-y-1">

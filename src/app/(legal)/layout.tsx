@@ -22,7 +22,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
         <header className="flex items-center justify-between gap-4 motion-safe:animate-fade-in">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 rounded-md font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
+            className="inline-flex items-center gap-2 rounded-md font-mono text-xs font-medium text-muted-foreground transition-colors duration-fast ease-out-soft hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
             Retour à Juno
@@ -46,7 +46,7 @@ export default function LegalLayout({ children }: { children: React.ReactNode })
               "[&_a]:text-foreground [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-primary",
               // Tables (plans/prix in the CGU) scroll inside their wrapper on narrow screens.
               "[&_table]:mt-4 [&_table]:w-full [&_table]:border-collapse [&_table]:text-sm",
-              "[&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-mono [&_th]:text-xs [&_th]:font-medium [&_th]:uppercase [&_th]:tracking-[0.14em] [&_th]:text-muted-foreground",
+              "[&_th]:border-b [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:text-left [&_th]:font-mono [&_th]:text-xs [&_th]:font-medium [&_th]:text-muted-foreground",
               "[&_td]:border-b [&_td]:border-border/60 [&_td]:px-3 [&_td]:py-2",
             ].join(" ")}
           >

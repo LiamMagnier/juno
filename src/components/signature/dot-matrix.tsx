@@ -34,7 +34,9 @@ export function DotMatrixMark({ className }: { className?: string }) {
 export function AsciiWordmark({ className }: { className?: string }) {
   return (
     <span className={cn("inline-flex items-center justify-center", className)}>
-      <span className="font-mono text-sm font-semibold uppercase tracking-[0.28em]">Juno</span>
+      {/* A logotype, not a label — it keeps its wide tracking now that the
+          rest of the mono voice has dropped all-caps. */}
+      <span className="font-mono text-sm font-semibold tracking-[0.12em]">Juno</span>
     </span>
   );
 }

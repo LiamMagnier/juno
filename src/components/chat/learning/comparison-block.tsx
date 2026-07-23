@@ -92,7 +92,7 @@ export function ComparisonBlock({ comparison }: { comparison: ComparisonData }) 
                 const value = row.values[colIndex];
                 return (
                   <div key={colIndex} className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
-                    <dt className="min-w-0 truncate font-mono text-[11px] uppercase tracking-[0.08em] text-muted-foreground">
+                    <dt className="min-w-0 truncate font-mono text-[11px] text-muted-foreground">
                       {column}
                     </dt>
                     <dd className={cn("min-w-0 break-words text-sm leading-5", value ? "text-foreground/80" : "text-muted-foreground/40")}>

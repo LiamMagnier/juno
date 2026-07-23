@@ -128,7 +128,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
         >
           <span className="flex flex-col items-center gap-2 px-5 text-center">
             {failed ? <ImageOff className="size-5" /> : <ImageIcon className="size-5 opacity-70" />}
-            <span className="font-mono text-caption uppercase tracking-[0.12em]">
+            <span className="font-mono text-caption">
               {failed ? "Preview unavailable · open original" : "Preparing image"}
             </span>
           </span>
@@ -162,7 +162,7 @@ function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAt
           type="button"
           onClick={onEdit}
           aria-label={`Edit ${attachment.fileName}`}
-          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label uppercase text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="absolute right-2 top-2 z-20 inline-flex h-8 items-center gap-1.5 rounded-full border border-border/60 bg-card/85 px-2.5 font-mono text-label text-foreground/85 opacity-0 shadow-soft backdrop-blur transition-all duration-base ease-out-soft hover:text-foreground active:scale-95 group-hover/media:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 coarse:opacity-100 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           <SquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> Edit
         </button>
@@ -195,7 +195,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
         >
           <span className="flex flex-col items-center gap-2 px-5 text-center">
             <VideoIcon className="size-5 opacity-70" />
-            <span className="font-mono text-caption uppercase tracking-[0.12em]">
+            <span className="font-mono text-caption">
               {failed ? "Video preview unavailable" : "Preparing video"}
             </span>
           </span>
@@ -230,7 +230,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
       <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border/60 bg-card/82 px-3.5">
         <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
           <VideoIcon className="size-3.5 shrink-0" aria-hidden="true" />
-          <span className="shrink-0 font-mono text-caption uppercase tracking-[0.12em] text-foreground/75">Video</span>
+          <span className="shrink-0 font-mono text-caption text-foreground/75">Video</span>
           <span aria-hidden="true" className="text-border">·</span>
           <span role="status" aria-live="polite" className="min-w-0 truncate text-caption">
             <span aria-hidden="true">{visibleStatus}</span>
@@ -242,7 +242,7 @@ function VideoAttachment({ attachment }: { attachment: ClientAttachment }) {
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`Open ${attachment.fileName} in a new tab`}
-          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption uppercase tracking-[0.08em] text-foreground/80 outline-none transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
+          className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border/60 bg-background/65 px-2.5 font-mono text-caption text-foreground/80 outline-none transition-[background-color,border-color,color,transform] duration-base ease-out-soft hover:border-border hover:bg-background hover:text-foreground active:scale-95 focus-visible:ring-2 focus-visible:ring-primary/40 coarse:h-10 motion-reduce:transition-none motion-reduce:active:scale-100"
         >
           Open
           <ExternalLink className="size-3" aria-hidden="true" />
@@ -611,7 +611,7 @@ export function MessageItem({
                 <button
                   type="button"
                   onClick={toggleExpanded}
-                  className="mt-1 font-mono text-label uppercase text-muted-foreground transition-colors duration-fast hover:text-foreground"
+                  className="mt-1 font-mono text-label text-muted-foreground transition-colors duration-fast hover:text-foreground"
                 >
                   {expanded ? "Show less" : `Show more · ${lineCount} lines`}
                 </button>

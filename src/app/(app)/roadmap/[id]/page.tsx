@@ -146,7 +146,7 @@ export default function RoadmapDetailPage() {
               <StatusBadge status={r.status} />
               <CategoryChip category={r.category} />
               {r.pinned && (
-                <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-wider text-primary">
+                <span className="inline-flex items-center gap-1 font-mono text-[10px] text-primary">
                   <Pin className="h-3 w-3 fill-primary text-primary" /> Pinned
                 </span>
               )}
@@ -170,7 +170,7 @@ export default function RoadmapDetailPage() {
         {/* Owner moderation */}
         {isOwner && (
           <Card variant="flat" className="mt-6 p-4">
-            <p className="mb-3 font-mono text-label uppercase text-muted-foreground">Moderate</p>
+            <p className="mb-3 font-mono text-label text-muted-foreground">Moderate</p>
             <div className="flex flex-wrap items-center gap-2">
               <Select value={r.status} onValueChange={(v) => moderate({ status: v as FeatureStatus })}>
                 <SelectTrigger className="h-8 w-[180px]">
@@ -240,7 +240,7 @@ export default function RoadmapDetailPage() {
                   <DotIdenticon seed={c.author.id} className="h-4 w-4" />
                   <span className="font-medium text-foreground/90">{c.author.name ?? "Someone"}</span>
                   {c.official && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-primary">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-[9px] text-primary">
                       <BadgeCheck className="h-3 w-3" /> Juno team
                     </span>
                   )}

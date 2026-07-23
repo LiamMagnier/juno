@@ -122,12 +122,12 @@ function ConsoleView({ entries, onClear }: { entries: ConsoleEntry[]; onClear: (
     <div className="flex h-full flex-col bg-[#0b0b0e] text-[#e7e7ea]">
       <div className="flex items-center gap-2 border-b border-white/5 px-3 py-1.5">
         <Terminal className="h-3.5 w-3.5 text-white/40" aria-hidden />
-        <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-white/40">Console</span>
+        <span className="font-mono text-[10px] text-white/40">Console</span>
         <span className="ml-auto" />
         <button
           type="button"
           onClick={onClear}
-          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[10px] uppercase tracking-wider text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
+          className="pressable flex items-center gap-1 rounded-md px-1.5 py-1 font-mono text-[10px] text-white/40 transition-colors hover:bg-white/10 hover:text-white/80"
         >
           <Eraser className="h-3 w-3" aria-hidden /> Clear
         </button>
@@ -707,7 +707,7 @@ export function CanvasPanel({
       <header className="flex items-center gap-2 border-b border-border/60 bg-card/50 py-2 pl-4 pr-2 backdrop-blur-md">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold leading-tight">{artifact.title}</h2>
-          <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
             <span className="truncate">{rt.label}</span>
             {hasHistory && (
               <>
@@ -813,7 +813,7 @@ export function CanvasPanel({
       {historyOpen ? (
         <div className="flex min-h-0 flex-1 motion-safe:animate-fade-in">
           <div className="flex w-48 shrink-0 flex-col overflow-y-auto border-r border-border/60">
-            <p className="px-4 pb-1.5 pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="px-4 pb-1.5 pt-3 font-mono text-[10px] text-muted-foreground">
               Versions
             </p>
             <div className="space-y-px px-2 pb-2">
@@ -833,7 +833,7 @@ export function CanvasPanel({
                     <button type="button" onClick={() => selectTarget(v.version)} className="min-w-0 flex-1 px-2 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-primary/40 rounded-[8px]">
                       <span className="flex items-baseline gap-1.5">
                         <span className={cn("font-mono text-xs font-medium", isTarget ? "text-primary" : "text-foreground")}>v{v.version}</span>
-                        {isCurrent && <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-muted-foreground">current</span>}
+                        {isCurrent && <span className="font-mono text-[9px] text-muted-foreground">current</span>}
                       </span>
                       <span className="block pt-px text-caption text-muted-foreground">
                         {origin ? `${origin} · ` : ""}
@@ -846,7 +846,7 @@ export function CanvasPanel({
                       aria-label={`Compare from v${v.version}`}
                       aria-pressed={isBase}
                       className={cn(
-                        "shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-[0.14em] transition-opacity duration-fast ease-out-soft coarse:min-h-9 coarse:px-2.5 coarse:text-[10px]",
+                        "shrink-0 rounded-full border px-1.5 py-0.5 font-mono text-[9px] transition-opacity duration-fast ease-out-soft coarse:min-h-9 coarse:px-2.5 coarse:text-[10px]",
                         isBase
                           ? "border-primary/40 bg-primary/10 text-primary"
                           : "border-border/60 text-muted-foreground opacity-0 focus-visible:opacity-100 group-hover:opacity-100 coarse:opacity-100"
@@ -863,7 +863,7 @@ export function CanvasPanel({
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex items-center gap-2 border-b border-border/60 px-3 py-2">
               <GitCompare className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <span className="font-mono text-[10px] text-muted-foreground">
                 v{baseVersion} → v{targetVersion}
               </span>
               {hasChanges && (
@@ -959,7 +959,7 @@ export function CanvasPanel({
                 type="button"
                 onClick={() => setSelectedVersion(artifact.currentVersion)}
                 aria-label={`Viewing v${selectedVersion} — back to latest`}
-                className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.12em] text-warning-foreground hover:bg-warning/20"
+                className="pressable inline-flex items-center gap-1 whitespace-nowrap rounded-full border border-warning/40 bg-warning/10 px-2.5 py-1 font-mono text-[10px] text-warning-foreground hover:bg-warning/20"
               >
                 v{selectedVersion}
                 {panelWide && <span className="normal-case tracking-normal">· back to latest</span>}
@@ -1099,7 +1099,7 @@ export function CanvasPanel({
               {/* Save bar — rises in only once there is something to save. */}
               {dirty && (
                 <div className="flex items-center gap-2 border-t border-border/60 bg-card/50 px-3 py-2 motion-safe:animate-rise-in">
-                  <span className="min-w-0 truncate font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                  <span className="min-w-0 truncate font-mono text-[10px] text-muted-foreground">
                     Unsaved changes · saves as v{artifact.currentVersion + 1}
                   </span>
                   <div className="flex-1" />

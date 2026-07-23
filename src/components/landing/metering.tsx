@@ -68,7 +68,7 @@ export function Metering() {
 
         {/* The receipt — live numbers, recomputed on every build/deploy. */}
         <div className="rounded-[24px] border border-border/60 bg-card p-6 shadow-soft">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">One message, priced</p>
+          <p className="font-mono text-[10px] text-muted-foreground">One message, priced</p>
           <p className="mt-1.5 text-caption text-muted-foreground">
             The same exchange — about {SAMPLE.input.toLocaleString("en-US")} tokens in,{" "}
             {SAMPLE.output.toLocaleString("en-US")} out — at today&rsquo;s list prices.

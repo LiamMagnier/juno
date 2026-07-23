@@ -133,7 +133,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               onClick={() => setTab(t.key)}
               aria-pressed={tab === t.key}
               className={cn(
-                "pressable rounded-full px-3.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] coarse:py-2.5",
+                "pressable rounded-full px-3.5 py-1.5 font-mono text-[10px] coarse:py-2.5",
                 tab === t.key ? "bg-primary/10 font-medium text-primary" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
               )}
             >
@@ -163,7 +163,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
             <div className="space-y-6">
               {images.length > 0 && (
                 <section>
-                  {tab === "all" && <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Images</p>}
+                  {tab ==="all"&& <p className="mb-2 font-mono text-label text-muted-foreground">Images</p>}
                   <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
                     {images.map((i) => {
                       const isSel = selected.has(i.id);
@@ -199,7 +199,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
 
               {files.length > 0 && (
                 <section>
-                  {tab === "all" && <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Files</p>}
+                  {tab ==="all"&& <p className="mb-2 font-mono text-label text-muted-foreground">Files</p>}
                   <div className="grid gap-2 sm:grid-cols-2">
                     {files.map((f) => {
                       const isSel = selected.has(f.id);

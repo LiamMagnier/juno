@@ -81,7 +81,7 @@ function CodeGreeting() {
 
   return (
     <div className="flex w-full flex-col items-center text-center">
-      <p className="mb-3 font-mono text-[11px] uppercase tracking-[0.2em] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
+      <p className="mb-3 font-mono text-[11px] text-muted-foreground/80 [animation-fill-mode:backwards] motion-safe:animate-fade-in">
         Juno Code
       </p>
       {/* 1fr | text | 1fr — text stays screen-centered; mark flanks left. */}
@@ -470,7 +470,7 @@ export default function NewCodeSessionPage() {
               {dragging && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-[inherit] border-2 border-dashed border-primary/45 bg-primary/10 backdrop-blur-sm motion-safe:animate-fade-in">
                   <FileUp className="h-6 w-6 text-primary" />
-                  <span className="font-mono text-label uppercase text-primary">Drop to attach</span>
+                  <span className="font-mono text-label text-primary">Drop to attach</span>
                 </div>
               )}
 
@@ -592,7 +592,7 @@ export default function NewCodeSessionPage() {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="start" side="top" sideOffset={8} className="w-56">
-                        <DropdownMenuLabel className="font-mono text-label uppercase">Add</DropdownMenuLabel>
+                        <DropdownMenuLabel className="font-mono text-label">Add</DropdownMenuLabel>
                         <DropdownMenuSub>
                           <DropdownMenuSubTrigger>
                             <Paperclip className="text-muted-foreground" />

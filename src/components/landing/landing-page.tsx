@@ -59,7 +59,7 @@ export function LandingPage() {
             className="pointer-events-none absolute inset-0 -z-10 opacity-60 [background-image:radial-gradient(hsl(var(--border))_1px,transparent_1.5px)] [background-size:24px_24px] [mask-image:linear-gradient(to_bottom,black,transparent_88%)]"
           />
           <div className="mx-auto w-full max-w-6xl px-6 pb-16 pt-14 sm:pb-20 sm:pt-20">
-            <p className="flex items-center gap-2 font-mono text-label uppercase text-muted-foreground motion-safe:animate-fade-in">
+            <p className="flex items-center gap-2 font-mono text-label text-muted-foreground motion-safe:animate-fade-in">
               <DotMatrixMark className="h-4 w-4" />
               Multi-model AI chat
             </p>
@@ -108,7 +108,7 @@ export function LandingPage() {
             </div>
             <nav aria-label="Footer" className="grid grid-cols-2 gap-x-16 gap-y-1.5 text-sm">
               <div className="space-y-1.5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">Product</p>
+                <p className="font-mono text-[10px] text-muted-foreground/80">Product</p>
                 {PRODUCT_LINKS.map(({ href, label }) => (
                   <Link
                     key={href}
@@ -120,7 +120,7 @@ export function LandingPage() {
                 ))}
               </div>
               <div className="space-y-1.5">
-                <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">Legal</p>
+                <p className="font-mono text-[10px] text-muted-foreground/80">Legal</p>
                 {LEGAL_LINKS.map(({ href, label }) => (
                   <Link
                     key={href}

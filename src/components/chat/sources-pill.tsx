@@ -115,7 +115,7 @@ export function SourcesPill({ sources, className }: { sources: ClientSource[]; c
             />
           ))}
         </span>
-        <span className="font-mono text-label uppercase text-muted-foreground transition-colors duration-fast group-hover/pill:text-foreground motion-reduce:transition-none">
+        <span className="font-mono text-label text-muted-foreground transition-colors duration-fast group-hover/pill:text-foreground motion-reduce:transition-none">
           Sources
         </span>
         <span className="font-mono text-caption tabular-nums text-muted-foreground/60">{sources.length}</span>

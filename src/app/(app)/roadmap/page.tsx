@@ -129,7 +129,7 @@ export default function RoadmapPage() {
               <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <span className="font-mono text-label uppercase text-muted-foreground">Roadmap</span>
+              <span className="font-mono text-label text-muted-foreground">Roadmap</span>
             </div>
             <h1 className="font-serif text-display font-medium tracking-tight">
               What we’re <span className="italic text-primary">building</span>
@@ -146,7 +146,7 @@ export default function RoadmapPage() {
         {/* Recently shipped strip */}
         {shipped.length > 0 && (
           <div className="mt-6 rounded-[20px] border border-success/30 bg-success/5 p-4">
-            <p className="mb-2 flex items-center gap-2 font-mono text-label uppercase text-success">
+            <p className="mb-2 flex items-center gap-2 font-mono text-label text-success">
               <PartyPopper className="h-3.5 w-3.5" /> Recently shipped
             </p>
             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -176,7 +176,7 @@ export default function RoadmapPage() {
                 onClick={() => setSort(s.key)}
                 aria-pressed={sort === s.key}
                 className={cn(
-                  "rounded-[10px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-all duration-fast",
+                  "rounded-[10px] px-2.5 py-1 font-mono text-[11px] transition-all duration-fast",
                   sort === s.key ? "bg-card text-primary [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]" : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -235,7 +235,7 @@ export default function RoadmapPage() {
                   <div key={status} className="flex min-w-0 flex-col">
                     <div className="mb-3 flex items-center gap-2">
                       <span className={cn("h-2 w-2 rounded-full", meta.dot)} />
-                      <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-foreground/80">{meta.label}</span>
+                      <span className="font-mono text-[11px] text-foreground/80">{meta.label}</span>
                       <span className="font-mono text-[11px] text-muted-foreground">{items.length}</span>
                     </div>
                     <div className="space-y-3">
@@ -286,7 +286,7 @@ function CatChip({ active, onClick, children }: { active: boolean; onClick: () =
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "rounded-full border px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors duration-fast",
+        "rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors duration-fast",
         active ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground hover:bg-accent"
       )}
     >

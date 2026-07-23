@@ -70,7 +70,7 @@ export function TaskCard({
     <Card className={cn("p-5 transition-opacity duration-base", !task.enabled && "opacity-70")}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+          <p className="font-mono text-[10px] text-muted-foreground/70">
             {describeSchedule(task)}
           </p>
           <h3 className="mt-1 truncate font-serif text-heading">{task.name}</h3>

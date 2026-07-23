@@ -109,7 +109,7 @@ export default function TasksPage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Tasks</span>
+          <span className="font-mono text-label text-muted-foreground">Tasks</span>
         </div>
         {/* flex-wrap: at ~360px the count + button drop under the title instead
             of squeezing the display h1 into a forced two-line wrap. */}
@@ -117,7 +117,7 @@ export default function TasksPage() {
           <h1 className="font-serif text-display font-medium tracking-tight">Scheduled tasks</h1>
           {!loading && !locked && !empty && (
             <div className="flex items-center gap-2.5 pb-1.5">
-              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/60">
+              <span className="font-mono text-[10px] text-muted-foreground/60">
                 {tasks.length} / {limit}
               </span>
               <Button size="sm" className="h-8 gap-1.5 text-xs" onClick={openCreate} disabled={atLimit}>

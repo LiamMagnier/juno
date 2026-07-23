@@ -156,7 +156,9 @@ function PaletteShell({
         hideClose
         // svh + inset-x centering (no transform) so the pop-in/out keyframes own
         // `transform`, and the palette stays reachable above the mobile keyboard.
-        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden rounded-panel border-border/60 p-0 shadow-glass data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
+        // Surface/radius/border come from DialogContent; only the position,
+        // size and the pop-in keyframes are the palette's own.
+        className="left-0 right-0 top-[9svh] mx-auto w-[calc(100%-2rem)] max-w-[560px] origin-top translate-x-0 translate-y-0 gap-0 overflow-hidden p-0 data-[state=open]:!animate-pop-in data-[state=closed]:!animate-pop-out"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector("input")?.focus();

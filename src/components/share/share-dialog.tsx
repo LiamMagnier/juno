@@ -155,7 +155,7 @@ export function ShareDialog({
               </Button>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="font-mono text-[10px] text-muted-foreground">
                 Snapshot · {formatSnapshotDate(share.snapshotAt)} · {share.views}{" "}
                 {share.views === 1 ? "view" : "views"}
               </p>

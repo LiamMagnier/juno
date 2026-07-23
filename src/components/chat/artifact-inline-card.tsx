@@ -26,7 +26,7 @@ function ConsolePreview({ entries }: { entries: ConsoleEntry[] }) {
     <div className="flex h-full flex-col bg-[#0b0b0e] text-[#e7e7ea]">
       <div className="flex items-center gap-2 border-b border-white/5 px-3 py-2">
         <Terminal className="size-3.5 text-white/40" aria-hidden />
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-white/40">Console</span>
+        <span className="font-mono text-[10px] text-white/40">Console</span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3 font-mono text-xs leading-relaxed">
         {entries.length === 0 ? (
@@ -218,7 +218,7 @@ export function ArtifactInlineCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium leading-5">{title || "Untitled artifact"}</span>
-        <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5 pt-0.5 font-mono text-[10px] text-muted-foreground">
           <span className="truncate">{rt.label}</span>
           {!streaming && version != null && version > 1 && (
             <>

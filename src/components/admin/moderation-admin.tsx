@@ -66,8 +66,8 @@ function severityClass(severity: string): string {
   }
 }
 
-const CHIP = "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]";
-const TH_CLASS = "px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground";
+const CHIP = "rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold";
+const TH_CLASS = "px-4 py-2.5 font-mono text-[11px] font-medium text-muted-foreground";
 
 export function ModerationAdmin() {
   const [filter, setFilter] = React.useState<Filter>("all");
@@ -193,7 +193,7 @@ export function ModerationAdmin() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+            <div className="mb-2 flex items-center gap-2 font-mono text-label text-muted-foreground">
               <ShieldAlert className="h-4 w-4" />
               Owner
             </div>
@@ -216,7 +216,7 @@ export function ModerationAdmin() {
                   }}
                   aria-pressed={filter === f.id}
                   className={cn(
-                    "rounded-full px-3.5 py-1.5 font-mono text-xs font-medium uppercase tracking-[0.14em] transition-colors duration-fast ease-out-soft",
+                    "rounded-full px-3.5 py-1.5 font-mono text-xs font-medium transition-colors duration-fast ease-out-soft",
                     filter === f.id ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -225,7 +225,7 @@ export function ModerationAdmin() {
               ))}
             </div>
             {data && (
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="font-mono text-[11px] text-muted-foreground">
                 {total} {total === 1 ? "flag" : "flags"}
               </p>
             )}
@@ -362,7 +362,7 @@ export function ModerationAdmin() {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="font-mono text-[11px] text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

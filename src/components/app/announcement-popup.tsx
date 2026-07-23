@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, Sparkles, X } from "lucide-react";
+import { ArrowRight, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { ClientAnnouncement } from "@/lib/announcements";
 
@@ -151,14 +151,9 @@ export function AnnouncementPopup() {
         else setOpen(true);
       }}
     >
-      <DialogContent
-        hideClose
-        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain rounded-panel p-0 border border-border/85 bg-background shadow-glass lg:overflow-hidden"
-      >
-        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground backdrop-blur-sm transition-all duration-fast ease-out-soft hover:bg-background hover:text-foreground hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11 coarse:w-11">
-          <X className="h-4 w-4" />
-          <span className="sr-only">Close</span>
-        </DialogClose>
+      {/* Surface, border and close button all come from DialogContent — this
+          used to opt out of every one of them and read as a different app. */}
+      <DialogContent className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain p-0 lg:overflow-hidden">
         <div className="grid gap-8 p-6 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
           <div className="h-64 overflow-hidden rounded-md bg-muted sm:h-80 lg:h-[26rem] w-full shrink-0">
             <AnnouncementVisual announcement={announcement} />
@@ -168,7 +163,7 @@ export function AnnouncementPopup() {
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
                   {announcement.modelName && (
-                    <div className="mb-2 font-mono text-label uppercase text-primary">{announcement.modelName}</div>
+                    <div className="mb-2 font-mono text-label text-primary">{announcement.modelName}</div>
                   )}
                   <DialogTitle className="font-serif text-2xl font-normal leading-tight sm:text-3xl text-foreground">{announcement.title}</DialogTitle>
                 </div>
@@ -184,15 +179,15 @@ export function AnnouncementPopup() {
                 <Button
                   variant="outline"
                   onClick={() => followHref(announcement.newsHref)}
-                  className="h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold hover:bg-muted"
+                  className="h-10 gap-1.5 px-5 font-sans text-[14px] font-semibold hover:bg-muted"
                 >
-                  {announcement.newsLabel || "Read The News"}
+                  {announcement.newsLabel || "Read the news"}
                 </Button>
               ) : (
                 <Button
                   variant="ghost"
                   onClick={dismiss}
-                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold text-muted-foreground hover:text-foreground"
+                  className="h-10 px-5 font-sans text-[14px] font-semibold text-muted-foreground hover:text-foreground"
                 >
                   Not now
                 </Button>
@@ -200,7 +195,7 @@ export function AnnouncementPopup() {
               {announcement.ctaLabel && announcement.ctaHref && (
                 <Button
                   onClick={() => followHref(announcement.ctaHref)}
-                  className="group h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold shadow-soft hover:-translate-y-px active:translate-y-0"
+                  className="group h-10 gap-1.5 px-5 font-sans text-[14px] font-semibold shadow-soft hover:-translate-y-px active:translate-y-0"
                 >
                   {announcement.ctaLabel}
                   <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />

@@ -23,7 +23,7 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-mono text-[10px]",
         m.badge,
         className
       )}
@@ -36,7 +36,7 @@ export function StatusBadge({ status, className }: { status: RoadmapRequest["sta
 
 export function CategoryChip({ category }: { category: RoadmapRequest["category"] }) {
   return (
-    <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+    <span className="rounded-full border border-border/70 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
       {CATEGORY_LABEL[category]}
     </span>
   );

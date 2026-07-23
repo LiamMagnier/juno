@@ -190,17 +190,17 @@ function ModelRow({ info, planLevel, count }: { info: ModelInfo; planLevel: numb
       <span className="min-w-0 truncate text-sm">{info.name}</span>
       <span className="shrink-0 font-mono text-caption text-muted-foreground">{info.released ?? "—"}</span>
       {info.status === "deprecated" && (
-        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-destructive">
+        <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/10 px-1.5 py-px font-mono text-[10px] text-destructive">
           Retiring
         </span>
       )}
       {info.status === "legacy" && (
-        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="shrink-0 rounded-full border border-border/60 px-1.5 py-px font-mono text-[10px] text-muted-foreground">
           Legacy
         </span>
       )}
       {locked && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+        <span className="flex shrink-0 items-center gap-1 rounded-full border border-border/60 bg-muted/50 px-1.5 py-px font-mono text-[10px] text-muted-foreground">
           <Lock className="h-2.5 w-2.5" /> {PLANS[lockPlan].name}
         </span>
       )}
@@ -490,7 +490,7 @@ export default function ProfilePage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Profile</span>
+          <span className="font-mono text-label text-muted-foreground">Profile</span>
         </div>
 
         {/* Identity */}
@@ -526,7 +526,7 @@ export default function ProfilePage() {
           <div className="min-w-0">
             <h1 className="font-serif text-title font-medium">{user.name ?? "You"}</h1>
             <p className="text-sm text-muted-foreground">{user.email}</p>
-            <p className="mt-1 font-mono text-caption uppercase tracking-wider text-muted-foreground">
+            <p className="mt-1 font-mono text-caption text-muted-foreground">
               {plan.name} plan
               {stats?.memberSince ? ` · since ${new Date(stats.memberSince).toLocaleDateString(undefined, { month: "short", year: "numeric" })}` : ""}
             </p>
@@ -579,7 +579,7 @@ export default function ProfilePage() {
                   <CardEyebrow>Provider availability</CardEyebrow>
                   <p className="mt-1 text-sm text-muted-foreground">How your messages split across configured labs.</p>
                 </div>
-                <p className="shrink-0 font-mono text-caption uppercase text-muted-foreground">
+                <p className="shrink-0 font-mono text-caption text-muted-foreground">
                   {features.providers.length} of {PROVIDER_LIST.length} configured
                 </p>
               </div>
@@ -695,13 +695,13 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
               call, including thinking. Not reset by deleting chats.
             </p>
           </div>
-          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground shadow-soft">
+          <span className="shrink-0 rounded-full border border-border/60 bg-card/80 px-2.5 py-1 font-mono text-[10px] text-muted-foreground shadow-soft">
             {planName}
           </span>
         </div>
 
         <div className="mt-5 border-t border-border/50 pt-5">
-          <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+          <p className="font-mono text-caption text-muted-foreground">
             API cost
           </p>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -726,7 +726,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
 
         <dl className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border/60 bg-border/60 sm:grid-cols-4">
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <dt className="font-mono text-[10px] text-muted-foreground">
               Input
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -734,7 +734,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <dt className="font-mono text-[10px] text-muted-foreground">
               Output
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -742,7 +742,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <dt className="font-mono text-[10px] text-muted-foreground">
               Replies
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -750,7 +750,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
             </dd>
           </div>
           <div className="bg-card/90 px-3 py-3">
-            <dt className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <dt className="font-mono text-[10px] text-muted-foreground">
               Models
             </dt>
             <dd className="mt-1 font-serif text-heading font-medium tracking-[-0.02em] tabular-nums">
@@ -761,7 +761,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
 
         {byModel.length > 0 ? (
           <div className="mt-5">
-            <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="font-mono text-caption text-muted-foreground">
               By model
             </p>
             {/* Compact scroll region — keeps the card short while all models stay reachable. */}
@@ -807,7 +807,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
 
         {kindsWithSpend.length > 1 ? (
           <div className="mt-5">
-            <p className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="font-mono text-caption text-muted-foreground">
               By surface
             </p>
             <ul className="mt-3 space-y-2.5">
@@ -840,7 +840,7 @@ function LifetimeCard({ stats, planName }: { stats: Stats; planName: string }) {
         ) : null}
 
         {stats.memberSince ? (
-          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+          <p className="mt-5 border-t border-border/50 pt-3 font-mono text-[10px] text-muted-foreground">
             Member since{" "}
             {new Date(stats.memberSince).toLocaleDateString(undefined, {
               month: "short",

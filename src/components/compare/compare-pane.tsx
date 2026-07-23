@@ -185,7 +185,7 @@ export function ComparePane({
           <button
             type="button"
             onClick={onContinue}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-mono text-caption uppercase tracking-[0.08em] text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
+            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 font-mono text-caption text-muted-foreground transition-colors duration-fast ease-out-soft hover:bg-accent hover:text-foreground"
           >
             Continue in chat <ArrowUpRight className="h-3 w-3" />
           </button>

@@ -168,7 +168,7 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
   return (
     <div className="group/code my-4 overflow-hidden rounded-xl border border-border/60 bg-background/35">
       <div className="flex items-center justify-between gap-2 border-b border-border/50 py-1 pl-3 pr-1">
-        <span className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{lang || "code"}</span>
+        <span className="truncate font-mono text-[10px] text-muted-foreground">{lang ||"code"}</span>
         {isMermaid ? (
           <span className="px-2 py-1 font-mono text-caption text-muted-foreground/80">Diagram renders when complete…</span>
         ) : (

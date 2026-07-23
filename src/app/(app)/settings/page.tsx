@@ -389,7 +389,7 @@ export default function SettingsPage() {
                 </div>
                 
                 <div className="mt-4 flex items-center justify-between gap-2 pt-3 border-t border-border/40">
-                  <span className="font-mono text-caption uppercase tracking-[0.14em] text-muted-foreground">
+                  <span className="font-mono text-caption text-muted-foreground">
                     {plan.price > 0 ? `${plan.price} € HT/mo` : "Active tier"}
                   </span>
                   {quota.plan === "FREE" && features.billing && (
@@ -432,7 +432,7 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-4">
                     <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
                     <div className="border-t border-border/40" />
-                    <span className="block font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/80">
+                    <span className="block font-mono text-[10px] text-muted-foreground/80">
                       Weekly limits
                     </span>
                     <UsageMeter label="All models" subtitle={weeklySubtitle} pct={windows.weekly.pct} />

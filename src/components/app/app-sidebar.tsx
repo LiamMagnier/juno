@@ -1190,7 +1190,7 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
     <>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
       <span className="min-w-0 flex-1 truncate">{task.title}</span>
-      <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+      <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
         {meta.label}
       </span>
     </>

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { Crop, ImageIcon, ImageOff, Info, MousePointer2, TriangleAlert, Wand2, X } from "lucide-react";
-import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, dialogCloseClassName } from "@/components/ui/dialog";
 import { GEN_MODELS, imageEditSupport, resolveModel, type ModelInfo } from "@/lib/models";
 import { cn } from "@/lib/utils";
 import type { ClientAttachment, GenerateEditPayload } from "@/types/chat";
@@ -266,13 +266,16 @@ export function ImageEditOverlay({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {/* `bg-background` on purpose — an image editor needs an opaque working
+          surface — but the radius, border and close button are the shared ones
+          so it still reads as the same family of modal. */}
       <DialogContent
         hideClose
-        className="h-[min(92dvh,46rem)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-[68rem] gap-0 overflow-hidden rounded-[24px] border border-border/70 bg-background p-0 shadow-float sm:w-[calc(100%-2rem)] md:h-[min(86dvh,43rem)]"
+        className="h-[min(92dvh,46rem)] max-h-[92dvh] w-[calc(100%-1rem)] max-w-[68rem] gap-0 overflow-hidden bg-background p-0 backdrop-blur-none sm:w-[calc(100%-2rem)] md:h-[min(86dvh,43rem)]"
       >
-        <DialogClose
-          className="group/close absolute right-3 top-3 z-50 flex size-9 items-center justify-center rounded-full border border-border/60 bg-background/90 text-muted-foreground shadow-soft backdrop-blur-sm transition-[color,background-color,transform] duration-fast ease-out-soft hover:bg-muted hover:text-foreground active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground/15 focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none motion-reduce:active:scale-100 sm:right-4 sm:top-4"
-        >
+        {/* Rendered here rather than by DialogContent: the layout is `p-0`, so
+            the button has to clear the canvas header instead of the padding. */}
+        <DialogClose className={cn("group/close absolute right-3 top-3 z-50 sm:right-4 sm:top-4", dialogCloseClassName)}>
           <X className="size-4 transition-transform duration-fast ease-out-soft group-hover/close:rotate-90 motion-reduce:transition-none motion-reduce:group-hover/close:rotate-0" aria-hidden="true" />
           <span className="sr-only">Close image editor</span>
         </DialogClose>
@@ -426,7 +429,7 @@ export function ImageEditOverlay({
           <aside className="min-h-0 overflow-y-auto bg-card" aria-label="Image edit controls">
             <form onSubmit={handleSubmit} className="flex min-h-full flex-col p-5 pt-6 sm:p-6 md:p-7">
               <div className="pr-9">
-                <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Image editor</p>
+                <p className="font-mono text-[10px] font-semibold text-muted-foreground">Image editor</p>
                 <DialogTitle className="mt-2 font-serif text-[26px] font-normal leading-tight tracking-[-0.02em] text-foreground">Edit image</DialogTitle>
                 <DialogDescription className="mt-2 max-w-sm text-[13px] leading-relaxed text-muted-foreground">
                   Describe the change and optionally target a precise area.
@@ -434,7 +437,7 @@ export function ImageEditOverlay({
               </div>
 
               <fieldset className="mt-6">
-                <legend className="mb-2 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Edit area</legend>
+                <legend className="mb-2 font-mono text-[10px] font-semibold text-muted-foreground">Edit area</legend>
                 <div className="grid grid-cols-2 gap-1 rounded-[12px] border border-border/60 bg-muted/40 p-1" role="group" aria-label="Edit area">
                   <button
                     type="button"
@@ -493,7 +496,7 @@ export function ImageEditOverlay({
               )}
 
               <div className="mt-5">
-                <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                <label htmlFor={`${selectionHelpId}-prompt`} className="font-mono text-[10px] font-semibold text-muted-foreground">
                   Instructions
                 </label>
                 <div className="mt-2 overflow-hidden rounded-[14px] border border-border/70 bg-background shadow-[inset_0_1px_2px_hsl(var(--foreground)/0.035)] transition-[border-color,box-shadow] duration-fast focus-within:border-foreground/25 focus-within:shadow-[0_0_0_3px_hsl(var(--foreground)/0.06)]">

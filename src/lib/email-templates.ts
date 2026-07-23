@@ -74,7 +74,7 @@ function layout(opts: {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
         <tr>
           <td style="background-color:${CARD};border:1px solid ${HAIRLINE};border-radius:16px;padding:36px 36px 32px;">
-            <p style="margin:0 0 16px;font-family:${MONO};font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:${MUTED};">${escapeHtml(opts.eyebrow)}</p>
+            <p style="margin:0 0 16px;font-family:${MONO};font-size:11px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(opts.eyebrow)}</p>
             <h1 style="margin:0 0 16px;font-family:${SERIF};font-size:24px;font-weight:500;line-height:1.3;color:${INK};">${escapeHtml(opts.heading)}</h1>
             ${opts.bodyHtml}
             <p style="margin:24px 0 0;font-family:${SANS};font-size:14px;">
@@ -84,7 +84,7 @@ function layout(opts: {
         </tr>
         <tr>
           <td align="center" style="padding:20px 8px 0;">
-            <p style="margin:0;font-family:${MONO};font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:${MUTED};">
+            <p style="margin:0;font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">
               Juno &middot; chat.liams.dev &middot; <a href="${appUrl("/settings")}" style="color:${MUTED};text-decoration:underline;">manage notifications</a>
             </p>
           </td>
@@ -193,7 +193,7 @@ export function weeklyDigest(stats: WeeklyDigestStats): EmailTemplate {
   const models = stats.topModels.slice(0, 3);
   const row = (label: string, value: string) =>
     `<tr>
-      <td style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${MONO};font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:${MUTED};">${escapeHtml(label)}</td>
+      <td style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${MONO};font-size:10px;letter-spacing:0.02em;color:${MUTED};">${escapeHtml(label)}</td>
       <td align="right" style="padding:8px 0;border-bottom:1px solid ${HAIRLINE};font-family:${SANS};font-size:14px;color:${INK};">${escapeHtml(value)}</td>
     </tr>`;
   const bodyHtml =

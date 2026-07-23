@@ -262,7 +262,7 @@ export function CompareView() {
       {/* Page header — serif heading, mono metadata, "not saved" said quietly. */}
       <header className="flex shrink-0 items-end justify-between gap-3 px-4 pb-3 pt-5 sm:px-6">
         <div>
-          <p className="font-mono text-label uppercase text-muted-foreground">
+          <p className="font-mono text-label text-muted-foreground">
             One prompt · {panes.length} models
           </p>
           <h1 className="mt-0.5 font-serif text-title tracking-tight">Compare</h1>
@@ -274,7 +274,7 @@ export function CompareView() {
 
       {/* Prompt composer — one textarea, one coral action. */}
       <div className="shrink-0 px-4 pb-4 sm:px-6">
-        <div className="flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-all duration-300 ease-out-soft focus-within:border-primary/30 focus-within:shadow-glass">
+        <div className="flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-primary/30 focus-within:shadow-glass">
           <textarea
             ref={textareaRef}
             value={prompt}

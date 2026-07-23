@@ -22,7 +22,7 @@ function BlockStreamingPlaceholder({ kind }: { kind: ParsedLearningBlock["kind"]
   return (
     <div className="my-6 flex items-center gap-3 border-y border-border/60 py-5 motion-safe:animate-fade-in">
       <ThinkingDots className="shrink-0" />
-      <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+      <p className="font-mono text-[11px] font-semibold text-muted-foreground">
         Building {LEARNING_BLOCK_LABELS[kind]}
       </p>
     </div>

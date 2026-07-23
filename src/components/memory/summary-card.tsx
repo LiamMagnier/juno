@@ -88,11 +88,11 @@ export function SummaryCard({ summary, paused, consolidating, onRegenerate, onIn
         )}
       >
         <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <h2 id="memory-summary-heading" className="font-mono text-label uppercase text-muted-foreground">
+          <h2 id="memory-summary-heading"className="font-mono text-label text-muted-foreground">
             Memory summary
           </h2>
           {paused && (
-            <Badge variant="muted" className="text-[10px] uppercase tracking-wider">
+            <Badge variant="muted"className="text-[10px]">
               Paused
             </Badge>
           )}

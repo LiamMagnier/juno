@@ -60,7 +60,7 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-const TH_CLASS = "px-4 py-2.5 font-mono text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground";
+const TH_CLASS = "px-4 py-2.5 font-mono text-[11px] font-medium text-muted-foreground";
 
 export function UsersAdmin({ selfId }: { selfId: string }) {
   const [query, setQuery] = React.useState("");
@@ -222,7 +222,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+            <div className="mb-2 flex items-center gap-2 font-mono text-label text-muted-foreground">
               <UsersIcon className="h-4 w-4" />
               Owner
             </div>
@@ -249,7 +249,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
               />
             </div>
             {data && (
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+              <p className="font-mono text-[11px] text-muted-foreground">
                 {total} {total === 1 ? "match" : "matches"}
               </p>
             )}
@@ -297,14 +297,14 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               <div className="flex items-center gap-2">
                                 <p className="truncate font-medium">{u.name || "—"}</p>
                                 {u.bannedAt && (
-                                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-destructive">
+                                  <span className="shrink-0 rounded-full bg-destructive/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-destructive">
                                     Banned
                                   </span>
                                 )}
                               </div>
                               <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-amber-600 dark:text-amber-500">
+                                <p className="mt-0.5 font-mono text-[10px] text-amber-600 dark:text-amber-500">
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
                               )}
@@ -332,7 +332,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                             </SelectContent>
                           </Select>
                           {u.subscriptionStatus && u.subscriptionStatus !== "ACTIVE" && (
-                            <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                            <p className="mt-1 font-mono text-[10px] text-muted-foreground">
                               {u.subscriptionStatus.toLowerCase().replace(/_/g, " ")}
                             </p>
                           )}
@@ -400,7 +400,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
           )}
 
           <div className="flex items-center justify-between gap-3 border-t border-border/70 px-4 py-3">
-            <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="font-mono text-[11px] text-muted-foreground">
               Page {page} of {pageCount}
             </p>
             <div className="flex gap-2">

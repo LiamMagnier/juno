@@ -63,7 +63,7 @@ export function FlagshipStrip() {
           </li>
         ))}
       </ul>
-      <p className="mt-4 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+      <p className="mt-4 font-mono text-[10px] text-muted-foreground">
         {MODELS_FLOOR}+ models · {TOTAL_LABS} labs · synced nightly
       </p>
     </div>

@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function ConfidentialitePage() {
   return (
     <>
-      <p className="font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Juno · RGPD</p>
+      <p className="font-mono text-xs font-medium text-muted-foreground">Juno · RGPD</p>
       <h1 className="mt-3">Politique de confidentialité</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 5 juillet 2026.</p>
 

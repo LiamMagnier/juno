@@ -51,7 +51,7 @@ export function Features() {
       <ol className="mt-10 grid gap-x-10 sm:grid-cols-2 lg:grid-cols-3">
         {FEATURES.map(({ title, body, link }, i) => (
           <li key={title} className="border-t border-border/60 pb-8 pt-5">
-            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <span className="font-mono text-[10px] text-muted-foreground">
               {String(i + 1).padStart(2, "0")}
             </span>
             <h3 className="mt-2 font-serif text-heading font-medium">{title}</h3>

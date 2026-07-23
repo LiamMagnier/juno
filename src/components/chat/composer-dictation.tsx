@@ -316,7 +316,7 @@ export function ComposerDictation({
           <div
             ref={previewRef}
             aria-live="polite"
-            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-2xl border border-border bg-card/95 px-4 py-3 text-sm leading-relaxed text-foreground shadow-float backdrop-blur-md"
+            className="absolute bottom-full left-1/2 mb-3 max-h-36 w-[92%] -translate-x-1/2 overflow-y-auto rounded-[18px] border border-border/60 bg-popover/80 px-4 py-3 text-sm leading-relaxed text-popover-foreground glass-raised backdrop-blur-xl"
           >
             {transcript ? (
               <>

@@ -58,7 +58,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
             <JunoMark className="h-6 w-6" />
           </Link>
           <h1 className="min-w-0 flex-1 truncate font-serif text-base font-medium tracking-tight">{title}</h1>
-          <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
             Shared {sharedOn}
           </span>
         </div>
@@ -81,7 +81,7 @@ export default async function SharePage({ params }: { params: Promise<{ token: s
 
       <footer className="sticky bottom-0 z-20 shrink-0 border-t border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-3 px-4 sm:px-6">
-          <span className="inline-flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+          <span className="inline-flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
             <JunoMark className="h-4 w-4" />
             Made with Juno
           </span>

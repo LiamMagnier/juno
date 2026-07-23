@@ -546,7 +546,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
               )}
             >
               <span className="font-serif text-sm font-medium text-foreground">{item.name}</span>
-              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">{item.role}</span>
+              <span className="font-mono text-[10px] text-muted-foreground">{item.role}</span>
             </button>
           ))}
         </div>
@@ -557,7 +557,7 @@ function TransformerVisual({ step }: { step: StepLabStep }) {
         </div>
       </div>
 
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">enriched representations ↓</p>
+      <p className="font-mono text-[10px] text-muted-foreground">enriched representations ↓</p>
       <p key={stage} className="text-sm leading-6 text-muted-foreground motion-safe:animate-fade-in">
         {TRANSFORMER_STAGES[stage].copy}
       </p>
@@ -672,7 +672,7 @@ function ProbabilityVisual({ step }: { step: StepLabStep }) {
         <button
           type="button"
           onClick={sample}
-          className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary outline-none transition-colors duration-fast hover:text-primary focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+          className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
         >
           Sample
         </button>
@@ -736,7 +736,7 @@ function NextTokenSelectionVisual({ step }: { step: StepLabStep }) {
       <button
         type="button"
         onClick={() => setRun((value) => value + 1)}
-        className="self-start rounded-[8px] py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+        className="self-start rounded-[8px] py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
       >
         Replay
       </button>
@@ -986,7 +986,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={active === 0}
             onClick={() => go(active - 1)}
             className={cn(
-              "rounded-[8px] py-1 pr-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none",
+              "rounded-[8px] py-1 pr-2 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
               "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
               active === 0 && "pointer-events-none opacity-40"
             )}
@@ -1002,7 +1002,7 @@ export const StepLabBlock = React.memo(function StepLabBlock({ lab, error }: { l
             aria-disabled={onLast}
             onClick={() => go(active + 1)}
             className={cn(
-              "rounded-[8px] py-1 pl-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] outline-none",
+              "rounded-[8px] py-1 pl-2 font-mono text-[11px] font-semibold outline-none",
               "transition-colors duration-fast focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11",
               onLast ? "pointer-events-none text-muted-foreground opacity-40" : "text-primary hover:text-primary",
             )}

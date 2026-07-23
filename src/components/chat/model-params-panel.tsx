@@ -88,7 +88,7 @@ function ParamRow({ label, value, min, max, step, fallback, format, onChange, on
   return (
     <div className={cn("rounded-md bg-muted/20 px-2.5 py-2 transition-opacity duration-fast", dimmed && "opacity-50")}>
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-label uppercase text-muted-foreground">{label}</span>
+        <span className="font-mono text-label text-muted-foreground">{label}</span>
         <span className="flex items-center gap-1">
           {value == null ? (
             <span className="inline-flex items-center rounded-full border border-border/60 bg-background/60 px-2 py-0.5 text-caption font-medium text-muted-foreground">
@@ -221,7 +221,7 @@ export function ModelParamsPanel({
         {/* Header — stays pinned while the body scrolls on short viewports. */}
         <div className="flex shrink-0 items-center gap-2 border-b border-border/60 px-4 pb-2.5 pt-3">
           <div className="min-w-0 flex-1">
-            <p className="font-mono text-label uppercase text-muted-foreground">Parameters</p>
+            <p className="font-mono text-label text-muted-foreground">Parameters</p>
             <p className="truncate font-mono text-sm text-foreground">{model?.name ?? "No model selected"}</p>
           </div>
           {customized && (
@@ -291,7 +291,7 @@ export function ModelParamsPanel({
 
         {/* Active feature flags */}
         <div className="border-t border-border/60 p-3">
-          <p className="px-0.5 font-mono text-label uppercase text-muted-foreground">Active for this model</p>
+          <p className="px-0.5 font-mono text-label text-muted-foreground">Active for this model</p>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <StatusPill
               label="Web search"

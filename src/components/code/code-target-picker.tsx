@@ -298,7 +298,7 @@ function DeviceList({
                   {active ? (
                     <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
                   ) : (
-                    <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground/70">{timeAgo(w.lastOpenedAt)}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground/70">{timeAgo(w.lastOpenedAt)}</span>
                   )}
                 </button>
               );
@@ -416,7 +416,7 @@ function CloudList({
                     <span className="flex items-center gap-1.5">
                       <span className="truncate text-sm font-medium text-foreground">{repo.fullName}</span>
                       {repo.private && (
-                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
                           <Lock className="h-2.5 w-2.5" aria-hidden="true" /> Private
                         </span>
                       )}
@@ -466,7 +466,7 @@ function CloudList({
 function PickerHeader({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="border-b border-border/60 px-3 py-2.5">
-      <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{title}</p>
+      <p className="font-mono text-[10px] text-muted-foreground">{title}</p>
       <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground/80">{hint}</p>
     </div>
   );

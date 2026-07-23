@@ -173,7 +173,7 @@ export default function ConnectionsPage() {
           <Button variant="ghost" size="icon-sm" onClick={() => router.push("/chat")} aria-label="Back to chat">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="font-mono text-label uppercase text-muted-foreground">Connections</span>
+          <span className="font-mono text-label text-muted-foreground">Connections</span>
         </div>
         <div className="flex items-end justify-between gap-4">
           <div>

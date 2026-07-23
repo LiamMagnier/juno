@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 export default function MentionsLegalesPage() {
   return (
     <>
-      <p className="font-mono text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">Juno · Informations légales</p>
+      <p className="font-mono text-xs font-medium text-muted-foreground">Juno · Informations légales</p>
       <h1 className="mt-3">Mentions légales</h1>
       <p className="text-muted-foreground">Dernière mise à jour : 5 juillet 2026.</p>
 

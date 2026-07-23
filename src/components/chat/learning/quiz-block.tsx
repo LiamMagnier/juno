@@ -130,7 +130,7 @@ export function QuizInteraction({
         <button
           type="button"
           onClick={reset}
-          className="self-start rounded-[8px] py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+          className="self-start rounded-[8px] py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
         >
           Start over
         </button>
@@ -247,7 +247,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={advance}
-                className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-primary outline-none transition-colors duration-fast hover:text-primary/80 focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+                className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold text-primary outline-none transition-colors duration-fast hover:text-primary/80 focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
               >
                 {isLast ? "See results →" : "Next question →"}
               </button>
@@ -255,7 +255,7 @@ export function QuizInteraction({
               <button
                 type="button"
                 onClick={reset}
-                className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
+                className="shrink-0 rounded-[8px] py-1 font-mono text-[11px] font-semibold text-muted-foreground outline-none transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring coarse:min-h-11"
               >
                 Try again
               </button>

@@ -36,10 +36,10 @@ export function BlockShell({ className, children, ...props }: React.ComponentPro
   );
 }
 
-/** Mono microcap label — "PROCESS", "QUICK CHECK", … */
+/** Mono micro-label — "Process", "Quick check", … */
 export function Microcap({ className, children }: { className?: string; children: React.ReactNode }) {
   return (
-    <span className={cn("font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground", className)}>
+    <span className={cn("font-mono text-[11px] font-semibold text-muted-foreground", className)}>
       {children}
     </span>
   );
@@ -156,7 +156,7 @@ export function TextToggle({
       aria-controls={controls}
       onClick={onToggle}
       className={cn(
-        "group/toggle inline-flex items-center gap-1.5 self-start rounded-[8px] py-1 pr-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground outline-none",
+        "group/toggle inline-flex items-center gap-1.5 self-start rounded-[8px] py-1 pr-1.5 font-mono text-[11px] font-semibold text-muted-foreground outline-none",
         "transition-colors duration-fast hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
         "coarse:min-h-11",
         className

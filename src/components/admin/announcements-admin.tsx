@@ -409,7 +409,7 @@ export function AnnouncementsAdmin() {
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="mb-2 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+            <div className="mb-2 flex items-center gap-2 font-mono text-label text-muted-foreground">
               <Megaphone className="h-4 w-4" />
               Owner
             </div>
@@ -593,7 +593,7 @@ export function AnnouncementsAdmin() {
                 <div className="flex min-h-44 flex-col justify-between gap-6 p-5">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      {draft.modelName && <p className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-primary">{draft.modelName}</p>}
+                      {draft.modelName && <p className="mb-2 font-mono text-[11px] text-primary">{draft.modelName}</p>}
                       <h2 className="font-serif text-2xl font-medium">{draft.title || "[model] just got released"}</h2>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">
                         {draft.description || "Write a short release description for users here."}
@@ -651,7 +651,7 @@ export function AnnouncementsAdmin() {
                               <p className="truncate text-sm font-medium">{item.title}</p>
                               <span
                                 className={cn(
-                                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                  "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold",
                                   status.tone === "active" && "bg-primary/10 text-primary",
                                   status.tone === "muted" && "bg-muted text-muted-foreground",
                                   status.tone === "ended" && "bg-destructive/10 text-destructive"

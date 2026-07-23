@@ -21,6 +21,7 @@ import {
 import { DotField } from "@/components/signature/dot-field";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { Button } from "@/components/ui/button";
+import { dialogSurfaceClassName } from "@/components/ui/dialog";
 import { useApp } from "@/components/app/app-provider";
 import { ACCENTS } from "@/lib/accents";
 import { resolveModel, type ModelInfo } from "@/lib/models";
@@ -86,8 +87,10 @@ function ModelField({
       {open && (
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          {/* opens upward — the field sits low in the card, which clips overflow */}
-          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-2xl border bg-popover/95 shadow-glass backdrop-blur-md motion-safe:animate-pop-in">
+          {/* opens upward — the field sits low in the card, which clips overflow.
+              Same material and radius as DropdownMenuContent; it used to be a
+              one-off 16px card with its own blur. */}
+          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
             <div className="relative border-b p-2">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -104,7 +107,7 @@ function ModelField({
               ) : (
                 groups.map((g) => (
                   <div key={g.p} className="mb-1.5 last:mb-0">
-                    <p className="px-2 pb-1 pt-1.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground/70">
+                    <p className="px-2 pb-1 pt-1.5 font-mono text-[10px] text-muted-foreground/70">
                       {PROVIDERS[g.p]?.label ?? g.p}
                     </p>
                     {g.items.map((m) => (
@@ -308,12 +311,15 @@ export function Onboarding() {
         <DotField spacing={26} />
       </div>
 
-      <div className="relative w-full max-w-[460px] overflow-hidden rounded-panel border bg-card/95 shadow-glass backdrop-blur-xl motion-safe:animate-rise-in">
+      {/* Not a Radix Dialog (it owns the whole first run, and the DotField
+          behind it needs the lighter scrim), but it wears the same surface so
+          it isn't a second kind of modal. */}
+      <div className={cn("relative w-full max-w-[460px] overflow-hidden motion-safe:animate-rise-in", dialogSurfaceClassName)}>
         <div className="pointer-events-none absolute -top-24 left-1/2 h-52 w-52 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
 
         {/* header: step label + dot pager */}
         <div className="relative flex items-center justify-between px-7 pt-6">
-          <span className="font-mono text-label uppercase text-muted-foreground">
+          <span className="font-mono text-label text-muted-foreground">
             {STEP_LABELS[step]}
           </span>
           <div className="flex items-center gap-1.5">
@@ -347,7 +353,7 @@ export function Onboarding() {
               A thoughtful AI for chat, code, and everything between.
             </p>
             {models.length > 1 && (
-              <p className="mt-3 font-mono text-label uppercase text-muted-foreground/80">
+              <p className="mt-3 font-mono text-label text-muted-foreground/80">
                 {models.length} models · {labCount} {labCount === 1 ? "lab" : "labs"} · one place
               </p>
             )}
@@ -393,7 +399,7 @@ export function Onboarding() {
 
             <div className="mt-5 space-y-5">
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Accent</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Accent</p>
                 <div className="flex gap-2.5">
                   {ACCENTS.map((a) => (
                     <button
@@ -415,7 +421,7 @@ export function Onboarding() {
               </div>
 
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Theme</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Theme</p>
                 <div className="grid grid-cols-3 gap-2">
                   {THEMES.map((t) => (
                     <button
@@ -431,14 +437,14 @@ export function Onboarding() {
                       )}
                     >
                       <t.icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                      <span className="font-mono text-[11px] uppercase tracking-wide">{t.label}</span>
+                      <span className="font-mono text-[11px]">{t.label}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <p className="mb-2 font-mono text-label uppercase text-muted-foreground">Default model</p>
+                <p className="mb-2 font-mono text-label text-muted-foreground">Default model</p>
                 <ModelField models={chatModels} valueId={currentModelId} onPick={(id) => save({ defaultModel: id })} />
               </div>
             </div>
@@ -461,7 +467,7 @@ export function Onboarding() {
           <div key="plan" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Choose a plan</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -493,12 +499,12 @@ export function Onboarding() {
                       <div className="flex items-center gap-2">
                         <h3 className="font-serif text-body-lg font-medium leading-none">{plan.name}</h3>
                         {popular && (
-                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] uppercase text-primary-foreground">
+                          <span className="rounded-full bg-primary px-2 py-0.5 font-mono text-[10px] text-primary-foreground">
                             Popular
                           </span>
                         )}
                         {isCurrent && (
-                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
+                          <span className="rounded-full bg-secondary px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                             Current
                           </span>
                         )}
@@ -562,7 +568,7 @@ export function Onboarding() {
           <div key="memory" className="relative px-7 pb-7 pt-4 motion-safe:animate-fade-in-up">
             <div className="flex items-center gap-2">
               <h2 className="font-serif text-heading font-medium">Bring your memory</h2>
-              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span className="rounded-full border px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
                 Optional
               </span>
             </div>
@@ -573,7 +579,7 @@ export function Onboarding() {
             <div className="mt-5 space-y-4">
               {/* step 1 — copy prompt */}
               <div>
-                <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+                <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
                   <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-foreground">
                     1
                   </span>
@@ -594,7 +600,7 @@ export function Onboarding() {
 
               {/* step 2 — paste results */}
               <div>
-                <p className="mb-1.5 flex items-center gap-2 font-mono text-label uppercase text-muted-foreground">
+                <p className="mb-1.5 flex items-center gap-2 font-mono text-label text-muted-foreground">
                   <span className="grid h-4 w-4 place-items-center rounded-full bg-secondary text-[10px] font-semibold text-foreground">
                     2
                   </span>
