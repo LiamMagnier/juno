@@ -68,6 +68,25 @@ public struct NativeAccountProfile: Equatable, Sendable {
     public let email: String
     public let imageURL: URL?
 
+    /// Resolves the account's avatar against the backend's origin.
+    ///
+    /// Juno stores an uploaded avatar as a **relative** path — `/api/files/<key>`
+    /// (see `src/app/api/profile/avatar/route.ts`) — so that one value works for
+    /// local disk and S3 alike. The browser resolves it against its own origin
+    /// for free. A native client does not: `URL(string: "/api/files/x")` succeeds
+    /// and yields a URL with no scheme or host, which decodes cleanly, is
+    /// non-nil, and can never load. That is why an account with a perfectly good
+    /// photo showed initials forever.
+    ///
+    /// An absolute URL — a Google or GitHub avatar from OAuth — is returned
+    /// untouched.
+    public static func resolveImageURL(_ raw: String?, relativeTo base: URL) -> URL? {
+        guard let raw, !raw.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        guard let url = URL(string: raw) else { return nil }
+        if url.scheme != nil { return url }
+        return URL(string: raw, relativeTo: base)?.absoluteURL
+    }
+
     public init(id: AccountID, name: String?, email: String, imageURL: URL?) {
         self.id = id
         self.name = name
@@ -234,7 +253,9 @@ public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
             id: AccountID(decoded.profile.id),
             name: decoded.profile.name,
             email: decoded.profile.email,
-            imageURL: decoded.profile.image.flatMap(URL.init(string:))
+            imageURL: NativeAccountProfile.resolveImageURL(
+                decoded.profile.image, relativeTo: client.origin.baseURL
+            )
         )
         return try NativeAuthenticatedSession(
             profile: profile,

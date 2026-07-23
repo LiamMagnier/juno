@@ -129,6 +129,10 @@ public struct NativeBootstrapClient: Sendable {
                 id: profileAccountID,
                 name: wire.profile.name,
                 email: wire.profile.email,
+                // Left unresolved: this client holds only a sender, not an
+                // origin. The profile the UI renders comes from the auth
+                // session, which does resolve it; this checkpoint's copy feeds
+                // account hydration, which does not display the avatar.
                 imageURL: wire.profile.image.flatMap(URL.init(string:))
             ),
             currentChangeCursor: wire.currentChangeCursor,
