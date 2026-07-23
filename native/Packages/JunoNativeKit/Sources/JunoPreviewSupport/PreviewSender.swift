@@ -63,6 +63,12 @@ public actor PreviewSender: NativeChatRequestSending {
         // Juno Code Remote. Ordered most-specific first: `/events` and
         // `/sessions` both sit under `/api/code/devices`, so testing the bare
         // device list first would swallow them.
+        if path.hasPrefix("/api/tasks") {
+            return Data(PreviewWorkspaceExtras.tasksJSON.utf8)
+        }
+        if path.hasPrefix("/api/connectors") {
+            return Data(PreviewWorkspaceExtras.connectorsJSON.utf8)
+        }
         if path.contains("/events") {
             return Data(PreviewCodeRemote.eventsJSON.utf8)
         }

@@ -1,3 +1,4 @@
+import JunoDesignSystem
 import JunoAuth
 import JunoChatKit
 import JunoCore
@@ -84,18 +85,31 @@ struct JunoMobileSettingsView: View {
     private var settingsForm: some View {
         Form {
             if let session {
+                // The account leads with the person, not a form row: their real
+                // photo, their name, their email. `person.crop.circle` was a
+                // placeholder standing in for an avatar the account already has.
                 Section {
-                    LabeledContent {
-                        Text(session.profile.email)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    } label: {
-                        Label {
+                    HStack(spacing: JunoSpace.cozy) {
+                        JunoAvatar(
+                            imageURL: session.profile.imageURL,
+                            name: session.profile.name,
+                            size: 52
+                        )
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(session.profile.name ?? session.profile.email)
-                        } icon: {
-                            Image(systemName: "person.crop.circle")
+                                .font(.system(size: 17, weight: .semibold))
+                                .lineLimit(1)
+                            Text(session.profile.email)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .lineLimit(1)
                         }
+                        Spacer(minLength: 0)
                     }
+                    .padding(.vertical, JunoSpace.snug)
+                    .accessibilityElement(children: .combine)
+
                     if authModel != nil {
                         Button(role: .destructive) {
                             showingSignOut = true

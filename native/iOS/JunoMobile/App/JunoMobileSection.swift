@@ -12,11 +12,15 @@ import SwiftUI
 /// is a genuine surface, not a placeholder.
 enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
-    case code
     case search
     case projects
     case library
     case artifacts
+    case tasks
+    case connections
+    // Last, not first: Code is a separate mode of working, and the web puts the
+    // everyday content destinations above it.
+    case code
     case settings
 
     var id: String { rawValue }
@@ -24,11 +28,13 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var title: LocalizedStringKey {
         switch self {
         case .chat: "navigation.chat"
-        case .code: "navigation.code"
         case .search: "navigation.search"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
+        case .tasks: "navigation.tasks"
+        case .connections: "navigation.connections"
+        case .code: "navigation.code"
         case .settings: "navigation.settings"
         }
     }
@@ -44,11 +50,13 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var junoIcon: JunoIcon? {
         switch self {
         case .chat: .new
-        case .code: .code
         case .search: .search
         case .projects: .projects
         case .library: .library
         case .artifacts: .artifacts
+        case .tasks: .tasks
+        case .connections: .connections
+        case .code: .code
         case .settings: nil
         }
     }
@@ -57,11 +65,13 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var systemImage: String {
         switch self {
         case .chat: "square.and.pencil"
-        case .code: "chevron.left.forwardslash.chevron.right"
         case .search: "magnifyingglass"
         case .projects: "folder"
         case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
+        case .tasks: "calendar.badge.clock"
+        case .connections: "powerplug"
+        case .code: "chevron.left.forwardslash.chevron.right"
         case .settings: "gearshape"
         }
     }
@@ -85,8 +95,8 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .code, .search]
-            case .content: [.projects, .library, .artifacts]
+            case .workspace: [.chat, .search]
+            case .content: [.projects, .library, .artifacts, .tasks, .connections, .code]
             case .account: [.settings]
             }
         }

@@ -29,6 +29,8 @@ public final class PreviewWorld {
     /// so hosts, sessions and a transcript can be inspected with no account and
     /// no host machine running.
     public let codeModel: CodeRemoteBrowserModel
+    /// Tasks and Connections, against the same canned sender.
+    public let workspaceExtrasModel: NativeWorkspaceExtrasModel
     /// Present so the composer's Attach section renders in the harness. It is
     /// hidden entirely when no model is supplied, which is correct in the app
     /// but made the section invisible to visual QA.
@@ -121,6 +123,11 @@ public final class PreviewWorld {
         // without an account silently no-ops and never retries — which reads as
         // a screen stuck on "Looking for your machines…".
         codeModel.start(for: accountID)
+        workspaceExtrasModel = NativeWorkspaceExtrasModel(
+            tasks: NativeTasksClient(sender: sender),
+            connections: NativeConnectionsClient(sender: sender)
+        )
+        workspaceExtrasModel.start(for: accountID)
     }
 
     /// Seeds fixtures and starts the real models. For the "loading" scenario it

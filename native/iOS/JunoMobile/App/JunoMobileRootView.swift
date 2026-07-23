@@ -26,6 +26,8 @@ struct JunoMobileRootView: View {
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let codeModel: CodeRemoteBrowserModel?
+    /// Scheduled tasks and connections, both on the website's own routes.
+    let workspaceExtrasModel: NativeWorkspaceExtrasModel?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -83,6 +85,7 @@ struct JunoMobileRootView: View {
                 // Code screen's own task finds no account, returns early and
                 // never retries — the screen simply never leaves "loading".
                 codeModel?.start(for: session.profile.id)
+                workspaceExtrasModel?.start(for: session.profile.id)
                 attachmentModel?.start(for: session.profile.id)
             } else {
                 syncModel?.stop()
@@ -93,6 +96,7 @@ struct JunoMobileRootView: View {
                 memorySettingsModel?.stop()
                 searchModel?.stop()
                 codeModel?.stop()
+                workspaceExtrasModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -169,12 +173,15 @@ struct JunoMobileRootView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    // A plain glyph with a real 44pt target — the outlined
+                    // circle around it was one of the rejected build's louder
+                    // pieces of chrome, and the sheet already reads as modal.
                     Button { showingSettings = false } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(.primary)
-                            .frame(width: 30, height: 30)
-                            .modifier(JunoGlassCircle())
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close settings")
@@ -334,6 +341,14 @@ struct JunoMobileRootView: View {
             if let codeModel {
                 JunoMobileCodeView(model: codeModel)
             } else { unavailable }
+        case .tasks:
+            if let workspaceExtrasModel {
+                JunoMobileTasksView(model: workspaceExtrasModel)
+            } else { unavailable }
+        case .connections:
+            if let workspaceExtrasModel {
+                JunoMobileConnectionsView(model: workspaceExtrasModel)
+            } else { unavailable }
         case .search:
             if let searchModel {
                 JunoMobileSearchView(model: searchModel, open: openSearchResult)
@@ -420,6 +435,8 @@ private struct JunoMobileSidebarDrawer: View {
     let openDestination: (JunoMobileSection) -> Void
     let openConversation: (String) -> Void
     let newChat: () -> Void
+    @State private var renameTarget: NativeConversation?
+    @State private var renameValue = ""
 
     private var pinned: [NativeConversation] {
         (conversationModel?.conversations ?? [])
@@ -439,16 +456,6 @@ private struct JunoMobileSidebarDrawer: View {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    // Code leads, as it does on the web: it is a mode of working
-                    // rather than a folder of things, so it belongs above the
-                    // content destinations rather than filed among them.
-                    JunoMobileSidebarRow(
-                        junoIcon: JunoMobileSection.code.junoIcon,
-                        icon: JunoMobileSection.code.systemImage,
-                        title: "navigation.code",
-                        selected: selection == .code,
-                        action: { openDestination(.code) }
-                    )
                     JunoMobileSidebarRow(
                         junoIcon: JunoMobileSection.projects.junoIcon,
                         icon: JunoMobileSection.projects.systemImage,
@@ -470,6 +477,30 @@ private struct JunoMobileSidebarDrawer: View {
                         selected: selection == .artifacts,
                         action: { openDestination(.artifacts) }
                     )
+                    JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.tasks.junoIcon,
+                        icon: JunoMobileSection.tasks.systemImage,
+                        title: "navigation.tasks",
+                        selected: selection == .tasks,
+                        action: { openDestination(.tasks) }
+                    )
+                    JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.connections.junoIcon,
+                        icon: JunoMobileSection.connections.systemImage,
+                        title: "navigation.connections",
+                        selected: selection == .connections,
+                        action: { openDestination(.connections) }
+                    )
+                    // Code sits last: it is a separate mode of working rather
+                    // than another folder of content, and the web orders it the
+                    // same way.
+                    JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.code.junoIcon,
+                        icon: JunoMobileSection.code.systemImage,
+                        title: "navigation.code",
+                        selected: selection == .code,
+                        action: { openDestination(.code) }
+                    )
 
                     if !pinned.isEmpty {
                         sectionLabel("sidebar.pinned")
@@ -478,7 +509,25 @@ private struct JunoMobileSidebarDrawer: View {
                                 title: conversation.title,
                                 pinned: true,
                                 pending: conversation.isPending,
-                                action: { openConversation(conversation.id) }
+                                action: { openConversation(conversation.id) },
+                                onTogglePin: {
+                                    Task {
+                                        await conversationModel?.setPinned(
+                                            id: conversation.id, pinned: !conversation.pinned
+                                        )
+                                    }
+                                },
+                                onRename: {
+                                    renameTarget = conversation
+                                    renameValue = conversation.title
+                                },
+                                onArchive: {
+                                    Task {
+                                        await conversationModel?.setArchived(
+                                            id: conversation.id, archived: true
+                                        )
+                                    }
+                                },
                             )
                         }
                     }
@@ -490,7 +539,25 @@ private struct JunoMobileSidebarDrawer: View {
                                 title: conversation.title,
                                 pinned: false,
                                 pending: conversation.isPending,
-                                action: { openConversation(conversation.id) }
+                                action: { openConversation(conversation.id) },
+                                onTogglePin: {
+                                    Task {
+                                        await conversationModel?.setPinned(
+                                            id: conversation.id, pinned: !conversation.pinned
+                                        )
+                                    }
+                                },
+                                onRename: {
+                                    renameTarget = conversation
+                                    renameValue = conversation.title
+                                },
+                                onArchive: {
+                                    Task {
+                                        await conversationModel?.setArchived(
+                                            id: conversation.id, archived: true
+                                        )
+                                    }
+                                },
                             )
                         }
                     }
@@ -504,6 +571,26 @@ private struct JunoMobileSidebarDrawer: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .accessibilityIdentifier("juno.mobile.sidebar")
+        .alert(
+            "conversation.rename",
+            isPresented: Binding(
+                get: { renameTarget != nil },
+                set: { if !$0 { renameTarget = nil } }
+            )
+        ) {
+            TextField("conversation.title", text: $renameValue)
+            Button("common.cancel", role: .cancel) { renameTarget = nil }
+            Button("common.save") {
+                if let target = renameTarget {
+                    Task {
+                        await conversationModel?.renameConversation(
+                            id: target.id, title: renameValue
+                        )
+                    }
+                }
+                renameTarget = nil
+            }
+        }
     }
 
     // Compact brand header — Juno wordmark left, circular glass Search right.
@@ -529,6 +616,9 @@ private struct JunoMobileSidebarDrawer: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 44)
+        // The lockup is a masthead, not a list row: it needs air beneath it, or
+        // the first destination reads as part of the logo.
+        .padding(.bottom, JunoSpace.regular)
     }
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
@@ -656,6 +746,10 @@ private struct JunoMobileConversationRow: View {
     var pinned: Bool
     var pending: Bool
     let action: () -> Void
+    /// Long-press management. Nil for rows that genuinely have no actions.
+    var onTogglePin: (() -> Void)?
+    var onRename: (() -> Void)?
+    var onArchive: (() -> Void)?
 
     var body: some View {
         Button(action: action) {
@@ -682,6 +776,34 @@ private struct JunoMobileConversationRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(JunoSidebarPressStyle())
+        // The sidebar is where these chats live, so it is where they should be
+        // manageable. Having to open a chat just to rename it — and having no
+        // way to pin or archive from here at all — was the gap.
+        //
+        // There is no Delete: the store exposes `setArchived`, not a delete, and
+        // an entry that cannot do what it says is worse than one that is absent.
+        .contextMenu {
+            if let onTogglePin {
+                Button {
+                    onTogglePin()
+                } label: {
+                    Label(
+                        pinned ? "conversation.unpin" : "conversation.pin",
+                        systemImage: pinned ? "pin.slash" : "pin"
+                    )
+                }
+            }
+            if let onRename {
+                Button { onRename() } label: {
+                    Label("conversation.rename", systemImage: "pencil")
+                }
+            }
+            if let onArchive {
+                Button(role: .destructive) { onArchive() } label: {
+                    Label("conversation.archive", systemImage: "archivebox")
+                }
+            }
+        }
     }
 }
 
@@ -1035,9 +1157,15 @@ private struct JunoMobileProjectDetail: View {
     }
 
     /// Characters and lines, as the web reports them under the excerpt.
-    private var instructionsMeasure: String {
+    ///
+    /// Returns a `Text`, not a `String`: `^[...](inflect: true)` is resolved by
+    /// `LocalizedStringKey`, and building it into a plain `String` first renders
+    /// the markup verbatim on screen.
+    private var instructionsMeasure: Text {
         let lines = project.instructions.split(whereSeparator: \.isNewline).count
-        return "^[\(project.instructions.count) character](inflect: true) · ^[\(lines) line](inflect: true)"
+        return Text("^[\(project.instructions.count) character](inflect: true)")
+            + Text(" · ")
+            + Text("^[\(lines) line](inflect: true)")
     }
 
     var body: some View {
@@ -1054,7 +1182,7 @@ private struct JunoMobileProjectDetail: View {
                     Text(instructionsPreview)
                         .lineLimit(3)
                         .foregroundStyle(.primary)
-                    Text(instructionsMeasure)
+                    instructionsMeasure
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
