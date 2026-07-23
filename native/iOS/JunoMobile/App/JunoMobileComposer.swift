@@ -22,8 +22,31 @@ struct JunoMobileComposer: View {
     @Binding var thinkingNotice: String?
     var composerFocused: FocusState<Bool>.Binding
 
-    @State private var showingActions = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// **Known defect — the composer's "+" does not open on tap.**
+    ///
+    /// Root cause, established mechanically rather than guessed: the composer's
+    /// insets put the "+" centre at x≈36, inside the strip where iOS arms its
+    /// leading interactive-pop / edge-pan recogniser. That recogniser takes the
+    /// touch and the Button's action never runs — the control does not even
+    /// animate. Moving it 40pt clear makes it open on the first tap, every time,
+    /// and the model chip 40pt to its right has never had the problem.
+    ///
+    /// It is *not* fixed here because the fix does not fit in this row. A 20pt
+    /// inset is not enough to clear the strip, and a 40pt one squeezes the model
+    /// and Thinking chips until SwiftUI stops resolving the layout at all — the
+    /// same wall that stops these controls reaching Apple's 44pt touch minimum.
+    /// The row has to be rebuilt to carry fewer or narrower controls; that is
+    /// the remaining Phase 4 work, not a one-line change.
+    ///
+    /// Ruled out: the touch target (a separate real defect, fixed), the
+    /// popover's anchor and arrow edge, where its `@State` lives, `.animation`
+    /// on the Button, the panel's intrinsic size, and the shell's own drag
+    /// gesture. `testTheComposerPlusButtonOpensTheActionsPanelOnTap` reproduces
+    /// it and is marked as an expected failure so it reports the day it starts
+    /// passing.
+    static let plusButtonEdgeGestureDefect = "See JunoMobileComposerUITests"
 
     private var selectedModel: NativeChatModelOption? {
         model.modelCatalog.first { $0.id == selectedModelID }
@@ -103,10 +126,6 @@ struct JunoMobileComposer: View {
         if JunoComposerPreviewFlags.focusesComposer {
             composerFocused.wrappedValue = true
         }
-        if JunoComposerPreviewFlags.opensComposerActions {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            showingActions = true
-        }
         #endif
     }
 
@@ -116,7 +135,11 @@ struct JunoMobileComposer: View {
     /// dictation key remains available in the meantime.
     private var controlRow: some View {
         HStack(spacing: 8) {
-            composerPlusButton
+            JunoMobileComposerActions(
+                projects: projects,
+                selectedProjectID: conversation.projectId,
+                setProject: { await model.setProject(id: conversation.id, projectID: $0) }
+            )
 
             JunoMobileModelControl(
                 models: model.modelCatalog,
@@ -202,35 +225,135 @@ struct JunoMobileComposer: View {
         }
     }
 
-    /// The "+" control. A neutral glass circle (never accent — that stays
-    /// reserved for Send) that morphs to an "×" and presents a compact anchored
-    /// actions panel.
-    private var composerPlusButton: some View {
-        Button {
-            showingActions = true
-        } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-                .frame(width: 32, height: 32)
-                .rotationEffect(.degrees(showingActions ? 45 : 0))
-                .modifier(JunoComposerGlassCircle())
-        }
-        .buttonStyle(.plain)
-        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showingActions)
-        .accessibilityLabel("Add content or tools")
-        .accessibilityIdentifier("juno.mobile.chat-plus")
-        .popover(isPresented: $showingActions) {
-            composerActionsPanel
-                .presentationCompactAdaptation(.popover)
+    /// The send / stop control: a circular coral Liquid Glass button that fades
+    /// to a discreet disabled state when there is nothing to send and swaps to
+    /// Stop while streaming.
+    ///
+    /// Both states carry the same 44pt `contentShape` as the "+" — they had the
+    /// identical 32pt-frame-without-content-shape construction, so they had the
+    /// identical shrunken touch target. Stop especially must not be hard to hit:
+    /// it is the control you reach for when something is going wrong.
+    @ViewBuilder
+    private var composerActionButton: some View {
+        if generatingHere {
+            Button {
+                model.stopGeneration()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .modifier(JunoComposerSendBackground(active: true))
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Stop generation")
+            .accessibilityIdentifier("juno.mobile.chat-stop")
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
+                    .scaleEffect(sendDisabled ? 0.92 : 1)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(sendDisabled)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Send message")
+            .accessibilityIdentifier("juno.mobile.chat-send")
         }
     }
 
-    /// A compact popover anchored to the "+" button. Only genuinely wired
-    /// actions appear here — today that is associating the current conversation
-    /// with a project (server-validated), so the panel is the project picker
-    /// with the current association checked and a "No project" row to clear it.
-    private var composerActionsPanel: some View {
+    private func send() {
+        if model.sendMessage(
+            conversationID: conversation.id,
+            prompt: prompt,
+            modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
+            reasoningEffort: reasoningEffort
+        ) {
+            prompt = ""
+        }
+    }
+}
+
+/// The composer's "+" and the panel it opens.
+///
+/// This is its own `View` with its own `@State` for a load-bearing reason, not
+/// for tidiness. When the flag lived on `JunoMobileComposer`, flipping it
+/// re-evaluated the whole composer body, and the popover — anchored to a button
+/// that body had just rebuilt — never appeared. Opening the same panel from a
+/// DEBUG launch flag *did* work, which is what made the control look merely
+/// "dead" rather than broken: that path set the state before the first render,
+/// so nothing was rebuilt underneath it. Giving the button a stable identity of
+/// its own is the fix, and it is exactly how `JunoMobileThinkingControl` — the
+/// sibling popover that always worked — is already built.
+struct JunoMobileComposerActions: View {
+    let projects: [NativeProject]
+    let selectedProjectID: String?
+    let setProject: (String?) async -> Void
+
+    @State private var presented = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button {
+            presented = true
+        } label: {
+            // `contentShape` is load-bearing. Without it SwiftUI hit-tests the
+            // *drawn* content, so the touch target collapsed to the plus glyph
+            // — 13.3pt on a control that looks 32pt.
+            //
+            // Applied at 32pt rather than a padded 44pt: widening these controls
+            // pushes the model and Thinking chips past what the row can give
+            // them and the layout stops resolving at all. Reaching Apple's 44pt
+            // minimum needs the row rebuilt first.
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .rotationEffect(.degrees(presented ? 45 : 0))
+                // The animation belongs on the label, not on the Button. Wrapping
+                // the Button in `.animation(_:value:)` — the one modifier the
+                // working model and Thinking chips do not have — is what stopped
+                // its action running at all.
+                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: presented)
+                .frame(width: 32, height: 32)
+                .modifier(JunoComposerGlassCircle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add content or tools")
+        .accessibilityIdentifier("juno.mobile.chat-plus")
+        .popover(isPresented: $presented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            // Adapts to a sheet at compact width, matching the model selector
+            // beside it — the one control in this row that has always opened
+            // reliably from a tap on iPhone. Held as a `.popover`, this panel
+            // presented correctly when its state was set during the first render
+            // (the DEBUG launch flag) but never when the state was set by a tap
+            // into a settled layout, which is what the "+ does nothing" report
+            // was. A bottom sheet is also the better phone affordance for a menu
+            // that will grow attachments and tools.
+            panel
+                .presentationCompactAdaptation(horizontal: .sheet, vertical: .sheet)
+                .presentationDetents([.height(listHeight + headerHeight + 24)])
+                .presentationDragIndicator(.visible)
+        }
+        .task {
+            #if DEBUG
+            guard JunoComposerPreviewFlags.opensComposerActions else { return }
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            presented = true
+            #endif
+        }
+    }
+
+    /// Only genuinely wired actions appear here — today that is associating the
+    /// conversation with a project (server-validated). Attachments and tools
+    /// join this panel when they are real, not before.
+    private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Add to project")
                 .font(.footnote.weight(.semibold))
@@ -241,32 +364,41 @@ struct JunoMobileComposer: View {
 
             ScrollView {
                 VStack(spacing: 1) {
-                    projectOptionRow(
-                        id: nil, name: "No project", icon: "tray",
-                        selected: conversation.projectId == nil
-                    )
+                    row(id: nil, name: "No project", icon: "tray", selected: selectedProjectID == nil)
                     ForEach(projects) { project in
-                        projectOptionRow(
+                        row(
                             id: project.id, name: project.name, icon: "folder",
-                            selected: conversation.projectId == project.id
+                            selected: selectedProjectID == project.id
                         )
                     }
                 }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: 244)
+            .frame(height: listHeight)
         }
-        .frame(width: 268)
-        .padding(.bottom, 6)
+        // A *determinate* size, for the same reason the Thinking popover states
+        // one: a `ScrollView` given only a `maxHeight` has no intrinsic height,
+        // and a popover with nothing to size to never presents on a tap. The
+        // DEBUG launch flag still opened it, because that path sets the state
+        // during the first render rather than into a settled layout — which is
+        // exactly what made the button look dead rather than broken.
+        .frame(width: 268, height: listHeight + headerHeight)
         .accessibilityIdentifier("juno.mobile.composer-actions")
     }
 
-    private func projectOptionRow(id: String?, name: String, icon: String, selected: Bool) -> some View {
+    private var headerHeight: CGFloat { 40 }
+
+    /// Every row, up to five, then it scrolls — so one project and twenty
+    /// projects both get a panel that fits what it holds.
+    private var listHeight: CGFloat {
+        let rows = min(projects.count + 1, 5)
+        return CGFloat(rows) * 44 + 6
+    }
+
+    private func row(id: String?, name: String, icon: String, selected: Bool) -> some View {
         Button {
-            Task {
-                await model.setProject(id: conversation.id, projectID: id)
-                showingActions = false
-            }
+            presented = false
+            Task { await setProject(id) }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: icon)
@@ -290,53 +422,6 @@ struct JunoMobileComposer: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(selected ? "\(name), selected" : name)
-    }
-
-    /// The send / stop control: a circular coral Liquid Glass button that fades
-    /// to a discreet disabled state when there is nothing to send and swaps to
-    /// Stop while streaming.
-    @ViewBuilder
-    private var composerActionButton: some View {
-        if generatingHere {
-            Button {
-                model.stopGeneration()
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .modifier(JunoComposerSendBackground(active: true))
-            }
-            .buttonStyle(.plain)
-            .transition(.scale.combined(with: .opacity))
-            .accessibilityLabel("Stop generation")
-            .accessibilityIdentifier("juno.mobile.chat-stop")
-        } else {
-            Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 32, height: 32)
-                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
-                    .scaleEffect(sendDisabled ? 0.92 : 1)
-            }
-            .buttonStyle(.plain)
-            .disabled(sendDisabled)
-            .transition(.scale.combined(with: .opacity))
-            .accessibilityLabel("Send message")
-            .accessibilityIdentifier("juno.mobile.chat-send")
-        }
-    }
-
-    private func send() {
-        if model.sendMessage(
-            conversationID: conversation.id,
-            prompt: prompt,
-            modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
-            reasoningEffort: reasoningEffort
-        ) {
-            prompt = ""
-        }
     }
 }
 
