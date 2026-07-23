@@ -34,6 +34,9 @@ struct JunoMacSidebar: View {
     @State private var renameValue = ""
     /// One clock read per list rebuild. Reading `Date()` inside the grouping
     /// call would make the buckets recompute on every unrelated redraw.
+    /// `JunoMacDayChange` pushes a new value when the calendar day actually
+    /// moves, so a window left open across midnight re-labels itself without
+    /// paying for a clock read per redraw.
     @State private var groupingNow = Date()
 
     private var groups: [NativeConversationGroup] {
@@ -87,6 +90,11 @@ struct JunoMacSidebar: View {
             // Refresh the recency boundaries when the history changes, so a
             // conversation created after midnight does not stay in "Yesterday".
             groupingNow = Date()
+        }
+        .onReceive(JunoMacDayChange.signal) { now in
+            // …and again when the day itself moves, so an idle window does not
+            // keep yesterday's chats under "Today".
+            groupingNow = now
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .overlay { emptyState }
