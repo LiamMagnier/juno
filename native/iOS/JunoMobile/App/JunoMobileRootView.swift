@@ -667,12 +667,18 @@ private struct JunoMobileSidebarDrawer: View {
             // failure, so a photo that 403'd looked identical to an account with
             // no photo — which is exactly the "my picture never shows" report,
             // and impossible to tell apart from the outside.
+            // The photo sits *inside* the glass circle rather than filling it.
+            // At the control's full 46pt it covered the glass edge to edge, so
+            // the button stopped reading as a control and became one large
+            // photo. The inset keeps the ring visible and matches how the
+            // initials fallback has always sat.
             JunoAvatar(
                 imageURL: session.profile.imageURL,
                 name: session.profile.name,
-                size: 46,
+                size: 32,
                 load: loadAvatar
             )
+            .frame(width: 46, height: 46)
             .modifier(JunoGlassCircle())
         }
         .buttonStyle(.plain)
