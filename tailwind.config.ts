@@ -278,14 +278,6 @@ const config: Config = {
           "0%": { transform: "translateX(-100%)" },
           "100%": { transform: "translateX(300%)" },
         },
-        // The dot trailing a streaming reply. `animate-pulse` (2s, opacity only)
-        // read as an idle placeholder next to text arriving several times a
-        // second; this beats at roughly a typing cadence and scales as well as
-        // fades, so it reads as a live caret.
-        "stream-dot": {
-          "0%, 100%": { opacity: "0.35", transform: "scale(0.8)" },
-          "50%": { opacity: "1", transform: "scale(1)" },
-        },
         // ---- Reasoning slider, top tier ("Max") ----
         // The gradient is sized 200% and panned, so the hue drifts without the
         // element itself moving. Paired with `bg-[length:200%_100%]`.
@@ -369,7 +361,6 @@ const config: Config = {
         "gen-drift-b": "gen-drift-b 22s ease-in-out infinite",
         "gen-grid-pulse": "gen-grid-pulse 5.2s ease-in-out infinite",
         "gen-sweep": "gen-sweep 1.8s cubic-bezier(0.45, 0, 0.55, 1) infinite",
-        "stream-dot": "stream-dot 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite",
       },
     },
   },

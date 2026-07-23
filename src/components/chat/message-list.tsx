@@ -35,91 +35,39 @@ const SCROLL_FADE_STYLE: React.CSSProperties = {
   WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
 };
 
-/**
- * Eased scroll follow for a target that keeps moving.
+/*
+ * A NOTE ON WHY THE FOLLOW IS NOT ANIMATED.
  *
- * Writing `scrollTop` straight to the bottom on every token is what made the
- * transcript twitch — each chunk was a hard jump of whatever height it added.
- * `behavior: "smooth"` is worse: every token restarts the browser's own
- * animation from a standstill, so it stutters and never arrives. Instead one
- * rAF loop chases a target that callers keep updating, easing a fixed fraction
- * of the remaining distance per frame. That reads as a continuous glide at any
- * token rate, and it costs one loop rather than one animation per chunk.
+ * An earlier version eased the follow: one rAF loop chasing the bottom, closing
+ * a fraction of the remaining distance per frame. It looked better and it was
+ * wrong, because it put the code and the reader in a tug of war over the same
+ * scrollTop. Every fix bred another bug — the loop had to know which movements
+ * were its own, that flag had to survive a hidden tab (where rAF never fires and
+ * the loop parks forever on a frame that never comes), and any state that can
+ * get stuck eventually does, at which point the transcript stops following for
+ * the rest of the session with no way back.
+ *
+ * A reply grows a few pixels at a time, so pinning to the bottom on each update
+ * is already smooth; there was never much to fix. The one place motion is safe
+ * is "jump to latest", which is discrete, user-initiated, and cannot be racing
+ * anything — that keeps `behavior: "smooth"`.
+ *
+ * The rule is one line: when new content arrives, follow it only if the reader
+ * was already at the bottom before it arrived. Scroll away and the transcript
+ * holds still; come back to the bottom and it picks you up again. No modes, no
+ * flags, nothing that can end up stuck in the wrong state.
  */
-function useGlideScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
-  const rafRef = React.useRef<number | null>(null);
-  const targetRef = React.useRef(0);
-  // True while the loop owns scrollTop, so the scroll handler can tell our own
-  // movement from the user's — the read-from-top hold below glides *upward*,
-  // which would otherwise look exactly like a user scrolling away.
-  const glidingRef = React.useRef(false);
-  // The last value the loop actually wrote. Anything else appearing in
-  // scrollTop came from outside (wheel, scrollbar drag, keyboard, a jump), and
-  // the loop has to let go rather than drag the view back to a stale target.
-  const lastWriteRef = React.useRef(0);
-  const reduceRef = React.useRef(false);
 
-  React.useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const sync = () => {
-      reduceRef.current = mq.matches;
-    };
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-
-  const cancel = React.useCallback(() => {
-    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
-    rafRef.current = null;
-    glidingRef.current = false;
-  }, []);
-
-  React.useEffect(() => cancel, [cancel]);
-
-  const glideTo = React.useCallback(
-    (target: number) => {
-      const el = scrollRef.current;
-      if (!el) return;
-      targetRef.current = target;
-      if (reduceRef.current) {
-        el.scrollTop = target;
-        return;
-      }
-      // A loop is already running — it reads targetRef every frame, so the new
-      // destination is picked up without restarting the easing.
-      if (rafRef.current != null) return;
-      glidingRef.current = true;
-      lastWriteRef.current = el.scrollTop;
-      const step = () => {
-        const node = scrollRef.current;
-        if (!node) return cancel();
-        // Someone else moved the view since our last frame — yield to them.
-        if (Math.abs(node.scrollTop - lastWriteRef.current) > 2) return cancel();
-        const delta = targetRef.current - node.scrollTop;
-        if (Math.abs(delta) < 0.5) {
-          node.scrollTop = targetRef.current;
-          return cancel();
-        }
-        node.scrollTop += delta * 0.22;
-        // Read back: the browser clamps and snaps to device pixels, so the
-        // value we wrote is not necessarily the value that landed.
-        lastWriteRef.current = node.scrollTop;
-        rafRef.current = requestAnimationFrame(step);
-      };
-      rafRef.current = requestAnimationFrame(step);
-    },
-    [cancel, scrollRef]
-  );
-
-  return { glideTo, cancel, glidingRef, lastWriteRef };
-}
+/** How close to the bottom counts as "at the bottom" and resumes the follow.
+ *  Small on purpose: it has to be tighter than a single wheel notch, or the
+ *  scroll a reader's own gesture produces re-attaches the follow they were
+ *  trying to escape. Wide enough to absorb sub-pixel and rounding drift. */
+const ATTACH_SLOP_PX = 24;
 
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
   const bottomRef = React.useRef<HTMLDivElement>(null);
   const scrollRef = React.useRef<HTMLDivElement>(null);
-  const stickRef = React.useRef(true);
   const [atBottom, setAtBottom] = React.useState(true);
 
   // Only animate messages that arrive after the initial mount, so opening an
@@ -137,77 +85,65 @@ export function MessageList(props: MessageListProps) {
     return map;
   }, [artifacts]);
 
-  const { glideTo, cancel, glidingRef, lastWriteRef } = useGlideScroll(scrollRef);
-  const lastTopRef = React.useRef(0);
+  /* Whether the reader was at the bottom BEFORE this content arrived.
+   *
+   * Deliberately not read from a `stickRef` that a scroll handler maintains.
+   * That made following depend on the scroll event having fired before the
+   * render, and when it hadn't — the content landing in the same tick as the
+   * reader's scroll — the view yanked back down on someone who had just
+   * scrolled away. Measuring the previous layout instead needs no event to
+   * have run: the geometry is already there, whatever order things happened in.
+   */
+  const prevRef = React.useRef({ scrollHeight: 0, scrollTop: 0, clientHeight: 0 });
 
+  const remember = React.useCallback((el: HTMLDivElement) => {
+    prevRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight };
+  }, []);
+
+  // A scroll ending within reach of the bottom means the reader is back, and
+  // the follow resumes. This window used to be 120px — about one wheel notch,
+  // so the scroll a reader's own scroll-up produced landed inside it and
+  // re-attached the follow they were trying to escape. That was the "can't
+  // scroll up": every nudge snapped straight back.
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    // Our own easing fires this too. Movement that matches what the loop last
-    // wrote is ours, so it carries no intent; anything else is the user and
-    // takes the view back immediately (a scrollbar drag fires neither wheel
-    // nor touch, so it can only be caught here).
-    if (glidingRef.current) {
-      if (Math.abs(el.scrollTop - lastWriteRef.current) <= 2) {
-        lastTopRef.current = el.scrollTop;
-        return;
-      }
-      cancel();
-    }
-    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const scrolledUp = el.scrollTop < lastTopRef.current - 1;
-    lastTopRef.current = el.scrollTop;
-    // Direction, not distance alone, decides detachment. Measuring distance on
-    // its own detached the follow whenever tokens arrived faster than the glide
-    // could close the gap — the view would stop following mid-reply.
-    if (scrolledUp && distance > 24) stickRef.current = false;
-    else if (distance < 120) stickRef.current = true;
-    setAtBottom(stickRef.current);
+    remember(el);
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < ATTACH_SLOP_PX);
   };
 
-  // A glide is ours to cancel the moment the user reaches for the transcript;
-  // `onScroll` alone can't tell, since the loop is writing scrollTop too.
-  const onUserScrollIntent = () => {
-    if (glidingRef.current) cancel();
-  };
-
-  // Keep pinned to the bottom while streaming new content (instant — smooth on
-  // every token janks). Honors the user scrolling up via the stick heuristic.
-  // One exception (NN/g): once a streaming reply outgrows the viewport, hold the
-  // view at the reply's top so it can be read from the start instead of chasing
-  // the tail. The hold fires once per reply — re-sticking afterwards (scrolling
-  // back down, or "jump to latest") resumes a plain bottom-follow.
+  // Follow the bottom while the reader is at it.
+  //
+  // There used to be a second behaviour here: once a streaming reply outgrew
+  // the viewport it would jump to that reply's TOP and detach itself, on the
+  // reasoning that a long answer should be read from the start. In practice it
+  // reads as the scroll breaking — the page stops following mid-reply for no
+  // reason the reader can see, and "why did it stop" costs more than "I have to
+  // scroll up myself" saves. Follow the bottom; let the reader decide when to
+  // leave.
+  //
+  // Layout effect, not effect: this runs before paint, so the transcript is
+  // never shown at the old position for a frame first.
   const last = messages[messages.length - 1];
   const lastContent = last?.content;
-  const heldIdRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    if (!stickRef.current) return;
+  React.useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // The bottom sentinel's previous sibling is the last message's root node.
-    const node = bottomRef.current?.previousElementSibling as HTMLElement | null;
-    const bottom = el.scrollHeight - el.clientHeight;
-    if (node && last?.role === "ASSISTANT" && last.streaming && heldIdRef.current !== last.id) {
-      // Reply top in scroll coordinates, offset to mirror the container's py-6.
-      const top = node.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 24;
-      if (top < bottom) {
-        // Bottom-following would push the reply's first line off-screen — hold
-        // here and release the stick so later tokens don't yank the view.
-        heldIdRef.current = last.id;
-        stickRef.current = false;
-        setAtBottom(false);
-        glideTo(Math.max(top, 0));
-        return;
-      }
-    }
-    glideTo(bottom);
-  }, [messages.length, lastContent, last, glideTo]);
+    const prev = prevRef.current;
+    const wasAtBottom = prev.scrollHeight - prev.scrollTop - prev.clientHeight < ATTACH_SLOP_PX;
+    if (wasAtBottom) el.scrollTop = el.scrollHeight - el.clientHeight;
+    remember(el);
+  }, [messages.length, lastContent, remember]);
 
   const jumpToLatest = () => {
     const el = scrollRef.current;
-    stickRef.current = true;
     setAtBottom(true);
-    if (el) glideTo(el.scrollHeight - el.clientHeight);
+    // Pretend we were already at the bottom, so a chunk landing mid-animation
+    // is followed rather than treated as "the reader is away".
+    if (el) prevRef.current = { scrollHeight: el.scrollHeight, scrollTop: el.scrollHeight, clientHeight: el.clientHeight };
+    // Discrete and user-initiated, so it is the one scroll safe to animate:
+    // nothing else is writing scrollTop at the same time.
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   };
 
   return (
@@ -215,10 +151,11 @@ export function MessageList(props: MessageListProps) {
       <div
         ref={scrollRef}
         onScroll={onScroll}
-        onWheel={onUserScrollIntent}
-        onTouchStart={onUserScrollIntent}
-        onKeyDown={onUserScrollIntent}
-        className="h-full overflow-y-auto"
+        // overflow-anchor:none — the browser's own scroll anchoring shifts
+        // scrollTop when content resizes, which while streaming is constantly.
+        // Left on, it moves the view out from under a reader who has scrolled
+        // up, and nothing in here asked it to.
+        className="h-full overflow-y-auto [overflow-anchor:none]"
         style={SCROLL_FADE_STYLE}
       >
         <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">

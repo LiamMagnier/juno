@@ -244,35 +244,43 @@ saturated color in the dot systems.
 
 ### 3.4b Streaming motion
 
-A reply arriving is two movements that have to agree: the page following it and
-the words appearing.
+A reply arriving is two things: the page following it and the words appearing.
 
-**The follow** (`useGlideScroll`, `message-list.tsx`). One rAF loop chases a
-target that callers keep moving, closing 22% of the remaining distance each
-frame. Writing `scrollTop` straight to the bottom per chunk made the transcript
-jump by whatever height each chunk added — a hard cut many times a second, which
-reads as shaking; `behavior: "smooth"` is worse, since every chunk restarts the
-browser's animation from a standstill. Everything that moves the transcript goes
-through it: the follow, the read-from-top hold, and "jump to latest".
+**The follow** (`message-list.tsx`). Auto-scroll with one rule — when new
+content arrives, follow the bottom **only if the reader was already at the
+bottom before it arrived**. Scroll up and the transcript holds still; return to
+within `ATTACH_SLOP_PX` (24px) of the bottom and it resumes. That "was at the
+bottom" is measured from the *previous* layout (`prevRef`), captured in a
+`useLayoutEffect` and on every scroll — not tracked as a flag by the scroll
+handler, because that made following depend on the scroll event firing before
+the content render, and a chunk landing in the same tick yanked the view back
+onto a reader who had just scrolled away.
 
-Two rules keep it from fighting the reader. Detachment is decided by
-**direction** — only a deliberate scroll *up* lets go, because measuring
-distance alone detached whenever tokens outran the easing. And the loop records
-the value it last wrote, so any scrollTop it doesn't recognise (wheel, scrollbar
-drag, keyboard, a programmatic jump) makes it yield on the next frame — a
-scrollbar drag fires neither wheel nor touch, so this is the only thing that
-catches it. `prefers-reduced-motion` skips the easing entirely.
+Two earlier attempts are worth not repeating. An eased rAF loop (chase the
+bottom, close a fraction per frame) looked smoother but put the code and the
+reader in a tug-of-war over one `scrollTop`: it needed to know which movements
+were its own, that state had to survive a hidden tab where rAF never fires, and
+once stuck the transcript stopped following for the rest of the session. And the
+re-attach window was once 120px — about one wheel notch — so a reader's own
+scroll-up produced a scroll event that landed inside it and re-stuck instantly;
+that was the literal "can't scroll up". A reply grows a few pixels per update, so
+pinning to the bottom is already smooth with no easing at all. `overflow-anchor:
+none` keeps the browser's scroll anchoring from shifting the view under a reader
+who has scrolled up. The one animated scroll is "jump to latest" — discrete,
+user-initiated, racing nothing — which keeps `behavior: "smooth"`.
 
 **The words** (`.stream-tail`). The line being written sits under a one-line
 gradient that bottoms out at 30% alpha, so it arrives soft and firms up as later
 lines push it clear. It masks the prose only — over the whole answer body it
-landed on the trailing dot's line instead of the text, and would have dimmed the
-bottom edge of a message ending in an image. It is gated on ~180 characters:
-below that the gradient spans the entire answer, so a short reply would sit
-dimmed for its whole life. Fading to zero rather than 30% ran a gradient through
-the letterforms, which reads as broken text, not as text arriving. A mask beats
-animating the tokens themselves — react-markdown rebuilds the trailing block on
-every chunk, so anything keyed to those nodes restarts dozens of times a second.
+would dim the bottom edge of a message ending in an image. It is gated on ~140
+characters (past the first wrap at every width): below that the gradient spans
+the whole answer, so a short reply would sit dimmed for its life. Fading to zero
+rather than 30% ran a gradient through the letterforms, which reads as broken
+text. A mask beats animating the tokens — react-markdown rebuilds the trailing
+block every chunk, so anything keyed to those nodes restarts dozens of times a
+second. There is **no trailing caret/orb**: a coral dot parked under the text was
+the loudest thing on the page while a reply arrived, and the fade plus the
+composer's stop button already say "still writing".
 
 ### 3.5 The flat-transcript law
 

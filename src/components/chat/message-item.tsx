@@ -731,10 +731,12 @@ export function MessageItem({
                 landed on the trailing dot's own line instead of the line being
                 written, and it would have dimmed the bottom edge of a message
                 that ends in an image.
-                The length gate matters: under a couple of lines the gradient
-                spans the entire answer, so a short reply would sit dimmed for
-                its whole life instead of having a soft leading edge. */}
-            <div className={cn("space-y-1", message.streaming && message.content.length > 180 && "stream-tail")}>
+                The length gate matters: the gradient is one line tall, so on an
+                answer only one line long it covers the whole thing and the
+                reply sits dimmed for its whole life. ~140 characters is past
+                the first wrap at every column width, which is the point where
+                the fade has a line of its own to sit on. */}
+            <div className={cn("space-y-1", message.streaming && message.content.length > 140 && "stream-tail")}>
             {parts.map((part, i) =>
               part.type === "text" ? (
                 <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} />
@@ -764,12 +766,10 @@ export function MessageItem({
               )
             )}
             </div>
-            {message.streaming && message.content.length > 0 && (
-              <span
-                className="ml-1 inline-block h-2 w-2 translate-y-[1px] rounded-full bg-primary align-middle motion-safe:animate-stream-dot"
-                aria-hidden="true"
-              />
-            )}
+            {/* No trailing dot. A coral ball parked under the text was the
+                loudest thing on the page while a reply arrived, and it is
+                redundant now: the tail fade already says "still writing", and
+                the composer is showing its stop button throughout. */}
             {(view.errorMessage || finishNote || canContinue) && (
               <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-border/70 bg-muted/45 px-3 py-2 text-xs text-muted-foreground">
                 <span className="min-w-0 flex-1">{view.errorMessage ?? finishNote}</span>
