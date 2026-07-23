@@ -14,10 +14,7 @@ struct JunoMacSidebarHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "circle.hexagongrid.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.junoAccent)
-                    .accessibilityHidden(true)
+                JunoMark(size: 15)
                 Text("Juno")
                     .font(.system(.subheadline, design: .default, weight: .semibold))
                 Spacer(minLength: 0)

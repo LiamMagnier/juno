@@ -76,15 +76,19 @@ public enum NativeConversationGrouping {
         if conversation.pinned { return .pinned }
 
         let date = conversation.lastMessageAt
-        if calendar.isDateInToday(date) { return .today }
-        if calendar.isDateInYesterday(date) { return .yesterday }
-        // A conversation dated in the future (clock skew between devices is
-        // real) reads as the most recent thing, not the oldest.
-        if date > now { return .today }
-
+        // Every boundary is measured from the injected `now`, never from
+        // `Calendar.isDateInToday(_:)` and friends — those read the system
+        // clock, so they would drift away from `now` the moment the caller
+        // holds a reference date (a frozen clock, a preview, or a sidebar that
+        // read the time once and is still open after midnight).
         let startOfToday = calendar.startOfDay(for: now)
         let startOfDate = calendar.startOfDay(for: date)
         let days = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
+        // A conversation dated in the future (clock skew between devices is
+        // real) reads as the most recent thing, not the oldest, so negative
+        // day offsets collapse into today.
+        if days <= 0 { return .today }
+        if days == 1 { return .yesterday }
         if days <= 7 { return .previous7Days }
         if days <= 30 { return .previous30Days }
         return .older

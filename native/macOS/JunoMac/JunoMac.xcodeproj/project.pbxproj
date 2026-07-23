@@ -8,15 +8,19 @@
 
 /* Begin PBXBuildFile section */
 		1952292BD298BAA4E7A8D19F /* JunoMacModelSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C5A755809C82406FB49E332 /* JunoMacModelSelector.swift */; };
+		1B7D74A695698A1BD0B2A020 /* Newsreader24pt-MediumItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3253DF72ECE209757DD083D5 /* Newsreader24pt-MediumItalic.ttf */; };
 		2F0DAD1CEF4D4C8C9C80722D /* JunoDesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = DF192D2A4026E9D67ADE8354 /* JunoDesignSystem */; };
+		3035FF4B71CA9101A44B59DA /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 612BE37A26BBF788EFC67C6D /* OFL.txt */; };
 		33AFB75B39862CCE4793DDA3 /* JunoMacSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D7BD74AC04FDE1F5C7E90BA /* JunoMacSearchView.swift */; };
 		426B2B13B00E82D73EF9C0DA /* JunoMacRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */; };
+		448A4F195CC7B50BEEB8BD56 /* Newsreader24pt-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3727F9360765313CE4F3BC1D /* Newsreader24pt-Regular.ttf */; };
 		4AE918BFFF50C114E6017E5E /* JunoMacDayChangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B5E2957D64DCDC299B2F5F9 /* JunoMacDayChangeTests.swift */; };
 		55F13CB20944615C0C86FD3F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4C9EBC8D50855FD9DCD13445 /* Assets.xcassets */; };
 		5A6E570CE22BCA48D933DD3B /* JunoCodeBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 1F539478D11B08380C18A639 /* JunoCodeBridge */; };
 		5C98CACC22978DC4AF2DB91D /* JunoSync in Frameworks */ = {isa = PBXBuildFile; productRef = B2E6F20B997DE375F5082AD2 /* JunoSync */; };
 		6A2738EFF4F02A729EB969C0 /* JunoMacChatShellUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49A1B6E603BC926BA6903005 /* JunoMacChatShellUITests.swift */; };
 		747DA0009881C3DED9D7C758 /* JunoCore in Frameworks */ = {isa = PBXBuildFile; productRef = 47CA0DBD9CBA1468E4C823DC /* JunoCore */; };
+		7675443440051BB1FD17EA8D /* Newsreader24pt-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E73414C500719664C5011B51 /* Newsreader24pt-SemiBold.ttf */; };
 		82E3BEDF35BE3243C696F2AD /* JunoMacProductModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBC06B87A989B3E68E1775BD /* JunoMacProductModeTests.swift */; };
 		857DE226B94D1787D977E32E /* JunoCodeUI in Frameworks */ = {isa = PBXBuildFile; productRef = D54AE939B9DF17EA23201112 /* JunoCodeUI */; };
 		8A1B4E686A5D0DAA5DCC8890 /* JunoMacConversationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A483F83EC28F197C398A201 /* JunoMacConversationsView.swift */; };
@@ -26,6 +30,7 @@
 		ACEE3957769B6DABBBB65ADC /* JunoStorage in Frameworks */ = {isa = PBXBuildFile; productRef = B538D69E7347C15F96A76535 /* JunoStorage */; };
 		AE30E9469C645F65D72D66F7 /* JunoCodeRuntime in Frameworks */ = {isa = PBXBuildFile; productRef = 4FD015E7FED1A6B82C0AFA3A /* JunoCodeRuntime */; };
 		AFF37CE61AF9A22E9BDC0FBE /* JunoMacChatInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7053347022CB7B7295D66351 /* JunoMacChatInspector.swift */; };
+		B279ADEEAF654B3A2D784838 /* Newsreader24pt-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 825AB743D8C4B6D6CDA83C98 /* Newsreader24pt-Medium.ttf */; };
 		B3E1EF12AA66D0EA011572A3 /* JunoMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F12913A1789B6010163FED0B /* JunoMacApp.swift */; };
 		B5F4857F03258F3F741BF104 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C2D8004C742B19972DF30644 /* Localizable.xcstrings */; };
 		C2A8FC2470043AED9FD3C292 /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 134D80E0EB9662BE0FDF8B37 /* JunoPreviewSupport */; };
@@ -69,6 +74,8 @@
 		16DBF974D3373278F7102398 /* JunoMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A483F83EC28F197C398A201 /* JunoMacConversationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacConversationsView.swift; sourceTree = "<group>"; };
 		2B25B6652DCD4815B9EAD948 /* JunoCode */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoCode; path = ../../Packages/JunoCode; sourceTree = SOURCE_ROOT; };
+		3253DF72ECE209757DD083D5 /* Newsreader24pt-MediumItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-MediumItalic.ttf"; sourceTree = "<group>"; };
+		3727F9360765313CE4F3BC1D /* Newsreader24pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Regular.ttf"; sourceTree = "<group>"; };
 		379CEA04E64C399B873C797D /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		38C816B8CDF33F4C2C135972 /* JunoMacModeSwitcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacModeSwitcher.swift; sourceTree = "<group>"; };
 		3E6A895D190D8032986F3FA8 /* JunoMacUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = JunoMacUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -78,6 +85,7 @@
 		4C9EBC8D50855FD9DCD13445 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		543A887EC7B1818EAE7EB0E6 /* JunoMacSidebarChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSidebarChrome.swift; sourceTree = "<group>"; };
 		5D7BD74AC04FDE1F5C7E90BA /* JunoMacSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSearchView.swift; sourceTree = "<group>"; };
+		612BE37A26BBF788EFC67C6D /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		670EED34A6F6BAA7930ECE91 /* JunoMacSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSidebar.swift; sourceTree = "<group>"; };
 		6DA713CF7CFE86C83B65FBC0 /* JunoMac-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Stable.xcconfig"; sourceTree = "<group>"; };
 		6EE1F2359F9FF2096C674FCA /* JunoMacLaunchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacLaunchUITests.swift; sourceTree = "<group>"; };
@@ -85,6 +93,7 @@
 		7053347022CB7B7295D66351 /* JunoMacChatInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacChatInspector.swift; sourceTree = "<group>"; };
 		70EC3645ED06842B9C90548F /* JunoMacSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacSettingsView.swift; sourceTree = "<group>"; };
 		792B58E305A59E287E5A7808 /* JunoNativeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = JunoNativeKit; path = ../../Packages/JunoNativeKit; sourceTree = SOURCE_ROOT; };
+		825AB743D8C4B6D6CDA83C98 /* Newsreader24pt-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Medium.ttf"; sourceTree = "<group>"; };
 		8B5E2957D64DCDC299B2F5F9 /* JunoMacDayChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacDayChangeTests.swift; sourceTree = "<group>"; };
 		97CD354B0BD2F2EEF3293987 /* JunoMacRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacRootView.swift; sourceTree = "<group>"; };
 		AA34D56D1D8034E67E11913E /* JunoMac-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoMac-Next.xcconfig"; sourceTree = "<group>"; };
@@ -96,6 +105,7 @@
 		CD58223D998C43B9DD3FB093 /* JunoMacChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacChatView.swift; sourceTree = "<group>"; };
 		DAD6983FCF9F7C63E9BD9D2B /* JunoMacProductMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacProductMode.swift; sourceTree = "<group>"; };
 		E57A4CB2A8EACC6D5C304C14 /* JunoMacComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacComposer.swift; sourceTree = "<group>"; };
+		E73414C500719664C5011B51 /* Newsreader24pt-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-SemiBold.ttf"; sourceTree = "<group>"; };
 		F12913A1789B6010163FED0B /* JunoMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacApp.swift; sourceTree = "<group>"; };
 		FC8A8C79DEA5FCBF7DF247DA /* JunoMacComposerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JunoMacComposerUITests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -156,6 +166,7 @@
 				4C9EBC8D50855FD9DCD13445 /* Assets.xcassets */,
 				C2D8004C742B19972DF30644 /* Localizable.xcstrings */,
 				379CEA04E64C399B873C797D /* PrivacyInfo.xcprivacy */,
+				6EA072D4D59987A43A0EA586 /* Fonts */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -195,6 +206,18 @@
 				CC993F6407539891B6372C2E /* JunoMacWebAuthenticationClient.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		6EA072D4D59987A43A0EA586 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				825AB743D8C4B6D6CDA83C98 /* Newsreader24pt-Medium.ttf */,
+				3253DF72ECE209757DD083D5 /* Newsreader24pt-MediumItalic.ttf */,
+				3727F9360765313CE4F3BC1D /* Newsreader24pt-Regular.ttf */,
+				E73414C500719664C5011B51 /* Newsreader24pt-SemiBold.ttf */,
+				612BE37A26BBF788EFC67C6D /* OFL.txt */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		BB9D9C431DC2548F4247FDA6 /* Config */ = {
@@ -343,6 +366,11 @@
 			files = (
 				55F13CB20944615C0C86FD3F /* Assets.xcassets in Resources */,
 				B5F4857F03258F3F741BF104 /* Localizable.xcstrings in Resources */,
+				B279ADEEAF654B3A2D784838 /* Newsreader24pt-Medium.ttf in Resources */,
+				1B7D74A695698A1BD0B2A020 /* Newsreader24pt-MediumItalic.ttf in Resources */,
+				448A4F195CC7B50BEEB8BD56 /* Newsreader24pt-Regular.ttf in Resources */,
+				7675443440051BB1FD17EA8D /* Newsreader24pt-SemiBold.ttf in Resources */,
+				3035FF4B71CA9101A44B59DA /* OFL.txt in Resources */,
 				FB5012C54D123DBE934BFDB0 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
