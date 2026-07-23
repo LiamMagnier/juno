@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoDesignSystem
 import JunoCodeUI
 import JunoCore
 import JunoStorage
