@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -51,6 +50,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ConnectorMark } from "@/components/connections/connector-logos";
 import { ModelSelector } from "@/components/chat/model-selector";
@@ -1162,6 +1162,34 @@ export function Composer({
     setPlusOpen(false);
   };
 
+  // "New project" at the foot of the Add-to-project submenu: create an unnamed
+  // project (the API names it from its first chat) and file this chat into it
+  // straight away, so it behaves like picking an existing one.
+  const [creatingProject, setCreatingProject] = React.useState(false);
+  const createProjectAndPick = React.useCallback(async () => {
+    if (creatingProject) return;
+    setCreatingProject(true);
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok || !d?.id) throw new Error(d?.error ?? "Could not create project.");
+      // Optimistically seed the list so the composer chip has a name to show
+      // before the sidebar's reload lands.
+      setProjects((prev) => [{ id: d.id, name: "New project", conversationCount: 0 }, ...prev]);
+      window.dispatchEvent(new CustomEvent("projects:sync"));
+      onPickProject?.(d.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not create project.");
+    } finally {
+      setCreatingProject(false);
+      setPlusOpen(false);
+    }
+  }, [creatingProject, onPickProject]);
+
   const clearComposerDraft = React.useCallback(() => {
     setText("");
     clear();
@@ -1897,34 +1925,57 @@ export function Composer({
                           <AppIcons.projects className="text-muted-foreground" />
                           <span className="flex-1">Add to project</span>
                         </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="max-h-72 w-56 overflow-y-auto">
-                          {loadingProjects && projects.length === 0 ? (
-                            <div className="flex items-center justify-center py-6">
-                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                            </div>
-                          ) : projects.length === 0 ? (
-                            <div className="px-2 py-4 text-center">
-                              <p className="text-caption text-muted-foreground">No projects yet.</p>
-                              <Link href="/projects" className="mt-1 inline-block text-caption text-primary hover:underline">
-                                Create one →
-                              </Link>
-                            </div>
-                          ) : (
-                            projects.map((project) => {
-                              const active = selectedProjectId === project.id;
-                              return (
-                                <DropdownMenuItem key={project.id} onSelect={() => pickProject(active ? null : project.id)}>
-                                  <AppIcons.projects className={cn(active ? "text-primary" : "text-muted-foreground")} />
-                                  <span className="flex-1 truncate">{project.name}</span>
-                                  {active ? (
-                                    <Check className="!size-3.5 text-primary" />
-                                  ) : (
-                                    <span className="font-mono text-caption text-muted-foreground/60">{project.conversationCount}</span>
-                                  )}
-                                </DropdownMenuItem>
-                              );
-                            })
-                          )}
+                        {/* Padding moves off the SubContent onto the two inner
+                            regions so the project list can scroll under a
+                            "New project" row that stays pinned to the bottom. */}
+                        <DropdownMenuSubContent className="flex max-h-[min(22rem,60vh)] w-60 flex-col p-0">
+                          <ScrollFade className="min-h-0 flex-1" viewportClassName="p-1.5">
+                            {loadingProjects && projects.length === 0 ? (
+                              <div className="flex items-center justify-center py-6">
+                                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                              </div>
+                            ) : projects.length === 0 ? (
+                              <p className="px-2 py-4 text-center text-caption text-muted-foreground">
+                                No projects yet — start one below.
+                              </p>
+                            ) : (
+                              projects.map((project) => {
+                                const active = selectedProjectId === project.id;
+                                return (
+                                  <DropdownMenuItem key={project.id} onSelect={() => pickProject(active ? null : project.id)}>
+                                    <AppIcons.projects className={cn(active ? "text-primary" : "text-muted-foreground")} />
+                                    <span className="flex-1 truncate">{project.name}</span>
+                                    {active ? (
+                                      <Check className="!size-3.5 text-primary" />
+                                    ) : (
+                                      <span className="font-mono text-caption text-muted-foreground/60">{project.conversationCount}</span>
+                                    )}
+                                  </DropdownMenuItem>
+                                );
+                              })
+                            )}
+                          </ScrollFade>
+                          {/* Pinned footer — the hairline sits above it, so the
+                              list scrolls beneath and "New project" is always
+                              reachable. */}
+                          <div className="shrink-0 border-t border-border/60 p-1.5">
+                            <DropdownMenuItem
+                              disabled={creatingProject}
+                              onSelect={(e) => {
+                                // Keep the menu open through the async create;
+                                // createProjectAndPick closes it when it settles.
+                                e.preventDefault();
+                                void createProjectAndPick();
+                              }}
+                            >
+                              {creatingProject ? (
+                                <Loader2 className="animate-spin text-muted-foreground" />
+                              ) : (
+                                <Plus className="text-muted-foreground" />
+                              )}
+                              <span className="flex-1">New project</span>
+                            </DropdownMenuItem>
+                          </div>
                         </DropdownMenuSubContent>
                       </DropdownMenuSub>
                     )}

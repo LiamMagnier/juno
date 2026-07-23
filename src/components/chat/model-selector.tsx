@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Brain, Check, ChevronDown, Clock, Eye, Globe, Image as ImageIcon, LayoutGrid, Lock, MessageSquare, Search, TriangleAlert, Video, Zap } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
@@ -520,7 +521,7 @@ export function ModelSelector({
                 autoFocus
               />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            <ScrollFade className="min-h-0 flex-1" viewportClassName="p-2">
               {providerFilter && !filterConfigured ? (
                 <div className="flex h-full flex-col items-center justify-center gap-2 px-6 text-center">
                   <ProviderLogo provider={providerFilter} className="h-8 w-8" />
@@ -604,7 +605,7 @@ export function ModelSelector({
                   );
                 })
               )}
-            </div>
+            </ScrollFade>
           </div>
           </div>
           <ModelDetailPanel

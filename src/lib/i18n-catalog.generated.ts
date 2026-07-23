@@ -3126,6 +3126,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Runs with Juno Code on your Mac — review the changes before you ship them."
   },
   {
+    "id": "58ba9d073029f327",
+    "source": "No projects yet — start one below."
+  },
+  {
     "id": "58bd8b632c81d03e",
     "source": "Compare models"
   },
@@ -4584,10 +4588,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "7ec0261b8e8aa3e0",
     "source": "Upgrade"
-  },
-  {
-    "id": "7ecf4d5b6dec67fa",
-    "source": "Create one →"
   },
   {
     "id": "7ed41c126536ea75",

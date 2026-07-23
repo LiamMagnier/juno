@@ -212,6 +212,15 @@ provider names) are literal strings, not a text transform.
   (recessed inputs), `.glass-raised` (`bg-popover/80` + `backdrop-blur-xl` — the
   warm-glass chrome material used on popovers, selects, dropdowns, dialogs, toasts),
   `.sheen-sweep`, `.skeleton`, `.scroll-fade-y`.
+- **Scroll edges.** Any capped, scrollable region should signal "more this way"
+  with a soft edge rather than a hard clip. Two tools: `.scroll-fade-y` (a
+  static opacity mask, for reading surfaces like the transcript) and
+  `<ScrollFade>` (`components/ui/scroll-fade.tsx`) — a wrapper that renders
+  **progressive-blur** bands (`.scroll-fade-edge`, two stacked backdrop-blur
+  layers) at the top and bottom, each fading in only when there is more to
+  scroll that way. Use `<ScrollFade className="flex-1 min-h-0" viewportClassName="…">`
+  as a drop-in for an `overflow-y-auto` child of a flex column (project picker,
+  model picker). It gates on `prefers-reduced-transparency` / `-motion`.
 
 Warm-glass is for **chrome only** (menus, popovers, dialogs, toasts, composer shell)
 — never on reading surfaces. It carries a warm `--card`/`--popover` tint and reuses
