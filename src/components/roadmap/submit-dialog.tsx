@@ -146,7 +146,7 @@ export function SubmitDialog({
           <div className="space-y-2">
             <Label>Category</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as FeatureCategory)}>
-              <SelectTrigger className="max-w-[200px]">
+              <SelectTrigger className="max-w-[200px]" aria-label="Category">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

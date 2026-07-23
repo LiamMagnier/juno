@@ -5186,6 +5186,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hosted in France, private by design"
   },
   {
+    "id": "920e413c7d411b61",
+    "source": "Status"
+  },
+  {
     "id": "92375f997ffe65ab",
     "source": "Roadmap"
   },

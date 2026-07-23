@@ -84,12 +84,16 @@ function CustomPickerButton({
   const pickerRef = React.useRef<HTMLInputElement>(null);
   return (
     <div className="relative">
+      {/* A proxy the labeled button opens via .click(); it must not be its own
+          unnamed tab stop in the accessibility tree. */}
       <input
         ref={pickerRef}
         type="color"
         value={customColor}
         onChange={(e) => onChange(e.target.value)}
         className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
       />
       <button
         type="button"
@@ -524,7 +528,7 @@ export default function SettingsPage() {
               value={resolveModel(settings.defaultModel)?.id ?? settings.defaultModel}
               onValueChange={(v) => save({ defaultModel: v })}
             >
-              <SelectTrigger>
+              <SelectTrigger aria-label="Default model">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -554,7 +558,7 @@ export default function SettingsPage() {
           <Tile eyebrow="Response language" i={3}>
             <p className="mb-3 text-sm text-muted-foreground">The language Juno replies in.</p>
             <Select value={settings.responseLanguage} onValueChange={(v) => save({ responseLanguage: v })}>
-              <SelectTrigger>
+              <SelectTrigger aria-label="Response language">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

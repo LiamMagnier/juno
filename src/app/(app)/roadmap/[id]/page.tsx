@@ -173,7 +173,7 @@ export default function RoadmapDetailPage() {
             <p className="mb-3 font-mono text-label text-muted-foreground">Moderate</p>
             <div className="flex flex-wrap items-center gap-2">
               <Select value={r.status} onValueChange={(v) => moderate({ status: v as FeatureStatus })}>
-                <SelectTrigger className="h-8 w-[180px]">
+                <SelectTrigger className="h-8 w-[180px]" aria-label="Status">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

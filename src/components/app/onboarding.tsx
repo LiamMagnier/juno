@@ -86,7 +86,9 @@ function ModelField({
 
       {open && (
         <>
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          {/* Click-outside scrim — a redundant affordance (the field also
+              closes on select), so it stays out of the a11y tree. */}
+          <div aria-hidden="true" className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           {/* opens upward — the field sits low in the card, which clips overflow.
               Same material and radius as DropdownMenuContent; it used to be a
               one-off 16px card with its own blur. */}

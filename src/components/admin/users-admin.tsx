@@ -304,7 +304,7 @@ export function UsersAdmin({ selfId }: { selfId: string }) {
                               </div>
                               <p className="truncate text-xs text-muted-foreground">{u.email}</p>
                               {u.strikes > 0 && !u.bannedAt && (
-                                <p className="mt-0.5 font-mono text-[10px] text-amber-600 dark:text-amber-500">
+                                <p className="mt-0.5 font-mono text-[10px] text-warning">
                                   {u.strikes}/{STRIKE_LIMIT} strikes
                                 </p>
                               )}
