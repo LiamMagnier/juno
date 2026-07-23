@@ -31,17 +31,25 @@ struct JunoMobileHomeView: View {
     @State private var phrase = JunoGreeting.phrase(at: Date())
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: JunoSpace.section) {
-                Spacer(minLength: JunoSpace.region)
-                greeting
-                composer
-                if !modes.isEmpty { modeRow }
-                if !recentProjects.isEmpty { projectRow }
-                Spacer(minLength: JunoSpace.region)
+        // Centred as one group, not pinned near the top. The `minHeight` is what
+        // does it: without it the VStack takes only its intrinsic height and the
+        // Spacers have nothing to divide, so the greeting sits high on the
+        // screen and the composer floats well above the thumb. Keeping it inside
+        // a ScrollView means the group still scrolls rather than clipping at
+        // large Dynamic Type or with the keyboard up.
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: JunoSpace.section) {
+                    Spacer(minLength: 0)
+                    greeting
+                    composer
+                    if !modes.isEmpty { modeRow }
+                    if !recentProjects.isEmpty { projectRow }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, JunoSpace.roomy)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
             }
-            .padding(.horizontal, JunoSpace.roomy)
-            .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle("navigation.chat")
