@@ -19,6 +19,8 @@ struct JunoMacChatView: View {
     let projectName: (String) -> String?
     let openArtifact: (String) -> Void
     @Binding var inspectorVisible: Bool
+    /// The signed-in account's name, for the home greeting.
+    var profileName: String?
 
     /// Drafts survive switching conversations — losing a half-written message
     /// to a stray click in the sidebar is the kind of small betrayal that makes
@@ -133,12 +135,13 @@ struct JunoMacChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 if messages.isEmpty {
-                    ContentUnavailableView {
-                        Label("chat.thread.empty.title", systemImage: "text.bubble")
-                    } description: {
-                        Text("chat.thread.empty.description")
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 320)
+                    // The website's home, not a stock empty state: the
+                    // time-of-day greeting in the editorial serif with the first
+                    // name in coral italic. `ContentUnavailableView` with a
+                    // speech-bubble glyph is the generic SwiftUI placeholder the
+                    // owner rejected on the phone, and it was here too.
+                    JunoMacChatGreeting(profileName: profileName)
+                        .frame(maxWidth: .infinity, minHeight: 320)
                 } else {
                     LazyVStack(alignment: .leading, spacing: JunoSpace.section + 4) {
                         ForEach(messages) { message in
@@ -381,7 +384,7 @@ private struct JunoMacMessageView: View {
 
     private var userContent: some View {
         VStack(alignment: .leading, spacing: JunoSpacing.compact) {
-            JunoMarkdownText(message.content)
+            JunoMarkdownText(NativeMessageContent.cleanForDisplay(message.content))
             if message.isPending {
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.small)
@@ -391,13 +394,12 @@ private struct JunoMacMessageView: View {
         }
         .padding(.horizontal, JunoSpace.cozy + 2)
         .padding(.vertical, JunoSpace.snug + 2)
+        // A quiet warm fill and no outline. A coral tint *and* a coral border
+        // made every one of your own messages shout as loudly as the accent
+        // reserved for actions; the shape alone already says who spoke.
         .background(
             RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .fill(Color.junoAccent.opacity(0.085))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .strokeBorder(Color.junoAccent.opacity(0.16))
+                .fill(Color.junoAccent.opacity(0.10))
         )
         .frame(maxWidth: 460, alignment: .trailing)
         .overlay(alignment: .bottomLeading) { copyButton.offset(x: -30) }
@@ -421,7 +423,7 @@ private struct JunoMacMessageView: View {
             if message.content.isEmpty && isStreaming {
                 JunoMacStreamingDots()
             } else {
-                JunoMarkdownText(message.content)
+                JunoMarkdownText(NativeMessageContent.cleanForDisplay(message.content))
             }
 
             if !message.sources.isEmpty {
@@ -576,5 +578,45 @@ private struct JunoMacBanner<Actions: View>: View {
         .padding(.vertical, JunoSpacing.compact + 2)
         .background(.bar)
         .accessibilityElement(children: .contain)
+    }
+}
+
+
+/// The Chat greeting, matching the phone and the website.
+///
+/// Same `JunoGreeting` table, same editorial serif, same coral italic first
+/// name — so an empty thread reads as Juno rather than as a SwiftUI
+/// placeholder with a speech-bubble glyph.
+private struct JunoMacChatGreeting: View {
+    var profileName: String?
+
+    /// Held in state so the phrase cannot flicker between redraws.
+    @State private var phrase = JunoGreeting.phrase(at: Date())
+
+    var body: some View {
+        VStack(spacing: JunoSpace.regular) {
+            JunoMark(size: 30)
+                .foregroundStyle(Color.junoAccent)
+
+            Group {
+                if let name = JunoGreeting.firstName(from: profileName) {
+                    Text(phrase + ", ")
+                        .font(JunoSerif.greeting())
+                        + Text(name)
+                        .font(JunoSerif.greetingName())
+                        .foregroundColor(Color.junoAccent)
+                } else {
+                    Text(phrase).font(JunoSerif.greeting())
+                }
+            }
+            .multilineTextAlignment(.center)
+            .accessibilityAddTraits(.isHeader)
+
+            Text("chat.thread.empty.description")
+                .junoCaption()
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: 520)
+        .accessibilityIdentifier("juno.mac.chat-greeting")
     }
 }

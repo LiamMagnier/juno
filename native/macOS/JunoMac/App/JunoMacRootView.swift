@@ -214,7 +214,8 @@ struct JunoMacRootView: View {
                     case .memory:
                         selection = .settings
                     }
-                }
+                },
+                profileName: session.profile.name
             )
             // Chat keeps its identity across conversation switches so the
             // transcript's scroll position and drafts survive; every other
@@ -289,6 +290,8 @@ private struct JunoMacDetailView: View {
     let openConversation: (String) -> Void
     let openArtifact: (String) -> Void
     let openSearchResult: (NativeSearchResult) -> Void
+    /// The signed-in account's name, for the Chat greeting.
+    var profileName: String?
 
     @ViewBuilder
     var body: some View {
@@ -300,7 +303,8 @@ private struct JunoMacDetailView: View {
                     projectModel?.projects.first { $0.id == id }?.name
                 },
                 openArtifact: openArtifact,
-                inspectorVisible: $inspectorVisible
+                inspectorVisible: $inspectorVisible,
+                profileName: profileName
             )
         } else if section == .search, let searchModel {
             JunoMacSearchView(model: searchModel, open: openSearchResult)
