@@ -299,7 +299,7 @@ private struct JunoMobileMessageRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            if isUser { Spacer(minLength: 40) }
+            if isUser { Spacer(minLength: 64) }
             if !isUser {
                 Image(systemName: "sparkle")
                     .font(.footnote.weight(.semibold))
@@ -320,9 +320,18 @@ private struct JunoMobileMessageRow: View {
                 if showThinking {
                     JunoThinkingIndicator()
                 } else if !message.content.isEmpty {
-                    Text(message.content)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if isUser {
+                        Text(message.content)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        // Real Markdown: headings, lists, tables, code. A reply
+                        // rendered as one flat string was losing every structure
+                        // the model actually produced.
+                        JunoMarkdownText(message.content)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
 
                 if !message.sources.isEmpty {
@@ -355,10 +364,21 @@ private struct JunoMobileMessageRow: View {
                         .foregroundStyle(.orange)
                 }
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
-            .background(isUser ? Color.junoAccent.opacity(0.14) : Color.junoSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // Only the user's own words sit on a surface. The assistant's
+            // answer is the reading surface — putting it inside a card made
+            // every reply a grey rectangle and cost it the full column width.
+            .padding(.horizontal, isUser ? 13 : 0)
+            .padding(.vertical, isUser ? 10 : 0)
+            .background(
+                isUser
+                    ? AnyShapeStyle(Color.junoAccent.opacity(0.12))
+                    : AnyShapeStyle(Color.clear)
+            )
+            .clipShape(
+                RoundedRectangle(
+                    cornerRadius: isUser ? JunoCornerRadius.message : 0, style: .continuous
+                )
+            )
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = message.content
@@ -413,15 +433,14 @@ private struct JunoReasoningDisclosure: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 6)
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "brain")
-                    .font(.caption)
-                Text("Reasoning")
-                    .font(.subheadline.weight(.medium))
-            }
-            .foregroundStyle(Color.junoAccent)
+            // Secondary, not coral. Reasoning is an aside you may open, not the
+            // headline of the answer — spending the accent on a permanently
+            // visible label is what made every reply shout.
+            Text("Reasoning")
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(.secondary)
         }
-        .tint(Color.junoAccent)
+        .tint(.secondary)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: expanded)
     }
 }
