@@ -1655,6 +1655,25 @@
     -webkit-mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
     mask-image: linear-gradient(to bottom, transparent, black 18px, black calc(100% - 18px), transparent);
   }
+
+  /* Streaming text emerges instead of snapping in.
+     A short gradient sits over the tail of a still-arriving reply, so the line
+     being written is faint and firms up as later tokens push it clear. This is
+     one mask on one element rather than an animation per token — react-markdown
+     rebuilds the trailing block on every chunk, so anything keyed to the text
+     nodes themselves would restart 30 times a second and strobe.
+     The fade is one line tall and bottoms out at 30% rather than 0. Fading to
+     nothing made the newest line legible only at its top edge — a gradient
+     running through letterforms, which reads as broken text rather than as
+     text arriving. 30% is soft enough to say "not settled yet" and solid
+     enough to read, so finishing the reply barely changes it. */
+  .stream-tail {
+    -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 1.35em), rgb(0 0 0 / 0.3) 100%);
+    mask-image: linear-gradient(to bottom, black calc(100% - 1.35em), rgb(0 0 0 / 0.3) 100%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .stream-tail { -webkit-mask-image: none; mask-image: none; }
+  }
 }
 
 /* ---- Minimal, theme-aware syntax highlighting (highlight.js token classes) ---- */

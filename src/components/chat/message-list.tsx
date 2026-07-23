@@ -35,6 +35,86 @@ const SCROLL_FADE_STYLE: React.CSSProperties = {
   WebkitMaskImage: "linear-gradient(to bottom, black 0%, black calc(100% - 72px), transparent 100%)",
 };
 
+/**
+ * Eased scroll follow for a target that keeps moving.
+ *
+ * Writing `scrollTop` straight to the bottom on every token is what made the
+ * transcript twitch — each chunk was a hard jump of whatever height it added.
+ * `behavior: "smooth"` is worse: every token restarts the browser's own
+ * animation from a standstill, so it stutters and never arrives. Instead one
+ * rAF loop chases a target that callers keep updating, easing a fixed fraction
+ * of the remaining distance per frame. That reads as a continuous glide at any
+ * token rate, and it costs one loop rather than one animation per chunk.
+ */
+function useGlideScroll(scrollRef: React.RefObject<HTMLDivElement | null>) {
+  const rafRef = React.useRef<number | null>(null);
+  const targetRef = React.useRef(0);
+  // True while the loop owns scrollTop, so the scroll handler can tell our own
+  // movement from the user's — the read-from-top hold below glides *upward*,
+  // which would otherwise look exactly like a user scrolling away.
+  const glidingRef = React.useRef(false);
+  // The last value the loop actually wrote. Anything else appearing in
+  // scrollTop came from outside (wheel, scrollbar drag, keyboard, a jump), and
+  // the loop has to let go rather than drag the view back to a stale target.
+  const lastWriteRef = React.useRef(0);
+  const reduceRef = React.useRef(false);
+
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => {
+      reduceRef.current = mq.matches;
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const cancel = React.useCallback(() => {
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    rafRef.current = null;
+    glidingRef.current = false;
+  }, []);
+
+  React.useEffect(() => cancel, [cancel]);
+
+  const glideTo = React.useCallback(
+    (target: number) => {
+      const el = scrollRef.current;
+      if (!el) return;
+      targetRef.current = target;
+      if (reduceRef.current) {
+        el.scrollTop = target;
+        return;
+      }
+      // A loop is already running — it reads targetRef every frame, so the new
+      // destination is picked up without restarting the easing.
+      if (rafRef.current != null) return;
+      glidingRef.current = true;
+      lastWriteRef.current = el.scrollTop;
+      const step = () => {
+        const node = scrollRef.current;
+        if (!node) return cancel();
+        // Someone else moved the view since our last frame — yield to them.
+        if (Math.abs(node.scrollTop - lastWriteRef.current) > 2) return cancel();
+        const delta = targetRef.current - node.scrollTop;
+        if (Math.abs(delta) < 0.5) {
+          node.scrollTop = targetRef.current;
+          return cancel();
+        }
+        node.scrollTop += delta * 0.22;
+        // Read back: the browser clamps and snaps to device pixels, so the
+        // value we wrote is not necessarily the value that landed.
+        lastWriteRef.current = node.scrollTop;
+        rafRef.current = requestAnimationFrame(step);
+      };
+      rafRef.current = requestAnimationFrame(step);
+    },
+    [cancel, scrollRef]
+  );
+
+  return { glideTo, cancel, glidingRef, lastWriteRef };
+}
+
 export function MessageList(props: MessageListProps) {
   const { messages, artifacts } = props;
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -57,12 +137,38 @@ export function MessageList(props: MessageListProps) {
     return map;
   }, [artifacts]);
 
+  const { glideTo, cancel, glidingRef, lastWriteRef } = useGlideScroll(scrollRef);
+  const lastTopRef = React.useRef(0);
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const stuck = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    stickRef.current = stuck;
-    setAtBottom(stuck);
+    // Our own easing fires this too. Movement that matches what the loop last
+    // wrote is ours, so it carries no intent; anything else is the user and
+    // takes the view back immediately (a scrollbar drag fires neither wheel
+    // nor touch, so it can only be caught here).
+    if (glidingRef.current) {
+      if (Math.abs(el.scrollTop - lastWriteRef.current) <= 2) {
+        lastTopRef.current = el.scrollTop;
+        return;
+      }
+      cancel();
+    }
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const scrolledUp = el.scrollTop < lastTopRef.current - 1;
+    lastTopRef.current = el.scrollTop;
+    // Direction, not distance alone, decides detachment. Measuring distance on
+    // its own detached the follow whenever tokens arrived faster than the glide
+    // could close the gap — the view would stop following mid-reply.
+    if (scrolledUp && distance > 24) stickRef.current = false;
+    else if (distance < 120) stickRef.current = true;
+    setAtBottom(stickRef.current);
+  };
+
+  // A glide is ours to cancel the moment the user reaches for the transcript;
+  // `onScroll` alone can't tell, since the loop is writing scrollTop too.
+  const onUserScrollIntent = () => {
+    if (glidingRef.current) cancel();
   };
 
   // Keep pinned to the bottom while streaming new content (instant — smooth on
@@ -77,10 +183,11 @@ export function MessageList(props: MessageListProps) {
   React.useEffect(() => {
     if (!stickRef.current) return;
     const el = scrollRef.current;
+    if (!el) return;
     // The bottom sentinel's previous sibling is the last message's root node.
     const node = bottomRef.current?.previousElementSibling as HTMLElement | null;
-    if (el && node && last?.role === "ASSISTANT" && last.streaming && heldIdRef.current !== last.id) {
-      const bottom = el.scrollHeight - el.clientHeight;
+    const bottom = el.scrollHeight - el.clientHeight;
+    if (node && last?.role === "ASSISTANT" && last.streaming && heldIdRef.current !== last.id) {
       // Reply top in scroll coordinates, offset to mirror the container's py-6.
       const top = node.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 24;
       if (top < bottom) {
@@ -89,22 +196,31 @@ export function MessageList(props: MessageListProps) {
         heldIdRef.current = last.id;
         stickRef.current = false;
         setAtBottom(false);
-        el.scrollTop = Math.max(top, 0);
+        glideTo(Math.max(top, 0));
         return;
       }
     }
-    bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length, lastContent, last]);
+    glideTo(bottom);
+  }, [messages.length, lastContent, last, glideTo]);
 
   const jumpToLatest = () => {
+    const el = scrollRef.current;
     stickRef.current = true;
     setAtBottom(true);
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (el) glideTo(el.scrollHeight - el.clientHeight);
   };
 
   return (
     <div className="relative min-h-0 flex-1">
-      <div ref={scrollRef} onScroll={onScroll} className="h-full overflow-y-auto" style={SCROLL_FADE_STYLE}>
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        onWheel={onUserScrollIntent}
+        onTouchStart={onUserScrollIntent}
+        onKeyDown={onUserScrollIntent}
+        className="h-full overflow-y-auto"
+        style={SCROLL_FADE_STYLE}
+      >
         <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
           {messages.map((m, i) => (
             <MessageItem

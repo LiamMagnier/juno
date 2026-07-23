@@ -727,6 +727,14 @@ export function MessageItem({
                 )}
               </div>
             )}
+            {/* The tail fade wraps the prose ONLY. On the whole answer body it
+                landed on the trailing dot's own line instead of the line being
+                written, and it would have dimmed the bottom edge of a message
+                that ends in an image.
+                The length gate matters: under a couple of lines the gradient
+                spans the entire answer, so a short reply would sit dimmed for
+                its whole life instead of having a soft leading edge. */}
+            <div className={cn("space-y-1", message.streaming && message.content.length > 180 && "stream-tail")}>
             {parts.map((part, i) =>
               part.type === "text" ? (
                 <Markdown key={i} content={part.text} streaming={message.streaming} sources={sources} />
@@ -755,9 +763,10 @@ export function MessageItem({
                 />
               )
             )}
+            </div>
             {message.streaming && message.content.length > 0 && (
               <span
-                className="ml-1 inline-block h-2 w-2 translate-y-[1px] rounded-full bg-primary align-middle motion-safe:animate-pulse"
+                className="ml-1 inline-block h-2 w-2 translate-y-[1px] rounded-full bg-primary align-middle motion-safe:animate-stream-dot"
                 aria-hidden="true"
               />
             )}

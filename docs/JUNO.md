@@ -242,6 +242,38 @@ each; they were removed, along with their bespoke icon-animation CSS. Compare
 still has a home in the command palette. Dots breathe at rest; coral is the only
 saturated color in the dot systems.
 
+### 3.4b Streaming motion
+
+A reply arriving is two movements that have to agree: the page following it and
+the words appearing.
+
+**The follow** (`useGlideScroll`, `message-list.tsx`). One rAF loop chases a
+target that callers keep moving, closing 22% of the remaining distance each
+frame. Writing `scrollTop` straight to the bottom per chunk made the transcript
+jump by whatever height each chunk added — a hard cut many times a second, which
+reads as shaking; `behavior: "smooth"` is worse, since every chunk restarts the
+browser's animation from a standstill. Everything that moves the transcript goes
+through it: the follow, the read-from-top hold, and "jump to latest".
+
+Two rules keep it from fighting the reader. Detachment is decided by
+**direction** — only a deliberate scroll *up* lets go, because measuring
+distance alone detached whenever tokens outran the easing. And the loop records
+the value it last wrote, so any scrollTop it doesn't recognise (wheel, scrollbar
+drag, keyboard, a programmatic jump) makes it yield on the next frame — a
+scrollbar drag fires neither wheel nor touch, so this is the only thing that
+catches it. `prefers-reduced-motion` skips the easing entirely.
+
+**The words** (`.stream-tail`). The line being written sits under a one-line
+gradient that bottoms out at 30% alpha, so it arrives soft and firms up as later
+lines push it clear. It masks the prose only — over the whole answer body it
+landed on the trailing dot's line instead of the text, and would have dimmed the
+bottom edge of a message ending in an image. It is gated on ~180 characters:
+below that the gradient spans the entire answer, so a short reply would sit
+dimmed for its whole life. Fading to zero rather than 30% ran a gradient through
+the letterforms, which reads as broken text, not as text arriving. A mask beats
+animating the tokens themselves — react-markdown rebuilds the trailing block on
+every chunk, so anything keyed to those nodes restarts dozens of times a second.
+
 ### 3.5 The flat-transcript law
 
 **Depth, gloss, and glass are for chrome and controls only. The chat transcript
