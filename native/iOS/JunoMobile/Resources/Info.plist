@@ -48,6 +48,19 @@
     <string>Juno uses the camera so you can attach a photo to a conversation.</string>
     <key>NSPhotoLibraryUsageDescription</key>
     <string>Juno reads the photos you choose so you can attach them to a conversation.</string>
+    <!-- Newsreader, the website's editorial serif (SIL OFL 1.1; see
+         Fonts/OFL.txt). The 24pt optical size is bundled because the serif is
+         only ever used at display sizes here — greetings, page headings, card
+         titles — never for body copy or controls, which stay on the system
+         font. Real named weights are shipped rather than one variable face so
+         SwiftUI never synthesises a faux-bold. -->
+    <key>UIAppFonts</key>
+    <array>
+        <string>Newsreader24pt-Regular.ttf</string>
+        <string>Newsreader24pt-Medium.ttf</string>
+        <string>Newsreader24pt-MediumItalic.ttf</string>
+        <string>Newsreader24pt-SemiBold.ttf</string>
+    </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchScreen</key>

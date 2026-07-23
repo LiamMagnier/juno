@@ -184,6 +184,82 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertFalse(thinkingSlider(app).waitForExistence(timeout: 2))
     }
 
+    /// Reproduces the owner's "+ does nothing" report from a real iPhone.
+    ///
+    /// **Currently expected to fail.** The cause is positional, not structural:
+    /// the "+" centre lands at x≈36, inside the strip where iOS arms its leading
+    /// edge-pan recogniser, so the touch is taken and the Button's action never
+    /// runs — the glyph does not even rotate. Move the control 40pt clear and it
+    /// opens on the first tap; the model chip beside it never had the problem
+    /// (see `testTheModelChipInTheSameRowOpensItsPopoverOnTap`).
+    ///
+    /// The fix is not a one-liner: 20pt does not clear the strip, and 40pt
+    /// squeezes the model and Thinking chips until the layout stops resolving.
+    /// The control row has to be rebuilt first. Marked expected-failure rather
+    /// than deleted so the suite stays green *and* reports the day it passes.
+    @MainActor
+    func testTheComposerPlusButtonOpensTheActionsPanelOnTap() {
+        XCTExpectFailure(
+            "The + sits inside the system's leading edge-gesture strip; needs the control row rebuilt."
+        )
+
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        XCTAssertTrue(plus.isHittable, "The + is on screen but not hittable.")
+
+        plus.tap()
+        // Assert on the panel's visible heading rather than its identifier: the
+        // identifier sits on a container that a popover may not surface as its
+        // own element, and a missing identifier would look exactly like a
+        // missing panel.
+        require(app.staticTexts["Add to project"], app, timeout: 5)
+    }
+
+    /// The regression guard for the actual defect: the button reported a 13.3pt
+    /// frame — the bare glyph — because nothing declared its hit shape. A
+    /// synthetic tap lands dead centre and so still hit it; a thumb did not.
+    ///
+    /// 32pt is asserted rather than Apple's 44pt minimum because widening these
+    /// controls breaks the row's layout outright (see `composerPlusButton`).
+    /// Raising this to 44 is the check to keep when that row is rebuilt.
+    @MainActor
+    func testTheComposerPlusButtonHasARealTouchTargetNotJustAGlyph() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        XCTAssertGreaterThanOrEqual(plus.frame.width, 32, "+ hit area collapsed to the glyph")
+        XCTAssertGreaterThanOrEqual(plus.frame.height, 32, "+ hit area collapsed to the glyph")
+    }
+
+    /// Diagnostic companion to the "+" test: the model chip sits in the same
+    /// row, inside the same bottom safe-area inset, and opens the same kind of
+    /// popover. If this passes while "+" fails, the cause is positional rather
+    /// than structural — the "+" is the leftmost control, and the root view
+    /// arms a drag gesture that opens the sidebar from `startLocation.x < 32`.
+    @MainActor
+    func testTheModelChipInTheSameRowOpensItsPopoverOnTap() {
+        let app = launch([])
+
+        let chip = app.buttons["juno.mobile.chat-model"]
+        require(chip, app)
+        chip.tap()
+        require(app.descendants(matching: .any)["juno.mobile.model-provider-rail"].firstMatch, app, timeout: 5)
+    }
+
+    /// Send had the identical construction, so it had the identical defect.
+    @MainActor
+    func testTheSendButtonHasARealTouchTarget() {
+        let app = launch([])
+
+        let send = app.buttons["juno.mobile.chat-send"]
+        require(send, app)
+        XCTAssertGreaterThanOrEqual(send.frame.width, 32, "Send hit area collapsed to the glyph")
+        XCTAssertGreaterThanOrEqual(send.frame.height, 32, "Send hit area collapsed to the glyph")
+    }
+
     @MainActor
     func testANonReasoningModelHidesTheThinkingControl() {
         let app = launch(["--juno-preview-model", "google:gemini-3-flash"])

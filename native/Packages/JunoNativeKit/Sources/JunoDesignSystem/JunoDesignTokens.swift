@@ -37,20 +37,30 @@ public struct JunoColorToken: Hashable, Sendable {
         self.opacity = opacity
     }
 
+    // The brand primitives, converted from the web's own custom properties in
+    // `src/app/globals.css` so the two platforms cannot drift. The comment on
+    // each token is the HSL triple it was derived from.
+
+    /// `--primary: 15 54% 51%`. Juno's coral. Deliberately the *same* value in
+    /// light and dark — the web does not brighten it, and neither should we.
     public static let coral = JunoColorToken(
-        uncheckedRed: 0.93,
-        green: 0.36,
-        blue: 0.27
+        uncheckedRed: 0.7746,
+        green: 0.3777,
+        blue: 0.2454
     )
+    /// `--background` (light): `48 33% 97%`. A warm off-white, not a pure grey.
     public static let warmWhite = JunoColorToken(
-        uncheckedRed: 0.98,
-        green: 0.97,
-        blue: 0.95
+        uncheckedRed: 0.9799,
+        green: 0.9759,
+        blue: 0.9601
     )
+    /// `--background` (dark): `28 9% 9%`. Warm — red highest, blue lowest. The
+    /// previous value was cool (blue highest), which read as a generic graphite
+    /// rather than as Juno.
     public static let warmBlack = JunoColorToken(
-        uncheckedRed: 0.08,
-        green: 0.075,
-        blue: 0.07
+        uncheckedRed: 0.0981,
+        green: 0.0895,
+        blue: 0.0819
     )
 }
 
@@ -65,18 +75,52 @@ public extension Color {
     }
 }
 
+/// The shared spacing scale. Screens compose from these rather than carrying
+/// their own numbers, so rhythm stays consistent when a layout is rewritten.
 public enum JunoSpacing {
+    /// Between tightly-coupled parts: an icon and its label.
     public static let compact: Double = 6
+    /// Between controls in a row.
+    public static let small: Double = 8
+    /// The default gap inside a control or between adjacent rows.
     public static let control: Double = 10
+    /// Standard content inset — the left edge of most text.
     public static let content: Double = 16
+    /// A roomier inset for cards and reading surfaces.
+    public static let comfortable: Double = 20
+    /// Between sections of a screen.
     public static let section: Double = 24
+    /// A page's outer breathing room, above a first heading.
+    public static let page: Double = 32
+
+    @available(*, deprecated, renamed: "page")
     public static let spacious: Double = 32
 }
 
+/// The shared corner-radius scale, ordered smallest to largest. Naming these by
+/// *role* rather than by number keeps a message bubble and a sheet from
+/// accidentally sharing a radius when one of them is retuned.
 public enum JunoCornerRadius {
+    /// A compact control: a chip, a small pill, a tag.
+    public static let compactControl: Double = 8
+    /// A standard control or a list row.
     public static let control: Double = 10
+    /// A selectable row in a sidebar or list.
+    public static let row: Double = 12
+    /// A chat message bubble.
+    public static let message: Double = 18
+    /// A content card (a project, an artifact).
+    public static let card: Double = 16
+    /// A grouped panel.
     public static let panel: Double = 16
+    /// Floating chrome: the composer, a floating toolbar.
     public static let floating: Double = 22
+    /// The composer's outer container.
+    public static let composer: Double = 24
+    /// An anchored popover.
+    public static let popover: Double = 16
+    /// A presented sheet's top corners.
+    public static let sheet: Double = 20
 }
 
 /// The shared motion language for JunoMobile and JunoMac. A small, named set of

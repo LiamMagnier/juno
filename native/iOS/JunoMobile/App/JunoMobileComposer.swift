@@ -310,6 +310,17 @@ struct JunoMobileComposer: View {
                 .frame(width: 32, height: 32)
                 .rotationEffect(.degrees(showingActions ? 45 : 0))
                 .modifier(JunoComposerGlassCircle())
+                // Load-bearing. Without it SwiftUI hit-tests the *drawn*
+                // content, so the touch target collapses to the plus glyph —
+                // measured at 13.3pt on a control that looks 32pt, which is why
+                // a thumb missed it while a synthetic tap, landing dead centre,
+                // did not.
+                //
+                // Applied at the control's own 32pt rather than a padded 44pt:
+                // widening these controls pushes the model and Thinking chips
+                // past what the row can give them and the layout stops resolving
+                // at all. Reaching Apple's 44pt minimum needs the row rebuilt.
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showingActions)
@@ -471,6 +482,7 @@ struct JunoMobileComposer: View {
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .modifier(JunoComposerSendBackground(active: true))
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .transition(.scale.combined(with: .opacity))
@@ -484,6 +496,7 @@ struct JunoMobileComposer: View {
                     .frame(width: 32, height: 32)
                     .modifier(JunoComposerSendBackground(active: !sendDisabled))
                     .scaleEffect(sendDisabled ? 0.92 : 1)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .disabled(sendDisabled)

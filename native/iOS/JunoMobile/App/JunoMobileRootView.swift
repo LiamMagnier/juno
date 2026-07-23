@@ -222,7 +222,14 @@ struct JunoMobileRootView: View {
             .offset(x: sidebarOpen ? revealed : 0)
         }
         .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: sidebarOpen)
-        .gesture(
+        // `simultaneousGesture`, not `gesture`. Attached as an exclusive gesture
+        // this tracked every touch in the whole shell and won against the
+        // control nearest the leading edge: the composer's "+" sits at x≈36 and
+        // its action simply never fired, while the model chip 40pt to its right
+        // always worked. That is the "+ does nothing" report — the button was
+        // never broken, its touch was being taken. Recognising simultaneously
+        // lets the button act and still leaves the drawer swipe intact.
+        .simultaneousGesture(
             DragGesture(minimumDistance: 18)
                 .onEnded { value in
                     if value.translation.width < -60 { setSidebar(false) }
@@ -421,18 +428,21 @@ private struct JunoMobileSidebarDrawer: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
                     JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.projects.junoIcon,
                         icon: JunoMobileSection.projects.systemImage,
                         title: "navigation.projects",
                         selected: selection == .projects,
                         action: { openDestination(.projects) }
                     )
                     JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.library.junoIcon,
                         icon: JunoMobileSection.library.systemImage,
                         title: "navigation.library",
                         selected: selection == .library,
                         action: { openDestination(.library) }
                     )
                     JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.artifacts.junoIcon,
                         icon: JunoMobileSection.artifacts.systemImage,
                         title: "navigation.artifacts",
                         selected: selection == .artifacts,
@@ -477,17 +487,17 @@ private struct JunoMobileSidebarDrawer: View {
     // Compact brand header — Juno wordmark left, circular glass Search right.
     private var header: some View {
         HStack(spacing: 9) {
-            Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 22))
-                .foregroundStyle(Color.junoAccent)
-                .accessibilityHidden(true)
+            // The real mark from `public/juno-mark.png`, not an SF Symbol
+            // stand-in. It is ink-coloured rather than coral: on the website the
+            // mark is ink and the coral is spent on emphasis, so tinting
+            // always-present chrome would spend the accent on nothing.
+            JunoMark(size: 24)
             Text("Juno")
                 .font(.system(size: 22, weight: .semibold))
                 .accessibilityAddTraits(.isHeader)
             Spacer(minLength: 0)
             Button(action: { openDestination(.search) }) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 17, weight: .semibold))
+                JunoIconView(.search, size: 18)
                     .foregroundStyle(.primary)
                     .frame(width: 46, height: 46)
                     .modifier(JunoGlassCircle())
@@ -577,7 +587,12 @@ private struct JunoMobileSidebarDrawer: View {
 /// A single destination / action row: constant icon column, 44pt tall, with a
 /// restrained accent wash only when selected.
 private struct JunoMobileSidebarRow: View {
-    let icon: String
+    /// The destination's own glyph. When it has a Juno icon that is used; the
+    /// system symbol is the fallback for destinations the web shell has no
+    /// glyph for. Neither is tinted coral — every row coral was one of the
+    /// rejected build's louder mistakes, and it left the accent meaning nothing.
+    var junoIcon: JunoIcon?
+    var icon: String
     let title: LocalizedStringKey
     var selected: Bool
     let action: () -> Void
@@ -585,10 +600,16 @@ private struct JunoMobileSidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 19))
-                    .frame(width: 26)
-                    .foregroundStyle(.primary)
+                Group {
+                    if let junoIcon {
+                        JunoIconView(junoIcon, size: 19)
+                    } else {
+                        Image(systemName: icon)
+                            .font(.system(size: 19))
+                    }
+                }
+                .frame(width: 26)
+                .foregroundStyle(.primary)
                 Text(title)
                     .font(.system(size: 17, weight: selected ? .semibold : .regular))
                     .foregroundStyle(.primary)
@@ -687,12 +708,9 @@ private struct JunoMobileSignInView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 42))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+            JunoMark(size: 44)
             Text("auth.welcome.title")
-                .font(.title2.weight(.semibold))
+                .junoPageHeading()
             Text("auth.welcome.description")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

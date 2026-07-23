@@ -238,12 +238,9 @@ private struct JunoMacSignInView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "circle.hexagongrid.fill")
-                .font(.system(size: 42))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+            JunoMark(size: 44)
             Text("auth.welcome.title")
-                .font(.title2.weight(.semibold))
+                .junoPageHeading()
             Text("auth.welcome.description")
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
