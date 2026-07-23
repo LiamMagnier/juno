@@ -351,7 +351,19 @@ private struct JunoMacProjectsView: View {
     @State private var createInstructions = ""
 
     var body: some View {
-        NavigationSplitView {
+        // `HSplitView`, not a second `NavigationSplitView`.
+        //
+        // This screen is mounted *inside* the shell's own split view, and
+        // nesting one navigation container in another's detail column is what
+        // crashed the app on launch: AppKit's two-pass constraint update
+        // re-entered itself, with `_informContainerThatSubviewsNeedUpdateConstraints`
+        // recursing eleven deep under `NSHostingView` until it threw. The window
+        // appeared and the process died before it could be drawn, which is why
+        // this read for so long as "the app creates no windows".
+        //
+        // `HSplitView` gives the same draggable two-pane layout with a real
+        // AppKit divider and no second navigation container.
+        HSplitView {
             List(selection: $model.selectedProjectID) {
                 ForEach(model.projects) { project in
                     VStack(alignment: .leading, spacing: 5) {
@@ -387,7 +399,7 @@ private struct JunoMacProjectsView: View {
                 }
             }
             .navigationTitle("Projects")
-            .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
+            .frame(minWidth: 240, idealWidth: 300, maxWidth: 380)
             .toolbar {
                 ToolbarItem {
                     Button {
@@ -402,18 +414,22 @@ private struct JunoMacProjectsView: View {
                 }
             }
             .overlay { projectListOverlay }
-        } detail: {
-            if let project = model.selectedProject {
-                JunoMacProjectDetail(
-                    model: model,
-                    conversationModel: conversationModel,
-                    project: project,
-                    openConversation: openConversation
-                )
-                .id(project.id)
-            } else {
-                ContentUnavailableView("Choose a project", systemImage: "folder")
+
+
+            Group {
+                if let project = model.selectedProject {
+                    JunoMacProjectDetail(
+                        model: model,
+                        conversationModel: conversationModel,
+                        project: project,
+                        openConversation: openConversation
+                    )
+                    .id(project.id)
+                } else {
+                    ContentUnavailableView("Choose a project", systemImage: "folder")
+                }
             }
+            .frame(minWidth: 380, maxWidth: .infinity, maxHeight: .infinity)
         }
         .alert("New project", isPresented: $showingCreate) {
             TextField("Name", text: $createName)
