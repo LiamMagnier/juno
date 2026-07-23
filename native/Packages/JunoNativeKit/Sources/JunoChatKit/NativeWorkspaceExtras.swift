@@ -164,6 +164,20 @@ public struct NativeConnector: Identifiable, Equatable, Sendable {
     public let connectedAt: Date?
 }
 
+/// One entry from the Composio directory — the browsable catalog, not just the
+/// apps already linked.
+public struct NativeComposioApp: Identifiable, Equatable, Sendable {
+    public let id: String
+    public let slug: String
+    public let name: String
+    public let connected: Bool
+    public let connecting: Bool
+    /// False when Composio hosts no OAuth app for this toolkit, so connecting
+    /// cannot work yet however much the row invites it.
+    public let managedAuth: Bool
+    public let noAuth: Bool
+}
+
 public struct NativeConnectionsClient: Sendable {
     private let sender: any NativeAuthenticatedRequestSending
 
@@ -187,6 +201,57 @@ public struct NativeConnectionsClient: Sendable {
             case .array(let items)? = root["connectors"]
         else { throw NativeWorkspaceExtrasError.malformedResponse }
         return items.compactMap(Self.decodeConnector)
+    }
+
+    /// The full Composio directory, not only what is already linked.
+    ///
+    /// `/api/connectors` returns direct connectors plus the Composio apps this
+    /// account has *connected* — by design. The browsable catalog is a separate
+    /// route, which is why the phone previously showed nothing it had not
+    /// already linked. `connected=0` asks for everything.
+    ///
+    /// A 503 means Composio is not configured on this deployment, and a 429 is
+    /// its catalog rate limit. Both are *empty*, not failures: the direct
+    /// connectors alongside them are still perfectly valid, and failing the whole
+    /// screen because an optional directory is unavailable would be wrong.
+    public func composioCatalog(
+        query: String = "", for accountID: AccountID
+    ) async throws -> [NativeComposioApp] {
+        let escaped = query.addingPercentEncoding(
+            withAllowedCharacters: .urlQueryAllowed
+        ) ?? ""
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/connectors/composio/catalog?connected=0&q=\(escaped)",
+                headers: try HTTPHeaders(["accept": "application/json"])
+            ),
+            for: accountID
+        )
+        if response.statusCode == 503 || response.statusCode == 429 { return [] }
+        guard (200..<300).contains(response.statusCode) else {
+            throw NativeWorkspaceExtrasError.requestFailed(response.statusCode)
+        }
+        guard let value = try? JSONDecoder().decode(JunoJSONValue.self, from: response.body),
+            case .object(let root) = value,
+            case .array(let items)? = root["items"]
+        else { throw NativeWorkspaceExtrasError.malformedResponse }
+        return items.compactMap(Self.decodeComposioApp)
+    }
+
+    static func decodeComposioApp(_ value: JunoJSONValue) -> NativeComposioApp? {
+        guard case .object(let o) = value,
+            case .string(let id)? = o["id"],
+            case .string(let name)? = o["name"]
+        else { return nil }
+        return NativeComposioApp(
+            id: id,
+            slug: o["slug"]?.stringValue ?? id,
+            name: name,
+            connected: o["connected"]?.boolValue ?? false,
+            connecting: o["connecting"]?.boolValue ?? false,
+            managedAuth: o["managedAuth"]?.boolValue ?? false,
+            noAuth: o["noAuth"]?.boolValue ?? false
+        )
     }
 
     /// Disconnect. Linking is deliberately **not** here: it is an OAuth flow
@@ -252,6 +317,9 @@ public final class NativeWorkspaceExtrasModel {
     public private(set) var connectorsPhase: Phase = .idle
     public private(set) var tasks: [NativeScheduledTask] = []
     public private(set) var connectors: [NativeConnector] = []
+    /// The browsable Composio directory, minus anything already represented by a
+    /// connector row, so one app never appears twice.
+    public private(set) var composioApps: [NativeComposioApp] = []
     public private(set) var lastErrorDescription: String?
     public private(set) var isMutating = false
 
@@ -270,6 +338,7 @@ public final class NativeWorkspaceExtrasModel {
         accountID = nil
         tasks = []
         connectors = []
+        composioApps = []
         tasksPhase = .idle
         connectorsPhase = .idle
         lastErrorDescription = nil
@@ -293,6 +362,12 @@ public final class NativeWorkspaceExtrasModel {
         connectorsPhase = .loading
         do {
             connectors = try await connectionsClient.connectors(for: accountID)
+            // The directory is *additive*: if it is unavailable the direct
+            // connectors are still worth showing, so its failure is swallowed
+            // here rather than failing the screen.
+            let alreadyListed = Set(connectors.map(\.id))
+            composioApps = ((try? await connectionsClient.composioCatalog(for: accountID)) ?? [])
+                .filter { !alreadyListed.contains($0.id) && !alreadyListed.contains($0.slug) }
             lastErrorDescription = nil
             connectorsPhase = .ready
         } catch {

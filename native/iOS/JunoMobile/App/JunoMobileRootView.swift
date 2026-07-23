@@ -655,21 +655,16 @@ private struct JunoMobileSidebarDrawer: View {
 
     private var profileButton: some View {
         Button(action: { openDestination(.settings) }) {
-            Group {
-                if let url = session.profile.imageURL {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: {
-                        Text(profileInitials).font(.system(size: 16, weight: .semibold))
-                    }
-                } else {
-                    Text(profileInitials)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.primary)
-                }
-            }
-            .frame(width: 46, height: 46)
-            .clipShape(Circle())
+            // One avatar implementation, shared with Settings. The previous
+            // inline `AsyncImage` used `placeholder:` for *both* loading and
+            // failure, so a photo that 403'd looked identical to an account with
+            // no photo — which is exactly the "my picture never shows" report,
+            // and impossible to tell apart from the outside.
+            JunoAvatar(
+                imageURL: session.profile.imageURL,
+                name: session.profile.name,
+                size: 46
+            )
             .modifier(JunoGlassCircle())
         }
         .buttonStyle(.plain)
@@ -1170,6 +1165,30 @@ private struct JunoMobileProjectDetail: View {
 
     var body: some View {
         List {
+            // The project itself, in its own name, at a size that fits — the
+            // navigation title truncated a real title to "Learning React +
+            // Java…", which told you nothing. The serif here is the same voice
+            // the web gives a project page.
+            Section {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text(project.name)
+                        .font(JunoSerif.pageHeading(compact: true))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(
+                        "^[\(model.selectedConversations.count) chat](inflect: true) · ^[\(model.selectedFiles.count) file](inflect: true) · \(project.updatedAt.formatted(.relative(presentation: .named)))"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, JunoSpace.tight)
+                .listRowSeparator(.hidden)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
+            }
+
             // A *preview* and a size, never the whole prompt. Dumping a
             // 6,000-character instruction block into the first screen is what
             // made this page unreadable — the web shows a clamped excerpt with a
@@ -1194,6 +1213,7 @@ private struct JunoMobileProjectDetail: View {
                         project.instructions.isEmpty ? "Add instructions" : "Edit instructions",
                         systemImage: "pencil"
                     )
+                    .foregroundStyle(.primary)
                 }
                 .disabled(project.isPending || model.isMutating)
                 .accessibilityIdentifier("juno.mobile.project-edit-instructions")
@@ -1232,7 +1252,9 @@ private struct JunoMobileProjectDetail: View {
                         }
                     }
                 } label: {
+                    // The one primary action on this page keeps the accent.
                     Label("New project conversation", systemImage: "square.and.pencil")
+                        .foregroundStyle(Color.junoAccent)
                 }
                 .disabled(project.isPending || conversationModel == nil)
             }
@@ -1255,13 +1277,19 @@ private struct JunoMobileProjectDetail: View {
                     }
                 }
                 Button { showingImporter = true } label: {
+                    // Secondary, like Edit instructions. The rejected build made
+                    // every row coral, which left the accent meaning nothing.
                     Label("Add file", systemImage: "paperclip")
+                        .foregroundStyle(.primary)
                 }
                 .disabled(project.isPending || model.isPerformingFileAction)
                 .accessibilityIdentifier("juno.mobile.project-file-add")
             }
         }
-        .navigationTitle(project.name)
+        // The title lives in the header above, at a size that can hold it. An
+        // inline navigation title truncates a real project name to nothing.
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {

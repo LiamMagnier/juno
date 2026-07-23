@@ -156,6 +156,23 @@ struct JunoMobileSettingsView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.settings-memory-link")
             }
+            // Answers "why is my photo not showing" from inside the app rather
+            // than by guessing: either the account carries no avatar URL, or it
+            // carries one the phone could not load. Those need different fixes.
+            Section("settings.diagnostics") {
+                LabeledContent("settings.diagnostics.avatar") {
+                    Text(
+                        session?.profile.imageURL?.absoluteString
+                            ?? String(localized: "settings.diagnostics.avatar.none")
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+                    .truncationMode(.middle)
+                    .textSelection(.enabled)
+                }
+            }
+
             Section("settings.about") {
                 Button {
                     showDiagnosticsPage = true

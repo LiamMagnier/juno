@@ -50,5 +50,20 @@ public enum PreviewWorkspaceExtras {
        "configured":false,"connected":false,"accountLabel":null,"connectedAt":null}
     ]}
     """
+
+    public static let composioCatalogJSON = """
+    {"totalPages":1,"total":5,"categories":["productivity","developer"],"items":[
+      {"id":"slack","slug":"slack","name":"Slack","logo":null,"connected":false,
+       "connecting":false,"noAuth":false,"managedAuth":true,"status":null,"connectedAt":null},
+      {"id":"linear","slug":"linear","name":"Linear","logo":null,"connected":false,
+       "connecting":false,"noAuth":false,"managedAuth":true,"status":null,"connectedAt":null},
+      {"id":"github","slug":"github","name":"GitHub","logo":null,"connected":false,
+       "connecting":false,"noAuth":false,"managedAuth":true,"status":null,"connectedAt":null},
+      {"id":"hackernews","slug":"hackernews","name":"Hacker News","logo":null,"connected":false,
+       "connecting":false,"noAuth":true,"managedAuth":false,"status":null,"connectedAt":null},
+      {"id":"asana","slug":"asana","name":"Asana","logo":null,"connected":false,
+       "connecting":false,"noAuth":false,"managedAuth":false,"status":null,"connectedAt":null}
+    ]}
+    """
 }
 #endif

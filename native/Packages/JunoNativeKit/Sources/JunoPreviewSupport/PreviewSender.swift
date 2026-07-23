@@ -66,6 +66,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.hasPrefix("/api/tasks") {
             return Data(PreviewWorkspaceExtras.tasksJSON.utf8)
         }
+        if path.hasPrefix("/api/connectors/composio/catalog") {
+            return Data(PreviewWorkspaceExtras.composioCatalogJSON.utf8)
+        }
         if path.hasPrefix("/api/connectors") {
             return Data(PreviewWorkspaceExtras.connectorsJSON.utf8)
         }

@@ -119,6 +119,7 @@ struct JunoMobileTasksView: View {
 struct JunoMobileConnectionsView: View {
     @Bindable var model: NativeWorkspaceExtrasModel
     @State private var disconnectTarget: NativeConnector?
+    @State private var search = ""
 
     var body: some View {
         Group {
@@ -192,7 +193,54 @@ struct JunoMobileConnectionsView: View {
                 // cannot finish a consent screen.
                 Text("connections.link.footer")
             }
+
+            // The browsable Composio directory. `/api/connectors` only reports
+            // the Composio apps this account has *already linked*, which is why
+            // nothing else used to appear here; the catalog is a separate route.
+            if !model.composioApps.isEmpty {
+                Section {
+                    ForEach(filteredComposio) { app in
+                        HStack(spacing: JunoSpace.cozy) {
+                            JunoIconView(.connections, size: 18)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 24)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(app.name)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .lineLimit(1)
+                                Text(status(app))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                } header: {
+                    Text("connections.directory.title")
+                } footer: {
+                    Text("connections.directory.footer")
+                }
+            }
         }
+        .searchable(text: $search, prompt: Text("connections.search"))
+    }
+
+    /// Client-side filtering: the directory arrives as one page, and a
+    /// round-trip per keystroke would hit the catalog's own rate limit.
+    private var filteredComposio: [NativeComposioApp] {
+        let needle = search.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return model.composioApps }
+        return model.composioApps.filter { $0.name.lowercased().contains(needle) }
+    }
+
+    /// Says plainly when an app cannot be linked yet, rather than implying it can.
+    private func status(_ app: NativeComposioApp) -> String {
+        if app.connected { return String(localized: "connections.status.connected") }
+        if app.noAuth { return String(localized: "connections.status.noauth") }
+        if !app.managedAuth { return String(localized: "connections.status.unavailable") }
+        return String(localized: "connections.status.available")
     }
 
     private func row(_ connector: NativeConnector) -> some View {

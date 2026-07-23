@@ -1014,6 +1014,40 @@
         }
       }
     },
+    "connections.directory.footer": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Everything Juno can connect to. Linking happens on the Juno website, then it appears above."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout ce à quoi Juno peut se connecter. La liaison se fait sur le site Juno, puis l'app apparaît ci-dessus."
+          }
+        }
+      }
+    },
+    "connections.directory.title": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Directory"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Répertoire"
+          }
+        }
+      }
+    },
     "connections.disconnect": {
       "extractionState": "manual",
       "localizations": {
@@ -1167,6 +1201,40 @@
         }
       }
     },
+    "connections.search": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search apps"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rechercher une application"
+          }
+        }
+      }
+    },
+    "connections.status.available": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Available to connect"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disponible"
+          }
+        }
+      }
+    },
     "connections.status.connected": {
       "extractionState": "manual",
       "localizations": {
@@ -1180,6 +1248,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connectée"
+          }
+        }
+      }
+    },
+    "connections.status.noauth": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No sign-in needed"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune connexion requise"
           }
         }
       }
@@ -2276,6 +2361,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "Compte"
+          }
+        }
+      }
+    },
+    "settings.diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.avatar": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Profile photo URL"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "URL de la photo de profil"
+          }
+        }
+      }
+    },
+    "settings.diagnostics.avatar.none": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your account has no photo URL."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Votre compte n'a pas d'URL de photo."
           }
         }
       }
