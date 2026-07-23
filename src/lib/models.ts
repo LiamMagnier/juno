@@ -99,6 +99,21 @@ interface ModelDef {
   api?: "chat" | "responses";
 }
 
+/**
+ * Whether a model has been superseded — the single reading of `status`/`legacy`,
+ * so the pickers, the display sort and the native manifest can't disagree.
+ *
+ * An ABSENT status means current, matching the `status` field's documented
+ * default. That case is entirely "discovered": a model the provider is still
+ * serving on its live API is current by definition, and only a curated entry
+ * can demote one. Reading absent-as-legacy is what buried every freshly
+ * discovered model (Gemini 3.6 Flash, 3.5 Flash-Lite) in the collapsed legacy
+ * section, whatever its version.
+ */
+export function isSupersededModel(model: Pick<ModelInfo, "legacy" | "status">): boolean {
+  return model.legacy ?? (model.status != null && model.status !== "current");
+}
+
 function def(d: ModelDef): ModelInfo {
   const modality = d.modality ?? "chat";
   return {

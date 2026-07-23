@@ -171,6 +171,11 @@ export function versionScore(bare: string): number {
 export function toModelInfo(provider: Provider, rawId: string, fam?: Family): ModelInfo {
   const id = `${provider}:${rawId}`;
   const known = MODELS[id];
+  // The provider is still serving this id on its live API, so it is current
+  // unless a curated entry says otherwise. Leaving these unset made every
+  // consumer that reads `status !== "current"` treat a brand-new model as
+  // legacy, which hid it in the pickers' collapsed legacy section.
+  const status = known?.status ?? "current";
   return {
     id,
     provider,
@@ -182,7 +187,8 @@ export function toModelInfo(provider: Provider, rawId: string, fam?: Family): Mo
     cost: known?.cost ?? guessCost(rawId),
     modality: known?.modality ?? "chat",
     webSearch: providerSupportsWebSearch(provider),
-    legacy: known?.legacy,
+    status,
+    legacy: known?.legacy ?? status !== "current",
   };
 }
 

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import { type ModelInfo } from "@/lib/models";
+import { isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { PROVIDERS } from "@/lib/providers";
 
@@ -13,9 +13,7 @@ import { PROVIDERS } from "@/lib/providers";
  * callable because the router only ever picks models the plan can reach.
  */
 /** `legacy` is derived from `status`; the flag itself is only a cached copy. */
-function isLegacy(model: ModelInfo): boolean {
-  return model.legacy ?? model.status !== "current";
-}
+const isLegacy = isSupersededModel;
 
 function usable(model: ModelInfo, plan: Plan | undefined): boolean {
   if (!plan) return true;

@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { modelGeneration, sortModelsForDisplay } from "../src/lib/model-metrics";
-import type { ModelInfo } from "../src/lib/models";
+import { isSupersededModel, type ModelInfo } from "../src/lib/models";
+import { toModelInfo } from "../src/lib/model-discovery-core";
 
 /** Synthetic ids on purpose: they miss the BENCHMARKS table, so `intelligence`
  *  falls out of `cost` alone and the power tiebreak stays deterministic. */
@@ -86,6 +87,41 @@ describe("sortModelsForDisplay", () => {
       model("GPT-5.1 Live", { released: "2026-01", status: "current" }),
     ]);
     assert.deepEqual(names(sorted), ["GPT-5.1 Live", "GPT-5.9 Old"]);
+  });
+
+  it("does not bury a discovered model as legacy", () => {
+    // The whole reason 3.6 Flash sat at the bottom: with no `status`, every
+    // `status !== "current"` reading called it legacy, and the picker files
+    // legacy models into a collapsed section under the live ones.
+    const discovered = model("Gemini 3.6 Flash", {
+      provider: "google",
+      released: undefined,
+      status: undefined,
+      legacy: undefined,
+    });
+    assert.equal(isSupersededModel(discovered), false, "absent status must mean current");
+
+    const sorted = sortModelsForDisplay([
+      model("Gemini 3.5 Flash", { provider: "google", released: "2026-06", cost: 2 }),
+      discovered,
+      model("Gemini 3.5 Flash-Lite", { provider: "google", released: undefined, status: undefined, legacy: undefined, cost: 1 }),
+    ]);
+    assert.deepEqual(names(sorted), ["Gemini 3.6 Flash", "Gemini 3.5 Flash", "Gemini 3.5 Flash-Lite"]);
+  });
+
+  it("still treats a curated deprecated model as superseded", () => {
+    assert.equal(isSupersededModel({ status: "deprecated", legacy: undefined }), true);
+    assert.equal(isSupersededModel({ status: "legacy", legacy: undefined }), true);
+    assert.equal(isSupersededModel({ status: "current", legacy: undefined }), false);
+  });
+
+  it("marks a freshly discovered id as current at construction", () => {
+    // toModelInfo is the discovery path; an id no curated entry knows about
+    // must come out current, not status-less.
+    const built = toModelInfo("google", "gemini-3.6-flash");
+    assert.equal(built.status, "current");
+    assert.equal(built.legacy, false);
+    assert.equal(isSupersededModel(built), false);
   });
 
   it("groups by lab before anything else, and does not mutate the input", () => {

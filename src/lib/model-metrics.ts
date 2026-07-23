@@ -1,4 +1,4 @@
-import type { ModelInfo } from "@/lib/models";
+import { isSupersededModel, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
@@ -342,9 +342,7 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
     const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
     if (labDelta !== 0) return labDelta;
-    // `legacy` is a cached copy of `status`; fall back to the source of truth.
-    const legacyDelta =
-      Number(a.legacy ?? a.status !== "current") - Number(b.legacy ?? b.status !== "current");
+    const legacyDelta = Number(isSupersededModel(a)) - Number(isSupersededModel(b));
     if (legacyDelta !== 0) return legacyDelta;
     // Only decisive when BOTH names carry a version; otherwise the release date
     // below still places an unversioned model sensibly against its siblings.
