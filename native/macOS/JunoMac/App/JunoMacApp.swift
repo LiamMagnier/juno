@@ -56,6 +56,11 @@ struct JunoMacApp: App {
         chatTransport = configuration.chatTransport
     }
 
+    // The window's minimum is Code's, not Chat's. Juno Code is a three-column
+    // workbench — sidebar 220 + detail + inspector 260 — and a window narrower
+    // than that has no satisfiable constraint solve, which AppKit reports by
+    // throwing from `_postWindowNeedsUpdateConstraints` rather than by clipping.
+    // Chat fits comfortably inside the same minimum.
     var body: some Scene {
         WindowGroup("Juno") {
             #if DEBUG
@@ -96,7 +101,7 @@ struct JunoMacApp: App {
                         previewSession: world.session
                     )
                 }
-                .frame(minWidth: 760, minHeight: 520)
+                .frame(minWidth: 900, minHeight: 560)
                 // `--juno-preview-dark` previously only affected the Juno Code
                 // preview, so a dark-mode QA pass of the main shell silently
                 // rendered light.
@@ -154,7 +159,7 @@ struct JunoMacApp: App {
             searchModel: searchModel,
             chatTransport: chatTransport
         )
-        .frame(minWidth: 760, minHeight: 520)
+        .frame(minWidth: 900, minHeight: 560)
     }
 
     #if DEBUG

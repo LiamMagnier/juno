@@ -41,6 +41,17 @@ struct JunoMacModeSwitcher: View {
         // grid as the rows below it.
         JunoMacSegmentedModeControl(mode: $mode)
             .frame(height: 22)
+            // `fixedSize(vertical:)` is load-bearing inside Juno Code.
+            //
+            // This hosts an `NSSegmentedControl`, and an AppKit view with an
+            // ambiguous height inside a `safeAreaInset` on a
+            // `NavigationSplitView` sidebar makes AppKit's two-pass constraint
+            // update re-enter itself: the inset asks the control for a height,
+            // the control invalidates, the inset is asked again. Code's sidebar
+            // hit it and Chat's did not, because only Code puts this header
+            // inside a split view that also owns an inspector. Pinning the
+            // vertical dimension gives the solve a fixed answer to converge on.
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("juno.mac.mode-switcher")
     }
 }

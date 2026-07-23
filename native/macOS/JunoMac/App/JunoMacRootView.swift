@@ -145,6 +145,17 @@ struct JunoMacRootView: View {
                 model: workbenchModel(transport: chatTransport, session: session),
                 sidebarHeader: { JunoMacSidebarHeader(mode: $productMode) }
             )
+            // Code needs a wider window than Chat, and this is why switching to
+            // it crashed rather than merely looking cramped.
+            //
+            // The workbench is three columns: a sidebar with a 220pt minimum, a
+            // detail column, and an inspector with a 260pt minimum. The window
+            // carried Chat's 760pt minimum, which cannot satisfy 220 + detail +
+            // 260 once the shell's own chrome is counted, so AppKit's constraint
+            // solve had no solution and `_postWindowNeedsUpdateConstraints`
+            // threw. The standalone Code preview never hit this because it sets
+            // its own 900pt minimum — the same number used here.
+            .frame(minWidth: 900, minHeight: 560)
         } else {
             unavailableShell
         }

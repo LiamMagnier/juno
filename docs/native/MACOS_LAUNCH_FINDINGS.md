@@ -72,3 +72,59 @@ open ~/Library/Developer/Xcode/DerivedData/JunoMacVerify/Build/Products/Debug/Ju
 `screencapture -x <file>` works; the accessibility route
 (`System Events → count of windows`) is reliable and was sanity-checked against
 TextEdit, which reports 1.
+
+---
+
+# The Juno Code crash, bisected
+
+2026-07-23, second pass. Every line below is a measured run, not a reading.
+
+## What is established
+
+| Configuration | Result |
+|---|---|
+| `--juno-code-ui-preview` — `WorkbenchView` alone in the `WindowGroup` | alive |
+| Chat shell | alive |
+| Code shell with `sidebarHeader: { JunoMacSidebarHeader(...) }` | **crashes** |
+| Code shell with `sidebarHeader: { EmptyView() }` | **alive** |
+
+The trigger is the **sidebar header**, and the only thing in it that is not
+plain SwiftUI is `JunoMacSegmentedModeControl` — an `NSViewRepresentable`
+hosting an `NSSegmentedControl`, placed by `.safeAreaInset(edge: .top)` on a
+`NavigationSplitView` sidebar. Code's sidebar hits it and Chat's does not,
+because only Code's split view also owns an `.inspector`.
+
+That matches the backtrace exactly: the inset asks the hosted control for a
+height, the control invalidates, the inset asks again —
+`_informContainerThatSubviewsNeedUpdateConstraints` recursing eleven deep until
+`_postWindowNeedsUpdateConstraints` throws.
+
+## Ruled out
+
+- **Window minimum.** Raising it from 760 to 900 (Code needs sidebar 220 +
+  detail + inspector 260) did not stop the crash. The change is kept because the
+  arithmetic is right regardless, but it was not the cause.
+- **Nested `NavigationSplitView`.** Fixed separately in Projects; unrelated here.
+- **Mode-switch identity.** `.id(productMode)` is kept for the same reason — it
+  is correct — but it did not stop this crash either.
+
+## Where it stands
+
+`.fixedSize(horizontal: false, vertical: true)` on the hosted control made Code
+launch successfully once and then fail on a later run. **It is intermittent,**
+which is what a constraint-timing bug looks like, and it must not be described
+as fixed.
+
+## The next step
+
+Replace the AppKit-hosted segmented control in the sidebar header with a plain
+SwiftUI control. `JunoMacModeSwitcher`'s own doc explains why
+`NSSegmentedControl` was chosen — it is the only API that gives two equal-width
+segments — but a control that crashes the app is worse than one that centres its
+segments. Either drop back to `Picker(.segmented)` inside a `.frame`, or move the
+switcher out of the sidebar's `safeAreaInset` and into the toolbar, where no
+inset asks it to resolve a height mid-pass.
+
+The known-good fallback, if Code must work today, is
+`sidebarHeader: { EmptyView() }` in `codeShell` — verified alive, at the cost of
+no mode switcher inside Code.
