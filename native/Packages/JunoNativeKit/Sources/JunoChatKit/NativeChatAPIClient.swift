@@ -218,6 +218,37 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     public let finishReason: NativeChatFinishReason
 }
 
+/// A step the server reports while working, mirroring the web's
+/// `ClientActivityEvent`.
+///
+/// Deep research is where these matter: PLAN → SEARCH → READ runs for tens of
+/// seconds before a single token of the report is streamed, and without these
+/// the screen shows an empty bubble and a spinner for the whole prep phase. The
+/// same events also carry the warning emitted when research degrades to plain
+/// chat, which the reader has to see or the answer silently is not researched.
+public struct NativeChatActivity: Equatable, Sendable, Identifiable {
+    public enum Kind: String, Equatable, Sendable {
+        case context, model, reasoning, search, visit, write, usage, done, warning, tool
+        /// A kind this build does not know. Kept rather than dropped so a
+        /// server that adds one does not make the step vanish from the screen.
+        case unknown
+    }
+
+    public let id: String
+    public let kind: Kind
+    public let title: String
+    public let detail: String?
+    public let url: String?
+
+    public init(id: String, kind: Kind, title: String, detail: String?, url: String?) {
+        self.id = id
+        self.kind = kind
+        self.title = title
+        self.detail = detail
+        self.url = url
+    }
+}
+
 public enum NativeChatServerEvent: Equatable, Sendable {
     case metadata(
         conversationID: String,
@@ -229,6 +260,7 @@ public enum NativeChatServerEvent: Equatable, Sendable {
     case textDelta(String)
     case reasoningDelta(String)
     case sources([NativeChatSource])
+    case activity(NativeChatActivity)
     case completed(NativeCompletedChatMessage)
     case failed(
         message: String,
@@ -244,17 +276,24 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     public let modelID: String
     public let reasoningEffort: NativeReasoningEffort?
     public let generationID: String
+    /// Runs the server's PLAN → SEARCH → READ → SYNTHESIS pipeline instead of a
+    /// plain turn. This is the same switch the web sets; the research itself is
+    /// server-side, so parity is sending the flag and rendering what comes
+    /// back, not reimplementing the pipeline.
+    public let deepResearch: Bool
 
     public init(
         conversationID: String,
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
-        generationID: String
+        generationID: String,
+        deepResearch: Bool = false
     ) {
         self.conversationID = conversationID
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.generationID = generationID
+        self.deepResearch = deepResearch
     }
 }
 
@@ -439,6 +478,7 @@ public struct NativeChatAPIClient: Sendable {
         conversationID: String,
         clientID: String,
         content: String,
+        attachmentIDs: [String] = [],
         for accountID: AccountID
     ) async throws -> NativeAppendedUserMessage {
         try requireIdentifier(conversationID)
@@ -448,7 +488,8 @@ public struct NativeChatAPIClient: Sendable {
         let requestBody = AppendRequestWire(turns: [AppendTurnWire(
             clientId: clientID,
             role: "USER",
-            content: trimmed
+            content: trimmed,
+            attachmentIds: attachmentIDs.isEmpty ? nil : attachmentIDs
         )])
         let response = try await sender.send(
             try NativeBearerRequest(
@@ -492,7 +533,8 @@ public struct NativeChatAPIClient: Sendable {
             regenerate: true,
             reasoningEffort: request.reasoningEffort?.rawValue,
             generationId: request.generationID,
-            client: "app"
+            client: "app",
+            deepResearch: request.deepResearch ? true : nil
         )
         let response = try await streamer.stream(
             try NativeBearerRequest(
@@ -635,7 +677,16 @@ public struct NativeChatAPIClient: Sendable {
                 generationID: envelope.generationId,
                 userMessageID: envelope.userMessageId
             )
-        case "ping", "activity", "progress":
+        case "activity":
+            guard let event = envelope.event else { return .ping }
+            return .activity(NativeChatActivity(
+                id: event.id,
+                kind: NativeChatActivity.Kind(rawValue: event.kind) ?? .unknown,
+                title: event.title,
+                detail: event.detail,
+                url: event.url
+            ))
+        case "ping", "progress":
             return .ping
         default:
             throw NativeChatAPIError.malformedResponse
@@ -789,6 +840,10 @@ private struct AppendTurnWire: Encodable {
     let clientId: String
     let role: String
     let content: String
+    /// Omitted entirely when empty — the route's schema is `.strict()`, and an
+    /// empty array would still be a claim of zero attachments rather than no
+    /// claim at all.
+    let attachmentIds: [String]?
 }
 private struct AppendResponseWire: Decodable {
     struct Message: Decodable {
@@ -808,6 +863,9 @@ private struct GenerationRequestWire: Encodable {
     let reasoningEffort: String?
     let generationId: String
     let client: String
+    /// Omitted when false so a plain turn's body is byte-identical to what it
+    /// was before deep research existed.
+    let deepResearch: Bool?
 }
 private struct CancelRequestWire: Encodable { let generationId: String }
 private struct CancelResponseWire: Decodable { let ok: Bool; let cancelled: Bool }
@@ -819,6 +877,13 @@ private struct SourceWire: Decodable {
 }
 
 private struct EventEnvelopeWire: Decodable {
+    struct ActivityWire: Decodable {
+        let id: String
+        let kind: String
+        let title: String
+        let detail: String?
+        let url: String?
+    }
     struct Message: Decodable {
         let id: String
         let role: String
@@ -838,12 +903,13 @@ private struct EventEnvelopeWire: Decodable {
     let sources: [SourceWire]?
     let message: Message?
     let messageText: String?
+    let event: ActivityWire?
     let error: String?
     let finishReason: String?
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
-             sources, message, error, finishReason
+             sources, message, event, error, finishReason
     }
 
     init(from decoder: any Decoder) throws {
@@ -857,6 +923,9 @@ private struct EventEnvelopeWire: Decodable {
         sources = try container.decodeIfPresent([SourceWire].self, forKey: .sources)
         message = try? container.decodeIfPresent(Message.self, forKey: .message)
         messageText = try? container.decodeIfPresent(String.self, forKey: .message)
+        // Tolerant on purpose: an activity payload this build cannot read must
+        // not fail the whole stream, since the report itself is unaffected.
+        event = try? container.decodeIfPresent(ActivityWire.self, forKey: .event)
         error = try container.decodeIfPresent(String.self, forKey: .error)
         finishReason = try container.decodeIfPresent(String.self, forKey: .finishReason)
     }

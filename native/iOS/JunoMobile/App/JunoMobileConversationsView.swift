@@ -11,6 +11,7 @@ import UIKit
 struct JunoMobileChatDetailScreen: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     var projects: [NativeProject] = []
+    var attachmentModel: NativeComposerAttachmentModel?
 
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
@@ -20,7 +21,12 @@ struct JunoMobileChatDetailScreen: View {
     var body: some View {
         Group {
             if let selected {
-                JunoMobileConversationDetail(model: model, conversation: selected, projects: projects)
+                JunoMobileConversationDetail(
+                    model: model,
+                    conversation: selected,
+                    projects: projects,
+                    attachmentModel: attachmentModel
+                )
             } else {
                 emptyState
             }
@@ -54,6 +60,7 @@ private struct JunoMobileConversationDetail: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
     var projects: [NativeProject] = []
+    var attachmentModel: NativeComposerAttachmentModel?
     @State private var showingRename = false
     @State private var editValue = ""
     @State private var prompt = ""
@@ -89,114 +96,132 @@ private struct JunoMobileConversationDetail: View {
         model.isGenerating && model.activeChatConversationID == conversation.id
     }
 
-    var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                if messages.isEmpty {
-                    ContentUnavailableView(
-                        "No messages yet",
-                        systemImage: "bubble.left.and.text.bubble.right",
-                        description: Text("This conversation is ready for its first message.")
-                    )
-                    .frame(maxWidth: .infinity, minHeight: 360)
-                } else {
-                    LazyVStack(spacing: 14) {
-                        ForEach(messages) { message in
-                            JunoMobileMessageRow(message: message)
-                        }
-                    }
-                    .padding()
-                    Color.clear
-                        .frame(height: 1)
-                        .id(bottomAnchor)
+    /// The transcript itself. Extracted from `body` because the merged view
+    /// stacks a long modifier chain on an inline `ScrollView`, and the type
+    /// checker times out on the combined expression.
+    @ViewBuilder
+    private var transcript: some View {
+        if messages.isEmpty {
+            ContentUnavailableView(
+                "No messages yet",
+                systemImage: "bubble.left.and.text.bubble.right",
+                description: Text("This conversation is ready for its first message.")
+            )
+            .frame(maxWidth: .infinity, minHeight: 360)
+        } else {
+            LazyVStack(spacing: 14) {
+                ForEach(messages) { message in
+                    JunoMobileMessageRow(message: message)
                 }
             }
-            // Scoped to the transcript, NOT to the whole screen: applied after
-            // `.safeAreaInset` it was stamped onto every composer control too,
-            // so the model and Thinking chips all reported this identifier
-            // instead of their own.
-            .accessibilityIdentifier("juno.mobile.conversation-detail")
-            .background(Color.junoCanvas)
-            .defaultScrollAnchor(.bottom)
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                let distance = geometry.contentSize.height
-                    - geometry.contentOffset.y
-                    - geometry.containerSize.height
-                // Non-scrollable (content fits) counts as "at bottom" so the
-                // jump-to-latest control never shows when there is nothing to
-                // scroll to.
-                return geometry.contentSize.height <= geometry.containerSize.height
-                    || distance < 120
-            } action: { _, nearBottom in
-                isNearBottom = nearBottom
-            }
-            .onChange(of: streamSignature) { _, _ in
-                guard isNearBottom else { return }
-                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                if !isNearBottom && !messages.isEmpty {
-                    Button {
-                        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                            proxy.scrollTo(bottomAnchor, anchor: .bottom)
-                        }
-                    } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.body.weight(.semibold))
-                            .padding(12)
-                    }
-                    .background(.regularMaterial, in: Circle())
-                    .padding(.trailing, 16)
-                    .padding(.bottom, 8)
-                    .transition(.scale.combined(with: .opacity))
-                    .accessibilityLabel("Scroll to latest")
-                    .accessibilityIdentifier("juno.mobile.chat-scroll-bottom")
-                }
-            }
+            .padding()
+            Color.clear
+                .frame(height: 1)
+                .id(bottomAnchor)
         }
-        .navigationTitle(conversation.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button {
-                        editValue = conversation.title
-                        showingRename = true
-                    } label: {
-                        Label("Rename", systemImage: "pencil")
+    }
+
+    /// Extracted from `body` for the same reason as `scrollArea`: the
+    /// nested menu was on its own enough to time the type checker out.
+    @ToolbarContentBuilder
+    private var conversationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Menu {
+                Button {
+                    editValue = conversation.title
+                    showingRename = true
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                Divider()
+                Button {
+                    Task {
+                        await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
                     }
-                    Divider()
-                    Button {
-                        Task {
-                            await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
-                        }
-                    } label: {
-                        Label(
-                            conversation.pinned ? "Unpin" : "Pin",
-                            systemImage: conversation.pinned ? "pin.slash" : "pin"
-                        )
-                    }
-                    Button {
-                        Task {
-                            await model.setArchived(
-                                id: conversation.id,
-                                archived: !conversation.isArchived
-                            )
-                        }
-                    } label: {
-                        Label(
-                            conversation.isArchived ? "Unarchive" : "Archive",
-                            systemImage: conversation.isArchived ? "tray.and.arrow.up" : "archivebox"
+                } label: {
+                    Label(
+                        conversation.pinned ? "Unpin" : "Pin",
+                        systemImage: conversation.pinned ? "pin.slash" : "pin"
+                    )
+                }
+                Button {
+                    Task {
+                        await model.setArchived(
+                            id: conversation.id,
+                            archived: !conversation.isArchived
                         )
                     }
                 } label: {
-                    Label("Conversation actions", systemImage: "ellipsis.circle")
+                    Label(
+                        conversation.isArchived ? "Unarchive" : "Archive",
+                        systemImage: conversation.isArchived ? "tray.and.arrow.up" : "archivebox"
+                    )
                 }
-                .disabled(model.isMutating || conversation.isPending)
+            } label: {
+                Label("Conversation actions", systemImage: "ellipsis.circle")
+            }
+            .disabled(model.isMutating || conversation.isPending)
+        }
+    }
+
+    /// The scrolling transcript with its follow-the-stream behaviour and
+    /// jump-to-latest control. A separate function so `body` stays a short
+    /// enough expression for the type checker.
+    private func scrollArea(_ proxy: ScrollViewProxy) -> some View {
+        ScrollView { transcript }
+        // Scoped to the transcript, NOT to the whole screen: applied after
+        // `.safeAreaInset` it was stamped onto every composer control too,
+        // so the model and Thinking chips all reported this identifier
+        // instead of their own.
+        .accessibilityIdentifier("juno.mobile.conversation-detail")
+        .background(Color.junoCanvas)
+        .defaultScrollAnchor(.bottom)
+        .onScrollGeometryChange(for: Bool.self) { geometry in
+            let distance = geometry.contentSize.height
+                - geometry.contentOffset.y
+                - geometry.containerSize.height
+            // Non-scrollable (content fits) counts as "at bottom" so the
+            // jump-to-latest control never shows when there is nothing to
+            // scroll to.
+            return geometry.contentSize.height <= geometry.containerSize.height
+                || distance < 120
+        } action: { _, nearBottom in
+            isNearBottom = nearBottom
+        }
+        .onChange(of: streamSignature) { _, _ in
+            guard isNearBottom else { return }
+            withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                proxy.scrollTo(bottomAnchor, anchor: .bottom)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if !isNearBottom && !messages.isEmpty {
+                Button {
+                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                    }
+                } label: {
+                    Image(systemName: "arrow.down")
+                        .font(.body.weight(.semibold))
+                        .padding(12)
+                }
+                .background(.regularMaterial, in: Circle())
+                .padding(.trailing, 16)
+                .padding(.bottom, 8)
+                .transition(.scale.combined(with: .opacity))
+                .accessibilityLabel("Scroll to latest")
+                .accessibilityIdentifier("juno.mobile.chat-scroll-bottom")
+            }
+        }
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            scrollArea(proxy)
+        }
+        .navigationTitle(conversation.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { conversationToolbar }
         .alert("Rename conversation", isPresented: $showingRename) {
             TextField("Title", text: $editValue)
             Button("Cancel", role: .cancel) {}
@@ -213,6 +238,7 @@ private struct JunoMobileConversationDetail: View {
                 selectedModelID: $selectedModelID,
                 reasoningEffort: $reasoningEffort,
                 thinkingNotice: $thinkingNotice,
+                attachmentModel: attachmentModel,
                 composerFocused: $composerFocused
             )
         }

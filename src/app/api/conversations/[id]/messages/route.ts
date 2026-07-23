@@ -9,6 +9,14 @@ import { isOwnerEmail } from "@/lib/owner";
 
 export const runtime = "nodejs";
 
+/** Raised when an attachment cannot be claimed — wrong owner, or already used. */
+class AttachmentClaimError extends Error {
+  constructor() {
+    super("One or more attachments are unavailable.");
+    this.name = "AttachmentClaimError";
+  }
+}
+
 // Native transcript push: the app appends batches of finalized turns (Code
 // session transcripts, voice turns) to a conversation it owns. Idempotent on
 // (conversationId, clientId) — a retried batch returns the rows the first
@@ -71,6 +79,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const now = Date.now();
       let newestCreatedAt: Date | null = null;
       for (const [index, turn] of turns.entries()) {
+        // Already persisted by an earlier attempt of this same batch. Its
+        // attachments were claimed then too, so re-running the claim would find
+        // `messageId` non-null and fail a retry that is in fact correct.
         if (byClientId.has(turn.clientId)) continue;
         const createdAt = appendTurnCreatedAt(turn, index, turns.length, now);
         const row = await tx.message.create({
@@ -88,6 +99,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         byClientId.set(turn.clientId, row);
         createdIds.add(turn.clientId);
         if (!newestCreatedAt || createdAt > newestCreatedAt) newestCreatedAt = createdAt;
+
+        // Claim the turn's uploads onto the message it belongs to, in the same
+        // transaction that created it. `/api/chat` does this for the web; the
+        // native composer appends through here instead, so without it native
+        // uploads would succeed and then attach to nothing.
+        //
+        // The WHERE clause is the entire security boundary, and each clause
+        // earns its place: `userId` stops one account claiming another's
+        // upload, and `messageId: null` stops an attachment already bound to a
+        // message being re-bound to a second one. A short count means at least
+        // one id failed one of those tests, and the whole batch rolls back —
+        // partially attaching a message is worse than refusing it, because the
+        // reader would see a message that silently lost a file.
+        const attachmentIds = [...new Set(turn.attachmentIds ?? [])];
+        if (attachmentIds.length > 0) {
+          const claimed = await tx.attachment.updateMany({
+            where: { id: { in: attachmentIds }, userId: user.id, messageId: null },
+            data: { messageId: row.id, conversationId: id },
+          });
+          if (claimed.count !== attachmentIds.length) {
+            throw new AttachmentClaimError();
+          }
+        }
       }
       // Bump the sidebar ordering only forward — replays and historical
       // backfills must never drag a conversation back in time. The guard is
@@ -107,6 +141,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   } catch (error) {
     // Two identical batches can race past the findMany; the unique index
     // rolls one back — rerun so both callers get the winner's rows.
+    if (error instanceof AttachmentClaimError) {
+      return NextResponse.json(
+        { error: "One or more attachments are unavailable." },
+        { status: 409 },
+      );
+    }
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       result = await write();
     } else {

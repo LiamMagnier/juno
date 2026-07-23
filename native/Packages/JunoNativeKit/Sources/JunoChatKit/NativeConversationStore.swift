@@ -442,6 +442,34 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private var generationTask: Task<Void, Never>?
     private var activeGenerationID: String?
 
+    /// Steps the server has reported for the generation in flight, newest last.
+    ///
+    /// Deep research runs PLAN → SEARCH → READ for tens of seconds before a
+    /// single token of the report arrives, so without these the screen is an
+    /// empty bubble and a spinner for the whole prep phase. Cleared when a new
+    /// generation starts, because last turn's search steps above this turn's
+    /// answer would be actively misleading.
+    public private(set) var researchActivity: [NativeChatActivity] = []
+
+    /// The warning the server emits when research degrades to a plain answer.
+    /// Surfaced separately because it changes what the answer *is* — a reader
+    /// who asked for research and silently got plain chat has been misled.
+    public var researchDegradedWarning: String? {
+        researchActivity.last { $0.kind == .warning }?.detail
+            ?? researchActivity.last { $0.kind == .warning }?.title
+    }
+
+    private func recordActivity(_ activity: NativeChatActivity, conversationID: String) {
+        guard activeChatConversationID == conversationID else { return }
+        // The server re-sends an entry when it gains a detail, so replace in
+        // place rather than appending a near-duplicate step.
+        if let index = researchActivity.firstIndex(where: { $0.id == activity.id }) {
+            researchActivity[index] = activity
+        } else {
+            researchActivity.append(activity)
+        }
+    }
+
     private struct RetryContext: Sendable {
         let accountID: AccountID
         let conversationID: String
@@ -449,6 +477,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         let prompt: String
         let modelID: String
         let reasoningEffort: NativeReasoningEffort?
+        /// Carried through retries so a resend claims the same uploads rather
+        /// than losing them. Claiming is idempotent per attachment — the second
+        /// attempt finds `messageId` already set and the server refuses — so a
+        /// retry of a *successful* append must not re-send them; this is only
+        /// re-sent when the append itself never landed.
+        let attachmentIDs: [String]
+        /// Carried through retries so a resend is still the research request the
+        /// reader asked for, rather than silently downgrading to plain chat.
+        let deepResearch: Bool
         var userMessageID: String?
         var userCreatedAt: Date
     }
@@ -532,7 +569,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             phase = syncModel.phase == .offline ? .offline : .ready
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -675,7 +712,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         conversationID: String,
         prompt: String,
         modelID: String,
-        reasoningEffort: NativeReasoningEffort?
+        reasoningEffort: NativeReasoningEffort?,
+        attachmentIDs: [String] = [],
+        deepResearch: Bool = false
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -702,10 +741,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             prompt: trimmed,
             modelID: modelID,
             reasoningEffort: reasoningEffort,
+            attachmentIDs: attachmentIDs,
+            deepResearch: deepResearch,
             userMessageID: nil,
             userCreatedAt: now
         )
         retryContexts.removeValue(forKey: conversationID)
+        researchActivity = []
         chatErrorDescription = nil
         activeChatConversationID = conversationID
         chatPhase = .appending
@@ -780,6 +822,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID,
                     clientID: context.clientID,
                     content: context.prompt,
+                    attachmentIDs: context.attachmentIDs,
                     for: context.accountID
                 )
                 guard accountID == context.accountID else { return }
@@ -796,7 +839,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     conversationID: context.conversationID,
                     modelID: context.modelID,
                     reasoningEffort: context.reasoningEffort,
-                    generationID: generationID
+                    generationID: generationID,
+                    deepResearch: context.deepResearch
                 ),
                 for: context.accountID
             )
@@ -825,6 +869,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     if chatPhase == .submitting { chatPhase = .reasoning }
                 case .sources(let sources):
                     updateAssistantSources(sources, conversationID: context.conversationID)
+                case .activity(let activity):
+                    recordActivity(activity, conversationID: context.conversationID)
                 case .completed(let message):
                     completeAssistant(message, conversationID: context.conversationID)
                     retryContexts.removeValue(forKey: context.conversationID)
@@ -1166,7 +1212,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             await reconcilePendingMutations()
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -1193,8 +1239,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
-            phase = .failed
+            lastErrorDescription = NativeFailureMessage.presentable(error)
+            // Draining is a network call, so losing connectivity here is an
+            // outage, not a refusal. Reporting it as `.failed` told the reader
+            // their queued changes had hard-failed when they were still safely
+            // queued and would go out on reconnect.
+            phase = NativeSyncModel<Repository>.isConnectivityFailure(error)
+                || syncModel.phase == .offline
+                ? .offline
+                : .failed
         }
     }
 
@@ -1223,7 +1276,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             if keepLocalChanges { await reconcilePendingMutations() }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }

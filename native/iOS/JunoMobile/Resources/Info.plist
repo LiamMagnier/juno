@@ -20,6 +20,12 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>JunoGitSHA</key>
+    <string>$(JUNO_GIT_SHA)</string>
+    <key>JunoContractVersion</key>
+    <string>$(JUNO_CONTRACT_VERSION)</string>
+    <key>JunoChannel</key>
+    <string>$(JUNO_CHANNEL)</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
@@ -48,6 +54,13 @@
         <string>Newsreader24pt-MediumItalic.ttf</string>
         <string>Newsreader24pt-SemiBold.ttf</string>
     </array>
+    <!-- Required before either API is touched: iOS terminates the app on first
+         access if the matching string is absent, so a missing entry is a crash
+         rather than a denied permission. -->
+    <key>NSCameraUsageDescription</key>
+    <string>Juno uses the camera so you can attach a photo to a conversation.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Juno reads the photos you choose so you can attach them to a conversation.</string>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>UILaunchScreen</key>

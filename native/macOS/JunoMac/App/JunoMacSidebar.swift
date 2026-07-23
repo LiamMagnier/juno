@@ -34,6 +34,9 @@ struct JunoMacSidebar: View {
     @State private var renameValue = ""
     /// One clock read per list rebuild. Reading `Date()` inside the grouping
     /// call would make the buckets recompute on every unrelated redraw.
+    /// `JunoMacDayChange` pushes a new value when the calendar day actually
+    /// moves, so a window left open across midnight re-labels itself without
+    /// paying for a clock read per redraw.
     @State private var groupingNow = Date()
 
     private var groups: [NativeConversationGroup] {
@@ -87,6 +90,11 @@ struct JunoMacSidebar: View {
             // Refresh the recency boundaries when the history changes, so a
             // conversation created after midnight does not stay in "Yesterday".
             groupingNow = Date()
+        }
+        .onReceive(JunoMacDayChange.signal) { now in
+            // …and again when the day itself moves, so an idle window does not
+            // keep yesterday's chats under "Today".
+            groupingNow = now
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .overlay { emptyState }
@@ -312,13 +320,27 @@ struct JunoMacSyncIndicator: View {
                     Image(systemName: "checkmark.circle")
                 case .offline:
                     Image(systemName: "wifi.slash")
+                case .failed:
+                    // Reached the server and cannot proceed — not a wifi problem,
+                    // so it must not borrow the wifi glyph.
+                    Image(systemName: "exclamationmark.triangle")
                 }
             }
             .buttonStyle(.plain)
-            .foregroundStyle(model.phase == .offline ? Color.orange : Color.secondary)
+            .foregroundStyle(syncStatusTint(model.phase))
             .help(helpText(model))
             .accessibilityLabel(helpText(model))
             .accessibilityIdentifier("juno.mac.sync-status")
+        }
+    }
+
+    private func syncStatusTint(
+        _ phase: NativeSyncModel<SQLiteAccountRepository>.Phase
+    ) -> Color {
+        switch phase {
+        case .offline: Color.orange
+        case .failed: Color.red
+        case .idle, .synchronizing, .live: Color.secondary
         }
     }
 
@@ -327,6 +349,7 @@ struct JunoMacSyncIndicator: View {
         return switch model.phase {
         case .live: Text("sync.state.synced")
         case .offline: Text("sync.state.offline")
+        case .failed: Text("sync.state.failed")
         case .idle, .synchronizing: Text("sync.state.syncing")
         }
     }

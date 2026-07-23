@@ -6,7 +6,8 @@ import { getUserPlan } from "@/lib/usage";
 import { PLANS } from "@/lib/plans";
 import { isStorageAvailable } from "@/lib/env";
 import { buildObjectKey, putObject } from "@/lib/storage";
-import { isAcceptedMime, attachmentKind, isTextExtractable, sniffImageMime, sanitizeFileName } from "@/lib/uploads";
+import { isAcceptedMime } from "@/lib/uploads";
+import { planAttachmentUpload } from "@/lib/attachment-upload";
 import { serializeAttachment } from "@/lib/serializers";
 import { isOwnerEmail } from "@/lib/owner";
 
@@ -58,37 +59,24 @@ export async function POST(req: Request) {
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  const fileName = sanitizeFileName(file.name || "file");
-  let kind = attachmentKind(mime);
-
-  // Images: verify magic bytes and use the *detected* type. Everything else is
-  // stored as a neutral type and forced to download, so uploaded HTML/scripts
-  // can never be rendered inline (stored-XSS / phishing prevention).
-  let storedType = "application/octet-stream";
-  let storedMime = mime;
-  let disposition: string | undefined = `attachment; filename="${fileName}"`;
-  if (kind === "IMAGE") {
-    const sniffed = sniffImageMime(bytes);
-    if (!sniffed) {
-      return NextResponse.json({ error: "That file isn't a valid image." }, { status: 415 });
-    }
-    storedType = sniffed;
-    storedMime = sniffed;
-    kind = "IMAGE";
-    disposition = undefined; // inline so thumbnails render
+  // Shared with /api/v1/attachments. These are security rules — magic-byte
+  // sniffing, the neutral stored type, the attachment disposition — and having
+  // one copy is the point: two copies means only one of them gets fixed.
+  const planned = planAttachmentUpload({
+    declaredMime: mime,
+    fileName: file.name || "file",
+    size: file.size,
+    bytes,
+    maxUploadMb: PLANS[plan].maxUploadMb,
+  });
+  if (!planned.ok) {
+    return NextResponse.json({ error: planned.error.message }, { status: planned.error.status });
   }
+  const { fileName, kind, storedMime, storedContentType, contentDisposition, extractedText } =
+    planned.plan;
 
   const key = buildObjectKey(user.id, fileName);
-  await putObject(key, bytes, storedType, disposition);
-
-  let extractedText: string | null = null;
-  if (isTextExtractable(storedMime) && file.size < 1_000_000) {
-    try {
-      extractedText = new TextDecoder("utf-8", { fatal: false }).decode(bytes).slice(0, 200_000);
-    } catch {
-      extractedText = null;
-    }
-  }
+  await putObject(key, bytes, storedContentType, contentDisposition);
 
   const attachment = await prisma.attachment.create({
     data: {

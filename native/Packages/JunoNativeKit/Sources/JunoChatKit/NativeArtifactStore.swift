@@ -268,10 +268,21 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
             { self.selectedArtifactID = nil }
             if selectedArtifactID == nil { selectedArtifactID = artifacts.first?.id }
             lastErrorDescription = nil
-            phase = syncModel.phase == .offline ? .offline : .ready
+            switch syncModel.phase {
+            case .offline:
+                phase = .offline
+            case .failed:
+                // Same reasoning as NativeMemorySettingsStore.reload(): local
+                // data loaded, but synchronization is refusing, so this is not
+                // `.ready` with stale content and no explanation.
+                phase = .failed
+                lastErrorDescription = syncModel.lastErrorDescription
+            case .idle, .synchronizing, .live:
+                phase = .ready
+            }
         } catch {
             guard self.accountID == accountID else { return }
-            lastErrorDescription = error.localizedDescription
+            lastErrorDescription = NativeFailureMessage.presentable(error)
             phase = .failed
         }
     }
@@ -434,12 +445,17 @@ public final class NativeArtifactModel<Repository: AccountScopedRepository> {
     }
 
     private func record(_ error: any Error) {
-        lastErrorDescription = error.localizedDescription
-        if error is URLError {
-            phase = .offline
-        } else {
-            phase = .failed
-        }
+        lastErrorDescription = NativeFailureMessage.presentable(error)
+        // `error is URLError` is not the same question. A genuine outage
+        // surfaces as `NativeSyncCoordinatorError.retryLimitExceeded` once the
+        // retry ladder gives up — the underlying `URLError` is swallowed — so
+        // matching only `URLError` reported real outages as hard failures.
+        // `URLError.cancelled`, conversely, is a control-flow signal and not a
+        // connectivity verdict. `isConnectivityFailure` is the one definition.
+        phase = NativeSyncModel<Repository>.isConnectivityFailure(error)
+            || syncModel.phase == .offline
+            ? .offline
+            : .failed
     }
 }
 

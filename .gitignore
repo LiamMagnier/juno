@@ -54,3 +54,4 @@ dist/*.app/
 dist/*.dmg
 dist/*.ipa
 dist/*.zip
+native/Config/Generated-Build.xcconfig

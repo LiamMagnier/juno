@@ -1,6 +1,8 @@
 import JunoAuth
 import JunoChatKit
+import JunoCore
 import JunoStorage
+import JunoSync
 import SwiftUI
 
 /// Real account settings and memory management projected from the encrypted
@@ -10,8 +12,11 @@ struct JunoMobileSettingsView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     var authModel: NativeAuthModel?
     var session: NativeAuthenticatedSession?
+    var syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    var outbox: (any MutationOutboxRepository)?
     @State private var showingSignOut = false
     @State private var showMemoryPage = false
+    @State private var showDiagnosticsPage = false
 
     var body: some View {
         Group {
@@ -35,11 +40,22 @@ struct JunoMobileSettingsView: View {
         .navigationDestination(isPresented: $showMemoryPage) {
             JunoMobileMemoryView(model: model)
         }
+        .navigationDestination(isPresented: $showDiagnosticsPage) {
+            NativeDiagnosticsView(
+                syncModel: syncModel,
+                outbox: outbox,
+                accountID: session.map { StorageAccountID($0.profile.id.rawValue) }
+            )
+        }
         .task {
             #if DEBUG
             if CommandLine.arguments.contains("--juno-preview-memory") {
                 try? await Task.sleep(nanoseconds: 350_000_000)
                 showMemoryPage = true
+            }
+            if CommandLine.arguments.contains("--juno-preview-diagnostics") {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                showDiagnosticsPage = true
             }
             #endif
         }
@@ -125,6 +141,24 @@ struct JunoMobileSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.settings-memory-link")
+            }
+            Section("settings.about") {
+                Button {
+                    showDiagnosticsPage = true
+                } label: {
+                    HStack {
+                        Label("diagnostics.title", systemImage: "stethoscope")
+                        Spacer()
+                        Text(JunoBuildInfo.current.displayVersion)
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
             }
         }
         .refreshable { await model.refresh() }

@@ -16,6 +16,7 @@ struct JunoMacRootView: View {
     @Binding var codeWorkbenchModel: WorkbenchModel?
     let authModel: NativeAuthModel
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    var outbox: (any MutationOutboxRepository)?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
@@ -183,6 +184,8 @@ struct JunoMacRootView: View {
                 memorySettingsModel: memorySettingsModel,
                 searchModel: searchModel,
                 chatTransport: chatTransport,
+                syncModel: syncModel,
+                outbox: outbox,
                 accountID: session.profile.id,
                 inspectorVisible: $inspectorVisible,
                 openConversation: { id in
@@ -276,6 +279,10 @@ private struct JunoMacDetailView: View {
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let chatTransport: (any NativeChatRequestSending)?
+    /// Only Settings › Diagnostics reads these two; they are threaded through
+    /// rather than reached for globally so the dependency stays visible.
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let outbox: (any MutationOutboxRepository)?
     let accountID: AccountID
     @Binding var inspectorVisible: Bool
     let openConversation: (String) -> Void
@@ -299,7 +306,10 @@ private struct JunoMacDetailView: View {
         } else if section == .settings, let memorySettingsModel {
             JunoMacSettingsView(
                 model: memorySettingsModel,
-                conversationModel: conversationModel
+                conversationModel: conversationModel,
+                syncModel: syncModel,
+                outbox: outbox,
+                accountID: StorageAccountID(accountID.rawValue)
             )
         } else if section == .projects, let projectModel {
             JunoMacProjectsView(

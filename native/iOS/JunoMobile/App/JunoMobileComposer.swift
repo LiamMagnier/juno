@@ -4,6 +4,7 @@ import JunoPreviewSupport
 #endif
 import JunoDesignSystem
 import JunoStorage
+import PhotosUI
 import SwiftUI
 
 /// The chat composer: one Liquid Glass container holding the message editor and,
@@ -20,8 +21,15 @@ struct JunoMobileComposer: View {
     /// The one line explaining a thinking level that had to move when the model
     /// changed. Cleared by the owner once shown.
     @Binding var thinkingNotice: String?
+    var attachmentModel: NativeComposerAttachmentModel?
     var composerFocused: FocusState<Bool>.Binding
 
+    @State private var showingActions = false
+    @State private var showingCamera = false
+    @State private var showingFileImporter = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var attachmentNotice: String?
+    @State private var deepResearch = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// **Known defect — the composer's "+" does not open on tap.**
@@ -84,6 +92,32 @@ struct JunoMobileComposer: View {
                     .accessibilityIdentifier("juno.mobile.thinking-notice")
             }
 
+            if deepResearch || !model.researchActivity.isEmpty {
+                JunoMobileResearchProgress(
+                    enabled: deepResearch,
+                    activity: model.researchActivity,
+                    degradedWarning: model.researchDegradedWarning,
+                    onDisable: { deepResearch = false }
+                )
+            }
+
+            if let attachmentModel, !attachmentModel.attachments.isEmpty {
+                JunoMobileAttachmentChips(
+                    attachments: attachmentModel.attachments,
+                    onRemove: { attachmentModel.remove($0) },
+                    onRetry: { attachmentModel.retry($0, conversationID: conversation.id) }
+                )
+            }
+
+            if let attachmentNotice {
+                Text(attachmentNotice)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .accessibilityIdentifier("juno.mobile.attachment-notice")
+            }
+
             VStack(spacing: 8) {
                 TextField("Message Juno", text: $prompt, axis: .vertical)
                     .lineLimit(1...6)
@@ -104,6 +138,68 @@ struct JunoMobileComposer: View {
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
         .task { await applyPreviewFlags() }
+        .modifier(
+            JunoMobileAttachmentPresentations(
+                conversationID: conversation.id,
+                attachmentModel: attachmentModel,
+                showingCamera: $showingCamera,
+                showingFileImporter: $showingFileImporter,
+                photoSelection: $photoSelection,
+                attachmentNotice: $attachmentNotice,
+                showingActions: $showingActions
+            )
+        )
+    }
+
+    /// The camera sheet, the file importer and the photo-picker plumbing, as
+    /// one modifier so the composer's own `body` stays type-checkable.
+    private struct JunoMobileAttachmentPresentations: ViewModifier {
+        let conversationID: String
+        let attachmentModel: NativeComposerAttachmentModel?
+        @Binding var showingCamera: Bool
+        @Binding var showingFileImporter: Bool
+        @Binding var photoSelection: [PhotosPickerItem]
+        @Binding var attachmentNotice: String?
+        @Binding var showingActions: Bool
+
+        func body(content: Content) -> some View {
+            content
+        .fullScreenCover(isPresented: $showingCamera) {
+            JunoCameraPicker { data, name in
+                attachmentModel?.add(
+                    data: data, fileName: name, mimeType: "image/jpeg",
+                    conversationID: conversationID, isImage: true
+                )
+            }
+            .ignoresSafeArea()
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: JunoAttachmentTypes.allowed,
+            allowsMultipleSelection: true
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let attachmentModel else { return }
+                JunoFileLoader.load(urls, into: attachmentModel, conversationID: conversationID)
+            case .failure(let error):
+                attachmentNotice = error.localizedDescription
+            }
+        }
+        .onChange(of: photoSelection) { _, items in
+            guard let attachmentModel, !items.isEmpty else { return }
+            showingActions = false
+            Task {
+                await JunoPhotoLoader.load(
+                    items, into: attachmentModel, conversationID: conversationID
+                )
+                photoSelection = []
+            }
+        }
+        .onChange(of: attachmentModel?.lastErrorDescription) { _, message in
+            if let message { attachmentNotice = message }
+        }
+        }
     }
 
     /// Drives the composer into one exact state for visual QA. No effect — and
@@ -355,6 +451,76 @@ struct JunoMobileComposerActions: View {
     /// join this panel when they are real, not before.
     private var panel: some View {
         VStack(alignment: .leading, spacing: 0) {
+            Button {
+                deepResearch.toggle()
+                showingActions = false
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "binoculars").frame(width: 20)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("research.title")
+                        Text("research.subtitle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if deepResearch {
+                        Image(systemName: "checkmark").foregroundStyle(.tint)
+                    }
+                }
+                .font(.callout)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("juno.mobile.deep-research-toggle")
+            .accessibilityAddTraits(deepResearch ? [.isSelected] : [])
+
+            Divider().padding(.vertical, 6)
+
+            if attachmentModel != nil {
+                Text("attachments.section")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 11)
+                    .padding(.bottom, 5)
+                VStack(spacing: 1) {
+                    attachmentActionRow(
+                        title: "attachments.camera", icon: "camera",
+                        // Shown but disabled when there is no camera, or when
+                        // access was denied or restricted: hiding the row would
+                        // leave the reader looking for a control that is simply
+                        // absent, with no idea why.
+                        disabledReason: JunoCameraAvailability.current().message
+                    ) { showingCamera = true }
+
+                    PhotosPicker(
+                        selection: $photoSelection,
+                        maxSelectionCount: NativeComposerAttachmentModel.maximumAttachments,
+                        matching: .images
+                    ) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "photo.on.rectangle").frame(width: 20)
+                            Text("attachments.photos")
+                            Spacer()
+                        }
+                        .font(.callout)
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("juno.mobile.attach-photos")
+
+                    attachmentActionRow(
+                        title: "attachments.files", icon: "folder", disabledReason: nil
+                    ) { showingFileImporter = true }
+                }
+                Divider().padding(.vertical, 6)
+            }
+
             Text("Add to project")
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -422,6 +588,100 @@ struct JunoMobileComposerActions: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(selected ? "\(name), selected" : name)
+    }
+    /// The send / stop control: a circular coral Liquid Glass button that fades
+    /// to a discreet disabled state when there is nothing to send and swaps to
+    /// Stop while streaming.
+    @ViewBuilder
+    private var composerActionButton: some View {
+        if generatingHere {
+            Button {
+                model.stopGeneration()
+            } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .modifier(JunoComposerSendBackground(active: true))
+            }
+            .buttonStyle(.plain)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Stop generation")
+            .accessibilityIdentifier("juno.mobile.chat-stop")
+        } else {
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
+                    .scaleEffect(sendDisabled ? 0.92 : 1)
+            }
+            .buttonStyle(.plain)
+            .disabled(sendDisabled)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Send message")
+            .accessibilityIdentifier("juno.mobile.chat-send")
+        }
+    }
+
+    private func send() {
+        // Refuse rather than silently drop: an upload still in flight, or one
+        // that failed, means the message would arrive missing a file, and
+        // nothing on the client can repair that afterwards.
+        if let attachmentModel, !attachmentModel.attachments.isEmpty,
+            !attachmentModel.canSend
+        {
+            attachmentNotice = String(localized: "attachments.wait")
+            return
+        }
+        if model.sendMessage(
+            conversationID: conversation.id,
+            prompt: prompt,
+            modelID: selectedModelID.isEmpty ? conversation.model : selectedModelID,
+            reasoningEffort: reasoningEffort,
+            attachmentIDs: attachmentModel?.uploadedIDs ?? [],
+            deepResearch: deepResearch
+        ) {
+            prompt = ""
+            attachmentModel?.clear()
+            attachmentNotice = nil
+        }
+    }
+
+    /// A row in the attachments section. A disabled row states its reason
+    /// inline rather than vanishing.
+    private func attachmentActionRow(
+        title: LocalizedStringKey,
+        icon: String,
+        disabledReason: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            if let disabledReason {
+                attachmentNotice = disabledReason
+            } else {
+                showingActions = false
+                action()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: icon).frame(width: 20)
+                Text(title)
+                Spacer()
+                if disabledReason != nil {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.callout)
+            .foregroundStyle(disabledReason == nil ? .primary : .secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

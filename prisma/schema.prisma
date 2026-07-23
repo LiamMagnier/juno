@@ -68,6 +68,10 @@ model User {
   mutationReceipts         MutationReceipt[]
   codeWorkspaces           CodeWorkspace[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
+  codeRemoteSessions      CodeRemoteSession[]
+  codeRemoteSessionEvents CodeRemoteSessionEvent[]
+  codeSessionCommands     CodeSessionCommand[]
+
 }
 
 // ----------------------------------------------------------------------------
@@ -481,6 +485,13 @@ model Attachment {
   height         Int?
   createdAt      DateTime       @default(now())
 
+  /// Set only by the native upload route. A native client retries on a flaky
+  /// network by design, so without this every retry would leave a duplicate
+  /// attachment behind. Nullable because the web route does not send one, and
+  /// Postgres treats NULLs as distinct, so the unique index below does not
+  /// collide across every legacy row.
+  idempotencyKey String?
+
   projectId String?
 
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -488,6 +499,7 @@ model Attachment {
   message      Message?      @relation(fields: [messageId], references: [id], onDelete: SetNull)
   project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
+  @@unique([userId, idempotencyKey])
   @@index([userId])
   @@index([conversationId])
   @@index([messageId])
@@ -887,6 +899,21 @@ model CodeDevice {
   tasks CodeTask[]
 
   @@unique([userId, name])
+
+  /// Reported by the host on registration and heartbeat. `protocolVersion`
+  /// lets the relay refuse a host too old to speak the current command shapes
+  /// instead of failing halfway through a session.
+  appVersion      String   @default("")
+  protocolVersion Int      @default(1)
+  /// The host's session-inventory generation. A mobile client compares it to
+  /// decide whether its cached list is stale without refetching the list.
+  sessionListVersion Int   @default(1)
+  sessionCount    Int      @default(0)
+  activeCount     Int      @default(0)
+  sessions        CodeRemoteSession[]
+  sessionEvents   CodeRemoteSessionEvent[]
+  sessionCommands CodeSessionCommand[]
+
 }
 
 model CodeTask {
@@ -933,6 +960,19 @@ model CodeTask {
   @@index([userId, createdAt])
   @@index([deviceId, status])
   @@index([conversationId])
+
+  /// Session lineage for a remote task: which host session it continues, and
+  /// whether it opens a new one. `origin` distinguishes a task the host created
+  /// locally from one a phone dispatched.
+  parentSessionId   String?
+  createsNewSession Boolean  @default(true)
+  origin            String   @default("remote")
+  /// Nullable, and unique per user: a mobile client retries a dispatch on a
+  /// flaky network, and without this each retry would start a second run.
+  idempotencyKey    String?
+
+  @@unique([userId, idempotencyKey])
+
 }
 
 model CodeTaskEvent {
@@ -1084,4 +1124,106 @@ model CodeWorkspace {
 
   @@unique([userId, path])
   @@index([userId, lastOpenedAt])
+}
+
+model CodeRemoteSession {
+  id                   String   @id @default(cuid())
+  userId               String
+  deviceId             String
+  sessionId            String
+  workspaceId          String?
+  workspaceKey         String?
+  workspaceName        String?
+  projectId            String?
+  projectName          String?
+  title                String
+  titleSource          String   @default("default")
+  modelId              String
+  reasoningEffort      String?
+  rolePreset           String   @default("builder")
+  permissionMode       String   @default("approvalRequired")
+  origin               String   @default("local")
+  pinned               Boolean  @default(false)
+  archived             Boolean  @default(false)
+  createdAt            DateTime
+  sessionUpdatedAt     DateTime
+  lastMessageAt        DateTime
+  currentStatus        String   @default("idle")
+  isRunning            Boolean  @default(false)
+  isAwaitingApproval   Boolean  @default(false)
+  pendingChangeCount   Int      @default(0)
+  activeBranch         String?
+  gitDirtyState        String?
+  lastError            String?
+  lastEventSequence    Int      @default(0)
+  transcriptVersion    Int      @default(1)
+  snapshotVersion      Int      @default(1)
+  transcriptPolicy     String   @default("metadata")
+  transcript           Json?
+  changes              Json?
+  terminal             Json?
+  tests                Json?
+  git                   Json?
+  approvals             Json?
+  subagents             Json?
+  usage                 Json?
+  indexedSearch         String  @default("") @db.Text
+  deletedAt             DateTime?
+  syncedAt              DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user     User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device   CodeDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  commands CodeSessionCommand[]
+  events   CodeRemoteSessionEvent[]
+
+  @@unique([deviceId, sessionId])
+  @@index([userId, deviceId, sessionUpdatedAt])
+  @@index([deviceId, workspaceKey])
+  @@index([deviceId, currentStatus])
+  @@index([deviceId, pinned, archived])
+}
+
+model CodeRemoteSessionEvent {
+  id              String   @id @default(cuid())
+  userId          String
+  deviceId        String
+  remoteSessionId String
+  sessionId       String
+  seq             Int
+  kind            String
+  payload         Json
+  createdAt       DateTime @default(now())
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device        CodeDevice        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  remoteSession CodeRemoteSession @relation(fields: [remoteSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([remoteSessionId, seq])
+  @@index([deviceId, sessionId, seq])
+}
+
+model CodeSessionCommand {
+  id             String   @id @default(cuid())
+  userId         String
+  deviceId       String
+  remoteSessionId String
+  sessionId      String
+  kind           String
+  payload        Json
+  idempotencyKey String
+  status         String   @default("pending")
+  result         Json?
+  error          String?
+  createdAt      DateTime @default(now())
+  claimedAt      DateTime?
+  completedAt    DateTime?
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device        CodeDevice        @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  remoteSession CodeRemoteSession @relation(fields: [remoteSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, idempotencyKey])
+  @@index([deviceId, status, createdAt])
+  @@index([deviceId, sessionId, createdAt])
 }

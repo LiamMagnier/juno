@@ -24,6 +24,10 @@ public final class PreviewWorld {
     public let artifactModel: NativeArtifactModel<SQLiteAccountRepository>
     public let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
     public let searchModel: NativeSearchModel<SQLiteAccountRepository>
+    /// Present so the composer's Attach section renders in the harness. It is
+    /// hidden entirely when no model is supplied, which is correct in the app
+    /// but made the section invisible to visual QA.
+    public let attachmentModel: NativeComposerAttachmentModel
     /// The no-network transport handed to the macOS Juno Code surface.
     public let chatTransport: any NativeChatRequestSending
 
@@ -65,6 +69,9 @@ public final class PreviewWorld {
         )
         sender = PreviewSender(networkFails: scenario.networkFails)
         chatTransport = sender
+        attachmentModel = NativeComposerAttachmentModel(
+            client: NativeAttachmentAPIClient(sender: sender)
+        )
         outbox = InMemoryMutationOutbox()
         let coordinator = NativeSyncCoordinator(repository: repository, sender: sender)
         syncModel = NativeSyncModel(
