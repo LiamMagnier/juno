@@ -182,18 +182,24 @@ export function CodeTargetPicker({
                   ? `Repository: ${selectedRepo.fullName}. Change repository`
                   : "Select a repository"
             }
+            // Sits directly beside the Device/Cloud segmented control, so it
+            // borrows that control's geometry — same height, the 10px small-
+            // button radius against the track's 12px — instead of being a
+            // full-round pill. Empty state used to be a dashed outline, which
+            // read as a drop zone and was the only dashed border on the page;
+            // the difference now lives in the label and icon colour.
             className={cn(
-              "group inline-flex h-8 min-w-0 max-w-[16rem] items-center gap-1.5 rounded-full border px-2.5 text-[13px] font-medium transition-[background-color,border-color,color,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 coarse:h-11",
+              "group inline-flex h-8 min-w-0 max-w-[16rem] items-center gap-1.5 rounded-[10px] border px-2.5 text-[13px] font-medium transition-[background-color,border-color,color,box-shadow,transform] duration-fast ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 coarse:h-11",
               hasSelection
-                ? "border-primary/30 bg-primary/[0.07] text-foreground hover:border-primary/45 hover:bg-primary/10"
-                : "border-dashed border-border/80 bg-transparent text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground",
-              open && "border-primary/45 bg-primary/10 text-foreground",
+                ? "border-border/70 bg-card text-foreground shadow-soft hover:border-border"
+                : "border-border/60 bg-transparent text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+              open && "border-border bg-card text-foreground shadow-soft",
             )}
           >
             {target === "device" ? (
-              <Folder className={cn("h-3.5 w-3.5 shrink-0", hasSelection ? "text-primary" : "text-muted-foreground/80")} aria-hidden="true" />
+              <Folder className={cn("h-3.5 w-3.5 shrink-0", hasSelection ? "text-primary" : "text-muted-foreground/70")} aria-hidden="true" />
             ) : (
-              <GitBranch className={cn("h-3.5 w-3.5 shrink-0", hasSelection ? "text-primary" : "text-muted-foreground/80")} aria-hidden="true" />
+              <GitBranch className={cn("h-3.5 w-3.5 shrink-0", hasSelection ? "text-primary" : "text-muted-foreground/70")} aria-hidden="true" />
             )}
             <span className="truncate">{chipLabel}</span>
             <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-base ease-out-soft group-data-[state=open]:rotate-180" aria-hidden="true" />

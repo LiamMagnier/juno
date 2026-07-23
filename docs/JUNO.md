@@ -255,8 +255,18 @@ a printed article." This keeps the constantly-scrolling list legible and
 
 ### 3.6 Accessibility
 
-Focus ring `2px solid hsl(var(--ring))` at 2px offset; `coarse:` variants bump touch
-targets to ≥44px; `pt-safe`/`pb-safe` for iOS insets; every glass surface gates on
+Focus ring `2px solid hsl(var(--ring))` at 2px offset for buttons and links.
+
+**Text fields are the exception, and they get a line, not a halo.** `Input`,
+`Textarea` and `SelectTrigger` opt out of the global outline and focus with
+`border-primary` + `ring-1 ring-primary/40` — about 2px of crisp accent edge.
+They used to carry `ring-[3px] ring-ring/25` on top of a `border-primary/60`,
+which on a click (browsers grant `:focus-visible` to text inputs on pointer
+focus, not just keyboard) bloomed into a wide coral wash that read as an overlay
+sitting on the field. The contrast is unchanged — it moved from a soft 3px to a
+solid 1px — so the indicator is still plainly visible without shouting.
+
+`coarse:` variants bump touch targets to ≥44px; `pt-safe`/`pb-safe` for iOS insets; every glass surface gates on
 `prefers-reduced-transparency` (→ solid warm fill), `prefers-contrast` (→ stronger
 borders), and `prefers-reduced-motion` (→ no shimmer). Baseline HTTP security
 headers are set in `next.config.mjs` (`X-Content-Type-Options`, `X-Frame-Options:

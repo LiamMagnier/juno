@@ -5,6 +5,7 @@ import { ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search, Sparkles } from "
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ConnectorMark } from "@/components/connections/connector-logos";
@@ -144,15 +145,22 @@ function CategoryChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "pressable shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-[color,background-color,border-color,box-shadow,transform] duration-fast ease-out-soft",
+        "pressable inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] font-medium",
+        "transition-[color,background-color,box-shadow] duration-fast ease-out-soft coarse:h-11",
         active
-          ? "border-primary/30 bg-primary/10 text-primary"
-          : "border-border/55 bg-background/55 text-muted-foreground hover:border-border hover:text-foreground hover:shadow-soft motion-safe:hover:-translate-y-px"
+          // Same raised-thumb material as the segmented control above it, so a
+          // chosen category and a chosen tab read as the same kind of "on".
+          ? "bg-card text-primary [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]"
+          // Bordered chips turned this into ten boxes fighting the cards below.
+          // Unselected is now just text until you reach for it.
+          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
       )}
     >
       {label}
       {count !== undefined && (
-        <span className="ml-1.5 font-mono text-[10px] tabular-nums opacity-60">{count}</span>
+        <span className={cn("ml-1.5 font-mono text-[10px] tabular-nums", active ? "text-primary/70" : "text-muted-foreground/60")}>
+          {count}
+        </span>
       )}
     </button>
   );
@@ -501,26 +509,20 @@ export function ConnectorDirectory({
     <section className="mt-6">
       {/* Toolbar — a calm search + filter row rather than a second page header. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* The site's canonical segmented control (same as Library's filter):
-            a recessed muted track with a raised bg-card active pill. */}
-        <div className="flex w-fit items-center gap-1 rounded-[12px] bg-muted/70 p-1">
-          {(["all", "connected"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setFilter(value)}
-              aria-pressed={filter === value}
-              className={cn(
-                "rounded-[9px] px-3 py-1 text-[13px] font-medium transition-all duration-fast ease-out-soft",
-                filter === value
-                  ? "bg-card text-foreground shadow-pop"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {value === "all" ? "All apps" : `Connected${connectedCount ? ` · ${connectedCount}` : ""}`}
-            </button>
-          ))}
-        </div>
+        {/* The shared control, not a local restatement of it. This was a
+            hand-rolled copy — `bg-muted/70` track, 9px pills, no sheen on the
+            thumb and no gliding or arrow-key nav — sitting one import away
+            from the real thing. */}
+        <SegmentedControl<Filter>
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter apps"
+          className="w-fit"
+          options={[
+            { value: "all", label: "All apps" },
+            { value: "connected", label: `Connected${connectedCount ? ` · ${connectedCount}` : ""}` },
+          ]}
+        />
         <label className="relative block w-full sm:w-72">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -542,9 +544,9 @@ export function ConnectorDirectory({
           role="group"
           aria-label="Filter by category"
           // overflow-x forces the block axis to clip too, so the padding here is
-          // load-bearing: it is the room the chips' hover lift needs to cast
-          // shadow-soft (~10px of reach) instead of having it shorn off flat.
-          className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          // load-bearing: it is the room the selected chip's shadow-pop needs
+          // instead of having it shorn off flat.
+          className="-mx-1 mt-3 flex gap-1 overflow-x-auto px-1 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
           <CategoryChip label="All categories" active={!category} onClick={() => setCategory(null)} />
           {categories.map((c) => (
