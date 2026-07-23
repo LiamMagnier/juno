@@ -155,6 +155,102 @@ final class CodeRemoteBrowserModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .idle)
     }
 
+    /// Host discovery is the entry point to the whole Remote surface: every
+    /// other call needs a `deviceID`, and nothing else can supply one.
+    func testLoadHostsDecodesWorkspaceNamesAndOnlineState() async throws {
+        let transport = BrowserTransport(responses: [
+            .ok("""
+            {"devices":[
+              {"id":"d1","name":"Studio","platform":"macos","online":true,
+               "lastSeenAt":"2026-07-22T10:00:00.000Z",
+               "workspaces":[{"name":"juno"},{"name":"juno-windows"}]}
+            ]}
+            """)
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+
+        await model.loadHosts()
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertEqual(model.hosts.map(\.id), ["d1"])
+        XCTAssertEqual(model.hosts.first?.workspaceNames, ["juno", "juno-windows"])
+        XCTAssertTrue(model.hosts.first?.online == true)
+    }
+
+    /// A machine you can reach right now is the one you want to tap; it must
+    /// never sort below a laptop that has been shut since Tuesday.
+    func testHostsAreOrderedOnlineFirstThenMostRecentlySeen() async throws {
+        let transport = BrowserTransport(responses: [
+            .ok("""
+            {"devices":[
+              {"id":"stale-online","name":"A","platform":"macos","online":true,
+               "lastSeenAt":"2026-07-20T10:00:00.000Z","workspaces":[]},
+              {"id":"fresh-offline","name":"B","platform":"macos","online":false,
+               "lastSeenAt":"2026-07-22T10:00:00.000Z","workspaces":[]},
+              {"id":"older-offline","name":"C","platform":"windows","online":false,
+               "lastSeenAt":"2026-07-19T10:00:00.000Z","workspaces":[]}
+            ]}
+            """)
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+
+        await model.loadHosts()
+
+        XCTAssertEqual(model.hosts.map(\.id), ["stale-online", "fresh-offline", "older-offline"])
+    }
+
+    /// A host that omits `online` is treated as offline. Claiming a machine is
+    /// reachable when the relay would not say so is the worse failure — it sends
+    /// someone into a session that cannot answer.
+    func testAHostWithoutAnOnlineFieldIsTreatedAsOffline() async throws {
+        let transport = BrowserTransport(responses: [
+            .ok("""
+            {"devices":[
+              {"id":"d1","name":"Studio","platform":"macos",
+               "lastSeenAt":"2026-07-22T10:00:00.000Z","workspaces":[]}
+            ]}
+            """)
+        ])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+
+        await model.loadHosts()
+
+        XCTAssertEqual(model.hosts.first?.online, false)
+    }
+
+    /// Offline and refused are different states with different remedies:
+    /// retrying helps one and cannot help the other.
+    func testARefusedHostListFailsRatherThanReportingOffline() async throws {
+        let transport = BrowserTransport(responses: [.status(403)])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+        model.start(for: account)
+
+        await model.loadHosts()
+
+        XCTAssertEqual(model.phase, .failed)
+        XCTAssertTrue(model.hosts.isEmpty)
+        XCTAssertNotNil(model.lastErrorDescription)
+    }
+
+    /// Signed out, the model must not reach the network at all.
+    func testLoadHostsDoesNothingWithoutAnAccount() async throws {
+        let transport = BrowserTransport(responses: [.ok(#"{"devices":[]}"#)])
+        let model = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: transport))
+
+        await model.loadHosts()
+
+        XCTAssertEqual(model.phase, .idle)
+        await AssertNoRequests(transport)
+    }
+
+    private func AssertNoRequests(_ transport: BrowserTransport) async {
+        let count = await transport.requests.count
+        XCTAssertEqual(count, 0)
+    }
+
     private var commandBody: String {
         #"{"command":{"id":"c1","sessionID":"s1","kind":"stop","payload":{},"status":"pending"}}"#
     }

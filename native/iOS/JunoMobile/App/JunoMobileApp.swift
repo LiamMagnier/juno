@@ -1,6 +1,7 @@
 import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
@@ -20,6 +21,7 @@ struct JunoMobileApp: App {
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    @State private var codeModel: CodeRemoteBrowserModel?
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
@@ -33,6 +35,7 @@ struct JunoMobileApp: App {
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _searchModel = State(initialValue: configuration.searchModel)
+        _codeModel = State(initialValue: configuration.codeModel)
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -54,6 +57,7 @@ struct JunoMobileApp: App {
                         artifactModel: world.artifactModel,
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
+                        codeModel: world.codeModel,
                         previewSession: world.session
                     )
                 }
@@ -76,7 +80,8 @@ struct JunoMobileApp: App {
             projectModel: projectModel,
             artifactModel: artifactModel,
             memorySettingsModel: memorySettingsModel,
-            searchModel: searchModel
+            searchModel: searchModel,
+            codeModel: codeModel
         )
     }
 
@@ -150,6 +155,9 @@ struct JunoMobileApp: App {
                 attachmentModel: NativeComposerAttachmentModel(
                     client: NativeAttachmentAPIClient(sender: runtime)
                 ),
+                codeModel: CodeRemoteBrowserModel(
+                    client: NativeCodeRemoteClient(sender: runtime)
+                ),
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
@@ -187,6 +195,7 @@ struct JunoMobileApp: App {
                 syncModel: nil,
                 outbox: nil,
                 attachmentModel: nil,
+                codeModel: nil,
                 conversationModel: nil,
                 projectModel: nil,
                 artifactModel: nil,
@@ -212,6 +221,9 @@ private struct JunoMobileConfiguration {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let outbox: (any MutationOutboxRepository)?
     let attachmentModel: NativeComposerAttachmentModel?
+    /// Drives Juno Code Remote: the account's hosts, their sessions and the
+    /// live transcript. Nil when the app could not build its runtime at all.
+    let codeModel: CodeRemoteBrowserModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?

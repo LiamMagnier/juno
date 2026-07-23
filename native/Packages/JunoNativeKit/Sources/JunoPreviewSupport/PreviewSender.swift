@@ -60,6 +60,18 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.hasSuffix("/models") {
             return Data(PreviewModelCatalog.json.utf8)
         }
+        // Juno Code Remote. Ordered most-specific first: `/events` and
+        // `/sessions` both sit under `/api/code/devices`, so testing the bare
+        // device list first would swallow them.
+        if path.contains("/events") {
+            return Data(PreviewCodeRemote.eventsJSON.utf8)
+        }
+        if path.contains("/sessions") {
+            return Data(PreviewCodeRemote.sessionsJSON.utf8)
+        }
+        if path.contains("/api/code/devices") {
+            return Data(PreviewCodeRemote.devicesJSON.utf8)
+        }
         return Data("{}".utf8)
     }
 }

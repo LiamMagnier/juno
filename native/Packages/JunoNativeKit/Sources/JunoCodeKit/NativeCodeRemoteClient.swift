@@ -142,6 +142,26 @@ public struct NativeCodeRemoteClient: Sendable {
 
     // MARK: - Mobile side
 
+    /// The hosts this account has registered, newest-seen first.
+    ///
+    /// Without this the phone has sessions but no way to discover which machine
+    /// holds them — every other call here needs a `deviceID` the user has no way
+    /// to type. `/api/code/devices` already served the web client; it
+    /// authenticates through `getCurrentUser`, which treats a presented bearer
+    /// as authoritative, so the phone reaches it with no backend change.
+    ///
+    /// `online` is computed server-side against its own freshness window rather
+    /// than from `lastSeenAt` here, so one clock decides it. A host that omits
+    /// the field is treated as offline: claiming a machine is reachable when the
+    /// relay would not say so is the worse failure.
+    public func devices(for accountID: AccountID) async throws -> [CodeRemoteHostSummary] {
+        let response = try await get("/api/code/devices", for: accountID)
+        guard let root = try decodeObject(response),
+            case .array(let items)? = root["devices"]
+        else { throw CodeRemoteError.malformedResponse }
+        return try items.map(decodeHost)
+    }
+
     public func sessions(
         deviceID: String,
         for accountID: AccountID
@@ -370,6 +390,35 @@ public struct NativeCodeRemoteClient: Sendable {
             updatedAt: updatedAt,
             lastMessageAt: lastMessageAt,
             fresh: object["fresh"]?.boolValue
+        )
+    }
+
+    /// Workspace *names* only. The route strips paths before serialising —
+    /// disclosing an absolute workspace path was a fixed security defect — and
+    /// `CodeRemoteHostSummary` has nowhere to put one.
+    private func decodeHost(_ value: JunoJSONValue) throws -> CodeRemoteHostSummary {
+        guard case .object(let object) = value,
+            case .string(let id)? = object["id"],
+            case .string(let name)? = object["name"],
+            case .string(let platform)? = object["platform"],
+            let lastSeenAt = object["lastSeenAt"]?.date
+        else { throw CodeRemoteError.malformedResponse }
+
+        var workspaceNames: [String] = []
+        if case .array(let raw)? = object["workspaces"] {
+            workspaceNames = raw.compactMap { entry in
+                if case .object(let workspace) = entry { return workspace["name"]?.stringValue }
+                return entry.stringValue
+            }
+        }
+
+        return CodeRemoteHostSummary(
+            id: id,
+            name: name,
+            platform: platform,
+            workspaceNames: workspaceNames,
+            online: object["online"]?.boolValue ?? false,
+            lastSeenAt: lastSeenAt
         )
     }
 

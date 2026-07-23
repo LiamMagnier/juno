@@ -2,11 +2,17 @@ import JunoDesignSystem
 import SwiftUI
 
 /// Every top-level destination in the iOS/iPadOS app. Each case maps to a real,
-/// working surface — Juno Code Cloud/Remote and the unbuilt Tasks/Connections
-/// sections are intentionally absent until their backends exist (GAP-021), so
-/// there is no navigation that leads nowhere.
+/// working surface — the unbuilt Tasks and Connections sections are
+/// intentionally absent until their backends exist, so there is no navigation
+/// that leads nowhere.
+///
+/// Code is present because its backend now is: the relay routes under
+/// `/api/code/devices/**` shipped, `CodeRemoteBrowserModel` drives the phone's
+/// side of them, and the screen shows the account's real hosts and sessions. It
+/// is a genuine surface, not a placeholder.
 enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
+    case code
     case search
     case projects
     case library
@@ -18,6 +24,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var title: LocalizedStringKey {
         switch self {
         case .chat: "navigation.chat"
+        case .code: "navigation.code"
         case .search: "navigation.search"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
@@ -37,6 +44,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var junoIcon: JunoIcon? {
         switch self {
         case .chat: .new
+        case .code: .code
         case .search: .search
         case .projects: .projects
         case .library: .library
@@ -49,6 +57,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     var systemImage: String {
         switch self {
         case .chat: "square.and.pencil"
+        case .code: "chevron.left.forwardslash.chevron.right"
         case .search: "magnifyingglass"
         case .projects: "folder"
         case .library: "books.vertical"
@@ -76,7 +85,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search]
+            case .workspace: [.chat, .code, .search]
             case .content: [.projects, .library, .artifacts]
             case .account: [.settings]
             }

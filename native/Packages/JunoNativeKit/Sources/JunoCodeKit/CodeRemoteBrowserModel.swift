@@ -83,6 +83,30 @@ public final class CodeRemoteBrowserModel {
         lastErrorDescription = nil
     }
 
+    /// Discovers the account's hosts. This is the entry point to the whole
+    /// Remote surface: every other call needs a `deviceID`, and until this runs
+    /// there is no way for a person to name one.
+    ///
+    /// Hosts are ordered online-first, then by most recently seen. A machine you
+    /// can actually reach right now is the one you want to tap, and it should
+    /// never be below a laptop that has been shut since Tuesday.
+    public func loadHosts() async {
+        guard let accountID else { return }
+        phase = .loading
+        do {
+            hosts = try await client.devices(for: accountID)
+                .sorted {
+                    $0.online == $1.online
+                        ? $0.lastSeenAt > $1.lastSeenAt
+                        : $0.online && !$1.online
+                }
+            lastErrorDescription = nil
+            phase = .ready
+        } catch {
+            record(error)
+        }
+    }
+
     public func loadSessions(deviceID: String) async {
         guard let accountID else { return }
         phase = .loading

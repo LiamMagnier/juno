@@ -3,6 +3,7 @@ import Foundation
 import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoStorage
 import JunoSync
@@ -24,6 +25,10 @@ public final class PreviewWorld {
     public let artifactModel: NativeArtifactModel<SQLiteAccountRepository>
     public let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
     public let searchModel: NativeSearchModel<SQLiteAccountRepository>
+    /// Drives the Code Remote screens against `PreviewCodeRemote`'s fixtures,
+    /// so hosts, sessions and a transcript can be inspected with no account and
+    /// no host machine running.
+    public let codeModel: CodeRemoteBrowserModel
     /// Present so the composer's Attach section renders in the harness. It is
     /// hidden entirely when no model is supplied, which is correct in the app
     /// but made the section invisible to visual QA.
@@ -110,6 +115,12 @@ public final class PreviewWorld {
             sender: sender
         )
         searchModel = NativeSearchModel(repository: repository)
+        codeModel = CodeRemoteBrowserModel(client: NativeCodeRemoteClient(sender: sender))
+        // Started here, synchronously, rather than in the async bootstrap: the
+        // Code screen's `.task` fires as soon as the view appears, and a model
+        // without an account silently no-ops and never retries — which reads as
+        // a screen stuck on "Looking for your machines…".
+        codeModel.start(for: accountID)
     }
 
     /// Seeds fixtures and starts the real models. For the "loading" scenario it

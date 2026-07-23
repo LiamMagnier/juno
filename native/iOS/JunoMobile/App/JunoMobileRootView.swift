@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
@@ -24,6 +25,7 @@ struct JunoMobileRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let codeModel: CodeRemoteBrowserModel?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -77,6 +79,10 @@ struct JunoMobileRootView: View {
                 Task { await artifactModel?.start(for: session.profile.id) }
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
                 searchModel?.start(for: session.profile.id)
+                // Code Remote is account-scoped like the rest. Without this the
+                // Code screen's own task finds no account, returns early and
+                // never retries — the screen simply never leaves "loading".
+                codeModel?.start(for: session.profile.id)
                 attachmentModel?.start(for: session.profile.id)
             } else {
                 syncModel?.stop()
@@ -86,6 +92,7 @@ struct JunoMobileRootView: View {
                 artifactModel?.stop()
                 memorySettingsModel?.stop()
                 searchModel?.stop()
+                codeModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -322,6 +329,10 @@ struct JunoMobileRootView: View {
             } else {
                 unavailable
             }
+        case .code:
+            if let codeModel {
+                JunoMobileCodeView(model: codeModel)
+            } else { unavailable }
         case .search:
             if let searchModel {
                 JunoMobileSearchView(model: searchModel, open: openSearchResult)
@@ -427,6 +438,16 @@ private struct JunoMobileSidebarDrawer: View {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
+                    // Code leads, as it does on the web: it is a mode of working
+                    // rather than a folder of things, so it belongs above the
+                    // content destinations rather than filed among them.
+                    JunoMobileSidebarRow(
+                        junoIcon: JunoMobileSection.code.junoIcon,
+                        icon: JunoMobileSection.code.systemImage,
+                        title: "navigation.code",
+                        selected: selection == .code,
+                        action: { openDestination(.code) }
+                    )
                     JunoMobileSidebarRow(
                         junoIcon: JunoMobileSection.projects.junoIcon,
                         icon: JunoMobileSection.projects.systemImage,
