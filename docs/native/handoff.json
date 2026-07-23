@@ -1,20 +1,23 @@
 {
-  "branch": "agent/juno-code-remote-backend (== main == 2f07804, deployed)",
-  "currentCommit": "2f07804",
+  "branch": "agent/juno-mobile-redesign",
+  "currentCommit": "78f4225",
   "deployedToProduction": true,
   "productionBaseUrl": "https://chat.liams.dev",
   "productionContractVersion": "1.3.0",
-  "workingTreeClean": true,
-  "currentPhase": "release-deployed-and-verified; next is phase-5, exercising Chat end to end from a native client against production",
-  "currentTask": "The release is DEPLOYED. main is 2f07804 and that commit is live at https://chat.liams.dev. All release gates pass including JUNO_CHECK_LIVE_CONTRACT=1. Verified by request after the deploy: production serves x-juno-contract-version 1.3.0 (was 1.0.1), homepage 200, /api/v1/auth/session + /api/v1/bootstrap + /api/v1/entities/index all 401 unauthenticated so the routes exist and auth is enforced, prisma migrate deploy reported '41 migrations found. No pending migrations to apply.' (the release adds NO migrations, so production schema is untouched), and pm2 shows juno-backend, juno-voice-relay and juno-scheduler online. Integration detail worth keeping: origin/main carried 8e7b898, the SQUASH merge of PR #15, which had landed an earlier snapshot of this same native lineage as brand-new files — that is why 35 of 39 conflicts were add/add even though this branch is a strict continuation. Every conflict resolved to the branch side, then checked rather than assumed: profile/page.tsx is byte-identical to origin/main so main's e0d1285 fix survived, and the migration set matches main's exactly. The bare-NULL migration hazard is CLOSED on both feature branches — the file is byte-identical to origin/main with all 22 NULL::timestamp. DO NOT read the deploy as 'the product works end to end': what is proven is that the backend is live at 1.3.0 and the native clients build against it. Chat, attachments, Deep Research, Canvas and Remote have not been exercised against production from a native client. BLOCKED, NEEDS THE OWNER: all macOS visual QA. (1) Screen Recording is not granted — a full-screen screencapture returns a pure black image, and -l<winid> / -R<rect> are refused outright; ScreenCaptureKit from a CLI binary fails with SCStreamErrorDomain -3811. (2) Every Xcode-built Juno target launches, runs a normal event loop and creates ZERO windows, confirmed by CGWindowList including off-screen and by the accessibility tree after 60s; reproduced on pre-redesign commit 2075a5c so it is NOT a redesign regression, while a hand-built minimal SwiftUI app in the same directory does get a window. The earlier 'killall cfprefsd broke window creation' diagnosis is WRONG — TextEdit launches and gets a window fine in this same login session.",
+  "workingTreeClean": false,
+  "currentPhase": "mobile-redesign: Phase 1 (brand assets) done and captured; Phase 4 (composer/model/thinking) preserved; Phases 3, 5-18 open",
+  "currentTask": "JunoMobile redesign after the owner's visual rejection. DONE: Phase 1 \u2014 real juno-mark.png as a template imageset replacing the SF Symbol 'circle.hexagongrid.fill' seven-dot stand-in; 11 navigation icons per platform generated from the installed lucide-react by scripts/generate-native-icons.mjs (the website's icons are Lucide via src/lib/app-icons.ts, NOT a bespoke set); Newsreader bundled as four real 24pt faces addressed by PostScript name; JunoGreeting ports the web's seven time-of-day buckets verbatim (9 tests); JunoAvatar loads the real account photo. ALSO: the composer '+' had TWO defects. The 13.3pt touch target (no contentShape) is FIXED, on + and Send, with UI tests asserting the frame. The dead action is NOT fixed and is the next task: the '+' centre sits at x~36, inside iOS's leading edge-pan strip, which takes the touch. Proven by moving it 40pt clear (opens first tap, every time) and by the model chip 40pt right never having the problem. Ruled out: popover anchor/arrowEdge, @State location, .animation on the Button, panel intrinsic size, the shell's own drag gesture. 20pt does not clear the strip and 40pt squeezes the model/Thinking chips until SwiftUI stops resolving the layout entirely \u2014 the same wall that blocks the 44pt touch minimum. THE CONTROL ROW MUST BE REBUILT. Reproduction is committed as XCTExpectFailure so it reports the day it passes. NOTE: the live simulator panel cannot run here \u2014 SimulatorKit.framework is absent from this Xcode-beta, so attach/tap fail; verification is simctl screenshots + XCUITests.",
   "nextFiles": [
-    "docs/native/NEXT_PROMPT.md",
-    "native/Packages/JunoCode/Sources/JunoCodeUI/Views/WorkbenchView.swift",
-    "docs/native/CODE_REMOTE_AUDIT.md",
-    "scripts/release-gates.sh"
+    "native/iOS/JunoMobile/App/JunoMobileComposer.swift",
+    "docs/native/MOBILE_DESIGN_REVIEW.md",
+    "native/Packages/JunoNativeKit/Sources/JunoDesignSystem/JunoGreeting.swift",
+    "native/iOS/JunoMobile/App/JunoMobileConversationsView.swift"
   ],
-  "orphanRecoveryBranch": "agent/juno-code-remote-orphan-recovery (2b353f6, pushed) — the previously uncommitted Code session relay, preserved byte-identically and deliberately NOT shipped: its routes are not in the published contract, it has no native callers, and its migration sorts before already-applied history",
+  "orphanRecoveryBranch": "agent/juno-code-remote-orphan-recovery (2b353f6, pushed) \u2014 the previously uncommitted Code session relay, preserved byte-identically and deliberately NOT shipped: its routes are not in the published contract, it has no native callers, and its migration sorts before already-applied history",
   "completed": [
+    "Phase 1 mobile brand assets in 78f4225: real Juno mark as a template imageset on both platforms, 11 Lucide-derived navigation icons per platform with a generator so web and native cannot drift, Newsreader bundled as four PostScript-addressed 24pt faces with OFL, JunoGreeting (web's 7 buckets, 9 tests), JunoAvatar with real-photo-first fallback",
+    "Composer + and Send touch targets fixed in 78f4225: hit region had collapsed to the 13.3pt glyph; UI tests now assert the frame",
+    "Composer, model selector and thinking control preserved and landed in 521de78 from an abandoned session, with plan-aware /api/v1/models and bootstrap reusing the web's own sortModelsForDisplay and getUserPlan",
     "Juno Code developer surfaces redesigned onto the shared design system in d19e924: JunoCodeTheme reduced to an alias layer, new shared JunoStatus.swift tokens, one ActivityRow shape for every transcript event, Markdown assistant turns, visible checkpoints, risk-tinted ApprovalCard, permission-mode menu in the composer, labelled inspector tab strip with overflow and VoiceOver purposes; also fixed JunoMacApp building the live configuration for DEBUG preview launches",
     "macOS design system + Chat/Code shell redesign in b3f069a after owner rejection; fixed the all-coral navigation and invisible dark-mode icons (one root cause), inspector no longer dominates Code, New Session integrated",
     "Mac Chat workspace rebuilt in 98bb5da: three-region shell (unified sidebar with recency-grouped history, borderless Markdown canvas, native inspector, floating glass composer); Chat is the verified launch destination and Juno Code is one row among the others",
@@ -50,6 +53,9 @@
     "All three active implementation lots committed as 0fb7cc3"
   ],
   "remaining": [
+    "REBUILD THE COMPOSER CONTROL ROW \u2014 unblocks both the dead '+' (edge-gesture strip) and the 44pt touch minimum",
+    "Phase 3: wire JunoGreeting into a redesigned Home screen (logic + tests exist, no screen yet)",
+    "Phases 5-18: messages/reasoning, top nav, sidebar, Projects cards, Project detail, Library, Artifacts, Settings, Memory, Connections, Tasks, Code, light mode/iPad, preview scenarios, device acceptance",
     "Juno Code Remote Host, Cloud Code and Remote mobile (blocked on GAP-021 backend Code-session routes)",
     "Live-account interactive completion (device browser, connected-device management)",
     "Complete typed chat/upload/account/Code/Remote/voice/push contracts",
@@ -85,5 +91,10 @@
   "blockers": [
     "Apple bundle identifiers, Team/signing/provisioning, App Store Connect, Developer ID and notarization inputs unavailable",
     "Production StoreKit mapping and APNs credentials require owner input"
+  ],
+  "knownIssues": [
+    "The composer '+' does not open on tap \u2014 iOS leading edge-pan strip takes the touch. See MOBILE_DESIGN_REVIEW.md.",
+    "NativeConversationGroupingTests is not hermetic: 269/269 at 00:50, 266/269 at 02:18 with identical code, because fixtures are built relative to Date(). Not caused by the redesign.",
+    "SimulatorKit.framework missing from this Xcode-beta install; the live simulator panel cannot attach."
   ]
 }
