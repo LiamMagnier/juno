@@ -292,6 +292,20 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
   return grounded;
 }
 
+/** First version number a model's display name advertises — "GPT-5.6 Sol" → 5.6,
+ *  "Gemini 3.6 Flash" → 3.6, "Kimi K3" → 3. Null when the name carries no
+ *  version ("Nano Banana Pro"), which sends the comparison to the release date.
+ *
+ *  Deliberately reads the display NAME only, never the provider id: ids encode
+ *  the API surface rather than the product line, so `gemini-3-pro-image` would
+ *  score "Nano Banana Pro" a 3 and float it over the newer "Nano Banana 2". */
+export function modelGeneration(name: string): number | null {
+  const match = /\d+(?:\.\d+)?/.exec(name);
+  if (!match) return null;
+  const value = Number.parseFloat(match[0]);
+  return Number.isFinite(value) ? value : null;
+}
+
 /**
  * Canonical display order for a model list, applied wherever the payload/list is
  * built so BOTH the web selector and the native apps (which consume the manifest
@@ -299,15 +313,28 @@ export function getModelMetrics(model: ModelInfo): ModelMetrics {
  *   1. lab/provider — PROVIDER_LIST index ascending (the rail order)
  *   2. current before legacy — a superseded model never outranks a live one,
  *      whatever its grades, because the pickers group them separately
- *   3. release date — descending as a "YYYY-MM" string compare (nullish last),
- *      so the newest generation leads its lab
- *   4. intelligence — descending, which orders one generation's siblings by
+ *   3. generation — descending, parsed from the name, so a lab reads
+ *      5.6 → 5.5 → 5.4 → 5.3 as a user expects
+ *   4. release date — descending "YYYY-MM" compare, breaking ties inside one
+ *      generation and ordering anything the parser couldn't version
+ *   5. intelligence — descending, which orders one generation's siblings by
  *      power (5.6 Sol before Terra before Luna)
- *   5. name — ascending, as a stable final tiebreak
+ *   6. cost tier — descending, the power tiebreak that still works when
+ *      intelligence ties. It ties often: `familyMetric` falls back to one
+ *      per-provider default, so every model a benchmark hasn't graded (notably
+ *      anything freshly discovered) scores identically, and without this the
+ *      order collapsed to alphabetical — Luna ahead of Sol.
+ *   7. name — ascending, as a stable final tiebreak
  *
- * Release date outranks intelligence deliberately: a lab's newest generation is
- * what a user is looking for, and sorting by grade first buried a just-shipped
- * mid-tier model under the previous flagship.
+ * Generation outranks the release date because shipping order and version order
+ * disagree: GPT-5.3 Codex shipped (2026-04) after the GPT-5.4 line (2026-03), so
+ * a pure date sort listed 5.3 above 5.4. It also fixes newly DISCOVERED models,
+ * which carry a name but no `released` at all — under a date-first sort a
+ * just-published "Gemini 3.6 Flash" sank below every dated 3.5, the exact
+ * opposite of what a new release should do.
+ *
+ * Generation is only ever compared inside one lab (key 1 runs first), so the
+ * numbering schemes of different labs never meet.
  *
  * Returns a new array; the input is not mutated.
  */
@@ -319,11 +346,18 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
     const legacyDelta =
       Number(a.legacy ?? a.status !== "current") - Number(b.legacy ?? b.status !== "current");
     if (legacyDelta !== 0) return legacyDelta;
+    // Only decisive when BOTH names carry a version; otherwise the release date
+    // below still places an unversioned model sensibly against its siblings.
+    const genA = modelGeneration(a.name);
+    const genB = modelGeneration(b.name);
+    if (genA !== null && genB !== null && genA !== genB) return genB - genA;
     // "" sorts before any real date; descending compare pushes nullish releases last.
     const relDelta = (b.released ?? "").localeCompare(a.released ?? "");
     if (relDelta !== 0) return relDelta;
     const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
     if (intelDelta !== 0) return intelDelta;
+    const costDelta = b.cost - a.cost;
+    if (costDelta !== 0) return costDelta;
     return a.name.localeCompare(b.name);
   });
 }
