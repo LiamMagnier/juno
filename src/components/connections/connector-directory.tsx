@@ -145,20 +145,19 @@ function CategoryChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "pressable inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3 text-[13px] font-medium",
-        "transition-[color,background-color,box-shadow] duration-fast ease-out-soft coarse:h-11",
+        // Solid, uniform fills — no borders, no per-chip shadows. Outlined pills
+        // read as ten boxes competing with the app cards below; borderless text
+        // read as nothing at all. A filled set reads as one control.
+        "inline-flex h-8 shrink-0 items-center whitespace-nowrap rounded-full px-3.5 text-[13px] font-medium",
+        "transition-colors duration-fast ease-out-soft coarse:h-11",
         active
-          // Same raised-thumb material as the segmented control above it, so a
-          // chosen category and a chosen tab read as the same kind of "on".
-          ? "bg-card text-primary [box-shadow:inset_0_1px_0_hsl(var(--sheen)),var(--shadow-pop)]"
-          // Bordered chips turned this into ten boxes fighting the cards below.
-          // Unselected is now just text until you reach for it.
-          : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+          ? "bg-foreground text-background"
+          : "bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground"
       )}
     >
       {label}
       {count !== undefined && (
-        <span className={cn("ml-1.5 font-mono text-[10px] tabular-nums", active ? "text-primary/70" : "text-muted-foreground/60")}>
+        <span className={cn("ml-1.5 font-mono text-[10px] tabular-nums", active ? "text-background/60" : "text-muted-foreground/55")}>
           {count}
         </span>
       )}

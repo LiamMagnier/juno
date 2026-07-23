@@ -614,7 +614,7 @@ export function Onboarding() {
                   }}
                   rows={4}
                   placeholder={"- Prefers concise answers\n- Building a chatbot called Juno\n- Based in France"}
-                  className="w-full resize-none rounded-2xl border bg-transparent p-3 text-[13px] leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/50"
+                  className="w-full resize-none rounded-2xl border bg-transparent p-3 text-[13px] leading-relaxed outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-foreground/30"
                 />
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-caption text-muted-foreground">

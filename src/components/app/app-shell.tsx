@@ -188,11 +188,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             }}
             className="group absolute inset-y-0 right-0 z-10 w-1.5 cursor-col-resize touch-none outline-none"
           >
-            {/* Invisible until engaged: a hairline highlight on hover/drag/focus. */}
+            {/* Invisible until engaged: a hairline highlight on hover/drag/focus.
+                Neutral ink, not coral — a full-height accent bar down the window
+                is the loudest thing on screen for what is only a drag affordance,
+                and the canvas/thought handles are already neutral. */}
             <span
               aria-hidden
               className={cn(
-                "absolute inset-y-0 right-0 w-[2px] bg-primary/60 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
+                "absolute inset-y-0 right-0 w-[2px] bg-foreground/25 opacity-0 transition-opacity duration-fast ease-out-soft group-hover:opacity-100 group-focus-visible:opacity-100",
                 resizing && "opacity-100"
               )}
             />

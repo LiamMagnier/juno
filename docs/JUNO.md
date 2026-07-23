@@ -257,14 +257,19 @@ a printed article." This keeps the constantly-scrolling list legible and
 
 Focus ring `2px solid hsl(var(--ring))` at 2px offset for buttons and links.
 
-**Text fields are the exception, and they get a line, not a halo.** `Input`,
-`Textarea` and `SelectTrigger` opt out of the global outline and focus with
-`border-primary` + `ring-1 ring-primary/40` — about 2px of crisp accent edge.
-They used to carry `ring-[3px] ring-ring/25` on top of a `border-primary/60`,
-which on a click (browsers grant `:focus-visible` to text inputs on pointer
-focus, not just keyboard) bloomed into a wide coral wash that read as an overlay
-sitting on the field. The contrast is unchanged — it moved from a soft 3px to a
-solid 1px — so the indicator is still plainly visible without shouting.
+**Text fields are the exception: no accent, no ring — the border just darkens.**
+`Input`, `Textarea` and `SelectTrigger` opt out of the global outline and focus
+with `border-foreground/30` and nothing else. They used to carry `ring-[3px]
+ring-ring/25` over `border-primary/60`; because browsers grant `:focus-visible`
+to text inputs on *pointer* focus and not only keyboard, merely clicking a field
+bloomed a wide coral wash that read as an overlay stuck on the box. The same
+rule covers the composer's model search and onboarding's memory textarea, and
+the Compare composer shell focuses to `border-border` instead of coral.
+
+**Coral is for state, not for furniture.** The sidebar's resize handle painted a
+full-height `bg-primary/60` bar while dragging — the loudest thing on screen for
+what is only a drag affordance. It is `bg-foreground/25` now, matching the
+canvas and thought-dock grips, which were already neutral.
 
 `coarse:` variants bump touch targets to ≥44px; `pt-safe`/`pb-safe` for iOS insets; every glass surface gates on
 `prefers-reduced-transparency` (→ solid warm fill), `prefers-contrast` (→ stronger

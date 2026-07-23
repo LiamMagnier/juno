@@ -274,7 +274,7 @@ export function CompareView() {
 
       {/* Prompt composer — one textarea, one coral action. */}
       <div className="shrink-0 px-4 pb-4 sm:px-6">
-        <div className="flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-primary/30 focus-within:shadow-glass">
+        <div className="flex w-full flex-col rounded-panel border border-border/70 bg-card/90 shadow-float backdrop-blur transition-[border-color,box-shadow] duration-base ease-out-soft focus-within:border-border focus-within:shadow-glass">
           <textarea
             ref={textareaRef}
             value={prompt}
