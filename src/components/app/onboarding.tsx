@@ -591,7 +591,10 @@ export function Onboarding() {
                     type="button"
                     onClick={copyPrompt}
                     aria-label="Copy prompt"
-                    className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-lg border bg-card text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
+                    // Concentric with the box: rounded-2xl (16px) − top-2/right-2 (8px)
+            // = 8px. rounded-lg is 24px here (bigger than the box), so the
+            // button read as a near-circle.
+            className="pressable absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md border bg-card text-muted-foreground hover:text-foreground coarse:h-9 coarse:w-9"
                   >
                     {copied ? <Check className="h-3.5 w-3.5 text-primary" /> : <Copy className="h-3.5 w-3.5" />}
                   </button>
