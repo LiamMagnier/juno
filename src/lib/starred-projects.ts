@@ -37,10 +37,6 @@ export function writeStarredProjects(ids: string[]): string[] {
   return ids;
 }
 
-export function isProjectStarred(id: string): boolean {
-  return readStarredProjects().includes(id);
-}
-
 /** Toggle `id`, persist, and return the new list. */
 export function toggleStarredProject(id: string): string[] {
   const current = readStarredProjects();

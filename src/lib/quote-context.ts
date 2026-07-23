@@ -51,27 +51,6 @@ export function clampQuoteText(text: string, limit = QUOTE_TEXT_LIMIT): string {
   return `${text.slice(0, head)}\n[… ${trimmed.toLocaleString()} characters trimmed …]\n${text.slice(text.length - tail)}`;
 }
 
-/**
- * Best-effort mapping of a selected string back to 1-based line numbers in the
- * artifact content. Returns null when the string can't be found or appears
- * more than once (ambiguous — better to omit line numbers than to lie).
- */
-export function findLineRange(content: string, selected: string): { start: number; end: number } | null {
-  const hay = content.replace(/\r\n/g, "\n");
-  let needle = selected.replace(/\r\n/g, "\n");
-  let idx = hay.indexOf(needle);
-  if (idx === -1) {
-    needle = needle.trim();
-    if (!needle) return null;
-    idx = hay.indexOf(needle);
-  }
-  if (idx === -1) return null;
-  if (hay.indexOf(needle, idx + 1) !== -1) return null;
-  const start = hay.slice(0, idx).split("\n").length;
-  const end = start + needle.split("\n").length - 1;
-  return { start, end };
-}
-
 /** Short human-readable location tag for the chip ("lines 4–12", "element .card"). */
 export function quoteLocationLabel(quote: ComposerQuote): string | null {
   if (quote.kind === "element" && quote.selector) return `element ${quote.selector}`;

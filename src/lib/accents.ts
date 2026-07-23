@@ -13,5 +13,3 @@ export const ACCENTS = [
 export const ACCENT_IDS = ["coral", "teal", "violet", "amber", "sage"] as const;
 
 export type AccentId = (typeof ACCENT_IDS)[number];
-
-export const DEFAULT_ACCENT: AccentId = "coral";

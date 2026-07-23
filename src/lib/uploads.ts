@@ -56,8 +56,6 @@ export function sniffImageMime(b: Uint8Array): string | null {
   return null;
 }
 
-export const VIDEO_MIME = ["video/mp4", "video/webm", "video/quicktime"];
-
 /** Verify real video type from magic bytes — mp4 (ftyp box), webm/mkv (EBML). */
 export function sniffVideoMime(b: Uint8Array): string | null {
   // ISO base media (mp4 / mov): bytes 4-7 are the 'ftyp' box type.

@@ -93,21 +93,6 @@ Return ONLY the title.`;
   );
 }
 
-/** A concise, specific title for a chat, derived from its first exchange. */
-export async function generateChatTitle(
-  userText: string,
-  assistantText: string,
-  opts: { llm?: UtilityLlm } = {}
-): Promise<string | null> {
-  return generateChatTitleFromMessages(
-    [
-      { role: "USER", content: userText },
-      { role: "ASSISTANT", content: assistantText },
-    ],
-    opts
-  );
-}
-
 /** A concise folder-style name for a project, derived from its instructions and/or first chat. */
 export async function generateProjectName(
   opts: { firstUser?: string; instructions?: string; llm?: UtilityLlm }

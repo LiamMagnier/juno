@@ -116,23 +116,6 @@ export function parseMemories(text: string): string[] {
   return out;
 }
 
-/** Remove memory tags entirely and replace artifact blocks with a marker for display. */
-export function cleanForDisplay(text: string): string {
-  return text
-    .replace(MEMORY_RE, "")
-    .replace(CLARIFICATION_WIZARD_RE, "")
-    .replace(ARTIFACT_RE, (_full, attrsRaw) => {
-      const attrs = parseAttrs(attrsRaw);
-      return `\n\n:::artifact{identifier="${attrs.identifier ?? ""}"}\n\n`;
-    })
-    // strip a partially-streamed (unclosed) artifact opener from the visible text
-    .replace(OPEN_ARTIFACT_RE, (full, attrsRaw) => {
-      const attrs = parseAttrs(attrsRaw);
-      return attrs.identifier ? `\n\n:::artifact{identifier="${attrs.identifier}"}\n\n` : full;
-    })
-    .trim();
-}
-
 export type ContentPart =
   | { type: "text"; text: string }
   | {

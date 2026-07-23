@@ -397,17 +397,6 @@ export async function backfillMemories(opts: {
 // Context injection (what the chat sees)
 // ---------------------------------------------------------------------------
 
-/** Recent memories to inject into the model context (most recent first, capped). */
-export async function getMemoriesForContext(userId: string, limit = 50): Promise<string[]> {
-  const rows = await prisma.memoryEntry.findMany({
-    where: { userId, kind: "FACT" },
-    orderBy: { createdAt: "desc" },
-    take: limit,
-    select: { content: true },
-  });
-  return rows.map((r) => r.content);
-}
-
 export interface MemorySummary {
   content: string;
   updatedAt: Date;

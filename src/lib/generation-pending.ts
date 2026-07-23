@@ -63,6 +63,3 @@ export function getPendingGeneration(conversationId: string): PendingGeneration 
   return readAll().find((r) => r.conversationId === conversationId) ?? null;
 }
 
-export function listPendingGenerations(): PendingGeneration[] {
-  return readAll();
-}

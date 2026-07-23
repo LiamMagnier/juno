@@ -120,7 +120,3 @@ export function runtimeFor(type: ArtifactType, language?: string | null): Runtim
       return { mode: "console", engine: "unsupported", lang: lang || "plaintext", label: langLabel(lang), runVerb: "Run" };
   }
 }
-
-export function isRunnable(type: ArtifactType, language?: string | null): boolean {
-  return runtimeFor(type, language).mode !== "none";
-}
