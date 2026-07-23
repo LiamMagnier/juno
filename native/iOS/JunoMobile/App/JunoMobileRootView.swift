@@ -324,7 +324,8 @@ struct JunoMobileRootView: View {
                 JunoMobileChatDetailScreen(
                     model: conversationModel,
                     projects: projectModel?.projects ?? [],
-                    attachmentModel: attachmentModel
+                    attachmentModel: attachmentModel,
+                    profileName: currentSession?.profile.name
                 )
             } else {
                 unavailable
@@ -795,16 +796,28 @@ private struct JunoMobileProjectsView: View {
                         .buttonStyle(.borderedProminent)
                 }
             default:
-                List {
-                    ForEach(model.projects) { project in
-                        NavigationLink(value: project.id) {
-                            projectRow(project)
+                // Cards, not rows: the web presents projects as objects you
+                // browse, and a flat list of folder rows was the rejected
+                // build's flattest screen. One column on a phone — an adaptive
+                // grid at this width gives two cramped columns rather than two
+                // useful ones.
+                ScrollView {
+                    LazyVStack(spacing: JunoSpace.cozy) {
+                        ForEach(model.projects) { project in
+                            NavigationLink(value: project.id) {
+                                JunoMobileProjectCard(
+                                    project: project,
+                                    conversations: model.conversationsByProject[project.id]?.count ?? 0,
+                                    files: model.filesByProject[project.id]?.count ?? 0
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .contextMenu { projectMenu(project) }
                         }
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 12))
-                        .contextMenu { projectMenu(project) }
                     }
+                    .padding(.horizontal, JunoSpace.regular)
+                    .padding(.vertical, JunoSpace.cozy)
                 }
-                .listStyle(.plain)
                 .accessibilityIdentifier("juno.mobile.project-list")
             }
         }
@@ -1010,17 +1023,49 @@ private struct JunoMobileProjectDetail: View {
     @State private var previewURL: URL?
     @State private var localError: String?
 
+    /// The opening of the instructions, collapsed onto single-spaced lines so a
+    /// prompt written with blank lines between sections does not spend its
+    /// three-line budget on whitespace.
+    private var instructionsPreview: String {
+        project.instructions
+            .split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    /// Characters and lines, as the web reports them under the excerpt.
+    private var instructionsMeasure: String {
+        let lines = project.instructions.split(whereSeparator: \.isNewline).count
+        return "^[\(project.instructions.count) character](inflect: true) · ^[\(lines) line](inflect: true)"
+    }
+
     var body: some View {
         List {
+            // A *preview* and a size, never the whole prompt. Dumping a
+            // 6,000-character instruction block into the first screen is what
+            // made this page unreadable — the web shows a clamped excerpt with a
+            // character count and an explicit Edit, and so does this.
             Section {
-                Text(project.instructions.isEmpty
-                    ? "No project instructions yet." : project.instructions)
-                    .foregroundStyle(project.instructions.isEmpty ? .secondary : .primary)
+                if project.instructions.isEmpty {
+                    Text("No project instructions yet.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(instructionsPreview)
+                        .lineLimit(3)
+                        .foregroundStyle(.primary)
+                    Text(instructionsMeasure)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 Button {
                     instructionsDraft = project.instructions
                     showingInstructions = true
                 } label: {
-                    Label("Edit instructions", systemImage: "pencil")
+                    Label(
+                        project.instructions.isEmpty ? "Add instructions" : "Edit instructions",
+                        systemImage: "pencil"
+                    )
                 }
                 .disabled(project.isPending || model.isMutating)
                 .accessibilityIdentifier("juno.mobile.project-edit-instructions")
@@ -1109,7 +1154,7 @@ private struct JunoMobileProjectDetail: View {
                     }
                     Button("Delete", role: .destructive) { showingDelete = true }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                 }
                 .disabled(project.isPending || model.isMutating)
             }
@@ -1374,7 +1419,7 @@ private struct JunoMobileProjectFileRow: View {
                 Button("Rename", action: rename)
                 Button("Delete", role: .destructive, action: delete)
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
                     .foregroundStyle(Color.junoAccent)
             }
         }
@@ -1615,7 +1660,7 @@ private struct JunoMobileArtifactDetail: View {
                     }
                     Button("Delete", role: .destructive) { showingDelete = true }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
                 }
                 .disabled(model.isMutating || model.isExporting)
             }

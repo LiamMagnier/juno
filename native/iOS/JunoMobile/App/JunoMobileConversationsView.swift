@@ -12,6 +12,9 @@ struct JunoMobileChatDetailScreen: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
+    var profileName: String?
+    /// Carries a home-screen prompt into the conversation that was just created.
+    @State private var seededPrompt: String?
 
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
@@ -25,7 +28,8 @@ struct JunoMobileChatDetailScreen: View {
                     model: model,
                     conversation: selected,
                     projects: projects,
-                    attachmentModel: attachmentModel
+                    attachmentModel: attachmentModel,
+                    seededPrompt: $seededPrompt
                 )
             } else {
                 emptyState
@@ -33,26 +37,26 @@ struct JunoMobileChatDetailScreen: View {
         }
     }
 
+    /// The website's home, not a generic empty state: a time-of-day greeting in
+    /// the editorial serif, the composer as the centre of gravity, and real
+    /// prompt modes. Sending here creates the conversation and seeds it, so the
+    /// first message is the one you typed rather than an empty chat you then
+    /// have to type into again.
     private var emptyState: some View {
-        ContentUnavailableView {
-            Label("chat.empty.title", systemImage: "bubble.left.and.text.bubble.right")
-        } description: {
-            Text("chat.empty.description")
-        } actions: {
-            Button {
+        JunoMobileHomeView(
+            model: model,
+            profileName: profileName,
+            recentProjects: projects,
+            start: { opening in
                 Task {
-                    if let id = await model.createConversation() {
-                        model.selectedConversationID = id
+                    guard let id = await model.createConversation() else { return }
+                    model.selectedConversationID = id
+                    if let opening, !opening.isEmpty {
+                        seededPrompt = opening
                     }
                 }
-            } label: {
-                Label("chat.new", systemImage: "square.and.pencil")
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isMutating)
-        }
-        .navigationTitle("navigation.chat")
-        .navigationBarTitleDisplayMode(.inline)
+        )
     }
 }
 
@@ -61,6 +65,8 @@ private struct JunoMobileConversationDetail: View {
     let conversation: NativeConversation
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
+    /// A prompt carried in from the home screen, consumed once into the draft.
+    @Binding var seededPrompt: String?
     @State private var showingRename = false
     @State private var editValue = ""
     @State private var prompt = ""
@@ -158,7 +164,7 @@ private struct JunoMobileConversationDetail: View {
                     )
                 }
             } label: {
-                Label("Conversation actions", systemImage: "ellipsis.circle")
+                Label("Conversation actions", systemImage: "ellipsis")
             }
             .disabled(model.isMutating || conversation.isPending)
         }
@@ -242,7 +248,16 @@ private struct JunoMobileConversationDetail: View {
                 composerFocused: $composerFocused
             )
         }
-        .onAppear { configureSelections() }
+        .onAppear {
+            configureSelections()
+            // Consumed once: the home screen's text becomes this conversation's
+            // draft, and clearing it stops it reappearing on every redraw.
+            if let seededPrompt {
+                prompt = seededPrompt
+                self.seededPrompt = nil
+                composerFocused = true
+            }
+        }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
     }
