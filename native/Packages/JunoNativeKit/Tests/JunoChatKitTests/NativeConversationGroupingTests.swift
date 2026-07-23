@@ -137,6 +137,48 @@ final class NativeConversationGroupingTests: XCTestCase {
         XCTAssertEqual(groups([future]).map(\.bucket), [.today])
     }
 
+    func testBucketsDependOnlyOnTheReferenceDate() {
+        // Guards the whole suite's hermeticity: reading the system clock (via
+        // `Calendar.isDateInToday(_:)` or similar) instead of `now` would make
+        // these references disagree, and would make every other test in here
+        // pass or fail depending on the hour it ran at.
+        let references = [
+            calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: 0))!,
+            calendar.date(from: DateComponents(year: 2026, month: 7, day: 22, hour: 23))!,
+            calendar.date(from: DateComponents(year: 2099, month: 12, day: 31, hour: 12))!,
+        ]
+        let expected: [NativeConversationBucket] = [
+            .today, .yesterday, .previous7Days, .previous30Days, .older,
+        ]
+        for reference in references {
+            let offsets: [Double] = [0, 1, 5, 20, 400]
+            let input = offsets.map { daysAgo -> NativeConversation in
+                let date = reference.addingTimeInterval(-daysAgo * 86_400)
+                return NativeConversation(
+                    id: "d\(daysAgo)",
+                    title: "d\(daysAgo)",
+                    model: "claude-opus-4-8",
+                    pinned: false,
+                    archivedAt: nil,
+                    createdAt: date,
+                    updatedAt: date,
+                    lastMessageAt: date,
+                    revision: 1
+                )
+            }
+            let result = NativeConversationGrouping.groups(
+                for: input,
+                now: reference,
+                calendar: calendar
+            )
+            XCTAssertEqual(
+                result.map(\.bucket),
+                expected,
+                "buckets changed for reference date \(reference)"
+            )
+        }
+    }
+
     func testEveryConversationLandsInExactlyOneGroup() {
         let input = (0..<40).map { conversation(id: "c\($0)", daysAgo: Double($0) * 3) }
         let result = groups(input)
