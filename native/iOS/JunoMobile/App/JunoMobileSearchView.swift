@@ -32,7 +32,7 @@ struct JunoMobileSearchView: View {
                 description: Text("Everything synced to this device is searchable offline.")
             )
         case .searching where model.results.isEmpty:
-            ProgressView("Searching…")
+            JunoMobileQuietLoading()
         case .failed:
             ContentUnavailableView {
                 Label("Search unavailable", systemImage: "exclamationmark.triangle")

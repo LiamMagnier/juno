@@ -33,6 +33,10 @@
             </array>
         </dict>
     </array>
+    <key>NSCameraUsageDescription</key>
+    <string>Juno uses the camera so you can take a photo and attach it to a message.</string>
+    <key>NSPhotoLibraryAddUsageDescription</key>
+    <string>Juno saves images you generate to your photo library when you ask it to.</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <!-- Newsreader, the website's editorial serif (SIL OFL 1.1; see

@@ -2,15 +2,16 @@ import JunoDesignSystem
 import SwiftUI
 
 /// Every top-level destination in the iOS/iPadOS app. Each case maps to a real,
-/// working surface — Juno Code Cloud/Remote and the unbuilt Tasks/Connections
-/// sections are intentionally absent until their backends exist (GAP-021), so
-/// there is no navigation that leads nowhere.
+/// working surface — nothing here navigates to a placeholder.
 enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
     case search
+    case code
+    case tasks
     case projects
     case library
     case artifacts
+    case connections
     case settings
 
     var id: String { rawValue }
@@ -19,9 +20,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "navigation.chat"
         case .search: "navigation.search"
+        case .code: "navigation.code"
+        case .tasks: "navigation.tasks"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
+        case .connections: "navigation.connections"
         case .settings: "navigation.settings"
         }
     }
@@ -38,9 +42,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: .new
         case .search: .search
+        case .code: .code
+        case .tasks: .tasks
         case .projects: .projects
         case .library: .library
         case .artifacts: .artifacts
+        case .connections: .connections
         case .settings: nil
         }
     }
@@ -50,15 +57,25 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "square.and.pencil"
         case .search: "magnifyingglass"
+        case .code: "chevron.left.forwardslash.chevron.right"
+        case .tasks: "clock.badge.checkmark"
         case .projects: "folder"
         case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
+        case .connections: "powerplug"
         case .settings: "gearshape"
         }
     }
 
+    /// The destinations the drawer lists, in order. Chat is absent because the
+    /// drawer's conversation list *is* chat, and Search and Settings have their
+    /// own controls in its header and footer.
+    static let drawerDestinations: [JunoMobileSection] = [
+        .code, .tasks, .projects, .library, .artifacts, .connections,
+    ]
+
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
-    /// tab bar shows the flat set.
+    /// drawer shows the flat set.
     enum Group: String, CaseIterable, Identifiable {
         case workspace
         case content
@@ -76,8 +93,8 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search]
-            case .content: [.projects, .library, .artifacts]
+            case .workspace: [.chat, .search, .code, .tasks]
+            case .content: [.projects, .library, .artifacts, .connections]
             case .account: [.settings]
             }
         }

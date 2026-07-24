@@ -5,13 +5,19 @@ import JunoSync
 import SwiftUI
 import UIKit
 
-/// The chat destination: the selected conversation's transcript + composer, or
-/// an empty state that starts a new chat. The conversation list lives in the
-/// sidebar; this screen never owns a NavigationStack (the root provides one).
+/// The chat destination: the selected conversation's transcript + composer, or —
+/// when nothing is selected — a **draft**: the website's serif greeting above an
+/// empty composer.
+///
+/// The draft is the load-bearing part. Tapping New chat used to create a row
+/// immediately, so a chat opened and abandoned left a "New chat" in the sidebar
+/// forever. Here nothing exists until the first message is sent, which is what
+/// the web does and what the sidebar reads as.
 struct JunoMobileChatDetailScreen: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
+    var profileName: String?
 
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
@@ -25,43 +31,157 @@ struct JunoMobileChatDetailScreen: View {
                     model: model,
                     conversation: selected,
                     projects: projects,
-                    attachmentModel: attachmentModel
+                    attachmentModel: attachmentModel,
+                    profileName: profileName
                 )
             } else {
-                emptyState
+                JunoMobileDraftChat(
+                    model: model,
+                    projects: projects,
+                    attachmentModel: attachmentModel,
+                    profileName: profileName
+                )
             }
+        }
+    }
+}
+
+// MARK: - Draft
+
+/// A chat that does not exist yet: the greeting, the composer, nothing else.
+private struct JunoMobileDraftChat: View {
+    @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    var projects: [NativeProject]
+    var attachmentModel: NativeComposerAttachmentModel?
+    var profileName: String?
+
+    @State private var prompt = ""
+    @State private var selectedModelID = ""
+    @State private var reasoningEffort: NativeReasoningEffort?
+    @State private var thinkingNotice: String?
+    @FocusState private var composerFocused: Bool
+
+    var body: some View {
+        JunoMobileGreeting(name: profileName)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.junoCanvas)
+            .accessibilityIdentifier("juno.mobile.chat-draft")
+            .navigationTitle("navigation.chat")
+            .navigationBarTitleDisplayMode(.inline)
+            .safeAreaInset(edge: .bottom) {
+                JunoMobileComposer(
+                    model: model,
+                    conversation: nil,
+                    projects: projects,
+                    prompt: $prompt,
+                    selectedModelID: $selectedModelID,
+                    reasoningEffort: $reasoningEffort,
+                    thinkingNotice: $thinkingNotice,
+                    attachmentModel: attachmentModel,
+                    startConversation: {
+                        await model.createConversationResolvingID(
+                            model: selectedModelID.isEmpty ? nil : selectedModelID
+                        )
+                    },
+                    composerFocused: $composerFocused
+                )
+            }
+            .onAppear { configureSelections() }
+            .onChange(of: selectedModelID) { _, _ in configureSelections() }
+            .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
+    }
+
+    private func configureSelections() {
+        selectedModelID = JunoMobileComposerSelection.resolvedModelID(
+            current: selectedModelID,
+            conversationModel: "",
+            selectable: model.selectableModels
+        )
+        guard let selected = model.modelCatalog.first(where: { $0.id == selectedModelID }) else {
+            reasoningEffort = nil
+            return
+        }
+        let adjustment = NativeThinkingScale(model: selected).adjusting(reasoningEffort)
+        reasoningEffort = adjustment.effort
+        thinkingNotice = adjustment.explanation
+    }
+}
+
+/// The website's home greeting, ported: the mark, then a time-of-day phrase, then
+/// the reader's first name in medium italic coral. Both halves rise in as two
+/// beats rather than one block, as they do in the browser.
+struct JunoMobileGreeting: View {
+    var name: String?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @State private var phrase = ""
+    @State private var appeared = false
+
+    private var firstName: String? {
+        guard let name, let first = name.split(separator: " ").first else { return nil }
+        return String(first)
+    }
+
+    private var compact: Bool { sizeClass == .compact }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            JunoMark(size: compact ? 21 : 29)
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 8)
+            Text(greetingText)
+                .font(JunoSerif.greeting(compact: compact))
+                .opacity(appeared ? 1 : 0)
+                .offset(y: appeared ? 0 : 10)
+                .multilineTextAlignment(.center)
+                .minimumScaleFactor(0.7)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, 28)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(plainGreeting)
+        .onAppear {
+            if phrase.isEmpty {
+                phrase = JunoGreeting.phrase(
+                    forHour: Calendar.current.component(.hour, from: Date())
+                )
+            }
+            guard !appeared else { return }
+            withAnimation(
+                JunoMotion.reduced(.snappy(duration: 0.42), when: reduceMotion)
+            ) { appeared = true }
         }
     }
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label("chat.empty.title", systemImage: "bubble.left.and.text.bubble.right")
-        } description: {
-            Text("chat.empty.description")
-        } actions: {
-            Button {
-                Task {
-                    if let id = await model.createConversation() {
-                        model.selectedConversationID = id
-                    }
-                }
-            } label: {
-                Label("chat.new", systemImage: "square.and.pencil")
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(model.isMutating)
-        }
-        .navigationTitle("navigation.chat")
-        .navigationBarTitleDisplayMode(.inline)
+    /// Built as one `AttributedString` so the phrase and the name wrap as a
+    /// single sentence. Two `Text`s in an `HStack` broke onto separate lines the
+    /// moment either grew, which the web layout never does.
+    private var greetingText: AttributedString {
+        var result = AttributedString(firstName == nil ? phrase : "\(phrase), ")
+        guard let firstName else { return result }
+        var name = AttributedString(firstName)
+        name.font = JunoSerif.greetingName(compact: compact)
+        name.foregroundColor = Color.junoAccent
+        result.append(name)
+        return result
+    }
+
+    private var plainGreeting: String {
+        firstName.map { "\(phrase), \($0)" } ?? phrase
     }
 }
+
+// MARK: - Conversation
 
 private struct JunoMobileConversationDetail: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let conversation: NativeConversation
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
+    var profileName: String?
     @State private var showingRename = false
+    @State private var showingDelete = false
     @State private var editValue = ""
     @State private var prompt = ""
     @State private var selectedModelID = ""
@@ -92,39 +212,45 @@ private struct JunoMobileConversationDetail: View {
         model.modelCatalog.first { $0.id == selectedModelID }
     }
 
-    private var generatingHere: Bool {
-        model.isGenerating && model.activeChatConversationID == conversation.id
-    }
-
     /// The transcript itself. Extracted from `body` because the merged view
     /// stacks a long modifier chain on an inline `ScrollView`, and the type
     /// checker times out on the combined expression.
     @ViewBuilder
     private var transcript: some View {
         if messages.isEmpty {
-            ContentUnavailableView(
-                "No messages yet",
-                systemImage: "bubble.left.and.text.bubble.right",
-                description: Text("This conversation is ready for its first message.")
-            )
-            .frame(maxWidth: .infinity, minHeight: 360)
+            // A conversation with no turns is the same moment as a draft, so it
+            // gets the same greeting rather than a "No messages yet" placard.
+            // `containerRelativeFrame` gives it the scroll view's own height so
+            // it centres in the visible area — a fixed `minHeight` inside a
+            // bottom-anchored scroll view pins it to the composer instead.
+            JunoMobileGreeting(name: profileName)
+                .frame(maxWidth: .infinity)
+                .containerRelativeFrame(.vertical)
         } else {
-            LazyVStack(spacing: 14) {
+            LazyVStack(spacing: 18) {
                 ForEach(messages) { message in
                     JunoMobileMessageRow(message: message)
                 }
             }
-            .padding()
+            .padding(.horizontal, 14)
+            .padding(.vertical, 18)
             Color.clear
                 .frame(height: 1)
                 .id(bottomAnchor)
         }
     }
 
-    /// Extracted from `body` for the same reason as `scrollArea`: the
-    /// nested menu was on its own enough to time the type checker out.
+    /// Extracted from `body` for the same reason as `scrollArea`: the nested menu
+    /// was on its own enough to time the type checker out.
     @ToolbarContentBuilder
     private var conversationToolbar: some ToolbarContent {
+        ToolbarItem(placement: .principal) {
+            JunoMobileConversationTitle(
+                title: conversation.title,
+                justRenamed: model.recentlyRenamedConversationID == conversation.id,
+                onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
+            )
+        }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 Button {
@@ -133,7 +259,6 @@ private struct JunoMobileConversationDetail: View {
                 } label: {
                     Label("Rename", systemImage: "pencil")
                 }
-                Divider()
                 Button {
                     Task {
                         await model.setPinned(id: conversation.id, pinned: !conversation.pinned)
@@ -144,23 +269,20 @@ private struct JunoMobileConversationDetail: View {
                         systemImage: conversation.pinned ? "pin.slash" : "pin"
                     )
                 }
-                Button {
-                    Task {
-                        await model.setArchived(
-                            id: conversation.id,
-                            archived: !conversation.isArchived
-                        )
-                    }
+                Divider()
+                // Delete, not archive. Archiving moved a conversation into a
+                // folder this app has no screen for, which from the phone is
+                // indistinguishable from losing it.
+                Button(role: .destructive) {
+                    showingDelete = true
                 } label: {
-                    Label(
-                        conversation.isArchived ? "Unarchive" : "Archive",
-                        systemImage: conversation.isArchived ? "tray.and.arrow.up" : "archivebox"
-                    )
+                    Label("Delete", systemImage: "trash")
                 }
             } label: {
                 Label("Conversation actions", systemImage: "ellipsis.circle")
             }
             .disabled(model.isMutating || conversation.isPending)
+            .accessibilityIdentifier("juno.mobile.conversation-menu")
         }
     }
 
@@ -219,7 +341,6 @@ private struct JunoMobileConversationDetail: View {
         ScrollViewReader { proxy in
             scrollArea(proxy)
         }
-        .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { conversationToolbar }
         .alert("Rename conversation", isPresented: $showingRename) {
@@ -228,6 +349,18 @@ private struct JunoMobileConversationDetail: View {
             Button("Save") {
                 Task { await model.renameConversation(id: conversation.id, title: editValue) }
             }
+        }
+        .confirmationDialog(
+            "Delete this conversation?",
+            isPresented: $showingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await model.deleteConversation(id: conversation.id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("chat.delete.warning")
         }
         .safeAreaInset(edge: .bottom) {
             JunoMobileComposer(
@@ -271,6 +404,50 @@ private struct JunoMobileConversationDetail: View {
     }
 }
 
+/// The navigation-bar title, which has to be able to *change under the reader*
+/// when the server names the conversation from its first message.
+///
+/// A silent swap is the thing to avoid: the reader typed a message, looked away,
+/// and the header is suddenly different text. So the new title arrives as a
+/// blur-replace and holds a brief coral tint — long enough to be noticed as "Juno
+/// named this", short enough not to become chrome.
+private struct JunoMobileConversationTitle: View {
+    let title: String
+    let justRenamed: Bool
+    let onAnimationShown: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var highlighted = false
+
+    var body: some View {
+        Text(title)
+            .font(.system(size: 16, weight: .semibold))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .foregroundStyle(highlighted ? Color.junoAccent : Color.primary)
+            .id(title)
+            .transition(.blurReplace)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: title)
+            .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: highlighted)
+            .accessibilityLabel(title)
+            .accessibilityIdentifier("juno.mobile.conversation-title")
+            .task(id: justRenamed) {
+                guard justRenamed else { return }
+                highlighted = true
+                try? await Task.sleep(for: .milliseconds(1_100))
+                highlighted = false
+                onAnimationShown()
+            }
+    }
+}
+
+/// One turn.
+///
+/// The two roles are shaped differently on purpose, matching the web: the
+/// reader's own message is a contained bubble on the trailing edge, and Juno's
+/// answer is full-width running text with no container at all. Boxing the answer
+/// too made long replies read as a wall of chrome and cost most of the line
+/// length on a phone.
 private struct JunoMobileMessageRow: View {
     let message: NativeChatMessage
 
@@ -283,79 +460,110 @@ private struct JunoMobileMessageRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            if isUser { Spacer(minLength: 40) }
-            if !isUser {
-                Image(systemName: "sparkle")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(width: 20, height: 20)
-                    .padding(.top, 3)
-                    .accessibilityHidden(true)
-            }
-            VStack(alignment: .leading, spacing: 7) {
-                Text(isUser ? "You" : "Juno").junoMetadata()
+        if isUser {
+            userBubble
+        } else {
+            assistantAnswer
+        }
+    }
 
-                // Reasoning sits above the answer as a collapsible control, not
-                // as a forgotten note beneath it.
-                if !isUser, let reasoning = message.reasoning, !reasoning.isEmpty {
-                    JunoReasoningDisclosure(text: reasoning)
-                }
-
-                if showThinking {
-                    JunoThinkingIndicator()
-                } else if !message.content.isEmpty {
-                    Text(message.content)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if !message.sources.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sources").junoMetadata()
-                        ForEach(message.sources, id: \.url) { source in
-                            Link(destination: source.url) {
-                                Label(source.title, systemImage: "link")
-                                    .font(.caption)
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                }
-
-                if (message.model?.isEmpty == false) || (message.isPending && !showThinking) {
-                    HStack(spacing: 8) {
-                        if let model = message.model, !model.isEmpty {
-                            Text(junoDisplayModelName(model)).font(.caption2).foregroundStyle(.tertiary)
-                        }
-                        if message.isPending && !showThinking {
-                            ProgressView().controlSize(.mini)
-                        }
-                    }
-                }
-
-                if let error = message.errorDescription {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                }
-            }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 10)
-            .background(isUser ? Color.junoAccent.opacity(0.14) : Color.junoSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .contextMenu {
-                Button {
-                    UIPasteboard.general.string = message.content
-                } label: {
-                    Label("Copy", systemImage: "doc.on.doc")
-                }
-                .disabled(message.content.isEmpty)
-            }
-            if !isUser { Spacer(minLength: 40) }
+    private var userBubble: some View {
+        HStack {
+            Spacer(minLength: 44)
+            Text(message.content)
+                .textSelection(.enabled)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(
+                    Color.junoAccent.opacity(0.13),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                )
+                .contextMenu { copyButton }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(isUser ? "You said" : "Juno replied")
+        .accessibilityLabel("You said, \(message.content)")
+    }
+
+    private var assistantAnswer: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            // Reasoning sits above the answer as a collapsible control, not as a
+            // forgotten note beneath it.
+            if let reasoning = message.reasoning, !reasoning.isEmpty {
+                JunoReasoningDisclosure(text: reasoning)
+            }
+
+            if showThinking {
+                JunoThinkingIndicator()
+            } else if !message.content.isEmpty {
+                JunoMarkdownText(message.content)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if !message.sources.isEmpty {
+                sources
+            }
+
+            footer
+
+            if let error = message.errorDescription {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu { copyButton }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Juno replied")
+    }
+
+    private var sources: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                ForEach(message.sources, id: \.url) { source in
+                    Link(destination: source.url) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "link").font(.caption2)
+                            Text(source.title).font(.caption).lineLimit(1)
+                        }
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(Color.junoSurface, in: Capsule())
+                        .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.vertical, 1)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .scrollIndicators(.hidden)
+    }
+
+    @ViewBuilder
+    private var footer: some View {
+        if (message.model?.isEmpty == false) || (message.isPending && !showThinking) {
+            HStack(spacing: 8) {
+                if let model = message.model, !model.isEmpty {
+                    Text(junoDisplayModelName(model))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+                if message.isPending && !showThinking {
+                    ProgressView().controlSize(.mini)
+                }
+            }
+        }
+    }
+
+    private var copyButton: some View {
+        Button {
+            UIPasteboard.general.string = message.content
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+        .disabled(message.content.isEmpty)
     }
 }
 

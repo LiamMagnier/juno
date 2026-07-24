@@ -331,8 +331,18 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					37778E68D00A52E4778E7B15 = {
+						DevelopmentTeam = 58PVP763WX;
+						ProvisioningStyle = Automatic;
+					};
 					80793E4009BDBE47CFB8D09D = {
+						DevelopmentTeam = 58PVP763WX;
+						ProvisioningStyle = Automatic;
 						TestTargetID = DDD09BA164BE41539FA65E3F;
+					};
+					DDD09BA164BE41539FA65E3F = {
+						DevelopmentTeam = 58PVP763WX;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};

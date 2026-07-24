@@ -414,6 +414,11 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public private(set) var chatErrorDescription: String?
     public private(set) var activeChatConversationID: String?
     public var selectedConversationID: String?
+    /// True while the reader is composing a chat that does not exist yet. It
+    /// suppresses the "open the most recent conversation" fallback in
+    /// ``reload()`` — without it, the first sync tick after tapping New chat
+    /// would drop the reader back into the conversation they just left.
+    public var isDraftingNewConversation = false
 
     public var selectedConversation: NativeConversation? {
         conversations.first { $0.id == selectedConversationID }
@@ -429,11 +434,21 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         selectedConversationID.flatMap { retryContexts[$0] } != nil
     }
 
+    /// The conversation whose title the server has just replaced, so the screen
+    /// showing it can animate the change rather than swapping the text under the
+    /// reader's eyes. Cleared by ``acknowledgeTitleAnimation(for:)``.
+    public private(set) var recentlyRenamedConversationID: String?
+
     private let store: NativeConversationStore<Repository>
     private let outbox: any MutationOutboxRepository
     private let drainer: NativeMutationDrainer<Repository>
     private let syncModel: NativeSyncModel<Repository>
     private let chatClient: NativeChatAPIClient?
+    private let titleClient: NativeConversationTitleClient?
+    /// Conversations already put through naming this session. The server is
+    /// idempotent about it, but a request per streamed turn would burn the
+    /// route's rate limit for nothing.
+    private var titledConversationIDs: Set<String> = []
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
@@ -495,13 +510,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         outbox: any MutationOutboxRepository,
         drainer: NativeMutationDrainer<Repository>,
         syncModel: NativeSyncModel<Repository>,
-        chatClient: NativeChatAPIClient? = nil
+        chatClient: NativeChatAPIClient? = nil,
+        titleClient: NativeConversationTitleClient? = nil
     ) {
         store = NativeConversationStore(repository: repository, outbox: outbox)
         self.outbox = outbox
         self.drainer = drainer
         self.syncModel = syncModel
         self.chatClient = chatClient
+        self.titleClient = titleClient
     }
 
     public func start(for accountID: AccountID) async {
@@ -535,6 +552,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         chatErrorDescription = nil
         activeChatConversationID = nil
         selectedConversationID = nil
+        recentlyRenamedConversationID = nil
+        titledConversationIDs = []
         lastSynchronizationGeneration = -1
         phase = .idle
     }
@@ -561,7 +580,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             {
                 self.selectedConversationID = nil
             }
-            if selectedConversationID == nil {
+            if selectedConversationID == nil, !isDraftingNewConversation {
                 selectedConversationID = conversations.first(where: { !$0.isArchived })?.id
             }
             lastErrorDescription = snapshot.conflictedMutationCount == 0
@@ -576,7 +595,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
 
     @discardableResult
     public func createConversation(
-        title: String = "New conversation",
+        title: String = "New chat",
         model: String? = nil,
         projectID: String? = nil
     ) async -> String? {
@@ -618,12 +637,121 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         return clientID
     }
 
+    /// Creates a conversation and returns the id it settled on — the *server*
+    /// id once the create drained, the client id while it is still queued.
+    ///
+    /// ``createConversation`` cannot answer that: the server mints its own id
+    /// and the client id it was enqueued under stops existing the moment the
+    /// mutation is acknowledged. A draft composer has to send into the row it
+    /// just created, so it needs the id that survived, not the one it asked for.
+    /// Resolved by diffing the conversation list across the create rather than
+    /// by trusting the ordering, which a pinned conversation would break.
+    public func createConversationResolvingID(
+        title: String = "New chat",
+        model: String? = nil,
+        projectID: String? = nil
+    ) async -> String? {
+        let before = Set(conversations.map(\.id))
+        guard let clientID = await createConversation(
+            title: title, model: model, projectID: projectID
+        ) else { return nil }
+
+        // The create drains and then pulls, but the pulled row can arrive a beat
+        // after the local one is retired — leaving a window where neither id is
+        // in the list. Two extra pulls close it. Without them the first send of a
+        // new chat occasionally landed on a conversation the store had never
+        // heard of, and the message stayed in the composer with no explanation.
+        var created = conversations.filter { !before.contains($0.id) }
+        for _ in 0..<2 where created.isEmpty {
+            await syncModel.refresh()
+            await reload()
+            created = conversations.filter { !before.contains($0.id) }
+        }
+
+        // The settled server row is the one that is no longer pending. Falling
+        // back to the client id keeps an offline create usable locally, where it
+        // stays queued until the network returns.
+        let resolved = created.first { !$0.isPending }?.id
+            ?? created.max(by: { $0.createdAt < $1.createdAt })?.id
+            ?? clientID
+        isDraftingNewConversation = false
+        selectedConversationID = resolved
+        return resolved
+    }
+
+    /// Removes the conversation and its transcript, everywhere. Replaces archive
+    /// as the destructive action offered on this client: archiving hid a
+    /// conversation into a folder the phone has no screen for, which is
+    /// indistinguishable from losing it.
+    public func deleteConversation(id: String) async {
+        let wasSelected = selectedConversationID == id
+        await mutateExisting(
+            id: id,
+            operation: "conversation.delete",
+            object: ["type": "conversation.delete", "entityId": id]
+        )
+        if wasSelected, selectedConversationID == id {
+            selectedConversationID = nil
+        }
+        titledConversationIDs.remove(id)
+    }
+
+    /// Asks the server to name the conversation from its opening turns, the way
+    /// the web client does after the first message.
+    ///
+    /// Best-effort throughout: the server owns the decision (a title the reader
+    /// typed is never overwritten) and any failure is swallowed, because naming
+    /// must never report an error on a message that sent fine.
+    public func generateTitleIfNeeded(conversationID: String) async {
+        guard let accountID, let titleClient,
+            !titledConversationIDs.contains(conversationID)
+        else { return }
+        let context = visibleMessages(for: conversationID)
+            .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .prefix(8)
+            .map {
+                NativeConversationTitleClient.ContextMessage(
+                    role: $0.role == .user ? "USER" : "ASSISTANT",
+                    content: $0.content
+                )
+            }
+        guard context.contains(where: { $0.role == "USER" }) else { return }
+        titledConversationIDs.insert(conversationID)
+
+        let generated = try? await titleClient.generateTitle(
+            conversationID: conversationID,
+            phase: .firstUser,
+            messages: context,
+            for: accountID
+        )
+        guard let generated, generated.renamed,
+            self.accountID == accountID,
+            let index = conversations.firstIndex(where: { $0.id == conversationID }),
+            conversations[index].title != generated.title
+        else { return }
+        // Applied locally first so the rename lands the moment it is known; the
+        // refresh below then persists the server's own row, and the two agree.
+        conversations[index].title = generated.title
+        recentlyRenamedConversationID = conversationID
+        await syncModel.refresh()
+        await reload()
+    }
+
+    /// Called by the screen that played the rename animation, so it plays once.
+    public func acknowledgeTitleAnimation(for conversationID: String) {
+        guard recentlyRenamedConversationID == conversationID else { return }
+        recentlyRenamedConversationID = nil
+    }
+
     public func renameConversation(id: String, title: String) async {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.utf8.count <= 200 else {
             lastErrorDescription = NativeConversationStoreError.invalidTitle.localizedDescription
             return
         }
+        // A title the reader typed is theirs. Marking it titled stops this
+        // session's auto-namer from proposing one over the top of it.
+        titledConversationIDs.insert(id)
         await mutateExisting(
             id: id,
             operation: "conversation.rename",

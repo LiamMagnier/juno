@@ -1,5 +1,6 @@
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
@@ -24,6 +25,12 @@ struct JunoMobileRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    /// The three server-backed sections. Unlike the models above they hold no
+    /// local mirror — connections, scheduled tasks and code sessions live only
+    /// on the server, so each screen reads them live and says so when it cannot.
+    var connectorModel: NativeConnectorModel?
+    var scheduledTaskModel: NativeScheduledTaskModel?
+    var codeModel: NativeCodeModel?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -63,6 +70,15 @@ struct JunoMobileRootView: View {
                 }
                 return
             }
+            // Opens the real, signed-in shell straight onto one destination, so
+            // a screenshot of any section is one relaunch rather than a scripted
+            // tap sequence:
+            //   SIMCTL_CHILD_JUNO_START_TAB=connections xcrun simctl launch …
+            // DEBUG-only, like every other flag in this block.
+            if let raw = ProcessInfo.processInfo.environment["JUNO_START_TAB"],
+                let section = JunoMobileSection(rawValue: raw) {
+                selection = section
+            }
             #endif
             await authModel.restore()
         }
@@ -78,6 +94,9 @@ struct JunoMobileRootView: View {
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
                 searchModel?.start(for: session.profile.id)
                 attachmentModel?.start(for: session.profile.id)
+                Task { await connectorModel?.start(for: session.profile.id) }
+                Task { await scheduledTaskModel?.start(for: session.profile.id) }
+                Task { await codeModel?.start(for: session.profile.id) }
             } else {
                 syncModel?.stop()
                 attachmentModel?.stop()
@@ -86,6 +105,9 @@ struct JunoMobileRootView: View {
                 artifactModel?.stop()
                 memorySettingsModel?.stop()
                 searchModel?.stop()
+                connectorModel?.stop()
+                scheduledTaskModel?.stop()
+                codeModel?.stop()
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -110,7 +132,7 @@ struct JunoMobileRootView: View {
         case .signedIn(let session):
             authenticatedContent(session: session)
         case .restoring:
-            ProgressView("auth.restoring")
+            JunoMobileQuietLoading()
         case .signedOut, .signingIn, .unavailable:
             JunoMobileSignInView(authModel: authModel)
         }
@@ -272,19 +294,20 @@ struct JunoMobileRootView: View {
     }
 
     private func openSidebarConversation(_ id: String) {
+        conversationModel?.isDraftingNewConversation = false
         conversationModel?.selectedConversationID = id
         selection = .chat
         setSidebar(false)
     }
 
+    /// New chat opens a *draft*: an empty composer under the greeting, with no
+    /// row in the sidebar. The conversation is created by the first send — see
+    /// `NativeConversationModel.createConversationResolvingID`.
     private func startNewChat() {
-        Task {
-            if let id = await conversationModel?.createConversation() {
-                conversationModel?.selectedConversationID = id
-            }
-            selection = .chat
-            setSidebar(false)
-        }
+        conversationModel?.isDraftingNewConversation = true
+        conversationModel?.selectedConversationID = nil
+        selection = .chat
+        setSidebar(false)
     }
 
     // MARK: Detail
@@ -317,7 +340,8 @@ struct JunoMobileRootView: View {
                 JunoMobileChatDetailScreen(
                     model: conversationModel,
                     projects: projectModel?.projects ?? [],
-                    attachmentModel: attachmentModel
+                    attachmentModel: attachmentModel,
+                    profileName: currentSession?.profile.name
                 )
             } else {
                 unavailable
@@ -325,6 +349,22 @@ struct JunoMobileRootView: View {
         case .search:
             if let searchModel {
                 JunoMobileSearchView(model: searchModel, open: openSearchResult)
+            } else { unavailable }
+        case .code:
+            if let codeModel {
+                JunoMobileCodeView(model: codeModel)
+            } else { unavailable }
+        case .tasks:
+            if let scheduledTaskModel {
+                JunoMobileTasksView(
+                    model: scheduledTaskModel,
+                    models: conversationModel?.modelCatalog ?? [],
+                    openConversation: openConversation
+                )
+            } else { unavailable }
+        case .connections:
+            if let connectorModel {
+                JunoMobileConnectionsView(model: connectorModel)
             } else { unavailable }
         case .projects:
             if let projectModel {
@@ -427,27 +467,15 @@ private struct JunoMobileSidebarDrawer: View {
             header
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 2) {
-                    JunoMobileSidebarRow(
-                        junoIcon: JunoMobileSection.projects.junoIcon,
-                        icon: JunoMobileSection.projects.systemImage,
-                        title: "navigation.projects",
-                        selected: selection == .projects,
-                        action: { openDestination(.projects) }
-                    )
-                    JunoMobileSidebarRow(
-                        junoIcon: JunoMobileSection.library.junoIcon,
-                        icon: JunoMobileSection.library.systemImage,
-                        title: "navigation.library",
-                        selected: selection == .library,
-                        action: { openDestination(.library) }
-                    )
-                    JunoMobileSidebarRow(
-                        junoIcon: JunoMobileSection.artifacts.junoIcon,
-                        icon: JunoMobileSection.artifacts.systemImage,
-                        title: "navigation.artifacts",
-                        selected: selection == .artifacts,
-                        action: { openDestination(.artifacts) }
-                    )
+                    ForEach(JunoMobileSection.drawerDestinations) { destination in
+                        JunoMobileSidebarRow(
+                            junoIcon: destination.junoIcon,
+                            icon: destination.systemImage,
+                            title: destination.title,
+                            selected: selection == destination,
+                            action: { openDestination(destination) }
+                        )
+                    }
 
                     if !pinned.isEmpty {
                         sectionLabel("sidebar.pinned")
@@ -663,46 +691,6 @@ private struct JunoMobileConversationRow: View {
     }
 }
 
-/// A circular Liquid Glass container (OS 26+) with a material fallback, used for
-/// the sidebar's Search and profile buttons.
-private struct JunoGlassCircle: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(.regular.interactive(), in: Circle())
-        } else {
-            content
-                .background(.regularMaterial, in: Circle())
-                .overlay(Circle().strokeBorder(Color.junoHairline, lineWidth: 1))
-        }
-    }
-}
-
-/// An accent-tinted Liquid Glass capsule (OS 26+) with an opaque accent fallback,
-/// used for the primary "New Chat" control.
-private struct JunoAccentGlassCapsule: ViewModifier {
-    func body(content: Content) -> some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            content
-                .glassEffect(.regular.tint(Color.junoAccent.opacity(0.72)).interactive(), in: Capsule())
-        } else {
-            content
-                .background(Color.junoAccent.opacity(0.82), in: Capsule())
-        }
-    }
-}
-
-/// A subtle pressed-state wash shared by sidebar rows.
-private struct JunoSidebarPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(configuration.isPressed ? Color.primary.opacity(0.06) : .clear)
-            )
-    }
-}
-
 private struct JunoMobileSignInView: View {
     let authModel: NativeAuthModel
 
@@ -756,7 +744,7 @@ private struct JunoMobileProjectsView: View {
         Group {
             switch model.phase {
             case .idle, .loading:
-                ProgressView("Loading projects…")
+                JunoMobileQuietLoading()
             case .failed where model.projects.isEmpty:
                 ContentUnavailableView(
                     "Projects unavailable",
@@ -1235,7 +1223,7 @@ private struct JunoMobileFilesView: View {
     var body: some View {
         Group {
             if model.phase == .loading || model.phase == .idle {
-                ProgressView("Loading files…")
+                JunoMobileQuietLoading()
             } else if model.files.isEmpty {
                 ContentUnavailableView(
                     "No files",
@@ -1399,7 +1387,7 @@ private struct JunoMobileArtifactsView: View {
         Group {
             switch model.phase {
             case .idle, .loading:
-                ProgressView("Loading artifacts…")
+                JunoMobileQuietLoading()
             case .failed where model.artifacts.isEmpty:
                 ContentUnavailableView(
                     "Artifacts unavailable",

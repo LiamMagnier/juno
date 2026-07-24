@@ -1,0 +1,653 @@
+import JunoCodeKit
+import JunoDesignSystem
+import SwiftUI
+
+/// **Juno Code** on the phone: start a coding task and watch it run.
+///
+/// Two targets, one composer. **Cloud** dispatches a runner against a GitHub
+/// repository and opens a pull request; **Remote** hands the task to a Mac or
+/// Windows machine signed in to Juno Code, working in a real local folder. They
+/// share a screen because from here they are the same act — describe the work,
+/// choose where it happens, watch the log — and the difference that matters
+/// (where the code actually lives) is named on the control that selects it, not
+/// buried in a setting.
+struct JunoMobileCodeView: View {
+    @Bindable var model: NativeCodeModel
+
+    @State private var prompt = ""
+    @FocusState private var composerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Group {
+            switch model.phase {
+            case .idle, .loading:
+                JunoMobileQuietLoading()
+            case .failed:
+                ContentUnavailableView {
+                    Label("code.unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(model.lastErrorDescription ?? String(localized: "code.retry"))
+                } actions: {
+                    Button("Retry") { Task { await model.refresh() } }
+                        .buttonStyle(.borderedProminent)
+                }
+            case .ready:
+                sessions
+            }
+        }
+        .background(Color.junoCanvas)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await model.refresh() }
+        .navigationDestination(
+            isPresented: Binding(
+                get: { model.openTask != nil },
+                set: { if !$0 { model.closeOpenTask() } }
+            )
+        ) {
+            JunoMobileCodeSessionView(model: model)
+        }
+        .accessibilityIdentifier("juno.mobile.code")
+    }
+
+    // MARK: Session list + composer
+
+    private var sessions: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                JunoPageTitle(title: "navigation.code", subtitle: "code.subtitle")
+                    .padding(.top, 6)
+
+                if let error = model.lastErrorDescription {
+                    JunoInlineError(message: error) { Task { await model.refresh() } }
+                }
+
+                if model.tasks.isEmpty {
+                    JunoMobileCodeGreeting()
+                        .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
+                } else {
+                    JunoGroupLabel(text: String(localized: "code.group.sessions"))
+                    ForEach(model.tasks) { task in
+                        Button { model.open(task) } label: {
+                            JunoMobileCodeTaskRow(task: task)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
+        }
+        .safeAreaInset(edge: .bottom) { composer }
+    }
+
+    /// The start composer: prompt, target toggle, target picker, go.
+    private var composer: some View {
+        VStack(spacing: 8) {
+            if let blocked = model.startBlockedReason, !prompt.isEmpty {
+                Label(blocked, systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 6)
+                    .transition(.opacity)
+            }
+            VStack(spacing: 8) {
+                TextField("code.composer.placeholder", text: $prompt, axis: .vertical)
+                    .lineLimit(1...6)
+                    .textFieldStyle(.plain)
+                    .focused($composerFocused)
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+                    .accessibilityIdentifier("juno.mobile.code-composer")
+
+                HStack(spacing: 8) {
+                    JunoMobileCodeTargetPicker(model: model)
+                    Spacer(minLength: 4)
+                    Button {
+                        start()
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .modifier(JunoComposerSendBackground(active: canStart))
+                            .frame(width: 40, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!canStart)
+                    .accessibilityLabel("code.start")
+                    .accessibilityIdentifier("juno.mobile.code-start")
+                }
+            }
+            .padding(8)
+            .background(JunoGlassBackground(cornerRadius: 26))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: canStart)
+    }
+
+    private var canStart: Bool {
+        !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && model.startBlockedReason == nil
+            && !model.isMutating
+    }
+
+    private func start() {
+        let text = prompt
+        Task {
+            if await model.startTask(prompt: text) != nil { prompt = "" }
+        }
+    }
+}
+
+/// The Code home greeting, in the same editorial voice as the chat one so the
+/// two destinations read as one product.
+private struct JunoMobileCodeGreeting: View {
+    private static let phrases = [
+        "code.greeting.building", "code.greeting.task", "code.greeting.next",
+        "code.greeting.start", "code.greeting.ready",
+    ]
+
+    @State private var phrase: LocalizedStringKey = "code.greeting.ready"
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("code.brand")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            HStack(spacing: 9) {
+                JunoMark(size: 20)
+                Text(phrase)
+                    .font(JunoSerif.greeting(compact: true))
+                    .multilineTextAlignment(.center)
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(2)
+            }
+            Text("code.greeting.detail")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+        .frame(maxWidth: .infinity)
+        .onAppear { phrase = LocalizedStringKey(Self.phrases.randomElement() ?? "code.greeting.ready") }
+    }
+}
+
+/// "Where does this run" — the Cloud ⇄ Remote toggle and the picker for whichever
+/// is selected, folded into one chip row so the choice is always visible without
+/// occupying a screen of its own.
+private struct JunoMobileCodeTargetPicker: View {
+    @Bindable var model: NativeCodeModel
+    @State private var picking = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Picker("code.target", selection: $model.target) {
+                Text("code.target.cloud").tag(NativeCodeTarget.cloud)
+                Text("code.target.remote").tag(NativeCodeTarget.device)
+            }
+            .pickerStyle(.segmented)
+            .frame(width: 152)
+            .accessibilityIdentifier("juno.mobile.code-target")
+
+            Button {
+                picking = true
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: model.target == .cloud ? "cloud" : "laptopcomputer")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text(label)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                }
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 11)
+                .frame(height: 32)
+                .modifier(JunoGlassCapsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text(label))
+            .sheet(isPresented: $picking) {
+                JunoMobileCodeTargetSheet(model: model)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private var label: String {
+        switch model.target {
+        case .cloud:
+            return model.selectedRepository?.fullName
+                ?? String(localized: "code.target.pick-repo")
+        case .device:
+            guard let device = model.selectedDevice else {
+                return String(localized: "code.target.pick-device")
+            }
+            return model.selectedWorkspace.map { "\(device.name) · \($0.name)" } ?? device.name
+        }
+    }
+}
+
+/// The picker itself. Both halves are honest about their failure modes: an
+/// unlinked GitHub sends the reader to Connections rather than offering a Retry
+/// that cannot work, and a computer that is not running Juno Code says so.
+private struct JunoMobileCodeTargetSheet: View {
+    @Bindable var model: NativeCodeModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var search = ""
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                switch model.target {
+                case .cloud: repositories
+                case .device: devices
+                }
+            }
+            .navigationTitle(
+                model.target == .cloud
+                    ? Text("code.target.repository") : Text("code.target.computer")
+            )
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var repositories: some View {
+        switch model.repositories {
+        case .idle, .loading:
+            JunoMobileQuietLoading()
+                .task { model.loadRepositoriesIfNeeded() }
+        case .ready(let repos):
+            let filtered = search.isEmpty
+                ? repos
+                : repos.filter { $0.fullName.localizedCaseInsensitiveContains(search) }
+            List {
+                ForEach(filtered) { repo in
+                    Button {
+                        model.selectedRepository = repo
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: repo.isPrivate ? "lock" : "chevron.left.forwardslash.chevron.right")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(repo.fullName).font(.system(size: 15, weight: .medium))
+                                Text(repo.defaultBranch)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                            if model.selectedRepository?.id == repo.id {
+                                Image(systemName: "checkmark")
+                                    .foregroundStyle(Color.junoAccent)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .searchable(text: $search, prompt: Text("code.target.search-repos"))
+        case .unavailable(let failure):
+            ContentUnavailableView {
+                Label("code.target.repos-unavailable", systemImage: "exclamationmark.triangle")
+            } description: {
+                Text(NativeCodeError.repositories(failure).localizedDescription)
+            } actions: {
+                // Only the transient failure gets a Retry. The two connector
+                // states need GitHub linked in Connections, and a button that
+                // re-runs the same failing call is worse than none.
+                if failure == .unreachable {
+                    Button("Retry") { model.loadRepositoriesIfNeeded(force: true) }
+                        .buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var devices: some View {
+        if model.devices.isEmpty {
+            ContentUnavailableView {
+                Label("code.target.no-devices", systemImage: "laptopcomputer.slash")
+            } description: {
+                Text("code.target.no-devices.detail")
+            }
+        } else {
+            List {
+                ForEach(model.devices) { device in
+                    Section {
+                        if device.workspaces.isEmpty {
+                            Text("code.target.no-workspaces")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        ForEach(device.workspaces) { workspace in
+                            Button {
+                                model.selectedDeviceID = device.id
+                                model.selectedWorkspaceKey = workspace.id
+                                dismiss()
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: "folder")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .frame(width: 20)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(workspace.name)
+                                            .font(.system(size: 15, weight: .medium))
+                                        Text(workspace.path)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.head)
+                                    }
+                                    Spacer(minLength: 0)
+                                    if model.selectedDeviceID == device.id,
+                                        model.selectedWorkspace?.id == workspace.id {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(Color.junoAccent)
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(!device.online)
+                        }
+                    } header: {
+                        HStack(spacing: 6) {
+                            Image(systemName: device.platformSymbol)
+                            Text(device.name)
+                            Spacer(minLength: 4)
+                            JunoStatusPill(
+                                text: device.online
+                                    ? String(localized: "code.device.online")
+                                    : String(localized: "code.device.offline"),
+                                tint: device.online ? .green : .secondary,
+                                filled: device.online
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One session in the list.
+private struct JunoMobileCodeTaskRow: View {
+    let task: NativeCodeTask
+
+    var body: some View {
+        JunoCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 8) {
+                    Image(systemName: task.target == .cloud ? "cloud" : "laptopcomputer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(task.whereItRuns)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                    Spacer(minLength: 4)
+                    JunoStatusPill(text: statusText, tint: statusTint)
+                }
+                Text(task.title)
+                    .font(JunoSerif.cardTitle)
+                    .foregroundStyle(.primary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(spacing: 6) {
+                    Text(task.updatedAt.formatted(.relative(presentation: .named)))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if task.pullRequestURL != nil {
+                        Text("·").foregroundStyle(.tertiary)
+                        Label("code.pull-request", systemImage: "arrow.triangle.pull")
+                            .font(.caption)
+                            .foregroundStyle(Color.junoAccent)
+                    }
+                }
+            }
+        }
+    }
+
+    private var statusText: String {
+        switch task.status {
+        case .queued: String(localized: "code.status.queued")
+        case .running: String(localized: "code.status.running")
+        case .awaitingApproval: String(localized: "code.status.awaiting")
+        case .done: String(localized: "code.status.done")
+        case .failed: String(localized: "code.status.failed")
+        case .cancelled: String(localized: "code.status.cancelled")
+        }
+    }
+
+    private var statusTint: Color {
+        switch task.status {
+        case .queued: .secondary
+        case .running: Color.junoAccent
+        case .awaitingApproval: .orange
+        case .done: .green
+        case .failed: .red
+        case .cancelled: .secondary
+        }
+    }
+}
+
+/// The live log of one session: what the agent is doing, what it wants
+/// permission for, and how to stop it.
+private struct JunoMobileCodeSessionView: View {
+    @Bindable var model: NativeCodeModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isNearBottom = true
+
+    private let bottomAnchor = "juno.code.bottom"
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    if let task = model.openTask { summary(task) }
+                    ForEach(model.events) { event in
+                        JunoMobileCodeEventRow(event: event)
+                    }
+                    Color.clear.frame(height: 1).id(bottomAnchor)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .background(Color.junoCanvas)
+            .defaultScrollAnchor(.bottom)
+            .onChange(of: model.events.count) { _, _ in
+                guard isNearBottom else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                    proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                }
+            }
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentSize.height <= geometry.containerSize.height
+                    || geometry.contentSize.height - geometry.contentOffset.y
+                        - geometry.containerSize.height < 120
+            } action: { _, nearBottom in
+                isNearBottom = nearBottom
+            }
+        }
+        .navigationTitle(model.openTask?.title ?? "")
+        .navigationBarTitleDisplayMode(.inline)
+        .safeAreaInset(edge: .bottom) { footer }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if model.openTask?.status.isActive == true {
+                    Button(role: .destructive) {
+                        Task { await model.cancelOpenTask() }
+                    } label: {
+                        Image(systemName: "stop.circle")
+                    }
+                    .disabled(model.isMutating)
+                    .accessibilityLabel("code.stop")
+                }
+            }
+        }
+        .accessibilityIdentifier("juno.mobile.code-session")
+    }
+
+    private func summary(_ task: NativeCodeTask) -> some View {
+        JunoCard(padding: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Image(systemName: task.target == .cloud ? "cloud" : "laptopcomputer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(task.whereItRuns)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    if model.isStreaming {
+                        ProgressView().controlSize(.mini)
+                    }
+                }
+                if !task.prompt.isEmpty {
+                    Text(task.prompt)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(6)
+                }
+                if let url = task.pullRequestURL {
+                    Link(destination: url) {
+                        Label("code.open-pull-request", systemImage: "arrow.triangle.pull")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundStyle(Color.junoAccent)
+                }
+            }
+        }
+    }
+
+    /// The approval card. It sits at the bottom, over the log, because the agent
+    /// is *blocked* on it — an answer buried in the scrollback would leave a run
+    /// stalled with no visible reason.
+    @ViewBuilder
+    private var footer: some View {
+        if let approval = model.pendingApproval {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("code.approval.title", systemImage: "hand.raised.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.orange)
+                Text(approval.summary)
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if let detail = approval.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                }
+                HStack(spacing: 10) {
+                    Button {
+                        Task { await model.respondToApproval(approve: false) }
+                    } label: {
+                        Text("code.approval.deny")
+                            .font(.system(size: 15, weight: .semibold))
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .modifier(JunoGlassCapsule())
+                    }
+                    .buttonStyle(.plain)
+                    Button {
+                        Task { await model.respondToApproval(approve: true) }
+                    } label: {
+                        Text("code.approval.allow")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 42)
+                            .modifier(JunoAccentGlassCapsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("juno.mobile.code-approve")
+                }
+            }
+            .padding(14)
+            .background(JunoGlassBackground(cornerRadius: 22))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 8)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+}
+
+/// One line of the log, shaped by what it is: the agent's prose reads as prose,
+/// a tool call and a file change read as machine output, and an error is orange.
+private struct JunoMobileCodeEventRow: View {
+    let event: NativeCodeEvent
+
+    var body: some View {
+        switch event.kind {
+        case .text, .user:
+            Text(event.title)
+                .font(.callout)
+                .foregroundStyle(event.kind == .user ? .secondary : .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .textSelection(.enabled)
+        case .error:
+            Label(event.title, systemImage: "exclamationmark.triangle.fill")
+                .font(.callout)
+                .foregroundStyle(.orange)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        case .status, .done, .cancelRequest:
+            Text(event.title)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        default:
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: symbol)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(event.title)
+                        .font(.system(size: 13, design: .monospaced))
+                        .lineLimit(2)
+                    if let detail = event.detail, !detail.isEmpty {
+                        Text(detail)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private var symbol: String {
+        switch event.kind {
+        case .tool: "wrench.and.screwdriver"
+        case .fileChange: "doc.badge.gearshape"
+        case .approvalRequest: "hand.raised"
+        case .approvalResponse: "checkmark.seal"
+        case .agent: "person.2"
+        default: "circle"
+        }
+    }
+}

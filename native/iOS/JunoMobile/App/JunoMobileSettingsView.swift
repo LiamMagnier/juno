@@ -1,12 +1,20 @@
 import JunoAuth
 import JunoChatKit
 import JunoCore
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// Real account settings and memory management projected from the encrypted
-/// local database, with durable optimistic mutations and conflict resolution.
+/// **Settings**, laid out the way the website's is: a serif title over the
+/// account, then a column of tiles — each one a card with a small monospaced
+/// eyebrow naming what it governs.
+///
+/// It was a plain `Form` before, which is the iOS Settings idiom: correct for a
+/// system pane, wrong for a product surface that has its own typography and its
+/// own grouping. The controls inside the tiles are still native pickers and
+/// toggles, because those are what a phone user knows how to operate — it is the
+/// *frame* that changed, not the mechanics.
 struct JunoMobileSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -22,7 +30,7 @@ struct JunoMobileSettingsView: View {
         Group {
             switch model.phase {
             case .idle, .loading:
-                ProgressView("Loading settings…")
+                JunoMobileQuietLoading()
             case .failed where model.settings == nil && model.memories.isEmpty:
                 ContentUnavailableView {
                     Label("Settings unavailable", systemImage: "exclamationmark.triangle")
@@ -30,12 +38,14 @@ struct JunoMobileSettingsView: View {
                     Text(model.lastErrorDescription ?? "Try again.")
                 } actions: {
                     Button("Retry") { Task { await model.refresh() } }
+                        .buttonStyle(.borderedProminent)
                 }
             default:
-                settingsForm
+                tiles
             }
         }
-        .navigationTitle("Settings")
+        .background(Color.junoCanvas)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showMemoryPage) {
             JunoMobileMemoryView(model: model)
@@ -81,87 +91,102 @@ struct JunoMobileSettingsView: View {
         .accessibilityIdentifier("juno.mobile.settings")
     }
 
-    private var settingsForm: some View {
-        Form {
-            if let session {
-                Section {
-                    LabeledContent {
-                        Text(session.profile.email)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    } label: {
-                        Label {
-                            Text(session.profile.name ?? session.profile.email)
-                        } icon: {
-                            Image(systemName: "person.crop.circle")
-                        }
-                    }
-                    if authModel != nil {
-                        Button(role: .destructive) {
-                            showingSignOut = true
-                        } label: {
-                            Label("auth.sign-out", systemImage: "rectangle.portrait.and.arrow.right")
-                        }
-                        .accessibilityIdentifier("juno.mobile.account-signout")
-                    }
-                } header: {
-                    Text("settings.account")
-                }
-            }
-            if let settings = model.settings {
-                JunoMobileSettingsSections(
-                    settings: settings,
-                    modelCatalog: conversationModel?.selectableModels ?? [],
-                    disabled: model.isMutating,
-                    update: { patch in Task { await model.updateSettings(patch) } }
-                )
-            } else {
-                Section("Preferences") {
-                    Label(
-                        "Account settings have not finished synchronizing.",
-                        systemImage: "clock.arrow.circlepath"
+    private var tiles: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                header
+
+                if let settings = model.settings {
+                    JunoMobileSettingsSections(
+                        settings: settings,
+                        modelCatalog: conversationModel?.selectableModels ?? [],
+                        disabled: model.isMutating,
+                        update: { patch in Task { await model.updateSettings(patch) } }
                     )
-                    .foregroundStyle(.secondary)
-                }
-            }
-            Section("Memory") {
-                Button {
-                    showMemoryPage = true
-                } label: {
-                    HStack {
-                        Label("Memory", systemImage: "brain")
-                        Spacer()
-                        Text("^[\(model.memories.count) memory](inflect: true)")
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+                } else {
+                    JunoSettingsTile(eyebrow: "Preferences") {
+                        Label(
+                            "Account settings have not finished synchronizing.",
+                            systemImage: "clock.arrow.circlepath"
+                        )
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("juno.mobile.settings-memory-link")
-            }
-            Section("settings.about") {
-                Button {
-                    showDiagnosticsPage = true
-                } label: {
-                    HStack {
-                        Label("diagnostics.title", systemImage: "stethoscope")
-                        Spacer()
-                        Text(JunoBuildInfo.current.displayVersion)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.tertiary)
+
+                JunoSettingsTile(eyebrow: "Memory") {
+                    JunoSettingsLink(
+                        title: "Memory",
+                        value: Text("^[\(model.memories.count) memory](inflect: true)"),
+                        symbol: "brain"
+                    ) { showMemoryPage = true }
+                    .accessibilityIdentifier("juno.mobile.settings-memory-link")
+                }
+
+                JunoSettingsTile(eyebrow: "Account") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if let session {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.profile.name ?? session.profile.email)
+                                    .font(.system(size: 16, weight: .medium))
+                                Text(session.profile.email)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        if authModel != nil {
+                            Button(role: .destructive) {
+                                showingSignOut = true
+                            } label: {
+                                Label("auth.sign-out", systemImage: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 15, weight: .medium))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("juno.mobile.account-signout")
+                        }
                     }
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
+
+                JunoSettingsTile(eyebrow: "About") {
+                    JunoSettingsLink(
+                        title: "diagnostics.title",
+                        value: Text(JunoBuildInfo.current.displayVersion),
+                        symbol: "stethoscope"
+                    ) { showDiagnosticsPage = true }
+                    .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
+                }
             }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
         }
         .refreshable { await model.refresh() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            if let session {
+                JunoAvatar(
+                    imageURL: session.profile.imageURL,
+                    name: session.profile.name ?? session.profile.email,
+                    size: 44
+                )
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Settings")
+                    .junoPageHeading(compact: true)
+                    .accessibilityAddTraits(.isHeader)
+                if let session {
+                    Text(session.profile.email)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 2)
     }
 
     private var conflictBanner: some View {
@@ -206,6 +231,56 @@ struct JunoMobileSettingsView: View {
     }
 }
 
+/// One settings tile: a card with a monospaced eyebrow naming what it governs.
+/// The eyebrow is the web page's own device — it lets a section be identified
+/// without spending a heading-sized line on it.
+struct JunoSettingsTile<Content: View>: View {
+    let eyebrow: LocalizedStringKey
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        JunoCard(padding: 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(eyebrow)
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                content
+            }
+        }
+    }
+}
+
+/// A row inside a tile that pushes a subpage. Deliberately not a `NavigationLink`
+/// in a `List`: these tiles are not list rows, and the chevron has to sit at the
+/// card's own trailing edge.
+private struct JunoSettingsLink: View {
+    let title: LocalizedStringKey
+    let value: Text?
+    let symbol: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol)
+                    .font(.system(size: 16))
+                    .foregroundStyle(Color.junoAccent)
+                    .frame(width: 22)
+                Text(title).font(.system(size: 16))
+                Spacer(minLength: 6)
+                if let value {
+                    value.font(.callout).foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 private struct JunoMobileSettingsSections: View {
     let settings: NativeAccountSettings
     let modelCatalog: [NativeChatModelOption]
@@ -228,34 +303,42 @@ private struct JunoMobileSettingsSections: View {
     ]
 
     var body: some View {
-        Section("Appearance") {
+        JunoSettingsTile(eyebrow: "Appearance") {
             Picker("Theme", selection: binding(\.theme) { NativeSettingsPatch(theme: $0) }) {
                 Text("System").tag(NativeThemePreference.system)
                 Text("Light").tag(NativeThemePreference.light)
                 Text("Dark").tag(NativeThemePreference.dark)
             }
+            .pickerStyle(.segmented)
             .disabled(disabled)
-            Picker("Accent", selection: binding(\.accent) { NativeSettingsPatch(accent: $0) }) {
-                ForEach(knownOrCurrent(Self.accents, current: settings.accent), id: \.self) {
-                    Text($0.capitalized).tag($0)
+            row("Accent") {
+                Picker("Accent", selection: binding(\.accent) { NativeSettingsPatch(accent: $0) }) {
+                    ForEach(knownOrCurrent(Self.accents, current: settings.accent), id: \.self) {
+                        Text($0.capitalized).tag($0)
+                    }
                 }
+                .labelsHidden()
+                .disabled(disabled)
             }
-            .disabled(disabled)
         }
 
-        Section("Model") {
-            Picker(
-                "Default model",
-                selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) }
-            ) {
-                if !modelCatalog.contains(where: { $0.id == settings.defaultModel }) {
-                    Text(junoDisplayModelName(settings.defaultModel)).tag(settings.defaultModel)
+        JunoSettingsTile(eyebrow: "Default model") {
+            row("Model") {
+                Picker(
+                    "Default model",
+                    selection: binding(\.defaultModel) { NativeSettingsPatch(defaultModel: $0) }
+                ) {
+                    if !modelCatalog.contains(where: { $0.id == settings.defaultModel }) {
+                        Text(junoDisplayModelName(settings.defaultModel))
+                            .tag(settings.defaultModel)
+                    }
+                    ForEach(modelCatalog) { option in
+                        Text(option.displayName).tag(option.id)
+                    }
                 }
-                ForEach(modelCatalog) { option in
-                    Text(option.displayName).tag(option.id)
-                }
+                .labelsHidden()
+                .disabled(disabled)
             }
-            .disabled(disabled)
             if !modelCatalog.isEmpty {
                 NavigationLink {
                     JunoMobileFavoriteModelsView(
@@ -266,101 +349,133 @@ private struct JunoMobileSettingsSections: View {
                     )
                 } label: {
                     HStack {
-                        Text("Favorite models")
-                        Spacer()
+                        Text("Favorite models").font(.system(size: 16))
+                        Spacer(minLength: 6)
                         Text("\(settings.favoriteModels.count)")
+                            .font(.callout)
                             .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
                     }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
 
-        Section("Personalization") {
-            Picker(
-                "Personality",
-                selection: binding(\.personality) { NativeSettingsPatch(personality: $0) }
-            ) {
-                ForEach(
-                    knownOrCurrent(Self.personalities, current: settings.personality),
-                    id: \.self
+        JunoSettingsTile(eyebrow: "Response style") {
+            row("Personality") {
+                Picker(
+                    "Personality",
+                    selection: binding(\.personality) { NativeSettingsPatch(personality: $0) }
                 ) {
-                    Text($0.capitalized).tag($0)
+                    ForEach(
+                        knownOrCurrent(Self.personalities, current: settings.personality),
+                        id: \.self
+                    ) {
+                        Text($0.capitalized).tag($0)
+                    }
                 }
+                .labelsHidden()
+                .disabled(disabled)
             }
-            .disabled(disabled)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Custom instructions")
-                if editingInstructions {
-                    TextEditor(text: $instructionsDraft)
-                        .frame(minHeight: 90)
-                        .accessibilityLabel("Custom instructions")
-                    HStack {
-                        Button("Cancel") { editingInstructions = false }
-                        Spacer()
-                        Button("Save") {
-                            editingInstructions = false
-                            update(NativeSettingsPatch(customInstructions: instructionsDraft))
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(disabled)
+        }
+
+        JunoSettingsTile(eyebrow: "Custom instructions") {
+            if editingInstructions {
+                TextEditor(text: $instructionsDraft)
+                    .font(.callout)
+                    .frame(minHeight: 110)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.junoCanvas)
+                    )
+                    .accessibilityLabel("Custom instructions")
+                HStack {
+                    Button("Cancel") { editingInstructions = false }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Save") {
+                        editingInstructions = false
+                        update(NativeSettingsPatch(customInstructions: instructionsDraft))
                     }
-                } else {
-                    Text(settings.customInstructions.isEmpty
-                        ? "No custom instructions" : settings.customInstructions)
-                        .foregroundStyle(settings.customInstructions.isEmpty
-                            ? .secondary : .primary)
-                        .lineLimit(4)
-                    Button("Edit instructions") {
-                        instructionsDraft = settings.customInstructions
-                        editingInstructions = true
-                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
                     .disabled(disabled)
-                    .accessibilityIdentifier("juno.mobile.settings-edit-instructions")
                 }
+                .font(.system(size: 15, weight: .medium))
+            } else {
+                Text(settings.customInstructions.isEmpty
+                    ? "Nothing set — tell Juno how you'd like it to answer."
+                    : settings.customInstructions)
+                    .font(.callout)
+                    .foregroundStyle(settings.customInstructions.isEmpty ? .secondary : .primary)
+                    .lineLimit(5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Edit instructions") {
+                    instructionsDraft = settings.customInstructions
+                    editingInstructions = true
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.junoAccent)
+                .disabled(disabled)
+                .accessibilityIdentifier("juno.mobile.settings-edit-instructions")
             }
         }
 
-        Section("Language") {
-            Picker(
-                "Response language",
-                selection: binding(\.responseLanguage) {
-                    NativeSettingsPatch(responseLanguage: $0)
-                }
-            ) {
-                ForEach(
-                    knownOrCurrent(Self.responseLanguages, current: settings.responseLanguage),
-                    id: \.self
+        JunoSettingsTile(eyebrow: "Language") {
+            row("Responses") {
+                Picker(
+                    "Response language",
+                    selection: binding(\.responseLanguage) {
+                        NativeSettingsPatch(responseLanguage: $0)
+                    }
                 ) {
-                    Text($0 == "auto" ? "Auto-detect" : $0).tag($0)
+                    ForEach(
+                        knownOrCurrent(Self.responseLanguages, current: settings.responseLanguage),
+                        id: \.self
+                    ) {
+                        Text($0 == "auto" ? "Auto-detect" : $0).tag($0)
+                    }
                 }
+                .labelsHidden()
+                .disabled(disabled)
             }
-            .disabled(disabled)
-            Picker(
-                "Interface language",
-                selection: binding(\.interfaceLocale) {
-                    NativeSettingsPatch(interfaceLocale: $0)
+            row("Interface") {
+                Picker(
+                    "Interface language",
+                    selection: binding(\.interfaceLocale) {
+                        NativeSettingsPatch(interfaceLocale: $0)
+                    }
+                ) {
+                    ForEach(
+                        knownOrCurrent(Self.interfaceLocales, current: settings.interfaceLocale),
+                        id: \.self
+                    ) { locale in
+                        Text(locale == "auto"
+                            ? "Match system"
+                            : (Locale.current.localizedString(forIdentifier: locale) ?? locale))
+                            .tag(locale)
+                    }
                 }
-            ) {
-                ForEach(
-                    knownOrCurrent(Self.interfaceLocales, current: settings.interfaceLocale),
-                    id: \.self
-                ) { locale in
-                    Text(locale == "auto"
-                        ? "Match system"
-                        : (Locale.current.localizedString(forIdentifier: locale) ?? locale))
-                        .tag(locale)
-                }
+                .labelsHidden()
+                .disabled(disabled)
             }
-            .disabled(disabled)
         }
 
-        Section("Email") {
+        JunoSettingsTile(eyebrow: "Email notifications") {
             Toggle(
                 "Budget alerts",
                 isOn: binding(\.emailBudgetAlerts) {
                     NativeSettingsPatch(emailBudgetAlerts: $0)
                 }
             )
+            .tint(Color.junoAccent)
             .disabled(disabled)
             Toggle(
                 "Weekly digest",
@@ -368,7 +483,21 @@ private struct JunoMobileSettingsSections: View {
                     NativeSettingsPatch(emailWeeklyDigest: $0)
                 }
             )
+            .tint(Color.junoAccent)
             .disabled(disabled)
+        }
+    }
+
+    /// A label and its control on one line. Pickers inside a card have no `Form`
+    /// to supply that layout, and a bare `Picker` with a visible label collapses
+    /// to a menu button with the label lost inside it.
+    private func row<Control: View>(
+        _ label: LocalizedStringKey, @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(spacing: 8) {
+            Text(label).font(.system(size: 16))
+            Spacer(minLength: 6)
+            control()
         }
     }
 

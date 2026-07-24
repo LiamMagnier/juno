@@ -184,25 +184,17 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertFalse(thinkingSlider(app).waitForExistence(timeout: 2))
     }
 
-    /// Reproduces the owner's "+ does nothing" report from a real iPhone.
+    /// The "+ does nothing" report from a real iPhone, now a regression guard.
     ///
-    /// **Currently expected to fail.** The cause is positional, not structural:
-    /// the "+" centre lands at x≈36, inside the strip where iOS arms its leading
-    /// edge-pan recogniser, so the touch is taken and the Button's action never
-    /// runs — the glyph does not even rotate. Move the control 40pt clear and it
-    /// opens on the first tap; the model chip beside it never had the problem
-    /// (see `testTheModelChipInTheSameRowOpensItsPopoverOnTap`).
-    ///
-    /// The fix is not a one-liner: 20pt does not clear the strip, and 40pt
-    /// squeezes the model and Thinking chips until the layout stops resolving.
-    /// The control row has to be rebuilt first. Marked expected-failure rather
-    /// than deleted so the suite stays green *and* reports the day it passes.
+    /// The cause was never the button. The shell armed a `DragGesture` for the
+    /// sidebar reveal, which won every touch near the leading edge — and the "+"
+    /// centre lands at x≈36, inside it. Recognising that gesture
+    /// *simultaneously* lets the button act and leaves the drawer swipe intact.
+    /// The panel is also a sheet now rather than a popover, which is both the
+    /// better phone affordance and immune to the sizing rule that stops a
+    /// popover with no intrinsic height from presenting at all.
     @MainActor
     func testTheComposerPlusButtonOpensTheActionsPanelOnTap() {
-        XCTExpectFailure(
-            "The + sits inside the system's leading edge-gesture strip; needs the control row rebuilt."
-        )
-
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
@@ -210,28 +202,33 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertTrue(plus.isHittable, "The + is on screen but not hittable.")
 
         plus.tap()
-        // Assert on the panel's visible heading rather than its identifier: the
-        // identifier sits on a container that a popover may not surface as its
-        // own element, and a missing identifier would look exactly like a
-        // missing panel.
-        require(app.staticTexts["Add to project"], app, timeout: 5)
+        // Assert on the panel's visible headings rather than its identifier: the
+        // identifier sits on a container the sheet may not surface as its own
+        // element, and a missing identifier would look exactly like a missing
+        // panel.
+        require(app.staticTexts["Attach"], app, timeout: 5)
+        // Matched as static text, not as a button: each row is a Button wrapping
+        // a title and a subtitle, so its accessibility label is the pair joined
+        // ("Camera, Take a photo now") and an exact button lookup finds nothing.
+        XCTAssertTrue(app.staticTexts["Camera"].exists, "The camera action is missing from the panel.")
+        XCTAssertTrue(app.staticTexts["Photos"].exists, "The photo action is missing from the panel.")
     }
 
     /// The regression guard for the actual defect: the button reported a 13.3pt
     /// frame — the bare glyph — because nothing declared its hit shape. A
     /// synthetic tap lands dead centre and so still hit it; a thumb did not.
     ///
-    /// 32pt is asserted rather than Apple's 44pt minimum because widening these
-    /// controls breaks the row's layout outright (see `composerPlusButton`).
-    /// Raising this to 44 is the check to keep when that row is rebuilt.
+    /// The row has since been rebuilt around a 40×44 hit rectangle behind a 34pt
+    /// glyph, so this now asserts Apple's own 44pt minimum on the axis that had
+    /// the room for it.
     @MainActor
     func testTheComposerPlusButtonHasARealTouchTargetNotJustAGlyph() {
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
         require(plus, app)
-        XCTAssertGreaterThanOrEqual(plus.frame.width, 32, "+ hit area collapsed to the glyph")
-        XCTAssertGreaterThanOrEqual(plus.frame.height, 32, "+ hit area collapsed to the glyph")
+        XCTAssertGreaterThanOrEqual(plus.frame.width, 40, "+ hit area collapsed to the glyph")
+        XCTAssertGreaterThanOrEqual(plus.frame.height, 44, "+ hit area collapsed to the glyph")
     }
 
     /// Diagnostic companion to the "+" test: the model chip sits in the same

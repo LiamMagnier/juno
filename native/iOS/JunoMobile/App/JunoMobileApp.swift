@@ -1,6 +1,7 @@
 import JunoAPI
 import JunoAuth
 import JunoChatKit
+import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
@@ -20,6 +21,9 @@ struct JunoMobileApp: App {
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     @State private var searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    @State private var connectorModel: NativeConnectorModel?
+    @State private var scheduledTaskModel: NativeScheduledTaskModel?
+    @State private var codeModel: NativeCodeModel?
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
@@ -33,6 +37,9 @@ struct JunoMobileApp: App {
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
         _searchModel = State(initialValue: configuration.searchModel)
+        _connectorModel = State(initialValue: configuration.connectorModel)
+        _scheduledTaskModel = State(initialValue: configuration.scheduledTaskModel)
+        _codeModel = State(initialValue: configuration.codeModel)
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -76,7 +83,10 @@ struct JunoMobileApp: App {
             projectModel: projectModel,
             artifactModel: artifactModel,
             memorySettingsModel: memorySettingsModel,
-            searchModel: searchModel
+            searchModel: searchModel,
+            connectorModel: connectorModel,
+            scheduledTaskModel: scheduledTaskModel,
+            codeModel: codeModel
         )
     }
 
@@ -155,7 +165,8 @@ struct JunoMobileApp: App {
                     outbox: outbox,
                     drainer: drainer,
                     syncModel: syncModel,
-                    chatClient: NativeChatAPIClient(transport: runtime)
+                    chatClient: NativeChatAPIClient(transport: runtime),
+                    titleClient: NativeConversationTitleClient(sender: runtime)
                 ),
                 projectModel: NativeProjectModel(
                     repository: localStore,
@@ -176,7 +187,16 @@ struct JunoMobileApp: App {
                     syncModel: syncModel,
                     sender: runtime
                 ),
-                searchModel: NativeSearchModel(repository: localStore)
+                searchModel: NativeSearchModel(repository: localStore),
+                connectorModel: NativeConnectorModel(
+                    client: NativeConnectorClient(sender: runtime)
+                ),
+                scheduledTaskModel: NativeScheduledTaskModel(
+                    client: NativeScheduledTaskClient(sender: runtime)
+                ),
+                codeModel: NativeCodeModel(
+                    client: NativeCodeTaskClient(sender: runtime, streamer: runtime)
+                )
             )
         } catch {
             return JunoMobileConfiguration(
@@ -191,7 +211,10 @@ struct JunoMobileApp: App {
                 projectModel: nil,
                 artifactModel: nil,
                 memorySettingsModel: nil,
-                searchModel: nil
+                searchModel: nil,
+                connectorModel: nil,
+                scheduledTaskModel: nil,
+                codeModel: nil
             )
         }
     }
@@ -217,4 +240,7 @@ private struct JunoMobileConfiguration {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let connectorModel: NativeConnectorModel?
+    let scheduledTaskModel: NativeScheduledTaskModel?
+    let codeModel: NativeCodeModel?
 }
