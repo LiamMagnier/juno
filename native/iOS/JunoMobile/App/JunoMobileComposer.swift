@@ -40,10 +40,6 @@ struct JunoMobileComposer: View {
     /// Set while a draft's conversation is being created, so a second tap on
     /// Send cannot create a second conversation.
     @State private var isStarting = false
-    /// Measured, so the floating attachment panel sits just above the composer
-    /// whatever height it has grown to — a fixed offset would overlap it the
-    /// moment the draft wrapped to a second line or a chip row appeared.
-    @State private var measuredHeight: CGFloat = 96
 
     private var selectedModel: NativeChatModelOption? {
         model.modelCatalog.first { $0.id == selectedModelID }
@@ -115,7 +111,6 @@ struct JunoMobileComposer: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredHeight = $0 }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -162,7 +157,6 @@ struct JunoMobileComposer: View {
     private var controlRow: some View {
         HStack(spacing: 6) {
             JunoMobileComposerActions(
-                composerHeight: measuredHeight,
                 projects: projects,
                 selectedProjectID: conversation?.projectId,
                 canPickProject: conversation != nil,
@@ -384,8 +378,6 @@ struct JunoMobileComposer: View {
 /// identity of its own is the fix, and it is how `JunoMobileThinkingControl` —
 /// the sibling popover that always worked — is already built.
 struct JunoMobileComposerActions: View {
-    /// How far above the bottom edge the panel must sit to clear the composer.
-    let composerHeight: CGFloat
     let projects: [NativeProject]
     let selectedProjectID: String?
     /// False in a draft: there is no conversation to file into a project yet.
@@ -454,11 +446,14 @@ struct JunoMobileComposerActions: View {
         .fullScreenCover(item: $active) { picker in
             switch picker {
             case .photos:
-                JunoMobilePhotoPicker(
+                // The tray, not the system picker: recents first, All Photos
+                // behind it. A half-height sheet so the chat stays visible,
+                // which is what makes it read as part of composing.
+                JunoMobilePhotoTray(
                     selectionLimit: NativeComposerAttachmentModel.maximumAttachments,
                     onPick: addPhotos
                 )
-                .ignoresSafeArea()
+                .presentationBackground(.clear)
             case .camera:
                 JunoMobileCameraCapture(onCapture: addCapture)
             case .files:
@@ -505,37 +500,115 @@ struct JunoMobileComposerActions: View {
                 row(title: "attachments.camera", icon: "camera", opens: .camera)
                 row(title: "attachments.photos", icon: "photo", opens: .photos)
                 row(title: "attachments.files", icon: "paperclip", opens: .files)
-
                 if canPickProject {
-                    Divider()
-                        .overlay(Color.junoHairline)
-                        .padding(.horizontal, 14)
-                    // The project rows carry a checkmark for the current one,
-                    // the same way the reference panel marks its active choice.
-                    projectRow(id: nil, name: String(localized: "attachments.no-project"),
-                               icon: "tray", selected: selectedProjectID == nil)
-                    ForEach(projects.prefix(4)) { project in
-                        projectRow(
-                            id: project.id, name: project.name, icon: "folder",
-                            selected: selectedProjectID == project.id
-                        )
-                    }
+                    Divider().overlay(Color.junoHairline).padding(.horizontal, 14)
+                    projectMenu
                 }
             }
             .padding(.vertical, 8)
-            .frame(width: 248, alignment: .leading)
+            .frame(width: 272, alignment: .leading)
             .background(JunoGlassBackground(cornerRadius: 26))
             .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .shadow(color: .black.opacity(0.16), radius: 22, y: 8)
-            .padding(.leading, 16)
-            .padding(.bottom, composerHeight + 6)
+            .shadow(color: .black.opacity(0.18), radius: 24, y: 6)
+            // Sits *on* the composer, not above it: same leading inset, same
+            // bottom inset, same corner radius. Floating it clear of the
+            // composer read as a detached second surface; landing it on the
+            // control it belongs to is what makes it feel like the "+" opened.
+            .padding(.leading, 12)
+            .padding(.bottom, 8)
             .opacity(canAttach ? 1 : 0.6)
             .transition(
-                .scale(scale: 0.92, anchor: .bottomLeading).combined(with: .opacity)
+                .scale(scale: 0.86, anchor: .bottomLeading)
+                    .combined(with: .opacity)
+                    .combined(with: .offset(y: 12))
             )
             .accessibilityIdentifier("juno.mobile.composer-actions")
         }
-        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: presented)
+        // A spring with a little overshoot, anchored at the "+": the panel grows
+        // out of the button rather than fading in over it. `JunoMotion.standard`
+        // is a flat snap, which for a surface this size read as a jump.
+        .animation(
+            JunoMotion.reduced(
+                .spring(response: 0.34, dampingFraction: 0.76), when: reduceMotion
+            ),
+            value: presented
+        )
+    }
+
+    /// The project picker, as a native menu rather than a run of rows.
+    ///
+    /// Listing every project inline made the panel's length a function of how
+    /// many projects the account has — three attachment actions and then a wall.
+    /// A `Menu` keeps the panel one fixed size and, from OS 26, presents in the
+    /// system's own Liquid Glass.
+    private var projectMenu: some View {
+        Menu {
+            // Buttons rather than a `Picker`: a picker in a menu infers its tag
+            // type from the content, and an optional id makes that inference
+            // ambiguous. The checkmark is drawn explicitly instead.
+            menuItem(id: nil, name: String(localized: "attachments.no-project"))
+            ForEach(projects) { project in
+                menuItem(id: project.id, name: project.name)
+            }
+        } label: {
+            HStack(spacing: 14) {
+                chip(icon: "folder", tinted: selectedProjectID != nil)
+                Text("attachments.project")
+                    .font(.system(size: 17))
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 6)
+                Text(selectedProjectName)
+                    .font(.system(size: 15))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    // The value is what the reader is here to see; the fixed
+                    // label beside it should yield the width, not win it.
+                    .layoutPriority(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 54)
+            .contentShape(Rectangle())
+        }
+        // A `Menu` tints its whole label with the accent, which turned this row
+        // coral while its three siblings stayed ink. The foreground styles
+        // inside the label cannot override that on their own — the tint has to
+        // be set on the menu itself.
+        .tint(Color.primary)
+        .accessibilityIdentifier("juno.mobile.composer-project")
+    }
+
+    private func menuItem(id: String?, name: String) -> some View {
+        Button {
+            presented = false
+            Task { await setProject(id) }
+        } label: {
+            if selectedProjectID == id {
+                Label(name, systemImage: "checkmark")
+            } else {
+                Text(name)
+            }
+        }
+    }
+
+    private var selectedProjectName: String {
+        guard let selectedProjectID,
+            let project = projects.first(where: { $0.id == selectedProjectID })
+        else { return String(localized: "attachments.no-project") }
+        return project.name
+    }
+
+    private func chip(icon: String, tinted: Bool = false) -> some View {
+        ZStack {
+            Circle().fill(Color.primary.opacity(0.06))
+            Image(systemName: icon)
+                .font(.system(size: 17))
+                .foregroundStyle(tinted ? Color.junoAccent : .primary)
+        }
+        .frame(width: 38, height: 38)
     }
 
     private func row(
@@ -547,13 +620,7 @@ struct JunoMobileComposerActions: View {
             presented = false
         } label: {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(Color.primary.opacity(0.06))
-                    Image(systemName: icon)
-                        .font(.system(size: 17))
-                        .foregroundStyle(.primary)
-                }
-                .frame(width: 38, height: 38)
+                chip(icon: icon)
                 Text(title)
                     .font(.system(size: 17))
                     .foregroundStyle(.primary)
@@ -567,39 +634,6 @@ struct JunoMobileComposerActions: View {
         .disabled(!canAttach)
     }
 
-    private func projectRow(
-        id: String?, name: String, icon: String, selected: Bool
-    ) -> some View {
-        Button {
-            presented = false
-            Task { await setProject(id) }
-        } label: {
-            HStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(Color.primary.opacity(0.06))
-                    Image(systemName: icon)
-                        .font(.system(size: 16))
-                        .foregroundStyle(selected ? Color.junoAccent : .primary)
-                }
-                .frame(width: 38, height: 38)
-                Text(name)
-                    .font(.system(size: 17))
-                    .foregroundStyle(selected ? Color.junoAccent : .primary)
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                if selected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(Color.junoAccent)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 54)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(selected ? "\(name), selected" : name)
-    }
 }
 
 /// The composer's selection rules, kept as pure functions so the fallback

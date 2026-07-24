@@ -74,20 +74,7 @@ struct JunoMobileCameraCapture: View {
 
     private var topBar: some View {
         HStack(spacing: 12) {
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(.black.opacity(0.35), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("attachments.camera.close")
-
             Spacer(minLength: 0)
-
             if review == nil, camera.hasFlash {
                 Button {
                     camera.cycleFlash()
@@ -131,17 +118,26 @@ struct JunoMobileCameraCapture: View {
             .padding(.bottom, 34)
         } else {
             HStack {
-                // A deliberate empty column the width of the flip button, so the
-                // shutter sits on the true screen centre rather than being
-                // pushed off it by the one control beside it.
-                Color.clear.frame(width: 48, height: 48)
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 48, height: 48)
+                        .background(.black.opacity(0.35), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("attachments.camera.close")
+
                 Spacer(minLength: 0)
                 shutter
                 Spacer(minLength: 0)
+
                 Button {
                     camera.flipCamera()
                 } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath.camera")
+                    Image(systemName: "arrow.triangle.2.circlepath")
                         .font(.system(size: 19, weight: .semibold))
                         .foregroundStyle(.white)
                         .frame(width: 48, height: 48)

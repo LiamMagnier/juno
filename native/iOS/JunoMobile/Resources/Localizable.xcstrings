@@ -553,6 +553,54 @@
         }
       }
     },
+    "attachments.photos.all": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Photos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les photos"
+          }
+        }
+      }
+    },
+    "attachments.photos.close": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close photos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fermer les photos"
+          }
+        }
+      }
+    },
+    "attachments.photos.denied": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno can't see your recent photos. You can still pick from All Photos, or turn on photo access in Settings."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Juno n’a pas accès à vos photos récentes. Vous pouvez utiliser Toutes les photos, ou autoriser l’accès dans Réglages."
+          }
+        }
+      }
+    },
     "attachments.photos.detail": {
       "extractionState": "stale",
       "localizations": {
@@ -566,6 +614,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choisir dans votre photothèque"
+          }
+        }
+      }
+    },
+    "attachments.photos.empty": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No photos on this device yet."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aucune photo sur cet appareil."
+          }
+        }
+      }
+    },
+    "attachments.photos.item": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo"
+          }
+        }
+      }
+    },
+    "attachments.photos.restricted": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photo access is restricted on this device. All Photos still works."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’accès aux photos est restreint sur cet appareil. Toutes les photos fonctionne malgré tout."
           }
         }
       }

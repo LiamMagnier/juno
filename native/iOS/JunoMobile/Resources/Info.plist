@@ -35,6 +35,8 @@
     </array>
     <key>NSCameraUsageDescription</key>
     <string>Juno uses the camera so you can take a photo and attach it to a message.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Juno shows your most recent photos so you can attach one without leaving the chat.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
     <string>Juno saves images you generate to your photo library when you ask it to.</string>
     <key>ITSAppUsesNonExemptEncryption</key>
