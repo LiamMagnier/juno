@@ -590,10 +590,6 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "length"
   },
   {
-    "id": "0f86fcbc55ca6901",
-    "source": "Incognito chats aren't saved, added to memory, or used to train models."
-  },
-  {
     "id": "0f8bf74360a15708",
     "source": "Low and steady"
   },
@@ -4558,6 +4554,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "remove"
   },
   {
+    "id": "7e726b0eec916fd8",
+    "source": "conversationId_required"
+  },
+  {
     "id": "7e8b64d281f4401e",
     "source": "Pre-filter matched explicit child sexual abuse language."
   },
@@ -4800,6 +4800,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "83b12c2216efb4fd",
     "source": "Clear"
+  },
+  {
+    "id": "83b794145c0cc3f5",
+    "source": "Read more"
   },
   {
     "id": "83da2d849a240967",
@@ -5516,10 +5520,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "99236aece9264652",
     "source": "Send instruction"
-  },
-  {
-    "id": "992b1e92888d36f7",
-    "source": "Read the news"
   },
   {
     "id": "993f0ebd3b3e492e",
@@ -8140,6 +8140,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "e222cff43655bc89",
     "source": "Files and images you share with Juno will appear here automatically."
+  },
+  {
+    "id": "e223bda2d051cb22",
+    "source": "Chats aren't saved, added to memory, or used to train models."
   },
   {
     "id": "e27ba483910567cf",

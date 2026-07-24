@@ -39,7 +39,7 @@ const SelectContent = React.forwardRef<
       className={cn(
         // pop-in/out fill `both`, which would permanently cancel translate-y utilities —
         // the trigger gap comes from sideOffset instead. 12px radius matches dropdown menus.
-        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height,24rem))] min-w-[8rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       position={position}

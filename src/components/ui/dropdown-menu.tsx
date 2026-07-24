@@ -23,7 +23,7 @@ const DropdownMenuContent = React.forwardRef<
       collisionPadding={collisionPadding}
       className={cn(
         // 12px = concentric with rounded-md (8px) items inset by p-1 (4px).
-        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}
@@ -60,7 +60,7 @@ const DropdownMenuSubContent = React.forwardRef<
       ref={ref}
       collisionPadding={collisionPadding}
       className={cn(
-        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
+        "z-50 min-w-[10rem] max-w-[calc(100vw-1rem)] origin-popper overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl data-[state=open]:animate-pop-in data-[state=closed]:animate-pop-out",
         className
       )}
       {...props}

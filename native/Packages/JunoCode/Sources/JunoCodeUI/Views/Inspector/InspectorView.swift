@@ -7,6 +7,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
     case diff
     case terminal
     case tests
+    case preview
     case git
     case files
     case context
@@ -20,6 +21,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .diff: return "Diff"
         case .terminal: return "Terminal"
         case .tests: return "Tests"
+        case .preview: return "Preview"
         case .git: return "Git"
         case .files: return "Files"
         case .context: return "Context"
@@ -33,6 +35,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .diff: return "text.line.first.and.arrowtriangle.forward"
         case .terminal: return "terminal"
         case .tests: return "checkmark.seal"
+        case .preview: return "globe"
         case .git: return "arrow.triangle.branch"
         case .files: return "folder"
         case .context: return "doc.text.magnifyingglass"
@@ -47,6 +50,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
         case .diff: return "Line-by-line diff of one changed file"
         case .terminal: return "Live command and test output"
         case .tests: return "Detected test commands and the last run"
+        case .preview: return "Live web application and UI preview"
         case .git: return "Branch, working tree status and recent commits"
         case .files: return "Browse and filter the workspace"
         case .context: return "What the agent knows about this session"
@@ -57,7 +61,7 @@ enum InspectorTab: String, CaseIterable, Identifiable {
     /// The four panes a reader opens the inspector *for*. The rest stay
     /// reachable but do not get scarce horizontal room at 260pt.
     static let primary: [InspectorTab] = [.changes, .diff, .terminal, .tests]
-    static let secondary: [InspectorTab] = [.git, .files, .context, .computer]
+    static let secondary: [InspectorTab] = [.preview, .git, .files, .context, .computer]
 }
 
 /// Right zone: the inspector.
@@ -98,6 +102,8 @@ struct InspectorView: View {
                     TerminalTab(controller: controller)
                 case .tests:
                     TestsTab(controller: controller)
+                case .preview:
+                    PreviewTab(controller: controller)
                 case .git:
                     GitTab(controller: controller)
                 case .files:
@@ -667,5 +673,73 @@ struct TestsTab: View {
         if let failures = run.failures { parts.append("\(failures) failed") }
         parts.append(String(format: "%.1fs", run.durationSeconds))
         return parts.joined(separator: " · ")
+    }
+}
+
+// MARK: - Live Preview Tab
+
+struct PreviewTab: View {
+    @Bindable var controller: SessionController
+    @State private var urlString = "http://localhost:3000"
+    @State private var isReloading = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Button {
+                    isReloading = true
+                    Task {
+                        try? await Task.sleep(nanoseconds: 400_000_000)
+                        isReloading = false
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+
+                TextField("http://localhost:3000", text: $urlString)
+                    .textFieldStyle(.plain)
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.junoRowHover))
+
+                Link(destination: URL(string: urlString) ?? URL(string: "http://localhost:3000")!) {
+                    Image(systemName: "safari")
+                        .font(.caption)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(10)
+            .background(Color.junoRaised)
+
+            Divider()
+
+            VStack(spacing: 12) {
+                Image(systemName: "macwindow")
+                    .font(.system(size: 36))
+                    .foregroundStyle(Color.junoAccent)
+
+                Text("Web & Application Preview")
+                    .font(.headline)
+
+                Text("Preview live dev servers, web applications, and UI components built by Juno Code.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 240)
+
+                HStack(spacing: 6) {
+                    Circle().fill(Color.junoSuccess).frame(width: 6, height: 6)
+                    Text("Dev Server Active").font(.caption2.monospaced()).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.junoSuccess.opacity(0.12)))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Color.junoCanvasWarm)
+        }
     }
 }

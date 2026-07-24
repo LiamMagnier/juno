@@ -7,7 +7,6 @@ import { getCurrentUser, type SessionUser } from "@/lib/session";
 import { readTaskToken, verifyTaskToken } from "@/lib/cloud-code-token";
 import { verifyGithubActionsOidc } from "@/lib/github-oidc";
 import type { ClientActivityEvent } from "@/types/chat";
-import { publicWorkspaces } from "@/lib/code-workspace-privacy";
 
 export const ONLINE_WINDOW_MS = 120_000;
 
@@ -182,14 +181,16 @@ export async function requireOidcRunnerAuth(
   return { user: { id: task.userId }, error: null };
 }
 
-export { publicWorkspaces };
-
 export function serializeDevice(device: CodeDevice, online?: boolean) {
   const base = {
     id: device.id,
     name: device.name,
     platform: device.platform,
-    workspaces: publicWorkspaces(device.workspaces),
+    appVersion: device.appVersion,
+    protocolVersion: device.protocolVersion,
+    workspaces: device.workspaces,
+    sessionCount: device.sessionCount,
+    activeCount: device.activeCount,
     lastSeenAt: device.lastSeenAt.toISOString(),
   };
   return online === undefined ? base : { ...base, online };
@@ -207,6 +208,9 @@ export function serializeTask(task: CodeTask) {
     status: task.status,
     lastSeq: task.lastSeq,
     conversationId: task.conversationId,
+    parentSessionId: task.parentSessionId,
+    createsNewSession: task.createsNewSession,
+    origin: task.origin,
     // Cloud Juno Code: "device" (default) runs on a registered host; "cloud"
     // runs on a GitHub Actions runner against repoOwner/repoName and opens a PR.
     target: task.target,

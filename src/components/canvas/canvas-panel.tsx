@@ -1130,7 +1130,7 @@ export function CanvasPanel({
             aria-label="Selection actions"
             style={barStyle}
             onPointerDown={(e) => e.preventDefault()}
-            className="fixed z-[70] flex items-center gap-0.5 rounded-[14px] border border-border/60 bg-popover/80 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
+            className="fixed z-[70] flex items-center gap-0.5 rounded-[14px] border border-border/60 bg-popover/90 p-1 glass-raised backdrop-blur-xl motion-safe:animate-pop-in"
           >
             <Button type="button" variant="ghost" size="sm" onClick={() => quoteSelection("ask")} className="h-7 gap-1.5 rounded-[10px] px-2.5 coarse:h-10 coarse:px-3.5">
               <MessageCircleQuestion className="h-3.5 w-3.5 text-primary" aria-hidden />

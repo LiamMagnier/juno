@@ -142,6 +142,7 @@ struct JunoMacSidebar: View {
     @ViewBuilder
     private var destinationsSection: some View {
         Section {
+            destinationRow(.connections)
             destinationRow(.projects)
             destinationRow(.library)
             destinationRow(.artifacts)

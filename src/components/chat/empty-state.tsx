@@ -88,3 +88,17 @@ export function EmptyGreeting() {
     </div>
   );
 }
+
+/** Private-mode empty header — same type scale as the normal greeting, no decoration. */
+export function PrivateGreeting() {
+  return (
+    <div className="flex w-full flex-col items-center gap-2 text-center">
+      <h1 className="font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]">
+        You&apos;re incognito
+      </h1>
+      <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
+        Chats aren&apos;t saved, added to memory, or used to train models.
+      </p>
+    </div>
+  );
+}

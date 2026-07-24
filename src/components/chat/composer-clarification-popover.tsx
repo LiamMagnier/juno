@@ -3,7 +3,6 @@
 import * as React from "react";
 import { Check, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { dialogSurfaceClassName } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -190,13 +189,10 @@ export function ComposerClarificationPopover({
     }
   };
 
-  // Inline sits *inside* the composer shell, so it stays a quiet 18px well.
-  // Floating is a real layer above it and wears the shared modal surface —
-  // it used to invent its own 22/24px radius and opaque card fill.
   const shellClass =
     variant === "inline"
-      ? "relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/55 bg-card/40 text-foreground"
-      : cn("relative mb-2 flex w-full flex-col overflow-hidden", dialogSurfaceClassName);
+      ? "relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/55 bg-card/40 text-foreground sm:rounded-[20px]"
+      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-panel border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl";
 
   return (
     <div
@@ -208,17 +204,11 @@ export function ComposerClarificationPopover({
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-slow motion-safe:ease-out-expo motion-reduce:animate-none"
       )}
     >
-      {/* Subtle top sheen — depth without chrome noise */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-[hsl(var(--sheen)/0.55)] to-transparent"
-      />
-
       {/* Header */}
       <header className="relative flex items-start gap-3 px-3.5 pb-0 pt-3.5 sm:gap-3.5 sm:px-5 sm:pt-4">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-            <span className="font-mono text-[10px] font-medium text-muted-foreground">
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
               {multi ? `Question ${index + 1} of ${questions.length}` : "One quick question"}
             </span>
             {pending.result.title ? (
@@ -357,7 +347,7 @@ export function ComposerClarificationPopover({
                 : "border-dashed border-border/70 bg-transparent focus-within:border-border focus-within:bg-muted/20"
             )}
           >
-            <span className="font-mono text-[10px] font-medium text-muted-foreground">
+            <span className="font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
               {active.elseLabel || "Or write your own"}
             </span>
             {customIsLong ? (
@@ -431,7 +421,7 @@ export function ComposerClarificationPopover({
       {variant === "card" ? (
         <span
           aria-hidden
-          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-card/85"
+          className="absolute -bottom-1.5 left-1/2 size-3 -translate-x-1/2 rotate-45 border-b border-r border-border/60 bg-card"
         />
       ) : null}
     </div>
