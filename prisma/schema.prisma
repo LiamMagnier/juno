@@ -482,6 +482,7 @@ model Attachment {
   extractedText  String?        @db.Text // text content extracted from documents
   width          Int?
   height         Int?
+  idempotencyKey String?
   createdAt      DateTime       @default(now())
 
   projectId String?
@@ -492,6 +493,7 @@ model Attachment {
   project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([userId, idempotencyKey])
   @@index([conversationId])
   @@index([messageId])
   @@index([projectId])
