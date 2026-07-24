@@ -585,7 +585,11 @@ export function SandboxFrame({
 }) {
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
   // runNonce participates in the memo so a re-run rebuilds the document.
-  const srcDoc = React.useMemo(() => buildSandboxDoc(type, content, language), [type, content, language, runNonce]);
+  const srcDoc = React.useMemo(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    runNonce;
+    return buildSandboxDoc(type, content, language);
+  }, [type, content, language, runNonce]);
 
   const postInspect = React.useCallback((on: boolean) => {
     iframeRef.current?.contentWindow?.postMessage({ type: "juno:inspect", on }, "*");

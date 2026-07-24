@@ -501,6 +501,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   React.useEffect(() => {
     if (!currentConversationId || privateMode) return;
     if (chat.messages.some((m) => m.role === "USER" && m.content.trim())) scheduleAutoTitle("first_user", 160);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
   React.useEffect(() => {
@@ -516,6 +517,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         scheduleAutoTitle(latestAssistant.finishReason === "user_stopped" ? "stopped" : "completed", 420);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.status, chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
   React.useEffect(() => {
