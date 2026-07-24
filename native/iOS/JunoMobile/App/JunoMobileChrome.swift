@@ -194,3 +194,79 @@ struct JunoStatusPill: View {
             .accessibilityLabel(text)
     }
 }
+
+// MARK: - Liquid Glass
+
+/// The real Liquid Glass container, with a pre-OS-26 fallback.
+///
+/// `GlassEffectContainer` is not decoration: it is what tells the system which
+/// glass elements belong to one another, so they refract a shared sample of the
+/// content behind them and blend as they approach instead of each sampling
+/// independently and seaming where they meet. Glass laid down outside a
+/// container is a lone pane; inside one it is a system.
+struct JunoGlass<Content: View>: View {
+    var spacing: CGFloat? = nil
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) { content }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// Applies real Liquid Glass in `shape`, falling back to a material.
+    ///
+    /// `interactive` is what makes the glass respond to touch — it flexes and
+    /// scatters light under a finger. It belongs on anything tappable and
+    /// nowhere else: a static panel that reacts to touch reads as a control.
+    @ViewBuilder
+    func junoGlass(
+        in shape: some Shape,
+        tint: Color? = nil,
+        interactive: Bool = false
+    ) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.glassEffect(
+                .regular.tint(tint).interactive(interactive), in: shape
+            )
+        } else {
+            // `stroke`, not `strokeBorder`: the latter is only on
+            // `InsettableShape`, and this takes any `Shape`.
+            self.background(.regularMaterial, in: shape)
+                .overlay(shape.stroke(Color.junoHairline, lineWidth: 1))
+        }
+    }
+
+    /// Marks this glass element so the system can animate it as glass —
+    /// materialising rather than cross-fading. Without an id the container has
+    /// nothing to track the element by across the transition.
+    @ViewBuilder
+    func junoGlassID(_ id: some Hashable & Sendable, in namespace: Namespace.ID) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self.glassEffectID(id, in: namespace)
+                .glassEffectTransition(.materialize)
+        } else {
+            self
+        }
+    }
+}
+
+/// The system's own glass button style, with a pre-OS-26 fallback.
+///
+/// `.buttonStyle(.glass)` is a real component: it brings the press flex, the
+/// light scatter and the platform's own shape and metrics, and it keeps up when
+/// those change. A hand-rolled capsule with a glass background looks similar
+/// today and drifts from the platform the moment the platform moves.
+struct JunoGlassButtonStyle: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content.buttonStyle(.glass)
+        } else {
+            content.buttonStyle(.bordered)
+        }
+    }
+}

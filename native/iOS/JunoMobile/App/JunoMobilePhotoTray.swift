@@ -23,6 +23,7 @@ struct JunoMobilePhotoTray: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var glass
     @State private var library = JunoPhotoLibrary()
     @State private var showingFullPicker = false
     @State private var loadingAssetID: String?
@@ -48,19 +49,21 @@ struct JunoMobilePhotoTray: View {
                 .accessibilityLabel("attachments.photos.close")
                 .accessibilityAddTraits(.isButton)
 
-            VStack(spacing: 0) {
-                grabber
-                content
-                allPhotosButton
-            }
-            .frame(height: trayHeight)
-            .frame(maxWidth: .infinity)
-            .background(JunoGlassBackground(cornerRadius: 28))
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous
+            JunoGlass(spacing: 16) {
+                VStack(spacing: 0) {
+                    grabber
+                    content
+                    allPhotosButton
+                }
+                .frame(height: trayHeight)
+                .frame(maxWidth: .infinity)
+                .junoGlass(
+                    in: UnevenRoundedRectangle(
+                        topLeadingRadius: 28, topTrailingRadius: 28, style: .continuous
+                    )
                 )
-            )
+                .junoGlassID("juno.photo-tray", in: glass)
+            }
             .transition(.move(edge: .bottom))
         }
         .ignoresSafeArea(edges: .bottom)
@@ -140,12 +143,13 @@ struct JunoMobilePhotoTray: View {
         } label: {
             Text("attachments.photos.all")
                 .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 26)
-                .frame(height: 50)
-                .modifier(JunoGlassCapsule())
+                .padding(.horizontal, 12)
+                .frame(height: 22)
         }
-        .buttonStyle(.plain)
+        // The system's own glass button, not a hand-rolled capsule: it gets the
+        // press flex, the light scatter and the shape for free, and it stays
+        // right when the platform changes them.
+        .modifier(JunoGlassButtonStyle())
         .padding(.top, 10)
         .padding(.bottom, 22)
         .accessibilityIdentifier("juno.mobile.photo-tray-all")

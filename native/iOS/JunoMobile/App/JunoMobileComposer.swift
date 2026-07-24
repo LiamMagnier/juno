@@ -401,6 +401,9 @@ struct JunoMobileComposerActions: View {
         var id: String { rawValue }
     }
 
+    /// Ties the panel's glass to the container so the system can materialise it
+    /// as glass rather than cross-fade a rectangle.
+    @Namespace private var glass
     @State private var presented = false
     /// Chosen in the panel, opened once the panel has *finished* closing. A
     /// presentation requested while another is still dismissing is dropped too,
@@ -496,19 +499,21 @@ struct JunoMobileComposerActions: View {
                 .accessibilityLabel("Close menu")
                 .accessibilityAddTraits(.isButton)
 
-            VStack(alignment: .leading, spacing: 0) {
-                row(title: "attachments.camera", icon: "camera", opens: .camera)
-                row(title: "attachments.photos", icon: "photo", opens: .photos)
-                row(title: "attachments.files", icon: "paperclip", opens: .files)
-                if canPickProject {
-                    Divider().overlay(Color.junoHairline).padding(.horizontal, 14)
-                    projectMenu
+            JunoGlass(spacing: 14) {
+                VStack(alignment: .leading, spacing: 0) {
+                    row(title: "attachments.camera", icon: "camera", opens: .camera)
+                    row(title: "attachments.photos", icon: "photo", opens: .photos)
+                    row(title: "attachments.files", icon: "paperclip", opens: .files)
+                    if canPickProject {
+                        Divider().overlay(Color.junoHairline).padding(.horizontal, 14)
+                        projectMenu
+                    }
                 }
+                .padding(.vertical, 8)
+                .frame(width: 272, alignment: .leading)
+                .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+                .junoGlassID("juno.attachment-panel", in: glass)
             }
-            .padding(.vertical, 8)
-            .frame(width: 272, alignment: .leading)
-            .background(JunoGlassBackground(cornerRadius: 26))
-            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: .black.opacity(0.18), radius: 24, y: 6)
             // Sits *on* the composer, not above it: same leading inset, same
             // bottom inset, same corner radius. Floating it clear of the
@@ -601,6 +606,13 @@ struct JunoMobileComposerActions: View {
         return project.name
     }
 
+    /// The row's leading glyph.
+    ///
+    /// Deliberately a flat fill, not more glass. Glass inside glass is the one
+    /// thing the material is not for: the panel is already a lens on the chat
+    /// behind it, and a second lens inside it has nothing left to refract — it
+    /// reads as a smudge. The reference does the same, tinting its chips rather
+    /// than layering them.
     private func chip(icon: String, tinted: Bool = false) -> some View {
         ZStack {
             Circle().fill(Color.primary.opacity(0.06))
