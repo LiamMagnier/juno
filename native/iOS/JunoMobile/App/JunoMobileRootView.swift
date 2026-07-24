@@ -71,10 +71,14 @@ struct JunoMobileRootView: View {
             #endif
         }
         .preferredColorScheme(preferredColorScheme)
-        .animation(
-            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
-            value: preferredColorScheme
-        )
+        // Deliberately NOT wrapped in `.animation(_:value:)`. Crossfading the
+        // whole app on a theme change reads well for about a second and costs
+        // far more than that: an `.animation` at the root applies to every state
+        // change in the entire hierarchy, including the ones that drive sheets
+        // and covers, and this codebase has already paid for that once — see the
+        // note on the composer's "+", whose action stopped running when it was
+        // wrapped the same way. The system's own appearance transition is
+        // perfectly good.
         .task {
             #if DEBUG
             if previewSession != nil {

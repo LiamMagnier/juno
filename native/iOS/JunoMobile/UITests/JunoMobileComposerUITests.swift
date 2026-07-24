@@ -202,16 +202,80 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertTrue(plus.isHittable, "The + is on screen but not hittable.")
 
         plus.tap()
-        // Assert on the panel's visible headings rather than its identifier: the
-        // identifier sits on a container the sheet may not surface as its own
-        // element, and a missing identifier would look exactly like a missing
-        // panel.
-        require(app.staticTexts["Attach"], app, timeout: 5)
+        // Assert on the panel's own rows rather than its identifier: the
+        // identifier sits on a container the presentation may not surface as its
+        // own element, and a missing identifier would look exactly like a
+        // missing panel.
+        require(app.staticTexts["Camera"], app, timeout: 5)
         // Matched as static text, not as a button: each row is a Button wrapping
         // a title and a subtitle, so its accessibility label is the pair joined
         // ("Camera, Take a photo now") and an exact button lookup finds nothing.
-        XCTAssertTrue(app.staticTexts["Camera"].exists, "The camera action is missing from the panel.")
         XCTAssertTrue(app.staticTexts["Photos"].exists, "The photo action is missing from the panel.")
+        XCTAssertTrue(app.staticTexts["Files"].exists, "The files action is missing from the panel.")
+    }
+
+    /// Taps all the way through to a picker, which the panel test above does not.
+    ///
+    /// **This is a smoke test, not a regression guard — and the difference
+    /// matters.** The reported failure ("the panel opens, Photos and Camera do
+    /// nothing") does not reproduce under XCUITest: it was verified that this
+    /// test passes against the structure that shipped broken, because the
+    /// simulator dismisses and presents fast enough that a racing presentation
+    /// still lands, and synthetic taps do not arbitrate with system gestures the
+    /// way a thumb does. So what this proves is only that the path is wired —
+    /// panel → choice → a presentation appears. Do not read a pass here as
+    /// evidence that the device-side defect is fixed.
+    ///
+    /// The assertion is that the app gets covered. The picker renders out of
+    /// process, so there is no element of ours to wait for — but a presentation
+    /// that happened makes the composer unreachable, and one that was dropped
+    /// leaves it sitting there.
+    @MainActor
+    func testTappingPhotosInThePanelActuallyOpensAPicker() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        require(app.staticTexts["Photos"], app, timeout: 5)
+        app.staticTexts["Photos"].tap()
+
+        let covered = expectation(
+            for: NSPredicate(format: "isHittable == false"), evaluatedWith: plus
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [covered], timeout: 10),
+            .completed,
+            "The panel closed but nothing was presented over the app. On screen:\n\(app.debugDescription)"
+        )
+    }
+
+    /// The camera's own path. Asserts on our surface rather than on coverage,
+    /// because the camera view is ours: with no capture hardware — the
+    /// simulator — it renders an explicit unavailable card instead of a preview.
+    /// Same caveat as the Photos test above: it cannot see the device-only
+    /// failure.
+    @MainActor
+    func testTappingCameraInThePanelActuallyOpensTheCamera() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        require(app.staticTexts["Camera"], app, timeout: 5)
+        app.staticTexts["Camera"].tap()
+
+        let unavailable = app.descendants(matching: .any)["juno.mobile.camera-unavailable"]
+        let preview = app.descendants(matching: .any)["juno.mobile.camera-preview"]
+        let opened = expectation(
+            for: NSPredicate(format: "exists == true OR count > 0"),
+            evaluatedWith: unavailable.firstMatch
+        )
+        let result = XCTWaiter().wait(for: [opened], timeout: 10)
+        XCTAssertTrue(
+            result == .completed || preview.firstMatch.exists,
+            "The panel closed but no camera surface appeared. On screen:\n\(app.debugDescription)"
+        )
     }
 
     /// The regression guard for the actual defect: the button reported a 13.3pt

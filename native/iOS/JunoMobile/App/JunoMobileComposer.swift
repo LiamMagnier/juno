@@ -40,6 +40,10 @@ struct JunoMobileComposer: View {
     /// Set while a draft's conversation is being created, so a second tap on
     /// Send cannot create a second conversation.
     @State private var isStarting = false
+    /// Measured, so the floating attachment panel sits just above the composer
+    /// whatever height it has grown to — a fixed offset would overlap it the
+    /// moment the draft wrapped to a second line or a chip row appeared.
+    @State private var measuredHeight: CGFloat = 96
 
     private var selectedModel: NativeChatModelOption? {
         model.modelCatalog.first { $0.id == selectedModelID }
@@ -111,6 +115,7 @@ struct JunoMobileComposer: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measuredHeight = $0 }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -157,6 +162,7 @@ struct JunoMobileComposer: View {
     private var controlRow: some View {
         HStack(spacing: 6) {
             JunoMobileComposerActions(
+                composerHeight: measuredHeight,
                 projects: projects,
                 selectedProjectID: conversation?.projectId,
                 canPickProject: conversation != nil,
@@ -302,11 +308,15 @@ struct JunoMobileComposer: View {
 
     // MARK: Attachments
 
-    private func addPhotos(_ items: [PhotosPickerItem]) {
+    private func addPhotos(_ files: [JunoPickedFile]) {
         guard let attachmentModel else { return }
-        Task {
-            await JunoPhotoLoader.load(
-                items, into: attachmentModel, conversationID: conversation?.id
+        for file in files where attachmentModel.hasCapacity {
+            attachmentModel.add(
+                data: file.data,
+                fileName: file.fileName,
+                mimeType: file.mimeType,
+                conversationID: conversation?.id,
+                isImage: file.isImage
             )
         }
     }
@@ -374,6 +384,8 @@ struct JunoMobileComposer: View {
 /// identity of its own is the fix, and it is how `JunoMobileThinkingControl` —
 /// the sibling popover that always worked — is already built.
 struct JunoMobileComposerActions: View {
+    /// How far above the bottom edge the panel must sit to clear the composer.
+    let composerHeight: CGFloat
     let projects: [NativeProject]
     let selectedProjectID: String?
     /// False in a draft: there is no conversation to file into a project yet.
@@ -381,15 +393,28 @@ struct JunoMobileComposerActions: View {
     /// False once the message is holding the maximum number of attachments.
     var canAttach: Bool = true
     let setProject: (String?) async -> Void
-    let addPhotos: ([PhotosPickerItem]) -> Void
+    let addPhotos: ([JunoPickedFile]) -> Void
     let addCapture: (Data, String) -> Void
     let addFiles: ([URL]) -> Void
 
+    /// Which picker the panel was tapped for.
+    ///
+    /// One value, one presentation. Each picker used to have its own modifier on
+    /// this button — `.photosPicker`, `.fileImporter`, `.fullScreenCover` — and
+    /// SwiftUI honours the first presentation declared on a view and silently
+    /// drops the rest, which is why the panel closed and no picker ever came up.
+    enum Picker: String, Identifiable {
+        case photos, camera, files
+
+        var id: String { rawValue }
+    }
+
     @State private var presented = false
-    @State private var showingPhotos = false
-    @State private var showingCamera = false
-    @State private var showingFiles = false
-    @State private var photoSelection: [PhotosPickerItem] = []
+    /// Chosen in the panel, opened once the panel has *finished* closing. A
+    /// presentation requested while another is still dismissing is dropped too,
+    /// so the hand-off happens in `onDismiss` rather than in the row's action.
+    @State private var pending: Picker?
+    @State private var active: Picker?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -416,32 +441,30 @@ struct JunoMobileComposerActions: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Add content or tools")
         .accessibilityIdentifier("juno.mobile.chat-plus")
-        .sheet(isPresented: $presented) {
+        // The menu is a full-screen cover with a *clear* background, not a
+        // sheet. That is what lets it be what it should be: a compact panel
+        // floating just above the composer, over the transcript — rather than a
+        // full-width tray slid up from the bottom edge, which is what a sheet
+        // can only ever be. Presenting it this way also keeps the strict rule
+        // that this button owns one presentation at a time.
+        .fullScreenCover(isPresented: $presented, onDismiss: openPendingPicker) {
             panel
-                .presentationDetents([.height(panelHeight)])
-                .presentationDragIndicator(.visible)
+                .presentationBackground(.clear)
         }
-        .photosPicker(
-            isPresented: $showingPhotos,
-            selection: $photoSelection,
-            maxSelectionCount: NativeComposerAttachmentModel.maximumAttachments,
-            matching: .any(of: [.images, .videos])
-        )
-        .onChange(of: photoSelection) { _, items in
-            guard !items.isEmpty else { return }
-            addPhotos(items)
-            photoSelection = []
-        }
-        .fullScreenCover(isPresented: $showingCamera) {
-            JunoMobileCameraCapture(onCapture: addCapture)
-        }
-        .fileImporter(
-            isPresented: $showingFiles,
-            allowedContentTypes: JunoAttachmentTypes.allowed,
-            allowsMultipleSelection: true
-        ) { result in
-            guard case .success(let urls) = result else { return }
-            addFiles(urls)
+        .fullScreenCover(item: $active) { picker in
+            switch picker {
+            case .photos:
+                JunoMobilePhotoPicker(
+                    selectionLimit: NativeComposerAttachmentModel.maximumAttachments,
+                    onPick: addPhotos
+                )
+                .ignoresSafeArea()
+            case .camera:
+                JunoMobileCameraCapture(onCapture: addCapture)
+            case .files:
+                JunoMobileDocumentPicker(onPick: addFiles)
+                    .ignoresSafeArea()
+            }
         }
         .task {
             #if DEBUG
@@ -452,110 +475,96 @@ struct JunoMobileComposerActions: View {
         }
     }
 
+    private func openPendingPicker() {
+        guard let pending else { return }
+        self.pending = nil
+        active = pending
+    }
+
+    /// The floating panel: a compact card anchored above the composer's leading
+    /// edge, with a scrim behind it.
+    ///
+    /// Shaped after the panel this replaced a bottom sheet for — one glyph in a
+    /// circular chip, one word, nothing else. The two-line rows it had before
+    /// (title over an explanatory subtitle) turned a three-item menu into a
+    /// paragraph: "Camera" needs no gloss, and reading one is slower than
+    /// looking at three.
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header("attachments.add")
-            VStack(spacing: 1) {
-                action(
-                    title: "attachments.photos",
-                    subtitle: "attachments.photos.detail",
-                    icon: "photo.on.rectangle.angled"
-                ) { showingPhotos = true }
-                action(
-                    title: "attachments.camera",
-                    subtitle: "attachments.camera.detail",
-                    icon: "camera"
-                ) { showingCamera = true }
-                action(
-                    title: "attachments.files",
-                    subtitle: "attachments.files.detail",
-                    icon: "folder"
-                ) { showingFiles = true }
-            }
-            .disabled(!canAttach)
-            .opacity(canAttach ? 1 : 0.45)
+        ZStack(alignment: .bottomLeading) {
+            // The scrim is the dismissal. It carries no colour of its own —
+            // dimming the chat to choose a photo would be a heavier moment than
+            // this is.
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { presented = false }
+                .accessibilityLabel("Close menu")
+                .accessibilityAddTraits(.isButton)
 
-            if !canAttach {
-                Text("attachments.full")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 18)
-                    .padding(.top, 8)
-            }
+            VStack(alignment: .leading, spacing: 0) {
+                row(title: "attachments.camera", icon: "camera", opens: .camera)
+                row(title: "attachments.photos", icon: "photo", opens: .photos)
+                row(title: "attachments.files", icon: "paperclip", opens: .files)
 
-            if canPickProject {
-                header("attachments.project")
-                ScrollView {
-                    VStack(spacing: 1) {
+                if canPickProject {
+                    Divider()
+                        .overlay(Color.junoHairline)
+                        .padding(.horizontal, 14)
+                    // The project rows carry a checkmark for the current one,
+                    // the same way the reference panel marks its active choice.
+                    projectRow(id: nil, name: String(localized: "attachments.no-project"),
+                               icon: "tray", selected: selectedProjectID == nil)
+                    ForEach(projects.prefix(4)) { project in
                         projectRow(
-                            id: nil, name: "No project", icon: "tray",
-                            selected: selectedProjectID == nil
+                            id: project.id, name: project.name, icon: "folder",
+                            selected: selectedProjectID == project.id
                         )
-                        ForEach(projects) { project in
-                            projectRow(
-                                id: project.id, name: project.name, icon: "folder",
-                                selected: selectedProjectID == project.id
-                            )
-                        }
                     }
                 }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(height: projectListHeight)
             }
-            Spacer(minLength: 0)
+            .padding(.vertical, 8)
+            .frame(width: 248, alignment: .leading)
+            .background(JunoGlassBackground(cornerRadius: 26))
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: .black.opacity(0.16), radius: 22, y: 8)
+            .padding(.leading, 16)
+            .padding(.bottom, composerHeight + 6)
+            .opacity(canAttach ? 1 : 0.6)
+            .transition(
+                .scale(scale: 0.92, anchor: .bottomLeading).combined(with: .opacity)
+            )
+            .accessibilityIdentifier("juno.mobile.composer-actions")
         }
-        .padding(.top, 6)
-        .accessibilityIdentifier("juno.mobile.composer-actions")
+        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: presented)
     }
 
-    private func header(_ key: LocalizedStringKey) -> some View {
-        Text(key)
-            .font(.footnote.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 6)
-    }
-
-    /// Every project row, up to four, then it scrolls — so one project and
-    /// twenty both get a panel that fits what it holds.
-    private var projectListHeight: CGFloat {
-        CGFloat(min(projects.count + 1, 4)) * 52
-    }
-
-    private var panelHeight: CGFloat {
-        let attachments: CGFloat = 40 + 3 * 56 + (canAttach ? 0 : 30)
-        return attachments + (canPickProject ? 40 + projectListHeight : 0) + 40
-    }
-
-    private func action(
-        title: LocalizedStringKey,
-        subtitle: LocalizedStringKey,
-        icon: String,
-        perform: @escaping () -> Void
+    private func row(
+        title: LocalizedStringKey, icon: String, opens: Picker
     ) -> some View {
         Button {
-            // Dismiss first: presenting a picker from a sheet that is still on
-            // screen drops the presentation on iOS.
+            // Record, then close. `onDismiss` opens the picker.
+            pending = opens
             presented = false
-            perform()
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .frame(width: 26)
-                    .foregroundStyle(Color.junoAccent)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.system(size: 16, weight: .medium))
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                ZStack {
+                    Circle().fill(Color.primary.opacity(0.06))
+                    Image(systemName: icon)
+                        .font(.system(size: 17))
+                        .foregroundStyle(.primary)
                 }
+                .frame(width: 38, height: 38)
+                Text(title)
+                    .font(.system(size: 17))
+                    .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 18)
-            .frame(height: 56)
+            .padding(.horizontal, 14)
+            .frame(height: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(!canAttach)
     }
 
     private func projectRow(
@@ -566,23 +575,26 @@ struct JunoMobileComposerActions: View {
             Task { await setProject(id) }
         } label: {
             HStack(spacing: 14) {
-                Image(systemName: icon)
-                    .font(.system(size: 18))
-                    .frame(width: 26)
-                    .foregroundStyle(selected ? Color.junoAccent : .primary)
+                ZStack {
+                    Circle().fill(Color.primary.opacity(0.06))
+                    Image(systemName: icon)
+                        .font(.system(size: 16))
+                        .foregroundStyle(selected ? Color.junoAccent : .primary)
+                }
+                .frame(width: 38, height: 38)
                 Text(name)
-                    .font(.system(size: 16))
-                    .foregroundStyle(.primary)
+                    .font(.system(size: 17))
+                    .foregroundStyle(selected ? Color.junoAccent : .primary)
                     .lineLimit(1)
-                Spacer(minLength: 0)
+                Spacer(minLength: 4)
                 if selected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Color.junoAccent)
                 }
             }
-            .padding(.horizontal, 18)
-            .frame(height: 52)
+            .padding(.horizontal, 14)
+            .frame(height: 54)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
