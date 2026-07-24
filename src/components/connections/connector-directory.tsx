@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search, Sparkles } from "lucide-react";
+import { ArrowUpRight, Link2, Link2Off, Loader2, Plug, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -589,9 +589,9 @@ export function ConnectorDirectory({
         </div>
 
         {!loading && items.length === 0 && (
-          <div className="flex flex-col items-center gap-4 rounded-[16px] border border-dashed border-border/70 px-6 py-12 text-center">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Sparkles className="size-6" />
+          <div className="flex flex-col items-center gap-4 rounded-[16px] border border-border/70 bg-card/40 px-6 py-12 text-center">
+            <span className="flex size-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+              <Plug className="size-6" />
             </span>
             <p className="max-w-xs text-sm text-muted-foreground">
               {filter === "connected"

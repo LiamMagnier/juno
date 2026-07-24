@@ -12,7 +12,7 @@ import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
 import { Composer } from "@/components/chat/composer";
-import { EmptyGreeting, SuggestionPills } from "@/components/chat/empty-state";
+import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { PrivateChatToggle } from "@/components/chat/private-chat-toggle";
 import { ModelParamsPanel } from "@/components/chat/model-params-panel";
@@ -1385,8 +1385,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       {/* Model parameters + incognito ghost, top-right in normal mode. */}
       <div
         className={cn(
-          "absolute right-3 top-3 z-20 flex items-center gap-0.5 md:right-4 md:top-4 transition-all duration-500 ease-out-soft",
-          privateMode ? "pointer-events-none scale-90 opacity-0" : "scale-100 opacity-100"
+          "absolute right-3 top-3 z-20 flex items-center gap-0.5 transition-[opacity,transform] duration-slow ease-out-soft md:right-4 md:top-4",
+          privateMode ? "pointer-events-none translate-y-1 opacity-0" : "translate-y-0 opacity-100"
         )}
       >
         {/* Share — saved, non-private chats with at least one message. */}
@@ -1507,49 +1507,51 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           </div>
         )}
 
-        {/* Incognito Header Bar */}
+        {/* Incognito header — grid-rows collapse keeps height animation smooth. */}
         <div
           className={cn(
-            "overflow-hidden transition-all duration-500 ease-out-soft",
-            privateMode ? "h-12 opacity-100 border-b bg-background/95" : "h-0 opacity-0 border-b-transparent pointer-events-none"
+            "grid transition-[grid-template-rows,opacity] duration-slow ease-out-soft",
+            privateMode ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
           )}
         >
-          <div className="flex h-12 shrink-0 items-center justify-between px-4 text-sm text-foreground/80 sm:px-5">
-            {forkedFrom ? (
-              <div className="inline-flex min-w-0 items-center gap-2 font-medium">
-                <GitFork className="h-4 w-4 shrink-0 text-primary" />
-                <span className="min-w-0 truncate">
-                  Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
-                </span>
-                <span className="shrink-0 font-mono text-label uppercase text-muted-foreground">
-                  {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
-                </span>
-              </div>
-            ) : (
-              <div className="inline-flex items-center gap-2 font-medium">
-                <PrivateGhostMark className="h-4 w-4 text-foreground/80" />
-                Incognito chat
-              </div>
-            )}
-            <button
-              type="button"
-              onClick={togglePrivateMode}
-              disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
-              aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
-              className="pressable inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-10 coarse:w-10"
-            >
-              <X className="h-4 w-4" />
-            </button>
+          <div className={cn("min-h-0 overflow-hidden", !privateMode && "pointer-events-none")}>
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-border/60 px-4 text-sm text-foreground/80 sm:px-5">
+              {forkedFrom ? (
+                <div className="inline-flex min-w-0 items-center gap-2 font-medium">
+                  <GitFork className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="min-w-0 truncate">
+                    Branched from <span className="font-serif italic">&ldquo;{forkedFrom.title}&rdquo;</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-label uppercase text-muted-foreground">
+                    {forkedFrom.count} {forkedFrom.count === 1 ? "message" : "messages"}
+                  </span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-2 font-medium">
+                  <PrivateGhostMark className="h-4 w-4 text-foreground/70" />
+                  Incognito chat
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={togglePrivateMode}
+                disabled={chat.isBusy || voiceOpen || voiceSaving || !!voiceSaveError || voiceTurnSending}
+                aria-label={forkedFrom ? "Discard branch" : "Leave private chat"}
+                className="pressable inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50 coarse:h-10 coarse:w-10"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* Main Content Area Container (morphs into rounded card in incognito mode) */}
+        {/* Main column — settles into a quiet framed card in incognito. */}
         <div
           className={cn(
-            "flex min-h-0 flex-1 flex-col overflow-hidden transition-all duration-500 ease-out-soft",
+            "flex min-h-0 flex-1 flex-col overflow-hidden transition-[margin,border-radius,border-color,background-color,box-shadow] duration-slow ease-out-soft",
             privateMode
-              ? "m-2 border border-dashed border-foreground/25 bg-background text-foreground rounded-[18px] sm:m-3 sm:rounded-[22px] shadow-soft"
-              : "m-0 border-transparent bg-transparent rounded-none"
+              ? "m-2 rounded-[18px] border border-border/70 bg-card/50 shadow-soft sm:m-3 sm:rounded-[22px]"
+              : "m-0 rounded-none border border-transparent bg-transparent shadow-none"
           )}
         >
           {hasMessages ? (
@@ -1587,8 +1589,8 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               )}
               <div
                 className={cn(
-                  "w-full transition-all duration-500 ease-out-soft",
-                  privateMode ? "px-2 sm:px-4 pb-1" : "px-0 pb-1"
+                  "w-full transition-[padding] duration-slow ease-out-soft",
+                  privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1"
                 )}
               >
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
@@ -1605,79 +1607,45 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             </div>
           ) : (
             // Empty / greeting view
-            <div className="min-h-0 flex-1 overflow-y-auto relative h-full flex flex-col">
+            <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
               <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
-                <div className="relative w-full flex flex-col items-center justify-center">
-                  {/* Headers cross-fade (CSS Grid overlap) */}
-                  <div className="grid grid-cols-1 grid-rows-1 w-full justify-items-center mb-5 sm:mb-6">
-                    {/* Normal Mode Greeting */}
+                <div className="relative flex w-full flex-col items-center justify-center">
+                  {/* Headers cross-fade — opacity only; scale was causing a jump. */}
+                  <div className="mb-5 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-6">
                     <div
                       className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode || chat.pendingClarification) ? "pointer-events-none scale-95 opacity-0" : "scale-100 opacity-100"
+                        "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                        privateMode || chat.pendingClarification
+                          ? "pointer-events-none opacity-0"
+                          : "opacity-100"
                       )}
                     >
                       <EmptyGreeting />
                     </div>
-
-                    {/* Private Mode Header */}
                     <div
                       className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode && !chat.pendingClarification) ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
+                        "col-start-1 row-start-1 flex w-full flex-col items-center justify-center transition-opacity duration-slow ease-out-soft",
+                        privateMode && !chat.pendingClarification
+                          ? "opacity-100"
+                          : "pointer-events-none opacity-0"
                       )}
                     >
-                      <h1 className="flex items-center gap-3 font-serif text-3xl font-normal tracking-tight text-foreground sm:text-display">
-                        <span className="text-primary">✳</span>
-                        You&apos;re incognito
-                      </h1>
+                      <PrivateGreeting />
                     </div>
                   </div>
 
-                  {/* Composer */}
-                  <div
-                    className={cn(
-                      "w-full transition-all duration-500 ease-out-soft z-10",
-                      privateMode ? "max-w-[42.5rem]" : "max-w-[44rem]"
-                    )}
-                  >
+                  <div className="z-10 w-full max-w-[44rem]">
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}
                   </div>
-
-                  {/* Footer options/pills cross-fade (CSS Grid overlap) */}
-                  <div className="grid grid-cols-1 grid-rows-1 w-full justify-items-center mt-3 sm:mt-4">
-                    {/* Normal Mode Suggestion Pills */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode || chat.pendingClarification) ? "pointer-events-none scale-95 opacity-0" : "scale-100 opacity-100"
-                      )}
-                    >
-                      <SuggestionPills onPick={(t) => void sendFromComposer(t, [])} />
-                    </div>
-
-                    {/* Private Mode Info */}
-                    <div
-                      className={cn(
-                        "col-start-1 row-start-1 w-full flex flex-col items-center justify-center transition-all duration-500 ease-out-soft",
-                        (privateMode && !chat.pendingClarification) ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
-                      )}
-                    >
-                      <p className="max-w-md text-center text-sm leading-6 text-muted-foreground sm:text-base">
-                        Incognito chats aren&apos;t saved, added to memory, or used to train models.
-                      </p>
-                    </div>
-                  </div>
-
                 </div>
               </div>
 
               {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
               <p
                 className={cn(
-                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45 transition-opacity duration-500 ease-out-soft",
+                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45 transition-opacity duration-slow ease-out-soft",
                   privateMode ? "pointer-events-none opacity-0" : "opacity-100"
                 )}
               >

@@ -192,7 +192,7 @@ export function ComposerClarificationPopover({
   const shellClass =
     variant === "inline"
       ? "relative flex w-full flex-col overflow-hidden rounded-[18px] border border-border/55 bg-card/40 text-foreground sm:rounded-[20px]"
-      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-[22px] border border-border/60 bg-card/95 text-foreground shadow-float backdrop-blur-xl sm:rounded-[24px]";
+      : "relative mb-2 flex w-full flex-col overflow-hidden rounded-panel border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl";
 
   return (
     <div
@@ -204,12 +204,6 @@ export function ComposerClarificationPopover({
         "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2 motion-safe:duration-slow motion-safe:ease-out-expo motion-reduce:animate-none"
       )}
     >
-      {/* Subtle top sheen — depth without chrome noise */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-[hsl(var(--sheen)/0.55)] to-transparent"
-      />
-
       {/* Header */}
       <header className="relative flex items-start gap-3 px-3.5 pb-0 pt-3.5 sm:gap-3.5 sm:px-5 sm:pt-4">
         <div className="min-w-0 flex-1">

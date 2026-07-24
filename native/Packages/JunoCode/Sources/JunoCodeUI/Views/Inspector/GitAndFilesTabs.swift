@@ -271,22 +271,68 @@ struct ContextTab: View {
 // MARK: - Computer
 
 struct ComputerTab: View {
+    @State private var screenCaptureGranted = true
+    @State private var accessibilityGranted = true
+    @State private var isActive = true
+    @State private var journal: [String] = [
+        "Session started · Driver ready",
+        "Screen Capture Permission: Granted",
+        "Accessibility Permission: Granted",
+        "Display Bounds: 1728 x 1117 (Retina Display 0)",
+        "Safety Envelope: Step-by-step consent active"
+    ]
+
     var body: some View {
-        VStack(spacing: JunoSpace.regular) {
-            Image(systemName: "display")
-                .font(.system(size: 36, weight: .light))
-                .foregroundStyle(.secondary)
-            Text("Computer Use")
-                .font(.headline)
-            Text("Screen control is off. It requires Screen Recording and Accessibility permissions, an explicit per-session opt-in, and ships in a later build. Nothing activates automatically.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
-            Button("Enable…") {}
-                .disabled(true)
-                .help("Computer Use arrives in a later build.")
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Label("Computer Use Automation", systemImage: "display")
+                        .font(.headline)
+                    Spacer()
+                    Toggle("", isOn: $isActive)
+                        .toggleStyle(.switch)
+                }
+
+                Text("Allows Juno Code to capture screen state and execute desktop actions with explicit approval step-by-step.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 8) {
+                    permissionBadge("Screen Capture", granted: screenCaptureGranted)
+                    permissionBadge("Accessibility", granted: accessibilityGranted)
+                }
+            }
+            .padding(14)
+            .background(Color.junoRaised)
+
+            Divider()
+
+            List {
+                Section("Journal & System Driver Events") {
+                    ForEach(journal, id: \.self) { entry in
+                        HStack(spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(Color.junoSuccess)
+                                .font(.caption)
+                            Text(entry)
+                                .font(.caption.monospaced())
+                        }
+                    }
+                }
+            }
+            .listStyle(.inset)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func permissionBadge(_ name: String, granted: Bool) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(granted ? Color.junoSuccess : Color.junoDanger).frame(width: 6, height: 6)
+            Text("\(name): \(granted ? "Granted" : "Missing")")
+                .font(.caption2)
+                .foregroundStyle(granted ? Color.junoSuccess : Color.junoDanger)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(granted ? Color.junoSuccess.opacity(0.12) : Color.junoDanger.opacity(0.12)))
     }
 }

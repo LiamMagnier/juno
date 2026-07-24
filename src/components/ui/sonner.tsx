@@ -13,7 +13,7 @@ export function Toaster(props: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:rounded-[16px] group-[.toaster]:border-border/60 group-[.toaster]:bg-popover/85 group-[.toaster]:backdrop-blur-xl group-[.toaster]:text-popover-foreground group-[.toaster]:shadow-glass",
+            "group toast group-[.toaster]:rounded-[16px] group-[.toaster]:border-border/60 group-[.toaster]:bg-popover/90 group-[.toaster]:backdrop-blur-xl group-[.toaster]:text-popover-foreground group-[.toaster]:shadow-glass",
           description: "group-[.toast]:text-muted-foreground",
           actionButton: "group-[.toast]:rounded-[10px] group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton: "group-[.toast]:rounded-[10px] group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",

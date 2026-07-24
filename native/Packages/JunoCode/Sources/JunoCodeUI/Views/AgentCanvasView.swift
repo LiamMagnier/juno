@@ -275,6 +275,8 @@ struct AgentCanvasView: View {
             .accessibilityLabel("Message the agent")
 
             HStack(spacing: JunoSpace.snug) {
+                CodeModelPicker(controller: controller, availableModels: model.availableModels)
+                CodeThinkingPicker(controller: controller)
                 PermissionModePicker(controller: controller)
 
                 Spacer(minLength: JunoSpace.snug)
@@ -539,6 +541,100 @@ struct ApprovalCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(
             "Approval required, \(request.risk.rawValue) risk: \(request.summary)"
+        )
+    }
+}
+
+// MARK: - Model Picker
+
+struct CodeModelPicker: View {
+    let controller: SessionController
+    let availableModels: [ModelOption]
+
+    private var currentModelID: String {
+        controller.session.configuration.modelID
+    }
+
+    private var currentDisplayName: String {
+        availableModels.first(where: { $0.modelID == currentModelID })?.displayName ?? "Claude Sonnet 3.7"
+    }
+
+    var body: some View {
+        Menu {
+            ForEach(availableModels) { option in
+                Button {
+                    Task { await controller.setModelID(option.modelID) }
+                } label: {
+                    HStack {
+                        Text(option.displayName)
+                        if option.modelID == currentModelID {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: "cpu").imageScale(.small)
+                Text(currentDisplayName).lineLimit(1)
+            }
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.junoRowHover))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Select model for code execution")
+    }
+}
+
+// MARK: - Thinking Slider Picker
+
+struct CodeThinkingPicker: View {
+    let controller: SessionController
+
+    private var effort: ReasoningEffort {
+        controller.session.configuration.reasoningEffort
+    }
+
+    private var label: String {
+        switch effort {
+        case .low: return "Low Thinking"
+        case .medium: return "Med Thinking"
+        case .high: return "High Thinking"
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Picker("Thinking Level", selection: binding) {
+                Text("Low Thinking").tag(ReasoningEffort.low)
+                Text("Medium Thinking").tag(ReasoningEffort.medium)
+                Text("High Thinking").tag(ReasoningEffort.high)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: "brain").imageScale(.small)
+                Text(label).lineLimit(1)
+            }
+            .font(.caption)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.junoRowHover))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Adjust reasoning effort / thinking slider")
+    }
+
+    private var binding: Binding<ReasoningEffort> {
+        Binding(
+            get: { controller.session.configuration.reasoningEffort },
+            set: { newEffort in
+                Task { await controller.setReasoningEffort(newEffort) }
+            }
         )
     }
 }

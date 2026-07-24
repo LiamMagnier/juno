@@ -943,11 +943,9 @@ export function Composer({
    * gets no --radix-*-available-height and nothing measures the room above it
    * for us. That room is not a constant: in the empty state the composer is
    * vertically centred (chat-view.tsx), so a ~700px laptop leaves ~250-320px
-   * above it — less than the list's own 18rem — and the content BELOW the
-   * composer (the starter pills) shrinks it further, at half a pixel per pixel,
-   * because centring splits the difference. Overflowing is unrecoverable, not
-   * merely ugly: rows laid out above a clipper's top edge create no scrollable
-   * area, so they cannot be reached.
+   * above it — less than the list's own 18rem. Overflowing is unrecoverable,
+   * not merely ugly: rows laid out above a clipper's top edge create no
+   * scrollable area, so they cannot be reached.
    */
   const [paletteMaxH, setPaletteMaxH] = React.useState(PALETTE_MAX_H);
   React.useLayoutEffect(() => {
@@ -966,12 +964,12 @@ export function Composer({
       setPaletteMaxH(snapPaletteToRow(paletteListRef.current, limit));
     };
     /* The clamp depends on the anchor's POSITION, but everything that moves it
-     * leaves its own box the same size — the greeting cross-fading out above,
-     * the starter-pill grid sweeping 0fr->1fr below — so a ResizeObserver on the
-     * anchor never fires for any of it. Sample per frame while the palette is
-     * open (Floating UI's autoUpdate does the same for moved-not-resized
-     * anchors); React bails out when the measurement is unchanged, and the
-     * palette is open only while a slash/mention token is being typed. */
+     * leaves its own box the same size — the greeting cross-fading above, the
+     * voice panel mounting — so a ResizeObserver on the anchor never fires for
+     * any of it. Sample per frame while the palette is open (Floating UI's
+     * autoUpdate does the same for moved-not-resized anchors); React bails out
+     * when the measurement is unchanged, and the palette is open only while a
+     * slash/mention token is being typed. */
     let raf = 0;
     const tick = () => {
       measure();
@@ -1655,7 +1653,7 @@ export function Composer({
           // layer — so adding shadow-float silently replaced the glass entirely
           // and left this popover looking unlike the + menu beside it.
           // DropdownMenuContent uses glass-raised alone; match it.
-          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/80 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
+          <div className="absolute bottom-full left-2 right-2 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 p-1.5 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
             {/* Options, not tab stops: the caret never leaves the textarea, so this
                 is a combobox popup. A button row also could not legally hold the
                 Switch, which is itself a button. */}

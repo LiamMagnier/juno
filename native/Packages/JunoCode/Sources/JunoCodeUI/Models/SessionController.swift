@@ -275,6 +275,26 @@ public final class SessionController {
         }
     }
 
+    public func setModelID(_ modelID: String) async {
+        guard let live else {
+            session.configuration.modelID = modelID
+            return
+        }
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.modelID = modelID
+        }
+    }
+
+    public func setReasoningEffort(_ effort: ReasoningEffort) async {
+        guard let live else {
+            session.configuration.reasoningEffort = effort
+            return
+        }
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.reasoningEffort = effort
+        }
+    }
+
     // MARK: - Changes review
 
     public func acceptChange(path: String) {

@@ -2,6 +2,7 @@ import JunoAuth
 import JunoChatKit
 import JunoCodeUI
 import JunoCore
+import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import QuickLook
@@ -296,6 +297,8 @@ private struct JunoMacDetailView: View {
             )
         } else if section == .search, let searchModel {
             JunoMacSearchView(model: searchModel, open: openSearchResult)
+        } else if section == .connections {
+            JunoMacConnectionsView(accountID: accountID, transport: chatTransport)
         } else if section == .settings, let memorySettingsModel {
             JunoMacSettingsView(
                 model: memorySettingsModel,

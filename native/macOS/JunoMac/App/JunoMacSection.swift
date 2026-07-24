@@ -12,6 +12,7 @@ import SwiftUI
 enum JunoMacSection: String, CaseIterable, Hashable, Identifiable {
     case chat
     case search
+    case connections
     case projects
     case library
     case artifacts
@@ -38,7 +39,7 @@ enum JunoMacSection: String, CaseIterable, Hashable, Identifiable {
         var sections: [JunoMacSection] {
             switch self {
             case .workspace: [.chat, .search]
-            case .content: [.projects, .library, .artifacts]
+            case .content: [.connections, .projects, .library, .artifacts]
             case .account: [.settings]
             }
         }
@@ -48,6 +49,7 @@ enum JunoMacSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "navigation.chat"
         case .search: "navigation.search"
+        case .connections: "navigation.connections"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
         case .artifacts: "navigation.artifacts"
@@ -59,6 +61,7 @@ enum JunoMacSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "bubble.left.and.bubble.right"
         case .search: "magnifyingglass"
+        case .connections: "link"
         case .projects: "folder"
         case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
@@ -73,6 +76,7 @@ enum JunoMacSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "1"
         case .search: "2"
+        case .connections: "6"
         case .projects: "3"
         case .library: "4"
         case .artifacts: "5"

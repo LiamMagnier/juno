@@ -11,6 +11,10 @@ const postSchema = z.object({
   // Hosts that can run local code sessions. Widened from the original
   // macOS-only literal when the Windows desktop client shipped.
   platform: z.enum(["macos", "windows"]),
+  appVersion: z.string().trim().max(100).optional(),
+  protocolVersion: z.number().int().min(1).max(100).optional(),
+  sessionCount: z.number().int().min(0).optional(),
+  activeCount: z.number().int().min(0).optional(),
   workspaces: z
     .array(
       z.object({
@@ -46,8 +50,17 @@ export async function POST(req: Request) {
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { deviceId, name, platform, workspaces } = parsed.data;
+  const { deviceId, name, platform, workspaces, appVersion, protocolVersion, sessionCount, activeCount } = parsed.data;
   const now = new Date();
+  const capabilities = {
+    platform,
+    workspaces,
+    appVersion: appVersion ?? "",
+    protocolVersion: protocolVersion ?? 1,
+    sessionCount: sessionCount ?? 0,
+    activeCount: activeCount ?? 0,
+    lastSeenAt: now,
+  };
 
   const existing = deviceId
     ? await prisma.codeDevice.findFirst({ where: { id: deviceId, userId: user.id }, select: { id: true } })
@@ -56,12 +69,12 @@ export async function POST(req: Request) {
   const device = existing
     ? await prisma.codeDevice.update({
         where: { id: existing.id, userId: user.id },
-        data: { name, platform, workspaces, lastSeenAt: now },
+        data: { name, ...capabilities },
       })
     : await prisma.codeDevice.upsert({
         where: { userId_name: { userId: user.id, name } },
-        update: { platform, workspaces, lastSeenAt: now },
-        create: { userId: user.id, name, platform, workspaces },
+        update: capabilities,
+        create: { userId: user.id, name, ...capabilities },
       });
 
   return NextResponse.json({ device: serializeDevice(device) });

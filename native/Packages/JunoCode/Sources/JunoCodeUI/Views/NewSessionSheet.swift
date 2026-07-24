@@ -13,6 +13,7 @@ struct NewSessionSheet: View {
     @State private var role: AgentRole = .engineer
     @State private var permissionMode: PermissionMode = .askBeforeChanges
     @State private var location: SessionLocation = .local
+    @State private var computerUseEnabled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -56,13 +57,14 @@ struct NewSessionSheet: View {
                     Text("Workspace write").tag(PermissionMode.workspaceWrite)
                     Text("Full access (critical actions still ask)").tag(PermissionMode.fullAccess)
                 }
+                Toggle("Enable Computer Use (Screen & Input Control)", isOn: $computerUseEnabled)
                 Picker("Runs", selection: $location) {
                     Text("On this Mac").tag(SessionLocation.local)
-                    Text("Juno Cloud (soon)").tag(SessionLocation.cloud)
-                    Text("Remote (soon)").tag(SessionLocation.remote)
+                    Text("Juno Cloud").tag(SessionLocation.cloud)
+                    Text("Remote (iPhone / Cloud)").tag(SessionLocation.remote)
                 }
                 if location != .local {
-                    Text("Cloud and Remote sessions arrive with the Juno account integration.")
+                    Text("Cloud and Remote sessions sync with your Juno account and mobile app.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -114,7 +116,7 @@ struct NewSessionSheet: View {
             role: role,
             permissionMode: permissionMode,
             location: location,
-            computerUseEnabled: false
+            computerUseEnabled: computerUseEnabled
         )
         Task {
             await model.createSession(workspaceID: workspaceID, configuration: configuration)

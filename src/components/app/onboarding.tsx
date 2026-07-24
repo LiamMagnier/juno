@@ -15,7 +15,6 @@ import {
   Moon,
   PenLine,
   Search,
-  Sparkles,
   Sun,
 } from "lucide-react";
 import { DotField } from "@/components/signature/dot-field";
@@ -87,7 +86,7 @@ function ModelField({
         <>
           <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
           {/* opens upward — the field sits low in the card, which clips overflow */}
-          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-2xl border bg-popover/95 shadow-glass backdrop-blur-md motion-safe:animate-pop-in">
+          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 origin-bottom overflow-hidden rounded-[14px] border border-border/60 bg-popover/90 glass-raised backdrop-blur-xl motion-safe:animate-pop-in">
             <div className="relative border-b p-2">
               <Search className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -302,15 +301,13 @@ export function Onboarding() {
       role="dialog"
       aria-modal="true"
       aria-label="Welcome to Juno"
-      className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-background/80 p-4 backdrop-blur-md motion-safe:animate-fade-in"
+      className="fixed inset-0 z-[60] grid place-items-center overflow-hidden bg-background/80 p-4 backdrop-blur-sm motion-safe:animate-fade-in"
     >
-      <div className="pointer-events-none absolute inset-0 -z-0 opacity-70">
+      <div className="pointer-events-none absolute inset-0 -z-0 opacity-40">
         <DotField spacing={26} />
       </div>
 
-      <div className="relative w-full max-w-[460px] overflow-hidden rounded-panel border bg-card/95 shadow-glass backdrop-blur-xl motion-safe:animate-rise-in">
-        <div className="pointer-events-none absolute -top-24 left-1/2 h-52 w-52 -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
-
+      <div className="relative w-full max-w-[460px] overflow-hidden rounded-panel border border-border/60 bg-popover/90 text-popover-foreground glass-raised backdrop-blur-xl motion-safe:animate-rise-in">
         {/* header: step label + dot pager */}
         <div className="relative flex items-center justify-between px-7 pt-6">
           <span className="font-mono text-label uppercase text-muted-foreground">
@@ -626,7 +623,7 @@ export function Onboarding() {
                     onClick={runImport}
                     disabled={importing || importText.trim().length < 3}
                   >
-                    <Sparkles className="h-3.5 w-3.5" />
+                    <NotebookPen className="h-3.5 w-3.5" />
                     {importing ? "Adding…" : "Add to memory"}
                   </Button>
                 </div>

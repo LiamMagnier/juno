@@ -11,7 +11,7 @@ final class JunoMacNavigationTests: XCTestCase {
     func testNavigationIdentifiersAreStableAndUnique() {
         XCTAssertEqual(
             JunoMacSection.allCases.map(\.id),
-            ["chat", "search", "projects", "library", "artifacts", "settings"]
+            ["chat", "search", "connections", "projects", "library", "artifacts", "settings"]
         )
         XCTAssertEqual(
             Set(JunoMacSection.allCases.map(\.id)).count,

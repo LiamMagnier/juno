@@ -2,9 +2,10 @@
 
 import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, Sparkles, X } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { JunoMark } from "@/components/brand/logo";
 import { ProviderLogo } from "@/components/brand/provider-logo";
 import type { ClientAnnouncement } from "@/lib/announcements";
 
@@ -56,8 +57,8 @@ function AnnouncementVisual({ announcement }: { announcement: ClientAnnouncement
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-muted text-primary">
-      <Sparkles className="h-16 w-16" />
+    <div className="flex h-full w-full items-center justify-center bg-muted text-foreground/70">
+      <JunoMark className="h-14 w-14" />
     </div>
   );
 }
@@ -153,55 +154,48 @@ export function AnnouncementPopup() {
     >
       <DialogContent
         hideClose
-        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain rounded-panel p-0 border border-border/85 bg-background shadow-glass lg:overflow-hidden"
+        className="max-h-[calc(100dvh-1rem)] max-w-4xl overflow-y-auto overscroll-contain p-0 lg:overflow-hidden"
       >
-        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-background/70 text-muted-foreground backdrop-blur-sm transition-all duration-fast ease-out-soft hover:bg-background hover:text-foreground hover:scale-105 active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11 coarse:w-11">
+        <DialogClose className="absolute right-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-[background-color,color,transform] duration-fast ease-out-soft hover:bg-accent hover:text-foreground active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring coarse:h-11 coarse:w-11">
           <X className="h-4 w-4" />
           <span className="sr-only">Close</span>
         </DialogClose>
         <div className="grid gap-8 p-6 lg:grid-cols-[minmax(16rem,24rem)_minmax(0,1fr)]">
-          <div className="h-64 overflow-hidden rounded-md bg-muted sm:h-80 lg:h-[26rem] w-full shrink-0">
+          <div className="h-64 w-full shrink-0 overflow-hidden rounded-2xl border border-border/50 bg-muted sm:h-80 lg:h-[26rem]">
             <AnnouncementVisual announcement={announcement} />
           </div>
-          <div className="flex min-h-0 flex-col justify-between gap-6 py-2 lg:min-h-[26rem] pr-2">
+          <div className="flex min-h-0 flex-col justify-between gap-6 py-2 pr-2 lg:min-h-[26rem]">
             <DialogHeader className="text-left">
               <div className="flex items-start justify-between gap-4 pr-12">
                 <div>
                   {announcement.modelName && (
-                    <div className="mb-2 font-mono text-label uppercase text-primary">{announcement.modelName}</div>
+                    <div className="mb-2 font-mono text-label uppercase text-muted-foreground">{announcement.modelName}</div>
                   )}
-                  <DialogTitle className="font-serif text-2xl font-normal leading-tight sm:text-3xl text-foreground">{announcement.title}</DialogTitle>
+                  <DialogTitle className="font-serif text-2xl font-normal leading-tight text-foreground sm:text-3xl">
+                    {announcement.title}
+                  </DialogTitle>
                 </div>
-                {announcement.provider && <ProviderLogo provider={announcement.provider} className="h-10 w-10 rounded-[24%] border-0 shadow-none shrink-0" />}
+                {announcement.provider && (
+                  <ProviderLogo provider={announcement.provider} className="h-10 w-10 shrink-0 rounded-[24%] border-0 shadow-none" />
+                )}
               </div>
               <DialogDescription className="max-w-xl pt-4 text-base leading-relaxed text-muted-foreground lg:max-w-md lg:pt-6">
                 {announcement.description}
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex flex-wrap items-center justify-end gap-3 mt-6">
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-3">
               {announcement.newsHref ? (
-                <Button
-                  variant="outline"
-                  onClick={() => followHref(announcement.newsHref)}
-                  className="h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold hover:bg-muted"
-                >
-                  {announcement.newsLabel || "Read The News"}
+                <Button variant="outline" onClick={() => followHref(announcement.newsHref)}>
+                  {announcement.newsLabel || "Read more"}
                 </Button>
               ) : (
-                <Button
-                  variant="ghost"
-                  onClick={dismiss}
-                  className="h-10 rounded-md px-5 font-sans text-[14px] font-semibold text-muted-foreground hover:text-foreground"
-                >
+                <Button variant="ghost" onClick={dismiss} className="text-muted-foreground hover:text-foreground">
                   Not now
                 </Button>
               )}
               {announcement.ctaLabel && announcement.ctaHref && (
-                <Button
-                  onClick={() => followHref(announcement.ctaHref)}
-                  className="group h-10 gap-1.5 rounded-md px-5 font-sans text-[14px] font-semibold shadow-soft hover:-translate-y-px active:translate-y-0"
-                >
+                <Button onClick={() => followHref(announcement.ctaHref)} className="group gap-1.5">
                   {announcement.ctaLabel}
                   <ArrowRight className="h-4 w-4 transition-transform duration-fast ease-out-soft group-hover:translate-x-0.5" />
                 </Button>
