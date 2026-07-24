@@ -148,7 +148,8 @@ function def(d: ModelDef): ModelInfo {
 const CURATED: ModelInfo[] = [
   // —— Anthropic ——
   def({ provider: "anthropic", id: "claude-fable-5", name: "Claude Fable 5", family: "fable", status: "current", released: "2026-06", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Anthropic's frontier model — deepest reasoning, long-horizon agents." }),
-  def({ provider: "anthropic", id: "claude-opus-4-8", name: "Claude Opus 4.8", family: "opus", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Most capable Opus — complex agentic coding and hard tasks." }),
+  def({ provider: "anthropic", id: "claude-opus-5", name: "Claude Opus 5", family: "opus", status: "current", released: "2026-07", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Most capable Opus — complex agentic coding and hard tasks." }),
+  def({ provider: "anthropic", id: "claude-opus-4-8", name: "Claude Opus 4.8", family: "opus", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_000_000, description: "Previous-generation Opus, superseded by Opus 5." }),
   def({ provider: "anthropic", id: "claude-sonnet-5", name: "Claude Sonnet 5", family: "sonnet", status: "current", released: "2026-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Best speed-to-intelligence balance — near-Opus quality for everyday work." }),
   def({ provider: "anthropic", id: "claude-haiku-4-5", name: "Claude Haiku 4.5", family: "haiku", status: "current", released: "2025-10", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 200_000, description: "Fastest, most cost-effective Claude — great for high-volume tasks." }),
   def({ provider: "anthropic", id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", family: "sonnet", status: "legacy", released: "2026-02", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_000_000, description: "Previous-generation Sonnet, superseded by Sonnet 5." }),
@@ -423,12 +424,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "anthropic:claude-3-5-sonnet-20241022": "anthropic:claude-sonnet-5",
   "anthropic:claude-3-5-sonnet-20240620": "anthropic:claude-sonnet-5",
   "anthropic:claude-3-5-haiku-20241022": "anthropic:claude-haiku-4-5",
-  "anthropic:claude-3-opus-20240229": "anthropic:claude-opus-4-8",
+  "anthropic:claude-3-opus-20240229": "anthropic:claude-opus-5",
   "anthropic:claude-3-sonnet-20240229": "anthropic:claude-sonnet-5",
   "anthropic:claude-3-haiku-20240307": "anthropic:claude-haiku-4-5",
   // Retired at the API: GET /v1/models/claude-opus-4-1 -> 404 not_found_error
   // (the other nine Claude ids return 200 on the same key).
-  "anthropic:claude-opus-4-1": "anthropic:claude-opus-4-8",
+  "anthropic:claude-opus-4-1": "anthropic:claude-opus-5",
   // OpenAI — retired ids + ids that never existed in the API.
   "openai:gpt-5.6": "openai:gpt-5.6-sol", // bare API alias — routes to Sol
   "openai:gpt-5.5-thinking": "openai:gpt-5.6-sol", // ChatGPT product name, never an API id

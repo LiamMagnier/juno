@@ -338,12 +338,26 @@ export function modelGeneration(name: string): number | null {
  *
  * Returns a new array; the input is not mutated.
  */
+/** Anthropic's product-line order, most capable first. Used only to keep Opus
+ *  above Sonnet when their version numbers disagree (Opus 4.8 vs Sonnet 5). */
+const ANTHROPIC_FAMILY_RANK: Record<string, number> = { fable: 0, opus: 1, sonnet: 2, haiku: 3 };
+
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
     const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
     if (labDelta !== 0) return labDelta;
     const legacyDelta = Number(isSupersededModel(a)) - Number(isSupersededModel(b));
     if (legacyDelta !== 0) return legacyDelta;
+    // Anthropic ships parallel product lines under mismatched version numbers —
+    // Opus 5 alongside Sonnet 5, Opus 4.8 alongside Sonnet 5 — so the raw
+    // generation compare below interleaves them wrongly (Sonnet 5 floating over
+    // Opus 4.8). A fixed line rank keeps the family order Fable → Opus → Sonnet
+    // → Haiku whatever the numbers say. Only Anthropic's families are ranked;
+    // every other lab's families are absent from the map, so their order is
+    // untouched — and generation still orders siblings *within* a family below.
+    const famA = ANTHROPIC_FAMILY_RANK[a.family ?? ""];
+    const famB = ANTHROPIC_FAMILY_RANK[b.family ?? ""];
+    if (famA !== undefined && famB !== undefined && famA !== famB) return famA - famB;
     // Only decisive when BOTH names carry a version; otherwise the release date
     // below still places an unversioned model sensibly against its siblings.
     const genA = modelGeneration(a.name);
