@@ -70,8 +70,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// The destinations the drawer lists, in order. Chat is absent because the
     /// drawer's conversation list *is* chat, and Search and Settings have their
     /// own controls in its header and footer.
+    ///
+    /// The order is the owner's: the three places your *content* lives first
+    /// (projects, library, artifacts), then the two that *do work* for you
+    /// (code, tasks), then the account-level one (connections).
     static let drawerDestinations: [JunoMobileSection] = [
-        .code, .tasks, .projects, .library, .artifacts, .connections,
+        .projects, .library, .artifacts, .code, .tasks, .connections,
     ]
 
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the

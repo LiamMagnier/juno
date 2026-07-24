@@ -1,5 +1,27 @@
 import SwiftUI
 
+#if canImport(UIKit)
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
+/// Decodes image bytes into a SwiftUI `Image` on either platform.
+///
+/// `Image(data:)` does not exist; every route into SwiftUI from raw bytes goes
+/// through the platform image type, and the two spell it differently.
+func JunoPlatformImage(data: Data) -> Image? {
+    #if canImport(UIKit)
+    guard let image = UIImage(data: data) else { return nil }
+    return Image(uiImage: image)
+    #elseif canImport(AppKit)
+    guard let image = NSImage(data: data) else { return nil }
+    return Image(nsImage: image)
+    #else
+    return nil
+    #endif
+}
+
 /// Juno's mark: the chat-bubble glyph the website renders at every entry point.
 ///
 /// The asset is the very same `public/juno-mark.png` the web serves, imported
@@ -99,11 +121,22 @@ public struct JunoIconView: View {
 /// when the account truly has no photo — never as a placeholder while one loads,
 /// which would flash the wrong identity on every launch.
 public struct JunoAvatar: View {
+    private let imageData: Data?
     private let imageURL: URL?
     private let name: String?
     private let size: CGFloat
 
-    public init(imageURL: URL?, name: String?, size: CGFloat = 32) {
+    /// - Parameter imageData: bytes already fetched by the caller. Juno's own
+    ///   avatars live behind an authenticated route that `AsyncImage` cannot
+    ///   reach, so they arrive this way (see `NativeAvatarModel`); a photo
+    ///   inherited from an OAuth provider is a plain URL and uses `imageURL`.
+    public init(
+        imageData: Data? = nil,
+        imageURL: URL?,
+        name: String?,
+        size: CGFloat = 32
+    ) {
+        self.imageData = imageData
         self.imageURL = imageURL
         self.name = name
         self.size = size
@@ -111,7 +144,9 @@ public struct JunoAvatar: View {
 
     public var body: some View {
         Group {
-            if let imageURL {
+            if let imageData, let image = JunoPlatformImage(data: imageData) {
+                image.resizable().scaledToFill()
+            } else if let imageURL {
                 AsyncImage(url: imageURL) { phase in
                     switch phase {
                     case .success(let image):

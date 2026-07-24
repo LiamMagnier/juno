@@ -20,6 +20,8 @@ struct JunoMobileSettingsView: View {
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     var authModel: NativeAuthModel?
     var session: NativeAuthenticatedSession?
+    /// The account photo's bytes, fetched through the authenticated file route.
+    var avatarData: Data?
     var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     var outbox: (any MutationOutboxRepository)?
     @State private var showingSignOut = false
@@ -150,12 +152,27 @@ struct JunoMobileSettingsView: View {
                 }
 
                 JunoSettingsTile(eyebrow: "About") {
+                    // Diagnostics is a developer pane — sync cursors, outbox
+                    // depth, contract digests. It is genuinely useful while
+                    // building and pure noise in a shipped app, so a release
+                    // build states the version and stops there.
+                    #if DEBUG
                     JunoSettingsLink(
                         title: "diagnostics.title",
                         value: Text(JunoBuildInfo.current.displayVersion),
                         symbol: "stethoscope"
                     ) { showDiagnosticsPage = true }
                     .accessibilityIdentifier("juno.mobile.settings-diagnostics-link")
+                    #else
+                    HStack {
+                        Text("settings.version").font(.system(size: 16))
+                        Spacer(minLength: 6)
+                        Text(JunoBuildInfo.current.displayVersion)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    #endif
                 }
             }
             .padding(.horizontal, 16)
@@ -168,6 +185,7 @@ struct JunoMobileSettingsView: View {
         HStack(spacing: 12) {
             if let session {
                 JunoAvatar(
+                    imageData: avatarData,
                     imageURL: session.profile.imageURL,
                     name: session.profile.name ?? session.profile.email,
                     size: 44

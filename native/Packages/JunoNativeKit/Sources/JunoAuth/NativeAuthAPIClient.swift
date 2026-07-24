@@ -66,13 +66,44 @@ public struct NativeAccountProfile: Equatable, Sendable {
     public let id: AccountID
     public let name: String?
     public let email: String
-    public let imageURL: URL?
+    /// The account photo exactly as the server stores it.
+    ///
+    /// Kept as the raw string because the two forms it takes need different
+    /// loaders. An avatar uploaded to Juno is stored as a **relative** path
+    /// (`/api/files/<key>` — see `src/app/api/profile/avatar/route.ts`) behind a
+    /// route that requires authentication, so it can be neither resolved nor
+    /// fetched by a plain `AsyncImage`; that is what left the profile circle
+    /// permanently blank. An avatar inherited from an OAuth provider is an
+    /// absolute URL and loads normally.
+    public let image: String?
 
-    public init(id: AccountID, name: String?, email: String, imageURL: URL?) {
+    public init(id: AccountID, name: String?, email: String, image: String?) {
         self.id = id
         self.name = name
         self.email = email
-        self.imageURL = imageURL
+        self.image = image
+    }
+
+    /// For callers that already hold a resolved URL (previews, fixtures).
+    public init(id: AccountID, name: String?, email: String, imageURL: URL?) {
+        self.init(id: id, name: name, email: email, image: imageURL?.absoluteString)
+    }
+
+    /// Non-nil only when the stored value is a fetchable absolute URL — never
+    /// for Juno's own `/api/files/…` avatars, which have no host to fetch from.
+    public var imageURL: URL? {
+        guard let image, let url = URL(string: image),
+            let scheme = url.scheme?.lowercased(),
+            scheme == "https" || scheme == "http"
+        else { return nil }
+        return url
+    }
+
+    /// The backend path when the photo lives behind Juno's authenticated file
+    /// route, which is where an uploaded avatar always lives.
+    public var imagePath: String? {
+        guard let image, imageURL == nil, image.hasPrefix("/") else { return nil }
+        return image
     }
 }
 
@@ -234,7 +265,7 @@ public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
             id: AccountID(decoded.profile.id),
             name: decoded.profile.name,
             email: decoded.profile.email,
-            imageURL: decoded.profile.image.flatMap(URL.init(string:))
+            image: decoded.profile.image
         )
         return try NativeAuthenticatedSession(
             profile: profile,

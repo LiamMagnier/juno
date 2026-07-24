@@ -129,7 +129,7 @@ public struct NativeBootstrapClient: Sendable {
                 id: profileAccountID,
                 name: wire.profile.name,
                 email: wire.profile.email,
-                imageURL: wire.profile.image.flatMap(URL.init(string:))
+                image: wire.profile.image
             ),
             currentChangeCursor: wire.currentChangeCursor,
             compactionFloorCursor: wire.compactionFloorCursor,

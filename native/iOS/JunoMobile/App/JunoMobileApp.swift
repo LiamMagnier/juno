@@ -27,6 +27,7 @@ struct JunoMobileApp: App {
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
+    private let avatarModel: NativeAvatarModel?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -43,6 +44,7 @@ struct JunoMobileApp: App {
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
+        avatarModel = configuration.avatarModel
     }
 
     var body: some Scene {
@@ -79,6 +81,7 @@ struct JunoMobileApp: App {
             syncModel: syncModel,
             outbox: outbox,
             attachmentModel: attachmentModel,
+            avatarModel: avatarModel,
             conversationModel: conversationModel,
             projectModel: projectModel,
             artifactModel: artifactModel,
@@ -160,6 +163,7 @@ struct JunoMobileApp: App {
                 attachmentModel: NativeComposerAttachmentModel(
                     client: NativeAttachmentAPIClient(sender: runtime)
                 ),
+                avatarModel: NativeAvatarModel(sender: runtime),
                 conversationModel: NativeConversationModel(
                     repository: localStore,
                     outbox: outbox,
@@ -207,6 +211,7 @@ struct JunoMobileApp: App {
                 syncModel: nil,
                 outbox: nil,
                 attachmentModel: nil,
+                avatarModel: nil,
                 conversationModel: nil,
                 projectModel: nil,
                 artifactModel: nil,
@@ -235,6 +240,7 @@ private struct JunoMobileConfiguration {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     let outbox: (any MutationOutboxRepository)?
     let attachmentModel: NativeComposerAttachmentModel?
+    let avatarModel: NativeAvatarModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
