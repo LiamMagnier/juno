@@ -2,6 +2,31 @@ import XCTest
 @testable import JunoCodeKit
 
 final class CodeContractsTests: XCTestCase {
+    func testAgentRuntimeMapsToBackendProviderWithoutChangingSharedProfile() throws {
+        let codex = CodeAgentProfile(
+            runtime: .codex,
+            permissionMode: .autoEdit,
+            modelID: "openai:gpt-codex",
+            reasoningEffort: "high",
+            computerUse: true,
+            subagentsEnabled: true
+        )
+        let claude = CodeAgentProfile(
+            runtime: .claude,
+            permissionMode: codex.permissionMode,
+            modelID: "anthropic:claude",
+            reasoningEffort: codex.reasoningEffort,
+            computerUse: codex.computerUse,
+            subagentsEnabled: codex.subagentsEnabled
+        )
+
+        XCTAssertEqual(codex.runtime.providerID, "openai")
+        XCTAssertEqual(claude.runtime.providerID, "anthropic")
+        XCTAssertEqual(codex.permissionMode, claude.permissionMode)
+        XCTAssertEqual(codex.computerUse, claude.computerUse)
+        XCTAssertEqual(codex.subagentsEnabled, claude.subagentsEnabled)
+    }
+
     func testWorkspaceRelativePathRejectsTraversalAndAbsolutePaths() {
         XCTAssertThrowsError(try WorkspaceRelativePath("../Secrets.txt"))
         XCTAssertThrowsError(try WorkspaceRelativePath("Sources/../Secrets.txt"))

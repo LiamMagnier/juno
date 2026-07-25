@@ -190,6 +190,21 @@ export class AgentSession {
     this.callbacks.onEvent(event);
   }
 
+  private persistMessages(): void {
+    const safe = this.messages.map((message): ChatMessage => {
+      if (message.role !== 'user') return message;
+      return {
+        role: 'user',
+        content: message.content.map((content) =>
+          content.type === 'image'
+            ? { type: 'text', text: '[Ephemeral Computer Use screenshot omitted.]' }
+            : content
+        ),
+      };
+    });
+    this.store.saveMessages(safe);
+  }
+
   /** Run one full user turn: stream, execute tools with gating, until end_turn. */
   async prompt(text: string): Promise<void> {
     const turnIndex = this.store.meta.turnCount;
@@ -250,7 +265,7 @@ export class AgentSession {
         onAssistantDelta: (text) => this.callbacks.onEvent({ type: 'assistant_delta', text }),
         onAssistantMessage: (text) => this.emit({ type: 'assistant_message', text }),
         executeToolCall: (call) => this.executeToolCall(turnIndex, call),
-        onMessagesChanged: () => this.store.saveMessages(this.messages),
+        onMessagesChanged: () => this.persistMessages(),
       });
       usage = result.usage;
       stopReason = result.stopReason;
@@ -370,7 +385,9 @@ export class AgentSession {
       type: 'tool_finished',
       callId: call.id,
       name: call.name,
-      output: output.length > 2000 ? output.slice(0, 2000) + '…' : output,
+      output: output.startsWith('data:image/')
+        ? '[Ephemeral Computer Use screenshot returned to the model.]'
+        : (output.length > 2000 ? output.slice(0, 2000) + '…' : output),
       isError,
       durationMs: Date.now() - started,
     });

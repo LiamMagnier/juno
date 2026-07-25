@@ -5614,6 +5614,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Rebuilding your chats with their original titles and dates."
   },
   {
+    "id": "9be029dc3f8fbb18",
+    "source": "Previous-generation Opus, superseded by Opus 5."
+  },
+  {
     "id": "9c0b617e79e94dac",
     "source": "Delete project"
   },

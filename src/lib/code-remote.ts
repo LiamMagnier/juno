@@ -211,6 +211,12 @@ export function serializeTask(task: CodeTask) {
     parentSessionId: task.parentSessionId,
     createsNewSession: task.createsNewSession,
     origin: task.origin,
+    agentRuntime: task.agentRuntime,
+    permissionMode: task.permissionMode,
+    modelId: task.modelId,
+    reasoningEffort: task.reasoningEffort,
+    computerUse: task.computerUse,
+    subagentsEnabled: task.subagentsEnabled,
     // Cloud Juno Code: "device" (default) runs on a registered host; "cloud"
     // runs on a GitHub Actions runner against repoOwner/repoName and opens a PR.
     target: task.target,

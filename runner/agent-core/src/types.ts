@@ -14,7 +14,8 @@ export interface Usage {
 /** Provider-neutral chat message format. Adapters translate to vendor wire formats. */
 export type UserContent =
   | { type: 'text'; text: string }
-  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean };
+  | { type: 'tool_result'; toolCallId: string; content: string; isError?: boolean }
+  | { type: 'image'; mediaType: 'image/png' | 'image/jpeg'; data: string };
 
 export type AssistantContent =
   | { type: 'text'; text: string }

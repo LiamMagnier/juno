@@ -54,6 +54,14 @@ const postSchema = z.object({
     })
     .optional(),
   baseRef: z.string().trim().min(1).max(200).optional(),
+  // The provider switch is deliberately a runtime choice rather than a second
+  // task type: history, files, approvals and events stay Juno-owned and sync.
+  agentRuntime: z.enum(["codex", "claude"]).optional().default("codex"),
+  permissionMode: z.enum(["plan", "ask", "auto-edit", "full"]).optional().default("ask"),
+  modelId: z.string().trim().min(1).max(200).optional(),
+  reasoningEffort: z.enum(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]).optional(),
+  computerUse: z.boolean().optional().default(false),
+  subagentsEnabled: z.boolean().optional().default(true),
 }).refine(
   (v) => (v.prompt?.trim().length ?? 0) > 0 || (v.attachmentIds?.length ?? 0) > 0,
   { message: "prompt_or_attachments_required", path: ["prompt"] },
@@ -136,6 +144,12 @@ export async function POST(req: Request) {
     target,
     repo,
     baseRef,
+    agentRuntime,
+    permissionMode,
+    modelId,
+    reasoningEffort,
+    computerUse,
+    subagentsEnabled,
   } = parsed.data;
   const isCloud = target === "cloud";
   // Existing-session tasks are explicit: the task and the local SwiftData
@@ -251,6 +265,12 @@ export async function POST(req: Request) {
             createsNewSession,
             origin: origin ?? "cloud",
             idempotencyKey: idempotencyKey ?? null,
+            agentRuntime,
+            permissionMode,
+            modelId: modelId ?? null,
+            reasoningEffort: reasoningEffort ?? null,
+            computerUse,
+            subagentsEnabled,
           },
         });
       });
@@ -326,6 +346,12 @@ export async function POST(req: Request) {
           createsNewSession,
           origin: origin ?? "remote",
           idempotencyKey: idempotencyKey ?? null,
+          agentRuntime,
+          permissionMode,
+          modelId: modelId ?? null,
+          reasoningEffort: reasoningEffort ?? null,
+          computerUse,
+          subagentsEnabled,
         },
       });
     } catch (err) {
