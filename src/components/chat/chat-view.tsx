@@ -1608,8 +1608,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               </p>
             </div>
           ) : (
-            // Empty / greeting view
-            <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto">
+            // Empty / greeting view. overflow-x-clip so the composer aura, which
+            // is wider than the column it sits in, can never put a horizontal
+            // scrollbar over dead space (it still scrolls vertically).
+            <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
               <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
                 <div className="relative flex w-full flex-col items-center justify-center">
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}

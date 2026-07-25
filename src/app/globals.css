@@ -1023,28 +1023,76 @@
      and it takes no layout (the column's height is the composer's alone). */
   .composer-aura {
     /* One knob for the whole effect: every alpha below is scaled by it, so the
-       bloom can be dialled up or down without re-balancing three shadows. */
+       bloom can be dialled up or down without re-balancing the ramp. */
     --aura: 1;
     position: absolute;
-    /* Deliberately SMALLER than the capsule and pill-shaped: the source box
-       stays hidden behind the composer, so all you ever see is the blur — a
-       soft ellipse of light rather than a rectangular rim. */
-    inset: 10px 70px;
+    /* Half the composer root's bottom padding, so the bloom centres on the
+       capsule rather than on the column — otherwise the light pools under it. */
+    top: calc(50% - .5rem);
+    left: 50%;
+    /* Wide, but kept close to the capsule's own height. This box is real
+       layout, so whatever it clears vertically it adds to the empty state's
+       scroll height — the column above clips it sideways (overflow-x-clip),
+       which leaves only the vertical to budget for, and ~45px of clearance
+       stays well inside the slack a centered greeting always has. */
+    width: min(150%, 58rem);
+    aspect-ratio: 10 / 3;
+    translate: -50% -50%;
     z-index: -1;
-    border-radius: 999px;
     pointer-events: none;
-    /* Three spreads of box-shadow, not a giant blurred gradient layer: shadows
-       are ink overflow, so however far the bloom reaches it can never widen the
-       empty state's scroll area (a 74rem gradient div did, and handed short or
-       narrow windows a scrollbar over dead space). Bonus: no offscreen blur
-       buffer, and the breathing scale below stays a composited transform. */
-    box-shadow:
-      0 0 70px 22px hsl(var(--primary) / calc(.24 * var(--aura))),
-      0 0 160px 56px hsl(var(--primary) / calc(.14 * var(--aura))),
-      0 16px 260px 110px hsl(var(--primary) / calc(.085 * var(--aura)));
+    /*
+     * ONE gradient, painted edge to edge of this box.
+     *
+     * Two things this shape is fixing. Stacked box-shadows drew the bloom as
+     * three separate falloffs, and their seams read as concentric rings on a
+     * good display. And a shadow paints only OUTSIDE its element's border box,
+     * so the box itself stayed unlit — a dark plate below the capsule, since
+     * the host is taller than the capsule by the composer's bottom padding.
+     * A single background covers its own box, so there is no plate, and one
+     * continuous ramp has no seams to band along.
+     *
+     * The ramp is hand-shaped to a rough Gaussian rather than left linear: a
+     * straight alpha ramp spends most of its length in the flat middle, which
+     * is exactly where 8-bit alpha steps are widest and most visible. Ending on
+     * an explicit zero-alpha PRIMARY (not `transparent`, which is zero-alpha
+     * black) keeps the hue steady all the way out instead of graying off.
+     */
+    background: radial-gradient(
+      ellipse 50% 50% at 50% 50%,
+      hsl(var(--primary) / calc(.20 * var(--aura))) 0%,
+      hsl(var(--primary) / calc(.175 * var(--aura))) 18%,
+      hsl(var(--primary) / calc(.125 * var(--aura))) 36%,
+      hsl(var(--primary) / calc(.072 * var(--aura))) 54%,
+      hsl(var(--primary) / calc(.032 * var(--aura))) 72%,
+      hsl(var(--primary) / calc(.009 * var(--aura))) 88%,
+      hsl(var(--primary) / 0) 100%
+    );
     opacity: .85;
     transition: opacity var(--dur-slow) var(--ease-out-soft);
   }
+  /* Dither. Even a perfect ramp bands: alpha is quantised to 1/255, so a slow
+     fade over ~400px puts a visible step every few pixels, and no amount of
+     blur helps because the blur output is quantised too. A little fixed noise
+     on top scatters each step across the boundary, which is what makes the
+     bands disappear rather than merely soften. Kept faint enough to read as
+     paper grain, and it must NOT be blurred — hence no filter on the parent. */
+  .composer-aura::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    opacity: .04;
+    mix-blend-mode: overlay;
+    /* Masked to the bloom, or the grain paints its own rectangle: this box is
+       wider than the light inside it, and unmasked noise over dark paper shows
+       every one of those edges. Held flat across the lit middle — where the
+       steps actually are — and released only at the rim. */
+    -webkit-mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, #000 62%, transparent 96%);
+    mask-image: radial-gradient(ellipse 50% 50% at 50% 50%, #000 0%, #000 62%, transparent 96%);
+  }
+  /* Warm charcoal swallows a low-alpha wash that light paper shows plainly, so
+     dark gets a little more of it. */
+  .dark .composer-aura { --aura: 1.2; }
   /* Typing warms it a little — the one place the composer is allowed an accent
      response to focus, since it happens behind the surface, not on it. */
   .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
