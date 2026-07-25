@@ -1030,13 +1030,15 @@
        capsule rather than on the column — otherwise the light pools under it. */
     top: calc(50% - .5rem);
     left: 50%;
-    /* Grows sideways rather than down. This box is real layout, so whatever it
-       clears vertically it adds to the empty state's scroll height — the column
-       above clips it sideways (overflow-x-clip), so width is free and height is
-       the budgeted axis. ~70px of clearance stays inside the slack a centered
-       greeting has, even in a 400px-tall window. */
+    /* Width is free — the column above clips sideways (overflow-x-clip), so
+       nothing it clears there can ever be scrolled to. Height is not: this box
+       is real layout, and whatever it clears below the composer is added to the
+       empty state's scroll height. So height is taken from the viewport rather
+       than from the width, which keeps the bloom inside the slack a centred
+       greeting leaves at any window size instead of handing short windows a
+       scrollbar over dead space. The cap stops it ballooning on tall screens. */
     width: min(180%, 72rem);
-    aspect-ratio: 18 / 5;
+    height: min(32rem, 54vh);
     translate: -50% -50%;
     z-index: -1;
     pointer-events: none;
