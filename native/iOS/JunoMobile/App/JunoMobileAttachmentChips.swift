@@ -68,20 +68,11 @@ struct JunoMobileAttachmentChips: View {
         .accessibilityLabel(accessibilityLabel(attachment))
     }
 
-    @ViewBuilder
+    /// The preview is decoded to thumbnail size off the main actor. Decoding it
+    /// here — `UIImage(data:)` in a view body — put a full 12-megapixel decode on
+    /// the main thread every time the composer was drawn.
     private func thumbnail(_ attachment: NativeComposerAttachment) -> some View {
-        if let data = attachment.previewData, let image = UIImage(data: data) {
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 30, height: 30)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-        } else {
-            Image(systemName: "doc")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(width: 30, height: 30)
-        }
+        JunoAttachmentThumbnail(data: attachment.previewData)
     }
 
     @ViewBuilder

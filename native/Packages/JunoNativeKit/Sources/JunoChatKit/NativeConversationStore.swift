@@ -64,6 +64,13 @@ public struct NativeConversation: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A reader's rating of one answer. Nullable on the wire and here: clearing a
+/// thumb is a real operation, not the absence of one.
+public enum NativeChatFeedback: String, Equatable, Sendable {
+    case up = "UP"
+    case down = "DOWN"
+}
+
 public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     public var id: String
     public let conversationID: String
@@ -78,6 +85,17 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     public var finishReason: NativeChatFinishReason?
     public var isPending: Bool
     public var errorDescription: String?
+    /// What this answer cost, in US dollars.
+    ///
+    /// The server's own figure, not an estimate made here: it is written at
+    /// generation time from tokens *plus* cache writes and tool fees, and a
+    /// client recomputing it from token counts alone under-reports badly. The
+    /// native model manifest carries a price tier, not per-token rates, so there
+    /// is nothing to recompute from anyway. Nil on user turns, on anything
+    /// written before the column existed, and while a reply is still streaming.
+    public var costUSD: Double?
+    /// The reader's rating, as the server holds it.
+    public var feedback: NativeChatFeedback?
 
     public init(
         id: String,
@@ -92,7 +110,9 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         sources: [NativeChatSource] = [],
         finishReason: NativeChatFinishReason? = nil,
         isPending: Bool = false,
-        errorDescription: String? = nil
+        errorDescription: String? = nil,
+        costUSD: Double? = nil,
+        feedback: NativeChatFeedback? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -107,6 +127,8 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.finishReason = finishReason
         self.isPending = isPending
         self.errorDescription = errorDescription
+        self.costUSD = costUSD
+        self.feedback = feedback
     }
 }
 
@@ -269,7 +291,12 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             reasoning: wire.reasoning,
             model: wire.model,
             createdAt: createdAt,
-            revision: record.revision
+            revision: record.revision,
+            // Micro-USD on the wire, dollars here. Zero is treated as absent:
+            // the column defaults to nothing for turns that were never billed,
+            // and "$0" under an answer reads as a claim rather than a gap.
+            costUSD: wire.costMicroUsd.flatMap { $0 > 0 ? Double($0) / 1_000_000 : nil },
+            feedback: wire.feedback.flatMap(NativeChatFeedback.init(rawValue:))
         )
     }
 
@@ -445,10 +472,19 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     private let syncModel: NativeSyncModel<Repository>
     private let chatClient: NativeChatAPIClient?
     private let titleClient: NativeConversationTitleClient?
-    /// Conversations already put through naming this session. The server is
-    /// idempotent about it, but a request per streamed turn would burn the
-    /// route's rate limit for nothing.
-    private var titledConversationIDs: Set<String> = []
+    /// Which naming passes each conversation has already had this session.
+    ///
+    /// Two, matching the website's ladder: `first_user` names the chat from the
+    /// question as soon as it is asked, and `completed` re-reads it once the
+    /// answer exists and refines the name from what the exchange turned out to
+    /// be about. The web fires four (`thinking` and `writing` as well); those two
+    /// only exist to make the title settle *during* a long stream in a browser
+    /// tab, and on a phone they would spend the route's rate limit re-naming a
+    /// chat the reader is watching.
+    ///
+    /// Keyed rather than a flat set because the server is idempotent per phase
+    /// but a request per streamed turn would burn the rate limit for nothing.
+    private var titlePhasesRun: [String: Set<NativeConversationTitleClient.Phase>] = [:]
     private var accountID: AccountID?
     private var lastSynchronizationGeneration = -1
     private var isReconciling = false
@@ -499,8 +535,14 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         /// re-sent when the append itself never landed.
         let attachmentIDs: [String]
         /// Carried through retries so a resend is still the research request the
-        /// reader asked for, rather than silently downgrading to plain chat.
+        /// reader asked for, rather than silently downgrading to plain chat. The
+        /// three tool flags beside it travel for the same reason: a retry that
+        /// dropped the reader's web search or their chosen connectors would
+        /// answer a different question from the one they asked.
         let deepResearch: Bool
+        let webSearch: Bool
+        let canvasEnabled: Bool?
+        let connectors: [String]
         var userMessageID: String?
         var userCreatedAt: Date
     }
@@ -553,7 +595,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         activeChatConversationID = nil
         selectedConversationID = nil
         recentlyRenamedConversationID = nil
-        titledConversationIDs = []
+        titlePhasesRun = [:]
         lastSynchronizationGeneration = -1
         phase = .idle
     }
@@ -693,18 +735,26 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         if wasSelected, selectedConversationID == id {
             selectedConversationID = nil
         }
-        titledConversationIDs.remove(id)
+        titlePhasesRun[id] = nil
     }
 
-    /// Asks the server to name the conversation from its opening turns, the way
-    /// the web client does after the first message.
+    /// Asks the server to name the conversation, the way the web client does.
+    ///
+    /// Called twice per conversation: once with ``NativeConversationTitleClient/Phase/firstUser``
+    /// when the question is sent, and once with `completed` when the answer
+    /// lands — see ``titlePhasesRun``. The second pass is the one that names a
+    /// chat from what it turned out to be *about* rather than from how it opened,
+    /// and the app was missing it entirely.
     ///
     /// Best-effort throughout: the server owns the decision (a title the reader
     /// typed is never overwritten) and any failure is swallowed, because naming
     /// must never report an error on a message that sent fine.
-    public func generateTitleIfNeeded(conversationID: String) async {
+    public func generateTitleIfNeeded(
+        conversationID: String,
+        phase: NativeConversationTitleClient.Phase = .firstUser
+    ) async {
         guard let accountID, let titleClient,
-            !titledConversationIDs.contains(conversationID)
+            !(titlePhasesRun[conversationID]?.contains(phase) ?? false)
         else { return }
         let context = visibleMessages(for: conversationID)
             .filter { !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -716,11 +766,15 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                 )
             }
         guard context.contains(where: { $0.role == "USER" }) else { return }
-        titledConversationIDs.insert(conversationID)
+        // The refining pass has nothing to refine *from* until an answer exists.
+        if phase == .completed, !context.contains(where: { $0.role == "ASSISTANT" }) {
+            return
+        }
+        titlePhasesRun[conversationID, default: []].insert(phase)
 
         let generated = try? await titleClient.generateTitle(
             conversationID: conversationID,
-            phase: .firstUser,
+            phase: phase,
             messages: context,
             for: accountID
         )
@@ -737,6 +791,29 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         await reload()
     }
 
+    /// Applies a rating to the on-screen row straight away.
+    ///
+    /// Optimistic on purpose: `POST /api/messages/:id/feedback` returns `{ok}`
+    /// and nothing else worth waiting for, and a thumb that fills in a second
+    /// after the tap reads as a button that did not work. The server's own value
+    /// arrives with the next sync and overwrites this either way.
+    public func applyFeedback(
+        _ feedback: NativeChatFeedback?,
+        messageID: String,
+        conversationID: String
+    ) {
+        if let index = transientMessagesByConversation[conversationID]?
+            .firstIndex(where: { $0.id == messageID })
+        {
+            transientMessagesByConversation[conversationID]?[index].feedback = feedback
+        }
+        if let index = messagesByConversation[conversationID]?
+            .firstIndex(where: { $0.id == messageID })
+        {
+            messagesByConversation[conversationID]?[index].feedback = feedback
+        }
+    }
+
     /// Called by the screen that played the rename animation, so it plays once.
     public func acknowledgeTitleAnimation(for conversationID: String) {
         guard recentlyRenamedConversationID == conversationID else { return }
@@ -749,9 +826,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             lastErrorDescription = NativeConversationStoreError.invalidTitle.localizedDescription
             return
         }
-        // A title the reader typed is theirs. Marking it titled stops this
-        // session's auto-namer from proposing one over the top of it.
-        titledConversationIDs.insert(id)
+        // A title the reader typed is theirs. Marking every phase run stops this
+        // session's auto-namer from proposing one over the top of it — including
+        // the refining pass that would otherwise fire when the next answer lands.
+        titlePhasesRun[id] = Set(NativeConversationTitleClient.Phase.allCases)
         await mutateExisting(
             id: id,
             operation: "conversation.rename",
@@ -842,7 +920,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
         attachmentIDs: [String] = [],
-        deepResearch: Bool = false
+        deepResearch: Bool = false,
+        webSearch: Bool = false,
+        canvasEnabled: Bool? = nil,
+        connectors: [String] = []
     ) -> Bool {
         guard !chatPhase.isActive, let accountID, chatClient != nil,
             let conversation = conversations.first(where: { $0.id == conversationID }),
@@ -871,6 +952,9 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             reasoningEffort: reasoningEffort,
             attachmentIDs: attachmentIDs,
             deepResearch: deepResearch,
+            webSearch: webSearch,
+            canvasEnabled: canvasEnabled,
+            connectors: connectors,
             userMessageID: nil,
             userCreatedAt: now
         )
@@ -968,7 +1052,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     modelID: context.modelID,
                     reasoningEffort: context.reasoningEffort,
                     generationID: generationID,
-                    deepResearch: context.deepResearch
+                    deepResearch: context.deepResearch,
+                    webSearch: context.webSearch,
+                    canvasEnabled: context.canvasEnabled,
+                    connectors: context.connectors
                 ),
                 for: context.accountID
             )
@@ -1024,6 +1111,18 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             if chatPhase != .failed { chatPhase = .idle }
             await syncModel.refresh()
             await reload()
+            // The refining pass, after the reload so the answer it names the chat
+            // from is actually in `visibleMessages`. The first-user pass ran when
+            // the question was sent; this is the one that renames "Sidebar
+            // question" to what the exchange turned out to be about, and it is
+            // what the web's `completed` phase does. No-ops on a chat the reader
+            // has named themselves.
+            if chatPhase != .failed {
+                await generateTitleIfNeeded(
+                    conversationID: context.conversationID,
+                    phase: .completed
+                )
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -1431,5 +1530,10 @@ private struct MessageWire: Decodable {
     let content: String
     let reasoning: String?
     let model: String?
+    /// Integer micro-USD, as the column stores it. Optional because every
+    /// message written before the column existed has none, and because a user
+    /// turn never has one.
+    let costMicroUsd: Int?
+    let feedback: String?
     let createdAt: String
 }

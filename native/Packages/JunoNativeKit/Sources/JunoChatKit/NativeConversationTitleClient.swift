@@ -41,7 +41,14 @@ public struct NativeConversationTitleClient: Sendable {
         }
     }
 
-    public enum Phase: String, Sendable {
+    /// The two naming passes the phone runs, of the four the route accepts.
+    ///
+    /// `thinking` and `writing` are deliberately absent: they exist so a browser
+    /// tab's title settles *during* a long stream, and on a phone they would
+    /// spend the route's rate limit re-naming a chat the reader is looking at.
+    /// `CaseIterable` so a manual rename can mark every pass as spent in one go —
+    /// see `NativeConversationModel.renameConversation`.
+    public enum Phase: String, Sendable, CaseIterable {
         case firstUser = "first_user"
         case completed
     }

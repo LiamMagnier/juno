@@ -24,12 +24,24 @@ public final class PreviewWorld {
     public let artifactModel: NativeArtifactModel<SQLiteAccountRepository>
     public let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>
     public let searchModel: NativeSearchModel<SQLiteAccountRepository>
+    /// The in-memory incognito session. Present in the harness so the ghost and
+    /// the mode it opens are inspectable without a real account.
+    public let privateChatModel: NativePrivateChatModel
     /// Present so the composer's Attach section renders in the harness. It is
     /// hidden entirely when no model is supplied, which is correct in the app
     /// but made the section invisible to visual QA.
     public let attachmentModel: NativeComposerAttachmentModel
     /// The no-network transport handed to the macOS Juno Code surface.
     public let chatTransport: any NativeChatRequestSending
+    /// Present so Settings' Danger zone renders in the harness. The tile is
+    /// hidden without a client — correct in an unconfigured app, but it meant the
+    /// one tile that cannot be reached by tapping was also the one tile visual QA
+    /// could never see. Every call goes to the no-network `PreviewSender`.
+    public let accountDataClient: NativeAccountDataClient
+    /// Present so the composer's "From your library" row exists in the harness.
+    /// The row is hidden entirely when no model is supplied — correct in the app,
+    /// but it made the whole path invisible to visual QA and to the UI tests.
+    public let libraryModel: NativeLibraryModel
 
     /// The no-network sync model; exposed so the chat toolbar's sync indicator
     /// renders in preview.
@@ -110,6 +122,11 @@ public final class PreviewWorld {
             sender: sender
         )
         searchModel = NativeSearchModel(repository: repository)
+        privateChatModel = NativePrivateChatModel(
+            client: NativeChatAPIClient(transport: sender)
+        )
+        libraryModel = NativeLibraryModel(client: NativeLibraryClient(sender: sender))
+        accountDataClient = NativeAccountDataClient(sender: sender)
     }
 
     /// Seeds fixtures and starts the real models. For the "loading" scenario it
@@ -134,6 +151,8 @@ public final class PreviewWorld {
         await artifactModel.start(for: accountID)
         await memorySettingsModel.start(for: accountID)
         searchModel.start(for: accountID)
+        privateChatModel.start(for: accountID)
+        libraryModel.start(for: accountID)
 
         // Select a conversation so the chat destination shows a real transcript
         // rather than the empty state during QA.

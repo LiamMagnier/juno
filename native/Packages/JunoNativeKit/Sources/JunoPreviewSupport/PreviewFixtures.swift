@@ -35,10 +35,38 @@ public enum PreviewFixtures {
         count: 60
     )
 
+    /// Project instructions shaped like the ones people actually write: a long,
+    /// tag-structured standing prompt rather than one polite sentence.
+    ///
+    /// The short version hid the problem this screen was rebuilt to fix. Real
+    /// instructions run to dozens of lines of `<role>` / `<about_me>` prompt text,
+    /// and unclamped they pushed the project's conversations and files off the
+    /// bottom of the phone — so the fixture has to be long enough to clamp, or
+    /// nothing about the clamp is being exercised.
+    ///
+    /// `\\n` is doubled: this is interpolated into a JSON string literal, so the
+    /// escape has to survive Swift and reach the decoder intact.
+    private static let promptShapedInstructions = [
+        "<role>",
+        "You are a research assistant on an observational astronomy project.",
+        "Stay in this role for every conversation in this project.",
+        "</role>",
+        "<standing_context>",
+        "Track every quasar observation and keep citations precise.",
+        "Prefer primary sources; name the instrument and the epoch.",
+        "When a measurement is uncertain, say so and give the error bars.",
+        "Group observations by epoch when summarising more than three of them.",
+        "</standing_context>",
+        "<output>",
+        "Lead with the finding, then the evidence, then the caveats.",
+        "Never invent a citation. If you cannot find a source, say that instead.",
+        "</output>",
+    ].joined(separator: "\\n")
+
     /// The account settings row every scenario carries so Settings is populated.
     private static func settings(_ accountID: StorageAccountID) -> StoredRecord {
         record(accountID, "settings", "settings-preview", 3, """
-        {"id":"settings-preview","theme":"SYSTEM","accent":"coral","defaultModel":"anthropic:claude-sonnet-4-6","customInstructions":"Prefer clear, structured answers with short paragraphs.","responseLanguage":"English","uiLocale":"auto","personality":"concise","memoryEnabled":true,"voiceId":null,"favoriteModels":["anthropic:claude-sonnet-4-6","openai:gpt-5"],"emailBudgetAlerts":true,"emailWeeklyDigest":false,"updatedAt":"\(iso(0))"}
+        {"id":"settings-preview","theme":"SYSTEM","accent":"coral","defaultModel":"anthropic:claude-opus-4-8","customInstructions":"Prefer clear, structured answers with short paragraphs.","responseLanguage":"English","uiLocale":"auto","personality":"concise","memoryEnabled":true,"voiceId":null,"favoriteModels":["anthropic:claude-opus-4-8","openai:gpt-5-6"],"emailBudgetAlerts":true,"emailWeeklyDigest":false,"updatedAt":"\(iso(0))"}
         """)
     }
 
@@ -84,11 +112,19 @@ public enum PreviewFixtures {
         """))
 
         // Messages for conv-1: user + assistant with reasoning.
+        //
+        // The assistant's reply deliberately carries the WIRE FORMAT — a
+        // `<juno:memory>` fact and a `<juno:artifact>` block — because a client
+        // that renders `content` verbatim shows both to the reader, and that is
+        // precisely how they shipped once: `juno` is a legal URI scheme, so
+        // `<juno:memory>` came out of Apple's Markdown parser as a coral tappable
+        // link labelled "juno:memory" mid-answer. A fixture that only ever
+        // carries clean prose cannot catch that.
         out.append(record(a, "message", "msg-1", 1, """
         {"id":"msg-1","conversationId":"conv-1","role":"user","content":"How should the macOS sidebar behave when the window gets narrow?","createdAt":"\(iso(-1200))"}
         """))
         out.append(record(a, "message", "msg-2", 1, """
-        {"id":"msg-2","conversationId":"conv-1","role":"assistant","content":"Keep the sidebar resizable with sensible min/max widths, and let NavigationSplitView collapse it automatically at narrow widths. Persist the user's chosen width and the collapsed state across launches.","reasoning":"The user wants native behavior. NavigationSplitView already handles adaptive collapse; the key is persistence and reasonable bounds so the layout never feels cramped.","model":"anthropic:claude-sonnet-4-6","createdAt":"\(iso(-600))"}
+        {"id":"msg-2","conversationId":"conv-1","role":"assistant","content":"Keep the sidebar resizable with sensible min/max widths, and let NavigationSplitView collapse it automatically at narrow widths. Persist the user's chosen width and the collapsed state across launches.  <juno:memory>Liam prefers native NavigationSplitView behaviour over a hand-rolled sidebar.</juno:memory>  <juno:artifact identifier='sidebar-spec' type='markdown' title='Sidebar behaviour spec'>## Widths\\n\\n- min 220pt, max 360pt</juno:artifact>","reasoning":"The user wants native behavior. NavigationSplitView already handles adaptive collapse; the key is persistence and reasonable bounds so the layout never feels cramped.","model":"anthropic:claude-sonnet-4-6","promptTokens":8421,"completionTokens":612,"costMicroUsd":21400,"createdAt":"\(iso(-600))"}
         """))
         out.append(record(a, "message", "msg-3", 1, """
         {"id":"msg-3","conversationId":"conv-proj","role":"user","content":"Summarize the latest quasar observations for the report.","createdAt":"\(iso(-1800))"}
@@ -99,7 +135,7 @@ public enum PreviewFixtures {
 
         // Projects (one starred).
         out.append(record(a, "project", "proj-1", 8, """
-        {"id":"proj-1","name":"Astro research","nameSource":"user","instructions":"Track every quasar observation and keep citations precise.","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
+        {"id":"proj-1","name":"Astro research","nameSource":"user","instructions":"\(promptShapedInstructions)","starred":true,"createdAt":"\(iso(-200000))","updatedAt":"\(iso(-1200))"}
         """))
         out.append(record(a, "project", "proj-2", 4, """
         {"id":"proj-2","name":"Native apps","nameSource":"user","instructions":"Ship the macOS and iOS clients with real backend transport.","starred":false,"createdAt":"\(iso(-400000))","updatedAt":"\(iso(-80000))"}

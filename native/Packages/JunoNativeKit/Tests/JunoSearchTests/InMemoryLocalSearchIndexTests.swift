@@ -130,6 +130,62 @@ final class InMemoryLocalSearchIndexTests: XCTestCase {
         XCTAssertEqual(results.map(\.key), [newer.key])
     }
 
+    // MARK: - Substring matching
+
+    /// The reported defect. Matching was exact-token-or-prefix only, so a
+    /// mid-word fragment found nothing and search read as broken.
+    func testMatchesATokenSubstringNotJustAPrefix() async throws {
+        let index = InMemoryLocalSearchIndex()
+        let document = makeDocument(
+            id: "one",
+            title: "Quasar brightness chart",
+            body: "Observed with JavaScript tooling"
+        )
+        try await index.apply([.upsert(document)])
+
+        for fragment in ["uasar", "right", "script"] {
+            let results = await index.search(accountID: accountA, query: fragment, limit: 10)
+            XCTAssertEqual(
+                results.map(\.key),
+                [document.key],
+                "\"\(fragment)\" should match inside a token"
+            )
+        }
+    }
+
+    /// A prefix hit has to still outrank a substring hit, or the ordering stops
+    /// meaning anything.
+    func testAPrefixMatchOutranksASubstringMatch() async throws {
+        let index = InMemoryLocalSearchIndex()
+        let prefixed = makeDocument(id: "prefix", title: "Sonnet notes", body: "")
+        let inside = makeDocument(id: "inside", title: "Reasonnetting", body: "")
+        try await index.apply([.upsert(prefixed), .upsert(inside)])
+
+        let results = await index.search(accountID: accountA, query: "sonnet", limit: 10)
+        XCTAssertEqual(results.first?.key, prefixed.key)
+        XCTAssertEqual(results.count, 2)
+    }
+
+    /// One and two character fragments appear inside almost every token in an
+    /// account. Matching them returns everything, ordered by nothing, which is
+    /// worse than returning nothing at all.
+    func testShortFragmentsDoNotMatchAsSubstrings() async throws {
+        let index = InMemoryLocalSearchIndex()
+        let document = makeDocument(id: "one", title: "Quasar brightness", body: "")
+        try await index.apply([.upsert(document)])
+
+        for fragment in ["ua", "s"] {
+            let results = await index.search(accountID: accountA, query: fragment, limit: 10)
+            XCTAssertTrue(
+                results.isEmpty,
+                "\"\(fragment)\" is too short to match as a substring"
+            )
+        }
+        // Three is the threshold, and it does match.
+        let atThreshold = await index.search(accountID: accountA, query: "uas", limit: 10)
+        XCTAssertEqual(atThreshold.map(\.key), [document.key])
+    }
+
     private func makeDocument(
         id: String,
         title: String,

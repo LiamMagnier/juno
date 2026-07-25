@@ -52,10 +52,34 @@ public extension JunoColorToken {
 }
 
 public extension Color {
-    /// The Juno accent (coral), brightened slightly in dark mode. Prefer the
-    /// app `AccentColor` asset for `.tint`; use this where an explicit brand
-    /// fill is needed.
-    static let junoAccent = Color.junoAdaptive(light: .accentLight, dark: .accentDark)
+    /// The account's chosen accent — coral unless Settings says otherwise.
+    ///
+    /// A computed property, not a `static let`, and that is the whole fix for
+    /// "changing the accent colour does nothing": the value was frozen at coral at
+    /// process start, so the picker moved a setting that was stored, synced, and
+    /// then read by nothing. Resolving through ``JunoAccentSelection`` means every
+    /// existing call site — 80-odd of them — picks the change up, and because the
+    /// selection is `@Observable` the reads register as dependencies and the views
+    /// actually redraw.
+    ///
+    /// `MainActor.assumeIsolated` is safe here in practice and unavoidable in
+    /// principle: SwiftUI evaluates view bodies on the main actor, which is the
+    /// only place a colour is resolved, but `Color`'s own accessors are not
+    /// annotated so the compiler cannot see that. The fallback keeps a non-main
+    /// caller (a unit test, a background snapshot) on brand rather than trapping.
+    static var junoAccent: Color {
+        guard Thread.isMainThread else {
+            return Color.junoAdaptive(light: .accentLight, dark: .accentDark)
+        }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.color }
+    }
+
+    /// Text and glyphs drawn *on* the accent. White on coral, but a warm near-black
+    /// on amber and on the lifted dark teal/violet/sage, where white fails contrast.
+    static var junoOnAccent: Color {
+        guard Thread.isMainThread else { return .white }
+        return MainActor.assumeIsolated { JunoAccentSelection.shared.current.onAccent }
+    }
 
     /// The primary screen background.
     static let junoCanvas = Color.junoAdaptive(light: .canvasLight, dark: .canvasDark)

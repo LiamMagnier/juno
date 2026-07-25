@@ -35,7 +35,14 @@ public enum JunoComposerPreviewFlags {
     public static var opensThinking: Bool { isSet("--juno-preview-thinking") }
     /// Focuses the composer, which brings the keyboard up.
     public static var focusesComposer: Bool { isSet("--juno-preview-keyboard") }
-    public static var opensComposerActions: Bool { isSet("--juno-preview-composer-actions") }
+    /// Opens one attachment surface straight from launch: `photos`, `camera` or
+    /// `files`. Reaching one by script otherwise means two taps — the menu, then
+    /// a row — which XCUITest arbitrates differently from a thumb.
+    ///
+    /// There is deliberately no flag for opening the *menu*: it is a system
+    /// menu now, and driving it from a launch argument would be scripting UIKit
+    /// rather than exercising anything of ours.
+    public static var opensPicker: String? { value("--juno-preview-picker") }
 
     public static var modelSearch: String? { value("--juno-preview-model-search") }
     public static var modelProvider: String? { value("--juno-preview-model-provider") }

@@ -255,6 +255,19 @@ extension View {
     }
 }
 
+extension View {
+    /// Wraps one glass element in a `GlassEffectContainer` so it blends with the
+    /// chrome around it instead of sampling independently.
+    @ViewBuilder
+    func junoGlassSearchContainer() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            GlassEffectContainer { self }
+        } else {
+            self
+        }
+    }
+}
+
 /// The system's own glass button style, with a pre-OS-26 fallback.
 ///
 /// `.buttonStyle(.glass)` is a real component: it brings the press flex, the

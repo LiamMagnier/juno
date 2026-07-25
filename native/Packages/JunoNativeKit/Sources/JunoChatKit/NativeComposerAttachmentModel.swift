@@ -163,6 +163,35 @@ public final class NativeComposerAttachmentModel {
         beginUpload(attachment.id, conversationID: conversationID)
     }
 
+    /// Stages files that are **already on the server** — the library picker's
+    /// clones, which reuse a stored object rather than uploading bytes.
+    ///
+    /// They enter directly in `.uploaded`, with no payload behind them. That is
+    /// what makes Retry correctly unavailable on these chips: `retry` requires a
+    /// stored payload, and there is nothing local to send again. If the clone is
+    /// wrong the answer is to remove it and pick another, not to re-upload
+    /// something this device never had.
+    ///
+    /// Silently stops at the per-message ceiling rather than failing the batch:
+    /// a reader who selected eleven files should get the ten that fit.
+    public func adopt(_ uploaded: [NativeUploadedAttachment]) {
+        for attachment in uploaded {
+            guard hasCapacity else {
+                lastErrorDescription =
+                    "You can attach up to \(Self.maximumAttachments) files to one message."
+                return
+            }
+            attachments.append(
+                NativeComposerAttachment(
+                    fileName: attachment.fileName,
+                    mimeType: attachment.mimeType,
+                    byteCount: attachment.size,
+                    state: .uploaded(id: attachment.id)
+                )
+            )
+        }
+    }
+
     public func retry(_ id: UUID, conversationID: String?) {
         guard let index = attachments.firstIndex(where: { $0.id == id }),
             case .failed = attachments[index].state,

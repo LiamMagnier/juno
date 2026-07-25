@@ -184,17 +184,53 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertFalse(thinkingSlider(app).waitForExistence(timeout: 2))
     }
 
+    /// A menu row, however this OS chooses to expose one. Menus have reported
+    /// their rows as buttons and as static text across releases, and a lookup
+    /// that guesses wrong fails identically to a menu that never opened.
+    @MainActor
+    private func requireMenuRow(
+        _ app: XCUIApplication,
+        _ label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) -> XCUIElement {
+        let button = app.buttons[label]
+        if button.waitForExistence(timeout: 5) { return hittable(button) }
+        let text = app.staticTexts[label]
+        XCTAssertTrue(
+            text.waitForExistence(timeout: 5),
+            "No \"\(label)\" row in the menu. On screen:\n\(app.debugDescription)",
+            file: file,
+            line: line
+        )
+        return hittable(text)
+    }
+
+    /// A row exists as soon as the menu is built, which is before it has
+    /// finished opening — and a tap in that window is swallowed. Waiting for
+    /// hittability is what makes the menu tests reliable rather than usually
+    /// fine.
+    @MainActor
+    private func hittable(_ element: XCUIElement) -> XCUIElement {
+        _ = XCTWaiter().wait(
+            for: [
+                expectation(
+                    for: NSPredicate(format: "isHittable == true"), evaluatedWith: element
+                )
+            ],
+            timeout: 5
+        )
+        return element
+    }
+
     /// The "+ does nothing" report from a real iPhone, now a regression guard.
     ///
     /// The cause was never the button. The shell armed a `DragGesture` for the
     /// sidebar reveal, which won every touch near the leading edge — and the "+"
     /// centre lands at x≈36, inside it. Recognising that gesture
     /// *simultaneously* lets the button act and leaves the drawer swipe intact.
-    /// The panel is also a sheet now rather than a popover, which is both the
-    /// better phone affordance and immune to the sizing rule that stops a
-    /// popover with no intrinsic height from presenting at all.
     @MainActor
-    func testTheComposerPlusButtonOpensTheActionsPanelOnTap() {
+    func testTheComposerPlusButtonOpensTheAttachmentMenuOnTap() {
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
@@ -202,79 +238,225 @@ final class JunoMobileComposerUITests: XCTestCase {
         XCTAssertTrue(plus.isHittable, "The + is on screen but not hittable.")
 
         plus.tap()
-        // Assert on the panel's own rows rather than its identifier: the
-        // identifier sits on a container the presentation may not surface as its
-        // own element, and a missing identifier would look exactly like a
-        // missing panel.
-        require(app.staticTexts["Camera"], app, timeout: 5)
-        // Matched as static text, not as a button: each row is a Button wrapping
-        // a title and a subtitle, so its accessibility label is the pair joined
-        // ("Camera, Take a photo now") and an exact button lookup finds nothing.
-        XCTAssertTrue(app.staticTexts["Photos"].exists, "The photo action is missing from the panel.")
-        XCTAssertTrue(app.staticTexts["Files"].exists, "The files action is missing from the panel.")
+        _ = requireMenuRow(app, "Camera")
+        XCTAssertTrue(app.descendants(matching: .any)["Photos"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Files"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["From your library"].firstMatch.exists)
     }
 
-    /// Taps all the way through to a picker, which the panel test above does not.
+    /// The Tools submenu — the website's second group, which this app did not
+    /// have at all.
     ///
-    /// **This is a smoke test, not a regression guard — and the difference
-    /// matters.** The reported failure ("the panel opens, Photos and Camera do
-    /// nothing") does not reproduce under XCUITest: it was verified that this
-    /// test passes against the structure that shipped broken, because the
-    /// simulator dismisses and presents fast enough that a racing presentation
-    /// still lands, and synthetic taps do not arbitrate with system gestures the
-    /// way a thumb does. So what this proves is only that the path is wired —
-    /// panel → choice → a presentation appears. Do not read a pass here as
-    /// evidence that the device-side defect is fixed.
+    /// Deep research especially: the flag was already plumbed the whole way
+    /// through `NativeChatGenerationRequest` and the retry context, and there was
+    /// no control anywhere in the app that could set it. A build that regresses
+    /// this ships a feature nobody can reach, which is exactly the state this
+    /// test exists to prevent.
     ///
-    /// The assertion is that the app gets covered. The picker renders out of
-    /// process, so there is no element of ours to wait for — but a presentation
-    /// that happened makes the composer unreachable, and one that was dropped
-    /// leaves it sitting there.
+    /// Matched on a prefix because the row states its own count — "Tools · 3"
+    /// with web search, canvas and memory on, which is the harness's resting
+    /// state.
     @MainActor
-    func testTappingPhotosInThePanelActuallyOpensAPicker() {
+    private func openTools(_ app: XCUIApplication) {
+        let tools = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Tools"))
+            .firstMatch
+        XCTAssertTrue(
+            tools.waitForExistence(timeout: 5),
+            "No Tools row in the menu. On screen:\n\(app.debugDescription)"
+        )
+        hittable(tools).tap()
+    }
+
+    @MainActor
+    func testThePlusMenuOffersTheWebsitesTools() {
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
         require(plus, app)
         plus.tap()
-        require(app.staticTexts["Photos"], app, timeout: 5)
-        app.staticTexts["Photos"].tap()
 
-        let covered = expectation(
+        XCTAssertTrue(app.descendants(matching: .any)["Create a canvas"].firstMatch.exists)
+        openTools(app)
+
+        _ = requireMenuRow(app, "Deep research")
+        XCTAssertTrue(app.descendants(matching: .any)["Web search"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Canvas & artifacts"].firstMatch.exists)
+        XCTAssertTrue(app.descendants(matching: .any)["Memory"].firstMatch.exists)
+    }
+
+    /// Arming research marks the "+" itself.
+    ///
+    /// The dot is the only thing on screen that says the next message will cost a
+    /// multi-minute research run, because the menu that set it is closed by then —
+    /// and now that the switches live one level down, it is the only thing saying
+    /// so at the top level either. Asserted through the accessibility label rather
+    /// than by pixel: the label is what a VoiceOver reader gets, and if it is
+    /// right the dot is drawn.
+    @MainActor
+    func testArmingDeepResearchMarksThePlusButton() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        XCTAssertEqual(plus.label, "Add")
+
+        plus.tap()
+        openTools(app)
+        requireMenuRow(app, "Deep research").tap()
+
+        let armed = expectation(
+            for: NSPredicate(format: "label BEGINSWITH %@", "Add — deep research"),
+            evaluatedWith: plus
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [armed], timeout: 5),
+            .completed,
+            "The + never announced that research is armed. Label was \(plus.label)"
+        )
+    }
+
+    /// The library picker opens from the menu and can be dismissed.
+    ///
+    /// The harness's canned library is empty, so this asserts on the picker's own
+    /// chrome rather than on rows: what is being proved is that the row is wired
+    /// to a presentation at all.
+    @MainActor
+    func testChoosingLibraryOpensThePicker() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        requireMenuRow(app, "From your library").tap()
+
+        require(app.buttons["juno.mobile.library-attach"], app, timeout: 10)
+        XCTAssertFalse(
+            plus.isHittable,
+            "The library picker opened but the composer is still reachable beneath it."
+        )
+    }
+
+    /// The headline behaviour, and the one the panel this replaced could not
+    /// have: opening the menu is not a presentation, so the keyboard stays where
+    /// it is and the composer does not move under the reader's thumb.
+    @MainActor
+    func testOpeningTheMenuLeavesTheKeyboardUp() throws {
+        let app = launch(["--juno-preview-keyboard"])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        guard app.keyboards.firstMatch.waitForExistence(timeout: 5) else {
+            // The simulator is on a hardware keyboard; there is no software
+            // keyboard to keep up, and asserting on one would be noise.
+            throw XCTSkip("No software keyboard on this simulator.")
+        }
+
+        plus.tap()
+        _ = requireMenuRow(app, "Camera")
+        XCTAssertTrue(
+            app.keyboards.firstMatch.exists,
+            "Opening the attachment menu dismissed the keyboard."
+        )
+    }
+
+    /// The other half of the gesture fix: scoping the drawer's open-swipe to the
+    /// leading edge is what stopped it competing with the menu, and this is what
+    /// proves the swipe still works.
+    ///
+    /// Asserts on the plate going inert rather than on a sidebar row appearing:
+    /// the drawer is always in the hierarchy, behind the plate, so "the drawer
+    /// exists" says nothing about whether it opened.
+    @MainActor
+    func testSwipingFromTheLeadingEdgeStillOpensTheDrawer() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        XCTAssertTrue(plus.isHittable, "The composer is not reachable to begin with.")
+
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.004, dy: 0.5))
+            .press(
+                forDuration: 0.05,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.75, dy: 0.5))
+            )
+
+        let revealed = expectation(
             for: NSPredicate(format: "isHittable == false"), evaluatedWith: plus
         )
         XCTAssertEqual(
-            XCTWaiter().wait(for: [covered], timeout: 10),
+            XCTWaiter().wait(for: [revealed], timeout: 5),
             .completed,
-            "The panel closed but nothing was presented over the app. On screen:\n\(app.debugDescription)"
+            "The edge swipe did not open the drawer. On screen:\n\(app.debugDescription)"
+        )
+    }
+
+    /// Taps all the way through to the photo panel.
+    ///
+    /// The grid inside it renders out of process, so there is no photo of ours
+    /// to wait for — but the panel's own All Photos control is ours, and the
+    /// composer being unreachable is what says the panel is over it rather than
+    /// under it.
+    @MainActor
+    func testChoosingPhotosOpensThePhotoPanelOverTheComposer() {
+        let app = launch([])
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        require(plus, app)
+        plus.tap()
+        requireMenuRow(app, "Photos").tap()
+
+        // Generous on purpose: the picker is an out-of-process extension and its
+        // first launch on a cold simulator is seconds, not milliseconds.
+        require(app.buttons["juno.mobile.photos-all"], app, timeout: 30)
+        XCTAssertFalse(
+            plus.isHittable,
+            "The photo panel opened but the composer is still reachable beneath it."
         )
     }
 
     /// The camera's own path. Asserts on our surface rather than on coverage,
-    /// because the camera view is ours: with no capture hardware — the
-    /// simulator — it renders an explicit unavailable card instead of a preview.
-    /// Same caveat as the Photos test above: it cannot see the device-only
-    /// failure.
+    /// because the camera panel is ours: with no capture hardware — the
+    /// simulator — it renders an explicit unavailable card instead of a preview,
+    /// and the panel itself is on screen either way.
     @MainActor
-    func testTappingCameraInThePanelActuallyOpensTheCamera() {
+    func testChoosingCameraOpensTheCameraPanel() {
         let app = launch([])
 
         let plus = app.buttons["juno.mobile.chat-plus"]
         require(plus, app)
         plus.tap()
-        require(app.staticTexts["Camera"], app, timeout: 5)
-        app.staticTexts["Camera"].tap()
+        requireMenuRow(app, "Camera").tap()
 
-        let unavailable = app.descendants(matching: .any)["juno.mobile.camera-unavailable"]
-        let preview = app.descendants(matching: .any)["juno.mobile.camera-preview"]
-        let opened = expectation(
-            for: NSPredicate(format: "exists == true OR count > 0"),
-            evaluatedWith: unavailable.firstMatch
+        // The close control, not a panel identifier: an identifier on the panel
+        // would be inherited by everything inside it.
+        require(app.buttons["juno.mobile.camera-close"], app, timeout: 10)
+        // And the panel is over the composer, not under it.
+        XCTAssertFalse(
+            plus.isHittable,
+            "The camera panel opened but the composer is still reachable beneath it."
         )
-        let result = XCTWaiter().wait(for: [opened], timeout: 10)
-        XCTAssertTrue(
-            result == .completed || preview.firstMatch.exists,
-            "The panel closed but no camera surface appeared. On screen:\n\(app.debugDescription)"
+    }
+
+    /// The camera panel is opened straight from a launch argument here — the tap
+    /// path is covered above — so the close control is exercised without the
+    /// menu's timing in the way.
+    @MainActor
+    func testTheCameraPanelClosesAndGivesTheComposerBack() {
+        let app = launch(["--juno-preview-picker", "camera"])
+
+        let close = app.buttons["juno.mobile.camera-close"]
+        require(close, app)
+        close.tap()
+
+        let plus = app.buttons["juno.mobile.chat-plus"]
+        let restored = expectation(
+            for: NSPredicate(format: "isHittable == true"), evaluatedWith: plus
+        )
+        XCTAssertEqual(
+            XCTWaiter().wait(for: [restored], timeout: 10),
+            .completed,
+            "Closing the camera did not give the composer back. On screen:\n\(app.debugDescription)"
         )
     }
 

@@ -17,6 +17,7 @@ struct JunoMobileApp: App {
     @State private var authModel: NativeAuthModel
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
+    @State private var privateChatModel: NativePrivateChatModel?
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     @State private var memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
@@ -24,16 +25,26 @@ struct JunoMobileApp: App {
     @State private var connectorModel: NativeConnectorModel?
     @State private var scheduledTaskModel: NativeScheduledTaskModel?
     @State private var codeModel: NativeCodeModel?
+    @State private var libraryModel: NativeLibraryModel?
     private let localStore: SQLiteAccountRepository?
     private let outbox: (any MutationOutboxRepository)?
     private let attachmentModel: NativeComposerAttachmentModel?
     private let avatarModel: NativeAvatarModel?
+    /// The authenticated transport, kept so a voice session can be authorized
+    /// on demand. Voice is the one feature whose credential is minted per
+    /// session against an account that is only known once signed in, so it
+    /// cannot be a model built at launch like every other one here.
+    private let requestSender: (any NativeAuthenticatedRequestSending)?
+    private let accountDataClient: NativeAccountDataClient?
+    private let voiceTranscriptClient: NativeVoiceTranscriptClient?
+    private let messageActionsClient: NativeMessageActionsClient?
 
     init() {
         let configuration = Self.makeConfiguration()
         _authModel = State(initialValue: configuration.authModel)
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
+        _privateChatModel = State(initialValue: configuration.privateChatModel)
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
         _memorySettingsModel = State(initialValue: configuration.memorySettingsModel)
@@ -41,6 +52,11 @@ struct JunoMobileApp: App {
         _connectorModel = State(initialValue: configuration.connectorModel)
         _scheduledTaskModel = State(initialValue: configuration.scheduledTaskModel)
         _codeModel = State(initialValue: configuration.codeModel)
+        _libraryModel = State(initialValue: configuration.libraryModel)
+        requestSender = configuration.requestSender
+        accountDataClient = configuration.accountDataClient
+        voiceTranscriptClient = configuration.voiceTranscriptClient
+        messageActionsClient = configuration.messageActionsClient
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -63,6 +79,9 @@ struct JunoMobileApp: App {
                         artifactModel: world.artifactModel,
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
+                        privateChatModel: world.privateChatModel,
+                        libraryModel: world.libraryModel,
+                        accountDataClient: world.accountDataClient,
                         previewSession: world.session
                     )
                 }
@@ -87,9 +106,15 @@ struct JunoMobileApp: App {
             artifactModel: artifactModel,
             memorySettingsModel: memorySettingsModel,
             searchModel: searchModel,
+            privateChatModel: privateChatModel,
             connectorModel: connectorModel,
             scheduledTaskModel: scheduledTaskModel,
-            codeModel: codeModel
+            codeModel: codeModel,
+            libraryModel: libraryModel,
+            requestSender: requestSender,
+            accountDataClient: accountDataClient,
+            voiceTranscriptClient: voiceTranscriptClient,
+            messageActionsClient: messageActionsClient
         )
     }
 
@@ -192,6 +217,11 @@ struct JunoMobileApp: App {
                     sender: runtime
                 ),
                 searchModel: NativeSearchModel(repository: localStore),
+                // Its own client instance, and its own model: an incognito chat
+                // shares no state with the persisted one by construction.
+                privateChatModel: NativePrivateChatModel(
+                    client: NativeChatAPIClient(transport: runtime)
+                ),
                 connectorModel: NativeConnectorModel(
                     client: NativeConnectorClient(sender: runtime)
                 ),
@@ -200,7 +230,14 @@ struct JunoMobileApp: App {
                 ),
                 codeModel: NativeCodeModel(
                     client: NativeCodeTaskClient(sender: runtime, streamer: runtime)
-                )
+                ),
+                libraryModel: NativeLibraryModel(
+                    client: NativeLibraryClient(sender: runtime)
+                ),
+                requestSender: runtime,
+                accountDataClient: NativeAccountDataClient(sender: runtime),
+                voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
+                messageActionsClient: NativeMessageActionsClient(sender: runtime)
             )
         } catch {
             return JunoMobileConfiguration(
@@ -217,9 +254,15 @@ struct JunoMobileApp: App {
                 artifactModel: nil,
                 memorySettingsModel: nil,
                 searchModel: nil,
+                privateChatModel: nil,
                 connectorModel: nil,
                 scheduledTaskModel: nil,
-                codeModel: nil
+                codeModel: nil,
+                libraryModel: nil,
+                requestSender: nil,
+                accountDataClient: nil,
+                voiceTranscriptClient: nil,
+                messageActionsClient: nil
             )
         }
     }
@@ -246,7 +289,13 @@ private struct JunoMobileConfiguration {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    let privateChatModel: NativePrivateChatModel?
     let connectorModel: NativeConnectorModel?
     let scheduledTaskModel: NativeScheduledTaskModel?
     let codeModel: NativeCodeModel?
+    let libraryModel: NativeLibraryModel?
+    let requestSender: (any NativeAuthenticatedRequestSending)?
+    let accountDataClient: NativeAccountDataClient?
+    let voiceTranscriptClient: NativeVoiceTranscriptClient?
+    let messageActionsClient: NativeMessageActionsClient?
 }

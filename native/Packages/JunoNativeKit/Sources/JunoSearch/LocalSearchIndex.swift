@@ -246,6 +246,18 @@ public actor InMemoryLocalSearchIndex: LocalSearchIndexing {
         return tokens.filter { seen.insert($0).inserted }
     }
 
+    /// How well one search term matches one document, 0 for not at all.
+    ///
+    /// The tiers are exact token, then token prefix, then — added because the index
+    /// was otherwise unusable for the way people actually type — **token
+    /// substring**. Prefix-only matching means "uasar" finds nothing in "quasar"
+    /// and "script" finds nothing in "JavaScript", which reads as search being
+    /// broken rather than as a deliberate retrieval rule. Substrings score below
+    /// every prefix tier so a real prefix hit still sorts first.
+    ///
+    /// Substring matching is gated at three characters. One or two characters match
+    /// inside almost every token in an account, which is worse than no results: it
+    /// returns everything, in an order that means nothing.
     private func score(
         term: String,
         title: Set<String>,
@@ -258,8 +270,16 @@ public actor InMemoryLocalSearchIndex: LocalSearchIndexing {
         if keywords.contains(where: { $0.hasPrefix(term) }) { return 4 }
         if body.contains(term) { return 3 }
         if body.contains(where: { $0.hasPrefix(term) }) { return 1 }
+
+        guard term.count >= Self.minimumSubstringLength else { return 0 }
+        if title.contains(where: { $0.contains(term) }) { return 6 }
+        if keywords.contains(where: { $0.contains(term) }) { return 3 }
+        if body.contains(where: { $0.contains(term) }) { return 1 }
         return 0
     }
+
+    /// Below this, a substring match is noise rather than a search.
+    static let minimumSubstringLength = 3
 
     private func snippet(for document: SearchDocument) -> String {
         let source = document.body.trimmingCharacters(in: .whitespacesAndNewlines)

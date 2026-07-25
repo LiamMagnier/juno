@@ -230,8 +230,17 @@ private struct JunoMacConversationDetail: View {
     }
 }
 
+/// A message in the plain conversation list.
+///
+/// This renders the reply flattened to text rather than `message.content`: the
+/// raw string carries `<juno:memory>` and `<juno:artifact>` wire tags, and this
+/// row would otherwise show them to the reader verbatim.
 private struct JunoMacMessageRow: View {
     let message: NativeChatMessage
+
+    private var plainText: String {
+        NativeMessageContent.plainText(of: message.content)
+    }
 
     var body: some View {
         HStack {
@@ -240,7 +249,7 @@ private struct JunoMacMessageRow: View {
                 Text(message.role == .user ? "You" : "Juno")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                Text(message.content)
+                Text(plainText)
                     .textSelection(.enabled)
                 if let model = message.model, !model.isEmpty {
                     Text(model).font(.caption2).foregroundStyle(.tertiary)

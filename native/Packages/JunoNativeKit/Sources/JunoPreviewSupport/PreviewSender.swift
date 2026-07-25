@@ -54,6 +54,9 @@ public actor PreviewSender: NativeChatRequestSending {
         if path.contains("/memory") {
             return Data(#"{"memories":[],"summary":null}"#.utf8)
         }
+        if path.hasPrefix("/api/library") {
+            return Data(#"{"items":[],"attachments":[]}"#.utf8)
+        }
         if path.contains("/mutations") {
             return Data(#"{"entity":{"id":"preview","revision":1},"entityMappings":{}}"#.utf8)
         }

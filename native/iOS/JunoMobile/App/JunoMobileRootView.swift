@@ -4,6 +4,7 @@ import JunoCodeKit
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoVoiceKit
 import QuickLook
 import SwiftUI
 import UniformTypeIdentifiers
@@ -28,16 +29,39 @@ struct JunoMobileRootView: View {
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
+    /// The in-memory incognito session. Nil when the app could not be configured.
+    var privateChatModel: NativePrivateChatModel?
     /// The three server-backed sections. Unlike the models above they hold no
     /// local mirror — connections, scheduled tasks and code sessions live only
     /// on the server, so each screen reads them live and says so when it cannot.
     var connectorModel: NativeConnectorModel?
     var scheduledTaskModel: NativeScheduledTaskModel?
     var codeModel: NativeCodeModel?
+    /// Backs the composer's "From your library".
+    var libraryModel: NativeLibraryModel?
+    /// The authenticated transport, used to mint a voice relay credential. See
+    /// ``startVoice()`` for why the controller cannot be built at launch.
+    var requestSender: (any NativeAuthenticatedRequestSending)?
+    /// Backs Settings › Danger zone.
+    var accountDataClient: NativeAccountDataClient?
+    /// Files a finished voice call into chat history. See ``saveVoiceTranscript``.
+    var voiceTranscriptClient: NativeVoiceTranscriptClient?
+    /// Backs the transcript's action row — rate, branch, read aloud.
+    var messageActionsClient: NativeMessageActionsClient?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
     @State private var showingSettings = false
+    @State private var incognito = false
+    /// The live voice session, built when one is asked for and torn down with the
+    /// cover that shows it.
+    @State private var voiceController: JunoRealtimeVoiceController?
+    #if DEBUG
+    /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
+    /// signed in — the launch flag fires before `restore()` finishes, and a
+    /// session cannot be authorized without an account.
+    @State private var pendingVoiceLaunch = false
+    #endif
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     #if DEBUG
@@ -71,6 +95,31 @@ struct JunoMobileRootView: View {
             #endif
         }
         .preferredColorScheme(preferredColorScheme)
+        // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
+        // this body makes the body re-evaluate whenever it changes, and this body is
+        // an ancestor of the Settings sheet — so choosing a colour tore the sheet
+        // down and dropped the reader back on the chat mid-tap, which is what
+        // "the accent selector doesn't work" actually was. The tint is applied on
+        // the leaves instead, none of which is an ancestor of a presentation the
+        // accent can move.
+        // The accent is a *process* value, not a view value — see
+        // `JunoAccentSelection`. Applied on first read of the settings row and on
+        // every subsequent sync, so a change made on the web lands here too.
+        .onChange(of: memorySettingsModel?.settings?.accent) { _, accent in
+            JunoAccentSelection.shared.apply(setting: accent)
+        }
+        // And once at launch: `onChange` does not fire for the value that is
+        // already there when the settings row loads before this view appears.
+        .task(id: memorySettingsModel?.settings?.accent) {
+            #if DEBUG
+            // A launch override wins, so every palette has a reachable state.
+            if let forced = JunoPreviewEnvironment.initialAccent {
+                JunoAccentSelection.shared.apply(setting: forced)
+                return
+            }
+            #endif
+            JunoAccentSelection.shared.apply(setting: memorySettingsModel?.settings?.accent)
+        }
         // Deliberately NOT wrapped in `.animation(_:value:)`. Crossfading the
         // whole app on a theme change reads well for about a second and costs
         // far more than that: an `.animation` at the root applies to every state
@@ -92,6 +141,13 @@ struct JunoMobileRootView: View {
                 if CommandLine.arguments.contains("--juno-preview-settings") {
                     showingSettings = true
                 }
+                // Opens straight into incognito, so the mode's own look is one
+                // relaunch away rather than a scripted tap.
+                if CommandLine.arguments.contains("--juno-preview-incognito") {
+                    selection = .chat
+                    conversationModel?.selectedConversationID = nil
+                    incognito = true
+                }
                 return
             }
             // Opens the real, signed-in shell straight onto one destination, so
@@ -111,6 +167,11 @@ struct JunoMobileRootView: View {
             switch environment["JUNO_START_OVERLAY"] {
             case "settings": showingSettings = true
             case "sidebar": sidebarOpen = true
+            // Voice is otherwise only reachable by tapping the composer's
+            // primary action on an empty draft, which a scripted screenshot
+            // cannot do. The session it opens is a real one — the relay refuses
+            // or accepts it exactly as it would from a tap.
+            case "voice": pendingVoiceLaunch = true
             default: break
             }
             #endif
@@ -127,11 +188,19 @@ struct JunoMobileRootView: View {
                 Task { await artifactModel?.start(for: session.profile.id) }
                 Task { await memorySettingsModel?.start(for: session.profile.id) }
                 searchModel?.start(for: session.profile.id)
+                privateChatModel?.start(for: session.profile.id)
                 attachmentModel?.start(for: session.profile.id)
                 avatarModel?.start(for: session.profile)
                 Task { await connectorModel?.start(for: session.profile.id) }
                 Task { await scheduledTaskModel?.start(for: session.profile.id) }
                 Task { await codeModel?.start(for: session.profile.id) }
+                libraryModel?.start(for: session.profile.id)
+                #if DEBUG
+                if pendingVoiceLaunch {
+                    pendingVoiceLaunch = false
+                    startVoice()
+                }
+                #endif
             } else {
                 syncModel?.stop()
                 attachmentModel?.stop()
@@ -140,10 +209,18 @@ struct JunoMobileRootView: View {
                 artifactModel?.stop()
                 memorySettingsModel?.stop()
                 searchModel?.stop()
+                // Signing out must not leave an incognito transcript in memory.
+                privateChatModel?.stop()
+                incognito = false
                 avatarModel?.clear()
                 connectorModel?.stop()
                 scheduledTaskModel?.stop()
                 codeModel?.stop()
+                libraryModel?.stop()
+                // A voice session outliving the account it was authorized for is
+                // a live microphone on a signed-out device.
+                voiceController?.end()
+                voiceController = nil
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -194,6 +271,120 @@ struct JunoMobileRootView: View {
             }
         }
         .sheet(isPresented: $showingSettings) { settingsSheet }
+        // A full-screen cover, not a sheet: a spoken conversation is the whole
+        // interaction while it lasts, and a sheet's dimmed strip of chat above it
+        // invites tapping back into a screen whose composer is now meaningless.
+        //
+        // The binding is derived from the controller rather than kept beside it
+        // as a separate `Bool`. Two sources of truth for one presentation is how
+        // a cover ends up showing with nothing behind it — or, worse here, how a
+        // dismissed cover leaves a live microphone running.
+        .fullScreenCover(
+            isPresented: Binding(
+                get: { voiceController != nil },
+                set: { shown in if !shown { voiceController = nil } }
+            )
+        ) {
+            if let voiceController {
+                JunoMobileVoiceView(
+                    controller: voiceController,
+                    saveTranscript: voiceSaveAction,
+                    close: { self.voiceController = nil }
+                )
+                .tint(Color.junoAccent)
+            }
+        }
+    }
+
+    /// Written as a typed property rather than an inline `cond ? method : nil`.
+    /// That form is a closure-or-nil choice the type checker has now given up on
+    /// twice in this file — see `voiceAction` and `memoryAction`.
+    private var voiceSaveAction: ((JunoMobileVoiceTranscript) async -> String?)? {
+        guard voiceTranscriptClient != nil else { return nil }
+        return { transcript in await saveVoiceTranscript(transcript) }
+    }
+
+    /// Files a finished voice call into the account's chat history.
+    ///
+    /// **Which conversation it lands in is decided here, by one line.** If a chat
+    /// was open when the call started, `selectedConversationID` is non-nil and the
+    /// turns are appended to it. On the home screen — a draft, nothing selected —
+    /// it is nil, and the server creates a conversation for them. That is the
+    /// same rule the website applies, and it is the whole of the behaviour: no
+    /// client-side branching, because the route already treats a null
+    /// `conversationId` as "make one".
+    ///
+    /// Returns the conversation id, or nil on failure so the screen can offer a
+    /// retry — the relay keeps nothing, so a dropped save loses the conversation.
+    private func saveVoiceTranscript(
+        _ transcript: JunoMobileVoiceTranscript
+    ) async -> String? {
+        guard let voiceTranscriptClient,
+            let session = currentSession,
+            let conversationModel
+        else { return nil }
+
+        let openConversationID = conversationModel.selectedConversationID
+        do {
+            let saved = try await voiceTranscriptClient.save(
+                sessionID: transcript.sessionID,
+                conversationID: openConversationID,
+                // The conversation's own model when there is one, so a voice turn
+                // in an existing chat is attributed to what that chat is using.
+                modelID: conversationModel.conversations
+                    .first { $0.id == openConversationID }?.model
+                    ?? memorySettingsModel?.settings?.defaultModel
+                    ?? conversationModel.selectableModels.first?.id
+                    ?? "juno:auto",
+                projectID: conversationModel.conversations
+                    .first { $0.id == openConversationID }?.projectId,
+                connectors: [],
+                turns: transcript.turns,
+                for: session.profile.id
+            )
+            // Pull the server's rows down before selecting, so opening the chat
+            // shows the turns rather than an empty transcript that fills in.
+            await syncModel?.refresh()
+            await conversationModel.reload()
+            conversationModel.selectedConversationID = saved.conversationID
+            selection = .chat
+            // A conversation the server just created has no name yet. This is the
+            // same naming the typed path gets — from the spoken turns instead of
+            // a typed one.
+            await conversationModel.generateTitleIfNeeded(
+                conversationID: saved.conversationID
+            )
+            return saved.conversationID
+        } catch {
+            return nil
+        }
+    }
+
+    /// Builds a voice session for the signed-in account and shows it.
+    ///
+    /// Built here, on demand, rather than at launch with the other models: a
+    /// relay credential is minted per session against a specific account, and at
+    /// `makeConfiguration()` time there is no account. Returning without doing
+    /// anything when either half is missing is what keeps the composer's voice
+    /// button honest — `openVoiceMode` is nil in that case, so the button is
+    /// never offered at all.
+    private func startVoice() {
+        guard voiceController == nil,
+            let requestSender,
+            let session = currentSession
+        else { return }
+        voiceController = JunoRealtimeVoiceController(
+            authorization: JunoMobileVoiceAuthorization(
+                sender: requestSender,
+                accountID: session.profile.id
+            )
+        )
+    }
+
+    /// Whether a spoken conversation can be started at all. Both halves have to
+    /// be present, and on a signed-out or unconfigured shell neither is.
+    private var canStartVoice: Bool {
+        requestSender != nil && currentSession != nil
     }
 
     /// Settings is presented as a large modal sheet over the current screen —
@@ -213,7 +404,8 @@ struct JunoMobileRootView: View {
                         session: currentSession,
                         avatarData: avatarModel?.imageData,
                         syncModel: syncModel,
-                        outbox: outbox
+                        outbox: outbox,
+                        accountDataClient: accountDataClient
                     )
                 } else {
                     unavailable
@@ -228,6 +420,8 @@ struct JunoMobileRootView: View {
                     Button { showingSettings = false } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 15, weight: .semibold))
+                            // Ink: closing a sheet is chrome, not emphasis.
+                            .foregroundStyle(Color.primary)
                     }
                     .accessibilityLabel("Close settings")
                     .accessibilityIdentifier("juno.mobile.settings-close")
@@ -236,6 +430,7 @@ struct JunoMobileRootView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .tint(Color.junoAccent)
     }
 
     // MARK: iPhone drawer
@@ -266,12 +461,47 @@ struct JunoMobileRootView: View {
                 detail(for: selection)
                     .allowsHitTesting(!sidebarOpen)
             }
+            // Closed: the drawer's open-swipe lives on a narrow strip along the
+            // leading edge, exactly where iOS puts its own edge gestures.
+            //
+            // It used to be a `simultaneousGesture` on the whole plate, and that
+            // is the "+ does nothing" report twice over. As an exclusive gesture
+            // it took the button's touch outright; recognising simultaneously
+            // fixed the *button* — but the "+" is a `Menu` now, and a menu's own
+            // recognizer loses that race often enough to be caught by a test
+            // that taps it three times. A gesture that only exists where it is
+            // meant to be used cannot compete with a control at all.
+            .overlay(alignment: .leading) {
+                if !sidebarOpen {
+                    Color.clear
+                        .frame(width: 20)
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 18)
+                                .onEnded { value in
+                                    guard value.translation.width > 60 else { return }
+                                    setSidebar(true)
+                                }
+                        )
+                        .ignoresSafeArea()
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay {
                 if sidebarOpen {
+                    // Open: the plate is inert anyway, so the close tap *and*
+                    // the close swipe both live here, competing with nothing.
                     Rectangle()
                         .fill(.clear)
                         .contentShape(Rectangle())
                         .onTapGesture { setSidebar(false) }
+                        .gesture(
+                            DragGesture(minimumDistance: 18)
+                                .onEnded { value in
+                                    guard value.translation.width < -60 else { return }
+                                    setSidebar(false)
+                                }
+                        )
                         .accessibilityLabel("Close sidebar")
                         .accessibilityAddTraits(.isButton)
                 }
@@ -282,22 +512,20 @@ struct JunoMobileRootView: View {
             .offset(x: sidebarOpen ? revealed : 0)
         }
         .animation(JunoMotion.reduced(JunoMotion.emphasized, when: reduceMotion), value: sidebarOpen)
-        // `simultaneousGesture`, not `gesture`. Attached as an exclusive gesture
-        // this tracked every touch in the whole shell and won against the
-        // control nearest the leading edge: the composer's "+" sits at x≈36 and
-        // its action simply never fired, while the model chip 40pt to its right
-        // always worked. That is the "+ does nothing" report — the button was
-        // never broken, its touch was being taken. Recognising simultaneously
-        // lets the button act and still leaves the drawer swipe intact.
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 18)
-                .onEnded { value in
-                    if value.translation.width < -60 { setSidebar(false) }
-                    else if value.translation.width > 60 && value.startLocation.x < 32 {
-                        setSidebar(true)
-                    }
-                }
-        )
+    }
+
+    /// Enters or leaves incognito.
+    ///
+    /// One animation for the whole mode change, applied here rather than at either
+    /// face: the two are siblings in the same `Group`, so animating the flag is what
+    /// crossfades them. A `.snappy` rather than a spring — the mode is a state, and
+    /// overshoot on a privacy affordance reads as playfulness in the wrong place.
+    private func setIncognito(_ on: Bool) {
+        if reduceMotion {
+            incognito = on
+        } else {
+            withAnimation(.snappy(duration: 0.28)) { incognito = on }
+        }
     }
 
     private func setSidebar(_ open: Bool) {
@@ -322,6 +550,13 @@ struct JunoMobileRootView: View {
 
     private func openSidebarDestination(_ destination: JunoMobileSection) {
         setSidebar(false)
+        // Navigating away ends it. Leaving the mode armed behind another section
+        // means coming back to Chat later and typing into a session the reader has
+        // forgotten is incognito — or worse, assuming one is.
+        if destination != .chat, incognito {
+            privateChatModel?.reset()
+            incognito = false
+        }
         // Settings is a modal sheet over the current screen, never a pushed
         // destination that replaces it.
         guard destination != .settings else {
@@ -369,25 +604,124 @@ struct JunoMobileRootView: View {
                     }
                 }
         }
+        .tint(Color.junoAccent)
+    }
+
+    /// The chat destination, extracted from `destinationRoot`.
+    ///
+    /// Not a style choice: with the composer's tools wired in, the `switch` over
+    /// every section became one expression the type checker gave up on —
+    /// literally "failed to produce diagnostic for expression". The transcript
+    /// and the conversation toolbar are already split out of their own bodies for
+    /// the same reason. Anything that has to grow here should grow as another
+    /// property, not as another argument in the middle of the switch.
+    @ViewBuilder
+    private var chatDestination: some View {
+        if incognito, let privateChatModel, let conversationModel {
+            // The SAME destination, wearing its incognito face. Not presented
+            // over the chat and not pushed onto it — see the note on
+            // `JunoMobileIncognitoChat`. The crossfade is the shell's, so the
+            // navigation bar and the drawer stay exactly where they are.
+            JunoMobileIncognitoChat(
+                model: privateChatModel,
+                selectableModels: conversationModel.selectableModels,
+                initialModelID: memorySettingsModel?.settings?.defaultModel
+                    ?? conversationModel.selectableModels.first?.id ?? "",
+                profileName: currentSession?.profile.name,
+                onClose: { setIncognito(false) }
+            )
+            .transition(.opacity)
+        } else if let conversationModel {
+            JunoMobileChatDetailScreen(
+                model: conversationModel,
+                projects: projectModel?.projects ?? [],
+                attachmentModel: attachmentModel,
+                profileName: currentSession?.profile.name,
+                // The composer's connected-apps row goes where the web's does:
+                // Juno's connections. Always offered, exactly as the drawer
+                // offers that destination — the screen itself is what says when
+                // there is nothing behind it.
+                openPlugins: { selection = .connections },
+                // The same action the drawer's + runs, so New chat from the
+                // chat header and New chat from the sidebar cannot diverge.
+                newChat: startNewChat,
+                // Settings' own choice. Empty until the settings row loads,
+                // which is why the composer re-resolves when it changes.
+                accountDefaultModelID: memorySettingsModel?.settings?.defaultModel ?? "",
+                // Lets a tapped artifact card in the transcript resolve to the
+                // stored artifact and open over the conversation.
+                artifactModel: artifactModel,
+                // Offered only where the web offers it: with no chat open. In a
+                // saved conversation the reader is already in a chat that IS
+                // being saved, and a ghost there reads as a promise about the
+                // thread they can see.
+                startIncognito: privateChatModel == nil ? nil : { setIncognito(true) },
+                // Nil where a session cannot be authorized, which is what keeps
+                // the composer from offering a voice button that opens nothing —
+                // the state this app shipped in.
+                openVoiceMode: voiceAction,
+                libraryModel: libraryModel,
+                // Only the connected ones. A menu listing every app in the
+                // catalog would be a catalog, and choosing an unconnected app for
+                // a turn does nothing the server can honour.
+                connectors: connectedApps,
+                memoryEnabled: memorySettingsModel?.settings?.memoryEnabled ?? true,
+                setMemoryEnabled: memoryAction,
+                messageActions: messageActionsClient,
+                accountID: currentSession?.profile.id,
+                voiceID: memorySettingsModel?.settings?.voiceID
+            )
+            .transition(.opacity)
+        } else {
+            unavailable
+        }
+    }
+
+    private var connectedApps: [NativeConnector] {
+        (connectorModel?.linked ?? []).filter(\.connected)
+    }
+
+    /// Written as typed properties rather than inline `cond ? method : nil`
+    /// ternaries. Both of those are a closure-or-nil choice in the middle of a
+    /// twenty-argument initializer, and they are what tipped this expression past
+    /// what the type checker would solve.
+    private var voiceAction: (() -> Void)? {
+        guard canStartVoice else { return nil }
+        return { startVoice() }
+    }
+
+    private var memoryAction: ((Bool) -> Void)? {
+        guard let memorySettingsModel else { return nil }
+        return { enabled in
+            Task {
+                await memorySettingsModel.updateSettings(
+                    NativeSettingsPatch(memoryEnabled: enabled)
+                )
+            }
+        }
     }
 
     @ViewBuilder
     private func destinationRoot(_ destination: JunoMobileSection) -> some View {
         switch destination {
         case .chat:
-            if let conversationModel {
-                JunoMobileChatDetailScreen(
-                    model: conversationModel,
-                    projects: projectModel?.projects ?? [],
-                    attachmentModel: attachmentModel,
-                    profileName: currentSession?.profile.name
-                )
-            } else {
-                unavailable
-            }
+            chatDestination
         case .search:
             if let searchModel {
-                JunoMobileSearchView(model: searchModel, open: openSearchResult)
+                JunoMobileSearchView(
+                    model: searchModel,
+                    open: openSearchResult,
+                    // The drawer's own ordering, reused: pinned first, then most
+                    // recently touched. Search's resting state should agree with
+                    // the sidebar rather than invent a second notion of "recent".
+                    recentConversations: recentsForSearch,
+                    projects: projectModel?.projects ?? [],
+                    openConversation: openConversation,
+                    openProject: { id in
+                        projectModel?.selectedProjectID = id
+                        selection = .projects
+                    }
+                )
             } else { unavailable }
         case .code:
             if let codeModel {
@@ -415,7 +749,7 @@ struct JunoMobileRootView: View {
             } else { unavailable }
         case .library:
             if let projectModel {
-                JunoMobileFilesView(model: projectModel)
+                JunoMobileLibraryView(model: projectModel)
             } else { unavailable }
         case .artifacts:
             if let artifactModel {
@@ -430,7 +764,8 @@ struct JunoMobileRootView: View {
                     session: currentSession,
                     avatarData: avatarModel?.imageData,
                     syncModel: syncModel,
-                    outbox: outbox
+                    outbox: outbox,
+                    accountDataClient: accountDataClient
                 )
             } else { unavailable }
         }
@@ -455,6 +790,16 @@ struct JunoMobileRootView: View {
     private func openConversation(_ id: String) {
         conversationModel?.selectedConversationID = id
         selection = .chat
+    }
+
+    /// Non-archived conversations, pinned first then newest — the drawer's rule.
+    private var recentsForSearch: [NativeConversation] {
+        (conversationModel?.conversations ?? [])
+            .filter { $0.archivedAt == nil }
+            .sorted { lhs, rhs in
+                if lhs.pinned != rhs.pinned { return lhs.pinned }
+                return lhs.lastMessageAt > rhs.lastMessageAt
+            }
     }
 
     private func openSearchResult(_ result: NativeSearchResult) {
@@ -644,7 +989,15 @@ private struct JunoMobileSidebarDrawer: View {
             .accessibilityLabel("navigation.search")
         }
         .padding(.horizontal, 16)
-        .frame(height: 44)
+        // No fixed height. It was pinned to 44pt around a 46pt glass circle, so
+        // the button overflowed its own header and the first destination row sat
+        // hard against Search — the mark, the wordmark and "Projects" reading as
+        // one undifferentiated block.
+        //
+        // The bottom inset is the load-bearing half: a brand header and a list of
+        // destinations are two different things, and the gap is what says so.
+        .padding(.top, 6)
+        .padding(.bottom, 14)
     }
 
     private func sectionLabel(_ key: LocalizedStringKey) -> some View {
@@ -672,14 +1025,25 @@ private struct JunoMobileSidebarDrawer: View {
 
     private var profileName: String { session.profile.name ?? session.profile.email }
 
+    /// The photo sits **inside** the glass, not over it.
+    ///
+    /// The avatar used to be 46pt with `JunoGlassCircle` behind it — an opaque
+    /// disc exactly covering the glass, so the button had a Liquid Glass
+    /// background that was impossible to see and read as a bare cropped photo.
+    /// A 32pt photo in a 46pt circle leaves a 7pt ring of real glass around it:
+    /// the control refracts and flexes under a finger like every other piece of
+    /// chrome, and the photo reads as mounted in it rather than as the button.
+    ///
+    /// The outer size is unchanged, so the touch target is still 46pt.
     private var profileButton: some View {
         Button(action: { openDestination(.settings) }) {
             JunoAvatar(
                 imageData: avatarData,
                 imageURL: session.profile.imageURL,
                 name: profileName,
-                size: 46
+                size: 32
             )
+            .padding(7)
             .modifier(JunoGlassCircle())
         }
         .buttonStyle(.plain)

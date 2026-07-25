@@ -5,6 +5,7 @@ import JunoDesignSystem
 import JunoStorage
 import JunoSync
 import SwiftUI
+import UIKit
 
 /// **Settings**, laid out the way the website's is: a serif title over the
 /// account, then a column of tiles — each one a card with a small monospaced
@@ -15,6 +16,23 @@ import SwiftUI
 /// own grouping. The controls inside the tiles are still native pickers and
 /// toggles, because those are what a phone user knows how to operate — it is the
 /// *frame* that changed, not the mechanics.
+///
+/// This pass closed three gaps against the web page:
+///
+/// - **The account was stated twice** — name and email in the header, then the
+///   *same* name and email in the Account tile, one scroll apart. The header is
+///   now the identity and the tile is the actions.
+/// - **Memory had a link and no switch.** The web puts the pause toggle on the
+///   Settings tile itself; the app made you open the subpage to find out whether
+///   memory was even on.
+/// - **There was no Danger zone.** Export and Delete account are the two things
+///   a person is most likely to come to Settings for and could not do here at
+///   all, on a page that otherwise claims to be the account's home.
+///
+/// Still missing against the web, and deliberately not faked: the **Usage**
+/// tile. Plan and quota reach the browser through the server-rendered bootstrap
+/// and there is no REST route behind them, so a native meter would have to
+/// invent its numbers.
 struct JunoMobileSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -24,9 +42,18 @@ struct JunoMobileSettingsView: View {
     var avatarData: Data?
     var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     var outbox: (any MutationOutboxRepository)?
+    /// Backs the Danger zone. Nil where the app could not be configured, in which
+    /// case the tile is absent rather than present and broken.
+    var accountDataClient: NativeAccountDataClient?
     @State private var showingSignOut = false
     @State private var showMemoryPage = false
     @State private var showDiagnosticsPage = false
+    @State private var showingDeleteAccount = false
+    @State private var deleteConfirmation = ""
+    @State private var isDeletingAccount = false
+    @State private var isExporting = false
+    @State private var exportURL: URL?
+    @State private var dangerError: String?
 
     var body: some View {
         Group {
@@ -90,7 +117,95 @@ struct JunoMobileSettingsView: View {
         } message: {
             Text("auth.sign-out.confirm.message")
         }
+        // A sheet, not an alert: an alert's `TextField` is one unlabelled line,
+        // and this one has to show *which* email is being asked for while it is
+        // being typed. Getting that wrong burns one of the three attempts an hour
+        // the route allows.
+        .sheet(isPresented: $showingDeleteAccount) { deleteAccountSheet }
+        // The system share sheet, straight from the finished download.
+        //
+        // Not a `ShareLink`: that needs its item up front, and this one does not
+        // exist until a request comes back. The alternative — a sheet holding a
+        // single `ShareLink` — made "save my data" three taps and two modals.
+        // `item:` rather than a Bool for the usual reason: the URL's existence
+        // *is* the presentation.
+        .sheet(item: Binding(
+            get: { exportURL.map(JunoMobileExportFile.init) },
+            set: { if $0 == nil { exportURL = nil } }
+        )) { file in
+            JunoMobileShareSheet(items: [file.url])
+        }
         .accessibilityIdentifier("juno.mobile.settings")
+    }
+
+    private var deleteAccountSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("This permanently deletes every conversation, project, file and memory on this account. It cannot be undone.")
+                    .font(.system(size: 15))
+                    .lineSpacing(3)
+                    .foregroundStyle(Color.junoMutedForeground)
+
+                if let email = session?.profile.email {
+                    Text("Type \(email) to confirm.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                }
+
+                TextField("Email", text: $deleteConfirmation)
+                    .textContentType(.emailAddress)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.emailAddress)
+                    .font(.system(size: 16))
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                            .fill(Color.junoSurface)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
+                            .strokeBorder(Color.junoHairline, lineWidth: 1)
+                    )
+                    .accessibilityIdentifier("juno.mobile.settings-delete-confirm")
+
+                if let dangerError {
+                    Label(dangerError, systemImage: "exclamationmark.circle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .background(Color.junoCanvas)
+            .navigationTitle("Delete account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("action.cancel") { showingDeleteAccount = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if isDeletingAccount {
+                        ProgressView()
+                    } else {
+                        Button("Delete", role: .destructive) { deleteAccount() }
+                            .disabled(!deleteConfirmationMatches)
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+        .tint(Color.junoAccent)
+    }
+
+    /// The same comparison the server makes. Checked here so the button is dead
+    /// until the confirmation is right, rather than live and then refused.
+    private var deleteConfirmationMatches: Bool {
+        guard let email = session?.profile.email, !email.isEmpty else { return false }
+        return deleteConfirmation
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare(email) == .orderedSame
     }
 
     private var tiles: some View {
@@ -116,38 +231,65 @@ struct JunoMobileSettingsView: View {
                     }
                 }
 
+                // The switch *and* the link, as the web has it. A tile whose only
+                // control was "go and look" could not answer the question the
+                // reader most often opens Settings with: is memory on?
                 JunoSettingsTile(eyebrow: "Memory") {
+                    Toggle(isOn: Binding(
+                        get: { model.settings?.memoryEnabled ?? true },
+                        set: { enabled in
+                            Task {
+                                await model.updateSettings(
+                                    NativeSettingsPatch(memoryEnabled: enabled)
+                                )
+                            }
+                        }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Remember details").font(.system(size: 16))
+                            Text("Juno keeps helpful details from your chats.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .tint(Color.junoAccent)
+                    .disabled(model.isMutating || model.settings == nil)
+                    .accessibilityIdentifier("juno.mobile.settings-memory-toggle")
+
+                    Divider()
+
                     JunoSettingsLink(
-                        title: "Memory",
+                        title: "What Juno remembers",
                         value: Text("^[\(model.memories.count) memory](inflect: true)"),
                         symbol: "brain"
                     ) { showMemoryPage = true }
                     .accessibilityIdentifier("juno.mobile.settings-memory-link")
                 }
 
+                // Identity lives in the header; this tile is what you can *do*.
+                // Restating name and email one scroll below where they already
+                // appear was the page's most obvious piece of duplication.
                 JunoSettingsTile(eyebrow: "Account") {
-                    VStack(alignment: .leading, spacing: 12) {
-                        if let session {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(session.profile.name ?? session.profile.email)
-                                    .font(.system(size: 16, weight: .medium))
-                                Text(session.profile.email)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .textSelection(.enabled)
+                    if authModel != nil {
+                        Button {
+                            showingSignOut = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    .font(.system(size: 16))
+                                    .frame(width: 22)
+                                Text("auth.sign-out").font(.system(size: 16))
+                                Spacer(minLength: 0)
                             }
-                        }
-                        if authModel != nil {
-                            Button(role: .destructive) {
-                                showingSignOut = true
-                            } label: {
-                                Label("auth.sign-out", systemImage: "rectangle.portrait.and.arrow.right")
-                                    .font(.system(size: 15, weight: .medium))
-                            }
-                            .buttonStyle(.plain)
                             .foregroundStyle(.red)
-                            .accessibilityIdentifier("juno.mobile.account-signout")
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("juno.mobile.account-signout")
+                    } else {
+                        Text("Signed in on this device.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -174,11 +316,136 @@ struct JunoMobileSettingsView: View {
                     }
                     #endif
                 }
+
+                dangerZone
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 28)
         }
         .refreshable { await model.refresh() }
+    }
+
+    /// **Danger zone** — the two irreversible things, kept together, last, and
+    /// visibly apart from everything above.
+    ///
+    /// Export first on purpose: it is the thing a person should do *before* they
+    /// delete, and putting it in the same tile is the only place the ordering can
+    /// be made obvious.
+    ///
+    /// Neither is one tap. Export runs a fetch and then hands the file to the
+    /// share sheet — nothing leaves the device without the reader choosing where.
+    /// Delete requires typing the account's own email back, which is the server's
+    /// rule and not a flourish added here: `/api/account/delete` rejects the
+    /// request without it.
+    @ViewBuilder
+    private var dangerZone: some View {
+        if accountDataClient != nil, session != nil {
+            JunoSettingsTile(eyebrow: "Danger zone") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button {
+                        exportAccount()
+                    } label: {
+                        HStack(spacing: 10) {
+                            if isExporting {
+                                ProgressView().controlSize(.small).frame(width: 22)
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(Color.junoAccent)
+                                    .frame(width: 22)
+                            }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Export your data").font(.system(size: 16))
+                                Text("Every chat, project and memory, as JSON.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isExporting)
+                    .accessibilityIdentifier("juno.mobile.settings-export")
+
+                    Divider()
+
+                    Button {
+                        deleteConfirmation = ""
+                        showingDeleteAccount = true
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "trash")
+                                .font(.system(size: 16))
+                                .foregroundStyle(.red)
+                                .frame(width: 22)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Delete account")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(.red)
+                                // Red on the *label*, not on the row. Tinting the
+                                // whole stack dragged the explanation to a pale
+                                // red that read as disabled — and the sentence is
+                                // secondary text, not a second warning.
+                                Text("Removes everything, permanently.")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDeletingAccount)
+                    .accessibilityIdentifier("juno.mobile.settings-delete-account")
+
+                    if let dangerError {
+                        Label(dangerError, systemImage: "exclamationmark.circle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+        }
+    }
+
+    private func exportAccount() {
+        guard let accountDataClient, let session else { return }
+        isExporting = true
+        dangerError = nil
+        Task {
+            defer { isExporting = false }
+            do {
+                exportURL = try await accountDataClient.export(
+                    format: .json,
+                    for: session.profile.id
+                )
+            } catch {
+                dangerError = error.localizedDescription
+            }
+        }
+    }
+
+    private func deleteAccount() {
+        guard let accountDataClient, let session else { return }
+        isDeletingAccount = true
+        dangerError = nil
+        Task {
+            defer { isDeletingAccount = false }
+            do {
+                try await accountDataClient.deleteAccount(
+                    confirmEmail: deleteConfirmation,
+                    accountEmail: session.profile.email,
+                    for: session.profile.id
+                )
+                showingDeleteAccount = false
+                // The account is gone; the local mirror of it must go too, and
+                // signing out is what tears down every model holding a copy.
+                await authModel?.signOut()
+            } catch {
+                dangerError = error.localizedDescription
+            }
+        }
     }
 
     private var header: some View {
@@ -247,6 +514,25 @@ struct JunoMobileSettingsView: View {
         .background(.bar)
         .accessibilityIdentifier("juno.mobile.settings-status")
     }
+}
+
+/// A finished export, wrapped so `.sheet(item:)` can key on it. A bare `URL` is
+/// not `Identifiable`, and identity here is genuinely the file path.
+private struct JunoMobileExportFile: Identifiable {
+    let url: URL
+    var id: String { url.path }
+}
+
+/// The system share sheet, for the one case a `ShareLink` cannot serve: an item
+/// that does not exist until a request comes back.
+private struct JunoMobileShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+
+    func updateUIViewController(_: UIActivityViewController, context: Context) {}
 }
 
 /// One settings tile: a card with a monospaced eyebrow naming what it governs.
@@ -329,14 +615,15 @@ private struct JunoMobileSettingsSections: View {
             }
             .pickerStyle(.segmented)
             .disabled(disabled)
+            // Swatches, not a menu of words. An accent picker whose options are
+            // the strings "Coral" and "Teal" asks the reader to imagine the
+            // result; showing the five colours is the whole decision at a glance —
+            // and it is what the web does.
             row("Accent") {
-                Picker("Accent", selection: binding(\.accent) { NativeSettingsPatch(accent: $0) }) {
-                    ForEach(knownOrCurrent(Self.accents, current: settings.accent), id: \.self) {
-                        Text($0.capitalized).tag($0)
-                    }
-                }
-                .labelsHidden()
-                .disabled(disabled)
+                JunoMobileAccentPicker(
+                    selection: binding(\.accent) { NativeSettingsPatch(accent: $0) },
+                    disabled: disabled
+                )
             }
         }
 
@@ -578,202 +865,50 @@ private struct JunoMobileFavoriteModelsView: View {
     }
 }
 
-private struct JunoMobileMemoryView: View {
-    @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
-    @State private var newMemory = ""
-    @State private var editMemoryID: String?
-    @State private var editContent = ""
-    @State private var deleteMemoryID: String?
-    @State private var showingEraseAll = false
+struct JunoMobileAccentPicker: View {
+    @Binding var selection: String
+    var disabled: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        List {
-            Section {
-                Text("Juno remembers helpful details from your chats so it can give you better, more personalized answers.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                if let summary = model.summary, !summary.content.isEmpty {
-                    Text(summary.content)
-                        .foregroundStyle(.primary)
-                        .textSelection(.enabled)
-                    HStack(spacing: 6) {
-                        Text("Updated \(summary.updatedAt.formatted(.relative(presentation: .named)))")
-                        Spacer(minLength: 0)
-                        Text("^[\(summary.entryCount) memory](inflect: true)")
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                } else {
-                    Text("No summary yet — Juno builds this from what it learns in chats.")
-                        .foregroundStyle(.secondary)
-                }
-            } header: {
-                HStack {
-                    Text("Memory summary")
-                    Spacer()
-                    Button {
-                        Task { await model.refresh() }
-                    } label: {
-                        if model.isRefreshingSummary {
-                            ProgressView().controlSize(.mini)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                    }
-                    .disabled(model.isRefreshingSummary)
-                    .accessibilityLabel("Refresh summary")
-                }
-            }
-
-            Section {
-                Toggle("Pause memory", isOn: Binding(
-                    get: { !(model.settings?.memoryEnabled ?? true) },
-                    set: { paused in
-                        Task {
-                            await model.updateSettings(NativeSettingsPatch(memoryEnabled: !paused))
-                        }
-                    }
-                ))
-                .disabled(model.isMutating || model.settings == nil)
-                .accessibilityIdentifier("juno.mobile.memory-pause")
-            } footer: {
-                Text("While paused, Juno won't save new details from your chats. Existing memories are kept.")
-            }
-
-            Section {
-                DisclosureGroup {
-                    HStack {
-                        TextField("Something Juno should remember", text: $newMemory)
-                            .onSubmit(addMemory)
-                            .accessibilityIdentifier("juno.mobile.settings-memory-input")
-                        Button("Add", action: addMemory)
-                            .disabled(
-                                model.isMutating
-                                    || newMemory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            )
-                            .accessibilityIdentifier("juno.mobile.settings-memory-add")
-                    }
-                    if model.memories.isEmpty {
-                        Text("No saved memories yet. Facts Juno learns in chats appear here.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ForEach(model.memories) { memory in
-                            memoryRow(memory)
-                        }
+        HStack(spacing: 10) {
+            ForEach(JunoAccent.allCases) { accent in
+                let chosen = accent.rawValue == JunoAccent(setting: selection).rawValue
+                Button {
+                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                        selection = accent.rawValue
                     }
                 } label: {
-                    HStack {
-                        Text("Manage edits")
-                        Spacer()
-                        Text("^[\(model.memories.count) memory](inflect: true)")
-                            .foregroundStyle(.secondary)
-                    }
+                    Circle()
+                        .fill(accent.color)
+                        .frame(width: 22, height: 22)
+                        .overlay(
+                            Circle().strokeBorder(Color.junoHairline, lineWidth: 1)
+                        )
+                        // The ring sits *outside* the swatch, so the colour is
+                        // never partly covered by its own selected state.
+                        .overlay {
+                            Circle()
+                                .strokeBorder(accent.color, lineWidth: 2)
+                                .padding(-4)
+                                .opacity(chosen ? 1 : 0)
+                        }
+                        .frame(width: 34, height: 34)
+                        .contentShape(Circle())
                 }
-            }
-
-            Section {
-                Button("Reset memory…", role: .destructive) {
-                    showingEraseAll = true
-                }
-                .disabled(model.isErasing || model.isMutating)
-                .accessibilityIdentifier("juno.mobile.settings-memory-erase")
-                if model.isErasing {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text("Erasing memory…").foregroundStyle(.secondary)
-                    }
-                }
-            } footer: {
-                Text("Resetting permanently removes every saved fact and the summary, and old chats are not re-learned.")
+                .buttonStyle(.plain)
+                .disabled(disabled)
+                .accessibilityLabel(accent.displayName)
+                .accessibilityAddTraits(chosen ? [.isSelected, .isButton] : .isButton)
+                .accessibilityIdentifier("juno.mobile.accent-\(accent.rawValue)")
             }
         }
-        .navigationTitle("Memory")
-        .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.refresh() }
-        .accessibilityIdentifier("juno.mobile.memory-list")
-        .alert("Edit memory", isPresented: Binding(
-            get: { editMemoryID != nil },
-            set: { if !$0 { editMemoryID = nil } }
-        )) {
-            TextField("Memory", text: $editContent)
-            Button("Cancel", role: .cancel) { editMemoryID = nil }
-            Button("Save") {
-                guard let id = editMemoryID else { return }
-                editMemoryID = nil
-                Task { await model.updateMemory(id: id, content: editContent) }
-            }
-        }
-        .alert("Delete this memory?", isPresented: Binding(
-            get: { deleteMemoryID != nil },
-            set: { if !$0 { deleteMemoryID = nil } }
-        )) {
-            Button("Cancel", role: .cancel) { deleteMemoryID = nil }
-            Button("Delete", role: .destructive) {
-                guard let id = deleteMemoryID else { return }
-                deleteMemoryID = nil
-                Task { await model.deleteMemory(id: id) }
-            }
-        } message: {
-            Text("Juno will no longer use this fact in conversations.")
-        }
-        .alert("Erase all memory?", isPresented: $showingEraseAll) {
-            Button("Cancel", role: .cancel) {}
-            Button("Erase everything", role: .destructive) {
-                Task { await model.eraseAllMemory() }
-            }
-        } message: {
-            Text("This permanently removes every saved fact and the consolidated summary. This cannot be undone.")
-        }
-    }
-
-    private func memoryRow(_ memory: NativeMemoryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(memory.content)
-            HStack(spacing: 8) {
-                Image(systemName: memory.kind == .suppression
-                    ? "hand.raised" : "brain.head.profile")
-                    .accessibilityHidden(true)
-                Text(memory.source == .manual ? "Added by you" : "Learned from chats")
-                Text(memory.createdAt, style: .date)
-                if memory.isPending {
-                    Label("Waiting to sync", systemImage: "arrow.triangle.2.circlepath")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-        .accessibilityElement(children: .combine)
-        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-            Button("Delete", role: .destructive) {
-                deleteMemoryID = memory.id
-            }
-            .disabled(model.isMutating || model.isErasing)
-            Button("Edit") {
-                editContent = memory.content
-                editMemoryID = memory.id
-            }
-            .disabled(model.isMutating || model.isErasing)
-        }
-        .contextMenu {
-            Button("Edit") {
-                editContent = memory.content
-                editMemoryID = memory.id
-            }
-            Button("Delete", role: .destructive) {
-                deleteMemoryID = memory.id
-            }
-        }
-    }
-
-    private func addMemory() {
-        let content = newMemory
-        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return
-        }
-        newMemory = ""
-        Task { await model.createMemory(content: content) }
+        .opacity(disabled ? 0.5 : 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Accent")
+        // A picker should say what it is set to, not only which of its options
+        // carries the selected trait.
+        .accessibilityValue(JunoAccent(setting: selection).displayName)
     }
 }

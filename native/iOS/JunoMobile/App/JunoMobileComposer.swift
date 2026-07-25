@@ -4,7 +4,7 @@ import JunoPreviewSupport
 #endif
 import JunoDesignSystem
 import JunoStorage
-import PhotosUI
+import JunoVoiceKit
 import SwiftUI
 
 /// The chat composer: one Liquid Glass container holding the pending
@@ -31,6 +31,27 @@ struct JunoMobileComposer: View {
     /// Owns the pending uploads. Held by the shell, not here, so a queued
     /// attachment survives navigating away and back.
     var attachmentModel: NativeComposerAttachmentModel?
+    /// The per-message tools the `+` menu switches: research, web search,
+    /// canvas, connectors. Owned by the chat screen so they survive the
+    /// composer's own re-renders and reset when the conversation changes.
+    @Bindable var tools: JunoMobileComposerTools
+    /// The account's connected apps, already filtered to the connected ones.
+    var connectors: [NativeConnector] = []
+    /// Settings › Memory, surfaced in the menu as the web surfaces it.
+    var memoryEnabled: Bool = true
+    var setMemoryEnabled: ((Bool) -> Void)?
+    /// Opens the library picker. Nil where the shell has no library model.
+    var openLibrary: (() -> Void)?
+    /// Which attachment surface is up. Owned by the chat screen, which is also
+    /// where the surfaces themselves are installed — see
+    /// `junoAttachmentSurfaces(coordinator:attachmentModel:conversationID:)`.
+    var attachmentCoordinator: JunoMobileAttachmentCoordinator
+    /// Opens the app's connected apps. Nil where there is nothing to navigate.
+    var openPlugins: (() -> Void)?
+    /// Starts a spoken conversation. Nil where no voice session is available, in
+    /// which case the primary action never offers one — see
+    /// ``composerActionButton``.
+    var openVoiceMode: (() -> Void)?
     /// Creates the conversation a draft send belongs to and returns its id.
     /// Nil inside an existing conversation.
     var startConversation: (() async -> String?)?
@@ -40,6 +61,8 @@ struct JunoMobileComposer: View {
     /// Set while a draft's conversation is being created, so a second tap on
     /// Send cannot create a second conversation.
     @State private var isStarting = false
+    /// Whether Dictate Mode has taken over the composer.
+    @State private var dictating = false
 
     private var selectedModel: NativeChatModelOption? {
         model.modelCatalog.first { $0.id == selectedModelID }
@@ -85,29 +108,71 @@ struct JunoMobileComposer: View {
                 notice(attachmentError, symbol: "exclamationmark.circle", tint: Color.orange)
                     .accessibilityIdentifier("juno.mobile.attachment-error")
             }
-
-            VStack(spacing: 8) {
-                if !attachments.isEmpty, let attachmentModel {
-                    JunoMobileAttachmentChips(
-                        attachments: attachments,
-                        onRemove: { attachmentModel.remove($0) },
-                        onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
-                    )
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                }
-
-                TextField("Message Juno", text: $prompt, axis: .vertical)
-                    .lineLimit(1...6)
-                    .textFieldStyle(.plain)
-                    .focused(composerFocused)
-                    .padding(.horizontal, 8)
-                    .padding(.top, 4)
-                    .accessibilityIdentifier("juno.mobile.chat-composer")
-
-                controlRow
+            // A photo the picker accepted and the app could not read is its own
+            // failure, separate from an upload that was refused.
+            if let importError = attachmentCoordinator.importError {
+                notice(importError, symbol: "exclamationmark.circle", tint: Color.orange)
+                    .accessibilityIdentifier("juno.mobile.attachment-import-error")
             }
-            .padding(8)
-            .background(JunoGlassBackground(cornerRadius: 26))
+
+            // Deep research runs PLAN → SEARCH → READ for tens of seconds before
+            // the first token of the report. Without the live step above the
+            // composer that whole stretch is an empty bubble and a spinner,
+            // which reads as a hung app rather than as work in progress.
+            if tools.deepResearch || !model.researchActivity.isEmpty {
+                JunoMobileResearchProgress(
+                    enabled: tools.deepResearch,
+                    activity: model.researchActivity,
+                    degradedWarning: model.researchDegradedWarning,
+                    onDisable: { tools.deepResearch = false }
+                )
+                .transition(.opacity)
+            }
+
+            // Dictation REPLACES the composer rather than sitting beside it: it
+            // owns the microphone, the transcript and the send action for as long
+            // as it is up, and leaving the text field visible underneath invited
+            // typing into a field whose contents were about to be overwritten.
+            if dictating {
+                JunoMobileDictation(
+                    onCancel: { setDictating(false) },
+                    onStop: { transcript in
+                        setDictating(false)
+                        appendDictated(transcript)
+                        composerFocused.wrappedValue = true
+                    },
+                    onSend: { transcript in
+                        setDictating(false)
+                        appendDictated(transcript)
+                        send()
+                    }
+                )
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                VStack(spacing: 8) {
+                    if !attachments.isEmpty, let attachmentModel {
+                        JunoMobileAttachmentChips(
+                            attachments: attachments,
+                            onRemove: { attachmentModel.remove($0) },
+                            onRetry: { attachmentModel.retry($0, conversationID: conversation?.id) }
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
+
+                    TextField("Message Juno", text: $prompt, axis: .vertical)
+                        .lineLimit(1...6)
+                        .textFieldStyle(.plain)
+                        .focused(composerFocused)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("juno.mobile.chat-composer")
+
+                    controlRow
+                }
+                .padding(8)
+                .background(JunoGlassBackground(cornerRadius: 26))
+                .transition(.opacity)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -150,10 +215,13 @@ struct JunoMobileComposer: View {
         #endif
     }
 
-    /// `+` · model · Thinking · phase · Send. There is deliberately no
-    /// microphone: dictation is not wired on iPhone yet, and a control that
-    /// does nothing is worse than one that is absent. The system keyboard's own
-    /// dictation key remains available in the meantime.
+    /// `+` · model · Thinking · phase · mic · Send.
+    ///
+    /// The trailing pair is the website's own: a microphone for Dictate Mode, a
+    /// hairline, then **one** primary action that morphs in place —
+    /// voice when there is nothing to send, Send once there is, Stop while a reply
+    /// is arriving. One slot for the primary action means the reader's thumb
+    /// learns one position, and the glyph tells them what it will do.
     private var controlRow: some View {
         HStack(spacing: 6) {
             JunoMobileComposerActions(
@@ -161,13 +229,31 @@ struct JunoMobileComposer: View {
                 selectedProjectID: conversation?.projectId,
                 canPickProject: conversation != nil,
                 canAttach: attachmentModel?.hasCapacity ?? false,
+                canOpenPlugins: openPlugins != nil,
+                tools: tools,
+                // Unknown model → assume it can. The server is the authority and
+                // refuses the flag on a model without the capability; guessing
+                // "no" here would hide the switch while the catalog loads.
+                modelSupportsWebSearch: selectedModel?.supportsWebSearch ?? true,
+                memoryEnabled: memoryEnabled,
+                setMemoryEnabled: setMemoryEnabled,
+                connectors: connectors,
                 setProject: { projectID in
                     guard let conversation else { return }
                     await model.setProject(id: conversation.id, projectID: projectID)
                 },
-                addPhotos: addPhotos,
-                addCapture: addCapture,
-                addFiles: addFiles
+                open: open,
+                openLibrary: openLibrary.map { open in
+                    {
+                        // Same rule as Camera and Photos: the sheet takes the
+                        // screen, and a keyboard still on its way out while it
+                        // arrives is the layout jump this all exists to remove.
+                        composerFocused.wrappedValue = false
+                        open()
+                    }
+                },
+                startCanvas: startCanvas,
+                openPlugins: { openPlugins?() }
             )
 
             JunoMobileModelControl(
@@ -188,8 +274,61 @@ struct JunoMobileComposer: View {
                 phaseIndicator
             }
 
+            if canDictate {
+                dictateButton
+                // The hairline is what makes the trailing pair read as *two*
+                // controls rather than as one two-part button.
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(width: 1, height: 20)
+                    .padding(.horizontal, 1)
+                    .accessibilityHidden(true)
+            }
+
             composerActionButton
         }
+    }
+
+    /// Offered only where it can actually work. A Simulator with no recognizer,
+    /// or a device where speech is restricted, gets no microphone at all rather
+    /// than one that opens a capsule and immediately apologises.
+    private var canDictate: Bool {
+        JunoSpeechService.isSupported && !generatingHere
+    }
+
+    private var dictateButton: some View {
+        Button {
+            // The keyboard goes first: the capsule takes the field's place, and a
+            // keyboard still on its way out while it arrives is the layout jump
+            // the attachment surfaces already learned to avoid.
+            composerFocused.wrappedValue = false
+            setDictating(true)
+        } label: {
+            Image(systemName: "mic")
+                .font(.system(size: 16))
+                .foregroundStyle(Color.primary.opacity(0.75))
+                .frame(width: 34, height: 34)
+                .frame(width: 40, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Dictate")
+        .accessibilityIdentifier("juno.mobile.chat-dictate")
+    }
+
+    private func setDictating(_ active: Bool) {
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            dictating = active
+        }
+    }
+
+    /// Puts a dictated passage into the draft without discarding what was already
+    /// typed — dictation continues a message, it does not replace one.
+    private func appendDictated(_ transcript: String) {
+        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let existing = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        prompt = existing.isEmpty ? text : "\(existing) \(text)"
     }
 
     private var phaseIndicator: some View {
@@ -255,11 +394,20 @@ struct JunoMobileComposer: View {
         }
     }
 
-    /// The send / stop control: a circular coral Liquid Glass button that fades
-    /// to a discreet disabled state when there is nothing to send and swaps to
-    /// Stop while streaming.
+    /// The one primary action, in three states.
     ///
-    /// Both states carry the same 44pt-tall `contentShape` as the "+": they had
+    /// The web's rule, ported exactly: **Stop** while a reply is arriving,
+    /// **Voice** when there is nothing to send, **Send** once there is. The slot,
+    /// the circle and the coral never move — only the glyph changes — so the
+    /// control reads as one thing doing the obvious next thing rather than as
+    /// three buttons taking turns.
+    ///
+    /// Voice appears only when there is somewhere for it to go. That is the same
+    /// `!!onOpenVoiceMode` guard the web applies, and it is what keeps a shell
+    /// with no voice session from offering a button that does nothing: without a
+    /// handler this falls back to the discreet disabled Send.
+    ///
+    /// Every state carries the same 44pt-tall `contentShape` as the "+": they had
     /// the identical 32pt-frame-without-content-shape construction, so they had
     /// the identical shrunken touch target. Stop especially must not be hard to
     /// hit — it is the control you reach for when something is going wrong.
@@ -269,28 +417,30 @@ struct JunoMobileComposer: View {
             Button {
                 model.stopGeneration()
             } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .modifier(JunoComposerSendBackground(active: true))
-                    .frame(width: 40, height: 44)
-                    .contentShape(Rectangle())
+                actionLabel(active: true) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 14, weight: .bold))
+                }
             }
             .buttonStyle(.plain)
             .transition(.scale.combined(with: .opacity))
             .accessibilityLabel("Stop generation")
             .accessibilityIdentifier("juno.mobile.chat-stop")
+        } else if showsVoiceAction, let openVoiceMode {
+            Button(action: openVoiceMode) {
+                actionLabel(active: true) { JunoMobileVoiceWave() }
+            }
+            .buttonStyle(.plain)
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityLabel("Start voice conversation")
+            .accessibilityIdentifier("juno.mobile.chat-voice")
         } else {
             Button(action: send) {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
-                    .modifier(JunoComposerSendBackground(active: !sendDisabled))
-                    .scaleEffect(sendDisabled ? 0.92 : 1)
-                    .frame(width: 40, height: 44)
-                    .contentShape(Rectangle())
+                actionLabel(active: !sendDisabled) {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 15, weight: .bold))
+                }
+                .scaleEffect(sendDisabled ? 0.92 : 1)
             }
             .buttonStyle(.plain)
             .disabled(sendDisabled)
@@ -300,42 +450,69 @@ struct JunoMobileComposer: View {
         }
     }
 
+    /// Voice takes the slot exactly when Send has nothing to do — which is what
+    /// makes the two feel like one control rather than a choice.
+    private var showsVoiceAction: Bool {
+        openVoiceMode != nil
+            && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !model.isGenerating
+            && !isStarting
+    }
+
+    private func actionLabel<Glyph: View>(
+        active: Bool,
+        @ViewBuilder glyph: () -> Glyph
+    ) -> some View {
+        glyph()
+            .foregroundStyle(.white)
+            .frame(width: 34, height: 34)
+            .modifier(JunoComposerSendBackground(active: active))
+            .frame(width: 40, height: 44)
+            .contentShape(Rectangle())
+    }
+
     // MARK: Attachments
 
-    private func addPhotos(_ files: [JunoPickedFile]) {
-        guard let attachmentModel else { return }
-        for file in files where attachmentModel.hasCapacity {
-            attachmentModel.add(
-                data: file.data,
-                fileName: file.fileName,
-                mimeType: file.mimeType,
-                conversationID: conversation?.id,
-                isImage: file.isImage
-            )
+
+    /// Opens one attachment surface.
+    ///
+    /// The keyboard goes first for Camera and Photos — both take the lower half
+    /// of the screen, and a keyboard still on its way out while they arrive is
+    /// the layout jump this feature exists to remove. Opening the menu itself
+    /// does nothing to focus at all, which is the point of it being a menu.
+    private func open(_ surface: JunoAttachmentSurface) {
+        if surface.dismissesKeyboard { composerFocused.wrappedValue = false }
+        attachmentCoordinator.present(surface, reduceMotion: reduceMotion)
+    }
+
+    /// "Create a canvas": turn artifacts on and hand the reader a sentence to
+    /// finish. Ported from the web's `startCanvas` — including the rule that an
+    /// existing draft is never overwritten, because the row is next to Photos and
+    /// Files and a mis-tap must not eat what someone was typing.
+    private func startCanvas() {
+        tools.canvas = true
+        if prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            prompt = String(localized: "composer.canvas.seed")
         }
+        composerFocused.wrappedValue = true
     }
 
-    private func addCapture(_ data: Data, _ fileName: String) {
-        attachmentModel?.add(
-            data: data,
-            fileName: fileName,
-            mimeType: "image/jpeg",
-            conversationID: conversation?.id,
-            isImage: true
-        )
-    }
-
-    private func addFiles(_ urls: [URL]) {
-        guard let attachmentModel else { return }
-        JunoFileLoader.load(urls, into: attachmentModel, conversationID: conversation?.id)
-    }
 
     // MARK: Send
 
     private func send() {
         let attachmentIDs = attachmentModel?.uploadedIDs ?? []
+        // Read the tools once, here, and let the read disarm research. Reading
+        // them again inside `deliver` would mean a draft's send resolved them
+        // *after* the conversation was created — an await during which the menu
+        // is still live.
+        let options = tools.consumeForSend()
         if let conversation {
-            deliver(conversationID: conversation.id, attachmentIDs: attachmentIDs)
+            deliver(
+                conversationID: conversation.id,
+                attachmentIDs: attachmentIDs,
+                options: options
+            )
             return
         }
         // Draft: create the conversation, then send into it. Sending first and
@@ -346,18 +523,32 @@ struct JunoMobileComposer: View {
             let created = await startConversation()
             isStarting = false
             guard let created else { return }
-            deliver(conversationID: created, attachmentIDs: attachmentIDs)
+            deliver(
+                conversationID: created,
+                attachmentIDs: attachmentIDs,
+                options: options
+            )
         }
     }
 
-    private func deliver(conversationID: String, attachmentIDs: [String]) {
+    private func deliver(
+        conversationID: String,
+        attachmentIDs: [String],
+        options: JunoMobileComposerTools.Sent
+    ) {
         let sent = model.sendMessage(
             conversationID: conversationID,
             prompt: prompt,
             modelID: selectedModelID.isEmpty
                 ? (conversation?.model ?? selectedModelID) : selectedModelID,
             reasoningEffort: reasoningEffort,
-            attachmentIDs: attachmentIDs
+            attachmentIDs: attachmentIDs,
+            deepResearch: options.deepResearch,
+            webSearch: options.webSearch,
+            // Only ever sent as `false`. Canvas defaults to on server-side, so
+            // `nil` is how "leave it alone" is said and `true` would be noise.
+            canvasEnabled: options.canvas ? nil : false,
+            connectors: options.connectors
         )
         guard sent else { return }
         prompt = ""
@@ -368,297 +559,25 @@ struct JunoMobileComposer: View {
     }
 }
 
-/// The composer's "+" and the panel it opens: Photos, Camera, Files, then the
-/// conversation's project.
-///
-/// This is its own `View` with its own `@State` for a load-bearing reason, not
-/// for tidiness. When the flag lived on `JunoMobileComposer`, flipping it
-/// re-evaluated the whole composer body, and the popover — anchored to a button
-/// that body had just rebuilt — never appeared. Giving the button a stable
-/// identity of its own is the fix, and it is how `JunoMobileThinkingControl` —
-/// the sibling popover that always worked — is already built.
-struct JunoMobileComposerActions: View {
-    let projects: [NativeProject]
-    let selectedProjectID: String?
-    /// False in a draft: there is no conversation to file into a project yet.
-    var canPickProject: Bool = true
-    /// False once the message is holding the maximum number of attachments.
-    var canAttach: Bool = true
-    let setProject: (String?) async -> Void
-    let addPhotos: ([JunoPickedFile]) -> Void
-    let addCapture: (Data, String) -> Void
-    let addFiles: ([URL]) -> Void
-
-    /// Which picker the panel was tapped for.
-    ///
-    /// One value, one presentation. Each picker used to have its own modifier on
-    /// this button — `.photosPicker`, `.fileImporter`, `.fullScreenCover` — and
-    /// SwiftUI honours the first presentation declared on a view and silently
-    /// drops the rest, which is why the panel closed and no picker ever came up.
-    enum Picker: String, Identifiable {
-        case photos, camera, files
-
-        var id: String { rawValue }
-    }
-
-    /// Ties the panel's glass to the container so the system can materialise it
-    /// as glass rather than cross-fade a rectangle.
-    @Namespace private var glass
-    @State private var presented = false
-    /// Chosen in the panel, opened once the panel has *finished* closing. A
-    /// presentation requested while another is still dismissing is dropped too,
-    /// so the hand-off happens in `onDismiss` rather than in the row's action.
-    @State private var pending: Picker?
-    @State private var active: Picker?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        Button {
-            presented = true
-        } label: {
-            // `contentShape` is load-bearing. Without it SwiftUI hit-tests the
-            // *drawn* content, so the touch target collapsed to the plus glyph
-            // — 13.3pt on a control that looks 32pt.
-            Image(systemName: "plus")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.primary)
-                .rotationEffect(.degrees(presented ? 45 : 0))
-                // The animation belongs on the label, not on the Button. Wrapping
-                // the Button in `.animation(_:value:)` — the one modifier the
-                // working model and Thinking chips do not have — is what stopped
-                // its action running at all.
-                .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: presented)
-                .frame(width: 34, height: 34)
-                .modifier(JunoComposerGlassCircle())
-                .frame(width: 40, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Add content or tools")
-        .accessibilityIdentifier("juno.mobile.chat-plus")
-        // The menu is a full-screen cover with a *clear* background, not a
-        // sheet. That is what lets it be what it should be: a compact panel
-        // floating just above the composer, over the transcript — rather than a
-        // full-width tray slid up from the bottom edge, which is what a sheet
-        // can only ever be. Presenting it this way also keeps the strict rule
-        // that this button owns one presentation at a time.
-        .fullScreenCover(isPresented: $presented, onDismiss: openPendingPicker) {
-            panel
-                .presentationBackground(.clear)
-        }
-        .fullScreenCover(item: $active) { picker in
-            switch picker {
-            case .photos:
-                // The tray, not the system picker: recents first, All Photos
-                // behind it. A half-height sheet so the chat stays visible,
-                // which is what makes it read as part of composing.
-                JunoMobilePhotoTray(
-                    selectionLimit: NativeComposerAttachmentModel.maximumAttachments,
-                    onPick: addPhotos
-                )
-                .presentationBackground(.clear)
-            case .camera:
-                JunoMobileCameraCapture(onCapture: addCapture)
-            case .files:
-                JunoMobileDocumentPicker(onPick: addFiles)
-                    .ignoresSafeArea()
-            }
-        }
-        .task {
-            #if DEBUG
-            guard JunoComposerPreviewFlags.opensComposerActions else { return }
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            presented = true
-            #endif
-        }
-    }
-
-    private func openPendingPicker() {
-        guard let pending else { return }
-        self.pending = nil
-        active = pending
-    }
-
-    /// The floating panel: a compact card anchored above the composer's leading
-    /// edge, with a scrim behind it.
-    ///
-    /// Shaped after the panel this replaced a bottom sheet for — one glyph in a
-    /// circular chip, one word, nothing else. The two-line rows it had before
-    /// (title over an explanatory subtitle) turned a three-item menu into a
-    /// paragraph: "Camera" needs no gloss, and reading one is slower than
-    /// looking at three.
-    private var panel: some View {
-        ZStack(alignment: .bottomLeading) {
-            // The scrim is the dismissal. It carries no colour of its own —
-            // dimming the chat to choose a photo would be a heavier moment than
-            // this is.
-            Color.black.opacity(0.001)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture { presented = false }
-                .accessibilityLabel("Close menu")
-                .accessibilityAddTraits(.isButton)
-
-            JunoGlass(spacing: 14) {
-                VStack(alignment: .leading, spacing: 0) {
-                    row(title: "attachments.camera", icon: "camera", opens: .camera)
-                    row(title: "attachments.photos", icon: "photo", opens: .photos)
-                    row(title: "attachments.files", icon: "paperclip", opens: .files)
-                    if canPickProject {
-                        Divider().overlay(Color.junoHairline).padding(.horizontal, 14)
-                        projectMenu
-                    }
-                }
-                .padding(.vertical, 8)
-                .frame(width: 272, alignment: .leading)
-                .junoGlass(in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .junoGlassID("juno.attachment-panel", in: glass)
-            }
-            .shadow(color: .black.opacity(0.18), radius: 24, y: 6)
-            // Sits *on* the composer, not above it: same leading inset, same
-            // bottom inset, same corner radius. Floating it clear of the
-            // composer read as a detached second surface; landing it on the
-            // control it belongs to is what makes it feel like the "+" opened.
-            .padding(.leading, 12)
-            .padding(.bottom, 8)
-            .opacity(canAttach ? 1 : 0.6)
-            .transition(
-                .scale(scale: 0.86, anchor: .bottomLeading)
-                    .combined(with: .opacity)
-                    .combined(with: .offset(y: 12))
-            )
-            .accessibilityIdentifier("juno.mobile.composer-actions")
-        }
-        // A spring with a little overshoot, anchored at the "+": the panel grows
-        // out of the button rather than fading in over it. `JunoMotion.standard`
-        // is a flat snap, which for a surface this size read as a jump.
-        .animation(
-            JunoMotion.reduced(
-                .spring(response: 0.34, dampingFraction: 0.76), when: reduceMotion
-            ),
-            value: presented
-        )
-    }
-
-    /// The project picker, as a native menu rather than a run of rows.
-    ///
-    /// Listing every project inline made the panel's length a function of how
-    /// many projects the account has — three attachment actions and then a wall.
-    /// A `Menu` keeps the panel one fixed size and, from OS 26, presents in the
-    /// system's own Liquid Glass.
-    private var projectMenu: some View {
-        Menu {
-            // Buttons rather than a `Picker`: a picker in a menu infers its tag
-            // type from the content, and an optional id makes that inference
-            // ambiguous. The checkmark is drawn explicitly instead.
-            menuItem(id: nil, name: String(localized: "attachments.no-project"))
-            ForEach(projects) { project in
-                menuItem(id: project.id, name: project.name)
-            }
-        } label: {
-            HStack(spacing: 14) {
-                chip(icon: "folder", tinted: selectedProjectID != nil)
-                Text("attachments.project")
-                    .font(.system(size: 17))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 6)
-                Text(selectedProjectName)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    // The value is what the reader is here to see; the fixed
-                    // label beside it should yield the width, not win it.
-                    .layoutPriority(1)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 54)
-            .contentShape(Rectangle())
-        }
-        // A `Menu` tints its whole label with the accent, which turned this row
-        // coral while its three siblings stayed ink. The foreground styles
-        // inside the label cannot override that on their own — the tint has to
-        // be set on the menu itself.
-        .tint(Color.primary)
-        .accessibilityIdentifier("juno.mobile.composer-project")
-    }
-
-    private func menuItem(id: String?, name: String) -> some View {
-        Button {
-            presented = false
-            Task { await setProject(id) }
-        } label: {
-            if selectedProjectID == id {
-                Label(name, systemImage: "checkmark")
-            } else {
-                Text(name)
-            }
-        }
-    }
-
-    private var selectedProjectName: String {
-        guard let selectedProjectID,
-            let project = projects.first(where: { $0.id == selectedProjectID })
-        else { return String(localized: "attachments.no-project") }
-        return project.name
-    }
-
-    /// The row's leading glyph.
-    ///
-    /// Deliberately a flat fill, not more glass. Glass inside glass is the one
-    /// thing the material is not for: the panel is already a lens on the chat
-    /// behind it, and a second lens inside it has nothing left to refract — it
-    /// reads as a smudge. The reference does the same, tinting its chips rather
-    /// than layering them.
-    private func chip(icon: String, tinted: Bool = false) -> some View {
-        ZStack {
-            Circle().fill(Color.primary.opacity(0.06))
-            Image(systemName: icon)
-                .font(.system(size: 17))
-                .foregroundStyle(tinted ? Color.junoAccent : .primary)
-        }
-        .frame(width: 38, height: 38)
-    }
-
-    private func row(
-        title: LocalizedStringKey, icon: String, opens: Picker
-    ) -> some View {
-        Button {
-            // Record, then close. `onDismiss` opens the picker.
-            pending = opens
-            presented = false
-        } label: {
-            HStack(spacing: 14) {
-                chip(icon: icon)
-                Text(title)
-                    .font(.system(size: 17))
-                    .foregroundStyle(.primary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 54)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(!canAttach)
-    }
-
-}
-
 /// The composer's selection rules, kept as pure functions so the fallback
 /// behaviour is testable without standing up a view.
 enum JunoMobileComposerSelection {
-    /// The model the composer should be on. Preference order: keep the current
-    /// choice if it is still selectable, otherwise the conversation's own model,
-    /// otherwise the first selectable one. The conversation's model is the last
-    /// resort when nothing is selectable at all — the composer then still names
-    /// something real rather than going blank.
+    /// The model the composer should be on.
+    ///
+    /// Preference order: keep the current choice if it is still selectable, then
+    /// the conversation's own model, then **the account's default model**, then the
+    /// first selectable one. The conversation's model is the last resort when
+    /// nothing is selectable at all, so the composer still names something real
+    /// rather than going blank.
+    ///
+    /// The account default used to be missing entirely, and the fallthrough landed
+    /// on `selectable.first` — which is `juno:auto`. So a reader who had chosen a
+    /// default in Settings opened the app on Auto every time, and the setting they
+    /// had changed appeared to do nothing.
     static func resolvedModelID(
         current: String,
         conversationModel: String,
+        accountDefault: String = "",
         selectable: [NativeChatModelOption]
     ) -> String {
         if !current.isEmpty, selectable.contains(where: { $0.id == current }) {
@@ -667,7 +586,65 @@ enum JunoMobileComposerSelection {
         if selectable.contains(where: { $0.id == conversationModel }) {
             return conversationModel
         }
+        if !accountDefault.isEmpty, selectable.contains(where: { $0.id == accountDefault }) {
+            return accountDefault
+        }
         return selectable.first?.id ?? conversationModel
+    }
+}
+
+/// The voice action's glyph: five bars rising to the centre.
+///
+/// Ported from the web's `.composer-voice-wave` — the same five bars at the same
+/// heights (5 · 9 · 13 · 9 · 5), 1.5pt wide with 1.5pt gaps in a 17×16 box. It is
+/// deliberately **not** a microphone: a mic glyph in the send slot reads as
+/// "record something", and this is an action that opens a conversation.
+///
+/// The bars breathe rather than dance. On the web the animation is a hover
+/// affordance, which a phone has no equivalent of, so here it runs continuously
+/// at a low amplitude — enough to say the control is live, quiet enough to sit
+/// beside a text field. Reduce Motion holds them at rest, where the shape still
+/// reads.
+struct JunoMobileVoiceWave: View {
+    private static let heights: [Double] = [5, 9, 13, 9, 5]
+    private static let cycle: Double = 1.6
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion)) { context in
+            let phase = reduceMotion
+                ? nil
+                : context.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: Self.cycle) / Self.cycle
+
+            HStack(alignment: .center, spacing: 1.5) {
+                ForEach(Array(Self.heights.enumerated()), id: \.offset) { index, height in
+                    Capsule(style: .continuous)
+                        .frame(width: 1.5, height: height * scale(index, phase: phase))
+                }
+            }
+            .frame(width: 17, height: 16)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The web's `composer-wave` keyframes — 1 → 0.48 at 38% → 1.24 at 70% → 1 —
+    /// with each bar entering 45ms after the one before it.
+    private func scale(_ index: Int, phase: Double?) -> Double {
+        guard let phase else { return 1 }
+        let offset = (phase - Double(index) * 0.045 / Self.cycle)
+            .truncatingRemainder(dividingBy: 1)
+        let t = offset < 0 ? offset + 1 : offset
+        switch t {
+        case ..<0.38: return interpolate(1, 0.48, t / 0.38)
+        case ..<0.70: return interpolate(0.48, 1.24, (t - 0.38) / 0.32)
+        default: return interpolate(1.24, 1, (t - 0.70) / 0.30)
+        }
+    }
+
+    private func interpolate(_ from: Double, _ to: Double, _ t: Double) -> Double {
+        from + (to - from) * min(max(t, 0), 1)
     }
 }
 

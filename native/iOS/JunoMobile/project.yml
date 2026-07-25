@@ -43,6 +43,8 @@ targets:
         product: JunoStorage
       - package: JunoNativeKit
         product: JunoSync
+      - package: JunoNativeKit
+        product: JunoVoiceKit
       # Development-only visual QA harness; its symbols are all #if DEBUG, so it
       # contributes nothing to Stable/Release builds.
       - package: JunoNativeKit

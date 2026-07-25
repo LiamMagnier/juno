@@ -6,7 +6,20 @@ import SwiftUI
 /// own. Only the blocks that genuinely need a container get one — code, tables
 /// and quotes — so a long answer reads as a document rather than a stack of
 /// panels. The caller owns the surrounding padding and width clamp.
+///
+/// The metrics come from the web's `.prose-juno` (`src/app/globals.css`), which is
+/// the only place either client states what an answer should read like:
+/// `line-height: 1.65` and `> * + * { margin-top: 0.85em }`. Native was running
+/// the platform default leading at a 10pt block gap, so answers were tighter
+/// between lines and looser between paragraphs than the same reply in the
+/// browser — the two clients disagreeing about the same text.
 public struct JunoMarkdownText: View {
+    /// `line-height: 1.65` on a 16pt body: ~26.4pt of line box, so ~7pt of extra
+    /// leading over the glyph height.
+    static let lineSpacing: Double = 7
+    /// `> * + * { margin-top: 0.85em }` at the body size.
+    static let blockSpacing: Double = 13
+
     private let source: String
     private let blocks: [JunoMarkdownBlock]
 
@@ -16,7 +29,7 @@ public struct JunoMarkdownText: View {
     }
 
     public var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpacing.control) {
+        VStack(alignment: .leading, spacing: Self.blockSpacing) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 JunoMarkdownBlockView(block: block)
             }
@@ -36,15 +49,20 @@ private struct JunoMarkdownBlockView: View {
         switch block {
         case .paragraph(let text):
             JunoInlineText(text)
+                .lineSpacing(JunoMarkdownText.lineSpacing)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
         case .heading(let level, let text):
+            // `margin-top: 1.3em` on every level, not just the first two: a run of
+            // `###` sub-headings needs the same air above it as an `##` does, and
+            // without it a sub-heading crowded the paragraph it was breaking away
+            // from. The gap is stated net of the stack's own block spacing.
             JunoInlineText(text)
                 .font(headingFont(level))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, level <= 2 ? JunoSpacing.compact : 0)
+                .padding(.top, 8)
                 .accessibilityAddTraits(.isHeader)
 
         case .code(let language, let source, _):
@@ -57,13 +75,18 @@ private struct JunoMarkdownBlockView: View {
             JunoMarkdownTable(header: header, rows: rows)
 
         case .quote(let text):
-            HStack(alignment: .top, spacing: JunoSpacing.control) {
+            // The rule is `--border`, not coral. A quote is not an active or
+            // selected thing, and the accent is reserved for what is — a coral
+            // bar down every blockquote made the model quoting itself the
+            // brightest mark on the screen.
+            HStack(alignment: .top, spacing: JunoSpacing.content) {
                 Capsule(style: .continuous)
-                    .fill(Color.junoAccent.opacity(0.55))
+                    .fill(Color.junoHairline)
                     .frame(width: 3)
                     .accessibilityHidden(true)
                 JunoInlineText(text)
-                    .foregroundStyle(.secondary)
+                    .lineSpacing(JunoMarkdownText.lineSpacing)
+                    .foregroundStyle(Color.junoMutedForeground)
                     .textSelection(.enabled)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -188,6 +211,7 @@ private struct JunoMarkdownList: View {
                         .frame(minWidth: 18, alignment: .trailing)
                         .accessibilityHidden(item.isChecked == nil)
                     JunoInlineText(item.text)
+                        .lineSpacing(JunoMarkdownText.lineSpacing)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }

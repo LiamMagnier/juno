@@ -241,6 +241,54 @@
         }
       }
     },
+    "chat.artifact.label %@ %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artifact, %1$@, %2$@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artefact, %1$@, %2$@"
+          }
+        }
+      }
+    },
+    "chat.artifact.open": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open artifact"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ouvrir l’artefact"
+          }
+        }
+      }
+    },
+    "chat.artifact.writing": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Writing…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rédaction…"
+          }
+        }
+      }
+    },
     "chat.bucket.archived": {
       "localizations": {
         "en": {

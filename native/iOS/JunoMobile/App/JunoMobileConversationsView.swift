@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
@@ -18,6 +19,49 @@ struct JunoMobileChatDetailScreen: View {
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
     var profileName: String?
+    /// Opens the app's connected apps — the composer menu's Plugins row.
+    var openPlugins: (() -> Void)?
+    /// Leaves this conversation for a fresh draft. Owned by the shell, because
+    /// starting a chat is a navigation change and not something the transcript
+    /// can do to itself.
+    var newChat: (() -> Void)?
+    /// The model chosen in Settings. A new chat opens on this rather than on
+    /// whatever the catalog happens to list first.
+    var accountDefaultModelID: String = ""
+    /// Resolves an artifact card in the transcript to the real artifact, so tapping
+    /// one can open it. Nil where artifacts have not loaded.
+    var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    /// Opens an incognito chat. Nil where no session is available.
+    var startIncognito: (() -> Void)?
+    /// Opens a spoken conversation. Nil where no voice session can be made, in
+    /// which case the composer never offers one.
+    var openVoiceMode: (() -> Void)?
+    /// Backs the `+` menu's "From your library". Nil where the app could not be
+    /// configured.
+    var libraryModel: NativeLibraryModel?
+    /// The account's connected apps, for the menu's per-chat connector picker.
+    var connectors: [NativeConnector] = []
+    var memoryEnabled: Bool = true
+    var setMemoryEnabled: ((Bool) -> Void)?
+    /// Server-backed message actions — rate, branch, read aloud.
+    var messageActions: NativeMessageActionsClient?
+    var accountID: AccountID?
+    /// The account's read-aloud voice, from Settings.
+    var voiceID: String?
+
+    /// One speaker for the whole screen. Held here rather than per row so that
+    /// starting a second reading stops the first — two answers talking over each
+    /// other is what a per-row player would produce.
+    @State private var readAloud: JunoMobileReadAloud?
+
+    /// The per-message tools, owned **here** rather than in either child.
+    ///
+    /// A draft becomes a conversation the moment its first message lands, and
+    /// the shell swaps `JunoMobileDraftChat` for `JunoMobileConversationDetail`
+    /// underneath it. State held in either one is discarded at that swap, so a
+    /// research turn armed in a draft would silently disarm between arming and
+    /// sending. Held one level up, it survives the swap.
+    @State private var tools = JunoMobileComposerTools()
 
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
@@ -32,17 +76,54 @@ struct JunoMobileChatDetailScreen: View {
                     conversation: selected,
                     projects: projects,
                     attachmentModel: attachmentModel,
-                    profileName: profileName
+                    profileName: profileName,
+                    openPlugins: openPlugins,
+                    newChat: newChat,
+                    accountDefaultModelID: accountDefaultModelID,
+                    artifactModel: artifactModel,
+                    openVoiceMode: openVoiceMode,
+                    libraryModel: libraryModel,
+                    connectors: connectors,
+                    memoryEnabled: memoryEnabled,
+                    setMemoryEnabled: setMemoryEnabled,
+                    tools: tools,
+                    readAloud: readAloud,
+                    voiceID: voiceID,
+                    messageActions: messageActions,
+                    accountID: accountID
                 )
             } else {
                 JunoMobileDraftChat(
                     model: model,
                     projects: projects,
                     attachmentModel: attachmentModel,
-                    profileName: profileName
+                    profileName: profileName,
+                    openPlugins: openPlugins,
+                    accountDefaultModelID: accountDefaultModelID,
+                    startIncognito: startIncognito,
+                    openVoiceMode: openVoiceMode,
+                    libraryModel: libraryModel,
+                    connectors: connectors,
+                    memoryEnabled: memoryEnabled,
+                    setMemoryEnabled: setMemoryEnabled,
+                    tools: tools
                 )
             }
         }
+        // Connectors are scoped to one thread — see the note on
+        // `JunoMobileComposerTools`. Moving to another conversation must not
+        // carry "this chat may act through Gmail" with it.
+        .onChange(of: model.selectedConversationID) { old, new in
+            guard old != new else { return }
+            tools.resetForConversationChange()
+            // Leaving a chat stops whatever it was reading. A voice carrying on
+            // over a different conversation is the one thing this must not do.
+            readAloud?.stop()
+        }
+        .task(id: accountID?.rawValue) {
+            readAloud = JunoMobileReadAloud(client: messageActions, accountID: accountID)
+        }
+        .onDisappear { readAloud?.stop() }
     }
 }
 
@@ -54,12 +135,46 @@ private struct JunoMobileDraftChat: View {
     var projects: [NativeProject]
     var attachmentModel: NativeComposerAttachmentModel?
     var profileName: String?
+    var openPlugins: (() -> Void)?
+    var accountDefaultModelID: String = ""
+    var startIncognito: (() -> Void)?
+    var openVoiceMode: (() -> Void)?
+    var libraryModel: NativeLibraryModel?
+    var connectors: [NativeConnector] = []
+    var memoryEnabled: Bool = true
+    var setMemoryEnabled: ((Bool) -> Void)?
+    let tools: JunoMobileComposerTools
 
     @State private var prompt = ""
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
     @State private var thinkingNotice: String?
+    @State private var attachments = JunoMobileAttachmentCoordinator()
+    @State private var showingLibrary = false
     @FocusState private var composerFocused: Bool
+
+    /// Whether the reader has actually chosen a model on this screen.
+    ///
+    /// This exists because "keep the current selection" and "fall back to the
+    /// first selectable model" fight each other. The first resolution runs before
+    /// the settings row has loaded, so it falls back to `juno:auto`; the account
+    /// default then arrives, resolution runs again — and sees a `current` that is
+    /// selectable and keeps it. The account default could never win, which is the
+    /// bug this flag closes: only a write that came through ``modelSelection``
+    /// counts as a choice.
+    @State private var userPickedModel = false
+
+    /// The binding the model control writes through. `configureSelections()`
+    /// assigns `selectedModelID` directly and so never sets the flag.
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: { selectedModelID },
+            set: { newValue in
+                selectedModelID = newValue
+                userPickedModel = true
+            }
+        )
+    }
 
     var body: some View {
         JunoMobileGreeting(name: profileName)
@@ -68,16 +183,35 @@ private struct JunoMobileDraftChat: View {
             .accessibilityIdentifier("juno.mobile.chat-draft")
             .navigationTitle("navigation.chat")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if let startIncognito {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(action: startIncognito) {
+                            JunoGhostMark(active: false, size: 21)
+                        }
+                        .accessibilityLabel("Start an incognito chat")
+                        .accessibilityIdentifier("juno.mobile.incognito-start")
+                    }
+                }
+            }
             .safeAreaInset(edge: .bottom) {
                 JunoMobileComposer(
                     model: model,
                     conversation: nil,
                     projects: projects,
                     prompt: $prompt,
-                    selectedModelID: $selectedModelID,
+                    selectedModelID: modelSelection,
                     reasoningEffort: $reasoningEffort,
                     thinkingNotice: $thinkingNotice,
                     attachmentModel: attachmentModel,
+                    tools: tools,
+                    connectors: connectors,
+                    memoryEnabled: memoryEnabled,
+                    setMemoryEnabled: setMemoryEnabled,
+                    openLibrary: libraryModel == nil ? nil : { showingLibrary = true },
+                    attachmentCoordinator: attachments,
+                    openPlugins: openPlugins,
+                    openVoiceMode: openVoiceMode,
                     startConversation: {
                         await model.createConversationResolvingID(
                             model: selectedModelID.isEmpty ? nil : selectedModelID
@@ -86,15 +220,29 @@ private struct JunoMobileDraftChat: View {
                     composerFocused: $composerFocused
                 )
             }
+            // After the inset, never before it: the camera panel is a sibling
+            // *above* the composer, and applying this first would layer it under.
+            .junoAttachmentSurfaces(
+                coordinator: attachments,
+                attachmentModel: attachmentModel,
+                conversationID: nil
+            )
+            .junoLibraryPicker(
+                isPresented: $showingLibrary,
+                libraryModel: libraryModel,
+                attachmentModel: attachmentModel
+            )
             .onAppear { configureSelections() }
             .onChange(of: selectedModelID) { _, _ in configureSelections() }
             .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
+            .onChange(of: accountDefaultModelID) { _, _ in configureSelections() }
     }
 
     private func configureSelections() {
         selectedModelID = JunoMobileComposerSelection.resolvedModelID(
-            current: selectedModelID,
+            current: userPickedModel ? selectedModelID : "",
             conversationModel: "",
+            accountDefault: accountDefaultModelID,
             selectable: model.selectableModels
         )
         guard let selected = model.modelCatalog.first(where: { $0.id == selectedModelID }) else {
@@ -180,6 +328,29 @@ private struct JunoMobileConversationDetail: View {
     var projects: [NativeProject] = []
     var attachmentModel: NativeComposerAttachmentModel?
     var profileName: String?
+    var openPlugins: (() -> Void)?
+    var newChat: (() -> Void)?
+    var accountDefaultModelID: String = ""
+    var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
+    var openVoiceMode: (() -> Void)?
+    var libraryModel: NativeLibraryModel?
+    var connectors: [NativeConnector] = []
+    var memoryEnabled: Bool = true
+    var setMemoryEnabled: ((Bool) -> Void)?
+    let tools: JunoMobileComposerTools
+    /// The screen's one speaker, so two answers cannot read over each other.
+    var readAloud: JunoMobileReadAloud?
+    var voiceID: String?
+    /// Server-backed message actions. Nil where the app could not be configured.
+    var messageActions: NativeMessageActionsClient?
+    var accountID: AccountID?
+    /// The artifact the reader tapped in the transcript, presented over it.
+    @State private var openArtifact: NativeArtifact?
+    /// An artifact the transcript can render from the reply's own tag, used when
+    /// the stored row has not arrived. See ``openArtifact(_:)``.
+    @State private var inlineArtifact: JunoMobileInlineArtifact?
+    @State private var showingLibrary = false
+    @State private var attachments = JunoMobileAttachmentCoordinator()
     @State private var showingRename = false
     @State private var showingDelete = false
     @State private var editValue = ""
@@ -190,13 +361,153 @@ private struct JunoMobileConversationDetail: View {
     /// change is explained rather than silent.
     @State private var thinkingNotice: String?
     @State private var isNearBottom = true
+    /// When the run in flight began, and — once it settles — which answer it
+    /// produced and how long it took.
+    ///
+    /// The clock lives here rather than in the row because the row's *identity
+    /// changes as the run ends*: the streamed placeholder is `local-assistant-…`
+    /// until the server's message replaces it, so any `@State` inside the row is
+    /// discarded at exactly the moment the duration becomes final. One clock per
+    /// transcript is also all that is ever needed — a conversation streams one
+    /// answer at a time.
+    @State private var runStartedAt: Date?
+    @State private var settledRunID: String?
+    @State private var settledRunDuration: TimeInterval?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var composerFocused: Bool
+
+    /// Whether the reader has actually chosen a model on this screen.
+    ///
+    /// This exists because "keep the current selection" and "fall back to the
+    /// first selectable model" fight each other. The first resolution runs before
+    /// the settings row has loaded, so it falls back to `juno:auto`; the account
+    /// default then arrives, resolution runs again — and sees a `current` that is
+    /// selectable and keeps it. The account default could never win, which is the
+    /// bug this flag closes: only a write that came through ``modelSelection``
+    /// counts as a choice.
+    @State private var userPickedModel = false
+
+    /// The binding the model control writes through. `configureSelections()`
+    /// assigns `selectedModelID` directly and so never sets the flag.
+    private var modelSelection: Binding<String> {
+        Binding(
+            get: { selectedModelID },
+            set: { newValue in
+                selectedModelID = newValue
+                userPickedModel = true
+            }
+        )
+    }
 
     private let bottomAnchor = "juno.chat.bottom"
 
     private var messages: [NativeChatMessage] {
         model.messages(for: conversation.id)
+    }
+
+    /// Opens the artifact a transcript card stands for. **Always.**
+    ///
+    /// This used to be a lookup that could fail silently. The transcript sees
+    /// only what the tag said — `identifier="sidebar-spec"` — while the store
+    /// keys artifacts by their row id, so resolution went `identifier` →
+    /// `NativeArtifact` and simply returned when there was no match. Tapping the
+    /// card then did nothing, with no explanation, in three ordinary cases: the
+    /// row had not synced yet (every freshly-written artifact, for as long as the
+    /// next sync takes), the model omitted `identifier` and the derived `art-…`
+    /// hash disagreed with the server's, and any reply read on a device that is
+    /// offline.
+    ///
+    /// Three steps now, in descending order of what they can offer:
+    ///
+    /// 1. **The stored row by identifier** — the full screen: versions, restore,
+    ///    edit, export.
+    /// 2. **The stored row by title**, within this conversation. A title collision
+    ///    across two artifacts in one thread is a far smaller risk than the
+    ///    identifier mismatch this repairs.
+    /// 3. **The tag's own body**, rendered read-only. No versions and no editing,
+    ///    because there is no row to version or edit — but the artifact itself,
+    ///    which is what the reader asked to see.
+    private func openArtifact(_ reference: NativeMessageContent.ArtifactReference) {
+        if let match = storedArtifact(for: reference) {
+            openArtifact = match
+            return
+        }
+        guard !reference.content.isEmpty else { return }
+        inlineArtifact = JunoMobileInlineArtifact(reference: reference)
+    }
+
+    /// Branch-from-here: the server copies the thread up to this message into a
+    /// new conversation, and the app opens it — the same move the web makes.
+    private var branchAction: ((String) -> Void)? {
+        guard let messageActions, let accountID else { return nil }
+        let conversationID = conversation.id
+        return { messageID in
+            Task {
+                guard let branched = try? await messageActions.branch(
+                    conversationID: conversationID,
+                    atMessageID: messageID,
+                    for: accountID
+                ) else { return }
+                await model.reload()
+                model.selectedConversationID = branched
+            }
+        }
+    }
+
+    /// Rating an answer. Applied to the row optimistically because the round trip
+    /// is a write with no reply worth waiting for, and a thumb that fills in a
+    /// second after the tap reads as a broken button.
+    private var feedbackAction: ((String, NativeChatFeedback?) -> Void)? {
+        guard let messageActions, let accountID else { return nil }
+        let conversationID = conversation.id
+        return { messageID, feedback in
+            model.applyFeedback(
+                feedback, messageID: messageID, conversationID: conversationID
+            )
+            Task {
+                try? await messageActions.setFeedback(
+                    messageID: messageID,
+                    feedback: feedback.map { $0 == .up ? .up : .down },
+                    for: accountID
+                )
+            }
+        }
+    }
+
+    private func storedArtifact(
+        for reference: NativeMessageContent.ArtifactReference
+    ) -> NativeArtifact? {
+        guard let artifactModel else { return nil }
+        if !reference.identifier.isEmpty,
+            let match = artifactModel.artifacts.first(where: {
+                $0.identifier == reference.identifier
+            })
+        { return match }
+        let title = reference.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return nil }
+        return artifactModel.artifacts.first {
+            $0.conversationID == conversation.id
+                && $0.title.caseInsensitiveCompare(title) == .orderedSame
+        }
+    }
+
+    /// The answer currently being produced, if any.
+    private var streamingMessageID: String? {
+        guard let last = messages.last, last.role == .assistant, last.isPending else { return nil }
+        return last.id
+    }
+
+    /// This run's clock as the given row should see it: live while the row is the
+    /// one streaming, the frozen measurement on the row it belongs to, and empty
+    /// for every message whose run this session never watched.
+    private func clock(for message: NativeChatMessage) -> JunoMobileRunClock {
+        if message.id == streamingMessageID {
+            return JunoMobileRunClock(startedAt: runStartedAt)
+        }
+        if message.id == settledRunID {
+            return JunoMobileRunClock(duration: settledRunDuration)
+        }
+        return .none
     }
 
     /// Changes whenever streamed content grows or a message is added, driving
@@ -227,13 +538,34 @@ private struct JunoMobileConversationDetail: View {
                 .frame(maxWidth: .infinity)
                 .containerRelativeFrame(.vertical)
         } else {
-            LazyVStack(spacing: 18) {
+            // The web's own transcript metrics: `max-w-3xl space-y-6 px-4 py-6`.
+            // The width clamp is not decoration — it is what keeps a line of
+            // running text at a readable measure on an iPad, where a full-bleed
+            // answer runs to ~90 characters.
+            LazyVStack(spacing: 24) {
                 ForEach(messages) { message in
-                    JunoMobileMessageRow(message: message)
+                    JunoMobileMessageRow(
+                        message: message,
+                        clock: clock(for: message),
+                        openArtifact: openArtifact,
+                        readAloud: readAloud,
+                        voiceID: voiceID,
+                        // Only the last answer, as the web does: regenerating an
+                        // earlier one would discard every turn after it.
+                        regenerate: message.id == messages.last?.id
+                            && message.role == .assistant
+                            && !model.isGenerating
+                            ? { model.retryLastMessage(conversationID: conversation.id) }
+                            : nil,
+                        branch: branchAction,
+                        setFeedback: feedbackAction
+                    )
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 768)
+            .frame(maxWidth: .infinity)
             Color.clear
                 .frame(height: 1)
                 .id(bottomAnchor)
@@ -250,6 +582,32 @@ private struct JunoMobileConversationDetail: View {
                 justRenamed: model.recentlyRenamedConversationID == conversation.id,
                 onAnimationShown: { model.acknowledgeTitleAnimation(for: conversation.id) }
             )
+        }
+        // New chat earns a place in the header the moment there is a chat to
+        // leave — which is the moment the transcript has a turn in it. On an
+        // empty conversation it would offer to replace a blank chat with a blank
+        // chat, so it is not there.
+        //
+        // The two items are deliberately *adjacent* with no `ToolbarSpacer`
+        // between them: from OS 26 the toolbar merges neighbouring items into one
+        // Liquid Glass capsule, which is exactly the pill this needs — compose on
+        // the leading edge, the menu on the trailing one, one pane of glass. A
+        // hand-rolled capsule would have to re-implement the press flex and the
+        // light scatter, and would drift from the platform the moment it moves.
+        if !messages.isEmpty, let newChat {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: newChat) {
+                    Image(systemName: "square.and.pencil")
+                        .font(.system(size: 16, weight: .regular))
+                        // Ink, not the accent. The root sets `.tint` so system
+                        // controls follow the account's accent, and toolbar glyphs
+                        // inherit it — but chrome that is always present is not
+                        // emphasis, and colouring it spends the accent on nothing.
+                        .foregroundStyle(Color.primary)
+                }
+                .accessibilityLabel("New chat")
+                .accessibilityIdentifier("juno.mobile.chat-new")
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
@@ -279,8 +637,16 @@ private struct JunoMobileConversationDetail: View {
                     Label("Delete", systemImage: "trash")
                 }
             } label: {
-                Label("Conversation actions", systemImage: "ellipsis.circle")
+                // `ellipsis`, not `ellipsis.circle`. The symbol's own ring sat
+                // inside the capsule the toolbar already draws, so the button
+                // wore two concentric outlines around three dots.
+                Label("Conversation actions", systemImage: "ellipsis")
             }
+            // On the Menu, not on the Label. A `Menu` tints its whole label with
+            // the accent, and a `foregroundStyle` inside cannot override that —
+            // the same trap `JunoMobileComposerActions` already documents for the
+            // composer's "+". With the accent applied this came out coral.
+            .tint(Color.primary)
             .disabled(model.isMutating || conversation.isPending)
             .accessibilityIdentifier("juno.mobile.conversation-menu")
         }
@@ -368,16 +734,98 @@ private struct JunoMobileConversationDetail: View {
                 conversation: conversation,
                 projects: projects,
                 prompt: $prompt,
-                selectedModelID: $selectedModelID,
+                selectedModelID: modelSelection,
                 reasoningEffort: $reasoningEffort,
                 thinkingNotice: $thinkingNotice,
                 attachmentModel: attachmentModel,
+                tools: tools,
+                connectors: connectors,
+                memoryEnabled: memoryEnabled,
+                setMemoryEnabled: setMemoryEnabled,
+                openLibrary: libraryModel == nil ? nil : { showingLibrary = true },
+                attachmentCoordinator: attachments,
+                openPlugins: openPlugins,
+                openVoiceMode: openVoiceMode,
                 composerFocused: $composerFocused
             )
+        }
+        // After the inset, never before it — see the note in the draft screen.
+        .junoAttachmentSurfaces(
+            coordinator: attachments,
+            attachmentModel: attachmentModel,
+            conversationID: conversation.id
+        )
+        .junoLibraryPicker(
+            isPresented: $showingLibrary,
+            libraryModel: libraryModel,
+            attachmentModel: attachmentModel
+        )
+        .sheet(item: $inlineArtifact) { inline in
+            NavigationStack {
+                JunoMobileInlineArtifactView(
+                    artifact: inline,
+                    close: { inlineArtifact = nil }
+                )
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+            .tint(Color.junoAccent)
         }
         .onAppear { configureSelections() }
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
+        .onChange(of: accountDefaultModelID) { _, _ in configureSelections() }
+        // A sheet, not a push: the web docks the canvas beside the thread so the
+        // conversation stays put, and on a phone the equivalent of "stays put" is
+        // a sheet the reader dismisses straight back onto it.
+        .sheet(item: $openArtifact) { artifact in
+            NavigationStack {
+                JunoMobileArtifactDetail(
+                    model: artifactModel!,
+                    artifact: artifact,
+                    // Already in the conversation this came from; the only sensible
+                    // "go there" is to close.
+                    openConversation: { _ in openArtifact = nil }
+                )
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button { openArtifact = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.primary)
+                        }
+                        .accessibilityLabel("Close artifact")
+                        .accessibilityIdentifier("juno.mobile.artifact-close")
+                    }
+                }
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
+        }
+        .onChange(of: streamingMessageID) { previous, current in
+            trackRun(from: previous, to: current)
+        }
+    }
+
+    /// Starts the run clock when an answer begins and freezes it when that answer
+    /// settles.
+    ///
+    /// The id moving from `local-assistant-…` to the server's own id *mid-run* is
+    /// why this watches the transition rather than the value: both ends are
+    /// non-nil across that swap, so the start time survives it. Only a fall to nil
+    /// is the run ending, and the message it belongs to is the last answer in the
+    /// transcript at that instant.
+    private func trackRun(from previous: String?, to current: String?) {
+        if current != nil {
+            if runStartedAt == nil { runStartedAt = Date() }
+            return
+        }
+        guard let startedAt = runStartedAt else { return }
+        runStartedAt = nil
+        // Prefer the id that just settled; fall back to the placeholder's, which
+        // is what a run that never reached the server leaves behind.
+        settledRunID = messages.last(where: { $0.role == .assistant })?.id ?? previous
+        settledRunDuration = Date().timeIntervalSince(startedAt)
     }
 
     /// Keeps the composer's model and thinking selections valid as the catalog
@@ -387,8 +835,9 @@ private struct JunoMobileConversationDetail: View {
     /// with a sentence explaining it, never silently.
     private func configureSelections() {
         selectedModelID = JunoMobileComposerSelection.resolvedModelID(
-            current: selectedModelID,
+            current: userPickedModel ? selectedModelID : "",
             conversationModel: conversation.model,
+            accountDefault: accountDefaultModelID,
             selectable: model.selectableModels
         )
         guard let selectedModel else {
@@ -448,15 +897,54 @@ private struct JunoMobileConversationTitle: View {
 /// answer is full-width running text with no container at all. Boxing the answer
 /// too made long replies read as a wall of chrome and cost most of the line
 /// length on a phone.
+///
+/// **Nothing here renders `message.content` directly.** The server's text carries
+/// wire tags the reader must never see — `<juno:memory>` most of all, which
+/// `juno` being a legal URI scheme turned into a coral *tappable link* labelled
+/// "juno:memory" in the middle of an answer. `NativeMessageContent` is the one
+/// place that knows which runs of a reply are prose, and every path through this
+/// view goes through it: the bubbles, the pasteboard and VoiceOver alike.
 private struct JunoMobileMessageRow: View {
     let message: NativeChatMessage
+    var clock: JunoMobileRunClock = .none
+    /// Opens the artifact a card stands for. Takes the whole reference, not just
+    /// the identifier: the tag's body is the fallback when no stored row matches,
+    /// so the resolver needs it. See `openArtifact(_:)` on the chat screen.
+    var openArtifact: ((NativeMessageContent.ArtifactReference) -> Void)?
+    /// The screen's one speaker. Nil where reading aloud is unavailable.
+    var readAloud: JunoMobileReadAloud?
+    /// The account's chosen read-aloud voice, passed to the server's TTS.
+    var voiceID: String?
+    /// Offered only on the last answer, as the web does — regenerating anything
+    /// earlier would silently discard every turn after it.
+    var regenerate: (() -> Void)?
+    var branch: ((String) -> Void)?
+    var setFeedback: ((String, NativeChatFeedback?) -> Void)?
+
+    @State private var copied = false
+
+    /// The transcript's own width, so the user bubble can be capped at a share of
+    /// it rather than at a guessed number of points.
+    @State private var rowWidth: CGFloat = 0
 
     private var isUser: Bool { message.role == .user }
 
-    /// The assistant is working but has not started writing the answer yet — the
-    /// moment to show the inline "Thinking about your request" status.
-    private var showThinking: Bool {
-        !isUser && message.isPending && message.content.isEmpty
+    /// The reply as the reader sees it — wire tags removed, and the duplicate
+    /// trailing `## Sources` list dropped when the chips below already carry it.
+    private var displayContent: String {
+        message.sources.isEmpty
+            ? message.content
+            : NativeMessageContent.strippingTrailingSourcesSection(message.content)
+    }
+
+    private var parts: [NativeMessageContent.Part] {
+        NativeMessageContent.parts(of: displayContent)
+    }
+
+    /// What Copy puts on the pasteboard and what VoiceOver reads: the visible
+    /// answer, never the wire format.
+    private var plainText: String {
+        NativeMessageContent.plainText(of: message.content)
     }
 
     var body: some View {
@@ -467,41 +955,85 @@ private struct JunoMobileMessageRow: View {
         }
     }
 
+    /// The web's bubble, ported metric for metric: `bg-secondary`, a hairline,
+    /// `rounded-2xl rounded-br-md` and `max-w-[85%]`.
+    ///
+    /// The tail corner is the load-bearing detail — a uniformly rounded rectangle
+    /// is a card, and one clipped corner on the trailing-bottom edge is what makes
+    /// it read as something *said*. The fill was coral at 13%, which spent the
+    /// accent on the reader's own words; the web keeps the accent for what is
+    /// active and the bubble neutral.
     private var userBubble: some View {
-        HStack {
-            Spacer(minLength: 44)
-            Text(message.content)
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Text(plainText)
+                .font(.system(size: 15))
+                // 15pt at the web's `leading-relaxed` (1.625) is ~24pt of line
+                // box, so 9pt of extra leading on top of the glyph height.
+                .lineSpacing(5)
                 .textSelection(.enabled)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 10)
-                .background(
-                    Color.junoAccent.opacity(0.13),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                )
+                .background(Color.junoMuted, in: Self.bubbleShape)
+                .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
+                .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
+                // A real cap, not a fixed width: the bubble hugs short messages
+                // and wraps long ones at 85% of the transcript, as the web's
+                // `max-w-[85%]` on a shrink-to-fit flex item does.
+                .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.85 : nil, alignment: .trailing)
                 .contextMenu { copyButton }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("You said, \(message.content)")
+        .accessibilityLabel("You said, \(plainText)")
     }
 
-    private var assistantAnswer: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            // Reasoning sits above the answer as a collapsible control, not as a
-            // forgotten note beneath it.
-            if let reasoning = message.reasoning, !reasoning.isEmpty {
-                JunoReasoningDisclosure(text: reasoning)
-            }
+    /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
+    /// edge. Uniform corners make a card; the notch is what makes it a remark.
+    private static let bubbleShape = UnevenRoundedRectangle(
+        topLeadingRadius: JunoCornerRadius.message,
+        bottomLeadingRadius: JunoCornerRadius.message,
+        bottomTrailingRadius: 6,
+        topTrailingRadius: JunoCornerRadius.message,
+        style: .continuous
+    )
 
-            if showThinking {
-                JunoThinkingIndicator()
-            } else if !message.content.isEmpty {
-                JunoMarkdownText(message.content)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+    private var assistantAnswer: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // The run trace leads the answer, as it does on the web: what Juno is
+            // doing belongs above the thing it produced, not in a footnote under
+            // it.
+            JunoMobileThoughtProcessRow(
+                streaming: message.isPending,
+                writing: !message.content.isEmpty,
+                reasoning: message.reasoning,
+                clock: clock
+            )
+
+            ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                switch part {
+                case .text(let text):
+                    JunoMarkdownText(text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case .artifact(let artifact):
+                    JunoMobileArtifactInlineCard(
+                        artifact: artifact,
+                        // Inert only while it is still *writing*: half an artifact
+                        // is not something to open. Once the closing tag lands the
+                        // card is always live, because the resolver can now always
+                        // answer — from the store when the row has synced, and from
+                        // the tag's own body when it has not.
+                        open: artifact.streaming || openArtifact == nil
+                            ? nil
+                            : { openArtifact?(artifact) }
+                    )
+                }
             }
 
             if !message.sources.isEmpty {
                 sources
+                    .padding(.top, 4)
             }
 
             footer
@@ -511,6 +1043,8 @@ private struct JunoMobileMessageRow: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
             }
+
+            if !message.isPending { actionRow }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu { copyButton }
@@ -541,80 +1075,278 @@ private struct JunoMobileMessageRow: View {
         .scrollIndicators(.hidden)
     }
 
+    /// Which model wrote this and what it cost, in the web's monospaced metadata
+    /// face. The spinner is gone: while a reply is pending the thought-process row
+    /// above already says so, and the composer is showing Stop throughout — a
+    /// third indicator for one event was the "AI slop" the transcript is being
+    /// cleared of.
+    ///
+    /// The price is the server's own figure, arriving with the message row.
+    /// It appears a beat after the answer finishes rather than with the last
+    /// token, because the cost is only known once the generation is billed — the
+    /// browser has exactly the same gap.
     @ViewBuilder
     private var footer: some View {
-        if (message.model?.isEmpty == false) || (message.isPending && !showThinking) {
-            HStack(spacing: 8) {
-                if let model = message.model, !model.isEmpty {
-                    Text(junoDisplayModelName(model))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                if message.isPending && !showThinking {
-                    ProgressView().controlSize(.mini)
-                }
-            }
+        if !message.isPending, let line = footerLine {
+            Text(line)
+                .font(.system(size: 11, design: .monospaced))
+                .kerning(0.22)
+                .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
+                .padding(.top, 2)
+                .accessibilityLabel(footerAccessibilityLabel ?? line)
         }
     }
 
+    private var footerLine: String? {
+        let name = message.model.flatMap { $0.isEmpty ? nil : junoDisplayModelName($0) }
+        let price = message.costUSD.map(JunoMobileCost.formatted)
+        switch (name, price) {
+        case (let name?, let price?): return "\(name) · \(price)"
+        case (let name?, nil): return name
+        case (nil, let price?): return price
+        default: return nil
+        }
+    }
+
+    private var footerAccessibilityLabel: String? {
+        guard let price = message.costUSD.map(JunoMobileCost.formatted) else { return nil }
+        guard let name = message.model.flatMap({ $0.isEmpty ? nil : junoDisplayModelName($0) })
+        else { return "Cost \(price)" }
+        return "\(name), cost \(price)"
+    }
+
+
+    /// The website's action row, ported.
+    ///
+    /// The phone had **one** of these six, and it was hidden behind a long
+    /// press: copy, in a context menu nobody discovers. Everything else the web
+    /// puts under an answer — rate it, hear it, branch from it, ask again — had
+    /// no equivalent at all.
+    ///
+    /// Always visible rather than revealed on hover, because a phone has no
+    /// hover. That is the one place this deliberately departs from the web,
+    /// where the row fades in under the pointer; `coarse:opacity-100` in the
+    /// web's own class list is that same concession for touch.
+    @ViewBuilder
+    private var actionRow: some View {
+        if hasAnyAction {
+            HStack(spacing: 2) {
+                if !plainText.isEmpty {
+                    actionButton(
+                        systemImage: copied ? "checkmark" : "doc.on.doc",
+                        label: copied ? "message.copied" : "message.copy",
+                        identifier: "juno.mobile.message-copy"
+                    ) { copy() }
+                }
+
+                if let readAloud, !plainText.isEmpty {
+                    actionButton(
+                        systemImage: readAloud.isSpeaking(message.id)
+                            ? "stop.fill"
+                            : (readAloud.isPreparing(message.id)
+                                ? "waveform" : "speaker.wave.2"),
+                        label: readAloud.isSpeaking(message.id)
+                            ? "message.stop-reading" : "message.read-aloud",
+                        identifier: "juno.mobile.message-read-aloud",
+                        active: readAloud.isSpeaking(message.id)
+                            || readAloud.isPreparing(message.id)
+                    ) {
+                        readAloud.toggle(
+                            messageID: message.id, text: plainText, voiceID: voiceID
+                        )
+                    }
+                }
+
+                if let regenerate {
+                    actionButton(
+                        systemImage: "arrow.clockwise",
+                        label: "message.regenerate",
+                        identifier: "juno.mobile.message-regenerate",
+                        action: regenerate
+                    )
+                }
+
+                if let branch {
+                    actionButton(
+                        systemImage: "arrow.triangle.branch",
+                        label: "message.branch",
+                        identifier: "juno.mobile.message-branch"
+                    ) { branch(message.id) }
+                }
+
+                if let setFeedback {
+                    actionButton(
+                        systemImage: message.feedback == .up
+                            ? "hand.thumbsup.fill" : "hand.thumbsup",
+                        label: "message.good",
+                        identifier: "juno.mobile.message-thumbs-up",
+                        active: message.feedback == .up
+                    ) { setFeedback(message.id, message.feedback == .up ? nil : .up) }
+
+                    actionButton(
+                        systemImage: message.feedback == .down
+                            ? "hand.thumbsdown.fill" : "hand.thumbsdown",
+                        label: "message.bad",
+                        identifier: "juno.mobile.message-thumbs-down",
+                        active: message.feedback == .down
+                    ) { setFeedback(message.id, message.feedback == .down ? nil : .down) }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    private var hasAnyAction: Bool {
+        !plainText.isEmpty || regenerate != nil || branch != nil || setFeedback != nil
+    }
+
+    /// 34pt of touch target around a 15pt glyph. The row reads as quiet
+    /// secondary chrome until one of its controls is *on*, which is the only
+    /// time the accent appears — a rated answer and a reading in progress are
+    /// both states worth seeing from across the screen.
+    private func actionButton(
+        systemImage: String,
+        label: LocalizedStringKey,
+        identifier: String,
+        active: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14))
+                .foregroundStyle(active ? Color.junoAccent : Color.junoMutedForeground)
+                .frame(width: 34, height: 34)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func copy() {
+        UIPasteboard.general.string = plainText
+        withAnimation(.easeOut(duration: 0.15)) { copied = true }
+        // Long enough to read, short enough that the row is back to normal
+        // before the reader looks again.
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation(.easeOut(duration: 0.2)) { copied = false }
+        }
+    }
+
+    /// Copies what is on screen. Copying `message.content` handed people a
+    /// `<juno:memory>` tag and an artifact's entire source — text they never saw.
     private var copyButton: some View {
         Button {
-            UIPasteboard.general.string = message.content
+            UIPasteboard.general.string = plainText
         } label: {
             Label("Copy", systemImage: "doc.on.doc")
         }
-        .disabled(message.content.isEmpty)
+        .disabled(plainText.isEmpty)
     }
 }
 
-/// The inline "Thinking about your request" status shown before the assistant's
-/// answer begins. Uses a subtle, self-limiting symbol pulse that is suppressed
-/// under Reduce Motion.
-private struct JunoThinkingIndicator: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+/// An artifact the reply produced, as the compact card the web draws
+/// (`artifact-inline-card.tsx`) instead of the tag's raw source.
+///
+/// Tapping it opens the artifact over the conversation.
+///
+/// The transcript only knows the `identifier` the tag carried, not the stored
+/// row's id, so the chat screen resolves one to the other — and a card whose
+/// artifact has not synced yet stays inert rather than opening an empty screen.
+private struct JunoMobileArtifactInlineCard: View {
+    let artifact: NativeMessageContent.ArtifactReference
+    var open: (() -> Void)?
 
-    var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "sparkles")
-                .font(.callout)
-                .foregroundStyle(Color.junoAccent)
-                .symbolEffect(.pulse, isActive: !reduceMotion)
-            Text("Thinking about your request")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+    private var glyph: String {
+        switch artifact.kind {
+        case "REACT", "HTML": "curlybraces.square"
+        case "SVG": "square.on.circle"
+        case "MERMAID": "flowchart"
+        case "MARKDOWN": "doc.text"
+        default: "chevron.left.forwardslash.chevron.right"
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Thinking about your request")
-        .accessibilityAddTraits(.updatesFrequently)
     }
-}
 
-/// The post-completion reasoning trace, presented as a compact expandable
-/// control (chevron, coral label) rather than a metadata footnote. VoiceOver
-/// announces the expanded/collapsed state via `DisclosureGroup`.
-private struct JunoReasoningDisclosure: View {
-    let text: String
-    @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private var subtitle: String {
+        if artifact.streaming { return "Writing…" }
+        return artifact.language?.uppercased() ?? artifact.kind.capitalized
+    }
 
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            Text(text)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 6)
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "brain")
-                    .font(.caption)
-                Text("Reasoning")
-                    .font(.subheadline.weight(.medium))
+        if let open {
+            Button(action: open) { card }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Artifact, \(artifact.title), \(subtitle). Opens it.")
+                .accessibilityIdentifier("juno.mobile.chat-artifact")
+        } else {
+            card.accessibilityElement(children: .combine)
+                .accessibilityLabel("Artifact, \(artifact.title), \(subtitle)")
+        }
+    }
+
+    private var card: some View {
+        HStack(spacing: 12) {
+            Image(systemName: glyph)
+                .font(.system(size: 15))
+                .foregroundStyle(Color.junoMutedForeground)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(artifact.title)
+                    .font(.system(size: 15, weight: .medium))
+                    .lineLimit(1)
+                Text(subtitle)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.junoMutedForeground.opacity(0.7))
             }
-            .foregroundStyle(Color.junoAccent)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            if artifact.streaming {
+                JunoThinkingMatrix(dot: 3, spacing: 2)
+                    .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+            } else if open != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Color.junoMutedForeground.opacity(0.35))
+            }
         }
-        .tint(Color.junoAccent)
-        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: expanded)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                .fill(Color.junoSurface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
+                .strokeBorder(Color.junoHairline, lineWidth: 1)
+        )
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+    }
+}
+
+// The reasoning trace and the pre-answer status both live in
+// `JunoMobileThoughtProcess.swift` now, as one control in two states — the shape
+// the web settled on. The pair they replaced (a coral `brain` DisclosureGroup and
+// a pulsing `sparkles`) is gone.
+
+/// What an answer cost, as the transcript writes it.
+///
+/// The web's `formatUsd` from `src/lib/utils.ts`, thresholds included — four
+/// decimals under a cent, three under a dollar, two above. The two clients have
+/// to agree, or the same answer costs "$0.0021" in a browser and "$0.00" on a
+/// phone. A flat two-decimal format is exactly that failure: almost every answer
+/// costs less than a cent, so it would print "$0.00" for all of them.
+enum JunoMobileCost {
+    static func formatted(_ value: Double) -> String {
+        guard value.isFinite, value > 0 else { return "$0" }
+        if value < 0.0001 { return "<$0.0001" }
+        if value < 0.01 { return String(format: "$%.4f", value) }
+        if value < 1 { return String(format: "$%.3f", value) }
+        return String(format: "$%.2f", value)
     }
 }

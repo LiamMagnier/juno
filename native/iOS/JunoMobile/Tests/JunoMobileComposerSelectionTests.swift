@@ -85,4 +85,58 @@ final class JunoMobileComposerSelectionTests: XCTestCase {
         )
         XCTAssertEqual(JunoMobileModelSelectorView.shortProviderName("Juno"), "Juno")
     }
+    // MARK: - The account's default model
+
+    /// The reported bug: Settings › Default model was persisted and synced, and
+    /// the composer ignored it — so every launch opened on `juno:auto`, the first
+    /// entry in the catalog, and the setting appeared to do nothing.
+    func testANewChatOpensOnTheAccountDefaultRatherThanTheFirstCatalogEntry() {
+        let resolved = JunoMobileComposerSelection.resolvedModelID(
+            current: "",
+            conversationModel: "",
+            accountDefault: "anthropic:claude-opus-5",
+            selectable: [
+                option("juno:auto"),
+                option("anthropic:claude-sonnet-4-6"),
+                option("anthropic:claude-opus-5"),
+            ]
+        )
+        XCTAssertEqual(resolved, "anthropic:claude-opus-5")
+    }
+
+    /// The conversation's own model still wins: opening an existing chat must not
+    /// silently re-point it at the account default.
+    func testAnExistingConversationsModelOutranksTheAccountDefault() {
+        let resolved = JunoMobileComposerSelection.resolvedModelID(
+            current: "",
+            conversationModel: "openai:gpt-5",
+            accountDefault: "anthropic:claude-opus-5",
+            selectable: [option("openai:gpt-5"), option("anthropic:claude-opus-5")]
+        )
+        XCTAssertEqual(resolved, "openai:gpt-5")
+    }
+
+    /// A default the account can no longer send to (plan change, retirement) is
+    /// skipped rather than selected — the whole point of the resolver.
+    func testAnUnselectableAccountDefaultFallsThrough() {
+        let resolved = JunoMobileComposerSelection.resolvedModelID(
+            current: "",
+            conversationModel: "",
+            accountDefault: "anthropic:claude-opus-5",
+            selectable: [option("juno:auto"), option("anthropic:claude-sonnet-4-6")]
+        )
+        XCTAssertEqual(resolved, "juno:auto")
+    }
+
+    /// Settings load asynchronously, so the first resolution runs with no default
+    /// at all. That must behave exactly as before rather than blanking.
+    func testAnEmptyAccountDefaultChangesNothing() {
+        let resolved = JunoMobileComposerSelection.resolvedModelID(
+            current: "",
+            conversationModel: "",
+            accountDefault: "",
+            selectable: [option("juno:auto"), option("anthropic:claude-sonnet-4-6")]
+        )
+        XCTAssertEqual(resolved, "juno:auto")
+    }
 }

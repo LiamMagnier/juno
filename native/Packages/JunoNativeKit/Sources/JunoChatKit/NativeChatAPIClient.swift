@@ -281,19 +281,85 @@ public struct NativeChatGenerationRequest: Equatable, Sendable {
     /// server-side, so parity is sending the flag and rendering what comes
     /// back, not reimplementing the pipeline.
     public let deepResearch: Bool
+    /// Lets the model reach the live web for this turn. The server still gates
+    /// it on the plan and on the model's own capability (`useWebSearch` in
+    /// `/api/chat`), so this is a request rather than an instruction.
+    public let webSearch: Bool
+    /// Whether the model may answer with a `<juno:artifact>`. Optional because
+    /// the server's default is *on* — sending `false` is a real instruction and
+    /// sending nothing must keep the previous behaviour.
+    public let canvasEnabled: Bool?
+    /// The connected apps this turn may act through, by connector id. Empty
+    /// means "none", which is also the server's default.
+    public let connectors: [String]
 
     public init(
         conversationID: String,
         modelID: String,
         reasoningEffort: NativeReasoningEffort?,
         generationID: String,
-        deepResearch: Bool = false
+        deepResearch: Bool = false,
+        webSearch: Bool = false,
+        canvasEnabled: Bool? = nil,
+        connectors: [String] = []
     ) {
         self.conversationID = conversationID
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
         self.generationID = generationID
         self.deepResearch = deepResearch
+        self.webSearch = webSearch
+        self.canvasEnabled = canvasEnabled
+        self.connectors = connectors
+    }
+}
+
+/// One finalized turn of an incognito conversation, sent with every request.
+///
+/// Incognito chats have no server-side history to read back, so the whole
+/// transcript travels with each turn. That is the server's contract, not a
+/// shortcut: `/api/chat`'s private branch takes `privateHistory` precisely
+/// because it writes nothing it could later look up.
+public struct NativeChatPrivateTurn: Equatable, Sendable, Encodable {
+    public enum Role: String, Equatable, Sendable, Encodable {
+        case user = "USER"
+        case assistant = "ASSISTANT"
+    }
+
+    public let role: Role
+    public let content: String
+
+    public init(role: Role, content: String) {
+        self.role = role
+        self.content = content
+    }
+}
+
+/// An incognito generation: no conversation, nothing stored.
+///
+/// A separate type from ``NativeChatGenerationRequest`` on purpose. The two are
+/// mutually exclusive at the wire level — the server's private branch takes no
+/// `conversationId` and **rejects `regenerate` with a 400** — and the normal path
+/// always sends both. Modelling incognito as a flag on the normal request would
+/// have meant one struct whose valid field combinations depend on a boolean, and
+/// the first mistake would have been a runtime 400 rather than a compile error.
+public struct NativeChatPrivateGenerationRequest: Equatable, Sendable {
+    public let modelID: String
+    public let reasoningEffort: NativeReasoningEffort?
+    public let generationID: String
+    /// The whole conversation so far, oldest first, INCLUDING the turn being sent.
+    public let history: [NativeChatPrivateTurn]
+
+    public init(
+        modelID: String,
+        reasoningEffort: NativeReasoningEffort?,
+        generationID: String,
+        history: [NativeChatPrivateTurn]
+    ) {
+        self.modelID = modelID
+        self.reasoningEffort = reasoningEffort
+        self.generationID = generationID
+        self.history = history
     }
 }
 
@@ -347,7 +413,7 @@ extension NativeAuthRuntime: NativeChatRequestSending {}
 /// then regenerates from that authoritative final user row. A dropped SSE is
 /// never re-POSTed automatically, so reconnect cannot duplicate or double-bill
 /// a generation that continues on the server.
-public struct NativeChatAPIClient: Sendable {
+public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
     private let sender: any NativeAuthenticatedRequestSending
     private let streamer: any NativeAuthenticatedByteStreaming
 
@@ -520,6 +586,27 @@ public struct NativeChatAPIClient: Sendable {
         )
     }
 
+    /// Streams an incognito turn. Nothing about it is persisted anywhere — not on
+    /// the server, and not by the caller, which must hold the transcript in memory
+    /// and pass it back on the next turn.
+    public func privateGenerationEvents(
+        _ request: NativeChatPrivateGenerationRequest,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
+        try requireIdentifier(request.modelID)
+        try requireIdentifier(request.generationID)
+        guard !request.history.isEmpty else { throw NativeChatAPIError.malformedResponse }
+        let body = PrivateGenerationRequestWire(
+            model: request.modelID,
+            reasoningEffort: request.reasoningEffort?.rawValue,
+            generationId: request.generationID,
+            client: "app",
+            privateMode: true,
+            privateHistory: request.history
+        )
+        return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
+    }
+
     public func generationEvents(
         _ request: NativeChatGenerationRequest,
         for accountID: AccountID
@@ -534,8 +621,22 @@ public struct NativeChatAPIClient: Sendable {
             reasoningEffort: request.reasoningEffort?.rawValue,
             generationId: request.generationID,
             client: "app",
-            deepResearch: request.deepResearch ? true : nil
+            deepResearch: request.deepResearch ? true : nil,
+            webSearch: request.webSearch ? true : nil,
+            canvasEnabled: request.canvasEnabled,
+            connectors: request.connectors.isEmpty ? nil : request.connectors
         )
+        return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
+    }
+
+    /// The shared half: both modes POST to `/api/chat` and read the same
+    /// `text/event-stream` back, so only the body differs. Keeping the response
+    /// handling in one place is what stops incognito quietly missing an event kind
+    /// the normal path learns to handle later.
+    private func streamEvents(
+        body: Data,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
         let response = try await streamer.stream(
             try NativeBearerRequest(
                 path: "/api/chat",
@@ -544,7 +645,7 @@ public struct NativeChatAPIClient: Sendable {
                     "Accept": "text/event-stream",
                     "Content-Type": "application/json",
                 ]),
-                body: try JSONEncoder().encode(body)
+                body: body
             ),
             for: accountID
         )
@@ -864,8 +965,26 @@ private struct GenerationRequestWire: Encodable {
     let generationId: String
     let client: String
     /// Omitted when false so a plain turn's body is byte-identical to what it
-    /// was before deep research existed.
+    /// was before deep research existed. The same rule covers `webSearch` and
+    /// `connectors`: the route's schema is `.strict()` and every one of these is
+    /// optional there, so "off" is best said by saying nothing.
     let deepResearch: Bool?
+    let webSearch: Bool?
+    /// The exception: canvas defaults to *on* server-side, so `false` has to be
+    /// sent explicitly and only `nil` means "leave it alone".
+    let canvasEnabled: Bool?
+    let connectors: [String]?
+}
+/// The private branch's body. `conversationId` and `regenerate` are ABSENT rather
+/// than nil-encoded: the server rejects `regenerate` outright in this mode, and an
+/// explicit `null` is still a present key.
+private struct PrivateGenerationRequestWire: Encodable {
+    let model: String
+    let reasoningEffort: String?
+    let generationId: String
+    let client: String
+    let privateMode: Bool
+    let privateHistory: [NativeChatPrivateTurn]
 }
 private struct CancelRequestWire: Encodable { let generationId: String }
 private struct CancelResponseWire: Decodable { let ok: Bool; let cancelled: Bool }

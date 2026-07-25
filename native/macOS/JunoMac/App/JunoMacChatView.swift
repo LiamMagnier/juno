@@ -130,6 +130,9 @@ struct JunoMacChatView: View {
 
     @ViewBuilder
     private func conversationBody(_ conversation: NativeConversation) -> some View {
+        // Resolved once for the thread rather than per row: every message asks
+        // the same question of the same list.
+        let conversationArtifacts = artifacts(for: conversation.id)
         ScrollViewReader { proxy in
             ScrollView {
                 if messages.isEmpty {
@@ -144,7 +147,9 @@ struct JunoMacChatView: View {
                         ForEach(messages) { message in
                             JunoMacMessageView(
                                 message: message,
-                                isStreaming: generatingHere && message.id == messages.last?.id
+                                isStreaming: generatingHere && message.id == messages.last?.id,
+                                artifacts: conversationArtifacts,
+                                openArtifact: openArtifact
                             )
                             .id(message.id)
                         }
@@ -356,14 +361,54 @@ struct JunoMacChatView: View {
 /// The assistant's answer has no container at all: label, content, actions. The
 /// reader's own message sits in a restrained accent-tinted block, indented from
 /// the left so the two voices are distinguishable without either being boxed.
+///
+/// **Nothing here renders `message.content` directly.** The server's text carries
+/// wire tags the reader must never see — `<juno:memory>` most of all, which
+/// `juno` being a legal URI scheme turned into a coral *clickable link* labelled
+/// "juno:memory" in the middle of an answer, and `<juno:artifact>`, which spilled
+/// a whole file's source into the transcript. `NativeMessageContent` is the one
+/// place that knows which runs of a reply are prose, and every path through this
+/// view goes through it: both bubbles, the pasteboard and VoiceOver alike.
 private struct JunoMacMessageView: View {
     let message: NativeChatMessage
     let isStreaming: Bool
+    /// The artifacts this conversation has synchronized, so a card in the
+    /// transcript can be matched to the record the Artifacts screen opens.
+    var artifacts: [NativeArtifact] = []
+    var openArtifact: (String) -> Void = { _ in }
     @State private var isHovering = false
     @State private var didCopy = false
     @State private var showReasoning = false
 
     private var isUser: Bool { message.role == .user }
+
+    /// The reply as the reader sees it — wire tags removed, and the duplicate
+    /// trailing `## Sources` list dropped when the list below already carries it.
+    private var displayContent: String {
+        message.sources.isEmpty
+            ? message.content
+            : NativeMessageContent.strippingTrailingSourcesSection(message.content)
+    }
+
+    private var parts: [NativeMessageContent.Part] {
+        NativeMessageContent.parts(of: displayContent)
+    }
+
+    /// What Copy puts on the pasteboard and what VoiceOver reads: the visible
+    /// answer, never the wire format.
+    private var plainText: String {
+        NativeMessageContent.plainText(of: message.content)
+    }
+
+    /// The synchronized row id for an artifact the reply referred to, matched on
+    /// the model's own `identifier`.
+    ///
+    /// Nil while a reply is still streaming, and for an artifact this device has
+    /// not synchronized yet — in both cases the card stays inert rather than
+    /// offering a click that would open nothing.
+    private func artifactRowID(for reference: NativeMessageContent.ArtifactReference) -> String? {
+        artifacts.first { $0.identifier == reference.identifier }?.id
+    }
 
     var body: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: JunoSpacing.compact) {
@@ -381,7 +426,7 @@ private struct JunoMacMessageView: View {
 
     private var userContent: some View {
         VStack(alignment: .leading, spacing: JunoSpacing.compact) {
-            JunoMarkdownText(message.content)
+            JunoMarkdownText(plainText)
             if message.isPending {
                 HStack(spacing: 4) {
                     ProgressView().controlSize(.small)
@@ -421,7 +466,19 @@ private struct JunoMacMessageView: View {
             if message.content.isEmpty && isStreaming {
                 JunoMacStreamingDots()
             } else {
-                JunoMarkdownText(message.content)
+                ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                    switch part {
+                    case .text(let text):
+                        JunoMarkdownText(text)
+                    case .artifact(let artifact):
+                        JunoMacArtifactInlineCard(
+                            artifact: artifact,
+                            open: artifactRowID(for: artifact).map { id in
+                                { openArtifact(id) }
+                            }
+                        )
+                    }
+                }
             }
 
             if !message.sources.isEmpty {
@@ -449,9 +506,11 @@ private struct JunoMacMessageView: View {
         }
     }
 
+    /// Copies what is on screen. Copying `message.content` handed people a
+    /// `<juno:memory>` tag and an artifact's entire source — text they never saw.
     private var copyButton: some View {
         Button {
-            JunoPasteboard.copy(message.content)
+            JunoPasteboard.copy(plainText)
             didCopy = true
             Task {
                 try? await Task.sleep(for: .seconds(1.6))
@@ -471,10 +530,100 @@ private struct JunoMacMessageView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
-        .disabled(message.content.isEmpty)
+        // Keyed to what would actually be copied: a reply that is nothing but a
+        // `<juno:memory>` tag has content but nothing a reader could paste.
+        .disabled(plainText.isEmpty)
         .opacity(isUser && !isHovering ? 0 : 1)
         .help(Text(didCopy ? "chat.copied" : "chat.copy"))
         .accessibilityIdentifier("juno.mac.message-copy")
+    }
+}
+
+/// An artifact the reply produced, as the compact card the web draws
+/// (`artifact-inline-card.tsx`) instead of the tag's raw source.
+///
+/// Unlike the phone's card this one *is* clickable, but only when it has
+/// somewhere to go: the transcript knows the model's `identifier`, and the Mac
+/// already resolves that to a synchronized row for the inspector's artifact list,
+/// so the same lookup makes the card open the real thing. When the lookup misses
+/// — a reply still streaming, or an artifact this device has not synchronized —
+/// the card stays inert and simply reports what was made, because a control that
+/// looks clickable and does nothing is worse than one that plainly states a fact.
+private struct JunoMacArtifactInlineCard: View {
+    let artifact: NativeMessageContent.ArtifactReference
+    /// Nil when the artifact cannot be resolved to something openable.
+    var open: (() -> Void)?
+
+    @State private var isHovering = false
+
+    private var glyph: String {
+        switch artifact.kind {
+        case "REACT", "HTML": "curlybraces.square"
+        case "SVG": "square.on.circle"
+        case "MERMAID": "flowchart"
+        case "MARKDOWN": "doc.text"
+        default: "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+    private var subtitle: String {
+        if artifact.streaming { return String(localized: "chat.artifact.writing") }
+        return artifact.language?.uppercased() ?? artifact.kind.capitalized
+    }
+
+    var body: some View {
+        if let open {
+            Button(action: open) { card }
+                .buttonStyle(.plain)
+                .onHover { isHovering = $0 }
+                .help(Text("chat.artifact.open"))
+                .accessibilityIdentifier("juno.mac.message-artifact")
+        } else {
+            card.accessibilityIdentifier("juno.mac.message-artifact")
+        }
+    }
+
+    private var card: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Image(systemName: glyph)
+                .foregroundStyle(open == nil ? Color.secondary : Color.junoAccent)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(artifact.title)
+                    .font(.system(.body, weight: .medium))
+                    .lineLimit(1)
+                Text(subtitle).junoMetadata()
+            }
+
+            Spacer(minLength: 0)
+
+            if artifact.streaming {
+                JunoThinkingMatrix(dot: 3, spacing: 2)
+                    .foregroundStyle(.secondary)
+            } else if open != nil {
+                // The affordance appears on hover, like the message actions
+                // above: at rest the transcript stays quiet.
+                Image(systemName: "arrow.up.forward")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .opacity(isHovering ? 1 : 0)
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug + 2)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .fill(Color.junoSurface.opacity(isHovering ? 1 : 0.72))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoHairline)
+        )
+        .contentShape(.rect)
+        .animation(.easeOut(duration: 0.12), value: isHovering)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text("chat.artifact.label \(artifact.title) \(subtitle)"))
     }
 }
 

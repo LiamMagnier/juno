@@ -28,6 +28,16 @@ public enum JunoPreviewEnvironment {
         value(for: "--juno-preview-tab", env: "JUNO_PREVIEW_TAB")
     }
 
+    /// Optional accent override from `--juno-preview-accent <name>` or
+    /// `JUNO_PREVIEW_ACCENT`, so each of the five accents can be screenshotted by
+    /// relaunching instead of tapping into Settings and back out.
+    ///
+    /// The accent is an account setting, and the fixture account has exactly one —
+    /// which meant four of the five palettes had no reachable state to inspect.
+    public static var initialAccent: String? {
+        value(for: "--juno-preview-accent", env: "JUNO_PREVIEW_ACCENT")
+    }
+
     /// Optional fixed window size from `--juno-preview-size <width>x<height>` or
     /// `JUNO_PREVIEW_SIZE`.
     ///

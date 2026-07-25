@@ -376,14 +376,14 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             let wire = try? JSONDecoder().decode(SettingsWire.self, from: payload),
             wire.id == record.key.id,
             let theme = NativeThemePreference(rawValue: wire.theme),
-            validString(wire.accent, maximum: 40, allowsEmpty: false),
-            validString(wire.defaultModel, maximum: 200, allowsEmpty: false),
-            validString(wire.customInstructions, maximum: 200_000, allowsEmpty: true),
-            validString(wire.responseLanguage, maximum: 80, allowsEmpty: false),
-            validString(wire.uiLocale, maximum: 40, allowsEmpty: false),
-            validString(wire.personality, maximum: 80, allowsEmpty: false),
-            wire.voiceId.map({ validString($0, maximum: 200, allowsEmpty: true) }) ?? true,
-            validFavorites(wire.favoriteModels),
+            Self.validString(wire.accent, maximum: 40, allowsEmpty: false),
+            Self.validString(wire.defaultModel, maximum: 200, allowsEmpty: false),
+            Self.validString(wire.customInstructions, maximum: 200_000, allowsEmpty: true),
+            Self.validString(wire.responseLanguage, maximum: 80, allowsEmpty: false),
+            Self.validString(wire.uiLocale, maximum: 40, allowsEmpty: false),
+            Self.validString(wire.personality, maximum: 80, allowsEmpty: false),
+            wire.voiceId.map({ Self.validString($0, maximum: 200, allowsEmpty: true) }) ?? true,
+            Self.validFavorites(wire.favoriteModels),
             let updatedAt = parseDate(wire.updatedAt)
         else { throw NativeMemorySettingsError.corruptRecord(record.key) }
         return NativeAccountSettings(
@@ -408,7 +408,7 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
     private func decodeSummary(_ record: StoredRecord) throws -> NativeMemorySummary {
         guard let payload = record.payload,
             let wire = try? JSONDecoder().decode(CachedSummaryWire.self, from: payload),
-            validString(wire.content, maximum: 500_000, allowsEmpty: true),
+            Self.validString(wire.content, maximum: 500_000, allowsEmpty: true),
             wire.entryCount >= 0,
             let updatedAt = parseDate(wire.updatedAt)
         else { throw NativeMemorySettingsError.corruptRecord(record.key) }
@@ -468,7 +468,7 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             guard var current = settings,
                 current.id == mutation.draft.entity.id
             else { break }
-            try applySettingsPatch(patch, to: &current)
+            try Self.applySettingsPatch(patch, to: &current)
             current.updatedAt = mutation.draft.createdAt
             current.isPending = true
             settings = current
@@ -477,7 +477,11 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
         }
     }
 
-    private func applySettingsPatch(
+    /// Applies a raw settings patch. `nonisolated static` so callers outside the
+    /// actor can reuse it — the model needs it to overlay a change the local record
+    /// has not caught up with yet, and duplicating the field-by-field validation
+    /// there is how the two would drift.
+    nonisolated static func applySettingsPatch(
         _ patch: [String: Any],
         to settings: inout NativeAccountSettings
     ) throws {
@@ -490,37 +494,37 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
         }
         if let raw = patch["accent"] {
             guard let value = raw as? String,
-                validString(value, maximum: 40, allowsEmpty: false)
+                Self.validString(value, maximum: 40, allowsEmpty: false)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.accent = value
         }
         if let raw = patch["defaultModel"] {
             guard let value = raw as? String,
-                validString(value, maximum: 200, allowsEmpty: false)
+                Self.validString(value, maximum: 200, allowsEmpty: false)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.defaultModel = value
         }
         if let raw = patch["customInstructions"] {
             guard let value = raw as? String,
-                validString(value, maximum: 200_000, allowsEmpty: true)
+                Self.validString(value, maximum: 200_000, allowsEmpty: true)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.customInstructions = value
         }
         if let raw = patch["responseLanguage"] {
             guard let value = raw as? String,
-                validString(value, maximum: 80, allowsEmpty: false)
+                Self.validString(value, maximum: 80, allowsEmpty: false)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.responseLanguage = value
         }
         if let raw = patch["uiLocale"] {
             guard let value = raw as? String,
-                validString(value, maximum: 40, allowsEmpty: false)
+                Self.validString(value, maximum: 40, allowsEmpty: false)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.interfaceLocale = value
         }
         if let raw = patch["personality"] {
             guard let value = raw as? String,
-                validString(value, maximum: 80, allowsEmpty: false)
+                Self.validString(value, maximum: 80, allowsEmpty: false)
             else { throw NativeMemorySettingsError.invalidMutation }
             settings.personality = value
         }
@@ -531,7 +535,7 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             settings.memoryEnabled = value
         }
         if let raw = patch["favoriteModels"] {
-            guard let value = raw as? [String], validFavorites(value) else {
+            guard let value = raw as? [String], Self.validFavorites(value) else {
                 throw NativeMemorySettingsError.invalidMutation
             }
             settings.favoriteModels = value
@@ -553,20 +557,20 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
     private func validMemory(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed.count <= 20_000,
-            validString(trimmed, maximum: 20_000, allowsEmpty: false)
+            Self.validString(trimmed, maximum: 20_000, allowsEmpty: false)
         else { return nil }
         return trimmed
     }
 
-    private func validFavorites(_ values: [String]) -> Bool {
+    nonisolated static func validFavorites(_ values: [String]) -> Bool {
         values.count <= 100
             && Set(values).count == values.count
             && values.allSatisfy {
-                validString($0, maximum: 200, allowsEmpty: false)
+                Self.validString($0, maximum: 200, allowsEmpty: false)
             }
     }
 
-    private func validString(
+    nonisolated static func validString(
         _ value: String,
         maximum: Int,
         allowsEmpty: Bool
@@ -747,6 +751,7 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         settings = nil
         pendingMutationCount = 0
         conflictedMutationCount = 0
+        acceptedSettings = [:]
         lastErrorDescription = nil
         isMutating = false
         isRefreshingSummary = false
@@ -778,7 +783,10 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
             guard self.accountID == accountID else { return }
             memories = snapshot.memories
             summary = snapshot.summary
-            settings = snapshot.settings
+            settings = applyingAcceptedSettings(
+                to: snapshot.settings,
+                pendingMutations: snapshot.pendingMutationCount
+            )
             pendingMutationCount = snapshot.pendingMutationCount
             conflictedMutationCount = snapshot.conflictedMutationCount
             lastErrorDescription = snapshot.conflictedMutationCount == 0
@@ -851,6 +859,61 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
         )
     }
 
+    /// Settings changes the server has accepted but the local record has not yet
+    /// caught up with, keyed by field.
+    ///
+    /// Without this, every settings change *visually reverted*. The sequence is:
+    /// enqueue → `reload()` shows the value via the pending-mutation overlay →
+    /// drain **acknowledges** the mutation → the overlay stops applying → the next
+    /// `reload()` reads the untouched local record and the old value comes back.
+    /// The change was saved the whole time; only the screen disagreed, which is why
+    /// the accent picker looked like it did nothing.
+    ///
+    /// Each entry is dropped the moment an incoming record already agrees with it,
+    /// so this is self-healing rather than a second source of truth — and it cannot
+    /// mask a server rejection, because a rejected mutation conflicts instead of
+    /// being acknowledged.
+    private var acceptedSettings: [String: Any] = [:]
+
+    /// Overlays accepted-but-not-yet-durable settings onto an incoming snapshot.
+    ///
+    /// **`pendingMutations` is what makes the clearing rule correct.** The snapshot
+    /// itself already overlays *pending* mutations, so while one is in flight the
+    /// incoming record appears to carry the new value — and an earlier version of
+    /// this read that as "the round trip finished" and dropped the entry. The drain
+    /// then acknowledged the mutation, the pending overlay stopped applying, and
+    /// with the entry already gone the old value came straight back. That is
+    /// precisely the revert this exists to prevent, reintroduced by its own
+    /// housekeeping.
+    ///
+    /// An entry is therefore only cleared when the record agrees with it **and**
+    /// nothing is queued — the two conditions that together mean the value is
+    /// really on the record rather than being simulated by the outbox.
+    private func applyingAcceptedSettings(
+        to incoming: NativeAccountSettings?,
+        pendingMutations: Int
+    ) -> NativeAccountSettings? {
+        guard var result = incoming, !acceptedSettings.isEmpty else { return incoming }
+        var stillOutstanding: [String: Any] = [:]
+        for (field, value) in acceptedSettings {
+            var probe = result
+            guard (try? NativeMemorySettingsStore<Repository>.applySettingsPatch(
+                [field: value], to: &probe
+            )) != nil else { continue }
+            if probe == result {
+                // The record matches. Only durable if nothing is still queued;
+                // otherwise this is the pending overlay wearing the record's face.
+                if pendingMutations == 0 { continue }
+                stillOutstanding[field] = value
+                continue
+            }
+            result = probe
+            stillOutstanding[field] = value
+        }
+        acceptedSettings = stillOutstanding
+        return result
+    }
+
     public func updateSettings(_ patch: NativeSettingsPatch) async {
         guard let accountID, let settings else {
             lastErrorDescription = NativeMemorySettingsError.settingsUnavailable
@@ -863,6 +926,10 @@ public final class NativeMemorySettingsModel<Repository: AccountScopedRepository
                 .localizedDescription
             return
         }
+        // Held from here, not from acknowledgement: the drain inside
+        // `enqueueAndDrain` can acknowledge and reload before this function
+        // resumes, and the overlay has to already be in place by then.
+        for (field, value) in patchObject { acceptedSettings[field] = value }
         await enqueueAndDrain(
             operation: "settings.update",
             entity: RecordKey(namespace: "settings", id: settings.id),
