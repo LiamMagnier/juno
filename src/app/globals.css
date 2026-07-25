@@ -1016,6 +1016,52 @@
       0 10px 24px -21px hsl(var(--foreground) / .34);
   }
 
+  /* Accent aura — a soft bloom of the live accent behind the empty-state
+     composer, so a brand-new chat reads as the warmest thing on the page.
+     Purely decorative: it sits on z-index -1 inside the composer column's own
+     stacking context, so it can never paint over the composer or eat a click,
+     and it takes no layout (the column's height is the composer's alone). */
+  .composer-aura {
+    /* One knob for the whole effect: every alpha below is scaled by it, so the
+       bloom can be dialled up or down without re-balancing three shadows. */
+    --aura: 1;
+    position: absolute;
+    /* Deliberately SMALLER than the capsule and pill-shaped: the source box
+       stays hidden behind the composer, so all you ever see is the blur — a
+       soft ellipse of light rather than a rectangular rim. */
+    inset: 10px 70px;
+    z-index: -1;
+    border-radius: 999px;
+    pointer-events: none;
+    /* Three spreads of box-shadow, not a giant blurred gradient layer: shadows
+       are ink overflow, so however far the bloom reaches it can never widen the
+       empty state's scroll area (a 74rem gradient div did, and handed short or
+       narrow windows a scrollbar over dead space). Bonus: no offscreen blur
+       buffer, and the breathing scale below stays a composited transform. */
+    box-shadow:
+      0 0 70px 22px hsl(var(--primary) / calc(.24 * var(--aura))),
+      0 0 160px 56px hsl(var(--primary) / calc(.14 * var(--aura))),
+      0 16px 260px 110px hsl(var(--primary) / calc(.085 * var(--aura)));
+    opacity: .85;
+    transition: opacity var(--dur-slow) var(--ease-out-soft);
+  }
+  /* Typing warms it a little — the one place the composer is allowed an accent
+     response to focus, since it happens behind the surface, not on it. */
+  .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
+    opacity: 1;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .composer-aura {
+      animation: composer-aura-breathe 11s var(--ease-out-soft) infinite;
+    }
+  }
+  /* Scale only — opacity stays out of the keyframes so the focus rule above can
+     still win (an animation's declarations outrank a plain one at any origin). */
+  @keyframes composer-aura-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+
   .reasoning-fast-toggle[aria-pressed="true"] .reasoning-fast-icon {
     animation: reasoning-fast-charge 480ms var(--ease-spring) both;
   }

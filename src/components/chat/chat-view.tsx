@@ -1636,7 +1636,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     </div>
                   </div>
 
-                  <div className="z-10 w-full max-w-[44rem]">
+                  <div className="composer-aura-host relative z-10 w-full max-w-[44rem]">
+                    {/* Accent bloom behind the composer. Hidden in incognito —
+                        that mode is deliberately colourless. */}
+                    {!privateMode && !voiceOpen && <div aria-hidden className="composer-aura" />}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}
