@@ -1030,13 +1030,13 @@
        capsule rather than on the column — otherwise the light pools under it. */
     top: calc(50% - .5rem);
     left: 50%;
-    /* Wide, but kept close to the capsule's own height. This box is real
-       layout, so whatever it clears vertically it adds to the empty state's
-       scroll height — the column above clips it sideways (overflow-x-clip),
-       which leaves only the vertical to budget for, and ~45px of clearance
-       stays well inside the slack a centered greeting always has. */
-    width: min(150%, 58rem);
-    aspect-ratio: 10 / 3;
+    /* Grows sideways rather than down. This box is real layout, so whatever it
+       clears vertically it adds to the empty state's scroll height — the column
+       above clips it sideways (overflow-x-clip), so width is free and height is
+       the budgeted axis. ~70px of clearance stays inside the slack a centered
+       greeting has, even in a 400px-tall window. */
+    width: min(180%, 72rem);
+    aspect-ratio: 18 / 5;
     translate: -50% -50%;
     z-index: -1;
     pointer-events: none;
@@ -1056,6 +1056,11 @@
      * is exactly where 8-bit alpha steps are widest and most visible. Ending on
      * an explicit zero-alpha PRIMARY (not `transparent`, which is zero-alpha
      * black) keeps the hue steady all the way out instead of graying off.
+     *
+     * This first declaration is the single-hue fallback. The one below re-reads
+     * the accent per stop and walks it down in lightness, which needs relative
+     * colour syntax; where that does not parse, the cascade keeps this and you
+     * get a plainer bloom rather than none.
      */
     background: radial-gradient(
       ellipse 50% 50% at 50% 50%,
@@ -1066,6 +1071,23 @@
       hsl(var(--primary) / calc(.032 * var(--aura))) 72%,
       hsl(var(--primary) / calc(.009 * var(--aura))) 88%,
       hsl(var(--primary) / 0) 100%
+    );
+    /*
+     * The real one: still the accent the whole way out, but each stop sits
+     * lower in lightness and slightly lower in saturation than the last, so the
+     * bloom burns from a lit core down through a deep ember rim instead of one
+     * flat colour thinning out. Interpolated in oklab, which keeps the mid
+     * stops from dipping grey the way sRGB does across a lightness run.
+     */
+    background: radial-gradient(
+      ellipse 50% 50% at 50% 50% in oklab,
+      hsl(from hsl(var(--primary)) h s calc(l * 1.06) / calc(.21 * var(--aura))) 0%,
+      hsl(from hsl(var(--primary)) h s l / calc(.185 * var(--aura))) 18%,
+      hsl(from hsl(var(--primary)) h s calc(l * .88) / calc(.135 * var(--aura))) 36%,
+      hsl(from hsl(var(--primary)) h calc(s * .96) calc(l * .72) / calc(.082 * var(--aura))) 54%,
+      hsl(from hsl(var(--primary)) h calc(s * .9) calc(l * .55) / calc(.04 * var(--aura))) 72%,
+      hsl(from hsl(var(--primary)) h calc(s * .84) calc(l * .4) / calc(.013 * var(--aura))) 88%,
+      hsl(from hsl(var(--primary)) h calc(s * .8) calc(l * .3) / 0) 100%
     );
     opacity: .85;
     transition: opacity var(--dur-slow) var(--ease-out-soft);
@@ -1092,7 +1114,7 @@
   }
   /* Warm charcoal swallows a low-alpha wash that light paper shows plainly, so
      dark gets a little more of it. */
-  .dark .composer-aura { --aura: 1.2; }
+  .dark .composer-aura { --aura: 1.5; }
   /* Typing warms it a little — the one place the composer is allowed an accent
      response to focus, since it happens behind the surface, not on it. */
   .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
