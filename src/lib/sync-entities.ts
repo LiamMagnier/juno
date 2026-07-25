@@ -126,6 +126,14 @@ const loaders: Record<string, EntityLoader> = {
           feedback: row.feedback,
           promptTokens: row.promptTokens,
           completionTokens: row.completionTokens,
+          // The exact cost written at generation time, in micro-USD. The native
+          // clients cannot derive this: their model manifest carries a price
+          // *tier* ("premium"/"economy"), not per-token rates, and recomputing
+          // from token counts alone drops cache writes and web-search fees — the
+          // same under-reporting `serializeMessage` avoids by preferring this
+          // column. Without it the phone can show a model name and nothing else
+          // where the browser shows a price.
+          costMicroUsd: row.costMicroUsd,
           createdAt: row.createdAt.toISOString(),
         },
       ]),
