@@ -117,7 +117,15 @@ jobs:
           fi
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        # `brew update` first: the runner image ships a pinned Homebrew whose
+        # formula was 2.45.4, while both project specs require 2.46.0, so a bare
+        # `brew install` produced "XcodeGen version is 2.45.4, but minimum
+        # required version specified as 2.46.0" and failed generation before any
+        # code was compiled.
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
 
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh
@@ -176,7 +184,15 @@ jobs:
           xcodebuild -version
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        # `brew update` first: the runner image ships a pinned Homebrew whose
+        # formula was 2.45.4, while both project specs require 2.46.0, so a bare
+        # `brew install` produced "XcodeGen version is 2.45.4, but minimum
+        # required version specified as 2.46.0" and failed generation before any
+        # code was compiled.
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
 
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh

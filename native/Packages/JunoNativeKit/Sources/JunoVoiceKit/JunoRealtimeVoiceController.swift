@@ -1,5 +1,16 @@
 #if canImport(AVFoundation) && canImport(Speech)
-import AVFoundation
+// `@preconcurrency` because `AVAudioConverterInputBlock` is typed `@Sendable`
+// while being called **synchronously**, on the calling thread, before
+// `convert(to:error:withInputFrom:)` returns. Under strict concurrency that
+// makes capturing the input `AVAudioPCMBuffer` and flipping the `consumed` flag
+// look like cross-actor escapes; neither ever leaves this frame. The alternative
+// — copying the buffer and boxing the flag in a lock — would add real cost and a
+// second thing to keep correct in the audio path to satisfy an annotation the
+// framework simply predates.
+//
+// Scoped to this import rather than switched off for the target: everything else
+// in JunoVoiceKit is still checked.
+@preconcurrency import AVFoundation
 import Foundation
 import Observation
 import Speech
