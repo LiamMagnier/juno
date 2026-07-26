@@ -1132,8 +1132,19 @@
        than from the width, which keeps the bloom inside the slack a centred
        greeting leaves at any window size instead of handing short windows a
        scrollbar over dead space. The cap stops it ballooning on tall screens. */
-    width: calc(min(180%, 72rem) * var(--aura-reach));
-    height: calc(min(32rem, 54vh) * var(--aura-reach));
+    width: min(180%, 72rem);
+    height: min(32rem, 54vh);
+    /*
+     * Effort scales the bloom, it does not resize it. The box stays exactly the
+     * size and place it always was and `scale` grows or shrinks it about its own
+     * centre, which is the only formulation where the centre cannot move: a
+     * width that changes has to be re-centred every frame by the -50% translate,
+     * through layout, and any disagreement between the two — rounding, a stale
+     * composited layer — reads as the light sliding sideways as it dims. This
+     * also means the laid-out box is always the full envelope, the one measured
+     * flush against short windows, rather than a size that varies with a slider.
+     */
+    scale: var(--aura-reach);
     translate: -50% -50%;
     z-index: -1;
     pointer-events: none;
@@ -1218,7 +1229,9 @@
    */
   .composer-aura--docked {
     --aura: .38;
-    height: calc(min(15rem, 26vh) * var(--aura-reach));
+    /* No --aura-reach here: the scale on .composer-aura already applies it, and
+       multiplying it in twice would shrink this one quadratically. */
+    height: min(15rem, 26vh);
     /* Exactly the column, never wider. The empty state can spill sideways
        because the column above it clips; here the nearest clip is the main
        column's own overflow-hidden, and leaning on that to hide a bloom that
