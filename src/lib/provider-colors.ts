@@ -20,3 +20,24 @@ export const PROVIDER_ACCENTS: Record<Provider, string> = {
 export function providerAccent(provider: Provider): string {
   return PROVIDER_ACCENTS[provider] ?? PROVIDER_ACCENTS.openai;
 }
+
+/**
+ * The same brands, but as light rather than as ink.
+ *
+ * PROVIDER_ACCENTS holds each lab's mark colour, which is right for a logo and
+ * useless for a glow: three of these labs brand in near-black, and black does
+ * not emit. So the flat ones carry a luminous stand-in the lab actually uses
+ * elsewhere in its own product (OpenAI's green, Kimi's blue-violet), and xAI —
+ * which has no second colour — gets a cool steel that reads as its monochrome
+ * without pretending to be a brand value. Everything else is its real accent.
+ */
+export const PROVIDER_GLOWS: Record<Provider, string> = {
+  ...PROVIDER_ACCENTS,
+  openai: "#10a37f",
+  moonshot: "#6a5bff",
+  xai: "#8ea3c0",
+};
+
+export function providerGlow(provider: Provider): string {
+  return PROVIDER_GLOWS[provider] ?? PROVIDER_GLOWS.openai;
+}

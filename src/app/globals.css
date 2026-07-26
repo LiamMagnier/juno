@@ -3,6 +3,27 @@
 @tailwind utilities;
 
 /*
+ * The composer aura's two animated inputs, registered so they can interpolate.
+ *
+ * Both are read inside a gradient, and an unregistered custom property is a raw
+ * token: it flips from one value to the next with nothing in between, so the
+ * tint would cut from the accent to the model's lab colour and the send swell
+ * would step rather than swell. Giving them types lets one transition and one
+ * keyframe animation re-render the whole ramp smoothly.
+ */
+@property --aura-tint {
+  syntax: "<color>";
+  inherits: true;
+  /* Never used — .composer-aura-host always sets a real one. */
+  initial-value: #d97859;
+}
+@property --aura-pulse {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+/*
  * Juno design system
  * ------------------
  * Warm-paper light theme / warm-charcoal dark theme.
@@ -1021,6 +1042,38 @@
      Purely decorative: it sits on z-index -1 inside the composer column's own
      stacking context, so it can never paint over the composer or eat a click,
      and it takes no layout (the column's height is the composer's alone). */
+  /*
+   * What colour the bloom is, and when.
+   *
+   * Idle it is the user's accent, so the empty state answers the accent picker
+   * live. Focused it becomes the colour of the lab behind the selected model —
+   * the composer is about to talk to Anthropic or OpenAI or Moonshot, and the
+   * light behind it says which. Every stop of the ramp derives from this one
+   * colour, so the whole bloom turns over together and stays a coherent light
+   * rather than a mix of two.
+   */
+  .composer-aura-host {
+    --aura-tint: hsl(var(--primary));
+    transition: --aura-tint var(--dur-slow) var(--ease-out-soft);
+  }
+  .composer-aura-host:has(.composer-surface:focus-within) {
+    --aura-tint: var(--aura-provider, hsl(var(--primary)));
+  }
+  /* Send: one swell and settle. Driven from the host so it animates a variable
+     the aura merely reads, which keeps it clear of the breathing animation on
+     the aura itself — that one owns `transform` and is left alone. */
+  .composer-aura-host.is-sending {
+    animation: composer-aura-send 1100ms var(--ease-out-expo);
+  }
+  @keyframes composer-aura-send {
+    0% { --aura-pulse: 1; }
+    16% { --aura-pulse: 2.3; }
+    100% { --aura-pulse: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .composer-aura-host.is-sending { animation: none; }
+  }
+
   .composer-aura {
     /* One knob for the whole effect: every alpha below is scaled by it, so the
        bloom can be dialled up or down without re-balancing the ramp. */
@@ -1055,41 +1108,33 @@
      *
      * The ramp is hand-shaped to a rough Gaussian rather than left linear: a
      * straight alpha ramp spends most of its length in the flat middle, which
-     * is exactly where 8-bit alpha steps are widest and most visible. Ending on
-     * an explicit zero-alpha PRIMARY (not `transparent`, which is zero-alpha
-     * black) keeps the hue steady all the way out instead of graying off.
+     * is exactly where 8-bit alpha steps are widest and most visible. It ends on
+     * an explicit zero-alpha stop of its OWN colour, not `transparent` — which
+     * is zero-alpha black, and greys the hue on the way out.
      *
-     * This first declaration is the single-hue fallback. The one below re-reads
-     * the accent per stop and walks it down in lightness, which needs relative
-     * colour syntax; where that does not parse, the cascade keeps this and you
-     * get a plainer bloom rather than none.
+     * The first declaration is the single-hue fallback: the ramp below needs
+     * relative colour syntax, and where that does not parse the cascade keeps
+     * this one and you get a plainer bloom rather than none.
      */
     background: radial-gradient(
-      ellipse 50% 50% at 50% 50%,
-      hsl(var(--primary) / calc(.20 * var(--aura))) 0%,
-      hsl(var(--primary) / calc(.175 * var(--aura))) 18%,
-      hsl(var(--primary) / calc(.125 * var(--aura))) 36%,
-      hsl(var(--primary) / calc(.072 * var(--aura))) 54%,
-      hsl(var(--primary) / calc(.032 * var(--aura))) 72%,
-      hsl(var(--primary) / calc(.009 * var(--aura))) 88%,
+      ellipse 50% 50% at 50% 47%,
+      hsl(var(--primary) / calc(.225 * var(--aura) * var(--aura-pulse))) 0%,
+      hsl(var(--primary) / calc(.195 * var(--aura) * var(--aura-pulse))) 18%,
+      hsl(var(--primary) / calc(.14 * var(--aura) * var(--aura-pulse))) 36%,
+      hsl(var(--primary) / calc(.085 * var(--aura) * var(--aura-pulse))) 54%,
+      hsl(var(--primary) / calc(.042 * var(--aura) * var(--aura-pulse))) 72%,
+      hsl(var(--primary) / calc(.014 * var(--aura) * var(--aura-pulse))) 88%,
       hsl(var(--primary) / 0) 100%
     );
-    /*
-     * The real one: still the accent the whole way out, but each stop sits
-     * lower in lightness and slightly lower in saturation than the last, so the
-     * bloom burns from a lit core down through a deep ember rim instead of one
-     * flat colour thinning out. Interpolated in oklab, which keeps the mid
-     * stops from dipping grey the way sRGB does across a lightness run.
-     */
     background: radial-gradient(
-      ellipse 50% 50% at 50% 50% in oklab,
-      hsl(from hsl(var(--primary)) h s calc(l * 1.06) / calc(.21 * var(--aura))) 0%,
-      hsl(from hsl(var(--primary)) h s l / calc(.185 * var(--aura))) 18%,
-      hsl(from hsl(var(--primary)) h s calc(l * .88) / calc(.135 * var(--aura))) 36%,
-      hsl(from hsl(var(--primary)) h calc(s * .96) calc(l * .72) / calc(.082 * var(--aura))) 54%,
-      hsl(from hsl(var(--primary)) h calc(s * .9) calc(l * .55) / calc(.04 * var(--aura))) 72%,
-      hsl(from hsl(var(--primary)) h calc(s * .84) calc(l * .4) / calc(.013 * var(--aura))) 88%,
-      hsl(from hsl(var(--primary)) h calc(s * .8) calc(l * .3) / 0) 100%
+      ellipse 50% 50% at 50% 47% in oklab,
+      hsl(from var(--aura-tint) h s calc(l * 1.08) / calc(.225 * var(--aura) * var(--aura-pulse))) 0%,
+      hsl(from var(--aura-tint) h s l / calc(.195 * var(--aura) * var(--aura-pulse))) 18%,
+      hsl(from var(--aura-tint) h s calc(l * .88) / calc(.14 * var(--aura) * var(--aura-pulse))) 36%,
+      hsl(from var(--aura-tint) h calc(s * .96) calc(l * .72) / calc(.085 * var(--aura) * var(--aura-pulse))) 54%,
+      hsl(from var(--aura-tint) h calc(s * .9) calc(l * .55) / calc(.042 * var(--aura) * var(--aura-pulse))) 72%,
+      hsl(from var(--aura-tint) h calc(s * .84) calc(l * .4) / calc(.014 * var(--aura) * var(--aura-pulse))) 88%,
+      hsl(from var(--aura-tint) h calc(s * .8) calc(l * .3) / 0) 100%
     );
     opacity: .85;
     transition: opacity var(--dur-slow) var(--ease-out-soft);
@@ -1122,6 +1167,23 @@
   .composer-aura-host:has(.composer-surface:focus-within) .composer-aura {
     opacity: 1;
   }
+  /*
+   * In an open conversation the same bloom sits behind the docked composer, but
+   * it has messages above it to stay out of the way of: a third of the light,
+   * and short enough that it pools around the capsule instead of washing up the
+   * transcript. It earns its place by carrying the same two signals — the lab's
+   * colour while you type, the swell when you send.
+   */
+  .composer-aura--docked {
+    --aura: .38;
+    height: min(15rem, 26vh);
+    /* Exactly the column, never wider. The empty state can spill sideways
+       because the column above it clips; here the nearest clip is the main
+       column's own overflow-hidden, and leaning on that to hide a bloom that
+       overhangs it would leave the container quietly scrollable. */
+    width: 100%;
+  }
+  .dark .composer-aura--docked { --aura: .58; }
   @media (prefers-reduced-motion: no-preference) {
     .composer-aura {
       animation: composer-aura-breathe 11s var(--ease-out-soft) infinite;

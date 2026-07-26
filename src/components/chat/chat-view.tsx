@@ -23,6 +23,7 @@ import { RealtimeVoice } from "@/components/voice/realtime-voice";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
+import { providerGlow } from "@/lib/provider-colors";
 import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
@@ -1115,6 +1116,26 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const paramsCanWebSearch =
     PLANS[quota.plan].webSearch && paramsIsChat && (resolvedModelInfo?.webSearch ?? false);
 
+  // Composer aura: idle it is the user's accent, focused it becomes the colour
+  // of the lab behind the selected model. The CSS reads --aura-provider only
+  // under :focus-within, so setting it here is inert until you click in.
+  const auraStyle = React.useMemo(
+    () =>
+      resolvedModelInfo
+        ? ({ "--aura-provider": providerGlow(resolvedModelInfo.provider) } as React.CSSProperties)
+        : undefined,
+    [resolvedModelInfo]
+  );
+  // Send swells the bloom once. Cleared on a timer rather than animationend:
+  // under prefers-reduced-motion the keyframes are switched off, so that event
+  // would never arrive and the class would stick for the rest of the session.
+  const [auraSending, setAuraSending] = React.useState(false);
+  React.useEffect(() => {
+    if (!auraSending) return;
+    const t = window.setTimeout(() => setAuraSending(false), 1150);
+    return () => window.clearTimeout(t);
+  }, [auraSending]);
+
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
   const handleSpeak = (id: string, text: string) => {
@@ -1133,6 +1154,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         toast.error(voiceSaveError ?? "Wait for the voice transcript to finish saving.");
         return { accepted: false };
       }
+      // Past the guards that can still refuse the turn, so the aura only swells
+      // for a send that is actually going out.
+      setAuraSending(true);
       if (!voiceOpen) return chat.send(text, attachments, options);
       if (voiceTurnSendingRef.current) return { accepted: false };
       if (realtimeVoice.status !== "live") {
@@ -1591,10 +1615,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               )}
               <div
                 className={cn(
-                  "w-full transition-[padding] duration-slow ease-out-soft",
-                  privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1"
+                  // `isolate` matters: the aura sits on z-index -1, and without a
+                  // stacking context here it would escape this wrapper and paint
+                  // behind the whole column instead of behind the composer.
+                  "composer-aura-host relative isolate w-full transition-[padding] duration-slow ease-out-soft",
+                  privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1",
+                  auraSending && "is-sending"
                 )}
+                style={auraStyle}
               >
+                {/* Same bloom, dialled down: there are messages above it here. */}
+                {!privateMode && !voiceOpen && (
+                  <div aria-hidden className="composer-aura composer-aura--docked" />
+                )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -1638,10 +1671,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                     </div>
                   </div>
 
-                  <div className="composer-aura-host relative z-10 w-full max-w-[44rem]">
+                  <div
+                    className={cn(
+                      "composer-aura-host relative z-10 w-full max-w-[44rem]",
+                      auraSending && "is-sending"
+                    )}
+                    style={auraStyle}
+                  >
                     {/* Accent bloom behind the composer. Hidden in incognito —
                         that mode is deliberately colourless. */}
-                    {!privateMode && !voiceOpen && <div aria-hidden className="composer-aura" />}
+                    {!privateMode && !voiceOpen && (
+                      <div aria-hidden className="composer-aura" />
+                    )}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}
                     {composer}
