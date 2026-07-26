@@ -1,15 +1,11 @@
 #if canImport(AVFoundation) && canImport(Speech)
-// `@preconcurrency` because `AVAudioConverterInputBlock` is typed `@Sendable`
-// while being called **synchronously**, on the calling thread, before
-// `convert(to:error:withInputFrom:)` returns. Under strict concurrency that
-// makes capturing the input `AVAudioPCMBuffer` and flipping the `consumed` flag
-// look like cross-actor escapes; neither ever leaves this frame. The alternative
-// — copying the buffer and boxing the flag in a lock — would add real cost and a
-// second thing to keep correct in the audio path to satisfy an annotation the
-// framework simply predates.
-//
-// Scoped to this import rather than switched off for the target: everything else
-// in JunoVoiceKit is still checked.
+// `@preconcurrency` on this import alone, because AVFAudio's callback types are
+// declared `@Sendable` while being invoked synchronously on the calling thread —
+// annotations the framework predates. ``ConversionInput`` below is the *real*
+// fix for the converter block; this covers the rest of the file's AVFoundation
+// surface, which the macos-15 toolchain CI runs on diagnoses more strictly than
+// the Xcode 27 toolchain available here. It is deliberately narrow: scoped to
+// one import, so everything else in JunoVoiceKit stays fully checked.
 @preconcurrency import AVFoundation
 import Foundation
 import Observation
@@ -160,25 +156,52 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         guard let out = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: capacity) else {
             return
         }
-        var consumed = false
+        // The input buffer and the once-only flag travel into the block together,
+        // in one box, because `AVAudioConverterInputBlock` is typed `@Sendable`
+        // and neither a captured `var` nor a bare `AVAudioPCMBuffer` may cross
+        // that boundary. See ``ConversionInput`` for why the box is safe.
+        let input = ConversionInput(buffer: buffer)
         var conversionError: NSError?
         let status = converter.convert(to: out, error: &conversionError) { _, inputStatus in
             // `.noDataNow` after the single input buffer, never `.endOfStream`:
             // end-of-stream retires the converter, and the next tap callback
             // would find it permanently drained.
-            if consumed {
+            if input.consumed {
                 inputStatus.pointee = .noDataNow
                 return nil
             }
-            consumed = true
+            input.consumed = true
             inputStatus.pointee = .haveData
-            return buffer
+            return input.buffer
         }
         guard status != .error, conversionError == nil, out.frameLength > 0,
             let samples = out.int16ChannelData
         else { return }
         let data = Data(bytes: samples[0], count: Int(out.frameLength) * MemoryLayout<Int16>.size)
         socket.send(.data(data)) { _ in }
+    }
+}
+
+/// The single input buffer handed to one `AVAudioConverter.convert` call, plus
+/// the flag that makes it a once-only supply.
+///
+/// `@unchecked Sendable`, and the reason is specific rather than a shrug:
+/// `AVAudioConverterInputBlock` is *typed* `@Sendable` but is invoked
+/// **synchronously**, on the calling thread, before
+/// `convert(to:error:withInputFrom:)` returns. One instance is created per tap
+/// callback, is reachable only from that one `convert` call, and is dead before
+/// the next line runs — so no two threads can ever see it, and the compiler's
+/// concurrency rules are being satisfied for an API that predates them.
+///
+/// A captured `var` and a bare buffer were used here before, which the checker
+/// rejects for exactly the right general reason; the box is what states the
+/// narrower fact that makes it safe. Nothing outside this file may hold one.
+private final class ConversionInput: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    var consumed = false
+
+    init(buffer: AVAudioPCMBuffer) {
+        self.buffer = buffer
     }
 }
 
