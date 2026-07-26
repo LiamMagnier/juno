@@ -60,9 +60,7 @@ struct JunoDesktopRootView: View {
             .onChange(of: configuration.conversationModel?.selectableModels) {
                 _, models in
                 guard let models, !models.isEmpty else { return }
-                let codeModels = models
-                    .filter { CodeModelProviderResolver.supports($0.id) }
-                    .map { ModelOption(modelID: $0.id, displayName: $0.displayName) }
+                let codeModels = Self.codeModels(from: models)
                 guard !codeModels.isEmpty else { return }
                 workbenchModel?.availableModels = codeModels
             }
@@ -123,12 +121,31 @@ struct JunoDesktopRootView: View {
         }
     }
 
+    /// The account's manifest, projected onto Code's own option type **with the
+    /// catalog entry attached**.
+    ///
+    /// This used to be `ModelOption(modelID:displayName:)`, which kept the two
+    /// fields the runtime needs and discarded everything else. `ModelOption`'s
+    /// `catalog` is what the shared selector reads for the provider mark, the
+    /// lab's name, the capability chips, the pricing tier and the spec sheet —
+    /// so dropping it left Juno Code with a picker of bare display names under
+    /// "Unknown provider", while Chat, reading the identical manifest, showed
+    /// the full website catalog. Two pickers, one manifest, and only one of them
+    /// looked like the product.
+    ///
+    /// `ModelOption(catalog:)` also narrows the thinking ladder to the depths
+    /// the entry actually publishes, so the reasoning control stops offering
+    /// three fixed efforts for every model regardless of what it supports.
+    static func codeModels(from manifest: [NativeChatModelOption]) -> [ModelOption] {
+        manifest
+            .filter { CodeModelProviderResolver.supports($0.id) }
+            .map { ModelOption(catalog: $0.junoDescriptor) }
+    }
+
     private var initialCodeModels: [ModelOption] {
         let catalog = configuration.conversationModel?.selectableModels ?? []
         if !catalog.isEmpty {
-            let codeModels = catalog
-                .filter { CodeModelProviderResolver.supports($0.id) }
-                .map { ModelOption(modelID: $0.id, displayName: $0.displayName) }
+            let codeModels = Self.codeModels(from: catalog)
             if !codeModels.isEmpty { return codeModels }
         }
         // Only used during the brief bootstrap window before the signed-in

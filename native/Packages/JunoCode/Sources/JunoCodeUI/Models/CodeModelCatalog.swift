@@ -88,8 +88,31 @@ public extension ModelOption {
     }
 
     /// The thinking stops this model actually offers, in depth order.
+    ///
+    /// Prefers the **catalog's own ladder** — the one Chat and the website show —
+    /// so a model's published depth names and the explanatory caption under the
+    /// slider survive into Code. Rebuilding the ladder from bare efforts, which
+    /// is all this did before, relabelled every model's depths "Low / Medium /
+    /// High" and dropped the caption, so the same model read differently in two
+    /// windows of one app.
+    ///
+    /// Two guards decide when the catalog's ladder can be used verbatim:
+    ///
+    /// * **Every stop must map to a `ReasoningEffort`.** The session can only
+    ///   send the three the Code request contract defines; offering a depth that
+    ///   cannot be transmitted would be a control that silently does nothing.
+    /// * **It must not be automatic.** A router that picks its own depth sends
+    ///   no effort at all, which Code has no way to express — those fall back to
+    ///   the contract ladder.
     var thinkingLadder: JunoThinkingLadder {
-        .code(efforts: supportedReasoningEfforts, modelName: displayName)
+        if let published = catalog?.thinking,
+            !published.isAutomatic,
+            !published.stops.isEmpty,
+            published.stops.allSatisfy({ ReasoningEffort(rawValue: $0.id) != nil })
+        {
+            return published
+        }
+        return .code(efforts: supportedReasoningEfforts, modelName: displayName)
     }
 
     /// Re-fits a stored effort onto this model: the deepest supported depth at

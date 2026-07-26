@@ -19,6 +19,7 @@
 		3165507567EC5879E6D83B4F /* DesktopLibraryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD1849262D77AE703CF3750A /* DesktopLibraryScreen.swift */; };
 		3876B11FBB8D803ECEA1F668 /* JunoAuth in Frameworks */ = {isa = PBXBuildFile; productRef = 6283BAAB57F871FA6DEA8C7E /* JunoAuth */; };
 		40DC421EE2BBF10E74F5B273 /* DesktopCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = ADA36220F51C8AF1A7636D73 /* DesktopCommands.swift */; };
+		41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */; };
 		436B5F3E43E4D083EC052871 /* DesktopNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */; };
 		505D69963EC9D57AE39EAA45 /* JunoStorage in Frameworks */ = {isa = PBXBuildFile; productRef = F3EED4921EF67BDAF82CE484 /* JunoStorage */; };
 		532BCFE269F7B252E8489257 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 80E08901FA58A4F4DD67CE18 /* PrivacyInfo.xcprivacy */; };
@@ -103,6 +104,7 @@
 		6C25A824ACBDFBAEF6DF8035 /* JunoDesktop-Stable.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Stable.xcconfig"; sourceTree = "<group>"; };
 		6F663C28052DA8E4FB85A3E8 /* DesktopArtifactsScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopArtifactsScreen.swift; sourceTree = "<group>"; };
 		6F7DAFF580CD4F8CAF1786FD /* DesktopNavigationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNavigationState.swift; sourceTree = "<group>"; };
+		7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopCodeModelMappingTests.swift; sourceTree = "<group>"; };
 		808EF0C3D75DC5359F776E19 /* Newsreader24pt-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Medium.ttf"; sourceTree = "<group>"; };
 		80E08901FA58A4F4DD67CE18 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopNavigationStateTests.swift; sourceTree = "<group>"; };
@@ -264,6 +266,7 @@
 			isa = PBXGroup;
 			children = (
 				C31EE69BC10B8DCBBD935BE0 /* DesktopArtifactStatusTests.swift */,
+				7A3B8EFA669098DBC556746C /* DesktopCodeModelMappingTests.swift */,
 				87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */,
 				6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */,
 				00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */,
@@ -480,6 +483,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				69E11E717D21C0C6BE70BADC /* DesktopArtifactStatusTests.swift in Sources */,
+				41EC9D370B2856FDE84BCED7 /* DesktopCodeModelMappingTests.swift in Sources */,
 				A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */,
 				92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */,
 				C7182D3BF762DDD9FB6E64AB /* JunoDesktopSmokeTests.swift in Sources */,
