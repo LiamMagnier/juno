@@ -29,10 +29,11 @@ import UIKit
 ///   a person is most likely to come to Settings for and could not do here at
 ///   all, on a page that otherwise claims to be the account's home.
 ///
-/// Still missing against the web, and deliberately not faked: the **Usage**
-/// tile. Plan and quota reach the browser through the server-rendered bootstrap
-/// and there is no REST route behind them, so a native meter would have to
-/// invent its numbers.
+/// **Usage** is here now. It was the one tile this page could not honestly
+/// show — plan and quota reached the browser through the server-rendered
+/// bootstrap, with no REST route behind them — and `/api/profile/usage` plus
+/// `/api/profile/usage/breakdown` are what closed that. The screen behind the
+/// row is ``JunoMobileUsageView``, reading the same ledger the Mac reads.
 struct JunoMobileSettingsView: View {
     @Bindable var model: NativeMemorySettingsModel<SQLiteAccountRepository>
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
@@ -45,8 +46,13 @@ struct JunoMobileSettingsView: View {
     /// Backs the Danger zone. Nil where the app could not be configured, in which
     /// case the tile is absent rather than present and broken.
     var accountDataClient: NativeAccountDataClient?
+    /// The authenticated transport, used by the Usage page to read the ledger.
+    /// Nil where the app could not be configured — the row is absent rather than
+    /// present and leading to a screen that can only apologise.
+    var requestSender: (any NativeAuthenticatedRequestSending)?
     @State private var showingSignOut = false
     @State private var showMemoryPage = false
+    @State private var showUsagePage = false
     @State private var showDiagnosticsPage = false
     @State private var showingDeleteAccount = false
     @State private var deleteConfirmation = ""
@@ -78,6 +84,15 @@ struct JunoMobileSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showMemoryPage) {
             JunoMobileMemoryView(model: model)
+        }
+        .navigationDestination(isPresented: $showUsagePage) {
+            if let session {
+                JunoMobileUsageView(
+                    session: session,
+                    requestSender: requestSender,
+                    modelCatalog: conversationModel?.modelCatalog ?? []
+                )
+            }
         }
         .navigationDestination(isPresented: $showDiagnosticsPage) {
             NativeDiagnosticsView(
@@ -264,6 +279,20 @@ struct JunoMobileSettingsView: View {
                         symbol: "brain"
                     ) { showMemoryPage = true }
                     .accessibilityIdentifier("juno.mobile.settings-memory-link")
+                }
+
+                // The web's Usage page, reachable at last. Offered only where the
+                // ledger can actually be read: without a session or a transport
+                // the row would push a screen whose only content is an apology.
+                if session != nil, requestSender != nil {
+                    JunoSettingsTile(eyebrow: "Usage") {
+                        JunoSettingsLink(
+                            title: "Your usage",
+                            value: nil,
+                            symbol: "chart.bar"
+                        ) { showUsagePage = true }
+                        .accessibilityIdentifier("juno.mobile.settings-usage-link")
+                    }
                 }
 
                 // Identity lives in the header; this tile is what you can *do*.

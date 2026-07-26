@@ -65,4 +65,32 @@ final class SessionEventsTests: XCTestCase {
         XCTAssertFalse(SessionStatus.idle.isActive)
         XCTAssertFalse(SessionStatus.completed.isActive)
     }
+
+    func testAgentBehaviorRoundTripsAndOldSessionsDefaultToCode() throws {
+        let configured = AgentConfiguration(
+            modelID: "anthropic:claude-sonnet-5",
+            behavior: .plan
+        )
+        let data = try JSONEncoder().encode(configured)
+        XCTAssertEqual(
+            try JSONDecoder().decode(AgentConfiguration.self, from: data).behavior,
+            .plan
+        )
+
+        let oldSession = """
+        {
+          "modelID":"anthropic:claude-sonnet-5",
+          "reasoningEffort":"medium",
+          "role":"engineer",
+          "permissionMode":"askBeforeChanges",
+          "location":"local",
+          "computerUseEnabled":false
+        }
+        """
+        let restored = try JSONDecoder().decode(
+            AgentConfiguration.self,
+            from: Data(oldSession.utf8)
+        )
+        XCTAssertEqual(restored.behavior, .code)
+    }
 }

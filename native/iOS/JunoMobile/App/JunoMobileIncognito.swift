@@ -114,6 +114,7 @@ struct JunoMobileIncognitoChat: View {
     @State private var selectedModelID = ""
     @State private var reasoningEffort: NativeReasoningEffort?
     @State private var showingCloseWarning = false
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
     @FocusState private var composerFocused: Bool
 
     var body: some View {
@@ -162,32 +163,33 @@ struct JunoMobileIncognitoChat: View {
 
     @ViewBuilder
     private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                if model.turns.isEmpty {
-                    greeting
-                        .frame(maxWidth: .infinity)
-                        .containerRelativeFrame(.vertical)
-                } else {
-                    LazyVStack(spacing: 24) {
-                        ForEach(model.turns) { turn in
-                            JunoMobileIncognitoTurnRow(turn: turn)
-                        }
-                        if let error = model.lastErrorDescription {
-                            JunoInlineError(message: error)
-                        }
-                        Color.clear.frame(height: 1).id("bottom")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: 768)
+        ScrollView {
+            if model.turns.isEmpty {
+                greeting
                     .frame(maxWidth: .infinity)
+                    .containerRelativeFrame(.vertical)
+            } else {
+                LazyVStack(spacing: 24) {
+                    ForEach(model.turns) { turn in
+                        JunoMobileIncognitoTurnRow(turn: turn)
+                    }
+                    if let error = model.lastErrorDescription {
+                        JunoInlineError(message: error)
+                    }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 768)
+                .frame(maxWidth: .infinity)
             }
-            .defaultScrollAnchor(.bottom)
-            .onChange(of: streamSignature) { _, _ in
-                withAnimation(JunoMotion.fast) { proxy.scrollTo("bottom", anchor: .bottom) }
-            }
+        }
+        .defaultScrollAnchor(.bottom)
+        .scrollPosition($scrollPosition)
+        // Same correction as the saved transcript: `proxy.scrollTo(id:)` is inert
+        // on a bottom-anchored scroll view, so this follow was doing nothing and
+        // the anchor's own pinning was quietly carrying the feature.
+        .onChange(of: streamSignature) { _, _ in
+            withAnimation(JunoMotion.fast) { scrollPosition.scrollTo(edge: .bottom) }
         }
     }
 

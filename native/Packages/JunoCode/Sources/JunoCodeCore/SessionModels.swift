@@ -82,6 +82,7 @@ public struct WorkspaceDescriptor: Hashable, Codable, Sendable {
 public struct AgentConfiguration: Hashable, Codable, Sendable {
     public var modelID: String
     public var reasoningEffort: ReasoningEffort
+    public var behavior: AgentBehavior
     public var role: AgentRole
     public var permissionMode: PermissionMode
     public var location: SessionLocation
@@ -90,6 +91,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     public init(
         modelID: String,
         reasoningEffort: ReasoningEffort = .medium,
+        behavior: AgentBehavior = .code,
         role: AgentRole = .engineer,
         permissionMode: PermissionMode = .askBeforeChanges,
         location: SessionLocation = .local,
@@ -97,10 +99,39 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     ) {
         self.modelID = modelID
         self.reasoningEffort = reasoningEffort
+        self.behavior = behavior
         self.role = role
         self.permissionMode = permissionMode
         self.location = location
         self.computerUseEnabled = computerUseEnabled
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case modelID, reasoningEffort, behavior, role, permissionMode, location
+        case computerUseEnabled
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        modelID = try container.decode(String.self, forKey: .modelID)
+        reasoningEffort = try container.decode(ReasoningEffort.self, forKey: .reasoningEffort)
+        behavior = try container.decodeIfPresent(AgentBehavior.self, forKey: .behavior) ?? .code
+        role = try container.decode(AgentRole.self, forKey: .role)
+        permissionMode = try container.decode(PermissionMode.self, forKey: .permissionMode)
+        location = try container.decode(SessionLocation.self, forKey: .location)
+        computerUseEnabled =
+            try container.decodeIfPresent(Bool.self, forKey: .computerUseEnabled) ?? false
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(modelID, forKey: .modelID)
+        try container.encode(reasoningEffort, forKey: .reasoningEffort)
+        try container.encode(behavior, forKey: .behavior)
+        try container.encode(role, forKey: .role)
+        try container.encode(permissionMode, forKey: .permissionMode)
+        try container.encode(location, forKey: .location)
+        try container.encode(computerUseEnabled, forKey: .computerUseEnabled)
     }
 }
 
@@ -108,6 +139,15 @@ public enum ReasoningEffort: String, Codable, CaseIterable, Sendable {
     case low
     case medium
     case high
+}
+
+/// What the local agent is allowed and instructed to do during the session.
+/// Ask and Plan are read-only by construction; Code can make checkpointed,
+/// permission-gated changes.
+public enum AgentBehavior: String, Codable, CaseIterable, Sendable {
+    case ask
+    case plan
+    case code
 }
 
 public enum AgentRole: String, Codable, CaseIterable, Sendable {

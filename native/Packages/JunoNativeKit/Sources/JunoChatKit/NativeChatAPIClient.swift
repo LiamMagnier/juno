@@ -380,8 +380,17 @@ public enum NativeChatAPIError: Error, Equatable, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .invalidIdentifier:
-            "Juno could not safely address this conversation."
+        case .invalidIdentifier(let value):
+            // Names the failure and the value, because the previous wording —
+            // "Juno could not safely address this conversation" — reads as a
+            // moderation refusal of what the user wrote. It is not: this is a
+            // client-side format check on an internal id that never left the
+            // Mac, and blaming the user's message for it sends them looking in
+            // exactly the wrong place.
+            """
+            Juno rejected an internal identifier before sending (\(value)). \
+            This is a bug in Juno, not a problem with your message.
+            """
         case .invalidMessage:
             "Enter a message before sending."
         case .malformedResponse, .invalidContentType,

@@ -20,25 +20,70 @@ public final class WorkspaceAccess: WorkspaceAccessing, @unchecked Sendable {
         }
     }
 
+    /// True when the bookmark that opened this workspace needs re-minting.
+    ///
+    /// Resolution still succeeded — the folder was found — but the stored data
+    /// is out of date (the folder moved, or the app's identity changed). The
+    /// caller should persist a fresh bookmark; see `WorkspaceDirectory.open`.
+    public private(set) var bookmarkNeedsRefresh = false
+
     /// Opens a workspace from persisted bookmark data.
+    ///
+    /// **Resolution falls back from scoped to plain, and that is the fix for a
+    /// real dead end.** A security-scoped bookmark is bound to the code identity
+    /// of the app that created it: re-sign the app — ad-hoc to Developer ID, a
+    /// changed team, a local build replacing an installed one — and resolving it
+    /// throws. Juno Code surfaced that as `bookmarkInvalid` under the project
+    /// list, and because no workspace opened, no session could start and the
+    /// composer never appeared. The app looked broken rather than un-permitted.
+    ///
+    /// (Measured, not assumed: an unsandboxed process *can* both create and
+    /// resolve scoped bookmarks. The sandbox is not what breaks this; changing
+    /// the signature is.)
+    ///
+    /// A **plain** bookmark carries no such binding, and Juno for Mac is
+    /// deliberately not sandboxed — it runs `git`, spawns test runners and walks
+    /// sibling worktrees — so the security scope buys it nothing that the
+    /// process does not already have. Preferring scoped and accepting plain
+    /// keeps the app correct if it is ever sandboxed again, while making the
+    /// stored grant survive a re-signing in the meantime.
+    ///
+    /// A *stale* bookmark is no longer fatal either. Staleness means "this
+    /// resolved, but re-mint it" — throwing turned a folder that had merely
+    /// moved into a dead end.
     public convenience init(workspaceID: WorkspaceID, bookmarkData: Data) throws {
         var isStale = false
-        let resolved: URL
-        do {
-            resolved = try URL(
+        var scoped = false
+        var resolved: URL?
+
+        if let url = try? URL(
+            resolvingBookmarkData: bookmarkData,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) {
+            resolved = url
+            scoped = true
+        } else {
+            var plainIsStale = false
+            if let url = try? URL(
                 resolvingBookmarkData: bookmarkData,
-                options: [.withSecurityScope],
+                options: [],
                 relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-        } catch {
-            throw WorkspaceAccessError.bookmarkInvalid
+                bookmarkDataIsStale: &plainIsStale
+            ) {
+                resolved = url
+                isStale = plainIsStale
+            }
         }
-        if isStale {
-            throw WorkspaceAccessError.bookmarkStale
-        }
-        let didStart = resolved.startAccessingSecurityScopedResource()
+
+        guard let resolved else { throw WorkspaceAccessError.bookmarkInvalid }
+
+        // Only meaningful for a scoped resolution; a plain bookmark in an
+        // unsandboxed process needs no scope to be started or stopped.
+        let didStart = scoped && resolved.startAccessingSecurityScopedResource()
         try self.init(workspaceID: workspaceID, rootURL: resolved, securityScoped: didStart)
+        bookmarkNeedsRefresh = isStale
     }
 
     /// Opens a workspace from a directly granted URL (an open-panel result).
@@ -63,10 +108,21 @@ public final class WorkspaceAccess: WorkspaceAccessing, @unchecked Sendable {
     }
 
     /// Creates persistable bookmark data for a user-granted directory.
+    ///
+    /// **Plain, deliberately.** A security-scoped bookmark would tie the stored
+    /// grant to this build's code signature, so the next re-signed build could
+    /// not resolve it — which is precisely the failure that made Juno Code
+    /// unusable. This app is not sandboxed, so the scope grants it nothing it
+    /// does not already have; a plain bookmark tracks the folder by file id just
+    /// as durably (it survives a rename or a move) without the binding.
+    ///
+    /// ``init(workspaceID:bookmarkData:)`` still *resolves* scoped bookmarks, so
+    /// grants written by earlier builds keep working and a future sandboxed
+    /// build would keep working too.
     public static func makeBookmark(for grantedURL: URL) throws -> Data {
         do {
             return try grantedURL.bookmarkData(
-                options: [.withSecurityScope],
+                options: [],
                 includingResourceValuesForKeys: nil,
                 relativeTo: nil
             )

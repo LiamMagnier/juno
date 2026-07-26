@@ -57,6 +57,18 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertEqual(names, expected)
     }
 
+    func testInspectionRegistryCannotEvenAdvertiseMutatingTools() {
+        let inspection = registry.inspectionOnly()
+        XCTAssertEqual(
+            Set(inspection.allTools.map(\.name)),
+            ToolRegistry.inspectionToolNames
+        )
+        XCTAssertNil(inspection.tool(named: "write_file"))
+        XCTAssertNil(inspection.tool(named: "run_command"))
+        XCTAssertNil(inspection.tool(named: "run_tests"))
+        XCTAssertNil(inspection.tool(named: "git_commit"))
+    }
+
     func testReadFileThroughRegistry() async throws {
         let result = try await registry.invoke(
             toolName: "read_file",

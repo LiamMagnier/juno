@@ -63,6 +63,11 @@ struct JunoMobileComposer: View {
     @State private var isStarting = false
     /// Whether Dictate Mode has taken over the composer.
     @State private var dictating = false
+    /// Whether a very large draft has been opened back up for editing. Huge
+    /// pastes stay in `prompt` and are sent in full either way — this only
+    /// decides whether they are live in the text field. See
+    /// ``NativePromptLimits/composerInlineSoftCharacters``.
+    @State private var draftExpanded = false
 
     private var selectedModel: NativeChatModelOption? {
         model.modelCatalog.first { $0.id == selectedModelID }
@@ -81,11 +86,58 @@ struct JunoMobileComposer: View {
         attachmentModel?.attachments ?? []
     }
 
+    // MARK: Long drafts
+
+    /// Whether the draft is long enough that sending it as a file is worth
+    /// offering. An offer, never a rule — see ``NativePromptLimits``.
+    private var isLongDraft: Bool {
+        canAttachDraft && NativePromptLimits.isLongDraft(prompt)
+    }
+
+    /// Past this the draft leaves the text field entirely and shows as a card.
+    /// A 40k-character paste in a `TextField(axis: .vertical)` re-measures the
+    /// whole passage on every keystroke, on the main actor, and the composer
+    /// stops accepting input long before the reader gets to Send.
+    private var showsCollapsedDraft: Bool {
+        NativePromptLimits.isHugeDraft(prompt) && !draftExpanded
+    }
+
+    /// Attaching needs somewhere to put the file. Without an attachment model —
+    /// an unconfigured shell — the offer is absent rather than present and
+    /// broken.
+    private var canAttachDraft: Bool {
+        attachmentModel?.hasCapacity ?? false
+    }
+
+    /// Sends the draft as `prompt.txt` instead of as message text.
+    ///
+    /// The web's `attachAsFile`, ported: same file name, same MIME type, and the
+    /// same clearing of the draft afterwards, so a prompt attached on the phone
+    /// and one attached in the browser arrive at the model as the same message.
+    private func attachDraftAsFile() {
+        let content = prompt
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let attachmentModel
+        else { return }
+        attachmentModel.add(
+            data: Data(content.utf8),
+            fileName: NativePromptLimits.attachedPromptFileName,
+            mimeType: NativePromptLimits.attachedPromptMimeType,
+            conversationID: conversation?.id,
+            isImage: false
+        )
+        prompt = ""
+        draftExpanded = false
+    }
+
     /// Send is blocked while any upload is still in flight. Sending a message
     /// that references an attachment the server has not accepted produces a
     /// message with a missing file, which cannot be repaired from the client.
     private var sendDisabled: Bool {
-        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // Text *or* attachments, as the web has it: a message that is nothing
+        // but the file you attached is a message. Requiring text here is what
+        // made "Attach as file" leave a draft that could not be sent.
+        (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
             || model.isGenerating
             || isStarting
             || conversation?.isPending == true
@@ -159,13 +211,22 @@ struct JunoMobileComposer: View {
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
 
-                    TextField("Message Juno", text: $prompt, axis: .vertical)
-                        .lineLimit(1...6)
-                        .textFieldStyle(.plain)
-                        .focused(composerFocused)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
-                        .accessibilityIdentifier("juno.mobile.chat-composer")
+                    if showsCollapsedDraft {
+                        collapsedDraftCard
+                            .transition(.opacity)
+                    } else {
+                        TextField("Message Juno", text: $prompt, axis: .vertical)
+                            .lineLimit(1...6)
+                            .textFieldStyle(.plain)
+                            .focused(composerFocused)
+                            .padding(.horizontal, 8)
+                            .padding(.top, 4)
+                            .accessibilityIdentifier("juno.mobile.chat-composer")
+
+                        if isLongDraft {
+                            attachAsFileOffer
+                        }
+                    }
 
                     controlRow
                 }
@@ -180,7 +241,127 @@ struct JunoMobileComposer: View {
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: attachments.count)
+        .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: showsCollapsedDraft)
+        // Once the draft is back under the inline ceiling, forget that it was
+        // ever expanded — otherwise the *next* huge paste would land straight
+        // in the text field, which is the state this card exists to avoid.
+        .onChange(of: prompt) { _, text in
+            if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
+        }
         .task { await applyPreviewFlags() }
+    }
+
+    /// The quiet offer under a long draft: "That's a long one — attach it as a
+    /// file to keep the chat tidy?" One line and one button, exactly as the web
+    /// puts it, and it never touches the draft unless the button is tapped.
+    private var attachAsFileOffer: some View {
+        HStack(spacing: 8) {
+            Text("That's a long one — send it as a file to keep the chat tidy?")
+                .font(.system(size: 12))
+                .foregroundStyle(Color.junoMutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 4)
+            Button(action: attachDraftAsFile) {
+                HStack(spacing: 5) {
+                    Image(systemName: "doc.badge.arrow.up")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Attach")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundStyle(Color.primary)
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .modifier(JunoGlassCapsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Send this message as a file")
+            .accessibilityIdentifier("juno.mobile.chat-attach-draft")
+        }
+        .padding(.horizontal, 8)
+        .transition(.opacity)
+    }
+
+    /// What a very large paste looks like in the composer: a card standing for
+    /// the draft, not the draft itself.
+    ///
+    /// The text is untouched — it is still in `prompt` and Send still sends all
+    /// of it. What has gone is the live `TextField`, which was re-measuring tens
+    /// of thousands of characters on every keystroke and taking the composer
+    /// with it. "Edit" puts it back, for a reader who really does want to work
+    /// inside a 40,000-character prompt on a phone.
+    private var collapsedDraftCard: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Long message ready to send")
+                        .font(.system(size: 14, weight: .medium))
+                    Text(
+                        "\(prompt.count.formatted(.number)) characters · sent in full"
+                    )
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.junoMutedForeground)
+                    Text(prompt.prefix(160) + (prompt.count > 160 ? "…" : ""))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .lineLimit(3)
+                        .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    prompt = ""
+                    draftExpanded = false
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear this message")
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    draftExpanded = true
+                    composerFocused.wrappedValue = true
+                } label: {
+                    capsuleLabel("Edit", symbol: "pencil")
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("juno.mobile.chat-expand-draft")
+
+                if canAttachDraft {
+                    Button(action: attachDraftAsFile) {
+                        capsuleLabel("Attach as file", symbol: "doc.badge.arrow.up")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("juno.mobile.chat-attach-draft")
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.junoMuted.opacity(0.6))
+        )
+        .accessibilityIdentifier("juno.mobile.chat-collapsed-draft")
+    }
+
+    private func capsuleLabel(_ title: LocalizedStringKey, symbol: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .semibold))
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundStyle(Color.primary)
+        .padding(.horizontal, 11)
+        .frame(height: 28)
+        .modifier(JunoGlassCapsule())
     }
 
     private func notice(_ text: String, symbol: String, tint: Color) -> some View {
@@ -455,6 +636,8 @@ struct JunoMobileComposer: View {
     private var showsVoiceAction: Bool {
         openVoiceMode != nil
             && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // A staged attachment is something to send, so the slot stays Send.
+            && attachments.isEmpty
             && !model.isGenerating
             && !isStarting
     }
@@ -552,6 +735,7 @@ struct JunoMobileComposer: View {
         )
         guard sent else { return }
         prompt = ""
+        draftExpanded = false
         attachmentModel?.clear()
         // The title is generated from the first turn, exactly as the web does —
         // see NativeConversationModel.generateTitleIfNeeded.

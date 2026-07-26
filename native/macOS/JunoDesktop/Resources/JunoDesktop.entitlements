@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Juno for Mac runs a local coding agent. It spawns `git`, test runners and
+  arbitrary approved shell commands, reads and writes whole repositories the user
+  points it at, creates worktrees beside them, launches the iOS Simulator and
+  built macOS apps, and captures the screen for Computer Use.
+
+  It is therefore **not** sandboxed, and that is a deliberate product decision
+  rather than an omission:
+
+  * `com.apple.security.app-sandbox` was previously `true` here. Under the
+    sandbox, `files.user-selected.read-write` grants access only to the exact
+    paths the user picks through a system open panel, and child processes inherit
+    the sandbox — so `git status` in a chosen repository can still fail the moment
+    it walks to a parent directory or a sibling worktree, and ScreenCaptureKit is
+    unavailable without an entitlement that was never declared. A sandboxed build
+    cannot perform this app's core function.
+  * It also contradicted the documented security model: `docs/native/TESTING.md`
+    records the Mac app as not sandboxed and reasons about its Keychain behaviour
+    on that basis.
+  * Distribution does not require it. The Mac app ships as a Developer
+    ID-signed, notarized and stapled DMG (`docs/native/RELEASE.md`), not through
+    the App Store, so the sandbox is not an entry requirement.
+
+  Hardened Runtime is on for the shipping configurations, which is what
+  notarization requires, so the two entitlements below are still necessary: under
+  Hardened Runtime a process is denied the microphone, and denied sending Apple
+  events, unless it declares them — sandbox or no sandbox.
+
+  Nothing here weakens the user-facing gate. Every command the agent runs is
+  classified and approval-gated in `JunoCodeCore/CommandClassifier.swift`, and
+  screen capture carries a visible indicator with a hard stop.
+-->
+<plist version="1.0">
+<dict>
+    <!-- Dictation and voice conversations. Required under Hardened Runtime. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!--
+      `osascript` is classified `.critical` by CommandClassifier — the agent may
+      run it, but only behind an explicit approval. Hardened Runtime still needs
+      this entitlement for the event to be sent at all, and macOS layers its own
+      per-target consent prompt on top of it.
+    -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

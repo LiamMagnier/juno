@@ -1,0 +1,18 @@
+#include "Next.xcconfig"
+
+JUNO_DISPLAY_NAME = Juno Next
+PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoDesktop.next
+MACOSX_DEPLOYMENT_TARGET = 26.0
+SDKROOT = macosx
+SUPPORTED_PLATFORMS = macosx
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+
+
+// Notarization requires Hardened Runtime. It was set nowhere before, so a
+// release build would have been rejected by the notary service. The two
+// entitlements in JunoDesktop.entitlements (microphone, Apple events) exist
+// precisely because Hardened Runtime denies those by default.
+ENABLE_HARDENED_RUNTIME = YES
+
+// The product, not the target, is what a user sees in /Applications.
+PRODUCT_NAME = $(JUNO_DISPLAY_NAME)

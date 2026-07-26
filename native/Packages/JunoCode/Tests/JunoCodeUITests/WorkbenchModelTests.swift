@@ -11,8 +11,12 @@ final class WorkbenchModelTests: XCTestCase {
     private var model: WorkbenchModel!
 
     override func setUp() async throws {
-        baseURL = URL(fileURLWithPath: NSTemporaryDirectory())
+        let testRootURL = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("juno-code-ui-\(UUID().uuidString)")
+        baseURL = testRootURL
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: testRootURL)
+        }
         workspaceURL = baseURL.appendingPathComponent("workspace")
         try FileManager.default.createDirectory(
             at: workspaceURL.appendingPathComponent("src"),
@@ -31,10 +35,6 @@ final class WorkbenchModelTests: XCTestCase {
             )
         )
         await model.bootstrap()
-    }
-
-    override func tearDown() {
-        try? FileManager.default.removeItem(at: baseURL)
     }
 
     func testWorkspaceRegistrationPersistsAcrossRelaunch() async throws {
@@ -201,6 +201,170 @@ final class WorkbenchModelTests: XCTestCase {
         )
         XCTAssertEqual(content, "let x = 1\n")
         XCTAssertEqual(controller.changes.first?.reviewState, .rejected)
+    }
+
+    func testHunkReviewKeepsOneAndCheckpointRevertsAnother() async throws {
+        let path = try WorkspacePath("src/main.swift")
+        let original = (1...40).map(String.init).joined(separator: "\n") + "\n"
+        try original.write(
+            to: workspaceURL.appendingPathComponent(path.value),
+            atomically: true,
+            encoding: .utf8
+        )
+        let record = await model.addWorkspace(grantedURL: workspaceURL)!
+        let session = await model.createSession(
+            workspaceID: record.id,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )!
+        let controller = await model.controller(for: session.id)!
+        let context = try XCTUnwrap(controller.context)
+
+        var changedLines = (1...40).map(String.init)
+        changedLines[0] = "one"
+        changedLines[39] = "forty"
+        let changed = changedLines.joined(separator: "\n") + "\n"
+        let mutation = try await context.files.write(
+            path,
+            content: changed,
+            expectedBase: FileFingerprint(of: original),
+            sessionID: session.id
+        )
+        try await model.sessionStore.appendEvent(
+            sessionID: session.id,
+            payload: .fileChanged(
+                FileChangedEvent(
+                    path: mutation.path,
+                    kind: mutation.kind,
+                    linesAdded: mutation.diff?.linesAdded ?? 0,
+                    linesRemoved: mutation.diff?.linesRemoved ?? 0,
+                    checkpointID: mutation.checkpointID
+                )
+            )
+        )
+        for _ in 0..<30 {
+            if controller.changes.first?.checkpointIDs.isEmpty == false { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        let loadedInitialDiff = await controller.diff(for: path.value)
+        let initialDiff = try XCTUnwrap(loadedInitialDiff)
+        XCTAssertEqual(initialDiff.hunks.count, 2)
+        controller.acceptHunk(path: path.value, hunk: initialDiff.hunks[1])
+        XCTAssertTrue(
+            controller.isHunkAccepted(
+                path: path.value,
+                hunk: initialDiff.hunks[1]
+            )
+        )
+
+        let reverted = await controller.rejectHunk(path: path.value, index: 0)
+        XCTAssertTrue(reverted)
+        let loadedRemainingDiff = await controller.diff(for: path.value)
+        let remainingDiff = try XCTUnwrap(loadedRemainingDiff)
+        XCTAssertEqual(remainingDiff.hunks.count, 1)
+        XCTAssertEqual(remainingDiff.linesAdded, 1)
+        XCTAssertEqual(remainingDiff.linesRemoved, 1)
+        XCTAssertEqual(controller.changes.first?.linesAdded, 1)
+        XCTAssertEqual(controller.changes.first?.linesRemoved, 1)
+        XCTAssertFalse(
+            controller.isHunkAccepted(
+                path: path.value,
+                hunk: initialDiff.hunks[1]
+            ),
+            "a changed diff invalidates hunk review badges"
+        )
+
+        var expectedLines = (1...40).map(String.init)
+        expectedLines[39] = "forty"
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent(path.value),
+                encoding: .utf8
+            ),
+            expectedLines.joined(separator: "\n") + "\n"
+        )
+    }
+
+    func testManualEditorUsesCheckpointedConflictSafeWrites() async throws {
+        let record = await model.addWorkspace(grantedURL: workspaceURL)!
+        let session = await model.createSession(
+            workspaceID: record.id,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )!
+        let controller = await model.controller(for: session.id)!
+        let path = try WorkspacePath("src/main.swift")
+        let loaded = await controller.openWorkspaceFile(path)
+        let opened = try XCTUnwrap(loaded)
+
+        let saved = await controller.saveWorkspaceFile(
+            opened,
+            content: "let x = 9\n"
+        )
+        XCTAssertEqual(saved?.content, "let x = 9\n")
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            ),
+            "let x = 9\n"
+        )
+        for _ in 0..<30 {
+            if !controller.changes.isEmpty { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(controller.changes.first?.path, "src/main.swift")
+
+        let stale = try XCTUnwrap(saved)
+        try "let x = 10\n".write(
+            to: workspaceURL.appendingPathComponent("src/main.swift"),
+            atomically: true,
+            encoding: .utf8
+        )
+        let conflicted = await controller.saveWorkspaceFile(
+            stale,
+            content: "let x = 11\n"
+        )
+        XCTAssertNil(conflicted)
+        XCTAssertTrue(
+            controller.transientError?.contains("changed on disk") == true
+        )
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            ),
+            "let x = 10\n",
+            "a stale editor must never overwrite newer disk content"
+        )
+    }
+
+    func testAskSessionManualEditorIsReadOnly() async throws {
+        let record = await model.addWorkspace(grantedURL: workspaceURL)!
+        let session = await model.createSession(
+            workspaceID: record.id,
+            configuration: AgentConfiguration(
+                modelID: "test-model",
+                behavior: .ask
+            )
+        )!
+        let controller = await model.controller(for: session.id)!
+        let loaded = await controller.openWorkspaceFile(
+            try WorkspacePath("src/main.swift")
+        )
+        let opened = try XCTUnwrap(loaded)
+
+        let saved = await controller.saveWorkspaceFile(
+            opened,
+            content: "let x = 2\n"
+        )
+        XCTAssertNil(saved)
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            ),
+            "let x = 1\n"
+        )
     }
 
     func testGroupedSessionsByRecency() async throws {

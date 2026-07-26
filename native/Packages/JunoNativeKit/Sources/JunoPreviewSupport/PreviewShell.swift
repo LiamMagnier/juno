@@ -59,12 +59,49 @@ public enum JunoPreviewEnvironment {
         return CGSize(width: width, height: height)
     }
 
+    /// Optional appearance override from `--juno-preview-appearance light|dark` or
+    /// `JUNO_PREVIEW_APPEARANCE`.
+    ///
+    /// Light and dark are a stated design requirement, but there was no way to
+    /// capture dark from outside the app: appearance is either the account's theme
+    /// setting — which the fixture account has one value for — or the system's,
+    /// and flipping the system appearance to take a screenshot changes every other
+    /// window on the reviewer's Mac. Neither is reproducible in a capture script,
+    /// which is why dark had never actually been inspected.
+    public static var appearance: PreviewAppearance? {
+        guard let raw = value(
+            for: "--juno-preview-appearance", env: "JUNO_PREVIEW_APPEARANCE"
+        ) else { return nil }
+        return PreviewAppearance(rawValue: raw.lowercased())
+    }
+
     private static func value(for flag: String, env: String) -> String? {
         let arguments = CommandLine.arguments
         if let index = arguments.firstIndex(of: flag), index + 1 < arguments.count {
             return arguments[index + 1]
         }
         return ProcessInfo.processInfo.environment[env]
+    }
+}
+
+/// The appearance a preview launch is pinned to.
+public enum PreviewAppearance: String, Sendable, CaseIterable {
+    case light
+    case dark
+
+    public var colorScheme: ColorScheme {
+        switch self {
+        case .light: .light
+        case .dark: .dark
+        }
+    }
+}
+
+public extension View {
+    /// Pins the preview to `--juno-preview-appearance` when one is given, and
+    /// otherwise follows the account theme and the system as normal.
+    func junoPreviewAppearance() -> some View {
+        preferredColorScheme(JunoPreviewEnvironment.appearance?.colorScheme)
     }
 }
 

@@ -1,0 +1,1809 @@
+import AppKit
+import Foundation
+import JunoChatKit
+import JunoDesignSystem
+import JunoStorage
+import SwiftUI
+import UniformTypeIdentifiers
+
+/// Artifacts — the account's Canvas documents, and the one surface where a person
+/// reads and edits what Juno produced.
+///
+/// The shape is the web's artifacts page (`src/app/(app)/artifacts/page.tsx`)
+/// translated into a Mac window rather than transcribed: an index of documents,
+/// then the document itself. Six decisions carry that:
+///
+/// 1. The page is a `NavigationSplitView`: a real index list, a reading canvas,
+///    and version history as a proper `.inspector()`. The `HSplitView` it
+///    replaces had no keyboard navigation, no resizable columns, and drew its own
+///    title strip inside the content — where a Mac window states its identity in
+///    the title bar instead.
+/// 2. **The body of an artifact is a page, not a pour.** The web puts a document
+///    on a white `--card` over the warm `--background` and clamps its measure;
+///    this screen used to render Markdown through `AttributedString` straight
+///    onto the canvas at full window width, which came out as one unbroken wall
+///    of unstyled text running past the right edge. Prose now goes through
+///    `JunoMarkdownText` inside ``JunoDetailPage``, on a ``SwiftUI/View/junoCard()``,
+///    and wraps.
+/// 3. The index is content, not a second sidebar. This whole screen lives inside
+///    the window's *detail* column, so a `.sidebar`-styled list here reads as a
+///    second vibrant rail beside the real one. It is an inset list with its
+///    scroll background hidden, sitting on one raised card over the warm canvas
+///    — the web's `ul … rounded-[16px] border bg-card`. Selection stays the
+///    platform's, tinted to the web's `--sidebar-accent`.
+/// 4. Editing is not a mode. The latest version's source is always writable and
+///    `draft` stays `nil` while clean, which is how the web Canvas behaves. Older
+///    versions render as selectable text rather than as a text editor whose edits
+///    would be silently discarded.
+/// 5. A version the user is only *looking* at cannot be saved over. The one
+///    floating control on this page is the read-only badge that says so, and
+///    offers the restore that makes the version writable again.
+/// 6. `.inspector` and `.searchable` are attached to the split view, never to a
+///    column. See ``body`` — both placements have already cost this app a bug.
+struct DesktopArtifactsScreen: View {
+    @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
+
+    @State private var searchText = ""
+    /// The web's type chips (`TYPE_LABELS`). `nil` is "All".
+    @State private var kindFilter: NativeArtifactKind?
+    /// `nil` means "follow whatever the artifact's current version is", so a save
+    /// or a sync landing a new version does not leave the reader pinned to an old
+    /// one.
+    @State private var selectedVersion: Int?
+    /// `nil` while the editor is clean. The first keystroke stamps it, which is
+    /// what makes Save honest about whether there is anything to save.
+    @State private var draft: String?
+    @State private var mode = NativeArtifactDisplayMode.preview
+    @State private var showingChanges = false
+    @State private var historyVisible = false
+    @State private var compareBase: Int?
+    @State private var diffLines: [DesktopArtifactDiffLine] = []
+    @State private var diffComputing = false
+    @State private var renaming = false
+    @State private var renameValue = ""
+    @State private var deleteTarget: String?
+    @State private var pendingFile: DesktopArtifactFile?
+    @State private var localErrorDescription: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // MARK: - Derived state
+
+    private var artifact: NativeArtifact? { model.selectedArtifact }
+
+    private var visibleArtifacts: [NativeArtifact] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return model.artifacts.filter { artifact in
+            if let kindFilter, artifact.kind != kindFilter { return false }
+            guard !query.isEmpty else { return true }
+            return artifact.title.localizedCaseInsensitiveContains(query)
+                || artifact.conversationTitle.localizedCaseInsensitiveContains(query)
+                || (artifact.language?.localizedCaseInsensitiveContains(query) ?? false)
+                || DesktopArtifactKindName.singular(artifact.kind)
+                    .localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    /// Only the kinds the account actually has. A row of six chips over two
+    /// artifacts is a menu of dead ends — the same rule the phone applies in
+    /// `JunoMobileArtifactsView`, and the web's `presentTypes`.
+    private var availableKinds: [NativeArtifactKind] {
+        NativeArtifactKind.allCases.filter { kind in
+            model.artifacts.contains { $0.kind == kind }
+        }
+    }
+
+    private var targetVersion: Int? {
+        guard let artifact else { return nil }
+        return selectedVersion ?? artifact.currentVersion
+    }
+
+    private var targetEntry: NativeArtifactVersion? {
+        guard let artifact, let targetVersion else { return nil }
+        return artifact.versions.first { $0.version == targetVersion }
+    }
+
+    private var isLatest: Bool {
+        guard let artifact, let targetVersion else { return false }
+        return targetVersion == artifact.currentVersion
+    }
+
+    /// The draft belongs to the latest version only, so switching to an older one
+    /// shows that version rather than the unsaved edit, and switching back
+    /// restores the edit.
+    private var displayedContent: String {
+        let stored = targetEntry?.content ?? ""
+        return isLatest ? (draft ?? stored) : stored
+    }
+
+    private var isDirty: Bool {
+        guard isLatest, let draft, let stored = targetEntry?.content else { return false }
+        return draft != stored
+    }
+
+    private var canPreview: Bool { artifact?.kind.supportsRenderedPreview ?? false }
+
+    private var baseVersion: Int? {
+        guard let artifact, let targetVersion else { return nil }
+        if let compareBase, compareBase < targetVersion,
+            artifact.versions.contains(where: { $0.version == compareBase })
+        {
+            return compareBase
+        }
+        return artifact.versions.last { $0.version < targetVersion }?.version
+    }
+
+    private var earlierVersions: [NativeArtifactVersion] {
+        guard let artifact, let targetVersion else { return [] }
+        return Array(artifact.versions.filter { $0.version < targetVersion }.reversed())
+    }
+
+    private var addedCount: Int { diffLines.filter { $0.change == .added }.count }
+    private var removedCount: Int { diffLines.filter { $0.change == .removed }.count }
+
+    /// Recomputing a 200,000-character diff inside `body` would run on every
+    /// keystroke elsewhere in the window, so the request is a value the task
+    /// observes: artifact, both endpoints, and the version count (which changes
+    /// when `openArtifact` hydrates history the local store did not have).
+    private var diffRequest: DesktopArtifactDiffRequest? {
+        guard showingChanges, let artifact, let targetVersion, let baseVersion else {
+            return nil
+        }
+        return DesktopArtifactDiffRequest(
+            artifactID: artifact.id,
+            base: baseVersion,
+            target: targetVersion,
+            versionCount: artifact.versions.count
+        )
+    }
+
+    /// The store's phase, in the storage-free vocabulary ``DesktopArtifactStatus``
+    /// reasons about.
+    private var loadPhase: DesktopArtifactLoadPhase {
+        switch model.phase {
+        case .idle: .idle
+        case .loading: .loading
+        case .ready: .ready
+        case .offline: .offline
+        case .failed: .failed
+        }
+    }
+
+    // MARK: - Body
+
+    var body: some View {
+        NavigationSplitView {
+            artifactIndex
+                .junoSidebarColumn()
+        } detail: {
+            // `Color.clear.overlay`, and the choice is load-bearing. A detail
+            // column reports its ideal height up to the split view, which grows
+            // the window's AppKit split view to satisfy an ideal it cannot
+            // otherwise meet — so a long artifact resizes the *window* instead of
+            // scrolling inside it. A `ScrollView` does not stop that: it
+            // propagates its content's ideal height. `Color.clear` accepts
+            // whatever height it is proposed and an overlay is sized by its base,
+            // so nothing inside this page can reach the window.
+            //
+            // No `.junoReadingCanvas()` here: the warm canvas is painted once, on
+            // the window's own detail column (`DesktopChatWorkspace`). Repainting
+            // it per page is what turned the window into one flat cream field.
+            Color.clear
+                .overlay { canvas }
+                .navigationTitle(artifact?.title ?? "Artifacts")
+                .navigationSubtitle(subtitle)
+                .toolbar { artifactToolbar }
+        }
+        // Both of these belong to the split view, not to a column, and both
+        // placements have already cost this app a bug. `.inspector` on a *detail
+        // column* makes SwiftUI's hosting view request a constraint update from
+        // inside the window's own constraint pass, and the process takes SIGTRAP
+        // (bisected and documented in `DesktopCodeWorkspace`). `.searchable` on a
+        // *leading column* takes that column's titlebar safe area with it, so the
+        // list starts under the traffic lights and its first rows cannot be
+        // scrolled back into view.
+        .inspector(isPresented: $historyVisible) {
+            versionInspector
+                .inspectorColumnWidth(
+                    min: JunoInspectorMetrics.minimum,
+                    ideal: JunoInspectorMetrics.ideal,
+                    max: JunoInspectorMetrics.maximum
+                )
+        }
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search artifacts")
+        .task(id: model.selectedArtifactID) {
+            draft = nil
+            selectedVersion = nil
+            compareBase = nil
+            showingChanges = false
+            diffLines = []
+            localErrorDescription = nil
+            mode = canPreview ? .preview : .source
+            guard let id = model.selectedArtifactID else { return }
+            await model.openArtifact(id: id)
+            mode = canPreview ? .preview : .source
+        }
+        .task(id: diffRequest) {
+            guard let diffRequest, let artifact else {
+                diffLines = []
+                diffComputing = false
+                return
+            }
+            diffComputing = true
+            let base = content(of: diffRequest.base, in: artifact)
+            let target = content(of: diffRequest.target, in: artifact)
+            let computed = await Task.detached(priority: .userInitiated) {
+                DesktopArtifactDiff.lines(from: base, to: target)
+            }.value
+            guard model.selectedArtifactID == diffRequest.artifactID else { return }
+            diffLines = computed
+            diffComputing = false
+        }
+        .fileExporter(
+            isPresented: Binding(
+                get: { pendingFile != nil },
+                set: { if !$0 { pendingFile = nil } }
+            ),
+            document: pendingFile?.document,
+            // `.data` rather than a per-format type: the file name the server (or
+            // the artifact's kind) already decided carries the extension, and a
+            // second, guessed content type would fight it.
+            contentType: .data,
+            defaultFilename: pendingFile?.name
+        ) { result in
+            if case .failure(let error) = result {
+                localErrorDescription = error.localizedDescription
+            }
+            pendingFile = nil
+        }
+        .confirmationDialog(
+            "Delete this artifact?",
+            isPresented: Binding(
+                get: { deleteTarget != nil },
+                set: { if !$0 { deleteTarget = nil } }
+            ),
+            presenting: deleteTarget
+        ) { id in
+            Button("Delete", role: .destructive) {
+                Task { await model.deleteArtifact(id: id) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Every version of this artifact is removed. This cannot be undone.")
+        }
+    }
+
+    private var subtitle: String {
+        guard let artifact, let targetVersion else { return "" }
+        var parts = [DesktopArtifactKindName.singular(artifact.kind)]
+        if let language = artifact.language, !language.isEmpty {
+            parts.append(language.capitalized)
+        }
+        parts.append("v\(targetVersion)")
+        if isDirty { parts.append("Unsaved changes") }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Index column
+
+    /// The web's artifacts index: a count, the type chips, then the list of
+    /// documents on one raised card over the warm canvas.
+    private var artifactIndex: some View {
+        // Clamped for the same reason the detail column is: a `List` is greedy
+        // vertically, and a margin applied *outside* a greedy child asks the
+        // split view for "the whole column plus 24", which it cannot satisfy
+        // without growing. The base takes the proposed size and the overlay is
+        // sized by it, so the margin is spent inside the column instead.
+        Color.clear
+            .overlay {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    indexHeader
+                    indexBody
+                }
+                .padding(JunoSpace.cozy)
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) { statusFooter }
+    }
+
+    /// The web's page head, at column scale: the serif title, the line that says
+    /// what this collection *is*, the count, then the type chips.
+    ///
+    /// The column previously opened on a bare mono count — "1 artifact" — with
+    /// the list directly beneath it. That is a label, not a heading: nothing on
+    /// the surface said what an artifact is or why the reader would keep one,
+    /// and the window's own title bar is showing the *open document's* name, so
+    /// the collection had no name anywhere on screen.
+    @ViewBuilder
+    private var indexHeader: some View {
+        if !model.artifacts.isEmpty {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                HStack(alignment: .firstTextBaseline) {
+                    // `cardTitle` rather than `pageHeading`: this is a heading
+                    // inside a 264pt column, and the page-scale serif wraps to
+                    // two lines at the sidebar's minimum width.
+                    Text("Artifacts")
+                        .font(JunoSerif.cardTitle)
+                    Spacer(minLength: JunoSpace.snug)
+                    Text(
+                        model.artifacts.count == 1
+                            ? "1 artifact" : "\(model.artifacts.count) artifacts"
+                    )
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("juno.artifact-count")
+                }
+
+                Text("Everything Juno built with you, newest first.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if availableKinds.count > 1 { kindChips }
+            }
+            .padding(.horizontal, JunoSpace.hairline)
+        }
+    }
+
+    /// Chips rather than a `Picker`, because the web's filter is a *set of
+    /// present types* that changes as the account gains and loses artifacts, and
+    /// a segmented control with a moving number of segments re-lays-out under the
+    /// pointer. They scroll horizontally for the same reason the phone's do: the
+    /// column is narrow and SwiftUI has no wrapping stack.
+    private var kindChips: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: JunoSpace.tight) {
+                chip(nil, label: "All")
+                ForEach(availableKinds, id: \.self) { kind in
+                    chip(kind, label: DesktopArtifactKindName.plural(kind))
+                }
+            }
+            .padding(.vertical, 1)
+        }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("juno.artifact-kind-filter")
+    }
+
+    /// Selected state is carried by the outline and the ink, not by a tinted
+    /// fill: the accent is spent on one primary action per surface, and a row of
+    /// filled coral pills would be the loudest thing in the window.
+    private func chip(_ kind: NativeArtifactKind?, label: String) -> some View {
+        let active = kindFilter == kind
+        return Button {
+            kindFilter = kind
+        } label: {
+            Text(label)
+                .junoCodeSmall()
+                .foregroundStyle(active ? Color.junoAccent : Color.secondary)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.hairline)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(active ? Color.junoAccent : Color.junoBorder)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// The card is built only when there are rows to put in it. An empty raised
+    /// panel with an empty-state message floating inside it reads as a broken
+    /// list rather than as an account with nothing in it yet.
+    @ViewBuilder
+    private var indexBody: some View {
+        if visibleArtifacts.isEmpty {
+            indexEmptyState
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List(selection: $model.selectedArtifactID) {
+                ForEach(visibleArtifacts) { artifact in
+                    row(artifact)
+                        // Clear rather than absent: a list row with no background
+                        // of its own can pick up the platform's alternating fill,
+                        // which on a white card draws grey bands between real
+                        // rows. Clear also lets the selection through, which an
+                        // opaque per-row fill would hide.
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .listStyle(.inset)
+            .scrollContentBackground(.hidden)
+            .junoSidebarSelectionTint()
+            .clipShape(
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            )
+            .junoCard()
+            .accessibilityIdentifier("juno.artifact-list")
+        }
+    }
+
+    @ViewBuilder
+    private var indexEmptyState: some View {
+        if model.artifacts.isEmpty {
+            // The detail column already carries the real empty state; repeating
+            // it here would say the same sentence twice in one window.
+            Color.clear
+        } else {
+            // Reachable only while something is filtering: with no query and no
+            // kind chip the visible set *is* `model.artifacts`, which the branch
+            // above already covered. So the recovery is always offered.
+            JunoEmptyState(
+                title: "No matches",
+                message: "Nothing fits this search and filter.",
+                symbol: "line.3.horizontal.decrease",
+                actionLabel: "Clear Filters",
+                action: {
+                    searchText = ""
+                    kindFilter = nil
+                }
+            )
+        }
+    }
+
+    /// A failure, as floating glass over the column rather than a caption welded
+    /// to its bottom edge.
+    ///
+    /// Two things were wrong with the old footer. It printed the server's own
+    /// wording verbatim — an artifact whose fetch 404s put the bare words "Not
+    /// found" under the list, which tells a reader nothing about what was not
+    /// found or what to do — and it offered no way out, so the only recovery was
+    /// to quit the app. ``DesktopArtifactStatus`` now turns the raw string into a
+    /// sentence, and anything retryable carries the retry.
+    @ViewBuilder
+    private var statusFooter: some View {
+        if let status = DesktopArtifactStatus(
+            localError: localErrorDescription,
+            phase: loadPhase,
+            serverError: model.lastErrorDescription
+        ) {
+            JunoDesktopGlass(spacing: JunoSpace.snug) {
+                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                    Image(systemName: status.symbol)
+                        .foregroundStyle(status.tint)
+                        .accessibilityHidden(true)
+                    Text(status.message)
+                        .junoCaption()
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                    Spacer(minLength: JunoSpace.tight)
+                    if status.isRetryable {
+                        Button("Try Again") {
+                            localErrorDescription = nil
+                            Task { await model.reload() }
+                        }
+                        .controlSize(.small)
+                        .disabled(model.phase == .loading)
+                    }
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.bottom, JunoSpace.cozy)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("juno.artifact-status")
+        }
+    }
+
+    private func row(_ artifact: NativeArtifact) -> some View {
+        HStack(spacing: JunoSpace.cozy) {
+            kindTile(artifact.kind)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                Text(rowMeta(artifact))
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        // Pins the row's ink so the pale warm-grey selection cannot invert it —
+        // the platform pushes a white foreground into a focused selected row,
+        // which is right for a saturated accent and invisible on this one.
+        .junoSidebarRowInk()
+        .padding(.vertical, JunoSpace.hairline)
+        .tag(artifact.id)
+        .help(artifact.conversationTitle)
+        // The same actions the toolbar's ⋯ menu offers for the *open* artifact,
+        // available on any row without selecting it first. The website's row
+        // menu carries rename and download too, and a right-click that offered
+        // strictly less than the toolbar was the reason this list felt like a
+        // stub of the web page rather than the same product.
+        .contextMenu {
+            Button("Copy Source") { copySource(of: artifact) }
+                .disabled(artifact.currentContent == nil)
+            Button("Open in New Window") { openInWindow(artifact) }
+                .disabled(artifact.currentContent == nil)
+
+            Divider()
+
+            Button("Rename…") {
+                // Selecting first is what makes the toolbar popover — which
+                // anchors to the open artifact — point at this row's artifact.
+                model.selectedArtifactID = artifact.id
+                renameValue = artifact.title
+                renaming = true
+            }
+            .disabled(model.isMutating)
+
+            Button("Save Source As…") {
+                model.selectedArtifactID = artifact.id
+                exportSource()
+            }
+            .disabled(artifact.currentContent == nil)
+
+            Divider()
+
+            Button("Delete…", role: .destructive) { deleteTarget = artifact.id }
+                .disabled(model.isMutating)
+        }
+    }
+
+    /// The web's leading glyph tile (`size-8 rounded-[10px] border bg-muted/50`).
+    /// A bare symbol on the row's left edge is most of why this list read as
+    /// unfinished: the tile is what gives every row the same left edge to align
+    /// its two lines of text to.
+    private func kindTile(_ kind: NativeArtifactKind) -> some View {
+        Image(systemName: DesktopArtifactKindName.symbol(kind))
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(
+                width: DesktopArtifactMetrics.tile,
+                height: DesktopArtifactMetrics.tile
+            )
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(Color.junoMuted)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .strokeBorder(Color.junoBorder)
+            )
+            .accessibilityHidden(true)
+    }
+
+    /// The web's mono meta line: what the artifact is, which version, when it
+    /// last moved, and the conversation it came out of.
+    ///
+    /// The provenance is the part that was missing. The web prints `in
+    /// "conversation title"` on every row, and it is the only thing that tells
+    /// two artifacts called "index.html" apart — without it the list is a column
+    /// of near-identical rows and the reader has to open each one to find the
+    /// one they meant. `updatedAt` also now says *what* the date is, because a
+    /// bare "3 days ago" beside a version number reads as the version's age.
+    private func rowMeta(_ artifact: NativeArtifact) -> String {
+        var parts = [DesktopArtifactKindName.singular(artifact.kind)]
+        if artifact.currentVersion > 1 { parts.append("v\(artifact.currentVersion)") }
+        parts.append(
+            "Updated \(artifact.updatedAt.formatted(.relative(presentation: .named)))"
+        )
+        let conversation = artifact.conversationTitle.trimmingCharacters(
+            in: .whitespacesAndNewlines
+        )
+        if !conversation.isEmpty {
+            parts.append("in \(conversation)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    // MARK: - Reading canvas
+
+    @ViewBuilder
+    private var canvas: some View {
+        if let artifact, let targetVersion {
+            content(for: artifact, version: targetVersion)
+                .animation(
+                    JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                    value: showingChanges
+                )
+                .overlay(alignment: .top) { readOnlyBadge(artifact) }
+        } else if model.artifacts.isEmpty {
+            emptyState
+        } else {
+            JunoEmptyState(
+                title: "No artifact selected",
+                message: "Choose an artifact to read, edit or export it.",
+                symbol: "square.stack.3d.up"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var emptyState: some View {
+        switch model.phase {
+        case .idle, .loading:
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Loading artifacts")
+        case .failed, .offline:
+            JunoEmptyState(
+                title: "Artifacts unavailable",
+                message: model.lastErrorDescription
+                    ?? "Check your connection and try again.",
+                symbol: "exclamationmark.triangle",
+                actionLabel: "Try Again",
+                action: { Task { await model.reload() } }
+            )
+        case .ready:
+            JunoEmptyState(
+                title: "No artifacts yet",
+                message: "When Juno builds a page, a component or a diagram in a chat, it is kept here — every version of it.",
+                symbol: "square.stack.3d.up"
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func content(for artifact: NativeArtifact, version: Int) -> some View {
+        if targetEntry == nil {
+            JunoEmptyState(
+                title: "Version unavailable",
+                message: "Reconnect to load this version's content.",
+                symbol: "clock.arrow.circlepath",
+                actionLabel: "Try Again",
+                action: { Task { await model.openArtifact(id: artifact.id) } }
+            )
+        } else if showingChanges {
+            DesktopArtifactDiffCanvas(
+                lines: diffLines,
+                computing: diffComputing,
+                baseVersion: baseVersion,
+                targetVersion: version
+            )
+        } else if mode == .preview, artifact.kind == .markdown {
+            // Markdown is prose, and prose is the whole reason this page was
+            // unreadable: `NativeArtifactPreview` renders it through
+            // `AttributedString(markdown:)`, which flattens headings, lists,
+            // tables and fences into one run of body text and then pours it
+            // across the full width of the window. `JunoMarkdownText` is the
+            // renderer the transcript already uses, and the page clamps the
+            // measure.
+            documentPage(artifact, version: version) {
+                JunoMarkdownText(displayedContent)
+            }
+            .accessibilityIdentifier("juno.artifact-preview")
+        } else if mode == .preview, artifact.kind.supportsRenderedPreview {
+            renderedPreview(artifact)
+        } else if isLatest {
+            sourceEditor(artifact, version: version)
+        } else {
+            // Wraps rather than scrolling sideways. The old canvas gave this a
+            // horizontal scroll axis and no measure, so a long line simply left
+            // the window — the reader had to drag to find out a sentence had
+            // ended.
+            documentPage(artifact, version: version) {
+                Text(displayedContent)
+                    .junoMono()
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Artifact source, version \(version)")
+            }
+        }
+    }
+
+    /// The artifact as a page: the document's own header, then its body, on a
+    /// white ``SwiftUI/View/junoCard()`` clamped to a measure and centred on the
+    /// warm canvas — the web's `--card` over `--background`.
+    ///
+    /// ``JunoDetailPage`` supplies the scroll and the clamp, so a hundred-page
+    /// artifact scrolls instead of growing the window's split view.
+    private func documentPage<Body: View>(
+        _ artifact: NativeArtifact,
+        version: Int,
+        @ViewBuilder body: () -> Body
+    ) -> some View {
+        JunoDetailPage {
+            VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                documentHeader(artifact, version: version)
+                body()
+            }
+            .padding(JunoSpace.section)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .junoCard()
+        }
+    }
+
+    /// A document states what it is at the top of itself, the way the web's
+    /// canvas header does. The window's title bar carries the same title, but a
+    /// page that is scrolled, exported or opened in its own window keeps this.
+    private func documentHeader(_ artifact: NativeArtifact, version: Int) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
+                .junoPageHeading(compact: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(provenance(artifact, version: version))
+                .junoCodeSmall()
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Divider()
+        }
+    }
+
+    /// The stamp is the *displayed version's* own, not the artifact's: a header
+    /// over v2 that said "Updated 3 minutes ago" because v5 had just been saved
+    /// would be describing a document the reader is not looking at.
+    private func provenance(_ artifact: NativeArtifact, version: Int) -> String {
+        var parts = [DesktopArtifactKindName.singular(artifact.kind)]
+        if let language = artifact.language, !language.isEmpty {
+            parts.append(language.capitalized)
+        }
+        parts.append("v\(version)")
+        if let entry = artifact.versions.first(where: { $0.version == version }) {
+            let stamp = entry.createdAt.formatted(.relative(presentation: .named))
+            if let origin = entry.origin {
+                parts.append("\(DesktopArtifactKindName.origin(origin)) \(stamp)")
+            } else {
+                parts.append(stamp)
+            }
+        }
+        if !artifact.conversationTitle.isEmpty {
+            parts.append("in \(artifact.conversationTitle)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// A rendered page or graphic keeps the full pane rather than a prose
+    /// measure: clamping a laid-out HTML document to 720pt would re-flow the very
+    /// thing the reader asked to see. It still sits on a page — clipped, with the
+    /// card's hairline and throw — instead of running to the window's edges.
+    ///
+    /// No `ScrollView` around it: the web view scrolls itself, and nesting the
+    /// two gives the page two scrollers that fight over the wheel.
+    private func renderedPreview(_ artifact: NativeArtifact) -> some View {
+        NativeArtifactPreview(
+            kind: artifact.kind,
+            content: displayedContent,
+            mode: .preview
+        )
+        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
+        .junoCard()
+        .padding(JunoSpace.region)
+    }
+
+    /// The editor is deliberately not inside ``JunoDetailPage``: a `TextEditor`
+    /// scrolls itself. It still reads as the same page — same header, same card,
+    /// same margin — so switching Preview to Source does not change what kind of
+    /// surface the document is sitting on.
+    private func sourceEditor(_ artifact: NativeArtifact, version: Int) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            documentHeader(artifact, version: version)
+            TextEditor(text: editorText)
+                .junoMono()
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Artifact source")
+                .accessibilityIdentifier("juno.artifact-editor")
+        }
+        .padding(JunoSpace.section)
+        .junoCard()
+        .padding(JunoSpace.region)
+    }
+
+    private var editorText: Binding<String> {
+        Binding(
+            get: { displayedContent },
+            set: { value in
+                guard isLatest else { return }
+                draft = value
+            }
+        )
+    }
+
+    /// The only floating element on this page, and the one thing glass is for
+    /// here: a transient status control that explains why the editor is not
+    /// writable, with the action that makes it writable.
+    @ViewBuilder
+    private func readOnlyBadge(_ artifact: NativeArtifact) -> some View {
+        if let targetVersion, !isLatest, !showingChanges {
+            JunoDesktopGlass(spacing: JunoSpace.snug) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text("Viewing v\(targetVersion) · read-only")
+                        .junoCaption()
+                        .foregroundStyle(.primary)
+                    Button {
+                        Task { await restore(artifact, version: targetVersion) }
+                    } label: {
+                        Text("Restore")
+                            .foregroundStyle(Color.junoAccent)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.isMutating)
+                    .help("Save this version's content as a new version")
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.vertical, JunoSpace.snug)
+                .junoFloatingChrome()
+            }
+            .padding(.top, JunoSpace.cozy)
+            .accessibilityIdentifier("juno.artifact-read-only")
+        }
+    }
+
+    // MARK: - Version history inspector
+
+    @ViewBuilder
+    private var versionInspector: some View {
+        if let artifact, let targetVersion {
+            List(selection: versionSelection) {
+                Section("Versions") {
+                    ForEach(artifact.versions.reversed()) { version in
+                        versionRow(version, current: artifact.currentVersion)
+                    }
+                }
+            }
+            // Same selection colour as the index, for the same reason: the
+            // platform resolves a focused list selection to the app's accent, and
+            // Juno's accent is coral.
+            .junoSidebarSelectionTint()
+            .accessibilityIdentifier("juno.artifact-versions")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                inspectorFooter(artifact, targetVersion: targetVersion)
+            }
+        } else {
+            JunoEmptyState(
+                title: "No version history",
+                message: "Select an artifact to see how it changed.",
+                symbol: "clock.arrow.circlepath"
+            )
+        }
+    }
+
+    private var versionSelection: Binding<Int?> {
+        Binding(
+            get: { targetVersion },
+            set: { value in
+                guard let value else { return }
+                selectedVersion = value
+                compareBase = nil
+            }
+        )
+    }
+
+    private func versionRow(_ version: NativeArtifactVersion, current: Int) -> some View {
+        versionRowContent(version, current: current)
+            .junoSidebarRowInk()
+            .tag(version.version)
+            .contextMenu {
+                Button("Compare From This Version") { compareBase = version.version }
+                    .disabled(targetVersion.map { version.version >= $0 } ?? true)
+            }
+    }
+
+    private func versionRowContent(
+        _ version: NativeArtifactVersion,
+        current: Int
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: JunoSpace.tight) {
+                Text("v\(version.version)")
+                    .junoCode()
+                if version.version == current {
+                    Text("current")
+                        .junoCodeSmall()
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text(versionCaption(version))
+                .junoCaption()
+                .lineLimit(1)
+        }
+    }
+
+    /// Origin is only known once `openArtifact` has run — the local projection
+    /// stores version content without it — so it is stated when present rather
+    /// than defaulted to "Generated".
+    private func versionCaption(_ version: NativeArtifactVersion) -> String {
+        let stamp = version.createdAt.formatted(.relative(presentation: .named))
+        guard let origin = version.origin else { return stamp }
+        return "\(DesktopArtifactKindName.origin(origin)) · \(stamp)"
+    }
+
+    @ViewBuilder
+    private func inspectorFooter(_ artifact: NativeArtifact, targetVersion: Int) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Divider()
+
+            Picker("Compare with", selection: compareBaseSelection) {
+                ForEach(earlierVersions) { version in
+                    Text("v\(version.version)").tag(version.version as Int?)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(earlierVersions.isEmpty)
+            .accessibilityIdentifier("juno.artifact-compare-base")
+
+            if showingChanges, let baseVersion {
+                HStack(spacing: JunoSpace.snug) {
+                    Text("v\(baseVersion) → v\(targetVersion)")
+                        .junoCodeSmall()
+                        .foregroundStyle(.secondary)
+                    Text("+\(addedCount)")
+                        .junoCodeSmall()
+                        .foregroundStyle(Color.junoSuccess)
+                    Text("−\(removedCount)")
+                        .junoCodeSmall()
+                        .foregroundStyle(Color.junoDanger)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "\(addedCount) lines added, \(removedCount) lines removed between version \(baseVersion) and version \(targetVersion)"
+                )
+            }
+
+            Button("Restore This Version") {
+                Task { await restore(artifact, version: targetVersion) }
+            }
+            .disabled(isLatest || model.isMutating)
+            .help("Save this version's content as a new version")
+            .accessibilityIdentifier("juno.artifact-restore")
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.bottom, JunoSpace.cozy)
+    }
+
+    private var compareBaseSelection: Binding<Int?> {
+        Binding(
+            get: { baseVersion },
+            set: { compareBase = $0 }
+        )
+    }
+
+    // MARK: - Toolbar
+
+    /// Every item is present in every state and disables rather than vanishing: a
+    /// `ToolbarItem` that comes and goes makes SwiftUI rebuild the AppKit toolbar
+    /// under a live window, and it also moves the remaining controls out from
+    /// under the pointer.
+    ///
+    /// Nothing here carries glass of its own. The window toolbar is already the
+    /// material on macOS 26, and a glass button inside a glass bar reads as a
+    /// translucent slab rather than as depth.
+    @ToolbarContentBuilder
+    private var artifactToolbar: some ToolbarContent {
+        ToolbarItem(placement: .primaryAction) {
+            Picker("View", selection: $mode) {
+                Text("Preview").tag(NativeArtifactDisplayMode.preview)
+                Text("Source").tag(NativeArtifactDisplayMode.source)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 148)
+            .disabled(!canPreview || showingChanges)
+            .help(
+                canPreview
+                    ? "Switch between the rendered artifact and its source"
+                    : "This artifact kind has no native renderer — its source is shown"
+            )
+            .accessibilityIdentifier("juno.artifact-view-mode")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Toggle(isOn: $showingChanges) {
+                Label("Changes", systemImage: "plus.forwardslash.minus")
+            }
+            .toggleStyle(.button)
+            .disabled((artifact?.versions.count ?? 0) < 2 || baseVersion == nil)
+            .keyboardShortcut("d", modifiers: [.command, .shift])
+            .help("Compare this version with an earlier one (⇧⌘D)")
+            .accessibilityLabel("Show changes")
+            .accessibilityIdentifier("juno.artifact-changes")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                copyDisplayed()
+            } label: {
+                Label(showingChanges ? "Copy Changes" : "Copy Source", systemImage: "doc.on.doc")
+            }
+            .disabled(targetEntry == nil)
+            .keyboardShortcut("c", modifiers: [.command, .shift])
+            .help(
+                showingChanges
+                    ? "Copy this comparison as a unified diff (⇧⌘C)"
+                    : "Copy the artifact source (⇧⌘C)"
+            )
+            .accessibilityLabel(showingChanges ? "Copy changes" : "Copy source")
+            .accessibilityIdentifier("juno.artifact-copy")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button("Save") {
+                guard let artifact else { return }
+                Task { await save(artifact) }
+            }
+            .disabled(!isDirty || model.isMutating)
+            .keyboardShortcut("s", modifiers: .command)
+            .help("Save your edit as a new version (⌘S)")
+            .accessibilityIdentifier("juno.artifact-save")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Menu {
+                Button("Rename…") {
+                    renameValue = artifact?.title ?? ""
+                    renaming = true
+                }
+                .disabled(artifact == nil || model.isMutating)
+
+                Button("Discard Changes") { draft = nil }
+                    .disabled(!isDirty)
+
+                Divider()
+
+                Button("Open in New Window") {
+                    guard let artifact else { return }
+                    openInWindow(artifact)
+                }
+                .disabled(targetEntry == nil)
+
+                Button("Save Source As…") { exportSource() }
+                    .disabled(targetEntry == nil)
+
+                if !model.availableExportFormats.isEmpty {
+                    Section("Export") {
+                        ForEach(model.availableExportFormats, id: \.rawValue) { format in
+                            Button(DesktopArtifactKindName.exportLabel(format)) {
+                                Task { await exportOffice(format) }
+                            }
+                        }
+                    }
+                }
+
+                Divider()
+
+                Button("Delete…", role: .destructive) {
+                    deleteTarget = model.selectedArtifactID
+                }
+                .disabled(artifact == nil || model.isMutating)
+            } label: {
+                Label("Artifact actions", systemImage: "ellipsis")
+            }
+            .disabled(artifact == nil || model.isExporting)
+            .help("Rename, export or delete this artifact")
+            .accessibilityLabel("Artifact actions")
+            .accessibilityIdentifier("juno.artifact-actions")
+            .popover(isPresented: $renaming, arrowEdge: .bottom) {
+                renameForm
+            }
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button {
+                historyVisible.toggle()
+            } label: {
+                Label("Version history", systemImage: "clock.arrow.circlepath")
+            }
+            .disabled(artifact == nil)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .help("Show version history (⌥⌘I)")
+            .accessibilityLabel("Version history")
+            .accessibilityIdentifier("juno.artifact-history")
+        }
+    }
+
+    /// An explicit frame, deliberately: a self-sizing popover over a split view is
+    /// what drove the constraint loop this window used to crash in.
+    private var renameForm: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Text("Rename artifact")
+                .junoTitle()
+            TextField("Title", text: $renameValue)
+                .textFieldStyle(.roundedBorder)
+                .onSubmit { commitRename() }
+                .accessibilityIdentifier("juno.artifact-rename-field")
+            HStack {
+                Spacer()
+                Button("Cancel") { renaming = false }
+                    .keyboardShortcut(.cancelAction)
+                Button("Rename") { commitRename() }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(
+                        renameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                    )
+            }
+        }
+        .padding(JunoSpace.regular)
+        .frame(width: 340, height: 152)
+    }
+
+    // MARK: - Actions
+
+    private func content(of version: Int, in artifact: NativeArtifact) -> String {
+        artifact.versions.first { $0.version == version }?.content ?? ""
+    }
+
+    /// A stale write is not a failure to hide: the model reloads the newer version
+    /// and reports it, so the draft is kept and a second Save — now based on the
+    /// version that actually exists — is the recovery.
+    private func save(_ artifact: NativeArtifact) async {
+        guard let draft else { return }
+        localErrorDescription = nil
+        await model.saveArtifact(id: artifact.id, content: draft)
+        guard model.lastErrorDescription == nil else { return }
+        self.draft = nil
+        selectedVersion = nil
+    }
+
+    private func restore(_ artifact: NativeArtifact, version: Int) async {
+        localErrorDescription = nil
+        await model.restoreArtifact(id: artifact.id, version: version)
+        guard model.lastErrorDescription == nil else { return }
+        selectedVersion = nil
+        compareBase = nil
+    }
+
+    private func commitRename() {
+        renaming = false
+        guard let artifact else { return }
+        let title = renameValue
+        Task { await model.renameArtifact(id: artifact.id, title: title) }
+    }
+
+    private func copyDisplayed() {
+        guard let targetVersion else { return }
+        let text: String
+        if showingChanges, let baseVersion {
+            text = DesktopArtifactDiff.unified(
+                diffLines,
+                baseLabel: "v\(baseVersion)",
+                targetLabel: "v\(targetVersion)"
+            )
+        } else {
+            text = displayedContent
+        }
+        write(text)
+    }
+
+    private func copySource(of artifact: NativeArtifact) {
+        guard let content = artifact.currentContent else { return }
+        write(content)
+    }
+
+    private func write(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
+    private func openInWindow(_ artifact: NativeArtifact) {
+        let version = artifact.id == model.selectedArtifactID ? targetVersion : artifact.currentVersion
+        guard let version,
+            let entry = artifact.versions.first(where: { $0.version == version })
+        else { return }
+        DesktopArtifactWindows.shared.present(
+            title: artifact.title,
+            subtitle: "\(DesktopArtifactKindName.singular(artifact.kind)) · v\(version)",
+            kind: artifact.kind,
+            content: entry.content,
+            mode: artifact.kind.supportsRenderedPreview ? mode : .source
+        )
+    }
+
+    private func exportSource() {
+        guard let artifact, let targetVersion, let entry = targetEntry else { return }
+        pendingFile = DesktopArtifactFile(
+            document: DesktopArtifactDocument(data: Data(entry.content.utf8)),
+            name: DesktopArtifactKindName.sourceFileName(
+                title: artifact.title,
+                kind: artifact.kind,
+                language: artifact.language,
+                version: targetVersion
+            )
+        )
+    }
+
+    private func exportOffice(_ format: NativeArtifactExportFormat) async {
+        guard let artifact else { return }
+        localErrorDescription = nil
+        guard let exported = await model.exportArtifact(id: artifact.id, format: format)
+        else { return }
+        pendingFile = DesktopArtifactFile(
+            document: DesktopArtifactDocument(data: exported.data),
+            name: exported.fileName
+        )
+    }
+}
+
+// MARK: - Metrics
+
+/// The one measurement this page owns that the shared scales do not cover.
+private enum DesktopArtifactMetrics {
+    /// The index row's leading glyph tile — the web's `size-8`. Not in
+    /// `JunoSpace`, because it is the size of a *thing*, not a gap between two.
+    static let tile: CGFloat = 32
+}
+
+// MARK: - Diff canvas
+
+/// The comparison, on the same raised page as the source it describes.
+///
+/// Row fills come from `junoDiffAdded`/`junoDiffRemoved` — low-chroma by design,
+/// because the whole row is tinted and has to sit *under* monospaced text in both
+/// appearances — with a solid bar in the status hue carrying the sign for anyone
+/// who cannot rely on the fill alone.
+///
+/// Only the diff itself is carded. "Comparing…" and "No changes" are states of
+/// the page, not documents on it, and a lone empty white panel with a sentence
+/// floating in the middle of it reads as a broken view.
+private struct DesktopArtifactDiffCanvas: View {
+    let lines: [DesktopArtifactDiffLine]
+    let computing: Bool
+    let baseVersion: Int?
+    let targetVersion: Int
+
+    private var hasChanges: Bool {
+        lines.contains { $0.change != .context }
+    }
+
+    var body: some View {
+        if computing {
+            ProgressView()
+                .controlSize(.small)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Comparing versions")
+        } else if !hasChanges {
+            JunoEmptyState(
+                title: "No changes",
+                message: baseVersion.map {
+                    "v\($0) and v\(targetVersion) have identical content."
+                } ?? "These versions have identical content.",
+                symbol: "equal"
+            )
+        } else {
+            // A diff keeps its horizontal scroll where prose gets a wrap: column
+            // alignment is the thing being read, and soft-wrapping a changed line
+            // hides which characters actually moved.
+            ScrollView([.vertical, .horizontal]) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(lines) { line in
+                        row(line)
+                    }
+                }
+                .padding(.vertical, JunoSpace.snug)
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            )
+            .junoCard()
+            .padding(JunoSpace.region)
+            .accessibilityLabel(
+                baseVersion.map {
+                    "Changes from version \($0) to version \(targetVersion)"
+                } ?? "Changes in version \(targetVersion)"
+            )
+            .accessibilityIdentifier("juno.artifact-diff")
+        }
+    }
+
+    private func row(_ line: DesktopArtifactDiffLine) -> some View {
+        HStack(alignment: .top, spacing: JunoSpace.snug) {
+            Rectangle()
+                .fill(barColor(line.change))
+                .frame(width: 2)
+                .accessibilityHidden(true)
+            Text(gutter(line.baseLine))
+                .junoCodeSmall()
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .frame(width: 34, alignment: .trailing)
+            Text(gutter(line.targetLine))
+                .junoCodeSmall()
+                .monospacedDigit()
+                .foregroundStyle(.tertiary)
+                .frame(width: 34, alignment: .trailing)
+            Text(sign(line.change))
+                .junoCode()
+                .foregroundStyle(.secondary)
+                .frame(width: 10, alignment: .leading)
+            Text(line.text.isEmpty ? " " : line.text)
+                .junoCode()
+                .textSelection(.enabled)
+                .fixedSize(horizontal: true, vertical: false)
+        }
+        .padding(.trailing, JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fill(line.change))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityText(line))
+    }
+
+    private func gutter(_ value: Int?) -> String {
+        value.map(String.init) ?? " "
+    }
+
+    private func sign(_ change: DesktopArtifactDiffLine.Change) -> String {
+        switch change {
+        case .added: "+"
+        case .removed: "−"
+        case .context: " "
+        }
+    }
+
+    private func fill(_ change: DesktopArtifactDiffLine.Change) -> Color {
+        switch change {
+        case .added: Color.junoDiffAdded
+        case .removed: Color.junoDiffRemoved
+        case .context: Color.clear
+        }
+    }
+
+    private func barColor(_ change: DesktopArtifactDiffLine.Change) -> Color {
+        switch change {
+        case .added: Color.junoSuccess
+        case .removed: Color.junoDanger
+        case .context: Color.clear
+        }
+    }
+
+    private func accessibilityText(_ line: DesktopArtifactDiffLine) -> String {
+        switch line.change {
+        case .added: "Added: \(line.text)"
+        case .removed: "Removed: \(line.text)"
+        case .context: line.text
+        }
+    }
+}
+
+// MARK: - Diff engine
+
+private struct DesktopArtifactDiffRequest: Equatable, Sendable {
+    let artifactID: String
+    let base: Int
+    let target: Int
+    let versionCount: Int
+}
+
+private struct DesktopArtifactDiffLine: Identifiable, Sendable {
+    enum Change: Sendable, Equatable {
+        case context
+        case added
+        case removed
+    }
+
+    let id: Int
+    let change: Change
+    let text: String
+    let baseLine: Int?
+    let targetLine: Int?
+}
+
+/// A line diff between two stored versions.
+///
+/// Deliberately the same shape as the web Canvas's `line-diff.ts`, so the same
+/// two versions describe the same change on both clients: trim the shared prefix
+/// and suffix, then align only the middle. The cap matters — a version may hold
+/// 200,000 characters, and past a few thousand changed lines an aligned diff
+/// stops being readable at all — so beyond it the middle is reported honestly as
+/// one removed block followed by one added block instead of a fabricated
+/// alignment.
+private enum DesktopArtifactDiff {
+    static let middleLineCap = 1500
+
+    static func lines(from base: String, to target: String) -> [DesktopArtifactDiffLine] {
+        let baseLines = split(base)
+        let targetLines = split(target)
+
+        var out: [DesktopArtifactDiffLine] = []
+        func append(
+            _ change: DesktopArtifactDiffLine.Change,
+            _ text: String,
+            base baseLine: Int?,
+            target targetLine: Int?
+        ) {
+            out.append(
+                DesktopArtifactDiffLine(
+                    id: out.count,
+                    change: change,
+                    text: text,
+                    baseLine: baseLine,
+                    targetLine: targetLine
+                )
+            )
+        }
+
+        let shared = min(baseLines.count, targetLines.count)
+        var prefix = 0
+        while prefix < shared, baseLines[prefix] == targetLines[prefix] { prefix += 1 }
+        var suffix = 0
+        while suffix < shared - prefix,
+            baseLines[baseLines.count - 1 - suffix] == targetLines[targetLines.count - 1 - suffix]
+        {
+            suffix += 1
+        }
+
+        for index in 0..<prefix {
+            append(.context, baseLines[index], base: index + 1, target: index + 1)
+        }
+
+        let baseMiddle = Array(baseLines[prefix..<(baseLines.count - suffix)])
+        let targetMiddle = Array(targetLines[prefix..<(targetLines.count - suffix)])
+
+        if baseMiddle.count > middleLineCap || targetMiddle.count > middleLineCap {
+            for (offset, text) in baseMiddle.enumerated() {
+                append(.removed, text, base: prefix + offset + 1, target: nil)
+            }
+            for (offset, text) in targetMiddle.enumerated() {
+                append(.added, text, base: nil, target: prefix + offset + 1)
+            }
+        } else {
+            let difference = targetMiddle.difference(from: baseMiddle)
+            var removed = Set<Int>()
+            var inserted = Set<Int>()
+            for change in difference {
+                switch change {
+                case .remove(let offset, _, _):
+                    removed.insert(offset)
+                case .insert(let offset, _, _):
+                    inserted.insert(offset)
+                }
+            }
+
+            var baseIndex = 0
+            var targetIndex = 0
+            while baseIndex < baseMiddle.count || targetIndex < targetMiddle.count {
+                if baseIndex < baseMiddle.count, removed.contains(baseIndex) {
+                    append(
+                        .removed,
+                        baseMiddle[baseIndex],
+                        base: prefix + baseIndex + 1,
+                        target: nil
+                    )
+                    baseIndex += 1
+                } else if targetIndex < targetMiddle.count, inserted.contains(targetIndex) {
+                    append(
+                        .added,
+                        targetMiddle[targetIndex],
+                        base: nil,
+                        target: prefix + targetIndex + 1
+                    )
+                    targetIndex += 1
+                } else if baseIndex < baseMiddle.count, targetIndex < targetMiddle.count {
+                    append(
+                        .context,
+                        baseMiddle[baseIndex],
+                        base: prefix + baseIndex + 1,
+                        target: prefix + targetIndex + 1
+                    )
+                    baseIndex += 1
+                    targetIndex += 1
+                } else if baseIndex < baseMiddle.count {
+                    append(
+                        .removed,
+                        baseMiddle[baseIndex],
+                        base: prefix + baseIndex + 1,
+                        target: nil
+                    )
+                    baseIndex += 1
+                } else {
+                    append(
+                        .added,
+                        targetMiddle[targetIndex],
+                        base: nil,
+                        target: prefix + targetIndex + 1
+                    )
+                    targetIndex += 1
+                }
+            }
+        }
+
+        for offset in 0..<suffix {
+            let baseIndex = baseLines.count - suffix + offset
+            let targetIndex = targetLines.count - suffix + offset
+            append(
+                .context,
+                baseLines[baseIndex],
+                base: baseIndex + 1,
+                target: targetIndex + 1
+            )
+        }
+        return out
+    }
+
+    /// A real unified diff, so what lands on the pasteboard can be read by a
+    /// person *and* applied by `patch`.
+    static func unified(
+        _ lines: [DesktopArtifactDiffLine],
+        baseLabel: String,
+        targetLabel: String
+    ) -> String {
+        let context = 3
+        var out = ["--- \(baseLabel)", "+++ \(targetLabel)"]
+        let changed = lines.indices.filter { lines[$0].change != .context }
+        guard !changed.isEmpty else { return out.joined(separator: "\n") }
+
+        var hunks: [(start: Int, end: Int)] = []
+        var start = changed[0]
+        var end = changed[0]
+        for index in changed.dropFirst() {
+            if index - end <= context * 2 {
+                end = index
+            } else {
+                hunks.append((start, end))
+                start = index
+                end = index
+            }
+        }
+        hunks.append((start, end))
+
+        for hunk in hunks {
+            let from = max(0, hunk.start - context)
+            let to = min(lines.count - 1, hunk.end + context)
+            var baseStart = 0
+            var targetStart = 0
+            var baseCount = 0
+            var targetCount = 0
+            for index in from...to {
+                if let line = lines[index].baseLine {
+                    if baseCount == 0 { baseStart = line }
+                    baseCount += 1
+                }
+                if let line = lines[index].targetLine {
+                    if targetCount == 0 { targetStart = line }
+                    targetCount += 1
+                }
+            }
+            // An empty side anchors to the line before the hunk, which is the
+            // unified-diff convention for a pure insertion or deletion.
+            if baseCount == 0 { baseStart = lastLine(before: from, in: lines, base: true) }
+            if targetCount == 0 { targetStart = lastLine(before: from, in: lines, base: false) }
+            out.append(
+                "@@ -\(range(baseStart, baseCount)) +\(range(targetStart, targetCount)) @@"
+            )
+            for index in from...to {
+                let line = lines[index]
+                let sign =
+                    switch line.change {
+                    case .added: "+"
+                    case .removed: "-"
+                    case .context: " "
+                    }
+                out.append(sign + line.text)
+            }
+        }
+        return out.joined(separator: "\n")
+    }
+
+    private static func split(_ value: String) -> [String] {
+        value.isEmpty ? [] : value.components(separatedBy: "\n")
+    }
+
+    private static func range(_ start: Int, _ count: Int) -> String {
+        count == 1 ? "\(start)" : "\(start),\(count)"
+    }
+
+    private static func lastLine(
+        before index: Int,
+        in lines: [DesktopArtifactDiffLine],
+        base: Bool
+    ) -> Int {
+        var cursor = index - 1
+        while cursor >= 0 {
+            if let value = base ? lines[cursor].baseLine : lines[cursor].targetLine {
+                return value
+            }
+            cursor -= 1
+        }
+        return 0
+    }
+}
+
+// MARK: - Export
+
+private struct DesktopArtifactFile {
+    let document: DesktopArtifactDocument
+    let name: String
+}
+
+/// Carries bytes the backend already produced (an Office export) or the version's
+/// own source, so `.fileExporter` — the system's save flow, with its sandbox
+/// grant and its replace confirmation — does the writing rather than a bare
+/// `NSSavePanel` and a `try?`.
+private struct DesktopArtifactDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.data] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+// MARK: - Detached artifact window
+
+/// "Open in New Window" as a real window, not a sheet.
+///
+/// The app has one `WindowGroup`, so there is no scene to route an
+/// `openWindow(value:)` through; the window is therefore built here and held by
+/// this presenter until AppKit tells it the window closed. It renders an
+/// immutable snapshot of one version on purpose — a detached window that silently
+/// followed later edits would misrepresent the version named in its subtitle.
+@MainActor
+private final class DesktopArtifactWindows: NSObject, NSWindowDelegate {
+    static let shared = DesktopArtifactWindows()
+
+    private var windows: [NSWindow] = []
+
+    func present(
+        title: String,
+        subtitle: String,
+        kind: NativeArtifactKind,
+        content: String,
+        mode: NativeArtifactDisplayMode
+    ) {
+        let controller = NSHostingController(
+            rootView: DesktopArtifactWindowContent(kind: kind, content: content, mode: mode)
+        )
+        let window = NSWindow(contentViewController: controller)
+        window.title = title
+        window.subtitle = subtitle
+        window.setContentSize(NSSize(width: 820, height: 620))
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.center()
+        windows.append(window)
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow else { return }
+        windows.removeAll { $0 === closing }
+    }
+}
+
+private struct DesktopArtifactWindowContent: View {
+    let kind: NativeArtifactKind
+    let content: String
+    let mode: NativeArtifactDisplayMode
+
+    var body: some View {
+        Group {
+            if mode == .preview, kind == .markdown {
+                // Same renderer and same page as the main canvas, so a document
+                // torn off into its own window is the document the reader was
+                // just looking at rather than a second, worse rendering of it.
+                JunoDetailPage {
+                    JunoMarkdownText(content)
+                        .padding(JunoSpace.section)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .junoCard()
+                }
+            } else {
+                NativeArtifactPreview(kind: kind, content: content, mode: mode)
+            }
+        }
+        .frame(minWidth: 480, minHeight: 360)
+        // This *is* the window level for a detached window, which is the one
+        // place a page paints the canvas itself.
+        .junoReadingCanvas()
+    }
+}
+
+// MARK: - Vocabulary
+
+/// The product's words for an artifact, in one place.
+///
+/// The wire values are shouted enum names (`MARKDOWN`), and a window subtitle
+/// full of capitals reads as an error code. These are the same nouns the web
+/// Canvas uses so the two clients describe the same document the same way.
+private enum DesktopArtifactKindName {
+    static func singular(_ kind: NativeArtifactKind) -> String {
+        switch kind {
+        case .html: "Page"
+        case .react: "Component"
+        case .code: "Code"
+        case .markdown: "Document"
+        case .svg: "Graphic"
+        case .mermaid: "Diagram"
+        }
+    }
+
+    /// The filter chips' labels — a *category* of artifact, matching the web's
+    /// `TYPE_LABELS`.
+    ///
+    /// Plurals of the singulars above rather than a straight copy of the web
+    /// list: the web calls an HTML artifact a "Site" in its chips and a "Page"
+    /// everywhere else, and both native clients already say "Page". Introducing a
+    /// third noun for the same object here would be worse than the small
+    /// divergence.
+    static func plural(_ kind: NativeArtifactKind) -> String {
+        switch kind {
+        case .html: "Pages"
+        case .react: "Components"
+        case .code: "Code"
+        case .markdown: "Documents"
+        case .svg: "Graphics"
+        case .mermaid: "Diagrams"
+        }
+    }
+
+    static func symbol(_ kind: NativeArtifactKind) -> String {
+        switch kind {
+        case .html: "globe"
+        case .react: "atom"
+        case .code: "chevron.left.forwardslash.chevron.right"
+        case .markdown: "doc.text"
+        case .svg: "scribble.variable"
+        case .mermaid: "flowchart"
+        }
+    }
+
+    static func origin(_ origin: NativeArtifactOrigin) -> String {
+        switch origin {
+        case .generated: "Generated"
+        case .edit: "Edited"
+        case .restore: "Restored"
+        }
+    }
+
+    static func exportLabel(_ format: NativeArtifactExportFormat) -> String {
+        switch format {
+        case .docx: "Word Document (.docx)"
+        case .xlsx: "Excel Workbook (.xlsx)"
+        case .pptx: "PowerPoint Deck (.pptx)"
+        }
+    }
+
+    /// The version number is part of the file name because the source of a *past*
+    /// version is a different document from the current one, and a folder of
+    /// same-named files is how that distinction gets lost.
+    static func sourceFileName(
+        title: String,
+        kind: NativeArtifactKind,
+        language: String?,
+        version: Int
+    ) -> String {
+        let forbidden = CharacterSet(charactersIn: "\\/:*?\"<>|").union(.controlCharacters)
+        let cleaned = String(
+            title.unicodeScalars.map { forbidden.contains($0) ? " " : Character($0) }
+        )
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        let base = cleaned.isEmpty ? "artifact" : String(cleaned.prefix(80))
+        return "\(base) v\(version).\(sourceExtension(kind: kind, language: language))"
+    }
+
+    private static func sourceExtension(kind: NativeArtifactKind, language: String?) -> String {
+        switch kind {
+        case .html: "html"
+        case .react: "tsx"
+        case .markdown: "md"
+        case .svg: "svg"
+        case .mermaid: "mmd"
+        case .code: codeExtension(language)
+        }
+    }
+
+    private static func codeExtension(_ language: String?) -> String {
+        switch language?.lowercased() {
+        case "swift": "swift"
+        case "python", "py": "py"
+        case "typescript", "ts": "ts"
+        case "tsx": "tsx"
+        case "javascript", "js": "js"
+        case "jsx": "jsx"
+        case "rust", "rs": "rs"
+        case "go": "go"
+        case "ruby", "rb": "rb"
+        case "java": "java"
+        case "kotlin", "kt": "kt"
+        case "c": "c"
+        case "cpp", "c++": "cpp"
+        case "css": "css"
+        case "json": "json"
+        case "yaml", "yml": "yaml"
+        case "sql": "sql"
+        case "sh", "bash", "shell": "sh"
+        default: "txt"
+        }
+    }
+}

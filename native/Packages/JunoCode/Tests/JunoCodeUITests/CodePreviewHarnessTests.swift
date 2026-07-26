@@ -91,10 +91,29 @@ final class CodePreviewHarnessTests: XCTestCase {
         await controller.send()
 
         XCTAssertEqual(controller.composerText, "", "the composer still clears")
+        // Two events, in this order, and the order is the point: the turn's
+        // contract is recorded *before* the prompt, so the behaviour, permission
+        // mode, model and reasoning effort a past turn ran under can still be read
+        // off the transcript long after the composer has moved to a different
+        // mode. Asserting the payloads rather than a count means a change to what
+        // is recorded fails here instead of silently passing on an equal total.
         XCTAssertEqual(
-            controller.events.count, before + 1,
-            "the prompt is appended locally so the transcript stays inspectable"
+            controller.events.count, before + 2,
+            "the contract and the prompt are both appended locally"
         )
+        let appended = controller.events.suffix(2).map(\.payload)
+        guard case .turnConfiguration(let configuration) = appended.first else {
+            return XCTFail("expected the turn contract first, got \(String(describing: appended.first))")
+        }
+        XCTAssertEqual(configuration.behavior, controller.session.configuration.behavior)
+        XCTAssertEqual(
+            configuration.permissionMode,
+            controller.session.configuration.permissionMode
+        )
+        guard case .userPrompt(let userPrompt) = appended.last else {
+            return XCTFail("expected the prompt second, got \(String(describing: appended.last))")
+        }
+        XCTAssertEqual(userPrompt.text, "Refactor everything")
         XCTAssertEqual(
             controller.transientError,
             "Preview mode does not run the agent: no model transport is attached."
@@ -311,6 +330,7 @@ final class CodePreviewHarnessTests: XCTestCase {
             for event in fixture.events {
                 switch event.payload {
                 case .sessionCreated: payloadKinds.insert("sessionCreated")
+                case .turnConfiguration: payloadKinds.insert("turnConfiguration")
                 case .userPrompt: payloadKinds.insert("userPrompt")
                 case .assistantMessage: payloadKinds.insert("assistantMessage")
                 case .reasoningSummary: payloadKinds.insert("reasoningSummary")
@@ -386,7 +406,8 @@ final class CodePreviewHarnessTests: XCTestCase {
         XCTAssertTrue(sawConflictedGit, "a conflicted Git status")
         XCTAssertTrue(sawCleanGit, "a clean Git status")
 
-        for kind in ["sessionCreated", "userPrompt", "assistantMessage", "reasoningSummary",
+        for kind in ["sessionCreated", "turnConfiguration", "userPrompt",
+                     "assistantMessage", "reasoningSummary",
                      "toolProposed", "toolStarted", "toolOutput", "toolCompleted",
                      "approvalRequested", "approvalResolved", "fileChanged",
                      "testRunCompleted", "errorOccurred", "runCompleted"] {

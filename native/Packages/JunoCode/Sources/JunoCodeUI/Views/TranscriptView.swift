@@ -1,0 +1,343 @@
+import SwiftUI
+import JunoCodeCore
+import JunoDesignSystem
+
+/// The scrolling record of what the agent did — the centre of gravity of the
+/// product. Everything else in the window is reference material that serves this
+/// one column.
+///
+/// Opaque, always. Long-form prose over glass loses contrast as the window moves,
+/// and a transcript is the longest-form thing in the app; the composer floating
+/// over it is what carries the material.
+public struct TranscriptView: View {
+    let controller: SessionController
+    /// Model identifiers are opaque outside the workbench, so the display names
+    /// come in from the caller that knows them.
+    let modelDisplayNames: [String: String]
+    let openSession: @MainActor @Sendable (CodeSessionID) -> Void
+    var focus: FocusState<Bool>.Binding?
+
+    /// The transcript's measure. Long-form agent prose past roughly 90
+    /// characters is measurably harder to read, and a full-screen window is
+    /// otherwise 1800pt of single-column text.
+    static let measure: CGFloat = 720
+
+    public init(
+        controller: SessionController,
+        modelDisplayNames: [String: String] = [:],
+        openSession: @escaping @MainActor @Sendable (CodeSessionID) -> Void = { _ in },
+        focus: FocusState<Bool>.Binding? = nil
+    ) {
+        self.controller = controller
+        self.modelDisplayNames = modelDisplayNames
+        self.openSession = openSession
+        self.focus = focus
+    }
+
+    public var body: some View {
+        // Both derivations walk the whole event list, so they are computed once
+        // per pass rather than once per use.
+        let events = visibleEvents
+        let rowContext = context
+        return ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                    if events.isEmpty {
+                        PreRunSuggestions(controller: controller, focus: focus)
+                    } else {
+                        ForEach(events) { event in
+                            TranscriptRow(event: event, context: rowContext)
+                                .id(event.id)
+                        }
+                    }
+                    // The live tail is its own view so that a token arriving
+                    // invalidates only the tail, not the whole event list.
+                    TranscriptTail(controller: controller, proxy: proxy)
+                }
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.top, JunoSpace.regular)
+                .padding(.bottom, JunoSpace.snug)
+                .frame(maxWidth: Self.measure, alignment: .leading)
+                .frame(maxWidth: .infinity)
+            }
+            .environment(\.codeModelDisplayNames, modelDisplayNames)
+            // Anchored on the tail rather than on the last event, so a run that
+            // ends with streaming text, a tool row or a status line all settle in
+            // the same place — and so this stays correct without re-deriving the
+            // visible list inside the handler.
+            .onChange(of: controller.events.count) {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    proxy.scrollTo(TranscriptTail.id, anchor: .bottom)
+                }
+            }
+        }
+    }
+
+    private var context: TranscriptContext {
+        TranscriptContext(
+            events: controller.events,
+            pendingApprovalIDs: Set(controller.pendingApprovals.map(\.id)),
+            loadSubAgent: { [controller] childID in
+                await controller.subAgentTranscript(childID)
+            },
+            openSession: openSession
+        )
+    }
+
+    /// What the reader sees, out of everything the record holds.
+    ///
+    /// Four kinds of event are structural rather than narrative and never
+    /// appear: session creation, status transitions, tool start, and approval
+    /// resolution — each is already visible as the state of the row it belongs
+    /// to. Streamed tool output is folded into its own tool row. A *pending*
+    /// approval is excluded because it is rendered as the pinned card above the
+    /// composer; the same event reappears here as a resolved row the moment it
+    /// is answered.
+    private var visibleEvents: [SessionEvent] {
+        let pendingApprovalIDs = Set(controller.pendingApprovals.map(\.id))
+        var result: [SessionEvent] = []
+        var lastContract: TurnConfigurationEvent?
+        for event in controller.events {
+            switch event.payload {
+            case .sessionCreated, .statusChanged, .toolOutput, .toolStarted, .approvalResolved:
+                continue
+            case let .turnConfiguration(configuration):
+                // The record carries a contract for every turn so a past turn's
+                // permissions are always recoverable; the transcript shows it
+                // only when it changed, so an unchanged contract is not restated
+                // above every message.
+                guard configuration != lastContract else { continue }
+                lastContract = configuration
+            case let .approvalRequested(request):
+                if pendingApprovalIDs.contains(request.id) { continue }
+            default:
+                break
+            }
+            result.append(event)
+        }
+        return result
+    }
+}
+
+// MARK: - The live tail
+
+/// The end of the transcript while a run is in flight: the reply as it arrives,
+/// or an honest statement that the agent is working.
+///
+/// Text streams into `liveAssistantText` and is replaced by the persisted
+/// `assistantMessage` event when the turn ends, so the reply never appears
+/// twice. Reasoning summaries, tool calls and file changes are already appended
+/// as they happen — the transcript has always moved during a run — but the
+/// prose used to arrive in one block at the end of the turn.
+struct TranscriptTail: View {
+    let controller: SessionController
+    let proxy: ScrollViewProxy
+
+    static let id = "juno.code.transcript.tail"
+
+    private var isStopping: Bool { controller.session.status == .stopping }
+
+    /// Only when there is genuinely nothing else to look at: a running tool
+    /// already draws its own spinner, and a pending approval has the card.
+    private var showsWorkingRow: Bool {
+        controller.session.status == .running
+            && controller.liveAssistantText.isEmpty
+            && CodeToolDigest.runningToolCallIDs(in: controller.events).isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            if !controller.liveAssistantText.isEmpty {
+                JunoMarkdownText(controller.liveAssistantText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Juno is writing: \(controller.liveAssistantText)")
+            }
+            if isStopping {
+                statusRow("Stopping…")
+            } else if showsWorkingRow {
+                statusRow("Juno is working…", showsElapsed: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .id(Self.id)
+        .onChange(of: controller.liveAssistantText) {
+            proxy.scrollTo(Self.id, anchor: .bottom)
+        }
+    }
+
+    private func statusRow(_ title: String, showsElapsed: Bool = false) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            ProgressView()
+                .controlSize(.small)
+                .frame(width: 18)
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            if showsElapsed {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    if let elapsed = controller.elapsedSeconds {
+                        Text(durationText(elapsed))
+                            .junoCaption()
+                            .monospacedDigit()
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+    }
+
+    private func durationText(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+// MARK: - Before the first turn
+
+/// The session's opening state: what this mode may do, and four real ways to
+/// start.
+///
+/// Left-aligned and top-anchored on the transcript's own measure, so the first
+/// reply lands exactly where the suggestions were instead of the canvas
+/// reflowing from centred to left the moment a run starts. The starters fill the
+/// composer rather than launching immediately — a one-click launch of a prompt
+/// the reader has not read is how a session starts in the wrong direction.
+struct PreRunSuggestions: View {
+    let controller: SessionController
+    var focus: FocusState<Bool>.Binding?
+
+    private var behavior: AgentBehavior { controller.session.configuration.behavior }
+
+    private var description: String {
+        switch behavior {
+        case .ask:
+            return "Ask Juno to inspect and explain this project. This session cannot edit files or run commands."
+        case .plan:
+            return "Describe an outcome and Juno will inspect the project, then write a read-only implementation plan."
+        case .code:
+            let level = PermissionModeLabel.shortText(
+                for: controller.session.configuration.permissionMode
+            )
+            return "Ask Juno to examine or change this project. Every edit is checkpointed, and this session is set to \(level)."
+        }
+    }
+
+    /// Only starters this session can actually carry out: a plan prompt in Plan,
+    /// a review prompt only in a repository, a test prompt only when a toolchain
+    /// was detected.
+    private var suggestions: [StarterPrompt] {
+        var items = [StarterPrompt.tour]
+        items.append(behavior == .plan ? .plan : .findBug)
+        if controller.isGitRepository {
+            items.append(.reviewUncommitted)
+        }
+        if let suggestion = controller.testSuggestions.first {
+            items.append(.runTests(command: suggestion.command))
+        }
+        return items
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text(controller.workspaceDisplayName)
+                    .font(.system(.title2, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                Text(description)
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            StarterPromptList(starters: suggestions) { prompt in
+                controller.composerText = prompt
+                focus?.wrappedValue = true
+            }
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// One way to start, as a real prompt the reader can read and edit before
+/// sending. Never a one-click launch: a session that begins with a prompt nobody
+/// read begins in the wrong direction.
+struct StarterPrompt: Identifiable {
+    var id: String { title }
+    let title: String
+    let glyph: String
+    let prompt: String
+
+    static let tour = StarterPrompt(
+        title: "Explain this codebase",
+        glyph: "map",
+        prompt: "Give me a tour of this codebase: structure, key modules, and how they fit together."
+    )
+    static let plan = StarterPrompt(
+        title: "Plan a change",
+        glyph: "list.bullet.rectangle",
+        prompt: """
+        I want to change:
+
+        Investigate the project first, then write an ordered implementation plan \
+        with the files involved, the risks, and how to validate it.
+        """
+    )
+    static let findBug = StarterPrompt(
+        title: "Find a likely bug",
+        glyph: "ant",
+        prompt: "Look for likely bugs in the most recently changed files and explain what you find."
+    )
+    static let reviewUncommitted = StarterPrompt(
+        title: "Review my uncommitted work",
+        glyph: "arrow.triangle.branch",
+        prompt: "Review my uncommitted changes: correctness, regressions, and anything missing tests."
+    )
+
+    static func runTests(command: String) -> StarterPrompt {
+        StarterPrompt(
+            title: "Run the tests",
+            glyph: "checkmark.seal",
+            prompt: "Run `\(command)`. If anything fails, explain the failure."
+        )
+    }
+}
+
+/// The starters as one grouped panel — a plain list of real actions rather than a
+/// grid of decorative cards.
+struct StarterPromptList: View {
+    let starters: [StarterPrompt]
+    let select: (String) -> Void
+
+    var body: some View {
+        VStack(spacing: 1) {
+            ForEach(starters) { starter in
+                Button {
+                    select(starter.prompt)
+                } label: {
+                    HStack(spacing: JunoSpace.snug) {
+                        Image(systemName: starter.glyph)
+                            .imageScale(.small)
+                            .foregroundStyle(Color.junoAccent)
+                            .frame(width: 16)
+                        Text(starter.title).junoRowLabel()
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug + 1)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Puts this prompt in the composer")
+            }
+        }
+        .junoPanel()
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoBorder)
+        )
+    }
+}

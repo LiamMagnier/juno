@@ -1,0 +1,194 @@
+# Gates for the native Swift surface: the shared packages, the generated API
+# contract, the macOS app and the iPhone app.
+#
+# Before this workflow existed, nothing in CI compiled or tested any native code
+# — `deploy.yml`, `code-runner.yml` and `sync-models.yml` all cover the web
+# surface only. Every native regression had to be caught by hand on a developer's
+# Mac, which is how a target that no longer exists stayed referenced in the
+# release script.
+#
+# The package jobs are the cheap, fast signal and run on every push. The app
+# builds need a specific Xcode, so they declare it and fail loudly when the
+# runner cannot provide it, rather than silently reporting green.
+
+name: native
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "native/**"
+      - "contracts/**"
+      - "scripts/check-native-swift-contract.mjs"
+      - "scripts/generate-native-swift-contract.mjs"
+      - ".github/workflows/native.yml"
+  pull_request:
+    paths:
+      - "native/**"
+      - "contracts/**"
+      - "scripts/check-native-swift-contract.mjs"
+      - "scripts/generate-native-swift-contract.mjs"
+      - ".github/workflows/native.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The macOS app's deployment floor is macOS 26 (Liquid Glass), so the SDK has
+  # to be at least that. Bump both values together when the floor moves.
+  REQUIRED_XCODE_MAJOR: "26"
+  DEVELOPMENT_TEAM: "58PVP763WX"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # The generated Swift contract must match the canonical OpenAPI document.
+  # Runs on Linux because it is pure Node — no Xcode needed.
+  # ---------------------------------------------------------------------------
+  contract:
+    name: API contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Contract has not drifted
+        run: npm run native:contract:check
+
+  # ---------------------------------------------------------------------------
+  # The shared packages, under the same strict-concurrency, warnings-as-errors
+  # settings the release gates use. `--scratch-path` is deliberately outside the
+  # checkout: a `.build` directory inside a File Provider-backed tree picks up
+  # resource forks that break product signing.
+  # ---------------------------------------------------------------------------
+  packages:
+    name: Swift packages
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [JunoNativeKit, JunoCode]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest installed Xcode
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "Using $newest"
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+
+      - name: Test ${{ matrix.package }}
+        run: |
+          swift test \
+            --package-path native/Packages/${{ matrix.package }} \
+            --scratch-path "$RUNNER_TEMP/${{ matrix.package }}-tests" \
+            -Xswiftc -warnings-as-errors
+
+  # ---------------------------------------------------------------------------
+  # The macOS app. Unsigned: this job verifies that the app compiles, not that it
+  # runs. Anything exercising auth, the Keychain or an authenticated screen needs
+  # a signed build and is covered by the release gates on a developer machine —
+  # see docs/native/TESTING.md, which explains why an unsigned build tests the
+  # failure path.
+  # ---------------------------------------------------------------------------
+  macos-app:
+    name: macOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require an Xcode new enough for the deployment floor
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+          major=$(xcodebuild -version | head -1 | sed -E 's/Xcode ([0-9]+).*/\1/')
+          if [ "$major" -lt "$REQUIRED_XCODE_MAJOR" ]; then
+            echo "::error::JunoDesktop targets macOS $REQUIRED_XCODE_MAJOR and needs Xcode $REQUIRED_XCODE_MAJOR or newer; this runner has Xcode $major."
+            echo "::error::Pin a runner image that ships it, or lower MACOSX_DEPLOYMENT_TARGET (which would remove Liquid Glass)."
+            exit 1
+          fi
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+
+      - name: Build JunoDesktop (Debug, strict)
+        run: |
+          xcodebuild \
+            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+            -scheme JunoDesktop \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Build JunoDesktop (Stable, strict)
+        run: |
+          xcodebuild \
+            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+            -scheme JunoDesktop \
+            -configuration Stable \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/desktop-stable-dd" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Unit tests
+        run: |
+          xcodebuild \
+            -project native/macOS/JunoDesktop/JunoDesktop.xcodeproj \
+            -scheme JunoDesktop \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/desktop-dd" \
+            -only-testing:JunoDesktopTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
+  # ---------------------------------------------------------------------------
+  # The iPhone app, because the macOS app and the phone app share JunoNativeKit
+  # and a shared-package change must not break the phone.
+  # ---------------------------------------------------------------------------
+  ios-app:
+    name: iOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select the newest installed Xcode
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate projects
+        run: ./native/Scripts/generate-projects.sh
+
+      - name: Build JunoMobile (Debug simulator, strict)
+        run: |
+          xcodebuild \
+            -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+            -scheme JunoMobile \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -41,6 +41,14 @@ public extension JunoColorToken {
     static let mutedForegroundLight = JunoColorToken(unchecked: 0.416, 0.4053, 0.384)
     static let mutedForegroundDark = JunoColorToken(unchecked: 0.6559, 0.636, 0.6041)
 
+    /// `--sidebar`: `50 23% 95%` / `28 10% 7.5%`.
+    ///
+    /// This is intentionally distinct from `--muted` in dark appearance: the
+    /// web shell's sidebar is a shade deeper than the reading canvas, so the
+    /// content opens up instead of being boxed by a lighter grey slab.
+    static let sidebarLight = JunoColorToken(unchecked: 0.9615, 0.9577, 0.9385)
+    static let sidebarDark = JunoColorToken(unchecked: 0.0825, 0.0756, 0.0675)
+
     // Border, success, danger and caution are deliberately *not* redefined here.
     // `JunoSurfaces.swift` already owns `borderLight`/`borderDark` and
     // `JunoStatus.swift` owns the status ramp (`junoSuccess`, `junoDanger`,
@@ -102,6 +110,9 @@ public extension Color {
     static let junoMutedForeground = Color.junoAdaptive(
         light: .mutedForegroundLight, dark: .mutedForegroundDark
     )
+
+    /// The navigation column, matched to the website's sidebar variables.
+    static let junoSidebar = Color.junoAdaptive(light: .sidebarLight, dark: .sidebarDark)
 
     static func junoAdaptive(light: JunoColorToken, dark: JunoColorToken) -> Color {
         #if canImport(UIKit)

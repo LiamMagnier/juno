@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "JunoCode",
     platforms: [
-        .macOS(.v15)
+        .macOS("26.0")
     ],
     products: [
         .library(name: "JunoCodeCore", targets: ["JunoCodeCore"]),

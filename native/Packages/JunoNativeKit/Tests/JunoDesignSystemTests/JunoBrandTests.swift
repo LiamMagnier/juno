@@ -1,6 +1,7 @@
 import XCTest
 @testable import JunoDesignSystem
 
+@MainActor
 final class JunoBrandTests: XCTestCase {
     /// The cases must mirror `src/lib/app-icons.ts` one-for-one. If the web adds
     /// a destination and native does not, this is where it surfaces.

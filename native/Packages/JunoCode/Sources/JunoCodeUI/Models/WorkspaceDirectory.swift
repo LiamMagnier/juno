@@ -89,8 +89,56 @@ public actor WorkspaceDirectory {
             workspaceID: record.id,
             bookmarkData: record.bookmarkData
         )
+        // Self-healing: a bookmark that resolved but reported itself stale is
+        // re-minted here, so the next launch does not depend on the system
+        // still being able to resolve outdated data. Best-effort — a failure to
+        // re-mint must not fail an open that already succeeded.
+        if access.bookmarkNeedsRefresh,
+            let refreshed = try? WorkspaceAccess.makeBookmark(for: access.rootURL)
+        {
+            record.bookmarkData = refreshed
+        }
+        // The folder may have moved since it was granted; the bookmark tracks it
+        // by file id, so the stored path hint is the thing that goes stale.
+        record.descriptor.localPathHint = access.rootURL.path
         record.descriptor.lastOpenedAt = Date()
         record.descriptor.isGitRepository = access.isGitRepository
+        records[index] = record
+        try persist()
+        return (record, access)
+    }
+
+    /// Replaces a known workspace's lapsed bookmark with a freshly granted one,
+    /// **keeping its identity**.
+    ///
+    /// `register(grantedURL:)` would also work when the user picks the same
+    /// folder — it matches on path — but it silently creates a *new* workspace
+    /// when they pick a moved or renamed one, stranding every session,
+    /// checkpoint and transcript recorded against the old id. A folder grant
+    /// lapsing is precisely the case where the folder may have moved, so the
+    /// re-grant path has to be explicit about which project it is repairing.
+    ///
+    /// The path hint and display name are refreshed from the new URL, since that
+    /// is now where the project lives.
+    public func regrant(
+        id: WorkspaceID,
+        grantedURL: URL
+    ) throws -> (WorkspaceRecord, WorkspaceAccess) {
+        try loadIfNeeded()
+        guard let index = records.firstIndex(where: { $0.id == id }) else {
+            throw WorkspaceDirectoryError.workspaceNotFound
+        }
+        // Built before anything is mutated: a URL the user picked that cannot be
+        // bookmarked must leave the stored record exactly as it was.
+        let bookmark = try WorkspaceAccess.makeBookmark(for: grantedURL)
+        let access = try WorkspaceAccess(workspaceID: id, bookmarkData: bookmark)
+
+        var record = records[index]
+        record.bookmarkData = bookmark
+        record.descriptor.localPathHint = grantedURL.path
+        record.descriptor.displayName = grantedURL.lastPathComponent
+        record.descriptor.isGitRepository = access.isGitRepository
+        record.descriptor.lastOpenedAt = Date()
         records[index] = record
         try persist()
         return (record, access)

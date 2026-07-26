@@ -6,6 +6,13 @@ import JunoCodeCore
 public struct ToolRegistry: Sendable {
     private let tools: [String: any CodeTool]
 
+    /// Tools that can inspect a workspace without mutating it or starting a
+    /// process. Ask and Plan sessions expose exactly this set.
+    public static let inspectionToolNames: Set<String> = [
+        "read_file", "list_directory", "find_files", "glob", "grep",
+        "git_status", "git_diff", "git_log",
+    ]
+
     public init(tools: [any CodeTool]) {
         var byName: [String: any CodeTool] = [:]
         for tool in tools {
@@ -20,7 +27,8 @@ public struct ToolRegistry: Sendable {
         index: any WorkspaceIndexing,
         executor: any CommandExecuting,
         git: any GitServicing,
-        tests: any TestRunning
+        tests: any TestRunning,
+        additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
         ToolRegistry(tools: [
             ReadFileTool(files: files),
@@ -39,7 +47,7 @@ public struct ToolRegistry: Sendable {
             GitLogTool(git: git),
             GitCommitTool(git: git),
             RunTestsTool(tests: tests),
-        ])
+        ] + additionalTools)
     }
 
     public var allTools: [any CodeTool] {
@@ -48,6 +56,12 @@ public struct ToolRegistry: Sendable {
 
     public func tool(named name: String) -> (any CodeTool)? {
         tools[name]
+    }
+
+    public func inspectionOnly() -> ToolRegistry {
+        ToolRegistry(tools: allTools.filter {
+            Self.inspectionToolNames.contains($0.name)
+        })
     }
 
     /// Validates input shape; returns a message when invalid.

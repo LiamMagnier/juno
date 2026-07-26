@@ -6,7 +6,17 @@ import JunoAuth
 import JunoCore
 import JunoSync
 
-/// The provider a model id routes to through the backend agent proxy.
+/// The request protocol a provider model speaks through the backend agent
+/// proxy. Every provider except Anthropic is OpenAI-compatible; a subset of
+/// OpenAI's own coding/pro models use the Responses API instead of Chat
+/// Completions.
+public enum CodeModelWireProtocol: String, Sendable {
+    case anthropicMessages
+    case openAIChat
+    case openAIResponses
+}
+
+/// The protocol family, retained as a compact presentation/testing surface.
 public enum CodeModelProvider: String, Sendable {
     case anthropic
     case openai
@@ -16,37 +26,103 @@ public enum CodeModelResolutionError: Error, Equatable, Sendable {
     case unsupportedModel(String)
 }
 
-/// Resolves a Juno model id to the provider path segment used by the existing
-/// `/api/agent/<provider>/<path>` proxy. Juno Code defaults to Claude models,
-/// which are fully wired; other providers fail closed until their request
-/// shape is added.
-public struct CodeModelProviderResolver: Sendable {
-    private let resolve: @Sendable (String) -> CodeModelProvider?
+public struct CodeModelRoute: Equatable, Sendable {
+    public let providerID: String
+    public let providerModelID: String
+    public let wireProtocol: CodeModelWireProtocol
 
-    public init(_ resolve: @escaping @Sendable (String) -> CodeModelProvider?) {
+    public init(
+        providerID: String,
+        providerModelID: String,
+        wireProtocol: CodeModelWireProtocol
+    ) {
+        self.providerID = providerID
+        self.providerModelID = providerModelID
+        self.wireProtocol = wireProtocol
+    }
+
+    public var provider: CodeModelProvider {
+        wireProtocol == .anthropicMessages ? .anthropic : .openai
+    }
+}
+
+/// Resolves a canonical Juno id (`provider:provider-model`) to the provider
+/// path and raw model id expected by `/api/agent`. Keeping this boundary
+/// explicit prevents canonical ids such as `anthropic:claude-sonnet-5` from
+/// leaking into provider-native request bodies.
+public struct CodeModelProviderResolver: Sendable {
+    private let resolve: @Sendable (String) -> CodeModelRoute?
+
+    public init(_ resolve: @escaping @Sendable (String) -> CodeModelRoute?) {
         self.resolve = resolve
     }
 
-    public func provider(for modelID: String) -> CodeModelProvider? {
+    public func route(for modelID: String) -> CodeModelRoute? {
         resolve(modelID)
     }
 
-    /// Prefix-based default: `claude*`/`anthropic*` → Anthropic.
+    public func provider(for modelID: String) -> CodeModelProvider? {
+        resolve(modelID)?.provider
+    }
+
+    /// The current website contract: Anthropic speaks Messages, OpenAI's
+    /// Pro/Codex snapshots speak Responses, and every other configured lab
+    /// speaks OpenAI-compatible Chat Completions.
     public static let `default` = CodeModelProviderResolver { modelID in
         let lowered = modelID.lowercased()
-        if lowered.hasPrefix("claude") || lowered.hasPrefix("anthropic") {
-            return .anthropic
+        if lowered.hasPrefix("claude") {
+            return CodeModelRoute(
+                providerID: "anthropic",
+                providerModelID: modelID,
+                wireProtocol: .anthropicMessages
+            )
         }
-        return nil
+
+        let separator: Character = lowered.contains(":") ? ":" : "/"
+        let components = modelID.split(separator: separator, maxSplits: 1).map(String.init)
+        guard components.count == 2 else { return nil }
+        let providerID = components[0].lowercased()
+        let providerModelID = components[1]
+        guard providerID != "juno", !providerModelID.isEmpty else { return nil }
+
+        if providerID == "anthropic" {
+            return CodeModelRoute(
+                providerID: providerID,
+                providerModelID: providerModelID,
+                wireProtocol: .anthropicMessages
+            )
+        }
+
+        let openAICompatibleProviders: Set<String> = [
+            "openai", "zhipu", "moonshot", "google", "meta", "deepseek",
+            "mistral", "xai", "minimax", "mimo", "qwen", "longcat",
+        ]
+        guard openAICompatibleProviders.contains(providerID) else { return nil }
+
+        let responseOnly = providerID == "openai"
+            && (providerModelID.lowercased().contains("-codex")
+                || providerModelID.lowercased().hasSuffix("-pro"))
+        return CodeModelRoute(
+            providerID: providerID,
+            providerModelID: providerModelID,
+            wireProtocol: responseOnly ? .openAIResponses : .openAIChat
+        )
+    }
+
+    /// Models the website's agent proxy can serve. `juno:auto` is deliberately
+    /// absent: Auto routes complete chat turns and cannot preserve an agent's
+    /// tool-call protocol across iterations.
+    public static func supports(_ modelID: String) -> Bool {
+        Self.default.route(for: modelID) != nil
     }
 }
 
 /// `AgentModelClient` backed by the authenticated Juno backend agent proxy.
 ///
 /// This is the single seam that turns a `ModelTurnRequest` into a real model
-/// turn: it builds a provider-native Anthropic Messages request (with the tool
-/// contracts), streams it through the existing refresh-aware bearer transport
-/// to `/api/agent/anthropic/v1/messages`, and maps the native provider SSE onto
+/// turn: it builds a provider-native Messages, Chat Completions, or Responses
+/// request (with the same tool contracts), streams it through the existing
+/// refresh-aware bearer transport, and maps provider SSE onto
 /// `ModelStreamEvent`. No provider key ever reaches the app, and no new auth or
 /// backend route is introduced.
 public struct BackendCodeModelClient: AgentModelClient {
@@ -79,27 +155,66 @@ public struct BackendCodeModelClient: AgentModelClient {
             let maxTokens = self.maxTokens
             let relay = Task {
                 do {
-                    guard let provider = resolver.provider(for: request.modelID) else {
+                    guard let route = resolver.route(for: request.modelID) else {
                         throw AgentModelClientError.invalidResponse(
-                            message: "Model \(request.modelID) is not available for Juno Code yet."
+                            message: "Model \(request.modelID) cannot run the Juno Code tool protocol."
                         )
                     }
-                    guard provider == .anthropic else {
-                        throw AgentModelClientError.invalidResponse(
-                            message: "\(provider.rawValue) models are not wired for Juno Code yet."
+
+                    let bearer: NativeBearerRequest
+                    switch route.wireProtocol {
+                    case .anthropicMessages:
+                        bearer = try NativeBearerRequest(
+                            path: "/api/agent/\(route.providerID)/v1/messages",
+                            method: .post,
+                            headers: try HTTPHeaders([
+                                "Accept": "text/event-stream",
+                                "Content-Type": "application/json",
+                                "anthropic-version": "2023-06-01",
+                            ]),
+                            body: try JSONEncoder().encode(
+                                AnthropicRequestBuilder.body(
+                                    for: request,
+                                    providerModelID: route.providerModelID,
+                                    maxTokens: maxTokens
+                                )
+                            )
+                        )
+                    case .openAIChat:
+                        bearer = try NativeBearerRequest(
+                            path: "/api/agent/\(route.providerID)/chat/completions",
+                            method: .post,
+                            headers: try HTTPHeaders([
+                                "Accept": "text/event-stream",
+                                "Content-Type": "application/json",
+                            ]),
+                            body: try JSONEncoder().encode(
+                                OpenAIChatRequestBuilder.body(
+                                    for: request,
+                                    providerModelID: route.providerModelID,
+                                    providerID: route.providerID,
+                                    maxTokens: maxTokens
+                                )
+                            )
+                        )
+                    case .openAIResponses:
+                        bearer = try NativeBearerRequest(
+                            path: "/api/agent/openai/responses",
+                            method: .post,
+                            headers: try HTTPHeaders([
+                                "Accept": "text/event-stream",
+                                "Content-Type": "application/json",
+                            ]),
+                            body: try JSONEncoder().encode(
+                                OpenAIResponsesRequestBuilder.body(
+                                    for: request,
+                                    providerModelID: route.providerModelID,
+                                    maxTokens: maxTokens
+                                )
+                            )
                         )
                     }
-                    let body = AnthropicRequestBuilder.body(for: request, maxTokens: maxTokens)
-                    let bearer = try NativeBearerRequest(
-                        path: "/api/agent/anthropic/v1/messages",
-                        method: .post,
-                        headers: try HTTPHeaders([
-                            "Accept": "text/event-stream",
-                            "Content-Type": "application/json",
-                            "anthropic-version": "2023-06-01",
-                        ]),
-                        body: try JSONEncoder().encode(body)
-                    )
+
                     let response = try await streamer.stream(bearer, for: accountID)
                     guard (200...299).contains(response.statusCode) else {
                         throw AgentModelClientError.transport(
@@ -114,7 +229,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                         )
                     }
 
-                    var decoder = AnthropicStreamDecoder()
+                    var decoder = ProviderStreamDecoder(protocol: route.wireProtocol)
                     var sawCompletion = false
                     for try await byte in response.bytes {
                         for payload in try decoder.consume(byte) {
@@ -124,7 +239,7 @@ public struct BackendCodeModelClient: AgentModelClient {
                             }
                         }
                     }
-                    for payload in decoder.finish() {
+                    for payload in try decoder.finish() {
                         for event in try decoder.events(from: payload) {
                             if case .turnCompleted = event { sawCompletion = true }
                             continuation.yield(event)
@@ -173,7 +288,11 @@ enum AnthropicRequestBuilder {
     /// Builds the Anthropic Messages body from a turn request. Adjacent
     /// same-role blocks are merged so tool_use/tool_result land in the correct
     /// alternating messages.
-    static func body(for request: ModelTurnRequest, maxTokens: Int) -> JSONValue {
+    static func body(
+        for request: ModelTurnRequest,
+        providerModelID: String,
+        maxTokens: Int
+    ) -> JSONValue {
         var messages: [JSONValue] = []
         var currentRole: String?
         var currentBlocks: [JSONValue] = []
@@ -222,7 +341,7 @@ enum AnthropicRequestBuilder {
         flush()
 
         var object: [String: JSONValue] = [
-            "model": .string(request.modelID),
+            "model": .string(providerModelID),
             "max_tokens": .number(Double(maxTokens)),
             "system": .string(request.systemPrompt),
             "messages": .array(messages),
@@ -242,7 +361,229 @@ enum AnthropicRequestBuilder {
     }
 }
 
+enum OpenAIChatRequestBuilder {
+    static func body(
+        for request: ModelTurnRequest,
+        providerModelID: String,
+        providerID: String,
+        maxTokens: Int
+    ) -> JSONValue {
+        var messages: [JSONValue] = [
+            .object([
+                "role": .string("system"),
+                "content": .string(request.systemPrompt),
+            ]),
+        ]
+
+        for message in request.messages {
+            switch message {
+            case let .user(text):
+                messages.append(.object([
+                    "role": .string("user"),
+                    "content": .string(text),
+                ]))
+            case let .assistant(text):
+                messages.append(.object([
+                    "role": .string("assistant"),
+                    "content": .string(text),
+                ]))
+            case let .toolCall(id, name, input):
+                messages.append(.object([
+                    "role": .string("assistant"),
+                    "content": .null,
+                    "tool_calls": .array([
+                        .object([
+                            "id": .string(id),
+                            "type": .string("function"),
+                            "function": .object([
+                                "name": .string(name),
+                                "arguments": .string(jsonString(input)),
+                            ]),
+                        ]),
+                    ]),
+                ]))
+            case let .toolResult(id, content, _):
+                messages.append(.object([
+                    "role": .string("tool"),
+                    "tool_call_id": .string(id),
+                    "content": .string(content),
+                ]))
+            }
+        }
+
+        var object: [String: JSONValue] = [
+            "model": .string(providerModelID),
+            "messages": .array(messages),
+            "stream": .bool(true),
+            "stream_options": .object(["include_usage": .bool(true)]),
+        ]
+        if providerID == "openai" {
+            object["max_completion_tokens"] = .number(Double(maxTokens))
+        } else {
+            object["max_tokens"] = .number(Double(maxTokens))
+        }
+        if !request.tools.isEmpty {
+            object["tools"] = .array(request.tools.map { tool in
+                .object([
+                    "type": .string("function"),
+                    "function": .object([
+                        "name": .string(tool.name),
+                        "description": .string(tool.description),
+                        "parameters": tool.inputSchema,
+                    ]),
+                ])
+            })
+        }
+        return .object(object)
+    }
+}
+
+enum OpenAIResponsesRequestBuilder {
+    static func body(
+        for request: ModelTurnRequest,
+        providerModelID: String,
+        maxTokens: Int
+    ) -> JSONValue {
+        var input: [JSONValue] = []
+        for message in request.messages {
+            switch message {
+            case let .user(text):
+                input.append(.object([
+                    "role": .string("user"),
+                    "content": .array([
+                        .object(["type": .string("input_text"), "text": .string(text)]),
+                    ]),
+                ]))
+            case let .assistant(text):
+                input.append(.object([
+                    "role": .string("assistant"),
+                    "content": .array([
+                        .object(["type": .string("output_text"), "text": .string(text)]),
+                    ]),
+                ]))
+            case let .toolCall(id, name, arguments):
+                input.append(.object([
+                    "type": .string("function_call"),
+                    "call_id": .string(id),
+                    "name": .string(name),
+                    "arguments": .string(jsonString(arguments)),
+                ]))
+            case let .toolResult(id, content, _):
+                input.append(.object([
+                    "type": .string("function_call_output"),
+                    "call_id": .string(id),
+                    "output": .string(content),
+                ]))
+            }
+        }
+
+        var object: [String: JSONValue] = [
+            "model": .string(providerModelID),
+            "instructions": .string(request.systemPrompt),
+            "input": .array(input),
+            "stream": .bool(true),
+            "store": .bool(false),
+            "max_output_tokens": .number(Double(maxTokens)),
+            "reasoning": .object([
+                "effort": .string(request.reasoningEffort.rawValue),
+                "summary": .string("detailed"),
+            ]),
+        ]
+        if !request.tools.isEmpty {
+            object["tools"] = .array(request.tools.map { tool in
+                .object([
+                    "type": .string("function"),
+                    "name": .string(tool.name),
+                    "description": .string(tool.description),
+                    "parameters": tool.inputSchema,
+                    "strict": .bool(false),
+                ])
+            })
+        }
+        return .object(object)
+    }
+}
+
+private func jsonString(_ value: JSONValue) -> String {
+    guard let data = try? JSONEncoder().encode(value),
+          let string = String(data: data, encoding: .utf8)
+    else { return "{}" }
+    return string
+}
+
 // MARK: - Streaming decode
+
+private struct ProviderStreamDecoder {
+    private enum Storage {
+        case anthropic(AnthropicStreamDecoder)
+        case chat(OpenAIChatStreamDecoder)
+        case responses(OpenAIResponsesStreamDecoder)
+    }
+
+    private var storage: Storage
+
+    init(protocol wireProtocol: CodeModelWireProtocol) {
+        switch wireProtocol {
+        case .anthropicMessages:
+            storage = .anthropic(AnthropicStreamDecoder())
+        case .openAIChat:
+            storage = .chat(OpenAIChatStreamDecoder())
+        case .openAIResponses:
+            storage = .responses(OpenAIResponsesStreamDecoder())
+        }
+    }
+
+    mutating func consume(_ byte: UInt8) throws -> [Data] {
+        switch storage {
+        case .anthropic(var decoder):
+            let payloads = try decoder.consume(byte)
+            storage = .anthropic(decoder)
+            return payloads
+        case .chat(var decoder):
+            let payloads = try decoder.consume(byte)
+            storage = .chat(decoder)
+            return payloads
+        case .responses(var decoder):
+            let payloads = try decoder.consume(byte)
+            storage = .responses(decoder)
+            return payloads
+        }
+    }
+
+    mutating func finish() throws -> [Data] {
+        switch storage {
+        case .anthropic(var decoder):
+            let payloads = decoder.finish()
+            storage = .anthropic(decoder)
+            return payloads
+        case .chat(var decoder):
+            let payloads = try decoder.finish()
+            storage = .chat(decoder)
+            return payloads
+        case .responses(var decoder):
+            let payloads = try decoder.finish()
+            storage = .responses(decoder)
+            return payloads
+        }
+    }
+
+    mutating func events(from payload: Data) throws -> [ModelStreamEvent] {
+        switch storage {
+        case .anthropic(var decoder):
+            let events = try decoder.events(from: payload)
+            storage = .anthropic(decoder)
+            return events
+        case .chat(var decoder):
+            let events = try decoder.events(from: payload)
+            storage = .chat(decoder)
+            return events
+        case .responses(var decoder):
+            let events = try decoder.events(from: payload)
+            storage = .responses(decoder)
+            return events
+        }
+    }
+}
 
 /// Line-based SSE reader that surfaces the JSON payload of each `data:` event.
 /// Anthropic includes a `type` field inside every data payload, so the event
@@ -428,4 +769,220 @@ private struct StreamEventWire: Decodable {
         case type, index, delta, error
         case contentBlock = "content_block"
     }
+}
+
+/// Shared bounded SSE framing for the two OpenAI-compatible protocols.
+private struct RawSSEDecoder {
+    private static let maximumLineBytes = 6 * 1_024 * 1_024
+    private static let maximumEventBytes = 6 * 1_024 * 1_024
+
+    private var line = Data()
+    private var dataLines: [Data] = []
+    private var eventBytes = 0
+
+    mutating func consume(_ byte: UInt8) throws -> [Data] {
+        guard byte == 0x0A else {
+            guard line.count < Self.maximumLineBytes else {
+                throw AgentModelClientError.invalidResponse(message: "Event line too large.")
+            }
+            line.append(byte)
+            return []
+        }
+        return try finishLine()
+    }
+
+    mutating func finish() throws -> [Data] {
+        var payloads: [Data] = []
+        if !line.isEmpty {
+            payloads.append(contentsOf: try finishLine())
+        }
+        if !dataLines.isEmpty {
+            payloads.append(dispatch())
+        }
+        return payloads
+    }
+
+    private mutating func finishLine() throws -> [Data] {
+        if line.last == 0x0D { line.removeLast() }
+        defer { line.removeAll(keepingCapacity: true) }
+        if line.isEmpty {
+            return dataLines.isEmpty ? [] : [dispatch()]
+        }
+        if line.first == 0x3A { return [] }
+        let separator = line.firstIndex(of: 0x3A)
+        let field = separator.map { line[..<$0] } ?? line[...]
+        guard field.elementsEqual(Data("data".utf8)) else { return [] }
+        var value = separator.map { Data(line[line.index(after: $0)...]) } ?? Data()
+        if value.first == 0x20 { value.removeFirst() }
+        eventBytes += value.count
+        guard eventBytes <= Self.maximumEventBytes else {
+            throw AgentModelClientError.invalidResponse(message: "Event payload too large.")
+        }
+        dataLines.append(value)
+        return []
+    }
+
+    private mutating func dispatch() -> Data {
+        var payload = Data()
+        for (index, value) in dataLines.enumerated() {
+            if index > 0 { payload.append(0x0A) }
+            payload.append(value)
+        }
+        dataLines.removeAll(keepingCapacity: true)
+        eventBytes = 0
+        return payload
+    }
+}
+
+private struct OpenAIChatStreamDecoder {
+    private struct ToolBlock {
+        var id = ""
+        var name = ""
+        var arguments = ""
+    }
+
+    private var sse = RawSSEDecoder()
+    private var toolBlocks: [Int: ToolBlock] = [:]
+    private var completed = false
+
+    mutating func consume(_ byte: UInt8) throws -> [Data] {
+        try sse.consume(byte)
+    }
+
+    mutating func finish() throws -> [Data] {
+        try sse.finish()
+    }
+
+    mutating func events(from payload: Data) throws -> [ModelStreamEvent] {
+        guard !payload.isEmpty, payload != Data("[DONE]".utf8) else { return [] }
+        let root = try decodeObject(payload)
+        if let error = root["error"]?["message"]?.stringValue {
+            throw AgentModelClientError.transport(message: error)
+        }
+        guard let choice = root["choices"]?.arrayValue?.first else { return [] }
+        var events: [ModelStreamEvent] = []
+        if let delta = choice["delta"] {
+            if let text = delta["content"]?.stringValue, !text.isEmpty {
+                events.append(.textDelta(text))
+            }
+            if let reasoning = delta["reasoning_content"]?.stringValue,
+               !reasoning.isEmpty
+            {
+                events.append(.reasoningSummary(reasoning))
+            }
+            for call in delta["tool_calls"]?.arrayValue ?? [] {
+                guard let index = call["index"]?.intValue else { continue }
+                var block = toolBlocks[index] ?? ToolBlock()
+                if let id = call["id"]?.stringValue { block.id = id }
+                if let name = call["function"]?["name"]?.stringValue {
+                    block.name = name
+                }
+                if let arguments = call["function"]?["arguments"]?.stringValue {
+                    block.arguments += arguments
+                }
+                toolBlocks[index] = block
+            }
+        }
+        if let finishReason = choice["finish_reason"]?.stringValue, !completed {
+            completed = true
+            for (_, block) in toolBlocks.sorted(by: { $0.key < $1.key })
+                where !block.id.isEmpty && !block.name.isEmpty
+            {
+                events.append(.toolCallRequested(
+                    id: block.id,
+                    name: block.name,
+                    input: parseToolInput(block.arguments)
+                ))
+            }
+            let reason: ModelStopReason
+            switch finishReason {
+            case "tool_calls": reason = .toolUse
+            case "length": reason = .maxTokens
+            default: reason = .endTurn
+            }
+            events.append(.turnCompleted(reason))
+        }
+        return events
+    }
+}
+
+private struct OpenAIResponsesStreamDecoder {
+    private var sse = RawSSEDecoder()
+    private var sawToolCall = false
+    private var completed = false
+
+    mutating func consume(_ byte: UInt8) throws -> [Data] {
+        try sse.consume(byte)
+    }
+
+    mutating func finish() throws -> [Data] {
+        try sse.finish()
+    }
+
+    mutating func events(from payload: Data) throws -> [ModelStreamEvent] {
+        guard !payload.isEmpty, payload != Data("[DONE]".utf8) else { return [] }
+        let root = try decodeObject(payload)
+        guard let type = root["type"]?.stringValue else {
+            throw AgentModelClientError.invalidResponse(
+                message: "Malformed Responses API event."
+            )
+        }
+        switch type {
+        case "response.output_text.delta":
+            guard let text = root["delta"]?.stringValue, !text.isEmpty else { return [] }
+            return [.textDelta(text)]
+        case "response.reasoning_summary_text.delta":
+            guard let text = root["delta"]?.stringValue, !text.isEmpty else { return [] }
+            return [.reasoningSummary(text)]
+        case "response.output_item.done":
+            guard let item = root["item"],
+                  item["type"]?.stringValue == "function_call",
+                  let id = item["call_id"]?.stringValue,
+                  let name = item["name"]?.stringValue
+            else { return [] }
+            sawToolCall = true
+            return [.toolCallRequested(
+                id: id,
+                name: name,
+                input: parseToolInput(item["arguments"]?.stringValue ?? "{}")
+            )]
+        case "response.completed":
+            guard !completed else { return [] }
+            completed = true
+            return [.turnCompleted(sawToolCall ? .toolUse : .endTurn)]
+        case "response.incomplete":
+            guard !completed else { return [] }
+            completed = true
+            let reason = root["response"]?["incomplete_details"]?["reason"]?.stringValue
+            return [.turnCompleted(reason == "max_output_tokens" ? .maxTokens : .endTurn)]
+        case "response.failed":
+            let message = root["response"]?["error"]?["message"]?.stringValue
+                ?? "The Responses API run failed."
+            throw AgentModelClientError.transport(message: message)
+        case "error":
+            let message = root["message"]?.stringValue
+                ?? root["error"]?["message"]?.stringValue
+                ?? "The Responses API stream failed."
+            throw AgentModelClientError.transport(message: message)
+        default:
+            return []
+        }
+    }
+}
+
+private func decodeObject(_ payload: Data) throws -> JSONValue {
+    do {
+        return try JSONDecoder().decode(JSONValue.self, from: payload)
+    } catch {
+        throw AgentModelClientError.invalidResponse(message: "Malformed model event.")
+    }
+}
+
+private func parseToolInput(_ json: String) -> JSONValue {
+    let trimmed = json.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty,
+          let data = trimmed.data(using: .utf8),
+          let value = try? JSONDecoder().decode(JSONValue.self, from: data)
+    else { return .object([:]) }
+    return value
 }

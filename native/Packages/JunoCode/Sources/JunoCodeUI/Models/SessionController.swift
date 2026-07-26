@@ -38,10 +38,130 @@ public struct TrackedChange: Identifiable, Sendable, Equatable {
     }
 }
 
+/// A note the reader attached to a hunk or a line while reviewing.
+///
+/// Batched like a pull-request review rather than sent one at a time, because a
+/// review is one thought about several places. There is no review-comment event
+/// in `SessionEventPayload`, so the batch lives here for the life of the
+/// session and only becomes durable when it is submitted — as a real
+/// `userPrompt`, which does persist.
+public struct ReviewComment: Identifiable, Sendable, Equatable {
+    public let id: UUID
+    public let path: String
+    /// The hunk's `@@` range, so the submitted prompt names the region.
+    public let hunkHeader: String
+    /// The new-file line the note is anchored to, when it is a line note.
+    public let lineNumber: Int?
+    public let quotedLine: String?
+    public let text: String
+
+    public init(
+        id: UUID = UUID(),
+        path: String,
+        hunkHeader: String,
+        lineNumber: Int? = nil,
+        quotedLine: String? = nil,
+        text: String
+    ) {
+        self.id = id
+        self.path = path
+        self.hunkHeader = hunkHeader
+        self.lineNumber = lineNumber
+        self.quotedLine = quotedLine
+        self.text = text
+    }
+
+    /// The batch as one prompt: grouped by file, each note quoting the line it
+    /// is about so the agent can locate it without a second round trip.
+    public static func prompt(from comments: [ReviewComment]) -> String {
+        var lines = ["Review notes on my working changes:"]
+        for path in comments.map(\.path).reduced() {
+            lines.append("")
+            lines.append(path)
+            for comment in comments where comment.path == path {
+                var location = comment.hunkHeader
+                if let lineNumber = comment.lineNumber {
+                    location += " line \(lineNumber)"
+                }
+                lines.append("- \(location)")
+                if let quotedLine = comment.quotedLine,
+                   !quotedLine.trimmingCharacters(in: .whitespaces).isEmpty
+                {
+                    lines.append("  > \(quotedLine)")
+                }
+                lines.append("  \(comment.text)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+}
+
+private extension Array where Element: Hashable {
+    /// First-occurrence order, preserved: the review reads in the order the
+    /// reader wrote it, not in hash order.
+    func reduced() -> [Element] {
+        var seen: Set<Element> = []
+        return filter { seen.insert($0).inserted }
+    }
+}
+
 public struct TerminalLine: Identifiable, Sendable, Equatable {
     public let id: Int
     public let channel: ToolOutputChannel
     public let text: String
+    /// The tool call that produced this line, when it is known. It is what lets
+    /// the Tests pane show the output of *that* run rather than the tail of
+    /// whatever else the agent has printed since.
+    public let toolCallID: String?
+
+    public init(
+        id: Int,
+        channel: ToolOutputChannel,
+        text: String,
+        toolCallID: String? = nil
+    ) {
+        self.id = id
+        self.channel = channel
+        self.text = text
+        self.toolCallID = toolCallID
+    }
+}
+
+/// One command the reader typed into the console, and what actually happened to
+/// it. There is no PTY and no shell session: this is a one-shot process run
+/// through the same gated `run_command` tool the agent uses.
+public struct ConsoleCommandRun: Identifiable, Sendable, Equatable {
+    public enum Outcome: Sendable, Equatable {
+        case running
+        /// `detail` is the runtime's own exit footer — `[exit 1, 0.4s]` — or the
+        /// refusal that stopped it, never a summary this layer invented.
+        case finished(detail: String, failed: Bool)
+    }
+
+    public let id: String
+    public let command: String
+    public let startedAt: Date
+    public var outcome: Outcome
+
+    public var isRunning: Bool { outcome == .running }
+}
+
+/// A concurrency-safe snapshot used by the manual workspace editor.
+public struct WorkspaceEditorDocument: Identifiable, Sendable, Equatable {
+    public var id: String { path.value }
+    public let path: WorkspacePath
+    public let content: String
+    public let fingerprint: FileFingerprint
+    public let byteCount: Int
+    public let lineCount: Int
+
+    public init(from result: FileReadResult) {
+        path = result.path
+        content = result.content
+        fingerprint = result.fingerprint
+        byteCount = result.byteCount
+        lineCount = result.lineCount
+    }
 }
 
 /// Live state and actions for one code session. Bridges the actor-based
@@ -58,7 +178,18 @@ public final class SessionController {
         let context: WorkspaceContext
         let store: CodeSessionStore
         let permissions: PermissionCoordinator
-        let orchestrator: AgentOrchestrator
+        let modelClient: any AgentModelClient
+    }
+
+    /// The part of the configuration an orchestrator cannot be changed on: its
+    /// tool registry, system prompt, model and reasoning effort are all fixed at
+    /// construction. Permission mode is deliberately absent —
+    /// `PermissionCoordinator.setMode` applies that live, including to a run
+    /// already in flight.
+    private struct TurnContract: Equatable {
+        let behavior: AgentBehavior
+        let modelID: String
+        let reasoningEffort: ReasoningEffort
     }
 
     public let sessionID: CodeSessionID
@@ -75,18 +206,68 @@ public final class SessionController {
     public private(set) var changes: [TrackedChange] = []
     public private(set) var terminal: [TerminalLine] = []
     public private(set) var lastTestRun: TestRunCompletedEvent?
+    /// The tool call `lastTestRun` came from, so the Tests pane can show that
+    /// run's own output instead of the tail of the terminal.
+    public private(set) var lastTestRunToolCallID: String?
+    /// True only while a run the reader started from the Tests pane is in
+    /// flight. Agent-started runs are visible through the session status.
+    public private(set) var isRunningTest = false
+    /// The command the reader typed into the console, and its real outcome.
+    public private(set) var consoleRun: ConsoleCommandRun?
+    /// Checkpoints recorded for this session. Per file, never per run — there is
+    /// no run-level snapshot to count.
+    public private(set) var checkpointCount = 0
     public private(set) var gitStatus: GitStatusSummary?
     public private(set) var gitHistory: [GitCommitInfo] = []
+    public private(set) var gitHubPullRequest: GitHubPullRequestStatus?
+    public private(set) var gitHubStatusMessage: String?
+    public private(set) var isLoadingGitHubStatus = false
     public private(set) var testSuggestions: [TestSuggestion] = []
     public private(set) var rootEntries: [FileEntry] = []
     public private(set) var instructionFiles: [FileEntry] = []
     public private(set) var runStartedAt: Date?
+    /// The assistant text accumulating in the turn that is streaming right now,
+    /// and empty whenever nothing is streaming. Never persisted: the
+    /// `assistantMessage` event is the record, and this is replaced by it.
+    public private(set) var liveAssistantText = ""
     public var composerText = ""
     public private(set) var transientError: String?
+    public private(set) var computerUseActive = false
+    public private(set) var computerUseScreenPermission: ComputerUsePermissionState =
+        .notDetermined
+    public private(set) var computerUseAccessibilityPermission:
+        ComputerUsePermissionState = .notDetermined
+    public private(set) var computerUseDisplayBounds: CGRect?
+    public private(set) var computerUseJournal: [ComputerUseJournalEntry] = []
+    public private(set) var computerUseScreenshot: Data?
+    public private(set) var acceptedHunks: Set<String> = []
+
+    /// Review state for this session — which file is open, unified or side-by-side,
+    /// the focused path, the comment target.
+    ///
+    /// Owned by the controller because it is per-session: switching sessions must
+    /// not carry one session's open document into another's review. It lives here
+    /// rather than in the environment so the canvas and the inspector, which are
+    /// siblings in different columns of the window, cannot end up holding two
+    /// different instances and disagreeing about what is being reviewed.
+    public let review = ReviewModel()
 
     private var storeObserver: UUID?
+    /// The orchestrator serving the contract the composer currently states,
+    /// built on first send and replaced whenever that contract changes.
+    private var orchestrator: AgentOrchestrator?
+    private var orchestratorContract: TurnContract?
     private var terminalLineCounter = 0
+    /// The last console line, when it ended without a line break and the rest of
+    /// it is still to arrive.
+    private var pendingTerminalLine: (id: Int, channel: ToolOutputChannel, toolCallID: String?)?
+    /// The tool call that has started and not yet completed. Side effects are
+    /// appended while the call is still open, which is what lets a test result
+    /// be attributed to the run that produced it.
+    private var openToolCallID: String?
     private var reviewStates: [String: TrackedChange.ReviewState] = [:]
+    private var lineStatsOverrides: [String: (added: Int, removed: Int)] = [:]
+    private var hunkReviewCheckpointIDs: Set<String> = []
     /// Workspace facts the views render. Stored rather than read through
     /// `context` so the inspector and canvas need no workspace in preview.
     private let workspaceSurface: WorkspaceSurface
@@ -110,31 +291,95 @@ public final class SessionController {
     ) {
         self.sessionID = session.id
         self.session = session
-        let permissions = PermissionCoordinator(
-            sessionID: session.id,
-            mode: session.configuration.permissionMode
-        )
+        let behavior = session.configuration.behavior
         self.live = Live(
             context: context,
             store: store,
-            permissions: permissions,
-            orchestrator: AgentOrchestrator(
+            permissions: PermissionCoordinator(
                 sessionID: session.id,
-                model: modelClient,
-                registry: context.registry,
-                permissions: permissions,
-                store: store,
-                configuration: AgentOrchestrator.Configuration(
-                    systemPrompt: context.systemPrompt()
-                ),
-                modelID: session.configuration.modelID,
-                reasoningEffort: session.configuration.reasoningEffort
-            )
+                mode: behavior == .code ? session.configuration.permissionMode : .readOnly
+            ),
+            modelClient: modelClient
         )
         self.workspaceSurface = WorkspaceSurface(
             displayName: context.record.descriptor.displayName,
             localPathHint: context.record.descriptor.localPathHint,
             isGitRepository: context.record.descriptor.isGitRepository
+        )
+    }
+
+    // MARK: - The turn contract
+
+    /// The orchestrator for the contract the composer currently states, built on
+    /// demand and rebuilt when that contract changes.
+    ///
+    /// This is what makes the composer's mode, model and reasoning controls
+    /// real rather than decorative. All three are fixed at an orchestrator's
+    /// construction — behaviour selects the tool registry and the system prompt,
+    /// the model and effort are sent with every turn — so changing one has to
+    /// replace the orchestrator. Conversation continuity survives it because the
+    /// store holds the model context, which the replacement reloads.
+    private func currentOrchestrator(_ live: Live) async -> AgentOrchestrator {
+        let contract = TurnContract(
+            behavior: session.configuration.behavior,
+            modelID: session.configuration.modelID,
+            reasoningEffort: session.configuration.reasoningEffort
+        )
+        if let orchestrator, orchestratorContract == contract {
+            return orchestrator
+        }
+        // Never swap an orchestrator out mid-run: it owns the run task and the
+        // approval observer for the turn in flight, and the replacement would
+        // know about neither.
+        if let orchestrator, await orchestrator.isRunning {
+            return orchestrator
+        }
+        await orchestrator?.release()
+        let next = makeOrchestrator(contract, live: live)
+        await next.observeLiveText { [weak self] text in
+            Task { @MainActor [weak self] in
+                self?.liveAssistantText = text
+            }
+        }
+        orchestrator = next
+        orchestratorContract = contract
+        return next
+    }
+
+    /// Ask and Plan get the inspection-only registry, so a read-only turn is
+    /// read-only *by construction* rather than by policy alone. Delegation is
+    /// offered only in Code, where the parent can act on what a sub-agent finds.
+    private func makeOrchestrator(_ contract: TurnContract, live: Live) -> AgentOrchestrator {
+        let systemPrompt = live.context.systemPrompt(
+            behavior: contract.behavior,
+            role: session.configuration.role
+        )
+        var tools = contract.behavior == .code
+            ? live.context.registry.allTools
+            : live.context.registry.inspectionOnly().allTools
+        if contract.behavior == .code {
+            tools.append(
+                DelegateTaskTool(
+                    model: live.modelClient,
+                    registry: live.context.registry,
+                    store: live.store,
+                    workspaceID: session.workspaceID,
+                    workspaceName: workspaceSurface.displayName,
+                    modelID: contract.modelID,
+                    reasoningEffort: contract.reasoningEffort,
+                    parentSystemPrompt: systemPrompt
+                )
+            )
+        }
+        return AgentOrchestrator(
+            sessionID: sessionID,
+            model: live.modelClient,
+            registry: ToolRegistry(tools: tools),
+            permissions: live.permissions,
+            store: live.store,
+            configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
+            modelID: contract.modelID,
+            reasoningEffort: contract.reasoningEffort
         )
     }
 
@@ -180,6 +425,18 @@ public final class SessionController {
         return Date().timeIntervalSince(runStartedAt)
     }
 
+    /// False when no model transport has been composed — the app is not signed
+    /// in, so the agent cannot run. The composer states that and disables Send,
+    /// rather than accepting a message and failing on the first turn.
+    ///
+    /// The DEBUG preview harness has no transport at all and answers `true`: it
+    /// records the prompt and then says plainly that nothing will answer it,
+    /// which is what makes the transcript inspectable for visual QA.
+    public var isAgentTransportConfigured: Bool {
+        guard let live else { return true }
+        return !(live.modelClient is UnconfiguredModelClient)
+    }
+
     // MARK: - Lifecycle
 
     /// Loads the persisted transcript and wires live observation. Idempotent.
@@ -195,16 +452,21 @@ public final class SessionController {
         }
         let restored = await live.store.events(for: sessionID)
         events = restored
+        rebuildTerminal()
         rebuildDerivedState()
         if let current = try? await live.store.session(id: sessionID) {
             session = current
         }
         pendingApprovals = await live.permissions.pendingApprovals
         await refreshWorkspacePanels()
+        await refreshComputerUse()
     }
 
     public func detach() async {
         guard let live else { return }
+        await live.context.computerUse.deactivate()
+        computerUseActive = false
+        computerUseScreenshot = nil
         if let token = storeObserver {
             await live.store.removeObserver(token)
             storeObserver = nil
@@ -216,6 +478,14 @@ public final class SessionController {
     public func send() async {
         let prompt = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty else { return }
+        // One run at a time, refused here rather than left to the orchestrator: a
+        // turn whose contract changed is served by a *new* orchestrator, and that
+        // one would not know the previous is still in flight. The message stays in
+        // the composer so nothing the reader typed is lost.
+        guard !session.status.isActive else {
+            transientError = "Juno is already working — stop the run before sending."
+            return
+        }
         composerText = ""
         transientError = nil
         guard let live else {
@@ -225,8 +495,24 @@ public final class SessionController {
             return
         }
         runStartedAt = Date()
+        liveAssistantText = ""
+        let configuration = session.configuration
+        // Written before the prompt, so the transcript reads contract-then-turn
+        // and a past turn's permissions can still be read off the record long
+        // after the composer has moved on to a different mode.
+        _ = try? await live.store.appendEvent(
+            sessionID: sessionID,
+            payload: .turnConfiguration(
+                TurnConfigurationEvent(
+                    behavior: configuration.behavior,
+                    permissionMode: configuration.permissionMode,
+                    modelID: configuration.modelID,
+                    reasoningEffort: configuration.reasoningEffort
+                )
+            )
+        )
         do {
-            try await live.orchestrator.submit(prompt: prompt)
+            try await currentOrchestrator(live).submit(prompt: prompt)
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
         } catch {
@@ -235,13 +521,120 @@ public final class SessionController {
     }
 
     public func stop() async {
-        guard let live else {
+        guard live != nil else {
             #if DEBUG
             previewStop()
             #endif
             return
         }
-        await live.orchestrator.stop()
+        await orchestrator?.stop()
+        liveAssistantText = ""
+    }
+
+    /// Sets the mode the *next* turn runs under.
+    ///
+    /// Leaving Code applies to the permission coordinator immediately, so a mode
+    /// change during a run cannot leave a read-only session holding write
+    /// authority, and drops the Computer Use grant with it. The registry and
+    /// system prompt are rebuilt on the next send.
+    public func setBehavior(_ behavior: AgentBehavior) async {
+        guard behavior != session.configuration.behavior else { return }
+        guard let live else {
+            session.configuration.behavior = behavior
+            return
+        }
+        await live.permissions.setMode(
+            behavior == .code ? session.configuration.permissionMode : .readOnly
+        )
+        if behavior != .code {
+            await live.context.computerUse.emergencyStop()
+            computerUseScreenshot = nil
+        }
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.behavior = behavior
+            if behavior != .code {
+                session.configuration.computerUseEnabled = false
+            }
+        }
+        if behavior != .code {
+            await refreshComputerUse()
+        }
+    }
+
+    /// Called only from the visible Computer Use control. This is the explicit
+    /// per-session consent boundary; creating or reopening a session never
+    /// starts screen capture or input control on its own.
+    public func activateComputerUse() async {
+        guard let live, session.configuration.computerUseEnabled else { return }
+        do {
+            try await live.context.computerUse.activate(
+                sessionID: sessionID,
+                userConsented: true
+            )
+            computerUseActive = true
+            transientError = nil
+        } catch ComputerUseError.screenCapturePermissionMissing {
+            transientError =
+                "Screen Recording permission is required. Enable Juno in System Settings › Privacy & Security."
+        } catch ComputerUseError.accessibilityPermissionMissing {
+            transientError =
+                "Accessibility permission is required. Enable Juno in System Settings › Privacy & Security."
+        } catch {
+            transientError = "Computer Use could not start: \(error)"
+        }
+        await refreshComputerUse()
+    }
+
+    public func stopComputerUse() async {
+        guard let live else { return }
+        await live.context.computerUse.emergencyStop()
+        computerUseScreenshot = nil
+        await refreshComputerUse()
+    }
+
+    /// Changes only this session's explicit capability setting. Enabling the
+    /// setting does not start capture; the reader must still activate Computer
+    /// Use with a separate visible gesture.
+    public func setComputerUseEnabled(_ enabled: Bool) async {
+        guard let live else {
+            session.configuration.computerUseEnabled = enabled
+            return
+        }
+        if !enabled {
+            await live.context.computerUse.emergencyStop()
+            computerUseScreenshot = nil
+        }
+        _ = try? await live.store.updateSession(id: sessionID) { session in
+            session.configuration.computerUseEnabled = enabled
+        }
+        await refreshComputerUse()
+    }
+
+    /// Captures through the coordinator so active-session checks, rate limits,
+    /// journaling, and the emergency-stop boundary are never bypassed.
+    public func captureComputerUseScreenshot() async {
+        guard let live else { return }
+        do {
+            let captures = try await live.context.computerUse.perform(
+                .screenshot,
+                sessionID: sessionID
+            )
+            computerUseScreenshot = captures.after
+            transientError = nil
+        } catch {
+            transientError = "Screen capture failed: \(error)"
+        }
+        await refreshComputerUse()
+    }
+
+    public func refreshComputerUse() async {
+        guard let live else { return }
+        let snapshot = await live.context.computerUse.snapshot()
+        computerUseActive = snapshot.isActive
+        computerUseScreenPermission = snapshot.screenCapturePermission
+        computerUseAccessibilityPermission = snapshot.accessibilityPermission
+        computerUseDisplayBounds = snapshot.displayBounds
+        computerUseJournal = snapshot.journal.filter { $0.sessionID == sessionID }
     }
 
     public func approve(_ approvalID: String) async {
@@ -264,7 +657,34 @@ public final class SessionController {
         await live.permissions.resolve(approvalID: approvalID, decision: .denied)
     }
 
+    /// Approves this action and stops asking about workspace edits for the rest
+    /// of the session, in one gesture.
+    ///
+    /// Offered only for a `write` action under `askBeforeChanges` — the one case
+    /// where the reader has just answered, in the concrete, the question the mode
+    /// will otherwise keep asking. The mode is raised first so the approval that
+    /// follows is not the last one this session honours before reverting.
+    public func approveAllowingFurtherEdits(_ approvalID: String) async {
+        await setPermissionMode(.workspaceWrite)
+        await approve(approvalID)
+    }
+
+    /// Denies approvals that have outlived their expiry.
+    ///
+    /// `PermissionCoordinator` fails closed on an expired approval but nothing in
+    /// the app ticks, so an expired request would otherwise leave the suspended
+    /// tool waiting for an answer the policy has already given. The approval card
+    /// calls this the moment its countdown runs out.
+    public func sweepExpiredApprovals() async {
+        guard let live else { return }
+        await live.permissions.sweepExpired()
+    }
+
     public func setPermissionMode(_ mode: PermissionMode) async {
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return
+        }
         guard let live else {
             session.configuration.permissionMode = mode
             return
@@ -340,6 +760,102 @@ public final class SessionController {
         }
     }
 
+    public func isHunkAccepted(path: String, hunk: DiffHunk) -> Bool {
+        acceptedHunks.contains(hunkReviewKey(path: path, hunk: hunk))
+    }
+
+    public func acceptHunk(path: String, hunk: DiffHunk) {
+        acceptedHunks.insert(hunkReviewKey(path: path, hunk: hunk))
+    }
+
+    /// Reverts one currently rendered hunk through a fingerprint-bound,
+    /// checkpointed write. If the file changed since the diff was loaded, the
+    /// operation fails instead of applying the hunk at an outdated line range.
+    @discardableResult
+    public func rejectHunk(path: String, index: Int) async -> Bool {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return false
+        }
+        guard let live else {
+            transientError = "Preview mode does not revert workspace hunks."
+            return false
+        }
+        guard let change = changes.first(where: { $0.path == path }),
+              let oldestID = change.checkpointIDs.first,
+              let checkpoint = await live.context.checkpoints.checkpoint(id: oldestID),
+              let workspacePath = try? WorkspacePath(path)
+        else {
+            transientError = "The original checkpoint for \(path) is unavailable."
+            return false
+        }
+        do {
+            let current = try await live.context.files.read(
+                workspacePath,
+                limit: OutputLimit(
+                    maximumBytes: FileOperationService.defaultMaximumFileBytes
+                )
+            )
+            guard !current.wasTruncated else {
+                transientError = "\(path) is too large to review safely."
+                return false
+            }
+            let original = checkpoint.preContent ?? ""
+            let currentDiff = try DiffEngine.diff(old: original, new: current.content)
+            let reverted = try DiffHunkReverter.reverting(
+                hunkAt: index,
+                in: current.content,
+                from: currentDiff
+            )
+            let mutation = try await live.context.files.write(
+                workspacePath,
+                content: reverted,
+                expectedBase: current.fingerprint,
+                sessionID: sessionID
+            )
+            if let checkpointID = mutation.checkpointID {
+                hunkReviewCheckpointIDs.insert(checkpointID)
+            }
+            let remainingDiff = try DiffEngine.diff(old: original, new: reverted)
+            lineStatsOverrides[path] = (
+                remainingDiff.linesAdded,
+                remainingDiff.linesRemoved
+            )
+            acceptedHunks = Set(
+                acceptedHunks.filter { !$0.hasPrefix("\(path)\u{1f}") }
+            )
+            if remainingDiff.isEmpty {
+                reviewStates[path] = .rejected
+            }
+            try await live.store.appendEvent(
+                sessionID: sessionID,
+                payload: .fileChanged(
+                    FileChangedEvent(
+                        path: mutation.path,
+                        kind: mutation.kind,
+                        linesAdded: mutation.diff?.linesAdded ?? 0,
+                        linesRemoved: mutation.diff?.linesRemoved ?? 0,
+                        checkpointID: mutation.checkpointID
+                    )
+                )
+            )
+            rebuildDerivedState()
+            await refreshWorkspacePanels()
+            return true
+        } catch DiffHunkRevertError.currentContentDiverged,
+                FileOperationError.concurrentModification
+        {
+            transientError =
+                "\(path) changed after the diff loaded. Refresh before reverting this hunk."
+        } catch DiffHunkRevertError.hunkOutOfRange {
+            transientError = "That hunk no longer exists. Refresh the diff."
+        } catch {
+            transientError = "Could not revert hunk in \(path): \(error)"
+        }
+        return false
+    }
+
     /// Current diff for one tracked change, computed against its oldest
     /// checkpoint's pre-content.
     public func diff(for path: String) async -> TextDiff? {
@@ -367,6 +883,138 @@ public final class SessionController {
         return try? DiffEngine.diff(old: before, new: after)
     }
 
+    // MARK: - Review notes
+
+    /// The unsubmitted review batch, in the order it was written.
+    public private(set) var reviewComments: [ReviewComment] = []
+
+    public func pendingReviewComments(for path: String) -> [ReviewComment] {
+        reviewComments.filter { $0.path == path }
+    }
+
+    public func addReviewComment(_ comment: ReviewComment) {
+        let text = comment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        reviewComments.append(
+            ReviewComment(
+                id: comment.id,
+                path: comment.path,
+                hunkHeader: comment.hunkHeader,
+                lineNumber: comment.lineNumber,
+                quotedLine: comment.quotedLine,
+                text: text
+            )
+        )
+    }
+
+    public func removeReviewComment(id: UUID) {
+        reviewComments.removeAll { $0.id == id }
+    }
+
+    public func discardReviewComments() {
+        reviewComments.removeAll()
+    }
+
+    /// Flushes the batch into the transcript as one prompt. The batch is only
+    /// cleared once the run has actually started, so a failed submit leaves the
+    /// notes intact rather than losing work that was never recorded anywhere.
+    @discardableResult
+    public func submitReviewComments() async -> Bool {
+        guard !reviewComments.isEmpty else { return false }
+        let draft = composerText
+        composerText = ReviewComment.prompt(from: reviewComments)
+        await send()
+        if transientError != nil {
+            composerText = draft
+            return false
+        }
+        reviewComments.removeAll()
+        return true
+    }
+
+    // MARK: - Per-file history
+
+    /// This session's checkpoints for one file, newest first. Checkpoints are
+    /// per-file by construction, so this is a file's history and never a
+    /// run-level snapshot.
+    public func checkpointHistory(for path: String) async -> [Checkpoint] {
+        guard let live else { return [] }
+        return await live.context.checkpoints
+            .checkpoints(for: sessionID)
+            .filter { $0.path.value == path }
+    }
+
+    /// Restores one earlier version of a file. `force` is the reader's second,
+    /// explicit answer to a divergence: the first attempt refuses rather than
+    /// silently discarding content written after the checkpoint was captured.
+    @discardableResult
+    public func restoreCheckpoint(_ id: String, force: Bool) async -> Bool {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return false
+        }
+        guard let live else {
+            transientError = "Preview mode does not restore workspace files."
+            return false
+        }
+        do {
+            try await live.context.checkpoints.restore(id: id, force: force)
+        } catch let CheckpointError.currentContentDiverged(path) {
+            transientError =
+                "\(path) changed after that version was captured. Restoring it would discard the newer content."
+            return false
+        } catch {
+            transientError = "Could not restore that version: \(error)"
+            return false
+        }
+        if let checkpoint = await live.context.checkpoints.checkpoint(id: id) {
+            await refreshTrackedLineStats(for: checkpoint.path.value)
+        }
+        await refreshWorkspacePanels()
+        return true
+    }
+
+    /// Recomputes one tracked file's counts and review state from disk. A
+    /// checkpoint restore rewrites the file outside the mutation path, so the
+    /// counts aggregated from `fileChanged` events no longer describe it.
+    private func refreshTrackedLineStats(for path: String) async {
+        guard changes.contains(where: { $0.path == path }) else { return }
+        guard let diff = await diff(for: path) else { return }
+        lineStatsOverrides[path] = (diff.linesAdded, diff.linesRemoved)
+        acceptedHunks = Set(acceptedHunks.filter { !$0.hasPrefix("\(path)\u{1f}") })
+        if diff.isEmpty {
+            reviewStates[path] = .rejected
+        }
+        rebuildDerivedState()
+    }
+
+    /// Starts a branch for the work in progress. This is the conflict-safety
+    /// operation the Git service actually has: there is no worktree support, so
+    /// nothing offers to run a session in a sibling checkout.
+    @discardableResult
+    public func createGitBranch(named name: String) async -> Bool {
+        transientError = nil
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return false
+        }
+        guard let live else {
+            transientError = "Preview mode does not run Git: no repository is attached."
+            return false
+        }
+        do {
+            try await live.context.git.createBranch(named: trimmed)
+            await refreshWorkspacePanels()
+            return true
+        } catch {
+            transientError = "Could not create \(trimmed): \(error)"
+            return false
+        }
+    }
+
     // MARK: - Inspector data
 
     /// Refreshes the inspector panels from the workspace. A preview controller
@@ -376,9 +1024,35 @@ public final class SessionController {
         testSuggestions = await live.context.tests.detectSuggestions()
         instructionFiles = await live.context.instructionFiles()
         rootEntries = (try? await live.context.index.listDirectory(nil)) ?? []
+        checkpointCount = await live.context.checkpoints.checkpoints(for: sessionID).count
         if live.context.record.descriptor.isGitRepository {
             gitStatus = try? await live.context.git.status()
             gitHistory = (try? await live.context.git.log(limit: 20)) ?? []
+        }
+    }
+
+    public func refreshGitHubPullRequest() async {
+        guard !isLoadingGitHubStatus else { return }
+        guard let live, live.context.record.descriptor.isGitRepository else {
+            gitHubPullRequest = nil
+            gitHubStatusMessage = "Open a Git repository to load pull requests."
+            return
+        }
+        isLoadingGitHubStatus = true
+        defer { isLoadingGitHubStatus = false }
+        do {
+            gitHubPullRequest = try await live.context.git.githubPullRequestStatus()
+            gitHubStatusMessage = gitHubPullRequest == nil
+                ? "No GitHub pull request is associated with this branch."
+                : nil
+        } catch let GitServiceError.commandFailed(message) {
+            gitHubPullRequest = nil
+            gitHubStatusMessage = message.isEmpty
+                ? "GitHub CLI is not configured for this repository."
+                : message
+        } catch {
+            gitHubPullRequest = nil
+            gitHubStatusMessage = "Could not load GitHub status: \(error)"
         }
     }
 
@@ -393,29 +1067,268 @@ public final class SessionController {
         return (try? await live.context.index.listDirectory(path)) ?? []
     }
 
+    /// Opens a complete UTF-8 text file for the reader's manual editor. The
+    /// same containment, encoding, and 2 MB bound as agent file operations
+    /// applies; binary and oversized files fail honestly.
+    public func openWorkspaceFile(_ path: WorkspacePath) async -> WorkspaceEditorDocument? {
+        transientError = nil
+        guard let live else {
+            transientError = "Preview mode does not open workspace files."
+            return nil
+        }
+        do {
+            let result = try await live.context.files.read(
+                path,
+                limit: OutputLimit(
+                    maximumBytes: FileOperationService.defaultMaximumFileBytes
+                )
+            )
+            guard !result.wasTruncated else {
+                transientError = "\(path.value) is too large to edit safely."
+                return nil
+            }
+            return WorkspaceEditorDocument(from: result)
+        } catch {
+            transientError = "Could not open \(path.value): \(error)"
+            return nil
+        }
+    }
+
+    /// Saves an explicit reader edit through the same atomic writer,
+    /// fingerprint conflict check, and persistent checkpoint store used by the
+    /// agent. Ask and Plan sessions stay read-only.
+    public func saveWorkspaceFile(
+        _ document: WorkspaceEditorDocument,
+        content: String
+    ) async -> WorkspaceEditorDocument? {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return nil
+        }
+        guard let live else {
+            transientError = "Preview mode does not write workspace files."
+            return nil
+        }
+        do {
+            let mutation = try await live.context.files.write(
+                document.path,
+                content: content,
+                expectedBase: document.fingerprint,
+                sessionID: sessionID
+            )
+            try await live.store.appendEvent(
+                sessionID: sessionID,
+                payload: .fileChanged(
+                    FileChangedEvent(
+                        path: mutation.path,
+                        kind: mutation.kind,
+                        linesAdded: mutation.diff?.linesAdded ?? 0,
+                        linesRemoved: mutation.diff?.linesRemoved ?? 0,
+                        checkpointID: mutation.checkpointID
+                    )
+                )
+            )
+            await refreshWorkspacePanels()
+            return await openWorkspaceFile(document.path)
+        } catch FileOperationError.concurrentModification {
+            transientError =
+                "\(document.path.value) changed on disk. Reload it before saving so nothing is overwritten."
+            return nil
+        } catch {
+            transientError = "Could not save \(document.path.value): \(error)"
+            return nil
+        }
+    }
+
+    /// Runs one test command through the same gated tool the agent uses, so a
+    /// reader-started run is subject to the same permission policy and produces
+    /// the same recorded outcome.
     public func runTest(command: String) async {
         transientError = nil
         guard let live else {
             transientError = "Preview mode does not run tests: no command executor is attached."
             return
         }
+        let toolCallID = "manual-test-\(UUID().uuidString.prefix(8))"
+        lastTestRunToolCallID = toolCallID
+        isRunningTest = true
+        defer { isRunningTest = false }
         do {
-            _ = try await live.context.registry.invoke(
+            let result = try await live.context.registry.invoke(
                 toolName: "run_tests",
                 input: ["command": .string(command)],
                 context: ToolContext(
                     sessionID: sessionID,
-                    toolCallID: "manual-test-\(UUID().uuidString.prefix(8))",
+                    toolCallID: toolCallID,
                     emitOutput: { [weak self] channel, text in
-                        await self?.appendManualTerminal(channel: channel, text: text)
+                        await self?.appendManualTerminal(
+                            channel: channel,
+                            text: text,
+                            toolCallID: toolCallID
+                        )
                     }
                 ),
                 permissions: live.permissions
             )
+            // The tool reports the parsed outcome as a side effect. Recording it
+            // keeps the transcript honest about a run the reader started, and is
+            // what makes the pass/fail shown here the runtime's own verdict.
+            //
+            // A failed append is not a failed test run, so it must not abort the
+            // remaining side effects or be reported as "Test run failed". But it
+            // cannot be dropped either: the transcript would then be missing an
+            // event this code claims to have recorded, which is the opposite of
+            // the honesty the comment above asserts. So it is collected and
+            // surfaced on its own terms.
+            var unrecorded = 0
+            for sideEffect in result.sideEffects {
+                if case let .testRunCompleted(run) = sideEffect {
+                    lastTestRun = run
+                }
+                do {
+                    try await live.store.appendEvent(
+                        sessionID: sessionID,
+                        payload: sideEffect
+                    )
+                } catch {
+                    unrecorded += 1
+                }
+            }
+            if unrecorded > 0 {
+                transientError = unrecorded == 1
+                    ? "The tests ran, but one result could not be saved to this session."
+                    : "The tests ran, but \(unrecorded) results could not be saved to this session."
+            }
+        } catch let ToolError.denied(reason) {
+            transientError = "Test run refused: \(reason)"
         } catch {
             transientError = "Test run failed: \(error)"
         }
         await refreshWorkspacePanels()
+    }
+
+    /// Runs one reader-typed command.
+    ///
+    /// It goes through `run_command` in the session's own registry, so the
+    /// classifier, the permission policy and the approval flow all apply — a
+    /// command typed here can raise the same approval an agent command would.
+    /// There is no PTY, no stdin and no ANSI handling anywhere beneath this: it
+    /// is a bounded one-shot process whose output is streamed into the console.
+    public func runConsoleCommand(_ command: String) async {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        transientError = nil
+        guard let live else {
+            consoleRun = ConsoleCommandRun(
+                id: "console-preview",
+                command: trimmed,
+                startedAt: Date(),
+                outcome: .finished(
+                    detail: "Preview mode has no command executor attached.",
+                    failed: true
+                )
+            )
+            return
+        }
+        let toolCallID = "console-\(UUID().uuidString.prefix(8))"
+        consoleRun = ConsoleCommandRun(
+            id: toolCallID,
+            command: trimmed,
+            startedAt: Date(),
+            outcome: .running
+        )
+        appendManualTerminal(channel: .log, text: "$ \(trimmed)\n", toolCallID: toolCallID)
+        do {
+            let result = try await live.context.registry.invoke(
+                toolName: "run_command",
+                input: ["command": .string(trimmed)],
+                context: ToolContext(
+                    sessionID: sessionID,
+                    toolCallID: toolCallID,
+                    emitOutput: { [weak self] channel, text in
+                        await self?.appendManualTerminal(
+                            channel: channel,
+                            text: text,
+                            toolCallID: toolCallID
+                        )
+                    }
+                ),
+                permissions: live.permissions
+            )
+            let detail = Self.exitFooter(in: result.content)
+                ?? (result.isError ? "Command failed." : "Command finished.")
+            appendManualTerminal(channel: .log, text: detail + "\n", toolCallID: toolCallID)
+            consoleRun?.outcome = .finished(detail: detail, failed: result.isError)
+        } catch let ToolError.denied(reason) {
+            appendManualTerminal(channel: .stderr, text: reason + "\n", toolCallID: toolCallID)
+            consoleRun?.outcome = .finished(detail: reason, failed: true)
+        } catch {
+            let message = String(describing: error)
+            appendManualTerminal(channel: .stderr, text: message + "\n", toolCallID: toolCallID)
+            consoleRun?.outcome = .finished(detail: message, failed: true)
+        }
+    }
+
+    /// `RunCommandTool` appends its exit status as a `[exit 1, 0.4s]` footer to
+    /// the result it returns to the model, and never streams it. The console has
+    /// to read it from there or invent one, so it reads it.
+    private static func exitFooter(in content: String) -> String? {
+        guard let line = content
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .last,
+            line.hasPrefix("[exit"), line.hasSuffix("]")
+        else { return nil }
+        return String(line)
+    }
+
+    /// Why the console cannot run a command in this session, or `nil` when it
+    /// can. Stated rather than inferred, so the field can be disabled with a
+    /// reason instead of failing on press.
+    public var consoleUnavailableReason: String? {
+        if live == nil {
+            return "Preview mode has no command executor attached."
+        }
+        if session.configuration.location != .local {
+            return "\(session.configuration.location == .cloud ? "Cloud" : "Remote") "
+                + "runs produce no local output on this Mac."
+        }
+        if session.configuration.behavior != .code {
+            return "Ask and Plan sessions are read-only and cannot run commands."
+        }
+        return nil
+    }
+
+    /// Output recorded for the last test run, taken from that run's own tool
+    /// call. Empty when the run predates the terminal's 2,000-line window.
+    public var lastTestRunOutput: [TerminalLine] {
+        guard let lastTestRunToolCallID else { return [] }
+        return terminal.filter { $0.toolCallID == lastTestRunToolCallID }
+    }
+
+    /// Why Computer Use cannot be used in this session, or `nil` when it can.
+    public var computerUseUnavailableReason: String? {
+        if live == nil {
+            return "Preview mode has no screen-capture driver attached."
+        }
+        if session.configuration.location != .local {
+            return "Screen control runs on the Mac the session runs on."
+        }
+        if session.configuration.behavior != .code {
+            return "Ask and Plan sessions cannot control the computer."
+        }
+        return nil
+    }
+
+    /// One sub-agent's session and result, read from the shared store.
+    public func subAgentDetail(_ childID: CodeSessionID) async -> SubagentDetail? {
+        guard let live else { return nil }
+        guard let child = try? await live.store.session(id: childID) else { return nil }
+        return SubagentDetail(
+            session: child,
+            events: await live.store.events(for: childID)
+        )
     }
 
     public func commit(message: String) async -> Bool {
@@ -441,6 +1354,76 @@ public final class SessionController {
         }
     }
 
+    /// Resolves the exact remote/branch pair for a reader confirmation. Git
+    /// publication is never exposed to the agent tool registry.
+    public func prepareGitPush() async -> GitPushPlan? {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return nil
+        }
+        guard let live else {
+            transientError = "Preview mode does not publish Git branches."
+            return nil
+        }
+        do {
+            return try await live.context.git.preparePush()
+        } catch GitPublishError.detachedHead {
+            transientError = "Create or switch to a branch before publishing."
+        } catch GitPublishError.noRemote {
+            transientError = "Add a Git remote before publishing this branch."
+        } catch let GitPublishError.ambiguousRemotes(remotes) {
+            transientError =
+                "Choose an upstream in Git first. Available remotes: \(remotes.joined(separator: ", "))."
+        } catch {
+            transientError = "Could not prepare branch publication: \(error)"
+        }
+        return nil
+    }
+
+    public func publishGitBranch(_ confirmedPlan: GitPushPlan) async -> Bool {
+        transientError = nil
+        guard session.configuration.behavior == .code else {
+            transientError = "Ask and Plan sessions are read-only by design."
+            return false
+        }
+        guard let live else {
+            transientError = "Preview mode does not publish Git branches."
+            return false
+        }
+        do {
+            let output = try await live.context.git.push(confirmedPlan)
+            appendManualTerminal(
+                channel: .stdout,
+                text: output.isEmpty
+                    ? "Published \(confirmedPlan.localBranch) to \(confirmedPlan.displayTarget).\n"
+                    : output
+            )
+            await refreshWorkspacePanels()
+            return true
+        } catch GitPublishError.planChanged {
+            transientError =
+                "The branch or upstream changed after confirmation. Review the target and try again."
+        } catch {
+            transientError = "Publish failed: \(error)"
+        }
+        return false
+    }
+
+    // MARK: - Sub-agents
+
+    /// One sub-agent's own transcript, read from the shared session store.
+    ///
+    /// `DelegateTaskTool` creates its children as ordinary sessions and returns
+    /// the child's identifier on the first line of its result. `CodeSession` has
+    /// no parent link, so that line is the only correlation there is — which is
+    /// also why a child is loaded on demand here rather than nested in the
+    /// parent's own event list.
+    public func subAgentTranscript(_ childID: CodeSessionID) async -> [SessionEvent] {
+        guard let live else { return [] }
+        return await live.store.events(for: childID)
+    }
+
     // MARK: - Event application
 
     private func apply(_ update: CodeSessionStore.StoreUpdate, own sessionID: CodeSessionID) {
@@ -464,29 +1447,133 @@ public final class SessionController {
             pendingApprovals.append(request)
         case let .approvalResolved(resolved):
             pendingApprovals.removeAll { $0.id == resolved.approvalID }
-        case let .toolOutput(output):
-            terminalLineCounter += 1
-            terminal.append(
-                TerminalLine(id: terminalLineCounter, channel: output.channel, text: output.text)
-            )
-            if terminal.count > 2_000 {
-                terminal.removeFirst(terminal.count - 2_000)
+        case let .toolStarted(started):
+            openToolCallID = started.toolCallID
+        case let .toolCompleted(completed):
+            if openToolCallID == completed.toolCallID {
+                openToolCallID = nil
             }
+        case let .toolOutput(output):
+            appendTerminalChunk(
+                channel: output.channel,
+                text: output.text,
+                toolCallID: output.toolCallID
+            )
         case let .fileChanged(change):
-            reviewStates[change.path.value] = nil
+            acceptedHunks = Set(
+                acceptedHunks.filter {
+                    !$0.hasPrefix("\(change.path.value)\u{1f}")
+                }
+            )
+            if let checkpointID = change.checkpointID,
+               hunkReviewCheckpointIDs.remove(checkpointID) != nil
+            {
+                // A hunk action already computed the final old-to-current
+                // line stats and review state. Preserve that projection.
+            } else {
+                reviewStates[change.path.value] = nil
+                lineStatsOverrides[change.path.value] = nil
+            }
             rebuildDerivedState()
         case let .testRunCompleted(run):
             lastTestRun = run
+            // Never clobber a known call id with nil: a run the reader started
+            // from the Tests pane has no `toolStarted` event of its own, and its
+            // id was recorded when it was launched.
+            if let openToolCallID {
+                lastTestRunToolCallID = openToolCallID
+            }
+        case .assistantMessage:
+            // The persisted message is the same text that was streaming into
+            // `liveAssistantText`; keeping both would render the reply twice.
+            liveAssistantText = ""
         case .runCompleted:
+            liveAssistantText = ""
             Task { await refreshWorkspacePanels() }
         default:
             break
         }
     }
 
-    private func appendManualTerminal(channel: ToolOutputChannel, text: String) {
-        terminalLineCounter += 1
-        terminal.append(TerminalLine(id: terminalLineCounter, channel: channel, text: text))
+    private func appendManualTerminal(
+        channel: ToolOutputChannel,
+        text: String,
+        toolCallID: String? = nil
+    ) {
+        appendTerminalChunk(channel: channel, text: text, toolCallID: toolCallID)
+    }
+
+    /// Replays the transcript's recorded output into the console.
+    ///
+    /// Reopening a session used to show an empty log beside a transcript full of
+    /// tool output, because the console was only ever fed by events arriving live.
+    /// The output is part of the record, so it is rebuilt from the record.
+    private func rebuildTerminal() {
+        terminal = []
+        terminalLineCounter = 0
+        pendingTerminalLine = nil
+        for event in events {
+            guard case let .toolOutput(output) = event.payload else { continue }
+            appendTerminalChunk(
+                channel: output.channel,
+                text: output.text,
+                toolCallID: output.toolCallID
+            )
+        }
+    }
+
+    /// Turns streamed output into console lines.
+    ///
+    /// Output arrives as pipe reads, not as lines: one chunk can carry twenty
+    /// newlines and can end mid-line, with the rest of that line arriving in the
+    /// next chunk. Splitting on newlines and continuing the previous partial line
+    /// is what makes the console a line-oriented log — and what makes the
+    /// 2,000-entry bound mean two thousand *lines* rather than two thousand
+    /// arbitrary reads. Carriage returns are treated as line breaks: the executor
+    /// runs commands with `TERM=dumb` and `NO_COLOR`, so a lone `\r` is a
+    /// progress redraw with no cursor to honour it.
+    private func appendTerminalChunk(
+        channel: ToolOutputChannel,
+        text: String,
+        toolCallID: String?
+    ) {
+        guard !text.isEmpty else { return }
+        var buffer = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+
+        if let pending = pendingTerminalLine,
+           pending.channel == channel,
+           pending.toolCallID == toolCallID,
+           let index = terminal.lastIndex(where: { $0.id == pending.id })
+        {
+            buffer = terminal[index].text + buffer
+            terminal.remove(at: index)
+        }
+        pendingTerminalLine = nil
+
+        let endsOnLineBreak = buffer.hasSuffix("\n")
+        var pieces = buffer.components(separatedBy: "\n")
+        if endsOnLineBreak {
+            pieces.removeLast()
+        }
+        for (offset, piece) in pieces.enumerated() {
+            terminalLineCounter += 1
+            terminal.append(
+                TerminalLine(
+                    id: terminalLineCounter,
+                    channel: channel,
+                    text: piece,
+                    toolCallID: toolCallID
+                )
+            )
+            if offset == pieces.count - 1, !endsOnLineBreak {
+                pendingTerminalLine = (terminalLineCounter, channel, toolCallID)
+            }
+        }
+        if terminal.count > 2_000 {
+            terminal.removeFirst(terminal.count - 2_000)
+        }
     }
 
     /// Aggregates fileChanged events into per-path tracked changes.
@@ -517,9 +1604,29 @@ public final class SessionController {
         }
         changes = order.compactMap { key in
             guard var change = byPath[key] else { return nil }
+            if let stats = lineStatsOverrides[key] {
+                change.linesAdded = stats.added
+                change.linesRemoved = stats.removed
+            }
             change.reviewState = reviewStates[key] ?? .pending
             return change
         }
+
+        // A restored transcript has to project its last test run too. Without
+        // this a reopened session claims no tests have ever run, even though the
+        // result is sitting in the events it just loaded. Only when nothing is
+        // known yet: a live run and a reader-started run both report their own
+        // outcome, and neither should be replaced by an older recorded one.
+        if lastTestRun == nil, let last = CodeTestDigest.lastTestRun(in: events) {
+            lastTestRun = last.run
+            if let toolCallID = last.toolCallID {
+                lastTestRunToolCallID = toolCallID
+            }
+        }
+    }
+
+    private func hunkReviewKey(path: String, hunk: DiffHunk) -> String {
+        "\(path)\u{1f}\(hunk.reviewIdentifier)"
     }
 
     #if DEBUG
@@ -562,6 +1669,16 @@ public final class SessionController {
     /// Appends the prompt so the transcript and scroll behaviour can be
     /// inspected, then says plainly that no agent will answer it.
     private func previewSend(_ prompt: String) {
+        appendPreviewEvent(
+            .turnConfiguration(
+                TurnConfigurationEvent(
+                    behavior: session.configuration.behavior,
+                    permissionMode: session.configuration.permissionMode,
+                    modelID: session.configuration.modelID,
+                    reasoningEffort: session.configuration.reasoningEffort
+                )
+            )
+        )
         appendPreviewEvent(.userPrompt(UserPromptEvent(text: prompt)))
         transientError = "Preview mode does not run the agent: no model transport is attached."
     }

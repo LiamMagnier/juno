@@ -1,0 +1,534 @@
+import JunoAuth
+import JunoChatKit
+import JunoDesignSystem
+import JunoSync
+import SwiftUI
+
+/// **Usage** — the account's own spend, across every surface that costs: Chat,
+/// Code, scheduled tasks and media.
+///
+/// The same two routes the Mac reads (`/api/profile/usage/breakdown` and
+/// `/api/profile/usage`), through the same shared client, so the phone and the
+/// desktop cannot quietly disagree about a number. The layout is the part that
+/// is phone-shaped: the Mac lays its cards out side by side at 960pt, and here
+/// they stack in one column with the activity grid scrolling horizontally.
+///
+/// Nothing here is synthesised. An account with no spend gets an empty state,
+/// not a plausible-looking shape — every zero on this page is a real zero.
+struct JunoMobileUsageView: View {
+    let session: NativeAuthenticatedSession
+    /// The authenticated transport. Nil on an unconfigured shell, in which case
+    /// the page says so rather than showing an empty dashboard.
+    var requestSender: (any NativeAuthenticatedRequestSending)?
+    /// The signed-in model manifest, used only to render a model's product name
+    /// instead of its wire identifier.
+    var modelCatalog: [NativeChatModelOption] = []
+
+    @State private var range = NativeUsageRange.month
+    @State private var breakdown: NativeUsageBreakdown?
+    @State private var plan: NativeUsagePlan?
+    @State private var loadError: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 12) {
+                header
+
+                if let loadError {
+                    JunoInlineError(message: loadError) {
+                        Task { await load(force: true) }
+                    }
+                } else if let breakdown {
+                    if breakdown.totals.requests == 0 {
+                        emptyState
+                    } else {
+                        content(breakdown)
+                    }
+                } else if isLoading {
+                    JunoMobileQuietLoading()
+                        .frame(height: 200)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
+        }
+        .background(Color.junoCanvas)
+        .navigationTitle("Usage")
+        .navigationBarTitleDisplayMode(.inline)
+        .task(id: range) { await load(force: false) }
+        .refreshable { await load(force: true) }
+        .accessibilityIdentifier("juno.mobile.usage")
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // The big number is *tokens*, not euros: it is the one
+                    // quantity that is meaningful on every plan, including the
+                    // unlimited ones where a spend figure has no budget to sit
+                    // against.
+                    Text(headline)
+                        .junoPageHeading(compact: true)
+                        .contentTransition(.numericText())
+                    if isLoading {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                Text(subhead)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+
+            Picker("Range", selection: $range) {
+                ForEach(NativeUsageRange.allCases) { value in
+                    Text(value.label).tag(value)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityIdentifier("juno.mobile.usage.range")
+        }
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    }
+
+    private var headline: String {
+        guard let breakdown else { return "—" }
+        return NativeUsageFormat.tokens(breakdown.totals.totalTokens)
+    }
+
+    private var subhead: String {
+        guard let breakdown else { return "Reading your ledger…" }
+        let surfaces = breakdown.surfaces
+            .filter { $0.requests > 0 }
+            .map(\.displayName)
+        let places = surfaces.isEmpty ? "no activity" : surfaces.formatted(.list(type: .and))
+        return "Tokens across \(places) · \(range.subtitle)"
+    }
+
+    // MARK: Content
+
+    @ViewBuilder
+    private func content(_ breakdown: NativeUsageBreakdown) -> some View {
+        JunoMobileUsageStats(breakdown: breakdown)
+        JunoMobileUsageActivity(breakdown: breakdown)
+        JunoMobileUsageSurfaces(breakdown: breakdown)
+        JunoMobileUsageTokenMix(totals: breakdown.totals)
+        JunoMobileUsageModels(breakdown: breakdown, catalog: modelCatalog)
+        if let plan {
+            JunoMobileUsagePlanCard(plan: plan)
+        }
+    }
+
+    private var emptyState: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Nothing yet")
+                    .font(.system(size: 16, weight: .semibold))
+                Text("No requests in the \(range.subtitle). Ask Juno something and this fills in.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: Loading
+
+    private func load(force: Bool) async {
+        guard let requestSender else {
+            loadError = NativeUsageError.unavailable.localizedDescription
+            return
+        }
+        if isLoading { return }
+        if !force, breakdown != nil { return }
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let loaded = try await NativeUsageClient(sender: requestSender)
+                .load(range: range, for: session.profile.id)
+            breakdown = loaded.breakdown
+            plan = loaded.plan
+            loadError = nil
+        } catch {
+            // The stale breakdown is dropped rather than left beside a fresh
+            // error: a number the app can no longer vouch for is the thing a
+            // reader is most likely to quote.
+            breakdown = nil
+            loadError = NativeFailureMessage.presentable(error)
+        }
+    }
+}
+
+// MARK: - Stats
+
+/// The four numbers worth reading before any chart: how much was asked, how
+/// often, how consistently, and how recently. A 2×2 grid rather than the Mac's
+/// single row — four columns on a phone leaves each number about forty points
+/// of width, which is where "12,481" starts wrapping mid-thousand.
+private struct JunoMobileUsageStats: View {
+    let breakdown: NativeUsageBreakdown
+
+    var body: some View {
+        JunoCard {
+            VStack(spacing: 14) {
+                HStack(spacing: 0) {
+                    stat(NativeUsageFormat.count(breakdown.totals.requests), "Requests")
+                    divider
+                    stat("\(breakdown.activeDays)", "Active days")
+                }
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(height: 1)
+                    .accessibilityHidden(true)
+                HStack(spacing: 0) {
+                    stat("\(breakdown.currentStreakDays)", "Day streak")
+                    divider
+                    stat(NativeUsageFormat.count(breakdown.pace.last24h), "Last 24 hours")
+                }
+            }
+        }
+    }
+
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(size: 22, weight: .semibold))
+                .contentTransition(.numericText())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(label)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label): \(value)")
+    }
+
+    private var divider: some View {
+        Rectangle()
+            .fill(Color.junoHairline)
+            .frame(width: 1, height: 30)
+            .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Activity grid
+
+/// A run of days as a contribution grid, scrolling sideways.
+///
+/// The grid is laid out on the **UTC** day boundary, because that is the
+/// boundary the server buckets on. Re-bucketing into the reader's local zone
+/// here would shift every cell by up to a day and quietly disagree with the
+/// totals above it.
+private struct JunoMobileUsageActivity: View {
+    let breakdown: NativeUsageBreakdown
+
+    private static let cell: CGFloat = 12
+    private static let gap: CGFloat = 3
+
+    /// Days ascending, in columns of seven — one column per week, which is what
+    /// makes a row read as "every Tuesday".
+    private var columns: [[NativeUsageActivityCell]] {
+        stride(from: 0, to: breakdown.activityCells.count, by: 7).map { start in
+            Array(breakdown.activityCells[start..<min(start + 7, breakdown.activityCells.count)])
+        }
+    }
+
+    var body: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Activity")
+                    .font(.system(size: 16, weight: .semibold))
+
+                // Anchored to the trailing edge: the newest week is the one
+                // worth landing on, and a year-long grid opening on last January
+                // is a scroll the reader has to undo every time.
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: Self.gap) {
+                        ForEach(Array(columns.enumerated()), id: \.offset) { _, week in
+                            VStack(spacing: Self.gap) {
+                                ForEach(week) { day in
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .fill(day.fill)
+                                        .frame(width: Self.cell, height: Self.cell)
+                                        .accessibilityLabel(day.summary)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                .defaultScrollAnchor(.trailing)
+                .scrollIndicators(.hidden)
+
+                legend
+            }
+        }
+    }
+
+    private var legend: some View {
+        HStack(spacing: 6) {
+            if let busiest = breakdown.busiestDay, busiest.requests > 0 {
+                Text("Busiest \(NativeUsageFormat.day(busiest.dayMs)) · \(busiest.requests)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 4)
+            Text("Less")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            ForEach(0..<5, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(NativeUsageActivityCell.fill(forLevel: level))
+                    .frame(width: 9, height: 9)
+            }
+            Text("More")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Surfaces
+
+/// Where the tokens went. "Where did it go" is the question this page exists to
+/// answer, and it is the one the plan meters below cannot.
+private struct JunoMobileUsageSurfaces: View {
+    let breakdown: NativeUsageBreakdown
+
+    private var rows: [NativeUsageSurfaceTotals] {
+        breakdown.surfaces
+            .filter { $0.totalTokens > 0 || $0.requests > 0 }
+            .sorted { $0.totalTokens > $1.totalTokens }
+    }
+
+    private var largest: Int {
+        max(rows.first?.totalTokens ?? 0, 1)
+    }
+
+    var body: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("By surface")
+                    .font(.system(size: 16, weight: .semibold))
+
+                if rows.isEmpty {
+                    Text("No surface has spent anything in this window.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(rows) { row in
+                        VStack(alignment: .leading, spacing: 5) {
+                            HStack(spacing: 8) {
+                                Image(systemName: row.symbol)
+                                    .font(.system(size: 13))
+                                    .frame(width: 18)
+                                    .foregroundStyle(.secondary)
+                                Text(row.displayName)
+                                    .font(.system(size: 15))
+                                Spacer(minLength: 6)
+                                Text(NativeUsageFormat.tokens(row.totalTokens))
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                            JunoMobileUsageBar(
+                                fraction: Double(row.totalTokens) / Double(largest)
+                            )
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(row.displayName): \(NativeUsageFormat.tokens(row.totalTokens)) tokens over \(row.requests) requests"
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One proportion bar. The track stays visible at zero, so a surface with no
+/// spend reads as "nothing here" rather than as a missing row.
+private struct JunoMobileUsageBar: View {
+    let fraction: Double
+    var tint: Color = .junoAccent
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.junoMuted)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: max(0, min(1, fraction)) * geometry.size.width)
+            }
+        }
+        .frame(height: 6)
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - Token mix
+
+/// What the tokens were: the question asked, or the answer written. A prompt-
+/// heavy account and a completion-heavy one cost the same on this page's
+/// headline and very different amounts in reality, which is why the split is
+/// here at all.
+private struct JunoMobileUsageTokenMix: View {
+    let totals: NativeUsageTotals
+
+    private var promptShare: Double {
+        guard totals.totalTokens > 0 else { return 0 }
+        return Double(totals.promptTokens) / Double(totals.totalTokens)
+    }
+
+    var body: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("In and out")
+                    .font(.system(size: 16, weight: .semibold))
+                JunoMobileUsageBar(fraction: promptShare)
+                HStack(spacing: 0) {
+                    label("Prompt", NativeUsageFormat.tokens(totals.promptTokens))
+                    Spacer(minLength: 8)
+                    label("Completion", NativeUsageFormat.tokens(totals.completionTokens))
+                }
+            }
+        }
+    }
+
+    private func label(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(value)
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+            Text(title)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(title): \(value) tokens")
+    }
+}
+
+// MARK: - Models
+
+/// Which models did the work. Named from the signed-in manifest where possible —
+/// a model absent from it (retired since the spend happened) keeps its wire
+/// identifier rather than being renamed into something it was not.
+private struct JunoMobileUsageModels: View {
+    let breakdown: NativeUsageBreakdown
+    let catalog: [NativeChatModelOption]
+
+    private var rows: [NativeUsageModelTotals] {
+        breakdown.models
+            .filter { $0.totalTokens > 0 }
+            .sorted { $0.totalTokens > $1.totalTokens }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    private func name(for id: String) -> String {
+        catalog.first { $0.id == id }?.displayName ?? junoDisplayModelName(id)
+    }
+
+    var body: some View {
+        if !rows.isEmpty {
+            JunoCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("By model")
+                        .font(.system(size: 16, weight: .semibold))
+                    ForEach(rows) { row in
+                        HStack(spacing: 8) {
+                            Text(name(for: row.model))
+                                .font(.system(size: 15))
+                                .lineLimit(1)
+                            Spacer(minLength: 6)
+                            Text("\(NativeUsageFormat.count(row.requests))×")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                            Text(NativeUsageFormat.tokens(row.totalTokens))
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(
+                            "\(name(for: row.model)): \(row.requests) requests, \(NativeUsageFormat.tokens(row.totalTokens)) tokens"
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Plan
+
+/// The two meters that actually stop a turn starting, and when they reset.
+private struct JunoMobileUsagePlanCard: View {
+    let plan: NativeUsagePlan
+
+    var body: some View {
+        JunoCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Plan")
+                        .font(.system(size: 16, weight: .semibold))
+                    Spacer(minLength: 6)
+                    JunoStatusPill(text: plan.planName, tint: .junoAccent)
+                }
+
+                if plan.isUnlimited {
+                    Text("No usage limits on this plan.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                } else if plan.isBrowseOnly {
+                    Text("Free is a browse-only tier. Upgrade to start using models.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                } else {
+                    meter("Session", plan.session)
+                    meter("Weekly", plan.weekly)
+                }
+
+                if let renewsAt = plan.renewsAt {
+                    Text("\(plan.renewalLabel) \(renewsAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func meter(_ title: String, _ window: NativeUsagePlan.Window) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 14))
+                Spacer(minLength: 6)
+                Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            // Coral until it is nearly spent, then amber: the colour is a
+            // warning only where there is something to warn about.
+            JunoMobileUsageBar(
+                fraction: window.fraction,
+                tint: window.fraction >= 0.9 ? .orange : .junoAccent
+            )
+            if let resetsAt = window.resetsAt {
+                Text("Resets \(resetsAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(title) window: \(window.fraction.formatted(.percent.precision(.fractionLength(0)))) used"
+        )
+    }
+}

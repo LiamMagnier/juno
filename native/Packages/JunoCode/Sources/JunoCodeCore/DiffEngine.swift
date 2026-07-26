@@ -40,6 +40,31 @@ public struct DiffHunk: Hashable, Codable, Sendable {
     public var header: String {
         "@@ -\(oldStart),\(oldCount) +\(newStart),\(newCount) @@"
     }
+
+    /// Stable within and across launches, unlike Swift's randomized `hashValue`.
+    /// Review state uses this key so keeping one hunk does not accept the file.
+    public var reviewIdentifier: String {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        func feed(_ value: String) {
+            for byte in value.utf8 {
+                hash ^= UInt64(byte)
+                hash &*= 1_099_511_628_211
+            }
+            hash ^= 0xff
+            hash &*= 1_099_511_628_211
+        }
+        feed(String(oldStart))
+        feed(String(oldCount))
+        feed(String(newStart))
+        feed(String(newCount))
+        for line in lines {
+            feed(line.kind.rawValue)
+            feed(line.text)
+            feed(line.oldLineNumber.map(String.init) ?? "-")
+            feed(line.newLineNumber.map(String.init) ?? "-")
+        }
+        return String(hash, radix: 16)
+    }
 }
 
 public struct TextDiff: Hashable, Codable, Sendable {
@@ -58,6 +83,46 @@ public struct TextDiff: Hashable, Codable, Sendable {
 
 public enum DiffEngineError: Error, Equatable, Sendable {
     case inputTooLarge
+}
+
+public enum DiffHunkRevertError: Error, Equatable, Sendable {
+    case hunkOutOfRange
+    case currentContentDiverged
+}
+
+/// Pure inverse application for one hunk. The caller remains responsible for
+/// fingerprint validation and an atomic checkpointed write.
+public enum DiffHunkReverter {
+    public static func reverting(
+        hunkAt index: Int,
+        in currentContent: String,
+        from diff: TextDiff
+    ) throws -> String {
+        guard diff.hunks.indices.contains(index) else {
+            throw DiffHunkRevertError.hunkOutOfRange
+        }
+        let hunk = diff.hunks[index]
+        var currentLines = DiffEngine.splitLines(currentContent)
+        let start = hunk.newStart > 0 ? hunk.newStart - 1 : 0
+        let end = start + hunk.newCount
+        guard start >= 0, start <= currentLines.count, end <= currentLines.count else {
+            throw DiffHunkRevertError.currentContentDiverged
+        }
+
+        let expectedCurrentLines = hunk.lines.compactMap { line in
+            line.kind == .removed ? nil : line.text
+        }
+        guard Array(currentLines[start..<end]) == expectedCurrentLines else {
+            throw DiffHunkRevertError.currentContentDiverged
+        }
+        let restoredLines = hunk.lines.compactMap { line in
+            line.kind == .added ? nil : line.text
+        }
+        currentLines.replaceSubrange(start..<end, with: restoredLines)
+
+        let joined = currentLines.joined(separator: "\n")
+        return currentContent.hasSuffix("\n") && !joined.isEmpty ? joined + "\n" : joined
+    }
 }
 
 /// Pure line-based Myers diff with hunk assembly. No I/O.

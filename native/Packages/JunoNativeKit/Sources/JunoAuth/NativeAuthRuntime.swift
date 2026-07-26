@@ -43,30 +43,13 @@ public actor NativeAuthRuntime {
     public static func live(
         origin: APIOrigin,
         device: NativeDeviceMetadata,
-        keychainNamespace: String? = nil,
-        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
         accountDataPurger: (any NativeAccountDataPurging)? = nil
     ) throws -> NativeAuthRuntime {
-        let tokenStore: KeychainAuthTokenStore
-        let installationStore: KeychainInstallationIDStore
-        if let keychainNamespace {
-            tokenStore = try KeychainAuthTokenStore(
-                service: "\(keychainNamespace).auth.tokens",
-                securityClient: securityClient
-            )
-            installationStore = KeychainInstallationIDStore(
-                item: SecurityKeychainItem(
-                    service: "\(keychainNamespace).auth.installation",
-                    account: "current"
-                ),
-                securityClient: securityClient
-            )
-        } else {
-            tokenStore = KeychainAuthTokenStore(securityClient: securityClient)
-            installationStore = KeychainInstallationIDStore(
-                securityClient: securityClient
-            )
-        }
+        let securityClient = SystemSecurityKeychainClient()
+        let tokenStore = KeychainAuthTokenStore(securityClient: securityClient)
+        let installationStore = KeychainInstallationIDStore(
+            securityClient: securityClient
+        )
         let apiClient = NativeAuthAPIClient(
             origin: origin,
             transport: try URLSessionHTTPTransport(),
@@ -203,16 +186,6 @@ public actor NativeAuthRuntime {
             try await invalidateLocalAccount(accountID)
         }
         return retryResponse
-    }
-
-    /// Returns a short-lived bearer header for a trusted local helper process.
-    /// The value is never persisted by the caller and receives the same
-    /// refresh/revocation behavior as ordinary authenticated requests.
-    public func localHelperAuthorizationHeader(
-        for accountID: AccountID
-    ) async throws -> String {
-        let accessToken = try await coordinatedAccessToken(for: accountID)
-        return "Bearer \(accessToken.reveal())"
     }
 
     public func signOut() async throws {

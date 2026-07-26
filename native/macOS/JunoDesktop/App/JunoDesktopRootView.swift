@@ -1,0 +1,339 @@
+import JunoAuth
+import JunoChatKit
+import JunoCodeBridge
+import JunoCodeUI
+import JunoCore
+import JunoDesignSystem
+import JunoStorage
+import JunoSync
+import SwiftUI
+
+struct JunoDesktopRootView: View {
+    let configuration: JunoDesktopConfiguration
+    @SceneStorage("juno.desktop.product") private var storedProduct = DesktopProductMode.chat.rawValue
+    @State private var workbenchModel: WorkbenchModel?
+
+    private var productBinding: Binding<DesktopProductMode> {
+        Binding(
+            get: { DesktopProductMode(rawValue: storedProduct) ?? .chat },
+            set: { storedProduct = $0.rawValue }
+        )
+    }
+
+    private var preferredColorScheme: ColorScheme? {
+        switch configuration.memorySettingsModel?.settings?.theme {
+        case .light: .light
+        case .dark: .dark
+        case .system, .none: nil
+        }
+    }
+
+    var body: some View {
+        phaseContent
+            .preferredColorScheme(preferredColorScheme)
+            .task {
+                await configuration.authModel.restore()
+            }
+            .onChange(of: configuration.authModel.phase) { _, phase in
+                updateLifecycle(for: phase)
+            }
+            .onChange(of: configuration.syncModel?.synchronizationGeneration) {
+                _, generation in
+                guard let generation else { return }
+                Task {
+                    await configuration.conversationModel?
+                        .synchronizationDidAdvance(to: generation)
+                    await configuration.projectModel?
+                        .synchronizationDidAdvance(to: generation)
+                    await configuration.artifactModel?
+                        .synchronizationDidAdvance(to: generation)
+                    await configuration.memorySettingsModel?
+                        .synchronizationDidAdvance(to: generation)
+                    configuration.searchModel?
+                        .synchronizationDidAdvance(to: generation)
+                }
+            }
+            .onChange(of: configuration.memorySettingsModel?.settings?.accent) {
+                _, accent in
+                JunoAccentSelection.shared.apply(setting: accent)
+            }
+            .onChange(of: configuration.conversationModel?.selectableModels) {
+                _, models in
+                guard let models, !models.isEmpty else { return }
+                let codeModels = models
+                    .filter { CodeModelProviderResolver.supports($0.id) }
+                    .map { ModelOption(modelID: $0.id, displayName: $0.displayName) }
+                guard !codeModels.isEmpty else { return }
+                workbenchModel?.availableModels = codeModels
+            }
+    }
+
+    @ViewBuilder
+    private var phaseContent: some View {
+        switch configuration.authModel.phase {
+        case .signedIn(let session):
+            JunoDesktopWorkspaceView(
+                configuration: configuration,
+                session: session,
+                product: productBinding,
+                workbenchModel: workbenchModel
+            )
+        case .restoring:
+            JunoDesktopLoadingView()
+        case .signedOut, .signingIn, .unavailable:
+            JunoDesktopSignInView(authModel: configuration.authModel)
+        }
+    }
+
+    private func updateLifecycle(for phase: NativeAuthModel.Phase) {
+        guard case .signedIn(let session) = phase else {
+            stopAuthenticatedModels()
+            workbenchModel = nil
+            return
+        }
+
+        let accountID = session.profile.id
+        configuration.syncModel?.start(for: accountID)
+        configuration.attachmentModel?.start(for: accountID)
+        configuration.avatarModel?.start(for: session.profile)
+        configuration.searchModel?.start(for: accountID)
+        configuration.privateChatModel?.start(for: accountID)
+        configuration.libraryModel?.start(for: accountID)
+        Task {
+            await configuration.conversationModel?.start(for: accountID)
+            await configuration.projectModel?.start(for: accountID)
+            await configuration.artifactModel?.start(for: accountID)
+            await configuration.memorySettingsModel?.start(for: accountID)
+            await configuration.connectorModel?.start(for: accountID)
+            await configuration.scheduledTaskModel?.start(for: accountID)
+            await configuration.codeModel?.start(for: accountID)
+        }
+        configuration.remoteCodeModel?.start(for: accountID)
+
+        if let runtime = configuration.runtime {
+            workbenchModel = WorkbenchModel(
+                dependencies: .standard(
+                    modelClient: BackendCodeModelClient(
+                        streamer: runtime,
+                        accountID: accountID
+                    ),
+                    availableModels: initialCodeModels
+                )
+            )
+        }
+    }
+
+    private var initialCodeModels: [ModelOption] {
+        let catalog = configuration.conversationModel?.selectableModels ?? []
+        if !catalog.isEmpty {
+            let codeModels = catalog
+                .filter { CodeModelProviderResolver.supports($0.id) }
+                .map { ModelOption(modelID: $0.id, displayName: $0.displayName) }
+            if !codeModels.isEmpty { return codeModels }
+        }
+        // Only used during the brief bootstrap window before the signed-in
+        // manifest arrives; `onChange` above replaces it with the full account
+        // catalog immediately afterwards.
+        return [
+            ModelOption(
+                modelID: "anthropic:claude-sonnet-5",
+                displayName: "Claude Sonnet 5"
+            ),
+        ]
+    }
+
+    private func stopAuthenticatedModels() {
+        configuration.syncModel?.stop()
+        configuration.attachmentModel?.stop()
+        configuration.avatarModel?.clear()
+        configuration.conversationModel?.stop()
+        configuration.privateChatModel?.stop()
+        configuration.projectModel?.stop()
+        configuration.artifactModel?.stop()
+        configuration.memorySettingsModel?.stop()
+        configuration.searchModel?.stop()
+        configuration.connectorModel?.stop()
+        configuration.scheduledTaskModel?.stop()
+        configuration.codeModel?.stop()
+        configuration.remoteCodeModel?.stop()
+        configuration.libraryModel?.stop()
+    }
+}
+
+private struct JunoDesktopLoadingView: View {
+    var body: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .controlSize(.small)
+            Text("Preparing Juno…")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.junoCanvasWarm)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// The signed-out window, built to the website's auth surface
+/// (`src/app/(auth)/layout.tsx` + `sign-in/page.tsx`).
+///
+/// That surface is one centred column on the warm canvas — dot field, the Juno
+/// mark, the mono wordmark, a white card, then fine print — not the two-pane
+/// marketing split this used to be. The split's right half was a coral rectangle
+/// holding `Image(systemName: "circle.grid.cross")`, an SF Symbol standing in for
+/// a brand mark Juno actually ships; and its headline asked for
+/// `Font.custom("Newsreader", …)`, which resolves nothing, because the bundled
+/// faces register under their PostScript names and not under that family. It
+/// silently fell back to the system sans, so the one place the editorial voice
+/// had to appear was the one place it did not. ``JunoSerif`` exists to make that
+/// unrepeatable.
+private struct JunoDesktopSignInView: View {
+    /// The web's `max-w-sm` card column, and its `h-12 w-12` mark.
+    private static let columnWidth: CGFloat = 360
+    private static let markSize: CGFloat = 48
+
+    let authModel: NativeAuthModel
+
+    private var isBusy: Bool { authModel.phase == .signingIn }
+
+    var body: some View {
+        VStack(spacing: JunoSpace.section) {
+            VStack(spacing: JunoSpace.cozy) {
+                JunoMark(size: Self.markSize)
+                JunoWordmark()
+            }
+
+            card
+                .frame(maxWidth: Self.columnWidth)
+
+            // The two honest notes the web pairs under its card: what the
+            // account is for, and — native-only, because only the app could get
+            // this wrong — where credentials are actually typed.
+            VStack(spacing: JunoSpace.tight) {
+                Text(
+                    "Authentication opens Juno in a system-owned browser session. Passwords are never entered into this app."
+                )
+                Text(
+                    "By continuing you agree to use Juno responsibly. Your conversations are private to your account."
+                )
+            }
+            .junoCaption()
+            .multilineTextAlignment(.center)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: Self.columnWidth)
+        }
+        .padding(JunoSpace.region)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            // Canvas first, dot field over it: the web layers the same two, and
+            // the field has to read as printed *on* the paper rather than as a
+            // texture the paper is sitting on.
+            Color.junoCanvasWarm
+            JunoDotField()
+        }
+    }
+
+    private var card: some View {
+        VStack(spacing: JunoSpace.roomy) {
+            VStack(spacing: JunoSpace.tight) {
+                Text("Welcome back")
+                    .font(JunoSerif.pageHeading())
+                Text("Sign in to continue to Juno.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+
+            Button {
+                Task { await authModel.signIn() }
+            } label: {
+                Group {
+                    if isBusy {
+                        HStack(spacing: JunoSpace.snug) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Opening secure sign-in…")
+                        }
+                    } else {
+                        Text("Sign in to Juno")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .junoProminentGlassButton()
+            .controlSize(.large)
+            .disabled(isBusy || authModel.phase == .unavailable)
+            .accessibilityIdentifier("Sign in to Juno")
+
+            // The real failure, in full, selectable — a sign-in that cannot
+            // explain itself is a sign-in nobody can report.
+            if let error = authModel.lastErrorDescription {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(Color.junoDanger)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(JunoSpace.section)
+        .junoCard(cornerRadius: JunoCornerRadius.card)
+    }
+}
+
+/// The mono wordmark, matching the web's `AsciiWordmark`.
+///
+/// A logotype rather than a label, which is why it keeps the wide tracking the
+/// rest of Juno's mono voice dropped.
+private struct JunoWordmark: View {
+    /// The web's `tracking-[0.12em]` resolved against its 14px mono size.
+    private static let tracking: CGFloat = 1.7
+
+    var body: some View {
+        Text("Juno")
+            .junoMono()
+            .fontWeight(.semibold)
+            .tracking(Self.tracking)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The faint dotted grid the website paints behind its auth and marketing
+/// surfaces (`src/components/signature/dot-field.tsx`).
+///
+/// Static, unlike the web's canvas: the pointer-reactive variant there is opt-in
+/// (`interactive`) and the auth layout does not opt in, so animating it here
+/// would be a flourish the brand does not have. Drawn in a `Canvas` rather than
+/// as thousands of `Circle`s so the layout engine never sees the dots at all.
+private struct JunoDotField: View {
+    /// The web's `spacing = 24` and `r = 0.7`, in points.
+    private static let spacing: CGFloat = JunoSpace.section
+    private static let radius: CGFloat = 0.7
+
+    var body: some View {
+        Canvas { context, size in
+            let diameter = Self.radius * 2
+            var x = Self.spacing / 2
+            while x < size.width {
+                var y = Self.spacing / 2
+                while y < size.height {
+                    context.fill(
+                        Path(
+                            ellipseIn: CGRect(
+                                x: x - Self.radius,
+                                y: y - Self.radius,
+                                width: diameter,
+                                height: diameter
+                            )
+                        ),
+                        with: .color(Color.junoSeparator)
+                    )
+                    y += Self.spacing
+                }
+                x += Self.spacing
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}

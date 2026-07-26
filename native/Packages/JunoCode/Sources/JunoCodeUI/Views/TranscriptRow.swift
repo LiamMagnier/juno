@@ -2,6 +2,82 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
+/// Everything a transcript row needs beyond the event itself.
+///
+/// Rows take this rather than a ``SessionController`` for two reasons. The first
+/// is correctness: a sub-agent's transcript is a *different* session's event
+/// list, and a row that reached into the parent controller would correlate a
+/// child's tool call against the parent's completions and find nothing. The
+/// second is cost — the previous rows each scanned the whole event array to find
+/// their own completion and output, so a long run was quadratic in the number of
+/// tool calls. The indices below are built once per transcript.
+struct TranscriptContext {
+    let events: [SessionEvent]
+    /// Approvals still awaiting an answer. Those are rendered as the pinned card
+    /// above the composer, so the transcript shows only the resolved ones.
+    let pendingApprovalIDs: Set<String>
+    /// Loads a sub-agent's own transcript from the shared session store.
+    var loadSubAgent: @MainActor @Sendable (CodeSessionID) async -> [SessionEvent] = { _ in [] }
+    /// Selects a session in the sidebar.
+    var openSession: @MainActor @Sendable (CodeSessionID) -> Void = { _ in }
+    /// 0 for the session's own transcript, 1 inside a sub-agent's. A child never
+    /// nests further: `DelegateTaskTool` cannot delegate, so there is nothing
+    /// deeper to show, and an unbounded tree in a transcript is a maze.
+    var depth = 0
+
+    private let completions: [String: ToolCompletedEvent]
+    private let outputs: [String: [ToolOutputEvent]]
+    private let approvalDecisions: [String: ApprovalDecision]
+
+    init(
+        events: [SessionEvent],
+        pendingApprovalIDs: Set<String> = [],
+        loadSubAgent: @escaping @MainActor @Sendable (CodeSessionID) async -> [SessionEvent]
+            = { _ in [] },
+        openSession: @escaping @MainActor @Sendable (CodeSessionID) -> Void = { _ in },
+        depth: Int = 0
+    ) {
+        self.events = events
+        self.pendingApprovalIDs = pendingApprovalIDs
+        self.loadSubAgent = loadSubAgent
+        self.openSession = openSession
+        self.depth = depth
+        var completions: [String: ToolCompletedEvent] = [:]
+        var outputs: [String: [ToolOutputEvent]] = [:]
+        var approvalDecisions: [String: ApprovalDecision] = [:]
+        for event in events {
+            switch event.payload {
+            case let .toolCompleted(completed):
+                completions[completed.toolCallID] = completed
+            case let .toolOutput(chunk):
+                outputs[chunk.toolCallID, default: []].append(chunk)
+            case let .approvalResolved(resolved):
+                approvalDecisions[resolved.approvalID] = resolved.decision
+            default:
+                break
+            }
+        }
+        self.completions = completions
+        self.outputs = outputs
+        self.approvalDecisions = approvalDecisions
+    }
+
+    func completion(forToolCall id: String) -> ToolCompletedEvent? { completions[id] }
+    func output(forToolCall id: String) -> [ToolOutputEvent] { outputs[id] ?? [] }
+    func decision(forApproval id: String) -> ApprovalDecision? { approvalDecisions[id] }
+
+    /// The context for a sub-agent's own transcript.
+    func child(events: [SessionEvent]) -> TranscriptContext {
+        TranscriptContext(
+            events: events,
+            pendingApprovalIDs: [],
+            loadSubAgent: loadSubAgent,
+            openSession: openSession,
+            depth: depth + 1
+        )
+    }
+}
+
 /// Renders one transcript event in the agent canvas.
 ///
 /// The transcript is a **timeline of machine activity**, not a chat log, and the
@@ -17,10 +93,12 @@ import JunoDesignSystem
 /// else is provenance.
 struct TranscriptRow: View {
     let event: SessionEvent
-    let controller: SessionController
+    let context: TranscriptContext
 
     var body: some View {
         switch event.payload {
+        case let .turnConfiguration(configuration):
+            TurnContractRow(configuration: configuration)
         case let .userPrompt(prompt):
             userRow(prompt.text)
         case let .assistantMessage(message):
@@ -28,9 +106,9 @@ struct TranscriptRow: View {
         case let .reasoningSummary(summary):
             ReasoningRow(text: summary.summary)
         case let .toolProposed(proposed):
-            ToolActivityRow(proposed: proposed, controller: controller)
+            ToolActivityRow(proposed: proposed, context: context)
         case let .approvalRequested(request):
-            if !controller.pendingApprovals.contains(where: { $0.id == request.id }) {
+            if !context.pendingApprovalIDs.contains(request.id) {
                 resolvedApprovalRow(request)
             }
         case let .fileChanged(change):
@@ -79,6 +157,11 @@ struct TranscriptRow: View {
     /// previous build passed the raw string to `Text(LocalizedStringKey:)`,
     /// which rendered `**bold**` but dropped every block construct — and treated
     /// agent output as a localisation key.
+    ///
+    /// A plan is prose here too. Neither `SessionEventPayload` nor the runtime
+    /// carries a structured plan or task list, so the ordered list the agent
+    /// writes is rendered as the ordered list it is, rather than dressed up as a
+    /// checklist whose boxes nothing could ever tick.
     private func assistantRow(_ text: String) -> some View {
         JunoMarkdownText(text)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -88,7 +171,7 @@ struct TranscriptRow: View {
     // MARK: - Activity
 
     private func resolvedApprovalRow(_ request: ApprovalRequest) -> some View {
-        let approved = resolution(for: request) == .approved
+        let approved = context.decision(forApproval: request.id) == .approved
         return ActivityRow(
             glyph: approved ? "checkmark.shield.fill" : "xmark.shield.fill",
             tint: approved ? .junoSuccess : .junoDanger,
@@ -96,17 +179,6 @@ struct TranscriptRow: View {
             subtitle: approved ? "Approved" : "Denied",
             accessibilityLabel: "\(request.summary), \(approved ? "approved" : "denied")"
         )
-    }
-
-    private func resolution(for request: ApprovalRequest) -> ApprovalDecision? {
-        controller.events.lazy.compactMap { event -> ApprovalDecision? in
-            if case let .approvalResolved(resolved) = event.payload,
-               resolved.approvalID == request.id
-            {
-                return resolved.decision
-            }
-            return nil
-        }.first
     }
 
     /// A file the agent touched. The filename stays whole and only the
@@ -294,6 +366,66 @@ struct TranscriptRow: View {
     }
 }
 
+// MARK: - Turn contract
+
+/// What the turn that follows was allowed to do.
+///
+/// Mode, model and reasoning effort are chosen in the composer for the *next*
+/// message, so without this line the record could not say whether the edit three
+/// turns ago happened under Ask-before-changes or full access. It is deliberately
+/// the quietest thing in the transcript — a caption, aligned with the user turn
+/// it belongs to — because it is provenance, not content.
+struct TurnContractRow: View {
+    let configuration: TurnConfigurationEvent
+    @Environment(\.codeModelDisplayNames) private var modelNames
+
+    private var modelName: String {
+        modelNames[configuration.modelID] ?? configuration.modelID
+    }
+
+    private var text: String {
+        [
+            configuration.behavior.rawValue.capitalized,
+            modelName,
+            PermissionModeLabel.text(for: configuration.effectivePermissionMode),
+        ].joined(separator: " · ")
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.hairline) {
+            Spacer(minLength: JunoSpace.region)
+            Image(systemName: PermissionModeLabel.glyph(for: configuration.effectivePermissionMode))
+                .imageScale(.small)
+                .accessibilityHidden(true)
+            Text(text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if configuration.reasoningEffort != .medium {
+                Text("· \(configuration.reasoningEffort.rawValue) reasoning")
+                    .lineLimit(1)
+            }
+        }
+        .junoCaption()
+        .padding(.horizontal, JunoSpace.cozy)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("This turn ran as \(text)")
+    }
+}
+
+/// Model identifiers are opaque; only the workbench knows what to call them.
+/// Passed down the transcript rather than into every row's initialiser, because
+/// exactly one row in a hundred needs it.
+struct CodeModelDisplayNamesKey: EnvironmentKey {
+    static let defaultValue: [String: String] = [:]
+}
+
+extension EnvironmentValues {
+    var codeModelDisplayNames: [String: String] {
+        get { self[CodeModelDisplayNamesKey.self] }
+        set { self[CodeModelDisplayNamesKey.self] = newValue }
+    }
+}
+
 // MARK: - Shared activity shape
 
 /// The one row shape every non-message transcript event uses.
@@ -457,38 +589,37 @@ struct ReasoningRow: View {
 /// A proposed/running/finished tool call with expandable streamed output.
 struct ToolActivityRow: View {
     let proposed: ToolProposedEvent
-    let controller: SessionController
+    let context: TranscriptContext
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var completion: ToolCompletedEvent? {
-        for event in controller.events.reversed() {
-            if case let .toolCompleted(completed) = event.payload,
-               completed.toolCallID == proposed.toolCallID
-            {
-                return completed
-            }
-        }
-        return nil
+        context.completion(forToolCall: proposed.toolCallID)
     }
 
     private var output: [ToolOutputEvent] {
-        controller.events.compactMap { event in
-            if case let .toolOutput(chunk) = event.payload,
-               chunk.toolCallID == proposed.toolCallID
-            {
-                return chunk
-            }
-            return nil
-        }
+        context.output(forToolCall: proposed.toolCallID)
     }
 
     private var isRunning: Bool { completion == nil }
 
+    /// The sub-agent this call delegated to, when it got far enough to create
+    /// one. Correlated through the marker line the tool returns, which is the
+    /// only link there is: a child is an ordinary session with no parent field.
+    private var childSessionID: CodeSessionID? {
+        guard proposed.toolName == SubagentDigest.toolName,
+              context.depth == 0,
+              let summary = completion?.resultSummary
+        else { return nil }
+        return SubagentDigest.childSessionID(in: summary)
+    }
+
     /// Only an unfinished or failed call is worth opening on sight. A succeeded
     /// call with output the reader did not ask for is noise.
     private var hasDetail: Bool {
-        !output.isEmpty || !(completion?.resultSummary.isEmpty ?? true)
+        !output.isEmpty
+            || !(completion?.resultSummary.isEmpty ?? true)
+            || childSessionID != nil
     }
 
     var body: some View {
@@ -567,6 +698,9 @@ struct ToolActivityRow: View {
             if !output.isEmpty {
                 OutputWell(lines: output.map { ($0.text, $0.channel) }, maxHeight: 200)
             }
+            if let childSessionID {
+                SubAgentTranscript(childSessionID: childSessionID, context: context)
+            }
         }
     }
 
@@ -604,6 +738,87 @@ struct ToolActivityRow: View {
             text += ", running"
         }
         return text
+    }
+}
+
+// MARK: - Sub-agents
+
+/// A delegated sub-agent's own transcript, expandable in place.
+///
+/// The child is a real session in the same store, so it renders through the same
+/// rows as its parent rather than through a summary of them — a sub-agent that
+/// read six files and concluded the wrong thing is only inspectable if its steps
+/// are the same shape as everything else in the window. Loaded when the reader
+/// asks, because a run can delegate several times and eagerly reading every
+/// child's transcript would mean a disk read per row.
+struct SubAgentTranscript: View {
+    let childSessionID: CodeSessionID
+    let context: TranscriptContext
+
+    @State private var events: [SessionEvent] = []
+    @State private var loaded = false
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(spacing: JunoSpace.snug) {
+                Button {
+                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                        expanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: JunoSpace.hairline) {
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
+                        Text("Sub-agent transcript")
+                    }
+                    .font(.caption)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sub-agent transcript")
+                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+
+                Button("Open sub-agent") {
+                    context.openSession(childSessionID)
+                }
+                .buttonStyle(.link)
+                .font(.caption)
+                .help("Select this sub-agent's session in the sidebar")
+
+                Spacer(minLength: 0)
+            }
+
+            if expanded {
+                if loaded, events.isEmpty {
+                    Text("This sub-agent's transcript is no longer in the store.")
+                        .junoCaption()
+                } else if !loaded {
+                    ProgressView().controlSize(.small)
+                } else {
+                    // Left rule rather than a nested card: the child's rows are
+                    // the same rows, one indent in.
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        ForEach(events) { event in
+                            TranscriptRow(event: event, context: context.child(events: events))
+                        }
+                    }
+                    .padding(.leading, JunoSpace.snug)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(Color.junoSeparator)
+                            .frame(width: 1)
+                    }
+                }
+            }
+        }
+        .task(id: expanded) {
+            guard expanded, !loaded else { return }
+            events = await context.loadSubAgent(childSessionID)
+            loaded = true
+        }
     }
 }
 

@@ -447,6 +447,21 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// would drop the reader back into the conversation they just left.
     public var isDraftingNewConversation = false
 
+    /// Whether ``reload()`` may fall back to opening the most recent
+    /// conversation when nothing is selected.
+    ///
+    /// **True on the Mac**, whose sidebar-plus-detail layout has no resting
+    /// state of its own: an empty detail pane beside a full sidebar reads as a
+    /// window that failed to load, so the last conversation is the right thing
+    /// to land on.
+    ///
+    /// **False on the phone**, where the resting state *is* a screen — the
+    /// greeting and an empty composer, which is what chat.liams.dev opens on.
+    /// With the fallback on, launching the app dropped the reader straight into
+    /// whatever they last said, and the home screen was unreachable without
+    /// tapping New chat.
+    public var opensMostRecentConversationOnLoad: Bool
+
     public var selectedConversation: NativeConversation? {
         conversations.first { $0.id == selectedConversationID }
     }
@@ -553,7 +568,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         drainer: NativeMutationDrainer<Repository>,
         syncModel: NativeSyncModel<Repository>,
         chatClient: NativeChatAPIClient? = nil,
-        titleClient: NativeConversationTitleClient? = nil
+        titleClient: NativeConversationTitleClient? = nil,
+        opensMostRecentConversationOnLoad: Bool = true
     ) {
         store = NativeConversationStore(repository: repository, outbox: outbox)
         self.outbox = outbox
@@ -561,6 +577,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         self.syncModel = syncModel
         self.chatClient = chatClient
         self.titleClient = titleClient
+        self.opensMostRecentConversationOnLoad = opensMostRecentConversationOnLoad
     }
 
     public func start(for accountID: AccountID) async {
@@ -622,7 +639,10 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             {
                 self.selectedConversationID = nil
             }
-            if selectedConversationID == nil, !isDraftingNewConversation {
+            if selectedConversationID == nil,
+                !isDraftingNewConversation,
+                opensMostRecentConversationOnLoad
+            {
                 selectedConversationID = conversations.first(where: { !$0.isArchived })?.id
             }
             lastErrorDescription = snapshot.conflictedMutationCount == 0
@@ -933,7 +953,12 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             return false
         }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
+        // Empty text is a real message when files came with it — "here, read
+        // this" is the whole point of an attachment. This is the same rule
+        // `/api/chat` applies (`!message?.trim() && attachmentIds.length === 0`),
+        // and without it the composer's "Attach as file" produced a draft that
+        // could no longer be sent.
+        guard !trimmed.isEmpty || !attachmentIDs.isEmpty else {
             chatErrorDescription = NativeChatAPIError.invalidMessage.localizedDescription
             return false
         }

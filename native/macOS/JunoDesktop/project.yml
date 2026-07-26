@@ -1,0 +1,131 @@
+name: JunoDesktop
+options:
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "26.0"
+  developmentLanguage: en
+  knownRegions:
+    - en
+    - fr
+  minimumXcodeGenVersion: 2.46.0
+configs:
+  Debug: debug
+  Stable: release
+  Next: release
+packages:
+  JunoNativeKit:
+    path: ../../Packages/JunoNativeKit
+  JunoCode:
+    path: ../../Packages/JunoCode
+targets:
+  JunoDesktop:
+    type: application
+    platform: macOS
+    sources:
+      - path: App
+      - path: Resources
+        excludes:
+          - Info.plist
+          - JunoDesktop.entitlements
+        buildPhase: resources
+      - path: ../../iOS/JunoMobile/Resources/Fonts
+        buildPhase: resources
+    dependencies:
+      - package: JunoNativeKit
+        product: JunoAPI
+      - package: JunoNativeKit
+        product: JunoAuth
+      - package: JunoNativeKit
+        product: JunoChatKit
+      - package: JunoNativeKit
+        product: JunoCodeKit
+      - package: JunoNativeKit
+        product: JunoCore
+      - package: JunoNativeKit
+        product: JunoDesignSystem
+      - package: JunoNativeKit
+        product: JunoStorage
+      - package: JunoNativeKit
+        product: JunoSync
+      - package: JunoNativeKit
+        product: JunoVoiceKit
+      - package: JunoNativeKit
+        product: JunoPreviewSupport
+      - package: JunoCode
+        product: JunoCodeBridge
+      - package: JunoCode
+        product: JunoCodeUI
+    configFiles:
+      Debug: ../../Config/JunoDesktop-Debug.xcconfig
+      Stable: ../../Config/JunoDesktop-Stable.xcconfig
+      Next: ../../Config/JunoDesktop-Next.xcconfig
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: Resources/JunoDesktop.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+        PRODUCT_MODULE_NAME: JunoDesktop
+  JunoDesktopTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: JunoDesktop
+    configFiles:
+      Debug: ../../Config/JunoDesktop-Debug.xcconfig
+      Stable: ../../Config/JunoDesktop-Stable.xcconfig
+      Next: ../../Config/JunoDesktop-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.tests
+  JunoDesktopUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: JunoDesktop
+    configFiles:
+      Debug: ../../Config/JunoDesktop-Debug.xcconfig
+      Stable: ../../Config/JunoDesktop-Stable.xcconfig
+      Next: ../../Config/JunoDesktop-Next.xcconfig
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.liammagnier.JunoDesktop.uitests
+        TEST_TARGET_NAME: JunoDesktop
+schemes:
+  JunoDesktop:
+    build:
+      targets:
+        JunoDesktop: all
+        JunoDesktopTests: [test]
+        JunoDesktopUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - JunoDesktopTests
+        - JunoDesktopUITests
+    profile:
+      config: Stable
+    analyze:
+      config: Debug
+    archive:
+      config: Stable
+  JunoDesktop-Next:
+    build:
+      targets:
+        JunoDesktop: all
+    run:
+      config: Next
+    profile:
+      config: Next
+    analyze:
+      config: Next
+    archive:
+      config: Next

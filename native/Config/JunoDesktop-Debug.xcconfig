@@ -1,0 +1,14 @@
+#include "Debug.xcconfig"
+
+JUNO_DISPLAY_NAME = Juno
+PRODUCT_BUNDLE_IDENTIFIER = com.liammagnier.JunoDesktop.debug
+MACOSX_DEPLOYMENT_TARGET = 26.0
+SDKROOT = macosx
+SUPPORTED_PLATFORMS = macosx
+ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor
+
+
+// Deliberately off for Debug only: the XCUI runner injects its bundle into the
+// host app, which Hardened Runtime blocks without a library-validation
+// exception. The shipping Stable and Next configurations both enable it.
+ENABLE_HARDENED_RUNTIME = NO

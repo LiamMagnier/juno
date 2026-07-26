@@ -195,7 +195,12 @@ struct JunoMobileApp: App {
                     drainer: drainer,
                     syncModel: syncModel,
                     chatClient: NativeChatAPIClient(transport: runtime),
-                    titleClient: NativeConversationTitleClient(sender: runtime)
+                    titleClient: NativeConversationTitleClient(sender: runtime),
+                    // The phone opens on its home screen — the greeting and an
+                    // empty composer — exactly as the website does. Without this
+                    // the first load selected the most recent conversation and
+                    // the app launched straight into the last thing you said.
+                    opensMostRecentConversationOnLoad: false
                 ),
                 projectModel: NativeProjectModel(
                     repository: localStore,

@@ -146,4 +146,149 @@ final class GitServiceTests: XCTestCase {
         let commit = try await git.commit(message: message)
         XCTAssertEqual(commit.subject, message)
     }
+
+    func testPrepareAndPublishBranchToOriginWithoutForce() async throws {
+        try "publish\n".write(
+            to: workspaceURL.appendingPathComponent("publish.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try await git.stage(paths: ["publish.txt"])
+        let commit = try await git.commit(message: "publish base")
+
+        let remoteURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-code-remote-\(UUID().uuidString).git")
+        defer { try? FileManager.default.removeItem(at: remoteURL) }
+        _ = try await executor.run(
+            "git init -q --bare \(GitService.shellQuote(remoteURL.path))",
+            timeoutSeconds: 20
+        )
+        _ = try await executor.run(
+            "git remote add origin \(GitService.shellQuote(remoteURL.path))",
+            timeoutSeconds: 20
+        )
+
+        let plan = try await git.preparePush()
+        XCTAssertEqual(
+            plan,
+            GitPushPlan(
+                remote: "origin",
+                localBranch: "main",
+                remoteBranch: "main",
+                setsUpstream: true
+            )
+        )
+        _ = try await git.push(plan)
+
+        let remoteHead = try await executor.run(
+            "git --git-dir \(GitService.shellQuote(remoteURL.path)) rev-parse refs/heads/main",
+            timeoutSeconds: 20
+        )
+        XCTAssertEqual(
+            remoteHead.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            commit.hash
+        )
+        let trackingPlan = try await git.preparePush()
+        XCTAssertFalse(trackingPlan.setsUpstream)
+        XCTAssertEqual(trackingPlan.displayTarget, "origin/main")
+    }
+
+    func testPushRejectsAPlanThatNoLongerMatchesTheCurrentBranch() async throws {
+        try "one\n".write(
+            to: workspaceURL.appendingPathComponent("one.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try await git.stage(paths: ["one.txt"])
+        _ = try await git.commit(message: "base")
+
+        let remoteURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("juno-code-remote-\(UUID().uuidString).git")
+        defer { try? FileManager.default.removeItem(at: remoteURL) }
+        _ = try await executor.run(
+            "git init -q --bare \(GitService.shellQuote(remoteURL.path))",
+            timeoutSeconds: 20
+        )
+        _ = try await executor.run(
+            "git remote add origin \(GitService.shellQuote(remoteURL.path))",
+            timeoutSeconds: 20
+        )
+
+        let mainPlan = try await git.preparePush()
+        try await git.createBranch(named: "feature/changed")
+        do {
+            _ = try await git.push(mainPlan)
+            XCTFail("Expected stale push plan rejection")
+        } catch let error as GitPublishError {
+            XCTAssertEqual(error, .planChanged)
+        }
+    }
+
+    func testGitHubStatusParserPreservesPullRequestAndCheckFields() throws {
+        let checks = try GitHubStatusParser.parseChecks(
+            #"""
+            [
+              {
+                "bucket": "pass",
+                "name": "Swift",
+                "state": "SUCCESS",
+                "link": "https://github.com/acme/juno/actions/runs/1",
+                "workflow": "Native CI"
+              },
+              {
+                "bucket": "pending",
+                "name": "Web",
+                "state": "IN_PROGRESS",
+                "link": null,
+                "workflow": "Checks"
+              }
+            ]
+            """#
+        )
+        let pullRequest = try GitHubStatusParser.parsePullRequest(
+            #"""
+            {
+              "number": 42,
+              "title": "Rework Code studio",
+              "url": "https://github.com/acme/juno/pull/42",
+              "state": "OPEN",
+              "isDraft": false,
+              "headRefName": "feature/code-studio",
+              "baseRefName": "main",
+              "reviewDecision": "REVIEW_REQUIRED"
+            }
+            """#,
+            checks: checks
+        )
+        XCTAssertEqual(pullRequest.number, 42)
+        XCTAssertEqual(pullRequest.headRefName, "feature/code-studio")
+        XCTAssertEqual(pullRequest.reviewDecision, "REVIEW_REQUIRED")
+        XCTAssertEqual(pullRequest.checks.count, 2)
+        XCTAssertEqual(pullRequest.checks[0].bucket, "pass")
+        XCTAssertEqual(pullRequest.checks[1].state, "IN_PROGRESS")
+    }
+
+    func testGitHubCheckIdentityIncludesWorkflowAndLink() throws {
+        let checks = try GitHubStatusParser.parseChecks(
+            #"""
+            [
+              {
+                "bucket": "pass",
+                "name": "Build",
+                "state": "SUCCESS",
+                "link": "https://github.com/acme/juno/actions/runs/1",
+                "workflow": "macOS"
+              },
+              {
+                "bucket": "pass",
+                "name": "Build",
+                "state": "SUCCESS",
+                "link": "https://github.com/acme/juno/actions/runs/2",
+                "workflow": "iOS"
+              }
+            ]
+            """#
+        )
+        XCTAssertEqual(Set(checks.map(\.id)).count, 2)
+    }
 }

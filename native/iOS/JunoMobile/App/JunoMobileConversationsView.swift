@@ -399,7 +399,20 @@ private struct JunoMobileConversationDetail: View {
         )
     }
 
-    private let bottomAnchor = "juno.chat.bottom"
+    /// Drives the transcript's scroll offset.
+    ///
+    /// This replaced a `ScrollViewReader` + `proxy.scrollTo(bottomAnchor)`, which
+    /// **silently did nothing here**: on a scroll view carrying
+    /// `.defaultScrollAnchor(.bottom)`, `scrollTo(id:)` is inert, so the
+    /// jump-to-latest button was a control that appeared, highlighted under a
+    /// finger, and moved the transcript not at all. It went unnoticed because the
+    /// bottom anchor *also* pins the view as content grows — so the follow-the-
+    /// stream path looked correct while its `scrollTo` was doing nothing either.
+    ///
+    /// `ScrollPosition.scrollTo(edge:)` asks for the edge directly rather than for
+    /// a view that happens to sit near it, which is both what the feature means
+    /// and the API that works with a bottom-anchored scroll view.
+    @State private var scrollPosition = ScrollPosition(edge: .bottom)
 
     private var messages: [NativeChatMessage] {
         model.messages(for: conversation.id)
@@ -566,9 +579,6 @@ private struct JunoMobileConversationDetail: View {
             .padding(.vertical, 24)
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
-            Color.clear
-                .frame(height: 1)
-                .id(bottomAnchor)
         }
     }
 
@@ -655,7 +665,7 @@ private struct JunoMobileConversationDetail: View {
     /// The scrolling transcript with its follow-the-stream behaviour and
     /// jump-to-latest control. A separate function so `body` stays a short
     /// enough expression for the type checker.
-    private func scrollArea(_ proxy: ScrollViewProxy) -> some View {
+    private var scrollArea: some View {
         ScrollView { transcript }
         // Scoped to the transcript, NOT to the whole screen: applied after
         // `.safeAreaInset` it was stamped onto every composer control too,
@@ -663,7 +673,12 @@ private struct JunoMobileConversationDetail: View {
         // instead of their own.
         .accessibilityIdentifier("juno.mobile.conversation-detail")
         .background(Color.junoCanvas)
+        // Both are needed and they do different jobs. `defaultScrollAnchor`
+        // keeps the bottom pinned as the answer grows — that is what makes a
+        // streaming reply stay in view without anyone asking it to. The
+        // position binding is how a *deliberate* jump is expressed.
         .defaultScrollAnchor(.bottom)
+        .scrollPosition($scrollPosition)
         .onScrollGeometryChange(for: Bool.self) { geometry in
             let distance = geometry.contentSize.height
                 - geometry.contentOffset.y
@@ -679,21 +694,38 @@ private struct JunoMobileConversationDetail: View {
         .onChange(of: streamSignature) { _, _ in
             guard isNearBottom else { return }
             withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                scrollPosition.scrollTo(edge: .bottom)
             }
         }
         .overlay(alignment: .bottomTrailing) {
             if !isNearBottom && !messages.isEmpty {
                 Button {
+                    // `isNearBottom` is not set optimistically here. The control
+                    // earns its own disappearance from the scroll it caused —
+                    // which is what made the broken version diagnosable instead
+                    // of a button that vanished and left the reader where it
+                    // found them.
                     withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                        proxy.scrollTo(bottomAnchor, anchor: .bottom)
+                        scrollPosition.scrollTo(edge: .bottom)
                     }
                 } label: {
                     Image(systemName: "arrow.down")
                         .font(.body.weight(.semibold))
-                        .padding(12)
+                        // Ink, not coral. The screen's `.tint` is the accent, and
+                        // a bare `Image` in a `Button` label takes it — so the one
+                        // piece of chrome that means "you have scrolled up" was
+                        // wearing the colour this app spends on what is *active*.
+                        // `Color.primary` follows the theme, so it is black on the
+                        // light canvas and white on the dark one.
+                        .foregroundStyle(Color.primary)
+                        .frame(width: 44, height: 44)
+                        // Real Liquid Glass, like every other floating control in
+                        // this app. `.regularMaterial` is a blur — it does not
+                        // refract, it does not flex under a finger, and beside the
+                        // glass composer directly below it the difference reads.
+                        .modifier(JunoGlassCircle())
                 }
-                .background(.regularMaterial, in: Circle())
+                .buttonStyle(.plain)
                 .padding(.trailing, 16)
                 .padding(.bottom, 8)
                 .transition(.scale.combined(with: .opacity))
@@ -704,9 +736,7 @@ private struct JunoMobileConversationDetail: View {
     }
 
     var body: some View {
-        ScrollViewReader { proxy in
-            scrollArea(proxy)
-        }
+        scrollArea
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { conversationToolbar }
         .alert("Rename conversation", isPresented: $showingRename) {
@@ -927,6 +957,12 @@ private struct JunoMobileMessageRow: View {
     /// it rather than at a guessed number of points.
     @State private var rowWidth: CGFloat = 0
 
+    /// Whether a long prompt is showing in full. Collapsed is the resting state,
+    /// as it is on the web.
+    @State private var expanded = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var isUser: Bool { message.role == .user }
 
     /// The reply as the reader sees it — wire tags removed, and the duplicate
@@ -963,29 +999,106 @@ private struct JunoMobileMessageRow: View {
     /// it read as something *said*. The fill was coral at 13%, which spent the
     /// accent on the reader's own words; the web keeps the accent for what is
     /// active and the bubble neutral.
+    /// Whether this prompt is long enough to open collapsed. The rule and the
+    /// numbers are the website's — see ``NativePromptLimits``.
+    private var isLongPrompt: Bool {
+        isUser && NativePromptLimits.isLongMessage(plainText)
+    }
+
     private var userBubble: some View {
         HStack(spacing: 0) {
             Spacer(minLength: 0)
-            Text(plainText)
-                .font(.system(size: 15))
-                // 15pt at the web's `leading-relaxed` (1.625) is ~24pt of line
-                // box, so 9pt of extra leading on top of the glyph height.
-                .lineSpacing(5)
-                .textSelection(.enabled)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(Color.junoMuted, in: Self.bubbleShape)
-                .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
-                .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
-                // A real cap, not a fixed width: the bubble hugs short messages
-                // and wraps long ones at 85% of the transcript, as the web's
-                // `max-w-[85%]` on a shrink-to-fit flex item does.
-                .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.85 : nil, alignment: .trailing)
-                .contextMenu { copyButton }
+            VStack(alignment: .trailing, spacing: 5) {
+                bubbleBody
+                if isLongPrompt { expandControl }
+            }
+            // A real cap, not a fixed width: the bubble hugs short messages
+            // and wraps long ones at 85% of the transcript, as the web's
+            // `max-w-[85%]` on a shrink-to-fit flex item does.
+            .frame(maxWidth: rowWidth > 0 ? rowWidth * 0.85 : nil, alignment: .trailing)
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { rowWidth = $0 }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("You said, \(plainText)")
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The bubble proper.
+    ///
+    /// A long prompt — a pasted system prompt, a curriculum, a stack trace — is
+    /// clipped to ``NativePromptLimits/collapsedMessageHeight`` with a fade off
+    /// its bottom edge, so the answer the reader actually came back for is not
+    /// pushed a full screen down by the thing they already know they wrote.
+    /// The text itself is untouched: Copy, VoiceOver and every resend read the
+    /// whole message whatever the bubble is showing.
+    private var bubbleBody: some View {
+        Text(plainText)
+            .font(.system(size: 15))
+            // 15pt at the web's `leading-relaxed` (1.625) is ~24pt of line
+            // box, so 9pt of extra leading on top of the glyph height.
+            .lineSpacing(5)
+            .textSelection(.enabled)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(
+                maxHeight: isLongPrompt && !expanded
+                    ? NativePromptLimits.collapsedMessageHeight : nil,
+                alignment: .top
+            )
+            .clipped()
+            .overlay(alignment: .bottom) {
+                if isLongPrompt && !expanded { fade }
+            }
+            .background(Color.junoMuted, in: Self.bubbleShape)
+            .overlay(Self.bubbleShape.strokeBorder(Color.junoHairline, lineWidth: 1))
+            .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
+            .contentShape(Self.bubbleShape)
+            .contextMenu { copyButton }
+            .accessibilityLabel("You said, \(plainText)")
+    }
+
+    /// The web's `bg-gradient-to-t from-secondary` — the bubble's own fill
+    /// dissolving upward, which is what says "clipped" rather than "ended".
+    private var fade: some View {
+        LinearGradient(
+            colors: [Color.junoMuted, Color.junoMuted.opacity(0)],
+            startPoint: .bottom,
+            endPoint: .top
+        )
+        .frame(height: 56)
+        .allowsHitTesting(false)
+    }
+
+    /// The size is sampled off the head of the message, never counted across the
+    /// whole of a multi-megabyte paste.
+    private var expandLabel: String {
+        guard !expanded else { return String(localized: "Show less") }
+        return String(
+            localized: "Show more · \(NativePromptLimits.collapsedSummary(for: plainText))",
+            comment: "Expands a collapsed long prompt in the transcript"
+        )
+    }
+
+    /// "Show more · 22 lines", in the web's monospaced metadata voice, on a
+    /// Liquid Glass capsule — it is a floating control over the transcript, and
+    /// this app's other floating controls are glass.
+    private var expandControl: some View {
+        Button {
+            withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                expanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(expandLabel)
+                    .font(.system(size: 12, design: .monospaced))
+            }
+            .foregroundStyle(Color.junoMutedForeground)
+            .padding(.horizontal, 11)
+            .frame(height: 28)
+            .modifier(JunoGlassCapsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("juno.mobile.message-expand")
     }
 
     /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom

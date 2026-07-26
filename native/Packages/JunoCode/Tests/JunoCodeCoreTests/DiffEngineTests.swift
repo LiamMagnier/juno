@@ -99,4 +99,68 @@ final class DiffEngineTests: XCTestCase {
         }
         XCTAssertEqual(reconstructed, DiffEngine.splitLines(new))
     }
+
+    func testRevertOneDistantHunkKeepsTheOtherChange() throws {
+        let old = (1...40).map(String.init).joined(separator: "\n") + "\n"
+        var changedLines = (1...40).map(String.init)
+        changedLines[0] = "one"
+        changedLines[39] = "forty"
+        let changed = changedLines.joined(separator: "\n") + "\n"
+        let diff = try DiffEngine.diff(old: old, new: changed)
+        XCTAssertEqual(diff.hunks.count, 2)
+
+        let reverted = try DiffHunkReverter.reverting(
+            hunkAt: 0,
+            in: changed,
+            from: diff
+        )
+        var expectedLines = (1...40).map(String.init)
+        expectedLines[39] = "forty"
+        XCTAssertEqual(reverted, expectedLines.joined(separator: "\n") + "\n")
+
+        let remaining = try DiffEngine.diff(old: old, new: reverted)
+        XCTAssertEqual(remaining.hunks.count, 1)
+        XCTAssertEqual(remaining.linesAdded, 1)
+        XCTAssertEqual(remaining.linesRemoved, 1)
+    }
+
+    func testRevertPureAdditionReturnsAnEmptyFile() throws {
+        let changed = "new\nfile\n"
+        let diff = try DiffEngine.diff(old: "", new: changed)
+        XCTAssertEqual(
+            try DiffHunkReverter.reverting(hunkAt: 0, in: changed, from: diff),
+            ""
+        )
+    }
+
+    func testRevertFailsWhenRenderedContentIsStale() throws {
+        let changed = "a\nB\nc\n"
+        let diff = try DiffEngine.diff(old: "a\nb\nc\n", new: changed)
+        XCTAssertThrowsError(
+            try DiffHunkReverter.reverting(
+                hunkAt: 0,
+                in: "a\nB\nnewer\n",
+                from: diff
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? DiffHunkRevertError,
+                .currentContentDiverged
+            )
+        }
+    }
+
+    func testHunkReviewIdentifierIsStableAndContentSensitive() throws {
+        let first = try XCTUnwrap(
+            DiffEngine.diff(old: "a\n", new: "b\n").hunks.first
+        )
+        let same = try XCTUnwrap(
+            DiffEngine.diff(old: "a\n", new: "b\n").hunks.first
+        )
+        let different = try XCTUnwrap(
+            DiffEngine.diff(old: "a\n", new: "c\n").hunks.first
+        )
+        XCTAssertEqual(first.reviewIdentifier, same.reviewIdentifier)
+        XCTAssertNotEqual(first.reviewIdentifier, different.reviewIdentifier)
+    }
 }

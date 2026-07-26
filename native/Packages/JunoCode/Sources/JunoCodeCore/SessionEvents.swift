@@ -28,6 +28,7 @@ public struct SessionEvent: Hashable, Codable, Sendable, Identifiable {
 
 public enum SessionEventPayload: Hashable, Codable, Sendable {
     case sessionCreated(SessionCreatedEvent)
+    case turnConfiguration(TurnConfigurationEvent)
     case userPrompt(UserPromptEvent)
     case assistantMessage(AssistantMessageEvent)
     case reasoningSummary(ReasoningSummaryEvent)
@@ -53,6 +54,39 @@ public struct SessionCreatedEvent: Hashable, Codable, Sendable {
         self.workspaceID = workspaceID
         self.workspaceName = workspaceName
         self.configuration = configuration
+    }
+}
+
+/// What the agent was permitted to do, and with which model, for the turn that
+/// follows this event.
+///
+/// Recorded per turn rather than read from the session record, because mode,
+/// permission level, model and reasoning effort are chosen in the composer for
+/// the *next* message. Without this the transcript could not say which turn was
+/// read-only and which was allowed to write — and a per-turn control the record
+/// cannot account for is not a control the reader can trust.
+public struct TurnConfigurationEvent: Hashable, Codable, Sendable {
+    public let behavior: AgentBehavior
+    public let permissionMode: PermissionMode
+    public let modelID: String
+    public let reasoningEffort: ReasoningEffort
+
+    public init(
+        behavior: AgentBehavior,
+        permissionMode: PermissionMode,
+        modelID: String,
+        reasoningEffort: ReasoningEffort
+    ) {
+        self.behavior = behavior
+        self.permissionMode = permissionMode
+        self.modelID = modelID
+        self.reasoningEffort = reasoningEffort
+    }
+
+    /// The permission level in force, which is `readOnly` in Ask and Plan
+    /// regardless of the session's stored mode.
+    public var effectivePermissionMode: PermissionMode {
+        behavior == .code ? permissionMode : .readOnly
     }
 }
 

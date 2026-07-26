@@ -58,10 +58,37 @@ public enum ComputerUseError: Error, Equatable, Sendable {
 public protocol ComputerUseDriving: Sendable {
     func screenCapturePermission() -> ComputerUsePermissionState
     func accessibilityPermission() -> ComputerUsePermissionState
+    /// Requests the two macOS TCC grants. Production calls these only after an
+    /// explicit Computer Use gesture; test drivers can inherit the defaults.
+    func requestScreenCapturePermission() -> ComputerUsePermissionState
+    func requestAccessibilityPermission() -> ComputerUsePermissionState
     /// The bounds actions may address (the selected display).
     func displayBounds() async throws -> CGRect
     /// PNG screenshot of the selected display. Ephemeral: callers must not
     /// persist it into sync records or analytics.
     func captureScreen() async throws -> Data
     func perform(_ action: ComputerUseActionKind) async throws
+}
+
+public extension ComputerUseDriving {
+    func requestScreenCapturePermission() -> ComputerUsePermissionState {
+        screenCapturePermission()
+    }
+
+    func requestAccessibilityPermission() -> ComputerUsePermissionState {
+        accessibilityPermission()
+    }
+}
+
+/// The safe, session-scoped surface exposed to agent tools and UI. Implemented
+/// by the macOS coordinator, not by the low-level driver, so callers cannot
+/// bypass consent, permission checks, rate limits, bounds checks or journaling.
+public protocol ComputerUseCoordinating: Sendable {
+    func activate(sessionID: CodeSessionID, userConsented: Bool) async throws
+    func deactivate() async
+    func emergencyStop() async
+    func perform(
+        _ action: ComputerUseActionKind,
+        sessionID: CodeSessionID
+    ) async throws -> (before: Data, after: Data)
 }

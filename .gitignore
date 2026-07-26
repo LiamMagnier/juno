@@ -56,3 +56,11 @@ dist/*.dmg
 dist/*.ipa
 dist/*.zip
 native/Config/Generated-Build.xcconfig
+
+# native build artifacts
+native/**/*.xcodeproj/xcuserdata/
+native/**/*.xcodeproj/project.xcworkspace/xcuserdata/
+native/**/*.xcodeproj/-Xcc/
+native/**/.build/
+DerivedData/
+*.xcresult

@@ -65,13 +65,13 @@ Doing any of it early would be destructive, not merely premature.
 
    ```bash
    cd /Users/liammagnier/Desktop/workspace
-   ln -s juno/native/macOS/JunoMac  Juno-Mac
+   ln -s juno/native/macOS/JunoDesktop  Juno-Mac
    ln -s juno/native/iOS/JunoMobile Juno-iPhone
    ln -s juno/dist                  Juno-Releases
    ```
 
    Then verify each opens the right project:
-   `open Juno-Mac/JunoMac.xcodeproj`, `open Juno-iPhone/JunoMobile.xcodeproj`.
+   `open Juno-Mac/JunoDesktop.xcodeproj`, `open Juno-iPhone/JunoMobile.xcodeproj`.
 
 3. **Worktree retirement.** For each of the nine worktrees in
    `git worktree list`, in this order and never out of it:
@@ -89,7 +89,7 @@ Delivery is not complete until all of these agree:
 |---|---|
 | Final `main` SHA | *pending* |
 | Deployed server SHA | *pending* |
-| JunoMac build SHA | *pending* |
+| JunoDesktop build SHA | *pending* |
 | JunoMobile build SHA | *pending* |
 | Native contract version | 1.2.0 |
 | Backend contract version (deployed) | 1.0.1 — **mismatch** |

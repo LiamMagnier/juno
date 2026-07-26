@@ -169,27 +169,24 @@ public struct NativeAuthorizationPlanner: Sendable {
 }
 
 public actor KeychainInstallationIDStore {
-    public static let defaultItem = SecurityKeychainItem(
+    private static let item = SecurityKeychainItem(
         service: "com.liammagnier.juno.auth.installation",
         account: "current"
     )
 
-    private let item: SecurityKeychainItem
     private let securityClient: any SecurityKeychainClient
     private let generator: PKCEGenerator
 
     public init(
-        item: SecurityKeychainItem = KeychainInstallationIDStore.defaultItem,
         securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
         generator: PKCEGenerator = PKCEGenerator()
     ) {
-        self.item = item
         self.securityClient = securityClient
         self.generator = generator
     }
 
     public func loadOrCreate() throws -> InstallationID {
-        if let data = try securityClient.read(item) {
+        if let data = try securityClient.read(Self.item) {
             guard let rawValue = String(data: data, encoding: .utf8),
                 NativeAuthorizationPlanner.isValidInstallationID(rawValue),
                 let installationID = try? InstallationID(rawValue)
@@ -205,10 +202,10 @@ public actor KeychainInstallationIDStore {
             throw NativeBrowserAuthorizationError.invalidInstallationIdentifier
         }
         let installationID = try InstallationID(rawValue)
-        if try securityClient.insertIfAbsent(Data(rawValue.utf8), for: item) {
+        if try securityClient.insertIfAbsent(Data(rawValue.utf8), for: Self.item) {
             return installationID
         }
-        guard let stored = try securityClient.read(item),
+        guard let stored = try securityClient.read(Self.item),
             let storedValue = String(data: stored, encoding: .utf8),
             NativeAuthorizationPlanner.isValidInstallationID(storedValue)
         else {

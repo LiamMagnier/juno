@@ -4,7 +4,7 @@
 # Every check here exists because the corresponding mistake was actually made,
 # or was one step away from being made. Run from the repository root:
 #
-#     ./scripts/release-gates.sh [path/to/JunoMac.app]
+#     ./scripts/release-gates.sh [path/to/Juno.app]
 #
 # Exit code 0 means every gate passed. Any failure is release-blocking.
 set -uo pipefail
@@ -93,11 +93,15 @@ echo
 # ---------------------------------------------------------------------------
 # 3. Release builds must point at production.
 # ---------------------------------------------------------------------------
+# `\.local:` alone also matched Swift's `case .local:` — Juno Code has a `.local`
+# execution environment — so this gate failed on every build and would have been
+# learned-ignored. A hostname has a name character immediately before `.local`;
+# an enum case has a space.
 echo "Production base URL"
-NATIVE_APP_SOURCES="native/macOS/JunoMac/App native/iOS/JunoMobile/App"
-if grep -rn "localhost\|127\.0\.0\.1\|ngrok\|\.local:" $NATIVE_APP_SOURCES >/dev/null 2>&1; then
+NATIVE_APP_SOURCES="native/macOS/JunoDesktop/App native/iOS/JunoMobile/App"
+if grep -rn "localhost\|127\.0\.0\.1\|ngrok\|[A-Za-z0-9-]\.local:" $NATIVE_APP_SOURCES >/dev/null 2>&1; then
     fail "a local or temporary host appears in native app sources"
-    grep -rn "localhost\|127\.0\.0\.1\|ngrok\|\.local:" $NATIVE_APP_SOURCES | sed 's/^/        /'
+    grep -rn "localhost\|127\.0\.0\.1\|ngrok\|[A-Za-z0-9-]\.local:" $NATIVE_APP_SOURCES | sed 's/^/        /'
 else
     pass "no localhost or temporary host in native app sources"
 fi
@@ -112,7 +116,7 @@ if grep -q 'productionURLString = "https://chat.liams.dev"' "$BACKEND_CONST" 2>/
 else
     fail "$BACKEND_CONST does not declare the production base URL"
 fi
-for app in JunoMac JunoMobile; do
+for app in JunoDesktop JunoMobile; do
     dir=$(echo $NATIVE_APP_SOURCES | tr ' ' '\n' | grep "$app")
     if grep -rq "JunoBackend.productionURLString" "$dir" 2>/dev/null; then
         pass "$app dials JunoBackend.productionURLString"

@@ -38,7 +38,7 @@ CI must run without production secrets and fail closed on any of these gates:
 1. TypeScript typecheck, lint and complete server test suite.
 2. OpenAPI 3.1 validation and deterministic Swift regeneration with no diff.
 3. `swift test` for every shared package with strict concurrency diagnostics.
-4. Independent Debug and Release builds for `JunoMac` and `JunoMobile`.
+4. Independent Debug and Release builds for `JunoDesktop` and `JunoMobile`.
 5. macOS and iOS/iPadOS unit tests plus required simulator UI tests.
 6. Unsigned dry archives for both application projects.
 7. Entitlement, privacy-manifest, permission-string and deployment-target audit.

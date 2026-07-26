@@ -32,19 +32,16 @@ public struct NativeLocalAccountStoreFactory: Sendable {
     )
 
     private let databaseURL: URL
-    private let encryptionKeyItem: SecurityKeychainItem
     private let securityClient: any SecurityKeychainClient
     private let randomGenerator: any SecureRandomDataGenerating
 
     public init(
         databaseURL: URL,
-        encryptionKeyItem: SecurityKeychainItem = Self.encryptionKeyItem,
         securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
         randomGenerator: any SecureRandomDataGenerating =
             SystemSecureRandomDataGenerator()
     ) {
         self.databaseURL = databaseURL
-        self.encryptionKeyItem = encryptionKeyItem
         self.securityClient = securityClient
         self.randomGenerator = randomGenerator
     }
@@ -64,7 +61,7 @@ public struct NativeLocalAccountStoreFactory: Sendable {
     }
 
     private func loadOrCreateKey() throws -> Data {
-        if let stored = try securityClient.read(encryptionKeyItem) {
+        if let stored = try securityClient.read(Self.encryptionKeyItem) {
             return try validate(stored)
         }
         if FileManager.default.fileExists(atPath: databaseURL.path) {
@@ -74,11 +71,11 @@ public struct NativeLocalAccountStoreFactory: Sendable {
         let candidate = try validate(randomGenerator.generate(count: 32))
         if try securityClient.insertIfAbsent(
             candidate,
-            for: encryptionKeyItem
+            for: Self.encryptionKeyItem
         ) {
             return candidate
         }
-        guard let winner = try securityClient.read(encryptionKeyItem) else {
+        guard let winner = try securityClient.read(Self.encryptionKeyItem) else {
             throw NativeLocalAccountStoreFactoryError.encryptionKeyRace
         }
         return try validate(winner)

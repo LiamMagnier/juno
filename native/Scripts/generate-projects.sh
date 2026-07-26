@@ -9,5 +9,5 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 
-xcodegen generate --spec "$NATIVE_DIRECTORY/macOS/JunoMac/project.yml"
+xcodegen generate --spec "$NATIVE_DIRECTORY/macOS/JunoDesktop/project.yml"
 xcodegen generate --spec "$NATIVE_DIRECTORY/iOS/JunoMobile/project.yml"

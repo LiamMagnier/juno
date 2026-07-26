@@ -135,9 +135,7 @@ public final class JunoSpeechService {
         let speechStatus: SFSpeechRecognizerAuthorizationStatus
         let current = SFSpeechRecognizer.authorizationStatus()
         if current == .notDetermined {
-            speechStatus = await withCheckedContinuation { continuation in
-                SFSpeechRecognizer.requestAuthorization { continuation.resume(returning: $0) }
-            }
+            speechStatus = await Self.requestSpeechAuthorization()
         } else {
             speechStatus = current
         }
@@ -145,6 +143,20 @@ public final class JunoSpeechService {
         let granted = micGranted && speechStatus == .authorized
         permission = granted ? .granted : .denied
         return granted
+    }
+
+    /// Speech calls this completion on a TCC worker queue. Keeping the bridge
+    /// `nonisolated` is essential: defining the completion inline in this
+    /// `@MainActor` service makes Swift attach a main-actor executor assertion
+    /// to it, and TCC then traps before the continuation can resume.
+    private nonisolated static func requestSpeechAuthorization() async
+        -> SFSpeechRecognizerAuthorizationStatus
+    {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
     }
 
     // MARK: - Lifecycle

@@ -182,3 +182,110 @@ commands above pass there. This is not a source regression.
 ## Failure recording policy
 
 Every failing command added here must include the first actionable error, whether it is introduced or pre-existing, and the exact next rerun. Do not replace a failure with a claimed pass until the same relevant command exits successfully.
+
+## 2026-07-26 — greenfield JunoDesktop and Juno Code studio
+
+| Command / gate | Result | Evidence |
+|---|---|---|
+| `swift test --package-path native/Packages/JunoNativeKit --scratch-path /tmp/juno-nativekit-final-tests -Xswiftc -warnings-as-errors` | Pass | 391 tests across XCTest and Swift Testing, no failures. Includes Voice permission-denied state coverage. Log: `/tmp/juno-nativekit-final-tests.log`. |
+| `npm run native:contract:check` | Pass | Regenerated Swift matches canonical OpenAPI SHA-256 `9723b452be44aa1f596a7544928f79abe6501b2de9c67b24896656c3fc36a745`. Log: `/tmp/juno-native-contract-check.log`. |
+| `swift test --package-path native/Packages/JunoCode --scratch-path /tmp/juno-code-hunk-tests -Xswiftc -warnings-as-errors` | Pass | 214 tests, no failures. Includes canonical provider routing across Anthropic/OpenAI-compatible/Responses protocols, Ask/Plan/Code tool enforcement, safe editor save/conflict/checkpoint behavior, deterministic hunk review identity, partial checkpointed reversal and stale-render rejection, confirmation-bound non-force publication to a real bare Git remote, stale push-plan rejection, GitHub PR/check identity and payload parsing, preview inertness, runtime/local/core/bridge coverage, real vertical slice, approval suspension, persistent network failure, and transient reconnect recovery. Latest log: `/tmp/juno-code-github-tests.log`. |
+| Strict `JunoDesktop` Debug build | Pass | `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`, `CODE_SIGNING_ALLOWED=NO`, DerivedData `/tmp/juno-desktop-derived`; latest post-GitHub-status build log: `/tmp/juno-desktop-github-status-build.log`. |
+| `JunoDesktopTests` | Pass | 2/2 smoke tests in the signed test build: stable product restoration values and safe model-selection fallback. |
+| Live preview inspection | Pass at standard size | Chat composer/model selector, Code Start, local run canvas, and inspector inspected at 1240×800. |
+| Signed `JunoDesktopUITests` | Pending environmental rerun | The Mac auto-locked during the batch; XCTest then failed activation with `current state: Running Background` and could not read any accessibility tree. Rerun the same signed UI suite only after manual unlock. |
+
+The strict build emits only Xcode's `appintentsmetadataprocessor` notice that
+the target has no AppIntents dependency. It emits no Swift compiler warning.
+The latest build after model routing, behavior enforcement, editor,
+side-by-side and per-hunk review, and confirmation-bound Git publication
+plus read-only GitHub PR/CI visibility passed.
+
+The failed UI batch is not a product failure: the first direct Code/auth tests
+had passed in an earlier unlocked run, and every later surface—including the
+authentication gate—became invisible after the session locked. The final
+deterministic selector and local-session preview routes must still be rerun; no
+pass is claimed for them here.
+
+## 2026-07-26 (later) — native shell, Liquid Glass, project-grouped Code
+
+Working tree on `main`, uncommitted, parent commit `540d1d8`.
+Toolchain: Xcode 27.0 (`27A5218g`), macOS 27.0 (`26A5388g`), Swift 6.4.
+
+| Command / gate | Result | Evidence |
+|---|---|---|
+| `swift test --package-path native/Packages/JunoNativeKit -Xswiftc -warnings-as-errors` | Pass | 391 tests (368 XCTest + 23 Swift Testing), 0 failures. Log `/tmp/t-nk.log`. |
+| `swift test --package-path native/Packages/JunoCode -Xswiftc -warnings-as-errors` | Pass | 214 tests, 0 failures. Log `/tmp/t-jc2.log`. |
+| `npm run native:contract:check` | Pass | Regenerated Swift matches OpenAPI SHA-256 `9723b452…6a745`. |
+| `JunoDesktop` Debug, `SWIFT_TREAT_WARNINGS_AS_ERRORS=YES` | Pass | Log `/tmp/bv.log`. |
+| `JunoDesktop` **Stable**, warnings-as-errors | Pass | Log `/tmp/b-stable3.log`. Product is `Juno.app`. |
+| Preview harness absent from the Stable binary | Pass | 0 launch-flag strings, 0 preview symbols in `Juno.app/Contents/MacOS/Juno`. |
+| `JunoDesktopTests` (signed) | Pass | 13 tests in 2 suites. |
+| `JunoMobile` Debug simulator, warnings-as-errors | Pass | Shared-package changes keep the phone app building. Log `/tmp/gate-ios2.log`. |
+| `./scripts/release-gates.sh` | Pass except "worktree dirty" | Dirty is expected and correct: nothing is committed. Every other gate passes. |
+| Light and dark appearance | Pass | Inspected via the new `--juno-preview-appearance` route at 1240×800 and 1280×820. |
+| `JunoDesktopUITests` (signed) | **Not run** | Still outstanding. See below. |
+
+### Building `Stable` is now a required gate, not an optional one
+
+Only Debug had ever been built. `Stable` caught a compile error Debug
+structurally cannot: a preview-mode guard written as a ternary over a
+compile-time-constant flag leaves a statically dead branch, which is an error
+under warnings-as-errors in Release and fine in Debug. Both configurations are
+now built in `.github/workflows/native.yml`.
+
+### `release-gates.sh` had a false positive that failed every run
+
+Its host pattern `\.local:` also matched Swift's `case .local:` — and Juno Code
+has a `.local` execution environment — so gate 3 failed on every build. A gate
+that always fails is a gate that gets ignored. Tightened to require a hostname
+character before `.local`.
+
+### The AppKit constraint crash, correctly diagnosed
+
+`MACOS_ARCHITECTURE_V2.md` previously recorded that `NavigationSplitView` and
+`.inspector` "cannot coexist" on macOS 27, and the shell was a hand-rolled
+`HStack` because of it. Re-tested from scratch:
+
+- `NavigationSplitView` alone: stable. Six rounds of sidebar toggling plus the
+  full-width model selector held open over the live split view, no crash, and the
+  accessibility tree confirms a real AppKit `splitter group`.
+- `.inspector` **on the detail column**: crashes every time, reproducibly, on the
+  Chat → Code switch. `SwiftUI.NSHostingView.updateConstraints` calls
+  `setNeedsUpdateConstraints:` while the window's constraint pass is already
+  running; AppKit throws from `-[NSWindow _postWindowNeedsUpdateConstraints]` and
+  the process takes `SIGTRAP`. Crash report
+  `JunoDesktop-2026-07-26-170247.ips`.
+- `.inspector` **on the `NavigationSplitView` itself**: stable. Same test, no
+  crash.
+
+So the placement was the bug, not the pairing. Two rules now carry that fix and
+must not be relaxed: every anchored popover declares an explicit `.frame`, and
+toolbar items are always present and `.disabled()` rather than conditional.
+
+### Signed UI tests — still the open gate
+
+`JunoDesktopUITests` has not been run against this shell. The suite also needs
+rewriting: it was authored against the previous hand-rolled column, so its
+element queries do not match a `List(selection:)` source list, a real `.toolbar`,
+or the project-grouped Code sidebar. Do not report a pass until the suite is
+rewritten and run signed with `ENABLE_HARDENED_RUNTIME=NO`.
+
+### Environment notes that cost real time
+
+- **A signed build is required for any interactive verification.** An unsigned
+  build has a different code identity from the one that created the Keychain
+  item, so macOS raises a modal password prompt no automation can answer. Build
+  with `-allowProvisioningUpdates CODE_SIGN_STYLE=Automatic
+  DEVELOPMENT_TEAM=58PVP763WX`.
+- **Launch the executable directly, not through `open -n`.** `open` hands
+  arguments to LaunchServices, which can reuse or "reopen" a just-terminated
+  instance and bring the process up with the arguments applied but no window ever
+  created — the app becomes frontmost, its menu bar appears, and there is nothing
+  to capture.
+- **`screencapture -R x,y,w,h`** takes points and resolves the display's backing
+  scale itself. Capturing the screen and cropping in pixels means reproducing
+  that scale by hand.
+- The DEBUG preview harness used to open the production encrypted store before
+  discarding it for its throwaway world, which is what raised the Keychain prompt
+  on QA launches. It no longer composes the live configuration at all.

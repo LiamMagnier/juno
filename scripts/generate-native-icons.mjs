@@ -42,7 +42,7 @@ const ICONS = {
 
 const TARGETS = [
   join(root, "native/iOS/JunoMobile/Resources/Assets.xcassets/Navigation"),
-  join(root, "native/macOS/JunoMac/Resources/Assets.xcassets/Navigation"),
+  join(root, "native/macOS/JunoDesktop/Resources/Navigation.xcassets"),
 ];
 
 /** Follows `export { default } from './other.mjs'` re-exports to the real node. */

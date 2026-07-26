@@ -3,15 +3,65 @@ import Observation
 import JunoCodeCore
 import JunoCodeLocal
 import JunoCodeRuntime
+import JunoDesignSystem
 
+/// A model the workbench can run a turn on.
+///
+/// `catalog` is what the composer's selector reads: the provider mark, the
+/// capabilities, the pricing tier and the spec sheet all come from there, and
+/// they come from the account's manifest rather than from anything this package
+/// knows. It stays optional because the runtime needs only `modelID`, and a
+/// caller that has no catalog (a test, the bootstrap window before the manifest
+/// arrives) should not have to fabricate one — the selector degrades to a name.
 public struct ModelOption: Identifiable, Hashable, Sendable {
     public var id: String { modelID }
     public let modelID: String
     public let displayName: String
+    public let catalog: JunoModelDescriptor?
+    /// The thinking depths this model actually offers. See
+    /// ``ModelOption/contractReasoningEfforts`` for why the default is all three.
+    public let supportedReasoningEfforts: [ReasoningEffort]
 
-    public init(modelID: String, displayName: String) {
+    public init(
+        modelID: String,
+        displayName: String,
+        catalog: JunoModelDescriptor? = nil,
+        supportedReasoningEfforts: [ReasoningEffort] = ReasoningEffort.allCases
+    ) {
         self.modelID = modelID
         self.displayName = displayName
+        self.catalog = catalog
+        self.supportedReasoningEfforts = supportedReasoningEfforts
+    }
+
+    /// Builds an option straight from a catalog entry.
+    ///
+    /// The ladder is narrowed to the depths the entry publishes *and* the Code
+    /// request contract can carry. A model whose published ladder shares nothing
+    /// with that contract (a router, or an on/off model) keeps all three, because
+    /// the session still has to send one of them.
+    public init(catalog: JunoModelDescriptor) {
+        let published = catalog.thinking.stops.compactMap {
+            ReasoningEffort(rawValue: $0.id)
+        }
+        self.init(
+            modelID: catalog.id,
+            displayName: catalog.displayName,
+            catalog: catalog,
+            supportedReasoningEfforts: published.isEmpty
+                ? ReasoningEffort.allCases
+                : published
+        )
+    }
+
+    /// Identity is the model id — two options for the same model are the same
+    /// choice however much catalog detail one of them happens to carry.
+    public static func == (lhs: ModelOption, rhs: ModelOption) -> Bool {
+        lhs.modelID == rhs.modelID
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(modelID)
     }
 }
 
@@ -75,10 +125,63 @@ public final class WorkbenchModel {
     public var selectedSessionID: CodeSessionID?
     public var sessionSearchText = ""
     public private(set) var lastError: String?
+    /// The workspace whose folder grant lapsed, if one has.
+    ///
+    /// macOS withdraws a sandboxed app's folder permission when the app's code
+    /// identity changes or the folder moves, and nothing the app does repairs it
+    /// — only the user re-picking the folder. Before this, that arrived as the
+    /// string "bookmarkInvalid" under the project list and Juno Code became
+    /// unusable with no route back: no session could start, so no composer ever
+    /// appeared. Holding the id is what lets the UI offer "Choose Folder Again".
+    public private(set) var workspaceNeedingAccess: WorkspaceID?
+
+    /// Re-point an existing workspace at a folder the user has just re-granted.
+    ///
+    /// Keeps the same `WorkspaceID`, so every session, checkpoint and transcript
+    /// already recorded against this project survives — re-adding it as a new
+    /// workspace would strand all of them.
+    public func restoreAccess(to workspaceID: WorkspaceID, grantedURL: URL) async -> Bool {
+        do {
+            let (record, access) = try await workspaceDirectory.regrant(
+                id: workspaceID,
+                grantedURL: grantedURL
+            )
+            contexts[workspaceID] = WorkspaceContext(
+                record: record,
+                access: access,
+                storageRoot: dependencies.storageRootURL
+            )
+            workspaces = await workspaceDirectory.allWorkspaces()
+            workspaceNeedingAccess = nil
+            lastError = nil
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            return false
+        }
+    }
+
+    /// Clears the re-grant prompt without re-granting — the reader may simply
+    /// want the project gone.
+    public func dismissAccessPrompt() {
+        workspaceNeedingAccess = nil
+    }
     /// The models offered in the new-session composer. Seeded from
     /// `dependencies.availableModels` and refreshable once the real manifest
     /// loads after sign-in.
     public var availableModels: [ModelOption]
+
+    /// Canonical model id to human name, for the transcript's attribution line.
+    ///
+    /// A turn records the id it was routed with; showing that id is how a
+    /// transcript ends up attributing an answer to "anthropic:claude-sonnet-5".
+    /// The id is a routing key, not a name.
+    public var modelDisplayNames: [String: String] {
+        Dictionary(
+            availableModels.map { ($0.modelID, $0.displayName) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
 
     public let dependencies: Dependencies
     public let sessionStore: CodeSessionStore
@@ -187,7 +290,19 @@ public final class WorkbenchModel {
             workspaces = await workspaceDirectory.allWorkspaces()
             return context
         } catch {
-            lastError = "Could not reopen the workspace: \(error)"
+            // `"\(error)"` printed the enum case — readers saw the literal word
+            // "bookmarkInvalid" under their project list. `localizedDescription`
+            // reaches the `LocalizedError` conformance on `WorkspaceAccessError`,
+            // which explains what a lapsed folder grant is.
+            lastError = error.localizedDescription
+            // A lapsed grant is not a failure the reader can only stare at: it is
+            // fixed by picking the folder again. Recording *which* workspace
+            // needs it is what lets the UI offer that instead of a dead end.
+            if let access = error as? WorkspaceAccessError,
+                access.isRecoverableByRegrantingAccess
+            {
+                workspaceNeedingAccess = workspaceID
+            }
             return nil
         }
     }

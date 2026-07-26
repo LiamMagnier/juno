@@ -67,7 +67,7 @@ final class BackendCodeModelClientTests: XCTestCase {
 
     private func makeRequest(
         messages: [ModelMessage] = [.user("Hello")],
-        modelID: String = "claude-sonnet-5"
+        modelID: String = "anthropic:claude-sonnet-5"
     ) -> ModelTurnRequest {
         ModelTurnRequest(
             sessionID: CodeSessionID(),
@@ -282,7 +282,7 @@ final class BackendCodeModelClientTests: XCTestCase {
     func testUnsupportedModelFailsClosed() async {
         let streamer = FakeByteStreamer(canned: .init(body: Data()))
         let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
-        let (_, error) = await collect(client, makeRequest(modelID: "gpt-5.2"))
+        let (_, error) = await collect(client, makeRequest(modelID: "juno:auto"))
         guard case AgentModelClientError.invalidResponse? = error as? AgentModelClientError else {
             return XCTFail("expected invalidResponse for unsupported model")
         }
@@ -293,5 +293,106 @@ final class BackendCodeModelClientTests: XCTestCase {
         XCTAssertEqual(CodeModelProviderResolver.default.provider(for: "claude-sonnet-5"), .anthropic)
         XCTAssertEqual(CodeModelProviderResolver.default.provider(for: "anthropic/x"), .anthropic)
         XCTAssertNil(CodeModelProviderResolver.default.provider(for: "gpt-5.2"))
+        XCTAssertEqual(
+            CodeModelProviderResolver.default.route(for: "openai:gpt-5.6-sol"),
+            CodeModelRoute(
+                providerID: "openai",
+                providerModelID: "gpt-5.6-sol",
+                wireProtocol: .openAIChat
+            )
+        )
+        XCTAssertEqual(
+            CodeModelProviderResolver.default.route(for: "openai:gpt-5.3-codex"),
+            CodeModelRoute(
+                providerID: "openai",
+                providerModelID: "gpt-5.3-codex",
+                wireProtocol: .openAIResponses
+            )
+        )
+        XCTAssertEqual(
+            CodeModelProviderResolver.default.route(for: "google:gemini-3.5-pro"),
+            CodeModelRoute(
+                providerID: "google",
+                providerModelID: "gemini-3.5-pro",
+                wireProtocol: .openAIChat
+            )
+        )
+        XCTAssertFalse(CodeModelProviderResolver.supports("juno:auto"))
+    }
+
+    func testOpenAICompatibleTurnUsesRawModelAndAssemblesTools() async throws {
+        let sse = """
+        data: {"choices":[{"delta":{"content":"Checking. ","reasoning_content":"Inspect first.","tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"read_file","arguments":"{\\"path\\":"}}]},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"src/main.swift\\"}"}}]},"finish_reason":null}]}
+
+        data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}
+
+        data: [DONE]
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        let (events, error) = await collect(
+            client,
+            makeRequest(modelID: "google:gemini-3.5-pro")
+        )
+        XCTAssertNil(error)
+        XCTAssertEqual(streamer.lastRequest?.path, "/api/agent/google/chat/completions")
+        let body = try XCTUnwrap(streamer.lastRequest?.body)
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        XCTAssertEqual(json["model"]?.stringValue, "gemini-3.5-pro")
+        XCTAssertNotNil(json["max_tokens"])
+        XCTAssertNil(json["max_completion_tokens"])
+        XCTAssertTrue(events.contains {
+            if case .reasoningSummary("Inspect first.") = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(events.contains {
+            if case let .toolCallRequested(id, name, input) = $0 {
+                return id == "call_1" && name == "read_file"
+                    && input["path"]?.stringValue == "src/main.swift"
+            }
+            return false
+        })
+        guard case .turnCompleted(.toolUse) = events.last else {
+            return XCTFail("expected tool-use completion")
+        }
+    }
+
+    func testResponsesTurnUsesResponsesEndpointAndToolEvents() async throws {
+        let sse = """
+        data: {"type":"response.reasoning_summary_text.delta","delta":"I will inspect."}
+
+        data: {"type":"response.output_text.delta","delta":"Reading the file."}
+
+        data: {"type":"response.output_item.done","item":{"type":"function_call","call_id":"call_2","name":"read_file","arguments":"{\\"path\\":\\"Package.swift\\"}"}}
+
+        data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5}}}
+
+        """
+        let streamer = FakeByteStreamer(canned: .init(body: Data(sse.utf8)))
+        let client = BackendCodeModelClient(streamer: streamer, accountID: accountID)
+        let (events, error) = await collect(
+            client,
+            makeRequest(modelID: "openai:gpt-5.3-codex")
+        )
+        XCTAssertNil(error)
+        XCTAssertEqual(streamer.lastRequest?.path, "/api/agent/openai/responses")
+        let body = try XCTUnwrap(streamer.lastRequest?.body)
+        let json = try JSONDecoder().decode(JSONValue.self, from: body)
+        XCTAssertEqual(json["model"]?.stringValue, "gpt-5.3-codex")
+        XCTAssertEqual(json["store"]?.boolValue, false)
+        XCTAssertEqual(json["reasoning"]?["effort"]?.stringValue, "medium")
+        XCTAssertTrue(events.contains {
+            if case let .toolCallRequested(id, name, input) = $0 {
+                return id == "call_2" && name == "read_file"
+                    && input["path"]?.stringValue == "Package.swift"
+            }
+            return false
+        })
+        guard case .turnCompleted(.toolUse) = events.last else {
+            return XCTFail("expected tool-use completion")
+        }
     }
 }

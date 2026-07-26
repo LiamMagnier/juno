@@ -123,7 +123,7 @@ public enum JunoCornerRadius {
     public static let sheet: Double = 20
 }
 
-/// The shared motion language for JunoMobile and JunoMac. A small, named set of
+/// The shared motion language for JunoMobile and JunoDesktop. A small, named set of
 /// durations/springs so every surface animates with the same intent instead of
 /// ad-hoc per-call values. All are short and purposeful; spatial motion is
 /// dropped under Reduce Motion via ``reduced(_:when:)``.

@@ -1,0 +1,468 @@
+import SwiftUI
+import JunoCodeCore
+import JunoCodeLocal
+import JunoDesignSystem
+
+/// Git status, history, publication and CI in one column, because they are all
+/// facts about the repository rather than about the agent.
+///
+/// Everything that changes a remote goes through a confirmation that names the
+/// exact remote and branch, and nothing here can force-push: `GitServicing` has
+/// no history-rewriting operation, and the command tool's classifier marks one as
+/// critical if the agent ever asks for it.
+struct RepositoryTab: View {
+    @Bindable var controller: SessionController
+
+    @State private var commitMessage = ""
+    @State private var committing = false
+    @State private var preparingPush = false
+    @State private var pushing = false
+    @State private var pushPlan: GitPushPlan?
+    @State private var creatingBranch = false
+    @State private var newBranchName = ""
+
+    private var isEditable: Bool {
+        controller.session.configuration.behavior == .code
+    }
+
+    var body: some View {
+        if !controller.isGitRepository {
+            JunoEmptyState(
+                title: "Not a Git repository",
+                message: "Juno can still read and edit this folder; branch, commit and pull-request information needs a repository.",
+                symbol: "arrow.triangle.branch"
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            List {
+                if let status = controller.gitStatus {
+                    branchSection(status)
+                    workingTreeSection(status)
+                }
+                pullRequestSection
+                commitsSection
+                instructionsSection
+            }
+            .listStyle(.inset)
+            .refreshable {
+                await controller.refreshWorkspacePanels()
+                await controller.refreshGitHubPullRequest()
+            }
+            .task(id: controller.sessionID) {
+                if controller.gitHubPullRequest == nil, controller.gitHubStatusMessage == nil {
+                    await controller.refreshGitHubPullRequest()
+                }
+            }
+            .alert("New branch", isPresented: $creatingBranch) {
+                TextField("Branch name", text: $newBranchName)
+                Button("Create") {
+                    let name = newBranchName
+                    newBranchName = ""
+                    Task { await controller.createGitBranch(named: name) }
+                }
+                Button("Cancel", role: .cancel) { newBranchName = "" }
+            } message: {
+                Text(
+                    "Switches this repository to a new branch from the current one, so the work in progress is isolated."
+                )
+            }
+            .confirmationDialog(
+                pushPlan?.setsUpstream == true ? "Publish branch?" : "Push branch?",
+                isPresented: Binding(
+                    get: { pushPlan != nil },
+                    set: { if !$0 { pushPlan = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if let plan = pushPlan {
+                    Button(
+                        plan.setsUpstream
+                            ? "Publish \(plan.localBranch)"
+                            : "Push \(plan.localBranch)"
+                    ) {
+                        publish(plan)
+                    }
+                }
+                Button("Cancel", role: .cancel) { pushPlan = nil }
+            } message: {
+                if let plan = pushPlan {
+                    Text(
+                        "Push \(plan.localBranch) to \(plan.displayTarget). "
+                            + "Juno never force-pushes from this control."
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Branch
+
+    private func branchSection(_ status: GitStatusSummary) -> some View {
+        Section("Branch") {
+            HStack(spacing: JunoSpace.snug) {
+                Image(systemName: "arrow.triangle.branch")
+                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(status.branch ?? "detached HEAD")
+                        .junoCode()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(status.upstream ?? "No upstream")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: JunoSpace.tight)
+                if status.ahead > 0 {
+                    Label("\(status.ahead)", systemImage: "arrow.up")
+                        .junoCaption()
+                        .monospacedDigit()
+                        .help("\(status.ahead) commits not yet pushed")
+                }
+                if status.behind > 0 {
+                    Label("\(status.behind)", systemImage: "arrow.down")
+                        .junoCaption()
+                        .monospacedDigit()
+                        .help("\(status.behind) commits on the upstream you do not have")
+                }
+            }
+
+            HStack(spacing: JunoSpace.snug) {
+                Button("New Branch…") { creatingBranch = true }
+                    .controlSize(.small)
+                    .disabled(!isEditable)
+                    .help(
+                        isEditable
+                            ? "Start a branch for this work"
+                            : "Ask and Plan sessions are read-only"
+                    )
+                Spacer(minLength: 0)
+                Button {
+                    preparePush()
+                } label: {
+                    if preparingPush || pushing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label(
+                            status.upstream == nil ? "Publish…" : "Push…",
+                            systemImage: "arrow.up.circle"
+                        )
+                    }
+                }
+                .controlSize(.small)
+                .disabled(!isEditable || preparingPush || pushing)
+                .help(
+                    isEditable
+                        ? "Confirm the exact remote and branch before anything leaves this Mac"
+                        : "Ask and Plan sessions are read-only"
+                )
+                .accessibilityLabel(
+                    status.upstream == nil ? "Publish current branch" : "Push current branch"
+                )
+                .accessibilityIdentifier("juno.code.repository.push")
+            }
+        }
+    }
+
+    // MARK: - Working tree
+
+    private func workingTreeSection(_ status: GitStatusSummary) -> some View {
+        Section("Working tree") {
+            if status.isClean {
+                Label("Working tree clean", systemImage: "checkmark.circle")
+                    .junoCaption()
+                    .foregroundStyle(Color.junoSuccess)
+            } else {
+                ForEach(status.files) { file in
+                    HStack(spacing: JunoSpace.snug) {
+                        // The real two-letter porcelain state: index then
+                        // worktree, so a staged-and-then-edited file reads as
+                        // "MM" rather than as one invented word.
+                        Text("\(file.indexState)\(file.worktreeState)")
+                            .junoCodeSmall()
+                            .foregroundStyle(stateTint(file))
+                            .frame(width: 26)
+                            .help(stateHelp(file))
+                        Text(file.path)
+                            .junoCode()
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(file.path), \(stateHelp(file))")
+                }
+
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    TextField("Commit message", text: $commitMessage, axis: .vertical)
+                        .lineLimit(1...4)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("juno.code.repository.commit-message")
+                    HStack(spacing: JunoSpace.snug) {
+                        if status.hasConflicts {
+                            Label("Resolve conflicts first", systemImage: "exclamationmark.triangle")
+                                .junoCaption()
+                                .foregroundStyle(Color.junoCaution)
+                        }
+                        Spacer(minLength: 0)
+                        Button(committing ? "Committing…" : "Stage All & Commit") { commit() }
+                            .controlSize(.small)
+                            .buttonStyle(.borderedProminent)
+                            .tint(Color.junoAccent)
+                            .disabled(
+                                !isEditable
+                                    || committing
+                                    || status.hasConflicts
+                                    || commitMessage.trimmingCharacters(in: .whitespaces).isEmpty
+                            )
+                            .help(
+                                isEditable
+                                    ? "Stage every change in the working tree and commit it"
+                                    : "Ask and Plan sessions are read-only"
+                            )
+                            .accessibilityIdentifier("juno.code.repository.commit")
+                    }
+                }
+                .padding(.top, JunoSpace.hairline)
+            }
+        }
+    }
+
+    private func stateTint(_ file: GitFileStatus) -> Color {
+        if file.isConflicted { return .junoDanger }
+        if file.isStaged { return .junoSuccess }
+        return .junoCaution
+    }
+
+    private func stateHelp(_ file: GitFileStatus) -> String {
+        if file.isConflicted { return "Conflicted" }
+        if file.isUntracked { return "Untracked" }
+        var parts: [String] = []
+        if file.isStaged { parts.append("staged") }
+        if file.hasUnstagedChanges { parts.append("unstaged changes") }
+        return parts.isEmpty ? "Unchanged" : parts.joined(separator: ", ").capitalized
+    }
+
+    // MARK: - Pull request and CI
+
+    /// Poll-on-demand, by construction: the status comes from shelling out to the
+    /// GitHub CLI, and there is no webhook or push channel to keep it live. The
+    /// panel says so rather than pretending to be a CI feed.
+    private var pullRequestSection: some View {
+        Section {
+            if controller.isLoadingGitHubStatus {
+                HStack(spacing: JunoSpace.snug) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading pull request…").junoCaption()
+                }
+            } else if let pullRequest = controller.gitHubPullRequest {
+                pullRequestSummary(pullRequest)
+                if pullRequest.checks.isEmpty {
+                    Text("No CI checks are reported for this pull request.")
+                        .junoCaption()
+                } else {
+                    ForEach(pullRequest.checks) { check in
+                        checkRow(check)
+                    }
+                }
+            } else {
+                VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                    Text(controller.gitHubStatusMessage ?? "GitHub status has not been loaded.")
+                        .junoCaption()
+                    Button("Check Again") {
+                        Task { await controller.refreshGitHubPullRequest() }
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                }
+            }
+        } header: {
+            HStack {
+                Text("Pull request & CI")
+                Spacer()
+                if !controller.isLoadingGitHubStatus {
+                    Button {
+                        Task { await controller.refreshGitHubPullRequest() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .help("Read the pull request and its checks again")
+                    .accessibilityLabel("Refresh pull request status")
+                }
+            }
+        }
+    }
+
+    private func pullRequestSummary(_ pullRequest: GitHubPullRequestStatus) -> some View {
+        VStack(alignment: .leading, spacing: JunoSpace.tight) {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                Text("#\(pullRequest.number)")
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
+                Text(pullRequest.title)
+                    .junoRowLabel()
+                    .lineLimit(2)
+                Spacer(minLength: JunoSpace.tight)
+                if let url = safeWebURL(pullRequest.url) {
+                    Link(destination: url) {
+                        Image(systemName: "arrow.up.right.square")
+                    }
+                    .help("Open the pull request on GitHub")
+                    .accessibilityLabel("Open pull request in browser")
+                }
+            }
+            HStack(spacing: JunoSpace.snug) {
+                Text(pullRequest.isDraft ? "Draft" : pullRequest.state.capitalized)
+                    .junoCaption()
+                    .foregroundStyle(pullRequest.isDraft ? Color.secondary : Color.junoSuccess)
+                Text("\(pullRequest.headRefName) → \(pullRequest.baseRefName)")
+                    .junoCodeSmall()
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let review = pullRequest.reviewDecision, !review.isEmpty {
+                    Text(review.replacingOccurrences(of: "_", with: " ").capitalized)
+                        .junoCaption()
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func checkRow(_ check: GitHubCheckStatus) -> some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: checkSymbol(check.bucket))
+                .foregroundStyle(checkColor(check.bucket))
+                .frame(width: 15)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(check.name)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                if let workflow = check.workflow, !workflow.isEmpty {
+                    Text(workflow)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: JunoSpace.tight)
+            Text(check.state.replacingOccurrences(of: "_", with: " ").capitalized)
+                .junoCaption()
+            if let link = check.link, let url = safeWebURL(link) {
+                Link(destination: url) {
+                    Image(systemName: "arrow.up.right")
+                        .imageScale(.small)
+                }
+                .accessibilityLabel("Open \(check.name) check")
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Commits
+
+    private var commitsSection: some View {
+        Section("Recent commits") {
+            if controller.gitHistory.isEmpty {
+                Text("No commits yet.").junoCaption()
+            } else {
+                ForEach(controller.gitHistory) { commit in
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(commit.subject)
+                            .junoRowLabel()
+                            .lineLimit(1)
+                        HStack(spacing: JunoSpace.tight) {
+                            Text(commit.shortHash).junoCodeSmall()
+                            Text(commit.author)
+                            Text(commit.date, style: .relative)
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(commit.subject), \(commit.author), \(commit.shortHash)")
+                }
+            }
+        }
+    }
+
+    // MARK: - Instructions
+
+    private var instructionsSection: some View {
+        Section("Instructions") {
+            if controller.instructionFiles.isEmpty {
+                Text("No repository instruction files found.").junoCaption()
+            } else {
+                ForEach(controller.instructionFiles) { file in
+                    Label(file.path.value, systemImage: "doc.text")
+                        .junoCode()
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+                Text(
+                    "Instructions are context for the agent, never policy: they cannot override permissions or approvals."
+                )
+                .junoCaption()
+            }
+        }
+    }
+
+    // MARK: - Actions
+
+    private func commit() {
+        committing = true
+        let message = commitMessage
+        Task {
+            if await controller.commit(message: message) {
+                commitMessage = ""
+            }
+            committing = false
+        }
+    }
+
+    private func preparePush() {
+        preparingPush = true
+        Task {
+            pushPlan = await controller.prepareGitPush()
+            preparingPush = false
+        }
+    }
+
+    private func publish(_ plan: GitPushPlan) {
+        pushPlan = nil
+        pushing = true
+        Task {
+            _ = await controller.publishGitBranch(plan)
+            pushing = false
+        }
+    }
+
+    private func safeWebURL(_ string: String) -> URL? {
+        guard let url = URL(string: string),
+              url.scheme == "https" || url.scheme == "http"
+        else { return nil }
+        return url
+    }
+
+    private func checkSymbol(_ bucket: String) -> String {
+        switch bucket.lowercased() {
+        case "pass": "checkmark.circle.fill"
+        case "fail": "xmark.circle.fill"
+        case "pending": "clock.fill"
+        case "skipping": "forward.circle.fill"
+        case "cancel": "minus.circle.fill"
+        default: "circle"
+        }
+    }
+
+    private func checkColor(_ bucket: String) -> Color {
+        switch bucket.lowercased() {
+        case "pass": .junoSuccess
+        case "fail": .junoDanger
+        case "pending": .junoCaution
+        default: .secondary
+        }
+    }
+}

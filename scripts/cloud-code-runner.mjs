@@ -394,20 +394,9 @@ async function main() {
   const baseRef = String(ctx.baseRef || INPUT_BASE_REF); // may be empty -> default branch
   const agentBaseUrl = String(ctx.agentBaseUrl || `${CALLBACK_BASE}/api/agent`);
   const models = Array.isArray(ctx.models) ? ctx.models : [];
-  const agentRuntime = ctx.agentRuntime === "claude" ? "claude" : "codex";
-  const permissionMode = ["plan", "ask", "auto-edit", "full"].includes(ctx.permissionMode)
-    ? ctx.permissionMode
-    : "ask";
-  const requestedModel = typeof ctx.modelId === "string" ? ctx.modelId : "";
-  const subagentsEnabled = ctx.subagentsEnabled !== false;
   if (!repoOwner || !repoName) throw new Error("runner-context is missing repoOwner/repoName");
 
-  const requestedProvider = agentRuntime === "claude" ? "anthropic" : "openai";
-  const chosen =
-    models.find((m) => m && m.available && requestedModel && m.model === requestedModel) ??
-    models.find((m) => m && m.available && m.provider === requestedProvider) ??
-    models.find((m) => m && m.available) ??
-    models[0];
+  const chosen = models.find((m) => m && m.available) ?? models[0];
   if (!chosen) throw new Error("runner-context returned no models to run");
   log(`repo ${repoOwner}/${repoName}, model ${chosen.provider}/${chosen.model}, baseRef "${baseRef || "(default)"}"`);
 
@@ -471,8 +460,7 @@ async function main() {
     provider,
     cwd: workdir,
     model: chosen.model,
-    mode: permissionMode,
-    subagents: subagentsEnabled ? {} : false,
+    mode: "full", // headless: the engine still hard-gates "sensitive" -> requestApproval
     // The bash tool spawns children with THIS env, not process.env — so agent
     // shell receives none of {exchange code, task token, clone token, JUNO_*,
     // GIT_ASKPASS, ACTIONS_*}. See runner/agent-core/VENDORED.md (divergence #3).

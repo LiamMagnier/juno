@@ -1,7 +1,35 @@
 import ApplicationServices
 import CoreGraphics
 import Foundation
+import ImageIO
 import JunoCodeCore
+import ScreenCaptureKit
+import UniformTypeIdentifiers
+
+/// Read-only Computer Use state for presentation. It contains no driver
+/// capability and cannot perform an action; the UI must still go through the
+/// coordinator's consent and safety envelope.
+public struct ComputerUseSnapshot: Sendable {
+    public let isActive: Bool
+    public let screenCapturePermission: ComputerUsePermissionState
+    public let accessibilityPermission: ComputerUsePermissionState
+    public let displayBounds: CGRect?
+    public let journal: [ComputerUseJournalEntry]
+
+    public init(
+        isActive: Bool,
+        screenCapturePermission: ComputerUsePermissionState,
+        accessibilityPermission: ComputerUsePermissionState,
+        displayBounds: CGRect?,
+        journal: [ComputerUseJournalEntry]
+    ) {
+        self.isActive = isActive
+        self.screenCapturePermission = screenCapturePermission
+        self.accessibilityPermission = accessibilityPermission
+        self.displayBounds = displayBounds
+        self.journal = journal
+    }
+}
 
 /// The safety envelope around Computer Use.
 ///
@@ -10,7 +38,7 @@ import JunoCodeCore
 /// action is rate-limited, bounds-checked, journaled, and bracketed by
 /// before/after captures; and the kill switch tears everything down
 /// immediately. The coordinator never activates itself.
-public actor ComputerUseCoordinator {
+public actor ComputerUseCoordinator: ComputerUseCoordinating {
     public static let minimumActionIntervalSeconds: Double = 0.5
 
     public enum State: Equatable, Sendable {
@@ -35,6 +63,25 @@ public actor ComputerUseCoordinator {
     public var currentState: State { state }
     public var actionJournal: [ComputerUseJournalEntry] { journal }
 
+    /// Returns current TCC and session state without prompting or capturing.
+    /// Preflight is safe to call when the inspector appears; permission prompts
+    /// remain exclusive to an explicit activation gesture.
+    public func snapshot() async -> ComputerUseSnapshot {
+        let bounds = try? await driver.displayBounds()
+        let isActive: Bool
+        switch state {
+        case .idle: isActive = false
+        case .active: isActive = true
+        }
+        return ComputerUseSnapshot(
+            isActive: isActive,
+            screenCapturePermission: driver.screenCapturePermission(),
+            accessibilityPermission: driver.accessibilityPermission(),
+            displayBounds: bounds,
+            journal: journal
+        )
+    }
+
     // MARK: - Lifecycle
 
     /// Activates Computer Use for one session. `userConsented` must be the
@@ -47,10 +94,10 @@ public actor ComputerUseCoordinator {
         if case let .active(current) = state, current != sessionID {
             throw ComputerUseError.activeForAnotherSession
         }
-        guard driver.screenCapturePermission() == .granted else {
+        guard driver.requestScreenCapturePermission() == .granted else {
             throw ComputerUseError.screenCapturePermissionMissing
         }
-        guard driver.accessibilityPermission() == .granted else {
+        guard driver.requestAccessibilityPermission() == .granted else {
             throw ComputerUseError.accessibilityPermissionMissing
         }
         state = .active(sessionID: sessionID)
@@ -154,9 +201,10 @@ public actor ComputerUseCoordinator {
     }
 }
 
-/// Real TCC preflight checks with the capture/injection driver not yet
-/// implemented: activation honestly fails until it lands, so the feature is
-/// gated off in production without any mock behavior.
+/// ScreenCaptureKit capture and CGEvent input injection for the selected main
+/// display. The coordinator above remains the safety boundary: this driver
+/// cannot be reached until the reader explicitly activates Computer Use for one
+/// session, and every action is bounded, rate-limited and journaled.
 public struct SystemComputerUseDriver: ComputerUseDriving {
     public init() {}
 
@@ -168,19 +216,148 @@ public struct SystemComputerUseDriver: ComputerUseDriving {
         AXIsProcessTrusted() ? .granted : .denied
     }
 
+    public func requestScreenCapturePermission() -> ComputerUsePermissionState {
+        if CGPreflightScreenCaptureAccess() { return .granted }
+        return CGRequestScreenCaptureAccess() ? .granted : .denied
+    }
+
+    public func requestAccessibilityPermission() -> ComputerUsePermissionState {
+        if AXIsProcessTrusted() { return .granted }
+        let options = [
+            "AXTrustedCheckOptionPrompt": true,
+        ] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options) ? .granted : .denied
+    }
+
     public func displayBounds() async throws -> CGRect {
         CGDisplayBounds(CGMainDisplayID())
     }
 
     public func captureScreen() async throws -> Data {
-        throw ComputerUseError.driverUnavailable(
-            reason: "The ScreenCaptureKit driver is not implemented yet."
+        let content = try await SCShareableContent.excludingDesktopWindows(
+            false,
+            onScreenWindowsOnly: true
         )
+        guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() })
+            ?? content.displays.first
+        else {
+            throw ComputerUseError.driverUnavailable(reason: "No capturable display is available.")
+        }
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = SCStreamConfiguration()
+        configuration.width = display.width
+        configuration.height = display.height
+        configuration.showsCursor = true
+        configuration.capturesAudio = false
+
+        let image = try await SCScreenshotManager.captureImage(
+            contentFilter: filter,
+            configuration: configuration
+        )
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            data,
+            UTType.png.identifier as CFString,
+            1,
+            nil
+        ) else {
+            throw ComputerUseError.driverUnavailable(reason: "Could not encode the screen image.")
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else {
+            throw ComputerUseError.driverUnavailable(reason: "Could not finish the screen image.")
+        }
+        return data as Data
     }
 
     public func perform(_ action: ComputerUseActionKind) async throws {
-        throw ComputerUseError.driverUnavailable(
-            reason: "The CGEvent driver is not implemented yet."
-        )
+        switch action {
+        case .screenshot:
+            return
+        case let .click(x, y):
+            try click(at: CGPoint(x: x, y: y), count: 1)
+        case let .doubleClick(x, y):
+            try click(at: CGPoint(x: x, y: y), count: 2)
+        case .typeText(let text):
+            try type(text)
+        case .pressKey(let key):
+            try press(key)
+        case let .scroll(x, y, deltaY):
+            guard let event = CGEvent(
+                scrollWheelEvent2Source: nil,
+                units: .pixel,
+                wheelCount: 1,
+                wheel1: Int32(clamping: Int(deltaY.rounded())),
+                wheel2: 0,
+                wheel3: 0
+            ) else {
+                throw ComputerUseError.driverUnavailable(reason: "Could not create a scroll event.")
+            }
+            event.location = CGPoint(x: x, y: y)
+            event.post(tap: .cghidEventTap)
+        }
     }
+
+    private func click(at point: CGPoint, count: Int) throws {
+        for index in 1...count {
+            guard let down = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseDown,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ), let up = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseUp,
+                mouseCursorPosition: point,
+                mouseButton: .left
+            ) else {
+                throw ComputerUseError.driverUnavailable(reason: "Could not create a click event.")
+            }
+            down.setIntegerValueField(.mouseEventClickState, value: Int64(index))
+            up.setIntegerValueField(.mouseEventClickState, value: Int64(index))
+            down.post(tap: .cghidEventTap)
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    private func type(_ text: String) throws {
+        let units = Array(text.utf16)
+        guard !units.isEmpty else { return }
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false)
+        else {
+            throw ComputerUseError.driverUnavailable(reason: "Could not create a typing event.")
+        }
+        units.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return }
+            down.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+            up.keyboardSetUnicodeString(stringLength: buffer.count, unicodeString: base)
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    private func press(_ key: String) throws {
+        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let code = Self.keyCodes[normalized] else {
+            throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
+        }
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
+        else {
+            throw ComputerUseError.driverUnavailable(reason: "Could not create a key event.")
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
+    private static let keyCodes: [String: CGKeyCode] = [
+        "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
+        "escape": 53, "esc": 53, "command": 55, "shift": 56, "capslock": 57,
+        "option": 58, "control": 59, "rightshift": 60, "rightoption": 61,
+        "rightcontrol": 62, "left": 123, "right": 124, "down": 125, "up": 126,
+        "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+        "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+        "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+    ]
 }

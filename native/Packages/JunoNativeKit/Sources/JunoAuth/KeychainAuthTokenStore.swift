@@ -1,6 +1,5 @@
 import Foundation
 import JunoCore
-import LocalAuthentication
 @preconcurrency import Security
 
 public struct SecurityKeychainItem: Equatable, Hashable, Sendable {
@@ -73,14 +72,6 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         var query = baseQuery(for: item)
         query[kSecReturnData as String] = true
         query[kSecMatchLimit as String] = kSecMatchLimitOne
-        // Restoring Juno must never park the app behind an invisible legacy
-        // Keychain prompt (common for unsigned/debug builds or a changed
-        // signing identity). Authentication happens in Juno's browser flow;
-        // an inaccessible local item therefore fails closed and the sign-in
-        // screen remains usable.
-        let authenticationContext = LAContext()
-        authenticationContext.interactionNotAllowed = true
-        query[kSecUseAuthenticationContext as String] = authenticationContext
 
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
@@ -218,13 +209,12 @@ public enum KeychainAuthTokenStoreError: Error, Equatable, Sendable {
 /// during a rotating-token compare-and-swap.
 public actor KeychainAuthTokenStore: AuthTokenStore {
     public static let defaultService = "com.liammagnier.juno.auth.tokens"
-    private static let defaultActiveAccountService =
+    private static let activeAccountService =
         "com.liammagnier.juno.auth.active-account"
     private static let activeAccountName = "current"
 
     private let securityClient: any SecurityKeychainClient
     private let service: String
-    private let activeAccountService: String
     private let accessGroup: String?
 
     public init(
@@ -232,7 +222,6 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient()
     ) {
         service = Self.defaultService
-        activeAccountService = Self.defaultActiveAccountService
         self.accessGroup = accessGroup
         self.securityClient = securityClient
     }
@@ -251,7 +240,6 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
             throw KeychainAuthTokenStoreError.invalidService
         }
         self.service = service
-        activeAccountService = "\(service).active-account"
         self.accessGroup = accessGroup
         self.securityClient = securityClient
     }
@@ -361,7 +349,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
 
     private func activeAccountItem() -> SecurityKeychainItem {
         SecurityKeychainItem(
-            service: activeAccountService,
+            service: Self.activeAccountService,
             account: Self.activeAccountName,
             accessGroup: accessGroup
         )

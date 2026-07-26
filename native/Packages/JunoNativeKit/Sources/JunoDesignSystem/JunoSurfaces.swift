@@ -25,6 +25,18 @@ public extension JunoColorToken {
     static let rowSelectedLight = JunoColorToken(unchecked: 0, 0, 0, 0.075)
     static let rowSelectedDark = JunoColorToken(unchecked: 1, 1, 1, 0.10)
 
+    // The navigation column's selected row, from the web's `--sidebar-accent`:
+    // `48 28% 91%` / `30 8% 14%`. Opaque, not an alpha wash, because it is fed to
+    // the platform as a *tint* and the system composites it itself.
+    static let sidebarSelectionLight = JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848)
+    static let sidebarSelectionDark = JunoColorToken(unchecked: 0.1512, 0.14, 0.1288)
+
+    // The ambient throw under a raised card, from the web's `--shadow-soft`
+    // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
+    // shadow on a warm canvas reads as dirt.
+    static let cardShadowLight = JunoColorToken(unchecked: 0.20, 0.19, 0.18, 0.07)
+    static let cardShadowDark = JunoColorToken(unchecked: 0, 0, 0, 0.42)
+
     // Hairlines. Two weights: one that separates regions, one that outlines.
     static let separatorLight = JunoColorToken(unchecked: 0, 0, 0, 0.08)
     static let separatorDark = JunoColorToken(unchecked: 1, 1, 1, 0.09)
@@ -58,6 +70,62 @@ public extension Color {
     static let junoBorder = Color.junoAdaptive(light: .borderLight, dark: .borderDark)
     /// Terminal and diff output.
     static let junoTerminal = Color.junoAdaptive(light: .terminalLight, dark: .terminalDark)
+    /// The navigation column's selected row — the web's `--sidebar-accent`.
+    ///
+    /// Fed to `List` as a tint rather than painted by hand, so the platform keeps
+    /// drawing the selection and Juno only says what colour it is. See
+    /// `junoSidebarSelectionTint()`.
+    static let junoSidebarSelection = Color.junoAdaptive(
+        light: .sidebarSelectionLight, dark: .sidebarSelectionDark
+    )
+    /// The throw under a raised card. Only ever used through ``View/junoCard(cornerRadius:)``.
+    static let junoCardShadow = Color.junoAdaptive(
+        light: .cardShadowLight, dark: .cardShadowDark
+    )
+}
+
+/// How far a surface lifts off the canvas.
+///
+/// Two numbers rather than a free-hand `.shadow(radius:)` at each call site: the
+/// web has exactly one raised elevation (`--shadow-soft`) and the app should not
+/// grow a second one page by page.
+public enum JunoElevation {
+    /// The blur of a raised card's ambient throw.
+    public static let cardBlur: CGFloat = 6
+    /// How far that throw falls below the card.
+    public static let cardOffsetY: CGFloat = 2
+}
+
+public extension View {
+    /// Raised content: a card, a table, a grid tile, a panel of rows.
+    ///
+    /// **This is the rule that separates the app from the website.** The web puts
+    /// content on white `--card` surfaces *over* the warm `--background`; the Mac
+    /// app painted content straight onto the warm canvas, so the whole window read
+    /// as one flat cream field. The canvas is a backdrop. Anything a reader
+    /// actually reads sits on `junoRaised` above it, with the canvas showing
+    /// around and between.
+    ///
+    /// Solid, never a material: this is content, and rule four of the desktop
+    /// vocabulary reserves glass for things that float. The hairline and the low
+    /// warm throw are the web's `border-border/70` + `--shadow-soft`, so a card
+    /// still reads as raised on a display where the two fills are barely a step
+    /// apart.
+    func junoCard(cornerRadius: CGFloat = JunoRadius.panel) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.junoRaised)
+                .shadow(
+                    color: .junoCardShadow,
+                    radius: JunoElevation.cardBlur,
+                    y: JunoElevation.cardOffsetY
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(Color.junoBorder, lineWidth: 1)
+        )
+    }
 }
 
 /// The spacing scale. Every gap in a Juno view comes from here.

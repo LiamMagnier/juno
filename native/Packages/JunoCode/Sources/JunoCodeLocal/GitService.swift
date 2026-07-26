@@ -1,8 +1,100 @@
 import Foundation
 import JunoCodeCore
 
+/// A push target resolved from the repository at confirmation time.
+///
+/// This is deliberately not part of `GitServicing`: the agent tool registry
+/// cannot publish. Only the explicit reader-owned Git inspector flow receives
+/// this capability.
+public struct GitPushPlan: Sendable, Equatable {
+    public let remote: String
+    public let localBranch: String
+    public let remoteBranch: String
+    public let setsUpstream: Bool
+
+    public init(
+        remote: String,
+        localBranch: String,
+        remoteBranch: String,
+        setsUpstream: Bool
+    ) {
+        self.remote = remote
+        self.localBranch = localBranch
+        self.remoteBranch = remoteBranch
+        self.setsUpstream = setsUpstream
+    }
+
+    public var displayTarget: String { "\(remote)/\(remoteBranch)" }
+}
+
+public enum GitPublishError: Error, Equatable, Sendable {
+    case detachedHead
+    case noRemote
+    case ambiguousRemotes([String])
+    case planChanged
+}
+
+public struct GitHubCheckStatus: Identifiable, Sendable, Equatable {
+    public var id: String { "\(workflow ?? "")\u{1f}\(name)\u{1f}\(link ?? "")" }
+    public let name: String
+    public let workflow: String?
+    public let state: String
+    public let bucket: String
+    public let link: String?
+
+    public init(
+        name: String,
+        workflow: String?,
+        state: String,
+        bucket: String,
+        link: String?
+    ) {
+        self.name = name
+        self.workflow = workflow
+        self.state = state
+        self.bucket = bucket
+        self.link = link
+    }
+}
+
+public struct GitHubPullRequestStatus: Sendable, Equatable {
+    public let number: Int
+    public let title: String
+    public let url: String
+    public let state: String
+    public let isDraft: Bool
+    public let headRefName: String
+    public let baseRefName: String
+    public let reviewDecision: String?
+    public let checks: [GitHubCheckStatus]
+
+    public init(
+        number: Int,
+        title: String,
+        url: String,
+        state: String,
+        isDraft: Bool,
+        headRefName: String,
+        baseRefName: String,
+        reviewDecision: String?,
+        checks: [GitHubCheckStatus]
+    ) {
+        self.number = number
+        self.title = title
+        self.url = url
+        self.state = state
+        self.isDraft = isDraft
+        self.headRefName = headRefName
+        self.baseRefName = baseRefName
+        self.reviewDecision = reviewDecision
+        self.checks = checks
+    }
+}
+
 /// Git operations over the workspace-pinned command execution service.
-/// Arguments are shell-quoted; only non-destructive commands are issued.
+/// Arguments are shell-quoted. Remote publication is available only through a
+/// confirmation-bound, non-force plan that is intentionally absent from the
+/// agent-facing `GitServicing` protocol.
 public final class GitService: GitServicing, Sendable {
     public static let maximumDiffBytes = 512 * 1_024
 
@@ -83,13 +175,149 @@ public final class GitService: GitServicing, Sendable {
         return info
     }
 
+    /// Resolves the exact non-force push target without changing the remote.
+    /// A repository without an upstream uses `origin`, or its only remote.
+    public func preparePush() async throws -> GitPushPlan {
+        let summary = try await status()
+        guard let localBranch = summary.branch else {
+            throw GitPublishError.detachedHead
+        }
+
+        if let upstream = summary.upstream,
+           let separator = upstream.firstIndex(of: "/")
+        {
+            let remote = String(upstream[..<separator])
+            let remoteBranch = String(upstream[upstream.index(after: separator)...])
+            guard !remote.isEmpty, !remoteBranch.isEmpty else {
+                throw GitPublishError.noRemote
+            }
+            return GitPushPlan(
+                remote: remote,
+                localBranch: localBranch,
+                remoteBranch: remoteBranch,
+                setsUpstream: false
+            )
+        }
+
+        let remotes = try await remoteNames()
+        let remote: String
+        if remotes.contains("origin") {
+            remote = "origin"
+        } else if remotes.count == 1, let only = remotes.first {
+            remote = only
+        } else if remotes.isEmpty {
+            throw GitPublishError.noRemote
+        } else {
+            throw GitPublishError.ambiguousRemotes(remotes)
+        }
+        return GitPushPlan(
+            remote: remote,
+            localBranch: localBranch,
+            remoteBranch: localBranch,
+            setsUpstream: true
+        )
+    }
+
+    /// Publishes exactly the plan the reader confirmed. The target is resolved
+    /// again immediately before execution, preventing a stale confirmation
+    /// from pushing a branch or remote that changed in the meantime.
+    @discardableResult
+    public func push(_ confirmedPlan: GitPushPlan) async throws -> String {
+        guard try await preparePush() == confirmedPlan else {
+            throw GitPublishError.planChanged
+        }
+        var arguments = ["push", "--porcelain"]
+        if confirmedPlan.setsUpstream {
+            arguments.append("--set-upstream")
+        }
+        arguments.append(confirmedPlan.remote)
+        if confirmedPlan.setsUpstream {
+            arguments.append(confirmedPlan.localBranch)
+        } else {
+            arguments.append(
+                "\(confirmedPlan.localBranch):refs/heads/\(confirmedPlan.remoteBranch)"
+            )
+        }
+        let outcome = try await runChecked(arguments)
+        return outcome.stdout + outcome.stderr
+    }
+
+    /// Loads the pull request associated with the current branch and its CI
+    /// checks through GitHub's authenticated CLI. This path is read-only and
+    /// inherits no process secrets; the scrubbed executor permits only the
+    /// user's existing CLI/Keychain authentication.
+    public func githubPullRequestStatus() async throws -> GitHubPullRequestStatus? {
+        let pullRequest = try await runExecutable(
+            "gh",
+            arguments: [
+                "pr", "view", "--json",
+                "number,title,url,state,isDraft,headRefName,baseRefName,reviewDecision",
+            ]
+        )
+        guard pullRequest.result.exitCode == 0 else {
+            let message = pullRequest.stderr.isEmpty
+                ? pullRequest.stdout
+                : pullRequest.stderr
+            let lowercased = message.lowercased()
+            if lowercased.contains("no pull requests found")
+                || lowercased.contains("could not find pull request")
+                || lowercased.contains("no pull request found")
+            {
+                return nil
+            }
+            throw GitServiceError.commandFailed(message: Self.tail(message))
+        }
+
+        let checks = try await runExecutable(
+            "gh",
+            arguments: [
+                "pr", "checks", "--json",
+                "bucket,name,state,link,workflow",
+            ]
+        )
+        let checkRows: [GitHubCheckStatus]
+        if checks.result.exitCode == 0 || checks.result.exitCode == 8 {
+            checkRows = try GitHubStatusParser.parseChecks(checks.stdout)
+        } else {
+            let message = checks.stderr.isEmpty ? checks.stdout : checks.stderr
+            let lowercased = message.lowercased()
+            if lowercased.contains("no checks") {
+                checkRows = []
+            } else {
+                throw GitServiceError.commandFailed(message: Self.tail(message))
+            }
+        }
+        return try GitHubStatusParser.parsePullRequest(
+            pullRequest.stdout,
+            checks: checkRows
+        )
+    }
+
     // MARK: - Helpers
+
+    private func remoteNames() async throws -> [String] {
+        let outcome = try await runChecked(["remote"])
+        return outcome.stdout
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .sorted()
+    }
 
     private func run(
         _ arguments: [String],
         outputLimit: OutputLimit = .commandOutput
     ) async throws -> (result: CommandResult, stdout: String, stderr: String) {
-        let commandLine = (["git"] + arguments.map(Self.shellQuote)).joined(separator: " ")
+        try await runExecutable("git", arguments: arguments, outputLimit: outputLimit)
+    }
+
+    private func runExecutable(
+        _ executable: String,
+        arguments: [String],
+        outputLimit: OutputLimit = .commandOutput
+    ) async throws -> (result: CommandResult, stdout: String, stderr: String) {
+        let commandLine = ([executable] + arguments).map(Self.shellQuote)
+            .joined(separator: " ")
         return try await executor.run(
             commandLine,
             timeoutSeconds: timeoutSeconds,
@@ -137,5 +365,60 @@ public final class GitService: GitServicing, Sendable {
     private static func tail(_ text: String, characters: Int = 500) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.count > characters ? String(trimmed.suffix(characters)) : trimmed
+    }
+}
+
+enum GitHubStatusParser {
+    private struct PullRequestPayload: Decodable {
+        let number: Int
+        let title: String
+        let url: String
+        let state: String
+        let isDraft: Bool
+        let headRefName: String
+        let baseRefName: String
+        let reviewDecision: String?
+    }
+
+    private struct CheckPayload: Decodable {
+        let bucket: String
+        let name: String
+        let state: String
+        let link: String?
+        let workflow: String?
+    }
+
+    static func parsePullRequest(
+        _ json: String,
+        checks: [GitHubCheckStatus]
+    ) throws -> GitHubPullRequestStatus {
+        let payload = try JSONDecoder().decode(
+            PullRequestPayload.self,
+            from: Data(json.utf8)
+        )
+        return GitHubPullRequestStatus(
+            number: payload.number,
+            title: payload.title,
+            url: payload.url,
+            state: payload.state,
+            isDraft: payload.isDraft,
+            headRefName: payload.headRefName,
+            baseRefName: payload.baseRefName,
+            reviewDecision: payload.reviewDecision,
+            checks: checks
+        )
+    }
+
+    static func parseChecks(_ json: String) throws -> [GitHubCheckStatus] {
+        try JSONDecoder().decode([CheckPayload].self, from: Data(json.utf8))
+            .map {
+                GitHubCheckStatus(
+                    name: $0.name,
+                    workflow: $0.workflow,
+                    state: $0.state,
+                    bucket: $0.bucket,
+                    link: $0.link
+                )
+            }
     }
 }

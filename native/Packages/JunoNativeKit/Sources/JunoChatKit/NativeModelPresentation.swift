@@ -1,19 +1,16 @@
 import Foundation
+import JunoDesignSystem
 
 /// Formatting shared by every surface that lists models. Kept free of SwiftUI
 /// so the rules — and the "never invent a value" guarantees — stay testable.
 public enum NativeModelPresentation {
     /// "1M" / "200K", matching `formatContext` on the web so the same model
     /// reads identically in the app and in the browser.
+    ///
+    /// The rule itself now lives in the design system, where Juno Code can reach
+    /// it too; this stays as the name the chat surfaces already call.
     public static func contextWindow(_ tokens: Int) -> String {
-        let million = 1_000_000
-        if tokens >= million {
-            let value = Double(tokens) / Double(million)
-            return value == value.rounded()
-                ? "\(Int(value))M"
-                : String(format: "%.1fM", value)
-        }
-        return "\(Int((Double(tokens) / 1000).rounded()))K"
+        JunoModelFormatting.contextWindow(tokens)
     }
 
     /// The relative-cost glyph the web selector uses: one "$" per cost tier.
@@ -72,31 +69,7 @@ public enum NativeModelPresentation {
     }
 }
 
-public enum NativeModelCapabilityChip: String, Identifiable, CaseIterable, Sendable {
-    case reasoning
-    case vision
-    case search
-    case tools
-
-    public var id: String { rawValue }
-
-    public var label: String {
-        switch self {
-        case .reasoning: "Reasoning"
-        case .vision: "Vision"
-        case .search: "Search"
-        case .tools: "Tools"
-        }
-    }
-
-    /// SF Symbols are right for capabilities — these are Apple-platform concepts
-    /// (a magnifier, an eye), not brands. Provider identity uses real logos.
-    public var systemImage: String {
-        switch self {
-        case .reasoning: "brain"
-        case .vision: "eye"
-        case .search: "globe"
-        case .tools: "wrench.and.screwdriver"
-        }
-    }
-}
+/// The capability vocabulary moved to the design system so Juno Code can render
+/// the same chips. This is the chat-side name for it, kept so the mobile and
+/// desktop chat surfaces do not have to be rewritten to say the new one.
+public typealias NativeModelCapabilityChip = JunoModelCapability

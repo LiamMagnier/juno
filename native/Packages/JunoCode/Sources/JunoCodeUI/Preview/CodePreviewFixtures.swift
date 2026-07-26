@@ -308,6 +308,7 @@ enum CodePreviewData {
             fixture.composerText = ""
 
         case .transcript:
+            builder.contract(fixture.session.configuration)
             builder.user("Tidy the design tokens: fold the duplicated spacing constants into one scale and update every call site.")
             builder.reasoning("Read the token file, found two overlapping spacing scales, and planned a single source of truth.")
             builder.assistant("I found two spacing scales — `JunoCodeTheme.Spacing` and a private `Metrics` enum in the inspector. I folded the second into the first and updated the call sites.")
@@ -588,6 +589,17 @@ enum CodePreviewData {
             )))
         }
 
+        /// The turn contract that precedes a user turn, so the quiet
+        /// "Code · model · ask to edit" line is inspectable in the sweep.
+        mutating func contract(_ configuration: AgentConfiguration) {
+            append(.turnConfiguration(TurnConfigurationEvent(
+                behavior: configuration.behavior,
+                permissionMode: configuration.permissionMode,
+                modelID: configuration.modelID,
+                reasoningEffort: configuration.reasoningEffort
+            )))
+        }
+
         mutating func user(_ text: String) {
             append(.userPrompt(UserPromptEvent(text: text)))
         }
@@ -821,7 +833,7 @@ extension CodePreviewData {
         GitCommitInfo(
             hash: "677d781a4c6e9b2f5d8a0c3e7b1f4d69a2c5e8b0",
             shortHash: "677d781",
-            subject: "feat(code): integrate the Juno Code workbench into JunoMac",
+            subject: "feat(code): integrate the Juno Code workbench into JunoDesktop",
             author: "Liam Magnier", date: minutes(2_600)
         ),
         GitCommitInfo(

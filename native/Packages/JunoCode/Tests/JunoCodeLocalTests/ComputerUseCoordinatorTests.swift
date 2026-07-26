@@ -145,17 +145,28 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         }
     }
 
-    func testSystemDriverFailsClosedWithoutImplementation() async {
+    func testSystemDriverExposesRealDisplayAndPermissionPreflight() async throws {
         let driver = SystemComputerUseDriver()
-        do {
-            _ = try await driver.captureScreen()
-            XCTFail("expected unavailable")
-        } catch let error as ComputerUseError {
-            guard case .driverUnavailable = error else {
-                return XCTFail("unexpected \(error)")
-            }
-        } catch {
-            XCTFail("unexpected \(error)")
-        }
+        let bounds = try await driver.displayBounds()
+        XCTAssertGreaterThan(bounds.width, 0)
+        XCTAssertGreaterThan(bounds.height, 0)
+        XCTAssertNotEqual(driver.screenCapturePermission(), .notDetermined)
+        XCTAssertNotEqual(driver.accessibilityPermission(), .notDetermined)
+    }
+
+    func testSnapshotNeverPromptsAndReflectsCoordinatorState() async throws {
+        let coordinator = ComputerUseCoordinator(driver: FakeDriver())
+        var snapshot = await coordinator.snapshot()
+        XCTAssertFalse(snapshot.isActive)
+        XCTAssertEqual(snapshot.screenCapturePermission, .granted)
+        XCTAssertEqual(snapshot.accessibilityPermission, .granted)
+        XCTAssertEqual(snapshot.displayBounds?.width, 1_000)
+        XCTAssertTrue(snapshot.journal.isEmpty)
+
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        _ = try await coordinator.perform(.screenshot, sessionID: sessionID)
+        snapshot = await coordinator.snapshot()
+        XCTAssertTrue(snapshot.isActive)
+        XCTAssertEqual(snapshot.journal.count, 1)
     }
 }

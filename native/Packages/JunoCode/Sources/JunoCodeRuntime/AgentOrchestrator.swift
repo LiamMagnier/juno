@@ -40,6 +40,8 @@ public actor AgentOrchestrator {
     private var runTask: Task<Void, Never>?
     private var approvalObserverToken: UUID?
     private var restored = false
+    private var liveTextObserver: (@Sendable (String) -> Void)?
+    private var lastLiveTextEmit = Date.distantPast
 
     public init(
         sessionID: CodeSessionID,
@@ -62,6 +64,49 @@ public actor AgentOrchestrator {
     }
 
     public var isRunning: Bool { runTask != nil }
+
+    /// Observes the assistant text as it accumulates within the current turn.
+    ///
+    /// Deliberately not persisted: `assistantMessage` is the record of what the
+    /// agent said, and writing a transcript line per token would make the
+    /// append-only store the bottleneck for every reply. The observer is handed
+    /// the whole accumulated turn text rather than each delta, so a subscriber
+    /// that attaches mid-turn is never left holding a fragment, and an empty
+    /// string at the start of every turn so the previous turn's text is dropped
+    /// instead of concatenated.
+    public func observeLiveText(_ observer: (@Sendable (String) -> Void)?) {
+        liveTextObserver = observer
+    }
+
+    /// Releases the observer this orchestrator holds on the shared permission
+    /// coordinator.
+    ///
+    /// A session whose turn contract changes — a different mode, model or
+    /// reasoning effort — is served by a new orchestrator, because the tool
+    /// registry, system prompt and model are fixed at construction. The
+    /// abandoned instance would otherwise keep observing approvals and write a
+    /// second `approvalRequested` event for every one of them.
+    public func release() async {
+        if let token = approvalObserverToken {
+            await permissions.removeObserver(token)
+            approvalObserverToken = nil
+        }
+        liveTextObserver = nil
+    }
+
+    /// Publishes the turn's text so far, at most twenty times a second.
+    ///
+    /// A model streams tokens far faster than a reader reads or a display
+    /// refreshes, and every notification costs a hop to whichever actor the
+    /// observer belongs to. Throttling here rather than in the observer keeps
+    /// that cost off every subscriber.
+    private func emitLiveText(_ text: String, force: Bool = false) {
+        guard let liveTextObserver else { return }
+        let now = Date()
+        guard force || now.timeIntervalSince(lastLiveTextEmit) >= 0.05 else { return }
+        lastLiveTextEmit = now
+        liveTextObserver(text)
+    }
 
     // MARK: - Entry points
 
@@ -196,6 +241,8 @@ public actor AgentOrchestrator {
             var turnText = ""
             var toolCalls: [(id: String, name: String, input: JSONValue)] = []
             var stopReason: ModelStopReason?
+            lastLiveTextEmit = .distantPast
+            emitLiveText("", force: true)
 
             do {
                 for try await event in model.streamTurn(request) {
@@ -203,6 +250,7 @@ public actor AgentOrchestrator {
                     switch event {
                     case let .textDelta(delta):
                         turnText += delta
+                        emitLiveText(turnText)
                     case let .reasoningSummary(summary):
                         _ = try? await store.appendEvent(
                             sessionID: sessionID,
@@ -441,6 +489,7 @@ public actor AgentOrchestrator {
         testsPassed: Bool?,
         startedAt: Date
     ) async {
+        emitLiveText("", force: true)
         _ = try? await store.appendEvent(
             sessionID: sessionID,
             payload: .runCompleted(

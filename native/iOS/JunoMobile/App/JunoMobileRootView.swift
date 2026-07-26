@@ -405,7 +405,8 @@ struct JunoMobileRootView: View {
                         avatarData: avatarModel?.imageData,
                         syncModel: syncModel,
                         outbox: outbox,
-                        accountDataClient: accountDataClient
+                        accountDataClient: accountDataClient,
+                        requestSender: requestSender
                     )
                 } else {
                     unavailable
@@ -765,7 +766,8 @@ struct JunoMobileRootView: View {
                     avatarData: avatarModel?.imageData,
                     syncModel: syncModel,
                     outbox: outbox,
-                    accountDataClient: accountDataClient
+                    accountDataClient: accountDataClient,
+                    requestSender: requestSender
                 )
             } else { unavailable }
         }
