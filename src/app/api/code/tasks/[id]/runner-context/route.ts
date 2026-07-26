@@ -51,20 +51,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const task = await prisma.codeTask.findFirst({
     where: { id, userId: user.id },
-    select: {
-      prompt: true,
-      target: true,
-      repoOwner: true,
-      repoName: true,
-      baseRef: true,
-      status: true,
-      agentRuntime: true,
-      permissionMode: true,
-      modelId: true,
-      reasoningEffort: true,
-      computerUse: true,
-      subagentsEnabled: true,
-    },
+    select: { prompt: true, target: true, repoOwner: true, repoName: true, baseRef: true, status: true },
   });
   if (!task || task.target !== "cloud" || !task.repoOwner || !task.repoName) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -112,12 +99,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       repoOwner: task.repoOwner,
       repoName: task.repoName,
       baseRef: task.baseRef,
-      agentRuntime: task.agentRuntime,
-      permissionMode: task.permissionMode,
-      modelId: task.modelId,
-      reasoningEffort: task.reasoningEffort,
-      computerUse: task.computerUse,
-      subagentsEnabled: task.subagentsEnabled,
       cloneToken,
       agentBaseUrl: `${env.appUrl.replace(/\/$/, "")}/api/agent`,
       // A fresh task token for every subsequent callback, so the runner gets a

@@ -117,29 +117,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentLoopRes
         });
         continue;
       }
-      const result = await opts.executeToolCall(call);
-      if (
-        result.type === 'tool_result' &&
-        !result.isError &&
-        result.content.startsWith('data:image/')
-      ) {
-        const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(
-          result.content,
-        );
-        if (match) {
-          results.content.push({
-            ...result,
-            content: 'A fresh Computer Use screenshot is attached to this tool result.',
-          });
-          results.content.push({
-            type: 'image',
-            mediaType: match[1] as 'image/png' | 'image/jpeg',
-            data: match[2],
-          });
-          continue;
-        }
-      }
-      results.content.push(result);
+      results.content.push(await opts.executeToolCall(call));
     }
     opts.messages.push(results);
     opts.onMessagesChanged?.();

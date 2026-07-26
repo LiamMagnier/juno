@@ -929,15 +929,6 @@ model CodeTask {
   createsNewSession Boolean @default(true)
   origin            String  @default("remote")
   idempotencyKey    String?
-  // Provider-neutral agent profile selected by every surface. "codex" routes
-  // through OpenAI; "claude" routes through Anthropic. The remaining fields
-  // keep the same task behavior when it moves between macOS, iOS, and Web.
-  agentRuntime     String  @default("codex")
-  permissionMode  String  @default("ask")
-  modelId          String?
-  reasoningEffort  String?
-  computerUse      Boolean @default(false)
-  subagentsEnabled Boolean @default(true)
   // Cloud Juno Code (GitHub Actions runner). target: "device" (default) |
   // "cloud". For cloud tasks, repoOwner/repoName/baseRef pin the repo the
   // runner clones + branches from, and prUrl records the PR it opens.

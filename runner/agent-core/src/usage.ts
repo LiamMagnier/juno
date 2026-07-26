@@ -19,8 +19,6 @@ export interface BackendUsageConfig {
   baseUrl: string;
   /** Cookie header carrying the signed-in session. */
   cookie: string;
-  /** Full bearer header for native clients and task runners. */
-  authorization?: string;
 }
 
 /** POSTs to `<baseUrl>/usage`; see the backend route for the contract. */
@@ -31,12 +29,7 @@ export class BackendUsageReporter implements UsageReporter {
     try {
       const res = await fetch(`${this.config.baseUrl.replace(/\/+$/, '')}/usage`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(this.config.authorization
-            ? { Authorization: this.config.authorization }
-            : { Cookie: this.config.cookie }),
-        },
+        headers: { 'content-type': 'application/json', Cookie: this.config.cookie },
         body: JSON.stringify(body),
       });
       const data = res.ok ? {} : ((await res.json().catch(() => ({}))) as { error?: string });

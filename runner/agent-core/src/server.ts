@@ -12,8 +12,6 @@ import {
 import { BackendUsageReporter, type UsageReporter } from './usage.js';
 import { AgentSession } from './agent.js';
 import { SessionStore } from './session.js';
-import { remoteComputerTools, type ComputerAction } from './computer.js';
-import { defaultTools } from './tools/registry.js';
 
 /**
  * Model catalog for the picker: backend-proxied providers first (the website's
@@ -39,7 +37,6 @@ function mergedListings(backendConfig: BackendConfig | null): ProviderListing[] 
  *   {type:'diff', sinceTurn?}                   request unified diff
  *   {type:'list_sessions'}                      list stored sessions
  *   {type:'abort'}                              cancel the in-flight turn
- *   {type:'computer_result', requestId, ok, result?, error?}
  *
  * server -> client:
  *   {type:'event', event: AgentEvent}
@@ -47,7 +44,6 @@ function mergedListings(backendConfig: BackendConfig | null): ProviderListing[] 
  *   {type:'undo_result', restored}
  *   {type:'sessions', sessions}
  *   {type:'protocol_error', message}
- *   {type:'computer_request', requestId, action, input}
  */
 export interface SidecarOptions {
   /** Fallback adapter when a client doesn't name one (legacy callers). */
@@ -86,15 +82,6 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
   /** Set by `configure_backend`: routes `backend/<id>` providers through the
    *  Juno backend proxy (server keys) and reports usage to the account plan. */
   let backendConfig: BackendConfig | null = null;
-  let computerRequestSequence = 0;
-  const pendingComputer = new Map<
-    string,
-    {
-      resolve: (value: string) => void;
-      reject: (error: Error) => void;
-      timer: NodeJS.Timeout;
-    }
-  >();
 
   /** Adapter for a client-chosen provider; falls back to the serve-time default. */
   const resolveAdapter = (id?: string): ProviderAdapter => {
@@ -112,11 +99,7 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
   /** Usage flows to the account plan only for backend-proxied providers. */
   const usageReporterFor = (providerId: string): UsageReporter | undefined => {
     if (backendConfig && providerId.startsWith(BACKEND_PROVIDER_PREFIX)) {
-      return new BackendUsageReporter({
-        baseUrl: backendConfig.baseUrl,
-        cookie: backendConfig.cookie,
-        authorization: backendConfig.authorization,
-      });
+      return new BackendUsageReporter({ baseUrl: backendConfig.baseUrl, cookie: backendConfig.cookie });
     }
     return undefined;
   };
@@ -125,20 +108,6 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
   const send = (msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
   };
-
-  const executeComputer = (
-    action: ComputerAction,
-    input: Record<string, unknown>,
-  ): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const requestId = `computer-${++computerRequestSequence}`;
-      const timer = setTimeout(() => {
-        pendingComputer.delete(requestId);
-        reject(new Error('The native Computer Use action timed out.'));
-      }, 45_000);
-      pendingComputer.set(requestId, { resolve, reject, timer });
-      send({ type: 'computer_request', requestId, action, input });
-    });
 
   const callbacks = {
     onEvent: (event: unknown) => send({ type: 'event', event }),
@@ -163,7 +132,6 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
             backendConfig = {
               baseUrl: String(msg.baseUrl ?? ''),
               cookie: String(msg.cookie ?? ''),
-              authorization: msg.authorization ? String(msg.authorization) : undefined,
               models: Array.isArray(msg.models) ? (msg.models as BackendConfig['models']) : [],
             };
             // Refresh the picker now that proxy models are available.
@@ -171,32 +139,14 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
             break;
           case 'start': {
             const providerId = msg.provider ? String(msg.provider) : undefined;
-            const computerUse = msg.computerUse === true;
             session = AgentSession.create({
               provider: resolveAdapter(providerId),
               cwd: String(msg.cwd ?? process.cwd()),
               model: msg.model ? String(msg.model) : undefined,
               mode: (msg.mode as PermissionMode) ?? 'ask',
-              tools: computerUse
-                ? [...defaultTools(), ...remoteComputerTools(executeComputer)]
-                : undefined,
-              subagents: msg.subagents === false ? false : {},
               callbacks,
               usageReporter: providerId ? usageReporterFor(providerId) : undefined,
             });
-            break;
-          }
-          case 'computer_result': {
-            const requestId = String(msg.requestId ?? '');
-            const pending = pendingComputer.get(requestId);
-            if (!pending) break;
-            pendingComputer.delete(requestId);
-            clearTimeout(pending.timer);
-            if (msg.ok === true) {
-              pending.resolve(String(msg.result ?? 'Computer action completed.'));
-            } else {
-              pending.reject(new Error(String(msg.error ?? 'Computer action failed.')));
-            }
             break;
           }
           case 'resume': {
@@ -284,11 +234,6 @@ function handleConnection(ws: WebSocket, fallback?: ProviderAdapter): void {
     // Deny anything still waiting so the loop can finish and persist.
     for (const [, resolve] of pendingApprovals) resolve('deny');
     pendingApprovals.clear();
-    for (const [, pending] of pendingComputer) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('The native Computer Use connection closed.'));
-    }
-    pendingComputer.clear();
     session?.abort();
   });
 }

@@ -69,30 +69,15 @@ function toCompatMessages(system: string, messages: ChatMessage[]): OpenAI.Chat.
     if (m.role === 'user') {
       const toolResults = m.content.filter((c) => c.type === 'tool_result');
       const texts = m.content.filter((c) => c.type === 'text');
-      const images = m.content.filter((c) => c.type === 'image');
       for (const r of toolResults) {
         if (r.type === 'tool_result') {
           out.push({ role: 'tool', tool_call_id: r.toolCallId, content: r.content });
         }
       }
-      if (texts.length > 0 || images.length > 0) {
-        const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
-          ...texts.map((t): OpenAI.Chat.Completions.ChatCompletionContentPart => ({
-            type: 'text',
-            text: t.type === 'text' ? t.text : '',
-          })),
-          ...images.map((image): OpenAI.Chat.Completions.ChatCompletionContentPart => ({
-            type: 'image_url',
-            image_url: {
-              url: image.type === 'image'
-                ? `data:${image.mediaType};base64,${image.data}`
-                : '',
-            },
-          })),
-        ];
+      if (texts.length > 0) {
         out.push({
           role: 'user',
-          content,
+          content: texts.map((t) => (t.type === 'text' ? t.text : '')).join('\n'),
         });
       }
     } else {
