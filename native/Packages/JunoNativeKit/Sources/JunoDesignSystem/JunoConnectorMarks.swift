@@ -159,31 +159,36 @@ public struct JunoConnectorMark: View {
     /// Launch Services lookup and `icon(forFile:)` reads the bundle from disk,
     /// and a grid of connector cards re-rendering on hover would otherwise do
     /// both on every frame.
+    ///
+    /// `@MainActor` rather than lock-guarded. The only caller is a SwiftUI body,
+    /// which is already on the main actor, so the isolation is free — and it is
+    /// what lets the cache hold `NSImage` honestly. The previous version wrapped
+    /// it in a hand-rolled mutex behind a `Sendable` struct with a non-`Sendable`
+    /// `NSImage` stored inside it: a conformance that claimed something untrue
+    /// about AppKit, to buy concurrency this code never uses.
+    @MainActor
     static func applicationIcon(for connectorID: String) -> NSImage? {
-        if let cached = iconCache.withLock({ $0[connectorID] }) { return cached.image }
-        let image = loadApplicationIcon(for: connectorID)
-        iconCache.withLock { $0[connectorID] = CachedIcon(image: image) }
-        return image
-    }
+        // A miss is cached too — `nil` here means "looked, not installed", which
+        // is exactly as worth remembering as a hit, so the double lookup is
+        // deliberate rather than a nil-coalescing slip.
+        if let cached = iconCache[connectorID] { return cached }
 
-    private static func loadApplicationIcon(for connectorID: String) -> NSImage? {
         guard let identifier = applicationBundleIdentifier(for: connectorID),
             let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: identifier)
-        else { return nil }
+        else {
+            iconCache[connectorID] = NSImage?.none
+            return nil
+        }
         let icon = NSWorkspace.shared.icon(forFile: url.path)
         // Ask for a size the mark is actually drawn at, so AppKit picks the
         // right representation instead of scaling the 512pt one down.
         icon.size = NSSize(width: 64, height: 64)
+        iconCache[connectorID] = icon
         return icon
     }
 
-    /// A miss is cached too — `nil` here means "looked, not installed", which is
-    /// exactly as worth remembering as a hit.
-    private struct CachedIcon: Sendable {
-        let image: NSImage?
-    }
-
-    private static let iconCache = Mutex<[String: CachedIcon]>([:])
+    @MainActor
+    private static var iconCache: [String: NSImage?] = [:]
     #endif
 }
 
@@ -207,19 +212,30 @@ public struct JunoConnectorMark: View {
 /// a scrolling grid of hundreds of tiles that recycles as it scrolls, and
 /// re-fetching a logo every time a row comes back into view would put the
 /// catalog's CDN in the scroll path.
-actor JunoConnectorLogoCache {
+/// `@MainActor`, not an actor, for the same reason the icon cache is: the only
+/// caller is a SwiftUI body. An `actor` here would have to hand a non-`Sendable`
+/// `NSImage`/`UIImage` back across an isolation boundary on every hit, which is
+/// a promise about AppKit that cannot be kept — and it would buy nothing, since
+/// every read and write already happens on the main actor.
+///
+/// Only the network fetch leaves the main actor, which is where the work
+/// actually is; decoding lands back here.
+@MainActor
+final class JunoConnectorLogoCache {
     static let shared = JunoConnectorLogoCache()
 
     /// `nil` value = fetched and failed. Distinct from "absent", so a broken
     /// logo URL is attempted once rather than on every appearance.
     private var entries: [URL: PlatformImage?] = [:]
-    private var inFlight: [URL: Task<PlatformImage?, Never>] = [:]
+    /// Deduplicates concurrent requests for the same logo. A grid scrolling past
+    /// twenty cards backed by one CDN would otherwise start twenty identical
+    /// fetches before the first returned.
+    private var inFlight: [URL: Task<Data?, Never>] = [:]
 
     func image(for url: URL) async -> PlatformImage? {
         if let cached = entries[url] { return cached }
-        if let running = inFlight[url] { return await running.value }
 
-        let task = Task<PlatformImage?, Never> {
+        let task = inFlight[url] ?? Task<Data?, Never> {
             var request = URLRequest(url: url)
             // A logo is decoration: it must never hold a view in a loading state
             // for longer than a reader would wait for one.
@@ -230,32 +246,21 @@ actor JunoConnectorLogoCache {
                 (200...299).contains(http.statusCode),
                 !data.isEmpty
             else { return nil }
-            return PlatformImage(data: data)
+            return data
         }
         inFlight[url] = task
-        let image = await task.value
+
+        // `Data` crosses the boundary, not the image: `Data` is `Sendable` and
+        // the platform image types are not, so decoding happens here rather than
+        // inside the task.
+        let data = await task.value
         inFlight[url] = nil
+        let image = data.flatMap(PlatformImage.init(data:))
         entries[url] = image
         return image
     }
 }
 
-#if canImport(AppKit)
-/// A minimal mutex so the icon cache is safe to touch from any actor.
-///
-/// `NSImage` is not `Sendable`, and the cache is read from view bodies on the
-/// main actor and could be primed from anywhere; `Mutex` from the standard
-/// library carries the same guarantee without pulling in a dependency.
-private final class Mutex<Value>: @unchecked Sendable {
-    private var value: Value
-    private let lock = NSLock()
-
-    init(_ value: Value) { self.value = value }
-
-    func withLock<Result>(_ body: (inout Value) -> Result) -> Result {
-        lock.lock()
-        defer { lock.unlock() }
-        return body(&value)
-    }
-}
-#endif
+// The hand-rolled `Mutex` that used to live here is gone with the caches it
+// guarded. Both are `@MainActor` now, which is where their only callers already
+// were, so the lock was protecting against concurrency this code never had.
