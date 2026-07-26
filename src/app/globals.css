@@ -1249,10 +1249,16 @@
    * local contrast without a plate, a blur, or a second colour, and it costs
    * nothing when there is no glow behind the text. The name then takes a step
    * in lightness AWAY from the light behind it — up on dark paper, down on
-   * light — so accent type and accent glow can never meet in the middle. The
-   * step is relative to --primary, so it holds for every accent, and it lives
-   * behind @supports so a browser without relative colour keeps plain
+   * light — so accent type and accent glow can never meet in the middle. It
+   * lives behind @supports so a browser without relative colour keeps plain
    * text-primary rather than losing the colour entirely.
+   *
+   * On dark the step is ADDITIVE and clamped, not proportional. Multiplying
+   * lightness moves the palest accents the furthest, which is backwards: those
+   * are the ones already nearest --foreground, so violet ran to 92% and arrived
+   * as white with a faint violet cast — the accent legible as brightness but no
+   * longer as violet. A fixed distance moves every accent equally and the
+   * ceiling stops any of them reaching the foreground.
    */
   .empty-greeting {
     text-shadow:
@@ -1268,7 +1274,18 @@
       color: hsl(from hsl(var(--primary)) h calc(s * .94) calc(l * .82));
     }
     .dark .empty-greeting .empty-greeting__name {
-      color: hsl(from hsl(var(--primary)) h s calc(l * 1.3));
+      color: hsl(from hsl(var(--primary)) h s clamp(52%, calc(l * 1% + 14%), 78%));
+    }
+    /* Amber is the one accent bright enough in light mode that the shared step
+       still lands under the 3:1 WCAG needs for text this size — hue near 39deg
+       carries far more luminance per unit of lightness than violet or teal do,
+       so an equal step in L is not an equal step in contrast. It takes a deeper
+       one of its own rather than dragging every other accent darker with it. */
+    :root[data-accent="amber"] .empty-greeting .empty-greeting__name {
+      color: hsl(from hsl(var(--primary)) h s calc(l * .68));
+    }
+    .dark[data-accent="amber"] .empty-greeting .empty-greeting__name {
+      color: hsl(from hsl(var(--primary)) h s clamp(52%, calc(l * 1% + 14%), 78%));
     }
   }
   @media (prefers-reduced-motion: no-preference) {
