@@ -59,7 +59,7 @@ import { LibraryPicker } from "@/components/chat/library-picker";
 import { ComposerClarificationPopover } from "@/components/chat/composer-clarification-popover";
 import { resolveModel, type ModelInfo } from "@/lib/models";
 import { isAutoModelId } from "@/lib/auto-model";
-import { reasoningOptions, defaultReasoning } from "@/lib/model-metrics";
+import { reasoningOptions, defaultReasoning, clampReasoningEffort } from "@/lib/model-metrics";
 import { supportsFastMode } from "@/lib/pricing";
 import { PROVIDERS } from "@/lib/providers";
 import { PLANS } from "@/lib/plans";
@@ -2153,7 +2153,14 @@ export function Composer({
             )}
 
             {!isAuto && effortOptions.length > 0 && (() => {
-              const currentEffort = effortOptions.find((e) => e.value === reasoningEffort) ?? effortOptions[0];
+              // Clamp before matching. A sticky effort the model does not offer
+              // (the pref is one global value, models are per-conversation) used
+              // to fall through to effortOptions[0] — the LOWEST tier — while the
+              // request itself went out clamped to the highest tier at or below
+              // it. So a leftover "Max" on a model that stops at Extra high read
+              // as "Instant" here and ran as Extra high. Same clamp as the wire.
+              const clampedEffort = resolved ? clampReasoningEffort(resolved, reasoningEffort) : reasoningEffort;
+              const currentEffort = effortOptions.find((e) => e.value === clampedEffort) ?? effortOptions[0];
               // Keep the mobile label short enough to fit in a fixed footprint.
               // The full wording remains in the accessible label and returns on
               // wider screens. Crucially, neither footprint changes by tier, so

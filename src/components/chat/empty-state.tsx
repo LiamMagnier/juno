@@ -66,7 +66,7 @@ export function EmptyGreeting() {
         </button>
       </div>
       <h1
-        className="text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
+        className="empty-greeting text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
         {/* The greeting and the name rise as two beats rather than one block. */}
@@ -77,7 +77,7 @@ export function EmptyGreeting() {
         {firstName ? (
           <>
             {" "}
-            <span className="inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
+            <span className="empty-greeting__name inline-block font-medium italic text-primary [animation-fill-mode:backwards] [animation-delay:180ms] motion-safe:animate-rise-in">
               {firstName}
             </span>
           </>

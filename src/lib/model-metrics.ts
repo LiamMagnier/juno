@@ -447,6 +447,23 @@ export function applyReasoning(metrics: ModelMetrics, effort: ReasoningEffort, s
 export const REASONING_TIERS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ReasoningTier = (typeof REASONING_TIERS)[number];
 const TIER_ORDER: ReasoningTier[] = [...REASONING_TIERS];
+
+/**
+ * How much of the composer aura a given effort earns, 0…1 — 0 being the
+ * quietest bloom Juno draws and 1 the full one. The empty state reads this so
+ * the light behind the composer answers the thinking slider: Instant is a hint,
+ * Max burns.
+ *
+ * Indexed off TIER_ORDER rather than a hand-written table, for the reason the
+ * comment above it already gives: a parallel list of these literals drifted
+ * once before, and a new tier silently landing at the bottom of this ramp is
+ * exactly the kind of quiet wrongness that took 26 models to notice.
+ */
+export function reasoningGlow(effort: ReasoningEffort): number {
+  if (!effort) return 0;
+  const i = TIER_ORDER.indexOf(effort as ReasoningTier);
+  return i < 0 ? 0 : (i + 1) / TIER_ORDER.length;
+}
 const LMH: ReasoningTier[] = ["low", "medium", "high"];
 /** OpenAI GPT-5.2 / 5.4 / 5.5 (+ some codex) — xhigh yes, max no. */
 const LMHX: ReasoningTier[] = ["low", "medium", "high", "xhigh"];

@@ -22,6 +22,21 @@
   inherits: true;
   initial-value: 1;
 }
+/*
+ * How hard the model is thinking, 0…1 (see reasoningGlow in model-metrics).
+ *
+ * Registered for two reasons. It has to interpolate, so dragging the effort
+ * slider swells the light instead of stepping it. And it must NOT be declared
+ * on .composer-aura itself: the aura sets --aura there, and a declaration on an
+ * element always beats a value inherited from its parent, so a default written
+ * into that rule would silently ignore whatever the host passes down. An
+ * initial-value gives the fallback with nothing to lose the cascade to.
+ */
+@property --aura-think {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 0.5;
+}
 
 /*
  * Juno design system
@@ -1054,7 +1069,19 @@
    */
   .composer-aura-host {
     --aura-tint: hsl(var(--primary));
-    transition: --aura-tint var(--dur-slow) var(--ease-out-soft);
+    /* Both inherited into the aura, so both transition from up here — a change
+       on the host is what the descendant follows. Effort eases a touch slower
+       than colour: moving the slider should feel like light coming up, not like
+       a value changing.
+       `padding` belongs in this list rather than as a transition-[padding]
+       utility on the docked host. Tailwind emits utilities after components at
+       the same specificity, so that utility replaced this whole declaration and
+       silently dropped both custom properties — the docked aura would jump
+       colour and effort instead of easing. */
+    transition:
+      padding var(--dur-slow) var(--ease-out-soft),
+      --aura-tint var(--dur-slow) var(--ease-out-soft),
+      --aura-think 520ms var(--ease-out-expo);
   }
   .composer-aura-host:has(.composer-surface:focus-within) {
     --aura-tint: var(--aura-provider, hsl(var(--primary)));
@@ -1078,6 +1105,21 @@
     /* One knob for the whole effect: every alpha below is scaled by it, so the
        bloom can be dialled up or down without re-balancing the ramp. */
     --aura: 1;
+    /* Thinking, folded into the two things you can see: --aura-lit rides the
+       alphas, --aura-reach rides the box. At Instant the bloom is a hint, at
+       Max it is the full light. Reach tops out at exactly 1 — the envelope
+       below is the one measured flush against short windows, and effort must
+       never push past it.
+
+       Lit curves rather than ramps. A straight line puts a constant ABSOLUTE
+       step between tiers, which is a shrinking RELATIVE step as it climbs, so
+       the deep end of the ladder — where the difference matters most — bunched
+       up: 17% between the first two tiers but only 9% between the last two,
+       under what the eye picks up. The quadratic term spends more of the range
+       higher up and holds every step to about a sixth brighter than the one
+       below it, evenly, from Instant to Max. */
+    --aura-lit: calc(.62 + .42 * var(--aura-think) + .44 * var(--aura-think) * var(--aura-think));
+    --aura-reach: calc(.74 + .26 * var(--aura-think));
     position: absolute;
     /* Half the composer root's bottom padding, so the bloom centres on the
        capsule rather than on the column — otherwise the light pools under it. */
@@ -1090,8 +1132,8 @@
        than from the width, which keeps the bloom inside the slack a centred
        greeting leaves at any window size instead of handing short windows a
        scrollbar over dead space. The cap stops it ballooning on tall screens. */
-    width: min(180%, 72rem);
-    height: min(32rem, 54vh);
+    width: calc(min(180%, 72rem) * var(--aura-reach));
+    height: calc(min(32rem, 54vh) * var(--aura-reach));
     translate: -50% -50%;
     z-index: -1;
     pointer-events: none;
@@ -1118,22 +1160,22 @@
      */
     background: radial-gradient(
       ellipse 50% 50% at 50% 47%,
-      hsl(var(--primary) / calc(.225 * var(--aura) * var(--aura-pulse))) 0%,
-      hsl(var(--primary) / calc(.195 * var(--aura) * var(--aura-pulse))) 18%,
-      hsl(var(--primary) / calc(.14 * var(--aura) * var(--aura-pulse))) 36%,
-      hsl(var(--primary) / calc(.085 * var(--aura) * var(--aura-pulse))) 54%,
-      hsl(var(--primary) / calc(.042 * var(--aura) * var(--aura-pulse))) 72%,
-      hsl(var(--primary) / calc(.014 * var(--aura) * var(--aura-pulse))) 88%,
+      hsl(var(--primary) / calc(.225 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 0%,
+      hsl(var(--primary) / calc(.195 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 18%,
+      hsl(var(--primary) / calc(.14 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 36%,
+      hsl(var(--primary) / calc(.085 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 54%,
+      hsl(var(--primary) / calc(.042 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 72%,
+      hsl(var(--primary) / calc(.014 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 88%,
       hsl(var(--primary) / 0) 100%
     );
     background: radial-gradient(
       ellipse 50% 50% at 50% 47% in oklab,
-      hsl(from var(--aura-tint) h s calc(l * 1.08) / calc(.225 * var(--aura) * var(--aura-pulse))) 0%,
-      hsl(from var(--aura-tint) h s l / calc(.195 * var(--aura) * var(--aura-pulse))) 18%,
-      hsl(from var(--aura-tint) h s calc(l * .88) / calc(.14 * var(--aura) * var(--aura-pulse))) 36%,
-      hsl(from var(--aura-tint) h calc(s * .96) calc(l * .72) / calc(.085 * var(--aura) * var(--aura-pulse))) 54%,
-      hsl(from var(--aura-tint) h calc(s * .9) calc(l * .55) / calc(.042 * var(--aura) * var(--aura-pulse))) 72%,
-      hsl(from var(--aura-tint) h calc(s * .84) calc(l * .4) / calc(.014 * var(--aura) * var(--aura-pulse))) 88%,
+      hsl(from var(--aura-tint) h s calc(l * 1.08) / calc(.225 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 0%,
+      hsl(from var(--aura-tint) h s l / calc(.195 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 18%,
+      hsl(from var(--aura-tint) h s calc(l * .88) / calc(.14 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 36%,
+      hsl(from var(--aura-tint) h calc(s * .96) calc(l * .72) / calc(.085 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 54%,
+      hsl(from var(--aura-tint) h calc(s * .9) calc(l * .55) / calc(.042 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 72%,
+      hsl(from var(--aura-tint) h calc(s * .84) calc(l * .4) / calc(.014 * var(--aura) * var(--aura-lit) * var(--aura-pulse))) 88%,
       hsl(from var(--aura-tint) h calc(s * .8) calc(l * .3) / 0) 100%
     );
     opacity: .85;
@@ -1176,7 +1218,7 @@
    */
   .composer-aura--docked {
     --aura: .38;
-    height: min(15rem, 26vh);
+    height: calc(min(15rem, 26vh) * var(--aura-reach));
     /* Exactly the column, never wider. The empty state can spill sideways
        because the column above it clips; here the nearest clip is the main
        column's own overflow-hidden, and leaning on that to hide a bloom that
@@ -1184,6 +1226,38 @@
     width: 100%;
   }
   .dark .composer-aura--docked { --aura: .58; }
+
+  /*
+   * The greeting reads ON the aura, and its name is set in the very accent the
+   * aura is made of — same hue, close luminance, which is the worst case there
+   * is for legibility. Both fixes leave the type itself alone.
+   *
+   * The halo is the page's own background shaped to the glyphs: it restores
+   * local contrast without a plate, a blur, or a second colour, and it costs
+   * nothing when there is no glow behind the text. The name then takes a step
+   * in lightness AWAY from the light behind it — up on dark paper, down on
+   * light — so accent type and accent glow can never meet in the middle. The
+   * step is relative to --primary, so it holds for every accent, and it lives
+   * behind @supports so a browser without relative colour keeps plain
+   * text-primary rather than losing the colour entirely.
+   */
+  .empty-greeting {
+    text-shadow:
+      0 0 10px hsl(var(--background) / .8),
+      0 0 30px hsl(var(--background) / .55);
+  }
+  /* Scoped through the parent on purpose: the span keeps `text-primary` as its
+     fallback, and that utility ties this rule on specificity — so a bare
+     .empty-greeting__name loses on source order and the step silently does
+     nothing. The descendant selector buys the one point that settles it. */
+  @supports (color: hsl(from red h s l)) {
+    .empty-greeting .empty-greeting__name {
+      color: hsl(from hsl(var(--primary)) h calc(s * .94) calc(l * .82));
+    }
+    .dark .empty-greeting .empty-greeting__name {
+      color: hsl(from hsl(var(--primary)) h s calc(l * 1.3));
+    }
+  }
   @media (prefers-reduced-motion: no-preference) {
     .composer-aura {
       animation: composer-aura-breathe 11s var(--ease-out-soft) infinite;

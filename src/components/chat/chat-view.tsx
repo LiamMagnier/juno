@@ -24,6 +24,8 @@ import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
 import { providerGlow } from "@/lib/provider-colors";
+import { clampReasoningEffort, reasoningGlow, reasoningOptions } from "@/lib/model-metrics";
+import { isAutoModelId } from "@/lib/auto-model";
 import { cleanForSpeech } from "@/lib/message-content";
 import { cn } from "@/lib/utils";
 import type { ComposerQuote } from "@/lib/quote-context";
@@ -1116,16 +1118,38 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const paramsCanWebSearch =
     PLANS[quota.plan].webSearch && paramsIsChat && (resolvedModelInfo?.webSearch ?? false);
 
-  // Composer aura: idle it is the user's accent, focused it becomes the colour
-  // of the lab behind the selected model. The CSS reads --aura-provider only
-  // under :focus-within, so setting it here is inert until you click in.
-  const auraStyle = React.useMemo(
-    () =>
-      resolvedModelInfo
-        ? ({ "--aura-provider": providerGlow(resolvedModelInfo.provider) } as React.CSSProperties)
-        : undefined,
-    [resolvedModelInfo]
-  );
+  // Composer aura. Two inputs travel down as custom properties on the host:
+  // the lab colour (inert until :focus-within reads it) and how hard the model
+  // is set to think, which drives both how bright and how big the bloom is.
+  //
+  // The effort is clamped to what the model actually accepts first — a sticky
+  // "max" carried over from the last model would otherwise light the page at
+  // full burn for a model that silently runs it at high.
+  //
+  // A model with no effort control is not "thinking at zero", it is a question
+  // the slider never asks, so those sit at the middle of the ramp — as does an
+  // unresolved model, by way of the property's initial-value.
+  //
+  // The test is whether a control is actually on screen, so it mirrors the
+  // composer's own gate exactly (composer.tsx: `isAuto || !resolved ? [] :
+  // reasoningOptions(resolved)`). The obvious `model.reasoning` is NOT that
+  // test, in two ways. Eleven shipped models — Kimi K2.7 Code, DeepSeek
+  // Reasoner, Magistral, several Grok and MiniMax — declare reasoning: true but
+  // expose no tiers, so they would have clamped to null and lit the page at its
+  // dimmest with no slider anywhere to explain why. And Auto resolves with the
+  // full ladder while showing no slider at all, so it would have been driven by
+  // a sticky global pref that Auto ignores on the wire anyway.
+  const auraStyle = React.useMemo(() => {
+    if (!resolvedModelInfo) return undefined;
+    const hasEffortControl = !isAutoModelId(model) && reasoningOptions(resolvedModelInfo).length > 0;
+    const think = hasEffortControl
+      ? reasoningGlow(clampReasoningEffort(resolvedModelInfo, reasoningEffort ?? null))
+      : 0.5;
+    return {
+      "--aura-provider": providerGlow(resolvedModelInfo.provider),
+      "--aura-think": think,
+    } as React.CSSProperties;
+  }, [resolvedModelInfo, reasoningEffort, model]);
   // Send swells the bloom once. Cleared on a timer rather than animationend:
   // under prefers-reduced-motion the keyframes are switched off, so that event
   // would never arrive and the class would stick for the rest of the session.
@@ -1618,7 +1642,10 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                   // `isolate` matters: the aura sits on z-index -1, and without a
                   // stacking context here it would escape this wrapper and paint
                   // behind the whole column instead of behind the composer.
-                  "composer-aura-host relative isolate w-full transition-[padding] duration-slow ease-out-soft",
+                  // No transition-[padding] utility here: it would out-order the
+                  // .composer-aura-host transition and drop the aura's colour and
+                  // effort easing with it. That rule carries the padding now.
+                  "composer-aura-host relative isolate w-full",
                   privateMode ? "px-2 pb-1 sm:px-4" : "px-0 pb-1",
                   auraSending && "is-sending"
                 )}
@@ -1646,7 +1673,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
             // scrollbar over dead space (it still scrolls vertically).
             <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-y-auto overflow-x-clip">
               <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center justify-center px-3 py-6 sm:px-5 md:py-10">
-                <div className="relative flex w-full flex-col items-center justify-center">
+                {/*
+                  `isolate` bounds where the aura is allowed to fall. It paints
+                  on z-index -1, and the column below deliberately does NOT
+                  create a stacking context, so without a floor here the bloom
+                  would drop to whatever distant ancestor happens to establish
+                  one and could end up behind an unrelated background.
+                */}
+                <div className="relative isolate flex w-full flex-col items-center justify-center">
                   {/* Headers cross-fade — opacity only; scale was causing a jump. */}
                   <div className="mb-5 grid w-full grid-cols-1 grid-rows-1 justify-items-center sm:mb-6">
                     <div
@@ -1673,7 +1707,17 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
                   <div
                     className={cn(
-                      "composer-aura-host relative z-10 w-full max-w-[44rem]",
+                      // NO z-index here, deliberately. A z-index would make this
+                      // a stacking context and flatten everything inside it into
+                      // one layer — which is exactly what made the greeting hard
+                      // to read: the aura is z-index -1, but trapped in this
+                      // layer it was composited OVER the text above rather than
+                      // under it. Without the stacking context the aura falls to
+                      // the isolate above, below the greeting, while the panels
+                      // the composer opens upward keep their own z-30 and stay
+                      // above it. Raising the greeting instead would have put it
+                      // over those panels.
+                      "composer-aura-host relative w-full max-w-[44rem]",
                       auraSending && "is-sending"
                     )}
                     style={auraStyle}
