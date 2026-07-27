@@ -109,6 +109,28 @@ jobs:
             "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -e
           cd ~/juno
+          # Upsert every PROD_ENV key shipped alongside the build into the
+          # runtime .env (replace-or-add per key), preserving any VM-only value
+          # not present in PROD_ENV, so changed/new keys take effect on reload.
+          # .env.bak is the pre-merge rollback.
+          #
+          # This MUST happen before the Prisma steps below. It used to run after
+          # them, which meant every migration was applied through the .env the VM
+          # already had — so a rotated DATABASE_URL migrated the OLD database and
+          # only the app reload picked up the new one. Harmless while the URL
+          # never changed; wrong the first time it did.
+          if [ -s .env.shared ]; then
+            cp .env .env.bak
+            while IFS= read -r line; do
+              key="${line%%=*}"
+              [ -n "$key" ] || continue
+              grep -v "^${key}=" .env > .env.tmp || true
+              mv .env.tmp .env
+              printf '%s\n' "$line" >> .env
+            done < .env.shared
+            rm -f .env.shared
+            echo "Synced PROD_ENV keys into runtime .env (VM-only keys preserved)."
+          fi
           # Prisma's migrate advisory lock doesn't survive a pooled connection:
           # a canceled deploy leaves the lock held by an orphaned session and
           # every later migrate times out with P1002. Deploys are already
@@ -162,22 +184,6 @@ jobs:
             npx prisma migrate deploy
           fi
           mkdir -p logs
-          # Upsert every PROD_ENV key shipped alongside the build into the
-          # runtime .env (replace-or-add per key), preserving any VM-only value
-          # not present in PROD_ENV, so changed/new keys take effect on reload.
-          # .env.bak is the pre-merge rollback.
-          if [ -s .env.shared ]; then
-            cp .env .env.bak
-            while IFS= read -r line; do
-              key="${line%%=*}"
-              [ -n "$key" ] || continue
-              grep -v "^${key}=" .env > .env.tmp || true
-              mv .env.tmp .env
-              printf '%s\n' "$line" >> .env
-            done < .env.shared
-            rm -f .env.shared
-            echo "Synced PROD_ENV keys into runtime .env (VM-only keys preserved)."
-          fi
           # Raise nginx header/URI buffers if still on the 8×8k default that
           # returns 414 Request-URI Too Large on long request lines / cookies.
           NGINX_SITE="/etc/nginx/sites-available/juno"
