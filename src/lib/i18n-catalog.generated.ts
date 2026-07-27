@@ -850,6 +850,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Check your connection and try once more."
   },
   {
+    "id": "171ea77b7923cd50",
+    "source": "This view couldn&rsquo;t load"
+  },
+  {
     "id": "172eac21b886bc76",
     "source": "CTA link"
   },
@@ -2194,6 +2198,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Fine-grained text-to-image with reference support."
   },
   {
+    "id": "3c86be3eae40bb5f",
+    "source": "Temporarily unavailable"
+  },
+  {
     "id": "3c8a1796ec7c4866",
     "source": "— optional"
   },
@@ -2470,6 +2478,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "element"
   },
   {
+    "id": "4469e8f368a3111a",
+    "source": "Nothing was lost. Retry the view, or head back to your chats if it keeps failing."
+  },
+  {
     "id": "44700474f3c5f932",
     "source": "GPT-5.1"
   },
@@ -2480,6 +2492,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "44d71f9782e649e8",
     "source": "Malformed block data."
+  },
+  {
+    "id": "44dc4af8bac10954",
+    "source": "Reference:"
   },
   {
     "id": "44dd013afe430180",
@@ -2508,6 +2524,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4529950e3cce03a4",
     "source": "Cedar"
+  },
+  {
+    "id": "452b3d36fefe163f",
+    "source": "Reload Juno"
   },
   {
     "id": "45ae340c9f75d893",
@@ -3488,6 +3508,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "624e3d750a61e02d",
     "source": "Chat deleted."
+  },
+  {
+    "id": "62922190a059fda0",
+    "source": "Back to chats"
   },
   {
     "id": "62a2fed3d6e08c44",
@@ -5406,6 +5430,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Starts"
   },
   {
+    "id": "96ebc8544f6e52ec",
+    "source": "Juno can&rsquo;t reach its backend"
+  },
+  {
     "id": "96f0c06bbcb724cd",
     "source": "Developer tools"
   },
@@ -6722,6 +6750,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Adjust what runs, on which model, and when."
   },
   {
+    "id": "bc05fe58e90941c3",
+    "source": "Something broke"
+  },
+  {
     "id": "bc227f1a10b0d174",
     "source": "Could not save your feedback."
   },
@@ -7544,6 +7576,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "d33897402ce863df",
     "source": "No matches for “"
+  },
+  {
+    "id": "d35007b0b918d850",
+    "source": "Your conversations are safe — the server just can&rsquo;t read them right now. This is on our side, not yours. Try again in a few minutes."
   },
   {
     "id": "d36be6494248ee06",
