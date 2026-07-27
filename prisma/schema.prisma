@@ -7,7 +7,21 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  // Runtime queries. On Supabase this is the Supavisor **session** pooler
+  // (port 5432) — not the transaction pooler on 6543, which multiplexes
+  // connections and therefore cannot keep the prepared statements Prisma
+  // relies on.
+  url = env("DATABASE_URL")
+  // Every schema operation (migrate deploy / db push / db execute) goes here
+  // instead. Migrations need a connection that is genuinely their own: the
+  // `_prisma_migrations` completion write has twice been lost over a pooled
+  // connection, leaving "failed" rows that P3009-poison every later deploy.
+  //
+  // Point this at a session-mode connection too. Supabase's *direct* host
+  // (`db.<ref>.supabase.co`) resolves to IPv6 only, and the VM this deploys to
+  // has no global IPv6 address — so the direct string is unreachable there and
+  // the session pooler is the correct choice for both.
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------------------

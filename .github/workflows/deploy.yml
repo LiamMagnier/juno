@@ -109,17 +109,34 @@ jobs:
             "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
           set -e
           cd ~/juno
-          # Prisma's migrate advisory lock doesn't survive pooled connections
-          # (Neon pooler/PgBouncer): a canceled deploy leaves the lock held by an
-          # orphaned session and every later migrate times out with P1002.
-          # Deploys are already serialized by this workflow's concurrency group,
-          # so the lock adds no safety here — only that failure mode.
+          # Prisma's migrate advisory lock doesn't survive a pooled connection:
+          # a canceled deploy leaves the lock held by an orphaned session and
+          # every later migrate times out with P1002. Deploys are already
+          # serialized by this workflow's concurrency group, so the lock adds no
+          # safety here — only that failure mode.
           export PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1
-          # Schema operations (migrate/push) run over Neon's DIRECT host — the
-          # pooled connection keeps dropping the _prisma_migrations completion
-          # write, leaving "failed" records that P3009-poison every later
-          # deploy (bitten twice). Runtime keeps the pooler.
-          DIRECT_DB_URL="$(grep -m1 '^DATABASE_URL=' .env | cut -d= -f2- | sed 's/-pooler//')"
+          # Schema operations route through DIRECT_URL (see prisma/schema.prisma
+          # `directUrl`) rather than the runtime pooler, because the pooled
+          # connection keeps dropping the _prisma_migrations completion write and
+          # leaving "failed" records that P3009-poison every later deploy (bitten
+          # twice). Prisma applies directUrl on its own, so no per-command
+          # DATABASE_URL override is needed.
+          #
+          # This used to derive the direct host by deleting "-pooler" from
+          # DATABASE_URL, which only ever worked because Neon happened to name
+          # its hosts that way. It is a silent no-op on any other provider — the
+          # migration would quietly run over the pooler again — so the direct
+          # connection is now an explicit environment variable.
+          DIRECT_VALUE="$(grep -m1 '^DIRECT_URL=' .env | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')"
+          case "$DIRECT_VALUE" in
+            postgres*) ;;
+            *)
+              echo "DIRECT_URL is missing or empty in the VM .env, so Prisma has no" >&2
+              echo "connection to run schema operations over. Set it in the PROD_ENV" >&2
+              echo "secret (Supabase: the session pooler string, port 5432)." >&2
+              exit 1
+              ;;
+          esac
           # Reinstall app deps only when the lockfile actually changed (rare).
           LOCK_HASH="$(sha256sum package-lock.json | awk '{print $1}')"
           if [ "$LOCK_HASH" != "$(cat ~/.juno-lock.sha 2>/dev/null || true)" ]; then
@@ -136,13 +153,13 @@ jobs:
           # matching migrations. Converge that history once, then use reviewed
           # migrations exclusively on every subsequent deploy.
           if node scripts/baseline-production-migrations.mjs --status; then
-            DATABASE_URL="$DIRECT_DB_URL" npx prisma migrate deploy
+            npx prisma migrate deploy
           else
             echo "Converging existing production schema with migration history…"
-            DATABASE_URL="$DIRECT_DB_URL" npx prisma db push --skip-generate
-            DATABASE_URL="$DIRECT_DB_URL" npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
+            npx prisma db push --skip-generate
+            npx prisma db execute --file prisma/migrations/20260716200000_account_change_log/migration.sql --schema prisma/schema.prisma
             JUNO_ALLOW_MIGRATION_BASELINE=1 node scripts/baseline-production-migrations.mjs --apply
-            DATABASE_URL="$DIRECT_DB_URL" npx prisma migrate deploy
+            npx prisma migrate deploy
           fi
           mkdir -p logs
           # Upsert every PROD_ENV key shipped alongside the build into the
