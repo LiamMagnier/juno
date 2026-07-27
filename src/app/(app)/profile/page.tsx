@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { toast } from "sonner";
 import { ArrowLeft, Camera, ChevronDown, Download, Loader2, Lock } from "lucide-react";
@@ -503,7 +504,7 @@ export default function ProfilePage() {
               aria-label="Change profile picture"
             >
               {avatar ? (
-                <Image src={avatar} alt="" width={80} height={80} className="h-full w-full object-cover" />
+                <Image src={avatar} unoptimized={requiresViewerCredentials(avatar)} alt="" width={80} height={80} className="h-full w-full object-cover" />
               ) : (
                 <DotIdenticon seed={user.id} className="h-full w-full p-2" />
               )}

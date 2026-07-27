@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { toast } from "sonner";
 import { Check, FileText, Loader2 } from "lucide-react";
 import {
@@ -178,7 +179,7 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
                             isSel && "ring-2 ring-primary"
                           )}
                         >
-                          <Image src={i.url} alt={i.fileName} fill sizes="160px" className="object-cover" />
+                          <Image src={i.url} unoptimized={requiresViewerCredentials(i.url)} alt={i.fileName} fill sizes="160px" className="object-cover" />
                           <span
                             className={cn(
                               "absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-md border bg-background/80 backdrop-blur transition-colors",

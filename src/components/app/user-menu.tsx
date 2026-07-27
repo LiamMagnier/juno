@@ -3,6 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { signOutToSignIn } from "@/lib/sign-out";
 import { NotebookPen, Command, Keyboard, LogOut, Map as MapIcon, Search, Settings, Shield, Sparkles, User } from "lucide-react";
 import {
@@ -80,7 +81,7 @@ export function UserMenu({ compact = false }: { compact?: boolean }) {
   // would clip.
   const avatar = (size: string) =>
     user.image ? (
-      <Image src={user.image} alt="" width={36} height={36} className={cn("shrink-0 rounded-full object-cover", size)} />
+      <Image src={user.image} unoptimized={requiresViewerCredentials(user.image)} alt="" width={36} height={36} className={cn("shrink-0 rounded-full object-cover", size)} />
     ) : (
       <DotIdenticon seed={user.id} className={cn("shrink-0", size)} />
     );

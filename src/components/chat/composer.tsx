@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import {
   ArrowUp,
@@ -1520,7 +1521,7 @@ export function Composer({
                     )}
                   >
                     {u.attachment?.kind === "IMAGE" ? (
-                      <Image src={u.attachment.url} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded object-cover" />
+                      <Image src={u.attachment.url} unoptimized={requiresViewerCredentials(u.attachment.url)} alt={u.fileName} width={32} height={32} className="h-8 w-8 rounded object-cover" />
                     ) : (
                       <FileText className="h-5 w-5 text-muted-foreground" />
                     )}

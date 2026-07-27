@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, GitBranch, GitFork, ImageOff, Image as ImageIcon, Pencil, RefreshCw, Square, SquareDashed, ThumbsDown, ThumbsUp, Video as VideoIcon, Volume2 } from "lucide-react";
@@ -88,7 +89,7 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
 function GeneratedImageAttachment({ attachment, onEdit }: { attachment: ClientAttachment; onEdit?: () => void }) {
   const [ready, setReady] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
-  const protectedLocalUrl = attachment.url.startsWith("/api/files/");
+  const protectedLocalUrl = requiresViewerCredentials(attachment.url);
 
   const revealAfterDecode = (event: React.SyntheticEvent<HTMLImageElement>) => {
     const image = event.currentTarget;
@@ -286,6 +287,7 @@ function AttachmentList({ attachments }: { attachments: ClientAttachment[] }) {
           <a key={a.id} href={a.url} target="_blank" rel="noopener noreferrer">
             <Image
               src={a.url}
+              unoptimized={requiresViewerCredentials(a.url)}
               alt={a.fileName}
               width={160}
               height={160}

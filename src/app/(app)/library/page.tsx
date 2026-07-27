@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -164,6 +165,7 @@ function ItemPreview({ item }: { item: LibItem }) {
       >
         <Image
           src={item.url}
+          unoptimized={requiresViewerCredentials(item.url)}
           alt=""
           fill
           sizes="44px"
@@ -310,6 +312,7 @@ function GridItemPreview({ item }: { item: LibItem }) {
       {isImage && !failed ? (
         <Image
           src={item.url}
+          unoptimized={requiresViewerCredentials(item.url)}
           alt=""
           fill
           sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"

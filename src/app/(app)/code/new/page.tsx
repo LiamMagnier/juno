@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Image from "next/image";
+import { requiresViewerCredentials } from "@/lib/image-source";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -518,6 +519,7 @@ export default function NewCodeSessionPage() {
                           {u.attachment?.kind === "IMAGE" ? (
                             <Image
                               src={u.attachment.url}
+                              unoptimized={requiresViewerCredentials(u.attachment.url)}
                               alt={u.fileName}
                               width={32}
                               height={32}
