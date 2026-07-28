@@ -51,6 +51,39 @@ jobs:
           PROD_ENV: ${{ secrets.PROD_ENV }}
         run: printf '%s\n' "$PROD_ENV" > .env
 
+      # The one documented exception to "PROD_ENV is the single source of truth".
+      # PROD_ENV is a write-only secret: nothing here can READ it, so adding a
+      # key to it means re-uploading the entire file by hand. These three ship as
+      # their own secrets instead and are merged in below, then travel to the VM
+      # through the same per-key upsert as everything else.
+      #
+      # Each key is removed from the PROD_ENV copy before being re-appended, so
+      # this is an upsert and not a shadowing duplicate — meaning the standalone
+      # secret WINS over a same-named key in PROD_ENV. If these are ever folded
+      # into PROD_ENV, delete this step or it will keep overriding them.
+      - name: Merge Modal credentials into .env
+        env:
+          MODAL_WORKSPACE: ${{ secrets.MODAL_WORKSPACE }}
+          MODAL_KEY: ${{ secrets.MODAL_KEY }}
+          MODAL_SECRET: ${{ secrets.MODAL_SECRET }}
+        run: |
+          set -euo pipefail
+          for key in MODAL_WORKSPACE MODAL_KEY MODAL_SECRET; do
+            value="${!key-}"
+            # An unset secret must skip, not write an empty assignment:
+            # isProviderConfigured treats blank as absent, but a stray
+            # MODAL_KEY= line would still shadow a real one from PROD_ENV.
+            [ -n "$value" ] || { echo "skip $key (secret not set)"; continue; }
+            # Guard the rewrite: never let a failed grep truncate the .env that
+            # carries every production credential.
+            if grep -v "^${key}=" .env > .env.tmp && [ -s .env.tmp ]; then
+              mv .env.tmp .env
+            fi
+            rm -f .env.tmp
+            printf '%s="%s"\n' "$key" "$value" >> .env
+          done
+          echo "Modal keys merged: $(grep -c '^MODAL_' .env) present."
+
       - name: Install dependencies
         run: npm ci
 

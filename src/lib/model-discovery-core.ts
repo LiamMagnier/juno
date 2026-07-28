@@ -154,6 +154,10 @@ export async function fetchProviderModelIds(provider: Provider, timeoutMs: numbe
     return (data.data ?? []).map((m) => m.id).filter(Boolean);
   }
   const base = (providerBaseUrl(provider) ?? "").replace(/\/$/, "");
+  // Providers that serve one endpoint per model (Modal) have no provider-wide
+  // /models to ask. Say so plainly — an empty base otherwise fetches the
+  // relative "/models" and reports a baffling URL parse failure.
+  if (!base) throw new Error(`${provider}: no provider-wide base URL — catalog only`);
   const data = (await fetchModelList(provider, `${base}/models`, {
     headers: { Authorization: `Bearer ${key}`, ...providerHeaders(provider) },
   }, timeoutMs)) as { data?: { id: string }[] };
