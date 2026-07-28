@@ -205,6 +205,16 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // $0.75/$2.95 (launch promo $0.30/$1.20 not baked in).
     { hints: ["longcat"], metric: metric(0.75, 2.95, 1_000_000, 6, 7) },
   ],
+  // Modal reuses each model's upstream quality/speed positioning — same weights,
+  // different host. Cost columns are the pricing.ts estimates, which are only
+  // real for Kimi K3 (the token-billed managed endpoint).
+  modal: [
+    { hints: ["kimi-k3"], metric: metric(3, 15, 1_000_000, 4, 8) },
+    { hints: ["deepseek-v4-pro"], metric: metric(0.435, 0.87, 1_000_000, 3, 7) },
+    { hints: ["glm-5.2"], metric: metric(1.4, 4.4, 200_000, 5, 6) },
+    { hints: ["gpt-oss"], metric: metric(0.1, 0.5, 131_072, 7, 5) },
+    { hints: ["gemma"], metric: metric(0.1, 0.4, 131_072, 8, 4) },
+  ],
 };
 
 // Sensible per-provider default so an unrecognized model still gets real-ish

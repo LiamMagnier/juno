@@ -1,7 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
-import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
+import { modalEndpointUrl, providerApiKey, providerBaseUrl, providerHeaders, PROVIDERS } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { reasoningCaps } from "@/lib/model-metrics";
 import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/openai-prompt-cache";
@@ -10,15 +10,42 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 
-const clients = new Map<Provider, OpenAI>();
+// Keyed by provider AND base URL, not provider alone: Modal serves one endpoint
+// per model, so a single cached client per provider would pin every Modal model
+// to whichever one happened to be constructed first.
+const clients = new Map<string, OpenAI>();
 
-function client(provider: Provider): OpenAI {
+/**
+ * Base URL for one model. Identical to the provider's for everyone except
+ * Modal, where each model is its own deployment (`endpoint`) — MODAL_BASE_URL
+ * stays available as a manual override for a non-standard host.
+ */
+function modelBaseUrl(model: ModelInfo): string | undefined {
+  // Derived URL wins: MODAL_BASE_URL is a single global value, so preferring it
+  // would point every Modal model at whichever endpoint it names.
+  if (model.endpoint) return modalEndpointUrl(model.endpoint) ?? providerBaseUrl(model.provider);
+  return providerBaseUrl(model.provider);
+}
+
+function client(model: ModelInfo): OpenAI {
+  const provider = model.provider;
   const apiKey = providerApiKey(provider);
   if (!apiKey) throw new Error(`${PROVIDERS[provider].label} API key is not configured.`);
-  let c = clients.get(provider);
+  const baseURL = modelBaseUrl(model);
+  if (model.endpoint && !baseURL) {
+    throw new Error(`${PROVIDERS[provider].label}: no endpoint URL for "${model.endpoint}" — set MODAL_WORKSPACE.`);
+  }
+  const cacheKey = `${provider}|${baseURL ?? ""}`;
+  let c = clients.get(cacheKey);
   if (!c) {
-    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 2 });
-    clients.set(provider, c);
+    const extraHeaders = providerHeaders(provider);
+    c = new OpenAI({
+      apiKey,
+      baseURL,
+      maxRetries: 2,
+      ...(Object.keys(extraHeaders).length ? { defaultHeaders: extraHeaders } : {}),
+    });
+    clients.set(cacheKey, c);
   }
   return c;
 }
@@ -355,7 +382,7 @@ export async function* streamOpenAICompat(
   if (hasTools) params.tools = toolset!.tools;
 
   const seen = new Set<string>();
-  const c = client(model.provider);
+  const c = client(model);
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;

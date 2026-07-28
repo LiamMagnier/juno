@@ -5,7 +5,7 @@
  * server-only imports so scripts can run it under tsx.
  */
 import type { Plan } from "@prisma/client";
-import { providerApiKey, providerBaseUrl, type Provider } from "@/lib/providers";
+import { providerApiKey, providerBaseUrl, providerHeaders, type Provider } from "@/lib/providers";
 import { MODELS, prettifyModelName, guessVision, guessPlan, guessReasoning, guessCost, providerSupportsWebSearch, type ModelInfo } from "@/lib/models";
 
 export const DEFAULT_DISCOVERY_TIMEOUT_MS = 2500;
@@ -155,7 +155,7 @@ export async function fetchProviderModelIds(provider: Provider, timeoutMs: numbe
   }
   const base = (providerBaseUrl(provider) ?? "").replace(/\/$/, "");
   const data = (await fetchModelList(provider, `${base}/models`, {
-    headers: { Authorization: `Bearer ${key}` },
+    headers: { Authorization: `Bearer ${key}`, ...providerHeaders(provider) },
   }, timeoutMs)) as { data?: { id: string }[] };
   return (data.data ?? []).map((m) => m.id).filter(Boolean);
 }

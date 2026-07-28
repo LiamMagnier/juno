@@ -174,6 +174,19 @@ function baseRate(model: ModelInfo): { input: number; output: number } {
       return { input: 0.4, output: 1.2 };
     case "longcat":
       return { input: 0.75, output: 2.95 }; // standard rate (launch promo $0.30/$1.20)
+    case "modal":
+      // Kimi K3 runs on Modal's managed capacity, which really is token-billed
+      // at these rates (modal.com/library/moonshot/kimi-k3).
+      if (pm.includes("kimi-k3")) return { input: 3, output: 15 };
+      // Everything else is a dedicated deployment billed per GPU-second, so
+      // there IS no token rate. These mirror what the same weights cost on a
+      // commercial API purely so the usage ledger shows a plausible number —
+      // the real bill is Modal GPU time and won't match.
+      if (pm.includes("deepseek-v4-pro")) return { input: 0.435, output: 0.87 };
+      if (pm.includes("glm-5.2")) return { input: 1.4, output: 4.4 };
+      if (pm.includes("gpt-oss")) return { input: 0.1, output: 0.5 };
+      if (pm.includes("gemma")) return { input: 0.1, output: 0.4 };
+      return { input: 1, output: 4 };
     default: {
       // Unknown provider → fall back by relative cost tier.
       if (model.cost === 3) return { input: 10, output: 40 };

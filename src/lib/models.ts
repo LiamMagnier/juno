@@ -46,6 +46,9 @@ export interface ModelInfo {
   /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
    *  Responses-only Codex snapshots aren't served on /chat/completions). */
   api?: "chat" | "responses";
+  /** Self-hosted deployment serving THIS model, when the provider has no single
+   *  base URL. Modal-only today: the endpoint name from `modal endpoint list`. */
+  endpoint?: string;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -97,6 +100,7 @@ interface ModelDef {
   deprecationNote?: string;
   comingSoon?: boolean;
   api?: "chat" | "responses";
+  endpoint?: string;
 }
 
 /**
@@ -136,6 +140,7 @@ function def(d: ModelDef): ModelInfo {
     legacy: d.status !== "current",
     comingSoon: d.comingSoon,
     api: d.api,
+    endpoint: d.endpoint,
   };
 }
 
@@ -252,6 +257,24 @@ const CURATED: ModelInfo[] = [
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),
   def({ provider: "moonshot", id: "kimi-k2.5", name: "Kimi K2.5", family: "kimi", status: "legacy", released: "2026-01", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Cheaper multimodal Kimi, superseded by K2.6." }),
   def({ provider: "moonshot", id: "moonshot-v1-128k", name: "Moonshot v1 128K", family: "moonshot-v1", status: "legacy", released: "2024-03", minPlan: "FREE", cost: 2, contextWindow: 131_072, description: "Legacy long-context text model." }),
+
+  // —— Modal —— open weights on Modal's OpenAI-compatible /v1. The id is the
+  // Hugging Face repo (what the endpoint reports on GET /v1/models), and
+  // `endpoint` is the deployment name from `modal endpoint list` — every model
+  // here lives on its own host, so that name is what resolves to a URL.
+  //
+  // Kimi K3 is a MANAGED endpoint (Modal's shared capacity, billed per token).
+  // The rest are DEDICATED deployments billed per GPU-second while live, so
+  // their cost tier reflects the hardware they hold, not a token rate.
+  def({ provider: "modal", id: "moonshotai/Kimi-K3", endpoint: "kimi-k3", name: "Kimi K3 (Modal)", family: "kimi-k3-modal", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Kimi K3 on Modal's managed capacity — 2.8T MoE reasoner, 1M context, billed per token." }),
+  // Dedicated endpoints are deliberately NOT registered: they bill GPU-seconds
+  // while live, and a stopped one would sit in the picker returning errors. To
+  // bring one back, run `modal endpoint create --model <id>` and re-add its line
+  // (pricing.ts and model-metrics.ts already carry entries for all of these):
+  //   deepseek-ai/DeepSeek-V4-Pro  endpoint: deepseek-v4-pro
+  //   zai-org/GLM-5.2-FP8         endpoint: glm-5-2-fp8
+  //   openai/gpt-oss-120b         endpoint: gpt-oss-120b
+  //   google/gemma-4-31b-it       endpoint: gemma-4-31b-it
 
   // —— DeepSeek ——
   def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "current", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),

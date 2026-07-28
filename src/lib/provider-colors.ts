@@ -15,6 +15,7 @@ export const PROVIDER_ACCENTS: Record<Provider, string> = {
   mimo: "#ff6a00",
   qwen: "#615ced",
   longcat: "#f5a524",
+  modal: "#7ee787",
 };
 
 export function providerAccent(provider: Provider): string {
