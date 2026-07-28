@@ -49,6 +49,13 @@ export interface ModelInfo {
   /** Self-hosted deployment serving THIS model, when the provider has no single
    *  base URL. Modal-only today: the endpoint name from `modal endpoint list`. */
   endpoint?: string;
+  /** Who TRAINED the model, as opposed to `provider`, who serves it. The two
+   *  differ only on hosts (Modal): Kimi K3 there is provider "modal", lab
+   *  "moonshot". Grouping, the lab rail and the row logo all read this, so a
+   *  hosted model files under its maker instead of stranding itself in a lab of
+   *  one that nobody thinks to open. Absent means it equals `provider`, so every
+   *  reader is `lab ?? provider` and no existing ModelInfo needed touching. */
+  lab?: Provider;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -101,6 +108,7 @@ interface ModelDef {
   comingSoon?: boolean;
   api?: "chat" | "responses";
   endpoint?: string;
+  lab?: Provider; // defaults to `provider`; set only when a host serves someone else's weights
 }
 
 /**
@@ -141,6 +149,7 @@ function def(d: ModelDef): ModelInfo {
     comingSoon: d.comingSoon,
     api: d.api,
     endpoint: d.endpoint,
+    lab: d.lab ?? d.provider,
   };
 }
 
@@ -266,7 +275,7 @@ const CURATED: ModelInfo[] = [
   // Kimi K3 is a MANAGED endpoint (Modal's shared capacity, billed per token).
   // The rest are DEDICATED deployments billed per GPU-second while live, so
   // their cost tier reflects the hardware they hold, not a token rate.
-  def({ provider: "modal", id: "moonshotai/Kimi-K3", endpoint: "kimi-k3", name: "Kimi K3 (Modal)", family: "kimi-k3-modal", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Kimi K3 on Modal's managed capacity — 2.8T MoE reasoner, 1M context, billed per token." }),
+  def({ provider: "modal", lab: "moonshot", id: "moonshotai/Kimi-K3", endpoint: "kimi-k3", name: "Kimi K3 (Modal)", family: "kimi-k3-modal", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Kimi K3 on Modal's managed capacity — 2.8T MoE reasoner, 1M context, billed per token. Served on SGLang, so thinking depth goes all the way to Instant." }),
   // Dedicated endpoints are deliberately NOT registered: they bill GPU-seconds
   // while live, and a stopped one would sit in the picker returning errors. To
   // bring one back, run `modal endpoint create --model <id>` and re-add its line
@@ -545,6 +554,26 @@ export const MODELS_BY_PROVIDER: ReadonlyMap<Provider, readonly ModelInfo[]> = (
     const list = grouped.get(m.provider);
     if (list) list.push(m);
     else grouped.set(m.provider, [m]);
+  }
+  for (const list of grouped.values()) {
+    list.sort((a, b) => (b.released ?? "").localeCompare(a.released ?? "") || a.name.localeCompare(b.name));
+  }
+  return grouped;
+})();
+
+/**
+ * Same models grouped by LAB rather than by who serves them — Kimi K3 on Modal
+ * files under Moonshot here. Use this anywhere the question is "who made this",
+ * and MODELS_BY_PROVIDER where it is "which API key turns this on" (the profile
+ * page's key list, for one, must stay provider-keyed).
+ */
+export const MODELS_BY_LAB: ReadonlyMap<Provider, readonly ModelInfo[]> = (() => {
+  const grouped = new Map<Provider, ModelInfo[]>();
+  for (const m of Object.values(MODELS)) {
+    const lab = m.lab ?? m.provider;
+    const list = grouped.get(lab);
+    if (list) list.push(m);
+    else grouped.set(lab, [m]);
   }
   for (const list of grouped.values()) {
     list.sort((a, b) => (b.released ?? "").localeCompare(a.released ?? "") || a.name.localeCompare(b.name));

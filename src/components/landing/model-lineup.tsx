@@ -1,6 +1,6 @@
 import { ProviderLogo } from "@/components/brand/provider-logo";
-import { MODELS, MODELS_BY_PROVIDER, type ModelInfo } from "@/lib/models";
-import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
+import { MODELS, MODELS_BY_LAB, type ModelInfo } from "@/lib/models";
+import { PROVIDERS, LAB_LIST, type Provider } from "@/lib/providers";
 import { Section } from "@/components/landing/section";
 
 /**
@@ -14,7 +14,7 @@ import { Section } from "@/components/landing/section";
  * priciest (the frontier line), then the shorter name (the canonical variant).
  */
 function currentChat(p: Provider): ModelInfo[] {
-  return (MODELS_BY_PROVIDER.get(p) ?? [])
+  return (MODELS_BY_LAB.get(p) ?? [])
     .filter((m) => m.modality === "chat" && (m.status ?? "current") === "current" && !m.comingSoon)
     .sort(
       (a, b) =>
@@ -33,18 +33,18 @@ interface Lab {
 }
 
 // Registry order (Anthropic, OpenAI, Google first) is already editorial — keep it.
-const LABS: Lab[] = PROVIDER_LIST.map((p) => ({
+const LABS: Lab[] = LAB_LIST.map((p) => ({
   provider: p,
   label: PROVIDERS[p].label,
   flagships: currentChat(p)
     .slice(0, 2)
     .map((m) => m.name),
-  count: (MODELS_BY_PROVIDER.get(p) ?? []).length,
+  count: (MODELS_BY_LAB.get(p) ?? []).length,
 })).filter((l) => l.flagships.length > 0);
 
 const TOTAL_MODELS = Object.keys(MODELS).length;
 // Labs across every modality — Seedance, for one, is video-only and has no chat row.
-const TOTAL_LABS = new Set(Object.values(MODELS).map((m) => m.provider)).size;
+const TOTAL_LABS = new Set(Object.values(MODELS).map((m) => m.lab ?? m.provider)).size;
 /** "127" reads like a bug; "120+" reads like a catalog. */
 const MODELS_FLOOR = Math.floor(TOTAL_MODELS / 10) * 10;
 

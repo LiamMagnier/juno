@@ -27,6 +27,13 @@ interface ProviderDef {
    * without it resolves to nothing.
    */
   requiredEnvs?: string[];
+  /**
+   * Serves other labs' weights rather than making its own. Hosts are real
+   * providers (own key, own base URL, own billing) but they are NOT labs, so
+   * they get no lab rail of their own — their models file under the lab that
+   * trained them, which is where anyone looking for Kimi will actually look.
+   */
+  host?: boolean;
 }
 
 export const PROVIDERS: Record<Provider, ProviderDef> = {
@@ -163,6 +170,7 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     docsUrl: "https://modal.com/docs/guide/endpoints",
     extraHeaderEnvs: { "Modal-Key": "MODAL_KEY", "Modal-Secret": "MODAL_SECRET" },
     requiredEnvs: ["MODAL_WORKSPACE"],
+    host: true,
   },
 };
 
@@ -182,6 +190,9 @@ export function modalEndpointUrl(endpoint: string): string | undefined {
 }
 
 export const PROVIDER_LIST = Object.keys(PROVIDERS) as Provider[];
+
+/** Providers that actually train models — the "AI Labs" rail, hosts excluded. */
+export const LAB_LIST = PROVIDER_LIST.filter((p) => !PROVIDERS[p].host);
 
 /**
  * Read an env value defensively. `.env` parsers (dotenv/Next) strip surrounding

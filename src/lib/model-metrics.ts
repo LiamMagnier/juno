@@ -354,7 +354,9 @@ const ANTHROPIC_FAMILY_RANK: Record<string, number> = { fable: 0, opus: 1, sonne
 
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
-    const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
+    // By LAB, not provider: a hosted model (Kimi K3 on Modal) sorts next to the
+    // lab's own models rather than into a trailing group of its own.
+    const labDelta = PROVIDER_LIST.indexOf(a.lab ?? a.provider) - PROVIDER_LIST.indexOf(b.lab ?? b.provider);
     if (labDelta !== 0) return labDelta;
     const legacyDelta = Number(isSupersededModel(a)) - Number(isSupersededModel(b));
     if (legacyDelta !== 0) return legacyDelta;
@@ -632,6 +634,14 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps(LMH, true);
     case "longcat":
       return caps([], true, true); // thinking: enabled/disabled
+    case "modal":
+      // SGLang's OpenAI layer, not the model author's API — so the ladder is
+      // the SERVER's, and it is wider than Moonshot's own K3 endpoint. Probing
+      // the live deployment with an invalid value returns the literal enum
+      // none|minimal|low|medium|high|xhigh|max, and "none" really does return
+      // empty reasoning_content. Hence the full ladder WITH an off switch,
+      // where moonshot:kimi-k3 above is caps(["low","high","max"], false).
+      return caps(LMHXM, true);
     default:
       return caps([], false);
   }

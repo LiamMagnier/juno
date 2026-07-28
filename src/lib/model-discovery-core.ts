@@ -193,6 +193,9 @@ export function toModelInfo(provider: Provider, rawId: string, fam?: Family): Mo
     webSearch: providerSupportsWebSearch(provider),
     status,
     legacy: known?.legacy ?? status !== "current",
+    // A discovered model came off this provider's own API, so the provider IS
+    // the lab — unless a curated entry already says otherwise.
+    lab: known?.lab ?? provider,
   };
 }
 

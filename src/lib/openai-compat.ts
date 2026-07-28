@@ -155,6 +155,12 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
   // EXPLICITLY: gemini-3-flash-preview thinks by DEFAULT when the parameter is
   // omitted (native thoughts=380), so omission would make Instant a silent lie.
   if (model.provider === "google") return model.reasoning && reasoningCaps(model).canDisable;
+  // Modal/SGLang takes "none" and genuinely stops thinking — verified on the
+  // live Kimi K3 deployment, where reasoning_effort:"none" returns empty
+  // reasoning_content while every other tier fills it. Sending it explicitly
+  // matters for the same reason as Google: omitting the parameter leaves
+  // thinking ON, so Instant would otherwise be a silent lie.
+  if (model.provider === "modal") return model.reasoning && reasoningCaps(model).canDisable;
   if (model.provider !== "openai") return false;
   if (/gpt-5(\.\d)?-pro/.test(id)) return false; // always reason
   // Codex is not uniformly always-on: 5.3-codex accepts "none" (-> 0 reasoning
@@ -282,7 +288,14 @@ export async function* streamOpenAICompat(
     // replacing the K2.x `thinking` object. Only K3 speaks it on Moonshot; the
     // K2.x line stays on the usesThinkingObject path below (and is canDisable:
     // false, so it never actually emits `thinking` either).
-    (model.provider === "moonshot" && modelId.includes("k3"));
+    (model.provider === "moonshot" && modelId.includes("k3")) ||
+    // Modal serves these weights on SGLang, whose OpenAI layer takes the
+    // top-level enum for every model it hosts. Its ladder is wider than
+    // Moonshot's own K3 endpoint — verified against the live deployment, which
+    // rejects an unknown value with the literal list
+    // none|minimal|low|medium|high|xhigh|max, so "none" really does turn
+    // thinking off here even though Moonshot's hosted K3 cannot.
+    model.provider === "modal";
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
