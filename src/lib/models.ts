@@ -46,16 +46,6 @@ export interface ModelInfo {
   /** Wire protocol. "responses" = OpenAI Responses API (gpt-*-pro line and
    *  Responses-only Codex snapshots aren't served on /chat/completions). */
   api?: "chat" | "responses";
-  /** Self-hosted deployment serving THIS model, when the provider has no single
-   *  base URL. Modal-only today: the endpoint name from `modal endpoint list`. */
-  endpoint?: string;
-  /** Who TRAINED the model, as opposed to `provider`, who serves it. The two
-   *  differ only on hosts (Modal): Kimi K3 there is provider "modal", lab
-   *  "moonshot". Grouping, the lab rail and the row logo all read this, so a
-   *  hosted model files under its maker instead of stranding itself in a lab of
-   *  one that nobody thinks to open. Absent means it equals `provider`, so every
-   *  reader is `lab ?? provider` and no existing ModelInfo needed touching. */
-  lab?: Provider;
 }
 
 // NOTE: these regexes + guess functions are declared BEFORE the registry
@@ -107,8 +97,6 @@ interface ModelDef {
   deprecationNote?: string;
   comingSoon?: boolean;
   api?: "chat" | "responses";
-  endpoint?: string;
-  lab?: Provider; // defaults to `provider`; set only when a host serves someone else's weights
 }
 
 /**
@@ -148,8 +136,6 @@ function def(d: ModelDef): ModelInfo {
     legacy: d.status !== "current",
     comingSoon: d.comingSoon,
     api: d.api,
-    endpoint: d.endpoint,
-    lab: d.lab ?? d.provider,
   };
 }
 
@@ -266,24 +252,6 @@ const CURATED: ModelInfo[] = [
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),
   def({ provider: "moonshot", id: "kimi-k2.5", name: "Kimi K2.5", family: "kimi", status: "legacy", released: "2026-01", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Cheaper multimodal Kimi, superseded by K2.6." }),
   def({ provider: "moonshot", id: "moonshot-v1-128k", name: "Moonshot v1 128K", family: "moonshot-v1", status: "legacy", released: "2024-03", minPlan: "FREE", cost: 2, contextWindow: 131_072, description: "Legacy long-context text model." }),
-
-  // —— Modal —— open weights on Modal's OpenAI-compatible /v1. The id is the
-  // Hugging Face repo (what the endpoint reports on GET /v1/models), and
-  // `endpoint` is the deployment name from `modal endpoint list` — every model
-  // here lives on its own host, so that name is what resolves to a URL.
-  //
-  // Kimi K3 is a MANAGED endpoint (Modal's shared capacity, billed per token).
-  // The rest are DEDICATED deployments billed per GPU-second while live, so
-  // their cost tier reflects the hardware they hold, not a token rate.
-  def({ provider: "modal", lab: "moonshot", id: "moonshotai/Kimi-K3", endpoint: "kimi-k3", name: "Kimi K3 (Modal)", family: "kimi-k3-modal", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Kimi K3 on Modal's managed capacity — 2.8T MoE reasoner, 1M context, billed per token. Served on SGLang, so thinking depth goes all the way to Instant." }),
-  // Dedicated endpoints are deliberately NOT registered: they bill GPU-seconds
-  // while live, and a stopped one would sit in the picker returning errors. To
-  // bring one back, run `modal endpoint create --model <id>` and re-add its line
-  // (pricing.ts and model-metrics.ts already carry entries for all of these):
-  //   deepseek-ai/DeepSeek-V4-Pro  endpoint: deepseek-v4-pro
-  //   zai-org/GLM-5.2-FP8         endpoint: glm-5-2-fp8
-  //   openai/gpt-oss-120b         endpoint: gpt-oss-120b
-  //   google/gemma-4-31b-it       endpoint: gemma-4-31b-it
 
   // —— DeepSeek ——
   def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "current", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),
@@ -554,26 +522,6 @@ export const MODELS_BY_PROVIDER: ReadonlyMap<Provider, readonly ModelInfo[]> = (
     const list = grouped.get(m.provider);
     if (list) list.push(m);
     else grouped.set(m.provider, [m]);
-  }
-  for (const list of grouped.values()) {
-    list.sort((a, b) => (b.released ?? "").localeCompare(a.released ?? "") || a.name.localeCompare(b.name));
-  }
-  return grouped;
-})();
-
-/**
- * Same models grouped by LAB rather than by who serves them — Kimi K3 on Modal
- * files under Moonshot here. Use this anywhere the question is "who made this",
- * and MODELS_BY_PROVIDER where it is "which API key turns this on" (the profile
- * page's key list, for one, must stay provider-keyed).
- */
-export const MODELS_BY_LAB: ReadonlyMap<Provider, readonly ModelInfo[]> = (() => {
-  const grouped = new Map<Provider, ModelInfo[]>();
-  for (const m of Object.values(MODELS)) {
-    const lab = m.lab ?? m.provider;
-    const list = grouped.get(lab);
-    if (list) list.push(m);
-    else grouped.set(lab, [m]);
   }
   for (const list of grouped.values()) {
     list.sort((a, b) => (b.released ?? "").localeCompare(a.released ?? "") || a.name.localeCompare(b.name));

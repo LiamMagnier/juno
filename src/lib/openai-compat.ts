@@ -1,7 +1,7 @@
 import "server-only";
 import OpenAI from "openai";
 import { getObjectBytes } from "@/lib/storage";
-import { modalEndpointUrl, providerApiKey, providerBaseUrl, providerHeaders, PROVIDERS } from "@/lib/providers";
+import { providerApiKey, providerBaseUrl, PROVIDERS, type Provider } from "@/lib/providers";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { reasoningCaps } from "@/lib/model-metrics";
 import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/openai-prompt-cache";
@@ -10,42 +10,15 @@ import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
 import type { McpToolset } from "@/lib/mcp";
 
-// Keyed by provider AND base URL, not provider alone: Modal serves one endpoint
-// per model, so a single cached client per provider would pin every Modal model
-// to whichever one happened to be constructed first.
-const clients = new Map<string, OpenAI>();
+const clients = new Map<Provider, OpenAI>();
 
-/**
- * Base URL for one model. Identical to the provider's for everyone except
- * Modal, where each model is its own deployment (`endpoint`) — MODAL_BASE_URL
- * stays available as a manual override for a non-standard host.
- */
-function modelBaseUrl(model: ModelInfo): string | undefined {
-  // Derived URL wins: MODAL_BASE_URL is a single global value, so preferring it
-  // would point every Modal model at whichever endpoint it names.
-  if (model.endpoint) return modalEndpointUrl(model.endpoint) ?? providerBaseUrl(model.provider);
-  return providerBaseUrl(model.provider);
-}
-
-function client(model: ModelInfo): OpenAI {
-  const provider = model.provider;
+function client(provider: Provider): OpenAI {
   const apiKey = providerApiKey(provider);
   if (!apiKey) throw new Error(`${PROVIDERS[provider].label} API key is not configured.`);
-  const baseURL = modelBaseUrl(model);
-  if (model.endpoint && !baseURL) {
-    throw new Error(`${PROVIDERS[provider].label}: no endpoint URL for "${model.endpoint}" — set MODAL_WORKSPACE.`);
-  }
-  const cacheKey = `${provider}|${baseURL ?? ""}`;
-  let c = clients.get(cacheKey);
+  let c = clients.get(provider);
   if (!c) {
-    const extraHeaders = providerHeaders(provider);
-    c = new OpenAI({
-      apiKey,
-      baseURL,
-      maxRetries: 2,
-      ...(Object.keys(extraHeaders).length ? { defaultHeaders: extraHeaders } : {}),
-    });
-    clients.set(cacheKey, c);
+    c = new OpenAI({ apiKey, baseURL: providerBaseUrl(provider), maxRetries: 2 });
+    clients.set(provider, c);
   }
   return c;
 }
@@ -155,12 +128,6 @@ function canDisableViaNoneEffort(model: ModelInfo): boolean {
   // EXPLICITLY: gemini-3-flash-preview thinks by DEFAULT when the parameter is
   // omitted (native thoughts=380), so omission would make Instant a silent lie.
   if (model.provider === "google") return model.reasoning && reasoningCaps(model).canDisable;
-  // Modal/SGLang takes "none" and genuinely stops thinking — verified on the
-  // live Kimi K3 deployment, where reasoning_effort:"none" returns empty
-  // reasoning_content while every other tier fills it. Sending it explicitly
-  // matters for the same reason as Google: omitting the parameter leaves
-  // thinking ON, so Instant would otherwise be a silent lie.
-  if (model.provider === "modal") return model.reasoning && reasoningCaps(model).canDisable;
   if (model.provider !== "openai") return false;
   if (/gpt-5(\.\d)?-pro/.test(id)) return false; // always reason
   // Codex is not uniformly always-on: 5.3-codex accepts "none" (-> 0 reasoning
@@ -288,14 +255,7 @@ export async function* streamOpenAICompat(
     // replacing the K2.x `thinking` object. Only K3 speaks it on Moonshot; the
     // K2.x line stays on the usesThinkingObject path below (and is canDisable:
     // false, so it never actually emits `thinking` either).
-    (model.provider === "moonshot" && modelId.includes("k3")) ||
-    // Modal serves these weights on SGLang, whose OpenAI layer takes the
-    // top-level enum for every model it hosts. Its ladder is wider than
-    // Moonshot's own K3 endpoint — verified against the live deployment, which
-    // rejects an unknown value with the literal list
-    // none|minimal|low|medium|high|xhigh|max, so "none" really does turn
-    // thinking off here even though Moonshot's hosted K3 cannot.
-    model.provider === "modal";
+    (model.provider === "moonshot" && modelId.includes("k3"));
 
   const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & Record<string, unknown> = {
     model: model.providerModel,
@@ -395,7 +355,7 @@ export async function* streamOpenAICompat(
   if (hasTools) params.tools = toolset!.tools;
 
   const seen = new Set<string>();
-  const c = client(model);
+  const c = client(model.provider);
   let cumInput = 0;
   let cumOutput = 0;
   let cumCached = 0;

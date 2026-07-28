@@ -58,13 +58,6 @@ const LOGO_SRC: Record<Provider, { light: string; dark: string }> = {
     light: "/provider-logos/light/longcat.png",
     dark: "/provider-logos/dark/longcat.png",
   },
-  // Modal is the host, not the model maker — the only model served here is
-  // Kimi, so borrow Moonshot's mark rather than ship a Modal logo the picker
-  // would show next to "Kimi K3".
-  modal: {
-    light: "/provider-logos/light/moonshot.png",
-    dark: "/provider-logos/dark/moonshot.png",
-  },
 };
 
 export function providerLogoSrc(provider: Provider, theme: "light" | "dark" = "light"): string {

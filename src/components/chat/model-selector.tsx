@@ -10,7 +10,7 @@ import { ProviderLogo } from "@/components/brand/provider-logo";
 import { JunoMark } from "@/components/brand/logo";
 import { resolveModel, type ModelId, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
-import { PROVIDERS, LAB_LIST, type Provider } from "@/lib/providers";
+import { PROVIDERS, PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { PLANS, planRank, effectiveMinPlan } from "@/lib/plans";
 import { useApp } from "@/components/app/app-provider";
 import {
@@ -146,7 +146,7 @@ function ModelDetailPanel({
     );
   }
 
-  const accent = providerAccent(model.lab ?? model.provider);
+  const accent = providerAccent(model.provider);
   const effectiveEffort: ReasoningEffort = preview ? preview.effort : reasoningEffort;
   const metrics = applyReasoning(getModelMetrics(model), effectiveEffort, model.reasoning);
   // Only the thinking modes this model actually supports (real per-model data).
@@ -168,10 +168,10 @@ function ModelDetailPanel({
           <div>
             <div className="flex items-start justify-between gap-2">
               <h3 className="text-lg font-semibold leading-tight tracking-tight">{model.name}</h3>
-              <ProviderLogo provider={model.lab ?? model.provider} className="mt-0.5 h-6 w-6 shrink-0 rounded-[28%]" />
+              <ProviderLogo provider={model.provider} className="mt-0.5 h-6 w-6 shrink-0 rounded-[28%]" />
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-              <span>{PROVIDERS[model.lab ?? model.provider].label.split(" · ")[0]}</span>
+              <span>{PROVIDERS[model.provider].label.split(" · ")[0]}</span>
               <span aria-hidden>·</span>
               <span className="font-mono">{formatContext(metrics.contextTokens)} context</span>
               {model.status === "legacy" && (
@@ -324,19 +324,14 @@ export function ModelSelector({
   const autoSelected = isAutoModelId(value);
 
   const providerFilter = filter !== "all" ? (filter as Provider) : null;
-  // "Configured" for a lab means something can actually serve it — its own key
-  // OR a host carrying its weights — so the "add your API key" empty state only
-  // shows when the lab is genuinely unreachable.
-  const filterConfigured = providerFilter
-    ? features.providers.includes(providerFilter) || models.some((m) => (m.lab ?? m.provider) === providerFilter)
-    : true;
+  const filterConfigured = providerFilter ? features.providers.includes(providerFilter) : true;
 
   // Sort [lab asc, intelligence desc, released desc, name asc] to match the
   // /api/models payload order (the Mac app trusts that order verbatim), so the
   // web selector looks identical even before the API response lands.
   const visible: ModelInfo[] = sortModelsForDisplay(
     models
-      .filter((m) => (providerFilter ? (m.lab ?? m.provider) === providerFilter : true))
+      .filter((m) => (providerFilter ? m.provider === providerFilter : true))
       .filter(
         (m) =>
           !q ||
@@ -344,8 +339,6 @@ export function ModelSelector({
           m.providerModel.toLowerCase().includes(q) ||
           (m.family ?? "").toLowerCase().includes(q) ||
           m.modality.includes(q) ||
-          (PROVIDERS[m.lab ?? m.provider]?.label ?? "").toLowerCase().includes(q) ||
-          // Still findable by its host, so "modal" surfaces what Modal serves.
           (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
       )
   );
@@ -406,10 +399,10 @@ export function ModelSelector({
         >
           {/* Logo & Name Row */}
           <div className="flex items-center gap-2.5 w-full pr-6">
-            <ProviderLogo provider={m.lab ?? m.provider} className="h-6 w-6 rounded-[32%]" />
+            <ProviderLogo provider={m.provider} className="h-6 w-6 rounded-[32%]" />
             <div className="min-w-0 flex-1">
               <span className="block truncate text-sm font-semibold tracking-tight">{m.name}</span>
-              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{PROVIDERS[m.lab ?? m.provider].label.split(" · ")[0]}</span>
+              <span className="mt-0.5 block truncate text-xs text-muted-foreground">{PROVIDERS[m.provider].label.split(" · ")[0]}</span>
             </div>
           </div>
           
@@ -464,7 +457,7 @@ export function ModelSelector({
           {autoSelected ? (
             <JunoMark className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : current ? (
-            <ProviderLogo provider={current.lab ?? current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
+            <ProviderLogo provider={current.provider} className="size-3.5 shrink-0 rounded transition-transform duration-base ease-out-soft group-hover:scale-110 sm:size-4" />
           ) : null}
           <span
             key={current?.id ?? "no-model"}
@@ -509,18 +502,8 @@ export function ModelSelector({
               <LayoutGrid className={cn("h-5 w-5", filter === "all" ? "text-primary" : "text-muted-foreground")} />
             </RailButton>
             <div className="my-1.5 h-px w-6 shrink-0 bg-border" />
-            {LAB_LIST.map((p) => (
-              <RailButton
-                key={p}
-                active={filter === p}
-                // A lab is live if ANY available model carries it — its own key,
-                // or a host serving its weights. Reading features.providers here
-                // would dim Moonshot for someone who only configured Modal, even
-                // though Kimi K3 is right there behind that button.
-                dimmed={!models.some((m) => (m.lab ?? m.provider) === p)}
-                title={PROVIDERS[p].label}
-                onClick={() => setFilter(p)}
-              >
+            {PROVIDER_LIST.map((p) => (
+              <RailButton key={p} active={filter === p} dimmed={!features.providers.includes(p)} title={PROVIDERS[p].label} onClick={() => setFilter(p)}>
                 <ProviderLogo provider={p} className="h-6 w-6" />
               </RailButton>
             ))}

@@ -5,7 +5,7 @@
  * API key env var is set; models from unconfigured providers are hidden/disabled.
  */
 
-export type Provider = "anthropic" | "openai" | "zhipu" | "moonshot" | "google" | "meta" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat" | "modal";
+export type Provider = "anthropic" | "openai" | "zhipu" | "moonshot" | "google" | "meta" | "deepseek" | "mistral" | "xai" | "seedance" | "minimax" | "mimo" | "qwen" | "longcat";
 
 interface ProviderDef {
   label: string;
@@ -15,25 +15,6 @@ interface ProviderDef {
   defaultBaseUrl?: string; // undefined => native Anthropic SDK
   kind: "anthropic" | "openai";
   docsUrl: string;
-  /**
-   * Extra request headers, as header name → env var holding its value. For
-   * providers that don't authenticate with a plain `Authorization: Bearer`
-   * (Modal signs requests with a Modal-Key/Modal-Secret proxy-token pair).
-   */
-  extraHeaderEnvs?: Record<string, string>;
-  /**
-   * Extra env vars that must ALSO be set before the provider counts as usable.
-   * For Modal the endpoint URLs are derived from the workspace name, so a key
-   * without it resolves to nothing.
-   */
-  requiredEnvs?: string[];
-  /**
-   * Serves other labs' weights rather than making its own. Hosts are real
-   * providers (own key, own base URL, own billing) but they are NOT labs, so
-   * they get no lab rail of their own — their models file under the lab that
-   * trained them, which is where anyone looking for Kimi will actually look.
-   */
-  host?: boolean;
 }
 
 export const PROVIDERS: Record<Provider, ProviderDef> = {
@@ -152,47 +133,9 @@ export const PROVIDERS: Record<Provider, ProviderDef> = {
     kind: "openai",
     docsUrl: "https://longcat.chat/platform/api_keys",
   },
-  modal: {
-    // Modal is the one provider that does NOT have a single base URL: it serves
-    // one OpenAI-compatible endpoint PER model, each on its own host. So the
-    // per-model `endpoint` name in the catalog is what resolves to a URL (see
-    // modalEndpointUrl); MODAL_BASE_URL is only a manual override for a model
-    // whose host doesn't follow the standard shape.
-    //
-    // Auth is a proxy-token PAIR (`modal workspace proxy-tokens create`), not a
-    // bearer key: MODAL_KEY is the wk-… id and MODAL_SECRET the ws-… secret.
-    // MODAL_KEY doubles as the SDK's apiKey so the client constructs cleanly;
-    // the headers below are what Modal actually checks.
-    label: "Modal",
-    apiKeyEnv: "MODAL_KEY",
-    baseUrlEnv: "MODAL_BASE_URL",
-    kind: "openai",
-    docsUrl: "https://modal.com/docs/guide/endpoints",
-    extraHeaderEnvs: { "Modal-Key": "MODAL_KEY", "Modal-Secret": "MODAL_SECRET" },
-    requiredEnvs: ["MODAL_WORKSPACE"],
-    host: true,
-  },
 };
 
-/**
- * URL of one Modal endpoint, from the name shown by `modal endpoint list`.
- *
- * Modal mints these as `<workspace>--ep-<name>-server.<region>.modal.direct`,
- * so the whole fleet derives from the workspace name and adding a model to the
- * catalog costs one line instead of another env var per endpoint. Region is
- * Modal's `--routing-region`, which defaults to us-west.
- */
-export function modalEndpointUrl(endpoint: string): string | undefined {
-  const workspace = readEnv("MODAL_WORKSPACE");
-  if (!workspace) return undefined;
-  const region = readEnv("MODAL_REGION") ?? "us-west";
-  return `https://${workspace}--ep-${endpoint}-server.${region}.modal.direct/v1`;
-}
-
 export const PROVIDER_LIST = Object.keys(PROVIDERS) as Provider[];
-
-/** Providers that actually train models — the "AI Labs" rail, hosts excluded. */
-export const LAB_LIST = PROVIDER_LIST.filter((p) => !PROVIDERS[p].host);
 
 /**
  * Read an env value defensively. `.env` parsers (dotenv/Next) strip surrounding
@@ -219,29 +162,8 @@ export function providerBaseUrl(p: Provider): string | undefined {
   return readEnv(def.baseUrlEnv) ?? def.defaultBaseUrl;
 }
 
-/**
- * Non-bearer auth headers, resolved from env. Empty for every provider that
- * authenticates with the API key alone.
- */
-export function providerHeaders(p: Provider): Record<string, string> {
-  const entries = Object.entries(PROVIDERS[p].extraHeaderEnvs ?? {});
-  const out: Record<string, string> = {};
-  for (const [header, envVar] of entries) {
-    const value = readEnv(envVar);
-    if (value) out[header] = value;
-  }
-  return out;
-}
-
 export function isProviderConfigured(p: Provider): boolean {
-  const def = PROVIDERS[p];
-  if (!providerApiKey(p)) return false;
-  // A half-configured provider is worse than an absent one: its models show up
-  // selectable and then every send fails. Require the whole credential set.
-  if (!(def.requiredEnvs ?? []).every((name) => readEnv(name))) return false;
-  const required = Object.keys(def.extraHeaderEnvs ?? {});
-  const present = providerHeaders(p);
-  return required.every((h) => present[h]);
+  return Boolean(providerApiKey(p));
 }
 
 export function configuredProviders(): Provider[] {

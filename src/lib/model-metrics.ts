@@ -205,16 +205,6 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     // $0.75/$2.95 (launch promo $0.30/$1.20 not baked in).
     { hints: ["longcat"], metric: metric(0.75, 2.95, 1_000_000, 6, 7) },
   ],
-  // Modal reuses each model's upstream quality/speed positioning — same weights,
-  // different host. Cost columns are the pricing.ts estimates, which are only
-  // real for Kimi K3 (the token-billed managed endpoint).
-  modal: [
-    { hints: ["kimi-k3"], metric: metric(3, 15, 1_000_000, 4, 8) },
-    { hints: ["deepseek-v4-pro"], metric: metric(0.435, 0.87, 1_000_000, 3, 7) },
-    { hints: ["glm-5.2"], metric: metric(1.4, 4.4, 200_000, 5, 6) },
-    { hints: ["gpt-oss"], metric: metric(0.1, 0.5, 131_072, 7, 5) },
-    { hints: ["gemma"], metric: metric(0.1, 0.4, 131_072, 8, 4) },
-  ],
 };
 
 // Sensible per-provider default so an unrecognized model still gets real-ish
@@ -354,9 +344,7 @@ const ANTHROPIC_FAMILY_RANK: Record<string, number> = { fable: 0, opus: 1, sonne
 
 export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
   return [...models].sort((a, b) => {
-    // By LAB, not provider: a hosted model (Kimi K3 on Modal) sorts next to the
-    // lab's own models rather than into a trailing group of its own.
-    const labDelta = PROVIDER_LIST.indexOf(a.lab ?? a.provider) - PROVIDER_LIST.indexOf(b.lab ?? b.provider);
+    const labDelta = PROVIDER_LIST.indexOf(a.provider) - PROVIDER_LIST.indexOf(b.provider);
     if (labDelta !== 0) return labDelta;
     const legacyDelta = Number(isSupersededModel(a)) - Number(isSupersededModel(b));
     if (legacyDelta !== 0) return legacyDelta;
@@ -634,14 +622,6 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
       return caps(LMH, true);
     case "longcat":
       return caps([], true, true); // thinking: enabled/disabled
-    case "modal":
-      // SGLang's OpenAI layer, not the model author's API — so the ladder is
-      // the SERVER's, and it is wider than Moonshot's own K3 endpoint. Probing
-      // the live deployment with an invalid value returns the literal enum
-      // none|minimal|low|medium|high|xhigh|max, and "none" really does return
-      // empty reasoning_content. Hence the full ladder WITH an off switch,
-      // where moonshot:kimi-k3 above is caps(["low","high","max"], false).
-      return caps(LMHXM, true);
     default:
       return caps([], false);
   }
