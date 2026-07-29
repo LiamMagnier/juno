@@ -1,3 +1,4 @@
+import AppKit
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeUI
@@ -350,15 +351,14 @@ struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
     let remote: CodeRemoteBrowserModel
-    @Binding var product: DesktopProductMode
     @Binding var selection: DesktopCodeSidebarItem?
     @Binding var remoteDeviceID: String
-    let searchFocus: FocusState<Bool>.Binding
     let isBootstrapping: Bool
     let openRepository: () -> Void
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
     @SceneStorage("juno.code.collapsedProjects") private var collapsedProjects = ""
+    @State private var projectPendingDeletion: ProjectGroup?
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -385,6 +385,7 @@ struct DesktopCodeSidebar: View {
     private struct ProjectGroup: Identifiable {
         let workspaceID: WorkspaceID
         let name: String
+        let path: String
         let runs: [DesktopCodeRun]
         var id: WorkspaceID { workspaceID }
     }
@@ -406,20 +407,29 @@ struct DesktopCodeSidebar: View {
             ProjectGroup(
                 workspaceID: record.id,
                 name: record.descriptor.displayName,
+                path: record.descriptor.localPathHint,
                 runs: runsByWorkspace[record.id] ?? []
             )
         }
     }
 
-    /// The most recently touched runs, across every project and transport.
+    /// Finished runs that do not belong to a local Project outline.
     ///
-    /// Deliberately includes runs that are also nested under a project. A row
-    /// appearing in both places is not a duplicate in the sense that matters —
-    /// Projects and Recents answer different questions, and suppressing a session
-    /// from Recents because it happens to live in a granted repository would make
-    /// Recents useless exactly when the reader has organised their work well.
-    private func recentRuns(from allRuns: [DesktopCodeRun]) -> [DesktopCodeRun] {
-        Array(allRuns.sorted { $0.updatedAt > $1.updatedAt }.prefix(6))
+    /// Local sessions already live under their repository, so listing them again
+    /// under Recents made the sidebar mostly duplicates. Cloud, dispatched-device
+    /// and relay-watched runs have no local `WorkspaceID`; this is their one
+    /// durable home after they leave Active.
+    private func relayedRuns(from allRuns: [DesktopCodeRun]) -> [DesktopCodeRun] {
+        Array(
+            allRuns
+                .filter { run in
+                    guard !run.status.isActive else { return false }
+                    if case .session = run.item { return false }
+                    return true
+                }
+                .sorted { $0.updatedAt > $1.updatedAt }
+                .prefix(12)
+        )
     }
 
     var body: some View {
@@ -447,30 +457,49 @@ struct DesktopCodeSidebar: View {
                 }
             }
 
-            Section("Projects") {
-                ForEach(groups) { group in
-                    DisclosureGroup(isExpanded: expansion(for: group.workspaceID)) {
-                        if group.runs.isEmpty {
-                            Text("No sessions yet")
-                                .junoCaption()
-                        } else {
-                            ForEach(group.runs) { row($0) }
+            Section {
+                Button(action: openRepository) {
+                    Label("Add project…", systemImage: "folder.badge.plus")
+                        .junoRowLabel()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .help("Add a project… (⌘O)")
+                .selectionDisabled()
+                .accessibilityIdentifier("juno.code.add-project")
+
+                if groups.isEmpty {
+                    Text("Projects keep Code sessions and their files together.")
+                        .junoCaption()
+                        .selectionDisabled()
+                } else {
+                    ForEach(groups) { group in
+                        projectRow(group)
+
+                        if !collapsedProjectIDs.contains(group.workspaceID.value) {
+                            if group.runs.isEmpty {
+                                Text("No sessions yet")
+                                    .junoCaption()
+                                    .padding(.leading, 28)
+                                    .selectionDisabled()
+                            } else {
+                                ForEach(group.runs) { run in
+                                    row(run)
+                                        .padding(.leading, 22)
+                                }
+                            }
                         }
-                    } label: {
-                        projectLabel(group)
                     }
                 }
+            } header: {
+                Text("Projects")
             }
 
-            // Recents crosses projects. The nesting above answers "what have I
-            // done in this repository"; this answers "what was I just doing",
-            // which is a different question and the one a reader has on launch.
-            // Capped, because an uncapped Recents is just the project list again
-            // with the grouping removed.
-            let recents = recentRuns(from: allRuns)
-            if !recents.isEmpty {
-                Section("Recents") {
-                    ForEach(recents) { row($0) }
+            let relayed = relayedRuns(from: allRuns)
+            if !relayed.isEmpty {
+                Section("Cloud & devices") {
+                    ForEach(relayed) { row($0) }
                 }
             }
 
@@ -479,15 +508,19 @@ struct DesktopCodeSidebar: View {
             }
         }
         .listStyle(.sidebar)
-        // The Chat column's treatment, applied here too: macOS paints a focused
-        // sidebar selection in the app's accent, which is coral, so a selected
-        // session became a full-width saturated bar. The web uses
-        // `--sidebar-accent`, a subtle warm grey. Tinting keeps the platform's own
-        // selection — arrow keys, type-select, focus ring, inactive state — and
-        // only says what colour it is.
         .junoSidebarSelectionTint()
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
+        }
+        .alert(item: $projectPendingDeletion) { project in
+            Alert(
+                title: Text("Delete “\(project.name)” from Juno?"),
+                message: Text(projectDeletionMessage(project)),
+                primaryButton: .destructive(Text("Delete Project")) {
+                    deleteProject(project)
+                },
+                secondaryButton: .cancel()
+            )
         }
     }
 
@@ -507,7 +540,7 @@ struct DesktopCodeSidebar: View {
         return workbench.sessions.first { $0.id == id }?.isFavorite == true
     }
 
-    /// Which projects are expanded, restored across launches.
+    /// Which projects are collapsed, restored across launches.
     ///
     /// Stored as one delimited string because `@SceneStorage` takes only
     /// `RawRepresentable` values, and a `Set<WorkspaceID>` is not one. Collapsed
@@ -515,57 +548,150 @@ struct DesktopCodeSidebar: View {
     /// repositories collapses the seven they are not working in, and having that
     /// undone on every launch is what makes an outline sidebar annoying rather
     /// than useful.
-    private func expansion(for id: WorkspaceID) -> Binding<Bool> {
-        Binding(
-            get: { !collapsedProjectIDs.contains(id.value) },
-            set: { expanded in
-                var collapsed = collapsedProjectIDs
-                if expanded {
-                    collapsed.remove(id.value)
-                } else {
-                    collapsed.insert(id.value)
-                }
-                collapsedProjects = collapsed.sorted().joined(separator: "\u{1f}")
-            }
-        )
+    private func toggleExpansion(for id: WorkspaceID) {
+        var collapsed = collapsedProjectIDs
+        if collapsed.contains(id.value) {
+            collapsed.remove(id.value)
+        } else {
+            collapsed.insert(id.value)
+        }
+        collapsedProjects = collapsed.sorted().joined(separator: "\u{1f}")
     }
 
     private var collapsedProjectIDs: Set<String> {
         Set(collapsedProjects.components(separatedBy: "\u{1f}").filter { !$0.isEmpty })
     }
 
-    /// The project row: a folder, its name, and how many sessions are inside.
-    ///
-    /// Selectable in its own right — selecting a project is how the reader gets
-    /// the project's own surface rather than one of its sessions — so it carries
-    /// a `.tag`, and the disclosure triangle only opens the children.
-    private func projectLabel(_ group: ProjectGroup) -> some View {
+    /// A source-list project has three independent native controls:
+    /// disclosure, selection, and actions. Keeping the `Menu` out of the
+    /// disclosure label gives it a precise accessibility frame on macOS.
+    private func projectRow(_ group: ProjectGroup) -> some View {
         HStack(spacing: JunoSpace.tight) {
-            Label {
-                Text(group.name)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            } icon: {
-                // Juno's own projects glyph rather than SF Symbols' folder: the
-                // sidebar's other rows are Lucide-derived Juno icons, and one
-                // system folder among them reads as a different app's row.
-                JunoIconView(.projects, size: 15)
+            let isExpanded = !collapsedProjectIDs.contains(group.workspaceID.value)
+            Button {
+                toggleExpansion(for: group.workspaceID)
+            } label: {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .frame(width: 12, height: 16)
+                    .contentShape(.rect)
             }
-            Spacer(minLength: JunoSpace.hairline)
+            .buttonStyle(.plain)
+            .help(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
+            .accessibilityLabel(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
+
+            Button {
+                selection = .repository(group.workspaceID)
+            } label: {
+                Label {
+                    Text(group.name)
+                        .junoRowLabel()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } icon: {
+                    JunoIconView(.projects, size: 15)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+
             if !group.runs.isEmpty {
                 Text(group.runs.count.formatted())
                     .junoCaption()
                     .monospacedDigit()
                     .accessibilityLabel("\(group.runs.count) sessions")
             }
+            projectMenu(group)
         }
         .junoSidebarRowInk()
         .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
         .contextMenu {
-            Button("New Session in \(group.name)") {
-                newSession(group.workspaceID)
+            projectActions(group)
+        }
+    }
+
+    private func projectMenu(_ group: ProjectGroup) -> some View {
+        Menu {
+            projectActions(group)
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 16, height: 16)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Project actions")
+        .accessibilityLabel("Project actions for \(group.name)")
+        .accessibilityIdentifier("juno.code.project-menu.\(group.workspaceID.value)")
+    }
+
+    @ViewBuilder
+    private func projectActions(_ group: ProjectGroup) -> some View {
+        Button("New Code Session") {
+            newSession(group.workspaceID)
+        }
+        Button("Show in Finder") {
+            NSWorkspace.shared.activateFileViewerSelecting([
+                URL(fileURLWithPath: group.path)
+            ])
+        }
+        Divider()
+        Button("Delete Project…", role: .destructive) {
+            projectPendingDeletion = group
+        }
+    }
+
+    /// "Delete Project" deletes Juno's Code sessions and the stored folder
+    /// grant, but never calls a filesystem delete. The confirmation says that in
+    /// plain language before the user commits.
+    private func deleteProject(_ project: ProjectGroup) {
+        let sessions = sessions(in: project)
+        if selectionBelongs(to: project.workspaceID) {
+            selection = nil
+        }
+        if workbench.workspaceNeedingAccess == project.workspaceID {
+            workbench.dismissAccessPrompt()
+        }
+        Task { @MainActor in
+            for session in sessions {
+                await workbench.deleteSession(id: session.id)
             }
+            await workbench.removeWorkspace(id: project.workspaceID)
+        }
+    }
+
+    private func projectDeletionMessage(_ project: ProjectGroup) -> String {
+        let projectSessions = sessions(in: project)
+        let count = projectSessions.count
+        let sessionDescription =
+            count == 1 ? "1 Juno Code session" : "\(count) Juno Code sessions"
+        let activeCount = projectSessions.filter(\.status.isActive).count
+        let activeDescription =
+            activeCount == 0
+                ? ""
+                : activeCount == 1
+                    ? " The running session will be stopped."
+                    : " \(activeCount) running sessions will be stopped."
+        return """
+            This removes the project and deletes \(sessionDescription).\(activeDescription) \
+            The folder and its files stay on your Mac.
+            """
+    }
+
+    private func sessions(in project: ProjectGroup) -> [CodeSession] {
+        workbench.sessions.filter { $0.workspaceID == project.workspaceID }
+    }
+
+    private func selectionBelongs(to workspaceID: WorkspaceID) -> Bool {
+        switch selection {
+        case .repository(let id):
+            return id == workspaceID
+        case .session(let id):
+            return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
+        case .task, .remote, nil:
+            return false
         }
     }
 
@@ -643,53 +769,6 @@ struct DesktopCodeSidebar: View {
             // Repository rows carry their own menu; they never reach this row
             // builder.
             EmptyView()
-        }
-    }
-
-    // MARK: Repositories
-
-    private var repositoriesSection: some View {
-        Section("Repositories") {
-            ForEach(workbench.workspaces, id: \.id) { record in
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(record.descriptor.displayName)
-                            .junoRowLabel()
-                            .lineLimit(1)
-                        // Truncated from the head: the trailing folders identify
-                        // the repository, the leading ones are shared noise.
-                        Text(abbreviatedPath(record.descriptor.localPathHint))
-                            .junoCaption()
-                            .lineLimit(1)
-                            .truncationMode(.head)
-                    }
-                } icon: {
-                    Image(
-                        systemName: record.descriptor.isGitRepository
-                            ? "arrow.triangle.branch"
-                            : "folder"
-                    )
-                }
-                .tag(DesktopCodeSidebarItem.repository(record.id))
-                .contextMenu {
-                    Button("New Session Here") { newSession(record.id) }
-                    Button("Remove from Recents", role: .destructive) {
-                        Task { await workbench.removeWorkspace(id: record.id) }
-                    }
-                }
-            }
-
-            Button(action: openRepository) {
-                Label("Open Repository…", systemImage: "folder.badge.plus")
-                    .junoRowLabel()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.junoAccent)
-            .keyboardShortcut("o", modifiers: .command)
-            .selectionDisabled()
-            .accessibilityIdentifier("juno.code.open-repository")
         }
     }
 
@@ -818,9 +897,6 @@ struct DesktopCodeSidebar: View {
         Task { await workbench.restoreAccess(to: workspaceID, grantedURL: url) }
     }
 
-    private func abbreviatedPath(_ path: String) -> String {
-        (path as NSString).abbreviatingWithTildeInPath
-    }
 }
 
 /// Projects the transports into the column's one row type.
@@ -904,8 +980,8 @@ struct DesktopCodeFirstRun: View {
         JunoEmptyState(
             title: "Open a repository",
             message: """
-                Juno Code works in a folder you choose, and reads and writes only \
-                inside it.
+                Juno Code works from a folder you choose. File tools stay inside \
+                it; shell commands follow the permission mode you select.
                 """,
             symbol: "folder.badge.plus",
             actionLabel: "Open Repository…",
@@ -915,160 +991,708 @@ struct DesktopCodeFirstRun: View {
     }
 }
 
-/// A repository is open and no session is selected: a draft.
+/// The three real places a Code run can execute.
 ///
-/// The starters do not launch. Each one creates the session and lands its text in
-/// the composer, so the reader edits a real prompt in the place they will edit
-/// every later prompt, and the transcript grows exactly where the starters were
-/// rather than the layout re-flowing from centred to left.
+/// `NativeCodeTarget` intentionally has no local case because it models the
+/// server relay only. The desktop has a third, genuinely different path: a
+/// sandboxed `JunoCode` session working directly in a security-scoped folder on
+/// this Mac. Keeping the three-way choice here avoids pretending that a local
+/// session was dispatched through the cloud API.
+enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
+    case local
+    case cloud
+    case device
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .local: "This Mac"
+        case .cloud: "Cloud"
+        case .device: "My devices"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .local: "laptopcomputer"
+        case .cloud: "cloud"
+        case .device: "desktopcomputer"
+        }
+    }
+
+    var nativeTarget: NativeCodeTarget? {
+        switch self {
+        case .local: nil
+        case .cloud: .cloud
+        case .device: .device
+        }
+    }
+}
+
+/// Everything fixed at the start of a local run.
+///
+/// A turn's mode, model, reasoning and permissions can still change later from
+/// the session composer, but the first turn must not be created with hidden
+/// hard-coded values. This value is also the seam that keeps the launch surface
+/// independently testable from the local runtime.
+struct DesktopLocalCodeDraft: Equatable {
+    let workspaceID: WorkspaceID
+    let prompt: String
+    let behavior: AgentBehavior
+    let permissionMode: PermissionMode
+    let modelID: String
+    let reasoningEffort: ReasoningEffort
+
+    var configuration: AgentConfiguration {
+        AgentConfiguration(
+            modelID: modelID,
+            reasoningEffort: reasoningEffort,
+            behavior: behavior,
+            permissionMode: permissionMode,
+            location: .local
+        )
+    }
+
+    static func title(from prompt: String) -> String {
+        let firstLine = prompt
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .first
+            .map(String.init)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? prompt
+        return firstLine.count > 60 ? String(firstLine.prefix(60)) + "…" : firstLine
+    }
+}
+
+/// A repository is open and no session is selected: the real first-turn
+/// composer.
+///
+/// This is a repository work surface, not a marketing empty state. Repository
+/// identity stays fixed at the top, the working canvas stays quiet, and the
+/// first-turn composer sits where the running session transcript will end. The
+/// first send creates and starts the run; it never creates an empty session merely
+/// because the reader clicked "New".
 struct DesktopCodeDraftDetail: View {
     let record: WorkspaceRecord
-    let isStarting: Bool
-    let start: (String?) -> Void
+    let workbench: WorkbenchModel
+    let code: NativeCodeModel
+    let isStartingLocal: Bool
+    let startLocal: (DesktopLocalCodeDraft) -> Void
+    let openTask: (NativeCodeTask) -> Void
 
-    /// The four things a reader actually opens a coding agent to do.
-    ///
-    /// Named by intent rather than by prompt text. The card is the label; the
-    /// prompt behind it is what gets sent, and keeping the two separate means the
-    /// wording sent to the model can be tuned without changing what the reader
-    /// chose. A wall of four full sentences read as a list of things to read
-    /// rather than a set of things to pick.
-    /// One accent, not four hues.
-    ///
-    /// These carried a blue, a purple, a green and an orange glyph, which is the
-    /// convention in other tools but not Juno's: the design language is a single
-    /// restrained coral accent, and four saturated colours on the first surface of
-    /// the product reads as someone else's palette. Colour here would also be
-    /// carrying no information — the glyph and the label already say what the card
-    /// does — so it is spent on the one thing that matters, which is that all four
-    /// are equally available choices.
-    private struct Starter: Identifiable {
+    @SceneStorage("juno.desktop.code.launch-target")
+    private var storedTarget = DesktopCodeLaunchTarget.local.rawValue
+    @State private var prompt = ""
+    @State private var behavior = AgentBehavior.code
+    @State private var permissionMode = PermissionMode.askBeforeChanges
+    @State private var modelID = ""
+    @State private var reasoningEffort = ReasoningEffort.medium
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private struct Suggestion: Identifiable {
         let title: String
         let symbol: String
         let prompt: String
         var id: String { title }
     }
 
-    private static let starters: [Starter] = [
-        Starter(
-            title: "Explore and understand code",
-            symbol: "text.magnifyingglass",
-            prompt: "Map this codebase and explain how it fits together."
-        ),
-        Starter(
-            title: "Build a new feature, app, or tool",
-            symbol: "hammer",
-            prompt: """
-                I want to build something new here. Ask me what it is, then plan it \
-                before writing any code.
-                """
-        ),
-        Starter(
-            title: "Review code and suggest changes",
+    private static let suggestions: [Suggestion] = [
+        Suggestion(
+            title: "Review uncommitted changes",
             symbol: "checklist",
-            prompt: "Review my uncommitted changes for correctness and risk."
+            prompt: "Review my uncommitted changes for correctness, regressions, and security risk."
         ),
-        Starter(
-            title: "Fix issues and failures",
+        Suggestion(
+            title: "Fix failing tests",
             symbol: "wrench.and.screwdriver",
-            prompt: "Run the test suite and fix what fails."
+            prompt: "Run the relevant tests, diagnose every failure, and fix the root causes."
+        ),
+        Suggestion(
+            title: "Plan a feature",
+            symbol: "list.bullet.clipboard",
+            prompt: "Explore this codebase and propose an implementation plan before editing anything."
+        ),
+        Suggestion(
+            title: "Explain this repository",
+            symbol: "text.magnifyingglass",
+            prompt: "Map this repository and explain its architecture, data flow, and important conventions."
         ),
     ]
 
-    var body: some View {
-        JunoDetailPage {
-            draftBody
+    private var target: DesktopCodeLaunchTarget {
+        DesktopCodeLaunchTarget(rawValue: storedTarget) ?? .local
+    }
+
+    private var targetBinding: Binding<DesktopCodeLaunchTarget> {
+        Binding(
+            get: { target },
+            set: { next in
+                guard next != target else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+                    storedTarget = next.rawValue
+                    configureNativeTarget(next)
+                }
+            }
+        )
+    }
+
+    private var selectedModel: ModelOption? {
+        workbench.availableModels.first { $0.modelID == modelID }
+    }
+
+    private var modelBinding: Binding<String> {
+        Binding(
+            get: { modelID },
+            set: { next in
+                modelID = next
+                guard let option = workbench.availableModels.first(where: {
+                    $0.modelID == next
+                }) else { return }
+                let supported = option.supportedReasoningEfforts
+                if !supported.contains(reasoningEffort) {
+                    reasoningEffort = supported.first ?? .medium
+                }
+            }
+        )
+    }
+
+    private var reasoningBinding: Binding<String?> {
+        Binding(
+            get: { reasoningEffort.rawValue },
+            set: { value in
+                guard let value, let effort = ReasoningEffort(rawValue: value) else {
+                    return
+                }
+                reasoningEffort = effort
+            }
+        )
+    }
+
+    private var trimmedPrompt: String {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canSend: Bool {
+        guard !trimmedPrompt.isEmpty else { return false }
+        switch target {
+        case .local:
+            return !modelID.isEmpty && !isStartingLocal
+        case .cloud, .device:
+            return code.startBlockedReason == nil && !code.isMutating
         }
     }
 
-    private var draftBody: some View {
-        VStack(spacing: JunoSpace.section) {
-            Image(systemName: "apple.terminal")
-                .font(.system(size: 44, weight: .thin))
-                .foregroundStyle(.tertiary)
+    var body: some View {
+        VStack(spacing: 0) {
+            repositoryContextBar
+            Divider()
+
+            Color.clear.overlay(alignment: .bottom) {
+                VStack(spacing: JunoSpace.cozy) {
+                    VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                        Text("Start a task")
+                            .font(.title2.weight(.semibold))
+                        Text("Describe the outcome. Juno will inspect the repository before it edits.")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: 760, alignment: .leading)
+                    .padding(.horizontal, JunoSpace.roomy)
+
+                    composer
+
+                    Text(footerNote)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, JunoSpace.roomy)
+                        .accessibilityHidden(true)
+                }
+                .padding(.bottom, JunoSpace.region)
+            }
+        }
+        .onAppear {
+            configureModel()
+            configureNativeTarget(target)
+            focused = true
+        }
+        .onChange(of: workbench.availableModels.map(\.modelID)) { _, _ in
+            configureModel()
+        }
+    }
+
+    private var repositoryContextBar: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Image(systemName: record.descriptor.isGitRepository ? "folder.fill" : "folder")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
 
-            // The project name is part of the sentence, and underlined because it
-            // is the one word in it that changes: it tells the reader which of
-            // their repositories this session will be allowed to touch, at the
-            // moment they are deciding what to ask for.
-            Text(
-                "What should we work on in \(Text(record.descriptor.displayName).underline())?"
-            )
-            .font(JunoSerif.font(size: 27, relativeTo: .title, face: .regular))
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-
-            starterGrid
-
-            VStack(spacing: JunoSpace.tight) {
-                Text(abbreviatedPath)
-                    .junoMono()
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(record.descriptor.displayName)
+                    .font(.headline)
                     .lineLimit(1)
-                    .truncationMode(.head)
-                Text("A session may read and write inside this folder, and asks before it changes anything.")
-                    .junoCaption()
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(spacing: JunoSpace.cozy) {
-                Button("Start a Session") { start(nil) }
-                    .junoProminentGlassButton()
-                    .disabled(isStarting)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .accessibilityIdentifier("juno.code.start-session")
-                if isStarting {
-                    ProgressView().controlSize(.small)
-                }
-            }
-        }
-    }
-
-    /// Four cards across on a roomy window, two when the inspector is open and the
-    /// canvas is narrow. `adaptive` rather than a fixed count so the wrap is the
-    /// layout's decision and not a breakpoint someone has to maintain.
-    private var starterGrid: some View {
-        // The width bound belongs on the grid, not only on the enclosing stack.
-        // `.adaptive` decides its column count from the width it is *proposed*;
-        // proposed an unbounded width it lays the four cards out in one column and
-        // reports a height four times what it needs, which propagates all the way
-        // out to the window's split view.
-        LazyVGrid(
-            columns: [GridItem(.adaptive(minimum: 156), spacing: JunoSpace.cozy)],
-            spacing: JunoSpace.cozy
-        ) {
-            ForEach(Self.starters) { starter in
-                Button { start(starter.prompt) } label: {
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        Image(systemName: starter.symbol)
-                            .imageScale(.medium)
-                            .foregroundStyle(Color.junoAccent)
-                        Text(starter.title)
-                            .junoRowLabel()
-                            .multilineTextAlignment(.leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
-                    .padding(JunoSpace.cozy)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .junoPanel()
-                .overlay(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                        .strokeBorder(Color.junoBorder, lineWidth: 0.5)
+                Text(
+                    (record.descriptor.localPathHint as NSString)
+                        .abbreviatingWithTildeInPath
                 )
-                .disabled(isStarting)
-                .help(starter.prompt)
+                .font(.caption.monospaced())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
+
+            Spacer(minLength: JunoSpace.cozy)
+
+            Text(record.descriptor.isGitRepository ? "Git repository" : "Folder")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.hairline)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
+
+            Button {
+                NSWorkspace.shared.activateFileViewerSelecting([
+                    URL(fileURLWithPath: record.descriptor.localPathHint)
+                ])
+            } label: {
+                Label("Show in Finder", systemImage: "arrow.forward.square")
+            }
+            .labelStyle(.iconOnly)
+            .help("Show this repository in Finder")
+            .accessibilityLabel("Show repository in Finder")
+            .accessibilityIdentifier("juno.code.show-in-finder")
         }
-        .frame(maxWidth: 720)
+        .controlSize(.small)
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(minHeight: 52)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.repository-context")
     }
 
-    private var abbreviatedPath: String {
-        (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath
+    private var composer: some View {
+        JunoDesktopGlass(spacing: JunoSpace.snug) {
+            VStack(spacing: JunoSpace.cozy) {
+                destinationRow
+
+                TextField(
+                    target == .local
+                        ? "Ask Juno to build, fix, review, or explain…"
+                        : "Describe the task to run…",
+                    text: $prompt,
+                    axis: .vertical
+                )
+                .textFieldStyle(.plain)
+                .lineLimit(3...9)
+                .font(.body)
+                .focused($focused)
+                .padding(.horizontal, JunoSpace.tight)
+                .padding(.vertical, JunoSpace.tight)
+                .accessibilityIdentifier("juno.code.launch-prompt")
+                .onKeyPress(.return, phases: .down) { press in
+                    if press.modifiers.contains(.shift) { return .ignored }
+                    if canSend { send() }
+                    return .handled
+                }
+
+                if let issue = launchIssue {
+                    Label(issue, systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, JunoSpace.tight)
+                        .transition(.opacity)
+                        .accessibilityIdentifier("juno.code.launch-issue")
+                }
+
+                HStack(spacing: JunoSpace.snug) {
+                    targetMenu
+
+                    Rectangle()
+                        .fill(Color.junoHairline)
+                        .frame(width: 1, height: 19)
+                        .padding(.horizontal, 2)
+                        .accessibilityHidden(true)
+
+                    launchControls
+
+                    Spacer(minLength: JunoSpace.tight)
+
+                    suggestionsMenu
+                    sendButton
+                }
+            }
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: 760)
+            .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
+            .padding(.horizontal, JunoSpace.roomy)
+        }
+        .animation(
+            JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+            value: target
+        )
+    }
+
+    private var destinationRow: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Image(systemName: target.symbol)
+                .foregroundStyle(Color.junoAccent)
+                .contentTransition(.symbolEffect(.replace))
+            Text(destinationTitle)
+                .junoRowLabel()
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: JunoSpace.tight)
+            Text(destinationDetail)
+                .junoCaption()
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .padding(.horizontal, JunoSpace.tight)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(target.label), \(destinationTitle), \(destinationDetail)")
+    }
+
+    private var targetMenu: some View {
+        Menu {
+            Picker("Run on", selection: targetBinding) {
+                ForEach(DesktopCodeLaunchTarget.allCases) { choice in
+                    Label(choice.label, systemImage: choice.symbol)
+                        .tag(choice)
+                }
+            }
+        } label: {
+            Label(target.label, systemImage: target.symbol)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Choose where this task runs")
+        .accessibilityIdentifier("juno.code.launch-target")
+    }
+
+    @ViewBuilder
+    private var launchControls: some View {
+        switch target {
+        case .local:
+            localControls
+                .transition(.opacity)
+        case .cloud:
+            cloudControls
+                .transition(.opacity)
+        case .device:
+            deviceControls
+                .transition(.opacity)
+        }
+    }
+
+    private var localControls: some View {
+        HStack(spacing: JunoSpace.snug) {
+            contractMenu
+
+            JunoModelSelectorButton(
+                models: workbench.availableModels.map(\.descriptor),
+                selectedModelID: modelBinding,
+                placeholder: "Choose model",
+                accessibilityID: "juno.code.launch-model"
+            )
+
+            if let selectedModel {
+                JunoThinkingButton(
+                    ladder: selectedModel.thinkingLadder,
+                    stopID: reasoningBinding,
+                    accessibilityID: "juno.code.launch-reasoning"
+                )
+            }
+        }
+    }
+
+    private var contractMenu: some View {
+        Menu {
+            Picker("Mode", selection: $behavior) {
+                ForEach(AgentBehavior.allCases, id: \.self) { value in
+                    Label(
+                        AgentBehaviorLabel.text(for: value),
+                        systemImage: AgentBehaviorLabel.glyph(for: value)
+                    )
+                    .tag(value)
+                }
+            }
+
+            Divider()
+
+            Picker("Permissions", selection: $permissionMode) {
+                ForEach(PermissionMode.allCases, id: \.self) { value in
+                    Text(PermissionModeLabel.text(for: value))
+                        .tag(value)
+                }
+            }
+            .disabled(behavior != .code)
+        } label: {
+            Label(
+                behavior == .code
+                    ? "\(AgentBehaviorLabel.text(for: behavior)) · \(PermissionModeLabel.shortText(for: permissionMode))"
+                    : AgentBehaviorLabel.text(for: behavior),
+                systemImage: AgentBehaviorLabel.glyph(for: behavior)
+            )
+            .font(.caption)
+            .foregroundStyle(permissionMode == .fullAccess ? Color.junoCaution : .secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Choose whether Juno answers, plans, or edits—and when it asks")
+        .accessibilityIdentifier("juno.code.launch-contract")
+    }
+
+    @ViewBuilder
+    private var cloudControls: some View {
+        switch code.repositories {
+        case .idle, .loading:
+            HStack(spacing: JunoSpace.snug) {
+                ProgressView().controlSize(.small)
+                Text("Loading repositories…").junoCaption()
+            }
+        case .ready(let repositories):
+            if repositories.isEmpty {
+                Text("No GitHub repositories").junoCaption()
+            } else {
+                Picker("Repository", selection: cloudRepositoryBinding(repositories)) {
+                    ForEach(repositories) { repository in
+                        Text(repository.fullName).tag(repository.id)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(maxWidth: 210)
+                .accessibilityIdentifier("juno.code.launch-cloud-repository")
+            }
+        case .unavailable:
+            Button("Retry GitHub") {
+                code.loadRepositoriesIfNeeded(force: true)
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+        }
+    }
+
+    @ViewBuilder
+    private var deviceControls: some View {
+        if code.devices.isEmpty {
+            Text("No connected devices").junoCaption()
+        } else {
+            Picker("Device", selection: deviceBinding) {
+                ForEach(code.devices) { device in
+                    Text(device.online ? device.name : "\(device.name) (offline)")
+                        .tag(Optional(device.id))
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .frame(maxWidth: 150)
+            .accessibilityIdentifier("juno.code.launch-device")
+
+            if let device = code.selectedDevice, !device.workspaces.isEmpty {
+                Picker("Workspace", selection: workspaceBinding(device)) {
+                    ForEach(device.workspaces) { workspace in
+                        Text(workspace.name).tag(Optional(workspace.id))
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .frame(maxWidth: 170)
+                .accessibilityIdentifier("juno.code.launch-device-workspace")
+            }
+        }
+    }
+
+    private var suggestionsMenu: some View {
+        Menu {
+            ForEach(Self.suggestions) { suggestion in
+                Button {
+                    prompt = suggestion.prompt
+                    focused = true
+                } label: {
+                    Label(suggestion.title, systemImage: suggestion.symbol)
+                }
+            }
+        } label: {
+            Image(systemName: "sparkles")
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .menuStyle(.borderlessButton)
+        .help("Prompt suggestions")
+        .accessibilityLabel("Prompt suggestions")
+        .accessibilityIdentifier("juno.code.launch-suggestions")
+    }
+
+    private var sendButton: some View {
+        Button(action: send) {
+            Group {
+                if isStartingLocal || code.isMutating {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 12, weight: .bold))
+                }
+            }
+            .frame(width: 30, height: 30)
+            .contentShape(.circle)
+        }
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
+        .tint(Color.junoAccent)
+        .foregroundStyle(Color.junoOnAccent)
+        .disabled(!canSend)
+        .help("Start this task (Return)")
+        .accessibilityLabel("Start task")
+        .accessibilityIdentifier("juno.code.launch-send")
+    }
+
+    private var destinationTitle: String {
+        switch target {
+        case .local:
+            record.descriptor.displayName
+        case .cloud:
+            code.selectedRepository?.fullName ?? "Choose a GitHub repository"
+        case .device:
+            code.selectedWorkspace?.name
+                ?? code.selectedDevice?.name
+                ?? "Choose a connected device"
+        }
+    }
+
+    private var destinationDetail: String {
+        switch target {
+        case .local:
+            (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath
+        case .cloud:
+            code.selectedRepository.map { "\($0.defaultBranch) · opens a pull request" }
+                ?? "GitHub Actions"
+        case .device:
+            code.selectedWorkspace?.path
+                ?? code.selectedDevice.map {
+                    $0.online ? "Online" : "Offline"
+                }
+                ?? "Juno Code host"
+        }
+    }
+
+    private var launchIssue: String? {
+        switch target {
+        case .local:
+            if workbench.availableModels.isEmpty {
+                return "Your Code model catalog is still loading."
+            }
+            return nil
+        case .cloud, .device:
+            return code.lastErrorDescription ?? code.startBlockedReason
+        }
+    }
+
+    private var footerNote: String {
+        switch target {
+        case .local:
+            behavior == .code
+                ? PermissionModeLabel.explanation(for: permissionMode)
+                : AgentBehaviorLabel.explanation(for: behavior)
+        case .cloud:
+            "Cloud runs work on an isolated checkout and report their pull request here."
+        case .device:
+            "The selected device works only inside the workspace it has already granted."
+        }
+    }
+
+    private var deviceBinding: Binding<String?> {
+        Binding(
+            get: { code.selectedDeviceID },
+            set: { value in
+                code.selectedDeviceID = value
+                code.selectedWorkspaceKey = code.selectedDevice?.workspaces.first?.id
+            }
+        )
+    }
+
+    private func workspaceBinding(_ device: NativeCodeDevice) -> Binding<String?> {
+        Binding(
+            get: { code.selectedWorkspaceKey ?? device.workspaces.first?.id },
+            set: { code.selectedWorkspaceKey = $0 }
+        )
+    }
+
+    private func cloudRepositoryBinding(
+        _ repositories: [NativeCodeRepository]
+    ) -> Binding<String> {
+        Binding(
+            get: { code.selectedRepository?.id ?? repositories.first?.id ?? "" },
+            set: { id in
+                code.selectedRepository = repositories.first { $0.id == id }
+            }
+        )
+    }
+
+    private func configureModel() {
+        guard modelID.isEmpty
+                || !workbench.availableModels.contains(where: { $0.modelID == modelID })
+        else { return }
+        modelID = workbench.availableModels.first?.modelID ?? ""
+        if let selectedModel {
+            reasoningEffort = selectedModel.supportedReasoningEfforts.first ?? .medium
+        }
+    }
+
+    private func configureNativeTarget(_ choice: DesktopCodeLaunchTarget) {
+        guard let nativeTarget = choice.nativeTarget else { return }
+        code.target = nativeTarget
+        switch nativeTarget {
+        case .cloud:
+            code.loadRepositoriesIfNeeded()
+        case .device:
+            if code.selectedDeviceID == nil {
+                code.selectedDeviceID =
+                    code.devices.first(where: \.online)?.id ?? code.devices.first?.id
+            }
+            if code.selectedWorkspaceKey == nil {
+                code.selectedWorkspaceKey = code.selectedDevice?.workspaces.first?.id
+            }
+        }
+    }
+
+    private func send() {
+        guard canSend else { return }
+        switch target {
+        case .local:
+            startLocal(
+                DesktopLocalCodeDraft(
+                    workspaceID: record.id,
+                    prompt: trimmedPrompt,
+                    behavior: behavior,
+                    permissionMode: permissionMode,
+                    modelID: modelID,
+                    reasoningEffort: reasoningEffort
+                )
+            )
+        case .cloud, .device:
+            guard let nativeTarget = target.nativeTarget else { return }
+            code.target = nativeTarget
+            let submitted = trimmedPrompt
+            Task {
+                guard let task = await code.startTask(prompt: submitted) else { return }
+                prompt = ""
+                openTask(task)
+            }
+        }
     }
 }

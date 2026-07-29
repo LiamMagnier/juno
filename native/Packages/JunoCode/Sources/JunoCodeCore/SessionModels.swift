@@ -156,6 +156,334 @@ public enum AgentRole: String, Codable, CaseIterable, Sendable {
     case explainer
 }
 
+/// Durable lifecycle for a session goal. Completion is terminal and may only
+/// be entered after every ordered step is complete and verification evidence
+/// has been recorded.
+public enum GoalLifecycle: String, Codable, CaseIterable, Sendable {
+    case active
+    case paused
+    case blocked
+    case completed
+
+    public func canTransition(to next: GoalLifecycle) -> Bool {
+        switch (self, next) {
+        case (.active, .active), (.paused, .paused),
+             (.blocked, .blocked), (.completed, .completed),
+             (.active, .paused), (.active, .blocked), (.active, .completed),
+             (.paused, .active), (.paused, .blocked),
+             (.blocked, .active), (.blocked, .paused):
+            return true
+        case (.paused, .completed), (.blocked, .completed),
+             (.completed, .active), (.completed, .paused), (.completed, .blocked):
+            return false
+        }
+    }
+}
+
+public enum GoalStepStatus: String, Codable, CaseIterable, Sendable {
+    case pending
+    case inProgress
+    case completed
+    case blocked
+
+    public func canTransition(to next: GoalStepStatus) -> Bool {
+        switch (self, next) {
+        case (.pending, .pending), (.inProgress, .inProgress),
+             (.completed, .completed), (.blocked, .blocked),
+             (.pending, .inProgress), (.pending, .blocked),
+             (.inProgress, .pending), (.inProgress, .completed), (.inProgress, .blocked),
+             (.blocked, .pending), (.blocked, .inProgress),
+             (.completed, .inProgress):
+            return true
+        case (.pending, .completed), (.blocked, .completed),
+             (.completed, .pending), (.completed, .blocked):
+            return false
+        }
+    }
+}
+
+public struct GoalProgress: Hashable, Codable, Sendable {
+    public let completedSteps: Int
+    public let blockedSteps: Int
+    public let totalSteps: Int
+    public let fractionCompleted: Double
+
+    public init(completedSteps: Int, blockedSteps: Int, totalSteps: Int) {
+        self.completedSteps = completedSteps
+        self.blockedSteps = blockedSteps
+        self.totalSteps = totalSteps
+        fractionCompleted = totalSteps == 0
+            ? 0
+            : Double(completedSteps) / Double(totalSteps)
+    }
+}
+
+public struct GoalVerificationEvidence: Hashable, Codable, Sendable {
+    public let id: String
+    public let summary: String
+    public let source: String?
+    public let recordedAt: Date
+
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        summary: String,
+        source: String? = nil,
+        recordedAt: Date
+    ) {
+        self.id = id
+        self.summary = summary
+        self.source = source
+        self.recordedAt = recordedAt
+    }
+
+    public var isValid: Bool {
+        !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+public struct GoalStep: Hashable, Codable, Sendable, Identifiable {
+    public let id: String
+    public var title: String
+    public var status: GoalStepStatus
+    public let createdAt: Date
+    public var updatedAt: Date
+    public var completedAt: Date?
+
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        title: String,
+        status: GoalStepStatus = .pending,
+        createdAt: Date,
+        updatedAt: Date? = nil,
+        completedAt: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.status = status
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
+        self.completedAt = completedAt
+    }
+
+    public mutating func transition(
+        to next: GoalStepStatus,
+        at timestamp: Date
+    ) throws {
+        guard status.canTransition(to: next) else {
+            throw GoalStateError.invalidStepTransition(
+                stepID: id,
+                from: status,
+                to: next
+            )
+        }
+        status = next
+        updatedAt = timestamp
+        completedAt = next == .completed ? timestamp : nil
+    }
+}
+
+public enum GoalMutation: Hashable, Sendable {
+    case setObjective(String)
+    case setLifecycle(GoalLifecycle)
+    case addStep(title: String)
+    case setStepStatus(id: String, status: GoalStepStatus)
+    case addVerificationEvidence(summary: String, source: String?)
+}
+
+public enum GoalStateError: Error, Equatable, Sendable {
+    case objectiveRequired
+    case atLeastOneStepRequired
+    case stepTitleRequired(stepID: String)
+    case duplicateStepID(String)
+    case verificationSummaryRequired
+    case stepNotFound(String)
+    case invalidLifecycleTransition(from: GoalLifecycle, to: GoalLifecycle)
+    case invalidStepTransition(
+        stepID: String,
+        from: GoalStepStatus,
+        to: GoalStepStatus
+    )
+    case inactiveGoalRequiresResume(lifecycle: GoalLifecycle)
+    case completedGoalIsImmutable
+    case completionRequiresAllSteps
+    case completionRequiresVerificationEvidence
+
+    public var message: String {
+        switch self {
+        case .objectiveRequired:
+            return "A goal objective is required."
+        case .atLeastOneStepRequired:
+            return "A goal requires at least one ordered step."
+        case let .stepTitleRequired(stepID):
+            return "Goal step '\(stepID)' requires a title."
+        case let .duplicateStepID(stepID):
+            return "Goal step ID '\(stepID)' is duplicated."
+        case .verificationSummaryRequired:
+            return "Verification evidence requires a non-empty summary."
+        case let .stepNotFound(stepID):
+            return "Goal step '\(stepID)' was not found."
+        case let .invalidLifecycleTransition(from, to):
+            return "Goal lifecycle cannot transition from \(from.rawValue) to \(to.rawValue)."
+        case let .invalidStepTransition(stepID, from, to):
+            return "Goal step '\(stepID)' cannot transition from \(from.rawValue) to \(to.rawValue)."
+        case let .inactiveGoalRequiresResume(lifecycle):
+            return "A \(lifecycle.rawValue) goal must be resumed before its contents can be changed."
+        case .completedGoalIsImmutable:
+            return "A completed goal is immutable."
+        case .completionRequiresAllSteps:
+            return "A goal cannot complete until every step is completed."
+        case .completionRequiresVerificationEvidence:
+            return "A goal cannot complete without verification evidence."
+        }
+    }
+}
+
+/// A durable, ordered completion contract attached to one code session.
+public struct SessionGoal: Hashable, Codable, Sendable, Identifiable {
+    public let id: String
+    public var objective: String
+    public var lifecycle: GoalLifecycle
+    public var steps: [GoalStep]
+    public var verificationEvidence: [GoalVerificationEvidence]
+    public let createdAt: Date
+    public var updatedAt: Date
+    public var completedAt: Date?
+
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        objective: String,
+        lifecycle: GoalLifecycle = .active,
+        steps: [GoalStep],
+        verificationEvidence: [GoalVerificationEvidence] = [],
+        createdAt: Date,
+        updatedAt: Date? = nil,
+        completedAt: Date? = nil
+    ) {
+        self.id = id
+        self.objective = objective
+        self.lifecycle = lifecycle
+        self.steps = steps
+        self.verificationEvidence = verificationEvidence
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt ?? createdAt
+        self.completedAt = completedAt
+    }
+
+    public var progress: GoalProgress {
+        GoalProgress(
+            completedSteps: steps.count { $0.status == .completed },
+            blockedSteps: steps.count { $0.status == .blocked },
+            totalSteps: steps.count
+        )
+    }
+
+    public func validate() throws {
+        guard !objective.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw GoalStateError.objectiveRequired
+        }
+        guard !steps.isEmpty else {
+            throw GoalStateError.atLeastOneStepRequired
+        }
+        var stepIDs = Set<String>()
+        for step in steps {
+            guard !step.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw GoalStateError.stepTitleRequired(stepID: step.id)
+            }
+            guard stepIDs.insert(step.id).inserted else {
+                throw GoalStateError.duplicateStepID(step.id)
+            }
+        }
+        guard verificationEvidence.allSatisfy(\.isValid) else {
+            throw GoalStateError.verificationSummaryRequired
+        }
+        if lifecycle == .completed {
+            try validateCompletion()
+        }
+    }
+
+    public mutating func apply(
+        _ mutation: GoalMutation,
+        at timestamp: Date
+    ) throws {
+        if lifecycle == .completed {
+            if case .setLifecycle(.completed) = mutation {
+                return
+            }
+            throw GoalStateError.completedGoalIsImmutable
+        }
+        if lifecycle == .paused || lifecycle == .blocked {
+            guard case .setLifecycle = mutation else {
+                throw GoalStateError.inactiveGoalRequiresResume(lifecycle: lifecycle)
+            }
+        }
+
+        switch mutation {
+        case let .setObjective(value):
+            let objective = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !objective.isEmpty else {
+                throw GoalStateError.objectiveRequired
+            }
+            self.objective = objective
+
+        case let .setLifecycle(next):
+            guard lifecycle.canTransition(to: next) else {
+                throw GoalStateError.invalidLifecycleTransition(from: lifecycle, to: next)
+            }
+            if next == .completed {
+                try validateCompletion()
+            }
+            lifecycle = next
+            completedAt = next == .completed ? timestamp : nil
+
+        case let .addStep(title):
+            let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else {
+                throw GoalStateError.stepTitleRequired(stepID: "new")
+            }
+            steps.append(
+                GoalStep(
+                    title: title,
+                    createdAt: timestamp
+                )
+            )
+
+        case let .setStepStatus(id, status):
+            guard let index = steps.firstIndex(where: { $0.id == id }) else {
+                throw GoalStateError.stepNotFound(id)
+            }
+            try steps[index].transition(to: status, at: timestamp)
+
+        case let .addVerificationEvidence(summary, source):
+            let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !summary.isEmpty else {
+                throw GoalStateError.verificationSummaryRequired
+            }
+            let normalizedSource = source?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            verificationEvidence.append(
+                GoalVerificationEvidence(
+                    summary: summary,
+                    source: normalizedSource.flatMap { $0.isEmpty ? nil : $0 },
+                    recordedAt: timestamp
+                )
+            )
+        }
+        updatedAt = timestamp
+        try validate()
+    }
+
+    private func validateCompletion() throws {
+        guard steps.allSatisfy({ $0.status == .completed }) else {
+            throw GoalStateError.completionRequiresAllSteps
+        }
+        guard !verificationEvidence.isEmpty,
+              verificationEvidence.allSatisfy(\.isValid)
+        else {
+            throw GoalStateError.completionRequiresVerificationEvidence
+        }
+    }
+}
+
 public struct CodeSession: Hashable, Codable, Sendable {
     public let id: CodeSessionID
     public let workspaceID: WorkspaceID
@@ -166,6 +494,9 @@ public struct CodeSession: Hashable, Codable, Sendable {
     public var gitBranch: String?
     public var hasPendingApproval: Bool
     public var lastErrorSummary: String?
+    /// Optional for backward-compatible decoding of sessions created before
+    /// durable Goal Mode existed.
+    public var goal: SessionGoal?
     public let createdAt: Date
     public var updatedAt: Date
 
@@ -179,6 +510,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
         gitBranch: String? = nil,
         hasPendingApproval: Bool = false,
         lastErrorSummary: String? = nil,
+        goal: SessionGoal? = nil,
         createdAt: Date,
         updatedAt: Date
     ) {
@@ -191,6 +523,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
         self.gitBranch = gitBranch
         self.hasPendingApproval = hasPendingApproval
         self.lastErrorSummary = lastErrorSummary
+        self.goal = goal
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }

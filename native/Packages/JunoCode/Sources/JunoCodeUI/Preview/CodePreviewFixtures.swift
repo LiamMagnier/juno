@@ -256,8 +256,58 @@ enum CodePreviewData {
             gitBranch: placement.branch,
             hasPendingApproval: scenario == .approval,
             lastErrorSummary: placement.errorSummary,
+            goal: previewGoal(for: scenario),
             createdAt: minutes(placement.minutesAgo + 30),
             updatedAt: minutes(placement.minutesAgo)
+        )
+    }
+
+    /// The default signed-UI fixture carries a real, partially-complete goal so
+    /// Goal Mode's fixed progress strip and disclosure popover are exercised in
+    /// the same app shell as the transcript, composer and inspector.
+    private static func previewGoal(for scenario: CodePreviewScenario) -> SessionGoal? {
+        guard scenario == .transcript else { return nil }
+        let createdAt = minutes(330)
+        let updatedAt = minutes(302)
+        return SessionGoal(
+            id: "goal-preview-transcript",
+            objective: "Unify the spacing scale and verify every call site",
+            lifecycle: .active,
+            steps: [
+                GoalStep(
+                    id: "goal-preview-audit",
+                    title: "Audit both spacing definitions",
+                    status: .completed,
+                    createdAt: createdAt,
+                    updatedAt: minutes(315),
+                    completedAt: minutes(315)
+                ),
+                GoalStep(
+                    id: "goal-preview-consolidate",
+                    title: "Move call sites onto the shared scale",
+                    status: .completed,
+                    createdAt: createdAt,
+                    updatedAt: minutes(306),
+                    completedAt: minutes(306)
+                ),
+                GoalStep(
+                    id: "goal-preview-verify",
+                    title: "Run strict package verification",
+                    status: .inProgress,
+                    createdAt: createdAt,
+                    updatedAt: updatedAt
+                ),
+            ],
+            verificationEvidence: [
+                GoalVerificationEvidence(
+                    id: "goal-preview-evidence",
+                    summary: "Focused design-token tests passed.",
+                    source: "swift test --filter DesignTokenTests",
+                    recordedAt: minutes(304)
+                ),
+            ],
+            createdAt: createdAt,
+            updatedAt: updatedAt
         )
     }
 

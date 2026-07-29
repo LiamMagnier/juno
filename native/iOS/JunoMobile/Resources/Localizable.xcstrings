@@ -738,6 +738,38 @@
         }
       }
     },
+    "auth.divider.or" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "or"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ou"
+          }
+        }
+      }
+    },
+    "auth.email.placeholder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "you@example.com"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "vous@exemple.com"
+          }
+        }
+      }
+    },
     "auth.error.cancelled" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -823,6 +855,70 @@
         }
       }
     },
+    "auth.offline.retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Try again"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
+          }
+        }
+      }
+    },
+    "auth.offline.title" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno is unreachable — showing your local copy"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Juno est injoignable — affichage de votre copie locale"
+          }
+        }
+      }
+    },
+    "auth.password.disclaimer" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your password is sent once to Juno and never stored on this device. Use the browser if your account uses Google."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Votre mot de passe est envoyé une seule fois à Juno et n’est jamais conservé sur cet appareil. Utilisez le navigateur si votre compte passe par Google."
+          }
+        }
+      }
+    },
+    "auth.password.label" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Password"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mot de passe"
+          }
+        }
+      }
+    },
     "auth.restoring" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -852,6 +948,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Continuer dans le navigateur"
+          }
+        }
+      }
+    },
+    "auth.sign-in.password" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se connecter"
           }
         }
       }

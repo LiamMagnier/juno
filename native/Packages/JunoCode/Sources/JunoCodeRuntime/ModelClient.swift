@@ -1,6 +1,30 @@
 import Foundation
 import JunoCodeCore
 
+/// An ephemeral image sent to a vision-capable model. Screenshot bytes are
+/// deliberately stripped before conversation persistence.
+public struct ModelImage: Hashable, Codable, Sendable {
+    public enum Detail: String, Hashable, Codable, Sendable {
+        case low
+        case high
+        case auto
+    }
+
+    public let mediaType: String
+    public let data: Data
+    public let detail: Detail
+
+    public init(mediaType: String, data: Data, detail: Detail = .auto) {
+        self.mediaType = mediaType
+        self.data = data
+        self.detail = detail
+    }
+
+    public var dataURL: String {
+        "data:\(mediaType);base64,\(data.base64EncodedString())"
+    }
+}
+
 /// One message in the model conversation. Persisted so an interrupted
 /// session resumes with its exact context.
 public enum ModelMessage: Hashable, Codable, Sendable {
@@ -8,6 +32,29 @@ public enum ModelMessage: Hashable, Codable, Sendable {
     case assistant(String)
     case toolCall(id: String, name: String, input: JSONValue)
     case toolResult(id: String, content: String, isError: Bool)
+    /// Tool output with images for the immediately following model turn.
+    /// ``CodeSessionStore`` persists only its redacted text counterpart.
+    case toolResultWithImages(
+        id: String,
+        content: String,
+        isError: Bool,
+        images: [ModelImage]
+    )
+
+    /// The durable form of a message. Screen captures must never land in the
+    /// session store, sync records, analytics, or crash diagnostics.
+    public var persistenceSafe: ModelMessage {
+        switch self {
+        case let .toolResultWithImages(id, content, isError, _):
+            return .toolResult(
+                id: id,
+                content: content + "\n[Ephemeral image omitted; capture a fresh screenshot if needed.]",
+                isError: isError
+            )
+        default:
+            return self
+        }
+    }
 }
 
 public struct ModelToolDescriptor: Hashable, Codable, Sendable {

@@ -42,7 +42,7 @@ struct JunoMobileChatDetailScreen: View {
     /// The account's connected apps, for the menu's per-chat connector picker.
     var connectors: [NativeConnector] = []
     var memoryEnabled: Bool = true
-    var setMemoryEnabled: ((Bool) -> Void)?
+    var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     /// Server-backed message actions — rate, branch, read aloud.
     var messageActions: NativeMessageActionsClient?
     var accountID: AccountID?
@@ -142,7 +142,7 @@ private struct JunoMobileDraftChat: View {
     var libraryModel: NativeLibraryModel?
     var connectors: [NativeConnector] = []
     var memoryEnabled: Bool = true
-    var setMemoryEnabled: ((Bool) -> Void)?
+    var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
 
     @State private var prompt = ""
@@ -336,7 +336,7 @@ private struct JunoMobileConversationDetail: View {
     var libraryModel: NativeLibraryModel?
     var connectors: [NativeConnector] = []
     var memoryEnabled: Bool = true
-    var setMemoryEnabled: ((Bool) -> Void)?
+    var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
     /// The screen's one speaker, so two answers cannot read over each other.
     var readAloud: JunoMobileReadAloud?
@@ -662,6 +662,20 @@ private struct JunoMobileConversationDetail: View {
         }
     }
 
+    /// Returns the reader to the newest turn.
+    ///
+    /// `isNearBottom` is set here rather than left to the geometry callback: the
+    /// control has done its job the moment it is pressed, and a jump-to-latest
+    /// that lingers while the scroll animates reads as a button that failed. The
+    /// callback still owns the value — it will put it back to `false` if the
+    /// scroll did not in fact reach the bottom.
+    private func jumpToLatest() {
+        withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
+            scrollPosition.scrollTo(edge: .bottom)
+            isNearBottom = true
+        }
+    }
+
     /// The scrolling transcript with its follow-the-stream behaviour and
     /// jump-to-latest control. A separate function so `body` stays a short
     /// enough expression for the type checker.
@@ -700,14 +714,7 @@ private struct JunoMobileConversationDetail: View {
         .overlay(alignment: .bottomTrailing) {
             if !isNearBottom && !messages.isEmpty {
                 Button {
-                    // `isNearBottom` is not set optimistically here. The control
-                    // earns its own disappearance from the scroll it caused —
-                    // which is what made the broken version diagnosable instead
-                    // of a button that vanished and left the reader where it
-                    // found them.
-                    withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                        scrollPosition.scrollTo(edge: .bottom)
-                    }
+                    jumpToLatest()
                 } label: {
                     Image(systemName: "arrow.down")
                         .font(.body.weight(.semibold))
@@ -724,6 +731,16 @@ private struct JunoMobileConversationDetail: View {
                         // refract, it does not flex under a finger, and beside the
                         // glass composer directly below it the difference reads.
                         .modifier(JunoGlassCircle())
+                        // **Load-bearing.** A `.plain` button's hit region is its
+                        // label's content shape, and an `Image` in a `.frame` has
+                        // one the size of the glyph — around 17pt in the middle of
+                        // a 44pt circle. VoiceOver and XCUITest both read the 44pt
+                        // accessibility frame and call it hittable, so the control
+                        // looked fine from every angle except a thumb: taps landed
+                        // on the glass, the action never ran, and the transcript
+                        // sat still. Every other icon button in this app declares
+                        // its shape for exactly this reason.
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 16)

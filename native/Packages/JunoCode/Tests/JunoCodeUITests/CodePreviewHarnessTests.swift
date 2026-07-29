@@ -361,6 +361,7 @@ final class CodePreviewHarnessTests: XCTestCase {
                     payloadKinds.insert("testRunCompleted")
                     sawPassingTests = sawPassingTests || run.passed
                     sawFailingTests = sawFailingTests || !run.passed
+                case .goalUpdated: payloadKinds.insert("goalUpdated")
                 case .statusChanged: payloadKinds.insert("statusChanged")
                 case let .errorOccurred(error):
                     payloadKinds.insert("errorOccurred")

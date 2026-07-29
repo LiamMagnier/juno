@@ -55,6 +55,10 @@ struct DesktopChatWorkspace: View {
     /// window, and a reviewer looking at sixteen files was looking at two.
     /// Production passes nil and the restored destination wins as before.
     var initialDestination: DesktopDestination?
+    /// A one-shot request made from the Code sidebar to start an ordinary Chat
+    /// conversation that is not scoped to any local repository.
+    var unscopedChatRequestID: UUID?
+    let consumeUnscopedChatRequest: () -> Void
     @SceneStorage("juno.desktop.destination") private var storedDestination =
         DesktopDestination.chat.rawValue
     /// Holds the launch override until the reader navigates somewhere themselves.
@@ -70,6 +74,14 @@ struct DesktopChatWorkspace: View {
     @State private var hasSeededOverride = false
     @SceneStorage("juno.desktop.columns") private var storedColumnVisibility = ""
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// Set by Projects immediately before it opens a new draft. The composer
+    /// consumes it once so an ordinary toolbar New Chat never inherits an old
+    /// project's scope.
+    @State private var draftProjectID: String?
+    /// Optional text entered on a project overview before opening Chat. The
+    /// composer consumes this once, so the project page never presents a fake
+    /// prompt field.
+    @State private var draftPrompt: String?
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -131,7 +143,9 @@ struct DesktopChatWorkspace: View {
                 destination: destination,
                 configuration: configuration,
                 session: session,
-                conversationModel: model
+                conversationModel: model,
+                draftProjectID: $draftProjectID,
+                draftPrompt: $draftPrompt
             )
             .junoReadingCanvas()
             .navigationTitle(windowTitle)
@@ -141,6 +155,7 @@ struct DesktopChatWorkspace: View {
         .focusedSceneValue(
             \.junoWorkspaceActions,
             DesktopWorkspaceActions(
+                newItem: beginDraft,
                 newChat: beginDraft,
                 openSearch: { destination.wrappedValue = .search },
                 switchProduct: { product = $0 },
@@ -165,6 +180,10 @@ struct DesktopChatWorkspace: View {
                 overrideDestination = initialDestination
                 model.selectedConversationID = nil
             }
+            consumePendingUnscopedChatRequest()
+        }
+        .onChange(of: unscopedChatRequestID) { _, _ in
+            consumePendingUnscopedChatRequest()
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -173,14 +192,14 @@ struct DesktopChatWorkspace: View {
 
     private var windowTitle: String {
         DesktopNavigationState.windowTitle(
-            destination: DesktopNavigationState.destination(fromStored: storedDestination),
+            destination: currentDestination,
             conversationTitle: model.selectedConversation?.title
         )
     }
 
     /// The subtitle carries provenance, never the model id.
     private var windowSubtitle: String {
-        let current = DesktopNavigationState.destination(fromStored: storedDestination)
+        let current = currentDestination
         guard current == .chat, let conversation = model.selectedConversation else {
             return ""
         }
@@ -235,10 +254,19 @@ struct DesktopChatWorkspace: View {
     }
 
     private func beginDraft() {
+        draftProjectID = nil
+        draftPrompt = nil
         storedDestination = DesktopDestination.chat.rawValue
         model.isDraftingNewConversation = true
         model.selectedConversationID = nil
         configuration.attachmentModel?.clear()
+    }
+
+    private func consumePendingUnscopedChatRequest() {
+        guard unscopedChatRequestID != nil else { return }
+        overrideDestination = nil
+        beginDraft()
+        consumeUnscopedChatRequest()
     }
 }
 
@@ -490,6 +518,8 @@ struct DesktopConversationView: View {
     let profileName: String?
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
+    @Binding var draftProjectID: String?
+    @Binding var draftPrompt: String?
     @State private var voiceSession: DesktopVoiceSession?
 
     var body: some View {
@@ -617,6 +647,8 @@ struct DesktopConversationView: View {
             libraryModel: configuration.libraryModel,
             projectModel: configuration.projectModel,
             connectorModel: configuration.connectorModel,
+            draftProjectID: $draftProjectID,
+            draftPrompt: $draftPrompt,
             openVoiceMode: startVoice
         )
     }
@@ -1554,13 +1586,22 @@ private struct DesktopChatError: View {
     }
 }
 
-private struct DesktopComposer: View {
+struct DesktopComposer: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let attachmentModel: NativeComposerAttachmentModel?
     let libraryModel: NativeLibraryModel?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let connectorModel: NativeConnectorModel?
+    @Binding var draftProjectID: String?
+    @Binding var draftPrompt: String?
     let openVoiceMode: (String) -> Void
+    /// Locks this composer to a project and always starts a new conversation.
+    /// Used by the project overview so it is the same composer as Chat, not a
+    /// prompt-shaped imitation with fewer controls.
+    var fixedProjectID: String? = nil
+    /// Called after the first message is accepted, so an embedded project
+    /// composer can move to the real transcript it just created.
+    var didSendConversation: ((String) -> Void)? = nil
 
     @State private var prompt = ""
     @State private var selectedModelID = ""
@@ -1819,6 +1860,11 @@ private struct DesktopComposer: View {
         }
         .onAppear {
             configureSelection()
+            if let fixedProjectID {
+                selectedProjectID = fixedProjectID
+            }
+            consumeDraftProject()
+            consumeDraftPrompt()
             focused = true
         }
         // Every transient presentation is torn down with the composer.
@@ -1845,14 +1891,41 @@ private struct DesktopComposer: View {
         .onChange(of: model.modelCatalog) { _, _ in configureSelection() }
         .onChange(of: model.selectedConversationID) { _, selected in
             configureSelection()
-            selectedProjectID = selected == nil
-                ? nil : model.selectedConversation?.projectId
+            if let fixedProjectID {
+                selectedProjectID = fixedProjectID
+            } else {
+                selectedProjectID = selected == nil
+                    ? nil : model.selectedConversation?.projectId
+            }
             if selected == nil {
                 selectedConnectors = []
                 canvasEnabled = false
             }
         }
+        .onChange(of: draftProjectID) { _, _ in
+            consumeDraftProject()
+        }
+        .onChange(of: draftPrompt) { _, _ in
+            consumeDraftPrompt()
+        }
         .onChange(of: selectedModelID) { _, _ in configureThinking() }
+    }
+
+    private func consumeDraftProject() {
+        guard model.selectedConversationID == nil, let projectID = draftProjectID else {
+            return
+        }
+        selectedProjectID = projectID
+        draftProjectID = nil
+    }
+
+    private func consumeDraftPrompt() {
+        guard model.selectedConversationID == nil,
+            prompt.isEmpty,
+            let seededPrompt = draftPrompt
+        else { return }
+        prompt = seededPrompt
+        draftPrompt = nil
     }
 
     /// The quiet offer under a long draft: "That's a long one — send it as a
@@ -1964,7 +2037,7 @@ private struct DesktopComposer: View {
                 libraryModel == nil || !(attachmentModel?.hasCapacity ?? false)
             )
 
-            if let projectModel {
+            if fixedProjectID == nil, let projectModel {
                 Menu {
                     selectionMenuButton(
                         title: "No project",
@@ -2046,8 +2119,7 @@ private struct DesktopComposer: View {
                             .offset(x: 1, y: -1)
                     }
                 }
-                .frame(width: 40, height: 44)
-                .contentShape(.rect)
+                .contentShape(.circle)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -2305,13 +2377,13 @@ private struct DesktopComposer: View {
 
         Task {
             let conversationID: String?
-            if let selected = model.selectedConversationID {
+            if fixedProjectID == nil, let selected = model.selectedConversationID {
                 conversationID = selected
             } else {
                 model.isDraftingNewConversation = true
                 conversationID = await model.createConversationResolvingID(
                     model: modelID,
-                    projectID: projectID
+                    projectID: fixedProjectID ?? projectID
                 )
             }
 
@@ -2336,6 +2408,7 @@ private struct DesktopComposer: View {
             Task {
                 await model.generateTitleIfNeeded(conversationID: conversationID)
             }
+            didSendConversation?(conversationID)
         }
     }
 
@@ -2344,8 +2417,8 @@ private struct DesktopComposer: View {
     }
 
     private var selectedProjectName: String? {
-        guard let selectedProjectID else { return nil }
-        return projectModel?.projects.first { $0.id == selectedProjectID }?.name
+        guard let projectID = fixedProjectID ?? selectedProjectID else { return nil }
+        return projectModel?.projects.first { $0.id == projectID }?.name
     }
 
     private func toggleConnector(_ id: String) {

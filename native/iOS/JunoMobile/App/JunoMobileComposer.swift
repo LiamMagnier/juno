@@ -39,7 +39,7 @@ struct JunoMobileComposer: View {
     var connectors: [NativeConnector] = []
     /// Settings › Memory, surfaced in the menu as the web surfaces it.
     var memoryEnabled: Bool = true
-    var setMemoryEnabled: ((Bool) -> Void)?
+    var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     /// Opens the library picker. Nil where the shell has no library model.
     var openLibrary: (() -> Void)?
     /// Which attachment surface is up. Owned by the chat screen, which is also

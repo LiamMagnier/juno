@@ -336,6 +336,31 @@ enum AnthropicRequestBuilder {
                         "is_error": .bool(isError),
                     ])
                 )
+            case let .toolResultWithImages(id, content, isError, images):
+                let resultContent: [JSONValue] = [
+                    .object([
+                        "type": .string("text"),
+                        "text": .string(content),
+                    ]),
+                ] + images.map { image in
+                    .object([
+                        "type": .string("image"),
+                        "source": .object([
+                            "type": .string("base64"),
+                            "media_type": .string(image.mediaType),
+                            "data": .string(image.data.base64EncodedString()),
+                        ]),
+                    ])
+                }
+                append(
+                    role: "user",
+                    block: .object([
+                        "type": .string("tool_result"),
+                        "tool_use_id": .string(id),
+                        "content": .array(resultContent),
+                        "is_error": .bool(isError),
+                    ])
+                )
             }
         }
         flush()
@@ -408,6 +433,26 @@ enum OpenAIChatRequestBuilder {
                     "tool_call_id": .string(id),
                     "content": .string(content),
                 ]))
+            case let .toolResultWithImages(id, content, _, images):
+                messages.append(.object([
+                    "role": .string("tool"),
+                    "tool_call_id": .string(id),
+                    "content": .string(content),
+                ]))
+                if !images.isEmpty {
+                    messages.append(.object([
+                        "role": .string("user"),
+                        "content": .array(images.map { image in
+                            .object([
+                                "type": .string("image_url"),
+                                "image_url": .object([
+                                    "url": .string(image.dataURL),
+                                    "detail": .string(image.detail.rawValue),
+                                ]),
+                            ])
+                        }),
+                    ]))
+                }
             }
         }
 
@@ -474,6 +519,24 @@ enum OpenAIResponsesRequestBuilder {
                     "call_id": .string(id),
                     "output": .string(content),
                 ]))
+            case let .toolResultWithImages(id, content, _, images):
+                input.append(.object([
+                    "type": .string("function_call_output"),
+                    "call_id": .string(id),
+                    "output": .string(content),
+                ]))
+                if !images.isEmpty {
+                    input.append(.object([
+                        "role": .string("user"),
+                        "content": .array(images.map { image in
+                            .object([
+                                "type": .string("input_image"),
+                                "image_url": .string(image.dataURL),
+                                "detail": .string(image.detail.rawValue),
+                            ])
+                        }),
+                    ]))
+                }
             }
         }
 

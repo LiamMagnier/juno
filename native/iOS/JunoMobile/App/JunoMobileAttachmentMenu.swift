@@ -59,7 +59,12 @@ struct JunoMobileComposerActions: View {
     /// Account-level, unlike everything else in Tools — this is the same switch
     /// as Settings › Memory, surfaced where the web surfaces it.
     var memoryEnabled: Bool = true
-    var setMemoryEnabled: ((Bool) -> Void)?
+    /// `@MainActor @Sendable` because it is handed straight to a `Binding`'s
+    /// setter, whose accessors are `@Sendable` in the iOS 26 SDK — a plain
+    /// closure there "may introduce data races" under Swift 6. The toggle is
+    /// driven on the main actor, so stating that is accurate rather than a
+    /// widening.
+    var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     /// The account's connected apps, already filtered to the connected ones.
     var connectors: [NativeConnector] = []
     let setProject: (String?) async -> Void

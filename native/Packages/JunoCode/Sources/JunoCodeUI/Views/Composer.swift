@@ -99,6 +99,10 @@ public struct Composer: View {
     /// Which row the arrow keys are on. Reset every time the query changes, so
     /// the highlight cannot point past the end of a narrowed list.
     @State private var highlightedCommand = 0
+    @State private var highlightedFile = 0
+    @State private var fileResults: [FileEntry] = []
+    @State private var fileResultsQuery: String?
+    @State private var searchingFileQuery: String?
 
     public init(
         controller: SessionController,
@@ -123,6 +127,37 @@ public struct Composer: View {
     private var slashMatches: [CodeSlashCommand] {
         guard let token = slashToken, token.isNamingCommand else { return [] }
         return slashCommands.matches(token.query)
+    }
+
+    /// The trailing `@name` currently being typed, if it is not an email, path
+    /// component or escaped literal.
+    private var fileToken: CodeFileContextToken? {
+        guard !isRunning else { return nil }
+        return CodeFileContextToken(composerText: controller.composerText)
+    }
+
+    private var fileSearchQuery: String? {
+        guard slashMatches.isEmpty, let query = fileToken?.query, !query.isEmpty else {
+            return nil
+        }
+        return query
+    }
+
+    /// Results are tagged with the query that produced them so a fast typist can
+    /// never select a stale row during the debounce between two searches.
+    private var currentFileMatches: [FileEntry] {
+        guard let query = fileToken?.query, fileResultsQuery == query else { return [] }
+        return fileResults
+    }
+
+    private var isCurrentFileSearchRunning: Bool {
+        guard let query = fileToken?.query else { return false }
+        return searchingFileQuery == query
+    }
+
+    private var isFileMenuVisible: Bool {
+        slashMatches.isEmpty
+            && (!currentFileMatches.isEmpty || isCurrentFileSearchRunning)
     }
 
     private var isRunning: Bool { controller.isRunning }
@@ -168,15 +203,34 @@ public struct Composer: View {
             // its own pane of material rather than a shape painted on the
             // composer's. Anchored to the composer's top edge and grown upward,
             // so adding rows never moves the field the reader is typing in.
-            .overlay(alignment: .top) { slashMenu }
+            .overlay(alignment: .top) { suggestionMenu }
+            .onChange(of: slashToken?.query) { _, _ in
+                highlightedCommand = 0
+            }
+            .task(id: fileSearchQuery) {
+                await searchFiles(matching: fileSearchQuery)
+            }
     }
 
     @ViewBuilder
-    private var slashMenu: some View {
+    private var suggestionMenu: some View {
         if !slashMatches.isEmpty {
             SlashCommandMenu(
                 commands: slashMatches,
                 highlighted: min(highlightedCommand, slashMatches.count - 1),
+                choose: apply
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .alignmentGuide(.top) { $0[.bottom] + JunoSpace.snug }
+            .transition(.opacity)
+        } else if isFileMenuVisible {
+            FileContextMenu(
+                entries: currentFileMatches,
+                highlighted: min(
+                    highlightedFile,
+                    max(currentFileMatches.count - 1, 0)
+                ),
+                isSearching: isCurrentFileSearchRunning,
                 choose: apply
             )
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -283,11 +337,23 @@ public struct Composer: View {
     /// optional closure from `nil : someMethod` inside a large ViewBuilder is
     /// what made the type-checker give up on this body entirely.
     private var highlightHandler: ((Int) -> Void)? {
-        slashMatches.isEmpty ? nil : { delta in moveHighlight(delta) }
+        if !slashMatches.isEmpty {
+            return { delta in moveCommandHighlight(delta) }
+        }
+        if isFileMenuVisible, !currentFileMatches.isEmpty {
+            return { delta in moveFileHighlight(delta) }
+        }
+        return nil
     }
 
     private var dismissHandler: (() -> Void)? {
-        slashMatches.isEmpty ? nil : { dismissSlashMenu() }
+        if !slashMatches.isEmpty {
+            return { dismissSlashMenu() }
+        }
+        if isFileMenuVisible {
+            return { dismissFileMenu() }
+        }
+        return nil
     }
 
     /// Return in the field. While the menu is open it runs the highlighted
@@ -299,14 +365,29 @@ public struct Composer: View {
             apply(slashMatches[index])
             return
         }
+        if !currentFileMatches.isEmpty {
+            let index = min(highlightedFile, currentFileMatches.count - 1)
+            apply(currentFileMatches[index])
+            return
+        }
+        // A search in flight owns Return just like the synchronous slash menu
+        // does. This avoids sending a partial `@name` a few milliseconds before
+        // its results arrive.
+        if isCurrentFileSearchRunning { return }
         send()
     }
 
-    private func moveHighlight(_ delta: Int) {
+    private func moveCommandHighlight(_ delta: Int) {
         guard !slashMatches.isEmpty else { return }
         let count = slashMatches.count
         // Wraps, so holding ↓ at the end returns to the top rather than sticking.
         highlightedCommand = ((highlightedCommand + delta) % count + count) % count
+    }
+
+    private func moveFileHighlight(_ delta: Int) {
+        guard !currentFileMatches.isEmpty else { return }
+        let count = currentFileMatches.count
+        highlightedFile = ((highlightedFile + delta) % count + count) % count
     }
 
     /// Closes the menu without losing what was typed.
@@ -317,6 +398,12 @@ public struct Composer: View {
     private func dismissSlashMenu() {
         guard let token = slashToken, token.isNamingCommand else { return }
         controller.composerText += " "
+    }
+
+    private func dismissFileMenu() {
+        guard fileToken != nil else { return }
+        controller.composerText += " "
+        highlightedFile = 0
     }
 
     /// Replace the typed token with the command's prompt.
@@ -336,6 +423,49 @@ public struct Composer: View {
         {
             Task { await controller.setBehavior(behavior) }
         }
+        focus?.wrappedValue = true
+    }
+
+    // MARK: - File context
+
+    private func searchFiles(matching query: String?) async {
+        highlightedFile = 0
+        fileResults = []
+        fileResultsQuery = nil
+        searchingFileQuery = query
+
+        guard let query else {
+            searchingFileQuery = nil
+            return
+        }
+
+        // The index walks the workspace. Debouncing keeps rapid typing from
+        // starting one filesystem traversal per keystroke, and `.task(id:)`
+        // cancels the superseded search automatically.
+        try? await Task.sleep(for: .milliseconds(140))
+        guard !Task.isCancelled else { return }
+
+        let results = await controller.findFiles(nameContains: query, limit: 24)
+        guard !Task.isCancelled else { return }
+
+        fileResults = CodeFileContextSearch.ranked(results, query: query)
+        fileResultsQuery = query
+        searchingFileQuery = nil
+    }
+
+    private func apply(_ entry: FileEntry) {
+        guard let token = fileToken else { return }
+        controller.composerText = token.replacing(
+            in: controller.composerText,
+            withPath: entry.path.value
+        )
+        if !entry.isDirectory {
+            controller.registerComposerFileReference(entry.path)
+        }
+        highlightedFile = 0
+        fileResults = []
+        fileResultsQuery = nil
+        searchingFileQuery = nil
         focus?.wrappedValue = true
     }
 }

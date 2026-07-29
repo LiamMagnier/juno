@@ -89,6 +89,24 @@ final class BackendCodeModelClientTests: XCTestCase {
         )
     }
 
+    private func imageToolMessages() -> [ModelMessage] {
+        [
+            .toolCall(id: "capture-1", name: "computer_screenshot", input: [:]),
+            .toolResultWithImages(
+                id: "capture-1",
+                content: "Screenshot captured.",
+                isError: false,
+                images: [
+                    ModelImage(
+                        mediaType: "image/png",
+                        data: Data([0x01, 0x02, 0x03]),
+                        detail: .high
+                    ),
+                ]
+            ),
+        ]
+    }
+
     private func collect(
         _ client: BackendCodeModelClient,
         _ request: ModelTurnRequest
@@ -220,6 +238,85 @@ final class BackendCodeModelClientTests: XCTestCase {
             messages[2]["content"]?.arrayValue?.first?["type"]?.stringValue,
             "tool_result"
         )
+    }
+
+    func testAnthropicImageToolResultUsesNestedBase64ImageBlock() throws {
+        let json = AnthropicRequestBuilder.body(
+            for: makeRequest(messages: imageToolMessages()),
+            providerModelID: "claude-sonnet-5",
+            maxTokens: 1_024
+        )
+        let messages = try XCTUnwrap(json["messages"]?.arrayValue)
+        XCTAssertEqual(messages.count, 2)
+        let toolResult = try XCTUnwrap(messages[1]["content"]?.arrayValue?.first)
+        XCTAssertEqual(toolResult["type"]?.stringValue, "tool_result")
+        XCTAssertEqual(toolResult["tool_use_id"]?.stringValue, "capture-1")
+
+        let content = try XCTUnwrap(toolResult["content"]?.arrayValue)
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[0]["type"]?.stringValue, "text")
+        XCTAssertEqual(content[0]["text"]?.stringValue, "Screenshot captured.")
+        XCTAssertFalse(content[0]["text"]?.stringValue?.contains("data:") == true)
+
+        XCTAssertEqual(content[1]["type"]?.stringValue, "image")
+        let source = try XCTUnwrap(content[1]["source"])
+        XCTAssertEqual(source["type"]?.stringValue, "base64")
+        XCTAssertEqual(source["media_type"]?.stringValue, "image/png")
+        XCTAssertEqual(source["data"]?.stringValue, "AQID")
+        XCTAssertFalse(source["data"]?.stringValue?.contains("data:") == true)
+    }
+
+    func testOpenAIChatImageToolResultKeepsDataURLOutOfToolText() throws {
+        let json = OpenAIChatRequestBuilder.body(
+            for: makeRequest(
+                messages: imageToolMessages(),
+                modelID: "openai:gpt-5.6-sol"
+            ),
+            providerModelID: "gpt-5.6-sol",
+            providerID: "openai",
+            maxTokens: 1_024
+        )
+        let messages = try XCTUnwrap(json["messages"]?.arrayValue)
+        XCTAssertEqual(messages.count, 4)
+
+        let toolResult = messages[2]
+        XCTAssertEqual(toolResult["role"]?.stringValue, "tool")
+        XCTAssertEqual(toolResult["tool_call_id"]?.stringValue, "capture-1")
+        XCTAssertEqual(toolResult["content"]?.stringValue, "Screenshot captured.")
+        XCTAssertFalse(toolResult["content"]?.stringValue?.contains("data:") == true)
+
+        let imageMessage = messages[3]
+        XCTAssertEqual(imageMessage["role"]?.stringValue, "user")
+        let image = try XCTUnwrap(imageMessage["content"]?.arrayValue?.first)
+        XCTAssertEqual(image["type"]?.stringValue, "image_url")
+        XCTAssertEqual(image["image_url"]?["url"]?.stringValue, "data:image/png;base64,AQID")
+        XCTAssertEqual(image["image_url"]?["detail"]?.stringValue, "high")
+    }
+
+    func testOpenAIResponsesImageToolResultKeepsDataURLOutOfFunctionOutput() throws {
+        let json = OpenAIResponsesRequestBuilder.body(
+            for: makeRequest(
+                messages: imageToolMessages(),
+                modelID: "openai:gpt-5.3-codex"
+            ),
+            providerModelID: "gpt-5.3-codex",
+            maxTokens: 1_024
+        )
+        let input = try XCTUnwrap(json["input"]?.arrayValue)
+        XCTAssertEqual(input.count, 3)
+
+        let toolResult = input[1]
+        XCTAssertEqual(toolResult["type"]?.stringValue, "function_call_output")
+        XCTAssertEqual(toolResult["call_id"]?.stringValue, "capture-1")
+        XCTAssertEqual(toolResult["output"]?.stringValue, "Screenshot captured.")
+        XCTAssertFalse(toolResult["output"]?.stringValue?.contains("data:") == true)
+
+        let imageMessage = input[2]
+        XCTAssertEqual(imageMessage["role"]?.stringValue, "user")
+        let image = try XCTUnwrap(imageMessage["content"]?.arrayValue?.first)
+        XCTAssertEqual(image["type"]?.stringValue, "input_image")
+        XCTAssertEqual(image["image_url"]?.stringValue, "data:image/png;base64,AQID")
+        XCTAssertEqual(image["detail"]?.stringValue, "high")
     }
 
     func testDroppedStreamWithoutCompletionThrows() async {

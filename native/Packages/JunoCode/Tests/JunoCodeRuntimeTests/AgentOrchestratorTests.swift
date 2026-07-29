@@ -8,6 +8,7 @@ final class ScriptedModelClient: AgentModelClient, @unchecked Sendable {
     enum Step {
         case text(String)
         case toolCalls([(id: String, name: String, input: JSONValue)], text: String)
+        case events([ModelStreamEvent])
         case failure(Error)
         case neverFinishes
     }
@@ -43,6 +44,11 @@ final class ScriptedModelClient: AgentModelClient, @unchecked Sendable {
                 }
                 continuation.yield(.turnCompleted(.toolUse))
                 continuation.finish()
+            case let .events(events):
+                for event in events {
+                    continuation.yield(event)
+                }
+                continuation.finish()
             case let .failure(error):
                 continuation.finish(throwing: error)
             case .neverFinishes:
@@ -50,6 +56,32 @@ final class ScriptedModelClient: AgentModelClient, @unchecked Sendable {
                 continuation.onTermination = { _ in }
             }
         }
+    }
+}
+
+private struct EphemeralImageTool: CodeTool {
+    let name = "capture_test_image"
+    let description = "Capture a deterministic test image."
+    let inputSchema: JSONValue = [
+        "type": "object",
+        "properties": [:],
+        "additionalProperties": false,
+    ]
+
+    func assessRisk(input: JSONValue) -> ActionRisk { .read }
+    func summary(input: JSONValue) -> String { "Capture test image" }
+
+    func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
+        ToolResult(
+            content: "Screenshot captured.",
+            images: [
+                ModelImage(
+                    mediaType: "image/jpeg",
+                    data: Data([0xDE, 0xAD, 0xBE, 0xEF]),
+                    detail: .high
+                ),
+            ]
+        )
     }
 }
 
@@ -336,6 +368,60 @@ final class AgentOrchestratorTests: XCTestCase {
         XCTAssertEqual(final.status, .cancelled)
     }
 
+    func testModelGoalPauseStopsLaterToolCallsInTheSameTurn() async throws {
+        _ = try await store.createGoal(
+            sessionID: session.id,
+            objective: "Pause safely",
+            steps: ["Wait for direction"]
+        )
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [
+                    (
+                        "pause",
+                        "update_goal",
+                        ["action": "set_lifecycle", "lifecycle": "paused"]
+                    ),
+                    (
+                        "write-after-pause",
+                        "write_file",
+                        ["path": "src/after.swift", "content": "// must not exist\n"]
+                    ),
+                ],
+                text: ""
+            ),
+        ])
+        let permissions = PermissionCoordinator(
+            sessionID: session.id,
+            mode: .fullAccess
+        )
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(
+                tools: registry.allTools + [UpdateGoalTool(store: store)]
+            ),
+            permissions: permissions,
+            store: store,
+            configuration: .init(systemPrompt: "sys"),
+            modelID: "test-model",
+            reasoningEffort: .medium
+        )
+
+        try await orchestrator.submit(prompt: "Pause before writing")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.goal?.lifecycle, .paused)
+        XCTAssertEqual(final.status, .cancelled)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: workspaceURL.appendingPathComponent("src/after.swift").path
+            )
+        )
+        XCTAssertEqual(model.receivedRequests.count, 1)
+    }
+
     func testModelFailureRetriesOnceThenFails() async throws {
         let model = ScriptedModelClient(steps: [
             .failure(AgentModelClientError.transport(message: "boom")),
@@ -364,6 +450,145 @@ final class AgentOrchestratorTests: XCTestCase {
         await orchestrator.awaitCompletion()
         let final = try await store.session(id: session.id)
         XCTAssertEqual(final.status, .completed)
+    }
+
+    func testSubmittedPromptIsDurableBeforeModelFinishes() async throws {
+        let model = ScriptedModelClient(steps: [.neverFinishes])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Keep this prompt")
+
+        let persisted = await store.loadConversation(sessionID: session.id)
+        XCTAssertTrue(persisted.contains {
+            if case .user("Keep this prompt") = $0 { return true }
+            return false
+        })
+
+        await orchestrator.stop()
+    }
+
+    func testModelOnlyPromptContextDoesNotPolluteVisibleTranscript() async throws {
+        let model = ScriptedModelClient(steps: [.text("Reviewed.")])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+        let visible = "Review @src/main.swift"
+        let enriched = """
+        \(visible)
+
+        BEGIN EXPLICIT FILE CONTEXT
+        FILE @src/main.swift
+        let value = 1
+        END FILE @src/main.swift
+        END EXPLICIT FILE CONTEXT
+        """
+
+        try await orchestrator.submit(prompt: visible, modelPrompt: enriched)
+        await orchestrator.awaitCompletion()
+
+        let promptEvents = await payloads().compactMap { payload -> String? in
+            guard case let .userPrompt(event) = payload else { return nil }
+            return event.text
+        }
+        XCTAssertEqual(promptEvents.last, visible)
+        guard case let .user(modelPrompt)? = model.receivedRequests.first?.messages.last else {
+            return XCTFail("Expected a model-only user prompt")
+        }
+        XCTAssertEqual(modelPrompt, enriched)
+        XCTAssertTrue(modelPrompt.contains("let value = 1"))
+    }
+
+    func testTerminalFailureRedactsScreenshotBeforeNextRun() async throws {
+        let model = ScriptedModelClient(steps: [
+            .toolCalls([("screen-1", "capture_test_image", [:])], text: ""),
+            .failure(AgentModelClientError.transport(message: "offline")),
+            .failure(AgentModelClientError.transport(message: "still offline")),
+            .text("Recovered."),
+        ])
+        let permissions = PermissionCoordinator(sessionID: session.id, mode: .fullAccess)
+        let orchestrator = AgentOrchestrator(
+            sessionID: session.id,
+            model: model,
+            registry: ToolRegistry(tools: [EphemeralImageTool()]),
+            permissions: permissions,
+            store: store,
+            configuration: AgentOrchestrator.Configuration(systemPrompt: "sys"),
+            modelID: "vision-model",
+            reasoningEffort: .medium
+        )
+
+        try await orchestrator.submit(prompt: "Inspect the screen")
+        await orchestrator.awaitCompletion()
+        let failedSession = try await store.session(id: session.id)
+        XCTAssertEqual(failedSession.status, .failed)
+
+        try await orchestrator.submit(prompt: "Try again")
+        await orchestrator.awaitCompletion()
+
+        let followUp = try XCTUnwrap(model.receivedRequests.last)
+        XCTAssertFalse(followUp.messages.contains {
+            if case .toolResultWithImages = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(followUp.messages.contains {
+            guard case let .toolResult(id, content, isError) = $0 else { return false }
+            return id == "screen-1"
+                && !isError
+                && content.contains("Ephemeral image omitted")
+        })
+    }
+
+    func testMaximumTokenStopIsRecoverableFailure() async throws {
+        let model = ScriptedModelClient(steps: [
+            .events([
+                .textDelta("I started but"),
+                .turnCompleted(.maxTokens),
+            ]),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Do a long task")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .failed)
+        let events = await payloads()
+        XCTAssertTrue(events.contains {
+            guard case let .errorOccurred(event) = $0 else { return false }
+            return event.isRecoverable && event.message.contains("output limit")
+        })
+    }
+
+    func testReasoningDeltasBecomeOneTranscriptSummary() async throws {
+        let model = ScriptedModelClient(steps: [
+            .events([
+                .reasoningSummary("Inspect "),
+                .reasoningSummary("the files."),
+                .textDelta("Done."),
+                .turnCompleted(.endTurn),
+            ]),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Inspect")
+        await orchestrator.awaitCompletion()
+
+        let summaries = await payloads().compactMap { payload -> String? in
+            guard case let .reasoningSummary(event) = payload else { return nil }
+            return event.summary
+        }
+        XCTAssertEqual(summaries, ["Inspect the files."])
+    }
+
+    func testMissingCompletionReasonFailsInsteadOfCompleting() async throws {
+        let model = ScriptedModelClient(steps: [
+            .events([.textDelta("Partial response")]),
+        ])
+        let (orchestrator, _) = makeOrchestrator(model: model)
+
+        try await orchestrator.submit(prompt: "Answer")
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .failed)
     }
 
     func testIterationLimitStopsRunawayLoops() async throws {
@@ -460,11 +685,43 @@ final class AgentOrchestratorTests: XCTestCase {
 
     func testInterruptedSessionMarkedFailedOnRestore() async throws {
         _ = try await store.updateSession(id: session.id) { session in
-            session.status = .running
+            session.status = .waitingForApproval
+            session.hasPendingApproval = true
         }
+        let eventCountBeforeRestore = await store.events(for: session.id).count
+
         let reloaded = CodeSessionStore(directoryURL: storeURL)
         let restored = await reloaded.allSessions().first
         XCTAssertEqual(restored?.status, .failed)
+        XCTAssertEqual(restored?.hasPendingApproval, false)
         XCTAssertEqual(restored?.lastErrorSummary, "Interrupted by app termination.")
+
+        let repairedEvents = await reloaded.events(for: session.id)
+        XCTAssertEqual(repairedEvents.count, eventCountBeforeRestore + 2)
+        XCTAssertEqual(repairedEvents.map(\.sequence), Array(0..<repairedEvents.count))
+        guard repairedEvents.count >= 2 else {
+            return XCTFail("Expected interruption status and error events")
+        }
+        if case let .statusChanged(event) = repairedEvents[repairedEvents.count - 2].payload {
+            XCTAssertEqual(event.status, .failed)
+        } else {
+            XCTFail("Expected failed status event")
+        }
+        if case let .errorOccurred(event) = repairedEvents.last?.payload {
+            XCTAssertEqual(event.message, "Interrupted by app termination.")
+            XCTAssertTrue(event.isRecoverable)
+        } else {
+            XCTFail("Expected recoverable interruption error event")
+        }
+
+        // A second process load proves the repair reached disk and is
+        // idempotent: it remains failed and does not append duplicate events.
+        let reloadedAgain = CodeSessionStore(directoryURL: storeURL)
+        let restoredAgain = await reloadedAgain.allSessions().first
+        XCTAssertEqual(restoredAgain?.status, .failed)
+        XCTAssertEqual(restoredAgain?.hasPendingApproval, false)
+        XCTAssertEqual(restoredAgain?.lastErrorSummary, "Interrupted by app termination.")
+        let eventsAfterSecondReload = await reloadedAgain.events(for: session.id)
+        XCTAssertEqual(eventsAfterSecondReload, repairedEvents)
     }
 }

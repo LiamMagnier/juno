@@ -28,9 +28,10 @@ public struct ToolRegistry: Sendable {
         executor: any CommandExecuting,
         git: any GitServicing,
         tests: any TestRunning,
+        goalStore: CodeSessionStore? = nil,
         additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
-        ToolRegistry(tools: [
+        var tools: [any CodeTool] = [
             ReadFileTool(files: files),
             ListDirectoryTool(index: index),
             FindFilesTool(index: index),
@@ -47,7 +48,12 @@ public struct ToolRegistry: Sendable {
             GitLogTool(git: git),
             GitCommitTool(git: git),
             RunTestsTool(tests: tests),
-        ] + additionalTools)
+        ]
+        if let goalStore {
+            tools.append(UpdateGoalTool(store: goalStore))
+        }
+        tools.append(contentsOf: additionalTools)
+        return ToolRegistry(tools: tools)
     }
 
     public var allTools: [any CodeTool] {

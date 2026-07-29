@@ -64,7 +64,7 @@ public protocol ComputerUseDriving: Sendable {
     func requestAccessibilityPermission() -> ComputerUsePermissionState
     /// The bounds actions may address (the selected display).
     func displayBounds() async throws -> CGRect
-    /// PNG screenshot of the selected display. Ephemeral: callers must not
+    /// Compressed screenshot of the selected display. Ephemeral: callers must not
     /// persist it into sync records or analytics.
     func captureScreen() async throws -> Data
     func perform(_ action: ComputerUseActionKind) async throws
@@ -85,8 +85,9 @@ public extension ComputerUseDriving {
 /// bypass consent, permission checks, rate limits, bounds checks or journaling.
 public protocol ComputerUseCoordinating: Sendable {
     func activate(sessionID: CodeSessionID, userConsented: Bool) async throws
-    func deactivate() async
+    func deactivate(sessionID: CodeSessionID) async
     func emergencyStop() async
+    func displayBounds() async throws -> CGRect
     func perform(
         _ action: ComputerUseActionKind,
         sessionID: CodeSessionID

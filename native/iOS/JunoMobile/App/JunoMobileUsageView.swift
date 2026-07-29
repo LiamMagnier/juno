@@ -28,6 +28,10 @@ struct JunoMobileUsageView: View {
     @State private var breakdown: NativeUsageBreakdown?
     @State private var plan: NativeUsagePlan?
     @State private var loadError: String?
+    /// The server has the plan-meter route but not the breakdown one — explained
+    /// to the reader rather than reported as an error, since nothing is wrong
+    /// from the app's side and no retry could change it.
+    @State private var serverTooOld = false
     @State private var isLoading = false
 
     var body: some View {
@@ -148,19 +152,22 @@ struct JunoMobileUsageView: View {
         isLoading = true
         defer { isLoading = false }
 
-        do {
-            let loaded = try await NativeUsageClient(sender: requestSender)
-                .load(range: range, for: session.profile.id)
-            breakdown = loaded.breakdown
-            plan = loaded.plan
-            loadError = nil
-        } catch {
-            // The stale breakdown is dropped rather than left beside a fresh
-            // error: a number the app can no longer vouch for is the thing a
-            // reader is most likely to quote.
-            breakdown = nil
-            loadError = NativeFailureMessage.presentable(error)
-        }
+        // `load` no longer throws: the two routes it reads fail for genuinely
+        // different reasons, and a server older than the app serves the plan
+        // meters while 404ing the breakdown. Collapsing that into one thrown
+        // error produced a screen saying Juno couldn't load the usage against a
+        // deployment where the limits were readable the whole time.
+        let snapshot = await NativeUsageClient(sender: requestSender)
+            .load(range: range, for: session.profile.id)
+        breakdown = snapshot.breakdown
+        plan = snapshot.plan
+        serverTooOld = snapshot.isServerTooOld
+        // A server that simply predates the breakdown route is explained, not
+        // reported as a failure — there is nothing wrong from the app's side and
+        // nothing a retry could change.
+        loadError = snapshot.isServerTooOld
+            ? nil
+            : snapshot.breakdownFailure?.localizedDescription
     }
 }
 

@@ -53,7 +53,7 @@ struct DesktopProductSwitcher: View {
     /// wants on each side. A minimum rather than a fixed size: the control may
     /// grow for a longer localisation or a larger text size, it may not shrink
     /// below legibility.
-    private static let minimumSegmentWidth: CGFloat = 84
+    private static let minimumSegmentWidth: CGFloat = 68
 
     private var animatedSelection: Binding<DesktopProductMode> {
         Binding(

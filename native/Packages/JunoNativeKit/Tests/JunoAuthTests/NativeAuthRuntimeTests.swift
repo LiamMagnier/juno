@@ -198,7 +198,7 @@ final class NativeAuthRuntimeTests: XCTestCase {
         XCTAssertNotNil(storedAfterSignIn)
 
         let restored = try await runtime.restore()
-        XCTAssertEqual(restored, signedIn)
+        XCTAssertEqual(restored, .verified(signedIn))
         try await runtime.signOut()
         let storedAfterSignOut = try await tokenStore.loadActive()
         XCTAssertNil(storedAfterSignOut)
@@ -527,6 +527,7 @@ final class NativeAuthRuntimeTests: XCTestCase {
                 securityClient: security,
                 generator: PKCEGenerator(random: FixedRandomBytes())
             ),
+            sessionCache: KeychainSessionCacheStore(securityClient: security),
             planner: NativeAuthorizationPlanner(
                 origin: origin,
                 generator: PKCEGenerator(random: FixedRandomBytes())

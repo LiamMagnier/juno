@@ -174,9 +174,17 @@ public final class ReviewModel {
         revertFailures[hunkID] = nil
     }
 
-    public func revertFile(_ path: String, using controller: SessionController) async {
-        await controller.rejectChange(path: path)
-        await reload(path: path, from: controller)
+    @discardableResult
+    public func revertFile(
+        _ path: String,
+        force: Bool = false,
+        using controller: SessionController
+    ) async -> FileRevertResult {
+        let result = await controller.rejectChange(path: path, force: force)
+        if result == .restored {
+            await reload(path: path, from: controller)
+        }
+        return result
     }
 
     // MARK: - File history
@@ -190,13 +198,13 @@ public final class ReviewModel {
         path: String,
         force: Bool,
         using controller: SessionController
-    ) async -> Bool {
-        let restored = await controller.restoreCheckpoint(checkpointID, force: force)
-        if restored {
+    ) async -> FileRevertResult {
+        let result = await controller.restoreCheckpoint(checkpointID, force: force)
+        if result == .restored {
             await reload(path: path, from: controller)
             await loadCheckpoints(for: path, from: controller)
         }
-        return restored
+        return result
     }
 
     // MARK: - Documents

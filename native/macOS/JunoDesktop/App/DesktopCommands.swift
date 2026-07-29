@@ -15,6 +15,7 @@ import SwiftUI
 /// command with no focused window is simply disabled — which is also why every
 /// menu item below is `nil`-guarded rather than unconditionally enabled.
 struct DesktopWorkspaceActions {
+    var newItem: () -> Void
     var newChat: () -> Void
     var openSearch: () -> Void
     var switchProduct: (DesktopProductMode) -> Void
@@ -40,17 +41,35 @@ extension FocusedValues {
 /// settings, toggle the sidebar or find help without a pointer.
 struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoWorkspaceActions) private var actions
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
-            Button("New Chat") {
-                actions?.newChat()
+            if let actions {
+                Button(actions.currentProduct == .code ? "New Code Session" : "New Chat") {
+                    actions.newItem()
+                }
+                .keyboardShortcut("n", modifiers: [.command])
+            } else {
+                // A SwiftUI macOS app may relaunch with no restored windows after
+                // the reader closed its last one. The previous command was then
+                // disabled because there was no focused workspace, leaving the
+                // app alive in the menu bar with no way back to its UI.
+                Button("New Window") {
+                    openWindow(id: JunoDesktopWindow.mainID)
+                }
+                .keyboardShortcut("n", modifiers: [.command])
             }
-            .keyboardShortcut("n", modifiers: [.command])
-            .disabled(actions == nil)
         }
 
         CommandGroup(after: .newItem) {
+            if actions?.currentProduct == .code {
+                Button("New Chat") {
+                    actions?.newChat()
+                }
+                .keyboardShortcut("n", modifiers: [.command, .option])
+                .disabled(actions == nil)
+            }
             Divider()
             Button("Find in Juno…") {
                 actions?.openSearch()

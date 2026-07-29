@@ -186,7 +186,10 @@ struct JunoMobileTasksView: View {
 private struct JunoMobileTaskCard: View {
     let task: NativeScheduledTask
     let busy: Bool
-    let onToggle: (Bool) -> Void
+    /// `@MainActor @Sendable` because it is handed straight to a `Binding`'s
+    /// setter, whose accessors are `@Sendable` in the iOS 26 SDK. The toggle is
+    /// driven on the main actor, so the annotation states what already happens.
+    let onToggle: @MainActor @Sendable (Bool) -> Void
     let onEdit: () -> Void
     let onDelete: () -> Void
     let onOpenResults: () -> Void

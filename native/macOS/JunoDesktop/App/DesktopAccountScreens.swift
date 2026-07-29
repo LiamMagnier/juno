@@ -13,6 +13,8 @@ struct DesktopDestinationView: View {
     let configuration: JunoDesktopConfiguration
     let session: NativeAuthenticatedSession
     @Bindable var conversationModel: NativeConversationModel<SQLiteAccountRepository>
+    @Binding var draftProjectID: String?
+    @Binding var draftPrompt: String?
 
     var body: some View {
         switch destination {
@@ -22,7 +24,9 @@ struct DesktopDestinationView: View {
                 attachmentModel: configuration.attachmentModel,
                 profileName: session.profile.name,
                 configuration: configuration,
-                session: session
+                session: session,
+                draftProjectID: $draftProjectID,
+                draftPrompt: $draftPrompt
             )
         case .search:
             if let model = configuration.searchModel {
@@ -37,7 +41,11 @@ struct DesktopDestinationView: View {
             if let model = configuration.projectModel {
                 DesktopProjectsScreen(
                     model: model,
-                    openConversation: openConversation
+                    conversationModel: conversationModel,
+                    configuration: configuration,
+                    session: session,
+                    openConversation: openConversation,
+                    startConversation: startConversation
                 )
             } else {
                 unavailable("Projects", "The synchronized project store is unavailable.")
@@ -96,8 +104,17 @@ struct DesktopDestinationView: View {
     }
 
     private func openConversation(_ id: String) {
+        draftProjectID = nil
         conversationModel.isDraftingNewConversation = false
         conversationModel.selectedConversationID = id
+        destination = .chat
+    }
+
+    private func startConversation(in projectID: String, prompt: String?) {
+        draftProjectID = projectID
+        draftPrompt = prompt
+        conversationModel.isDraftingNewConversation = true
+        conversationModel.selectedConversationID = nil
         destination = .chat
     }
 

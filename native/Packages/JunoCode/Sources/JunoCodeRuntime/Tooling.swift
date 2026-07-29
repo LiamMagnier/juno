@@ -14,13 +14,22 @@ public struct ToolResult: Sendable {
     /// Bounded text returned to the model.
     public let content: String
     public let isError: Bool
+    /// Ephemeral visual output for the immediately following vision turn.
+    /// The orchestrator bounds it and the session store strips it on write.
+    public let images: [ModelImage]
     /// Structured transcript events produced by this call (file changes,
     /// test outcomes, …) beyond the generic tool events.
     public let sideEffects: [SessionEventPayload]
 
-    public init(content: String, isError: Bool = false, sideEffects: [SessionEventPayload] = []) {
+    public init(
+        content: String,
+        isError: Bool = false,
+        images: [ModelImage] = [],
+        sideEffects: [SessionEventPayload] = []
+    ) {
         self.content = content
         self.isError = isError
+        self.images = images
         self.sideEffects = sideEffects
     }
 }

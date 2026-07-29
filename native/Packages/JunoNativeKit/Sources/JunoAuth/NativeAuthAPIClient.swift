@@ -206,6 +206,42 @@ public struct NativeAuthAPIClient: AuthRefreshClient, Sendable {
         return try issuedTokens(from: decoded, deviceID: DeviceID(deviceSession.id))
     }
 
+    /// Exchanges an email/password pair for device credentials, skipping the
+    /// system-browser hand-off. The server answers with the same envelope as
+    /// `/auth/token`, and rejects every bad attempt identically, so nothing here
+    /// can distinguish a wrong password from an account that does not exist.
+    public func exchangePassword(
+        email: String,
+        password: String,
+        installationID: InstallationID,
+        device: NativeDeviceMetadata
+    ) async throws -> NativeIssuedTokens {
+        let body = PasswordSignInBody(
+            email: email,
+            password: password,
+            installationId: installationID.rawValue,
+            deviceName: device.name,
+            platform: device.platform,
+            appVersion: device.appVersion
+        )
+        let response = try await sendJSON(
+            path: "/api/v1/auth/password",
+            method: .post,
+            body: body
+        )
+        guard (200...299).contains(response.statusCode) else {
+            throw serverError(from: response)
+        }
+        let decoded: NativeTokenResponse = try decode(response.body)
+        guard decoded.tokenType == "Bearer" else {
+            throw NativeAuthAPIError.invalidTokenType
+        }
+        guard let deviceSession = decoded.deviceSession else {
+            throw NativeAuthAPIError.malformedResponse
+        }
+        return try issuedTokens(from: decoded, deviceID: DeviceID(deviceSession.id))
+    }
+
     public func refresh(credential: RefreshCredential) async throws -> RefreshedTokens {
         let response: HTTPResponse
         do {
@@ -435,6 +471,15 @@ private struct TokenExchangeBody: Encodable, Sendable {
     let code: String
     let codeVerifier: String
     let redirectUri: String
+    let installationId: String
+    let deviceName: String
+    let platform: String
+    let appVersion: String
+}
+
+private struct PasswordSignInBody: Encodable, Sendable {
+    let email: String
+    let password: String
     let installationId: String
     let deviceName: String
     let platform: String

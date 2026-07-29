@@ -33,6 +33,8 @@ struct DesktopCodeWorkspace: View {
     let codeModel: NativeCodeModel
     let remoteModel: CodeRemoteBrowserModel
     @Binding var product: DesktopProductMode
+    /// Starts a normal Juno conversation, independent of a repository.
+    let newChat: () -> Void
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
@@ -49,6 +51,7 @@ struct DesktopCodeWorkspace: View {
     @State private var renamingSession: CodeSession?
     @State private var renameText = ""
     @FocusState private var sidebarSearchFocused: Bool
+    @Environment(\.openWindow) private var openWindow
 
     /// `workbenchModel` arrives as a `let`, so there is no `$` projection to hand
     /// to `.searchable`. It is `@Observable`, so reading and writing the property
@@ -66,8 +69,43 @@ struct DesktopCodeWorkspace: View {
     /// window returns the reader to the run they were reading.
     private var selection: Binding<DesktopCodeSidebarItem?> {
         Binding(
-            get: { DesktopCodeNavigationState.decode(storedSelection) },
+            get: {
+                // SceneStorage is intentionally restored for real windows, but
+                // a named DEBUG fixture must win over whatever the last manual
+                // preview selected. Otherwise `--juno-preview-code-session`
+                // intermittently opened a repository draft and the inspector
+                // fixture became impossible to verify.
+                if let previewSessionID {
+                    return .session(previewSessionID)
+                }
+                return DesktopCodeNavigationState.decode(storedSelection)
+            },
             set: { storedSelection = DesktopCodeNavigationState.encode($0) }
+        )
+    }
+
+    private var previewSessionID: CodeSessionID? {
+        #if DEBUG
+        guard CommandLine.arguments.contains("--juno-preview-code-session") else {
+            return nil
+        }
+        return workbenchModel.selectedSessionID ?? workbenchModel.sessions.first?.id
+        #else
+        return nil
+        #endif
+    }
+
+    private var inspectorPresentation: Binding<Bool> {
+        Binding(
+            get: {
+                #if DEBUG
+                if CommandLine.arguments.contains("--juno-preview-inspector") {
+                    return true
+                }
+                #endif
+                return inspectorVisible
+            },
+            set: { inspectorVisible = $0 }
         )
     }
 
@@ -119,13 +157,11 @@ struct DesktopCodeWorkspace: View {
                 workbench: workbenchModel,
                 code: codeModel,
                 remote: remoteModel,
-                product: $product,
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
-                searchFocus: $sidebarSearchFocused,
                 isBootstrapping: isBootstrapping,
                 openRepository: { isChoosingRepository = true },
-                newSession: { start(in: $0, prompt: nil) },
+                newSession: { selection.wrappedValue = .repository($0) },
                 rename: beginRename
             )
             .junoSidebarColumn()
@@ -173,7 +209,7 @@ struct DesktopCodeWorkspace: View {
         // `NavigationSplitView` and `.inspector` cannot coexist and replaced both
         // with a hand-rolled `HStack`. They can coexist; the placement is what
         // matters.
-        .inspector(isPresented: $inspectorVisible) { inspector }
+        .inspector(isPresented: inspectorPresentation) { inspector }
         .focusedSceneValue(\.junoWorkspaceActions, workspaceActions)
         .fileImporter(
             isPresented: $isChoosingRepository,
@@ -282,10 +318,14 @@ struct DesktopCodeWorkspace: View {
     private func draft(_ record: WorkspaceRecord) -> some View {
         DesktopCodeDraftDetail(
             record: record,
-            isStarting: isStartingSession
-        ) { starter in
-            start(in: record.id, prompt: starter)
-        }
+            workbench: workbenchModel,
+            code: codeModel,
+            isStartingLocal: isStartingSession,
+            startLocal: start,
+            openTask: { task in
+                selection.wrappedValue = .task(task.id)
+            }
+        )
     }
 
     // MARK: - The session surface
@@ -541,45 +581,53 @@ struct DesktopCodeWorkspace: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Button { reviewVisible.toggle() } label: {
-                Label(reviewTitle, systemImage: "plusminus.circle")
-            }
-            .keyboardShortcut("r", modifiers: [.command, .option])
-            .disabled(controller == nil)
-            .help(
-                controller == nil
-                    ? "Cloud and device runs report no structured changes, so there is nothing to review."
-                    : "Review the changes this session made (⌥⌘R)"
-            )
-            .accessibilityIdentifier("juno.code.review")
-        }
+            Menu {
+                Button(action: openPreview) {
+                    Label("Open Preview", systemImage: "rectangle.on.rectangle")
+                }
+                .keyboardShortcut("p", modifiers: [.command, .option])
+                .disabled(controller?.context == nil)
+                .accessibilityIdentifier("juno.code.preview")
 
-        ToolbarItem(placement: .primaryAction) {
-            Button { consoleVisible.toggle() } label: {
-                Label("Console", systemImage: "terminal")
-            }
-            .keyboardShortcut("c", modifiers: [.command, .option])
-            .disabled(controller == nil)
-            .help(
-                controller == nil
-                    ? "Cloud and device runs stream no local command output."
-                    : "Show command output and tests (⌥⌘C)"
-            )
-            .accessibilityIdentifier("juno.code.console")
-        }
+                Button { consoleVisible.toggle() } label: {
+                    Label("Console", systemImage: "terminal")
+                }
+                .keyboardShortcut("c", modifiers: [.command, .option])
+                .disabled(controller == nil)
+                .accessibilityIdentifier("juno.code.console")
 
-        ToolbarItem(placement: .primaryAction) {
-            Button(action: toggleComputerUse) {
-                Label(
-                    "Screen control",
-                    systemImage: controller?.computerUseActive == true
-                        ? "display.trianglebadge.exclamationmark"
-                        : "display"
-                )
+                Button { reviewVisible.toggle() } label: {
+                    Label(reviewTitle, systemImage: "plusminus.circle")
+                }
+                .keyboardShortcut("r", modifiers: [.command, .option])
+                .disabled(controller == nil)
+                .accessibilityIdentifier("juno.code.review")
+
+                Button { inspectorVisible.toggle() } label: {
+                    Label("Inspector", systemImage: "sidebar.trailing")
+                }
+                .keyboardShortcut("i", modifiers: [.command, .option])
+                .disabled(controller == nil)
+                .accessibilityIdentifier("juno.code.inspector")
+
+                Divider()
+
+                Button(action: toggleComputerUse) {
+                    Label(
+                        controller?.computerUseActive == true
+                            ? "Stop Screen Control" : "Start Screen Control",
+                        systemImage: controller?.computerUseActive == true
+                            ? "display.trianglebadge.exclamationmark"
+                            : "display"
+                    )
+                }
+                .disabled(!supportsComputerUse)
+                .accessibilityIdentifier("juno.code.computer-use")
+            } label: {
+                Label("Session tools", systemImage: "ellipsis.circle")
             }
-            .disabled(!supportsComputerUse)
-            .help(computerUseHelp)
-            .accessibilityIdentifier("juno.code.computer-use")
+            .help("Preview, review, console, inspector, and screen control")
+            .accessibilityIdentifier("juno.code.session-tools")
         }
 
         ToolbarItem(placement: .primaryAction) {
@@ -590,20 +638,6 @@ struct DesktopCodeWorkspace: View {
             .disabled(!isRunning)
             .help("Stop this run immediately (⌘.)")
             .accessibilityIdentifier("juno.code.stop")
-        }
-
-        ToolbarItem(placement: .primaryAction) {
-            Button { inspectorVisible.toggle() } label: {
-                Label("Inspector", systemImage: "sidebar.trailing")
-            }
-            .keyboardShortcut("i", modifiers: [.command, .option])
-            .disabled(controller == nil)
-            .help(
-                controller == nil
-                    ? "There is nothing to inspect for a cloud or device run."
-                    : "Show changes, activity and repository (⌥⌘I)"
-            )
-            .accessibilityIdentifier("juno.code.inspector")
         }
     }
 
@@ -627,7 +661,9 @@ struct DesktopCodeWorkspace: View {
                     .foregroundStyle(status.tint)
             }
         } else {
-            Text("No session selected").junoCaption()
+            Label("Draft", systemImage: "square.and.pencil")
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("New session draft")
         }
     }
 
@@ -684,7 +720,8 @@ struct DesktopCodeWorkspace: View {
     /// window ever published these actions.
     private var workspaceActions: DesktopWorkspaceActions {
         DesktopWorkspaceActions(
-            newChat: newSession,
+            newItem: newSession,
+            newChat: newChat,
             openSearch: {
                 columnVisibility = .all
                 sidebarSearchFocused = true
@@ -701,32 +738,50 @@ struct DesktopCodeWorkspace: View {
             isChoosingRepository = true
             return
         }
-        start(in: record.id, prompt: nil)
+        // "New" means a new draft, as it does in Chat. Creating a persisted
+        // session before the reader has written anything filled Projects and
+        // Recents with abandoned "New session" rows and made ⌘N destructive to
+        // the reader's place in the current transcript.
+        reviewVisible = false
+        consoleVisible = false
+        selection.wrappedValue = .repository(record.id)
     }
 
-    /// Creates a real session and selects it. A starter prompt lands in the
-    /// composer rather than being sent, so the reader edits it in the place they
-    /// will edit every later prompt.
-    private func start(in workspaceID: WorkspaceID, prompt: String?) {
+    private func openPreview() {
+        guard let root = controller?.context?.access.rootURL else { return }
+        openWindow(
+            id: CodePreviewScene.windowID,
+            value: CodePreviewTarget(workspaceRoot: root)
+        )
+    }
+
+    /// Creates and starts the local run described by the launch composer.
+    ///
+    /// The old path hard-coded Code / Ask Before Changes / first model and made
+    /// the reader click a second composer to actually start. One draft value now
+    /// crosses the boundary intact, and its first send is the first transcript
+    /// turn—matching Juno Chat, Codex, and Claude Code.
+    private func start(_ draft: DesktopLocalCodeDraft) {
         guard !isStartingSession else { return }
         isStartingSession = true
         Task {
             defer { isStartingSession = false }
-            let configuration = AgentConfiguration(
-                modelID: workbenchModel.availableModels.first?.modelID ?? "",
-                behavior: .code,
-                permissionMode: .askBeforeChanges,
-                location: .local
-            )
             guard let session = await workbenchModel.createSession(
-                workspaceID: workspaceID,
-                configuration: configuration
+                workspaceID: draft.workspaceID,
+                configuration: draft.configuration
             ) else { return }
+            await workbenchModel.renameSession(
+                id: session.id,
+                title: DesktopLocalCodeDraft.title(from: draft.prompt)
+            )
             reviewVisible = false
+            consoleVisible = false
             selection.wrappedValue = .session(session.id)
-            if let prompt, let created = await workbenchModel.controller(for: session.id) {
-                created.composerText = prompt
+            guard let created = await workbenchModel.controller(for: session.id) else {
+                return
             }
+            created.composerText = draft.prompt
+            await created.send()
         }
     }
 
@@ -806,10 +861,7 @@ struct DesktopCodeWorkspace: View {
         if CommandLine.arguments.contains("--juno-preview-inspector") {
             inspectorVisible = true
         }
-        if CommandLine.arguments.contains("--juno-preview-code-session"),
-            let first = workbenchModel.selectedSessionID ?? workbenchModel.sessions.first?.id
-        {
-            storedSelection = DesktopCodeNavigationState.encode(.session(first))
+        if previewSessionID != nil {
             return
         }
         #endif

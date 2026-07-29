@@ -2,11 +2,12 @@ import XCTest
 
 /// The jump-to-latest control.
 ///
-/// It is a `ScrollViewProxy.scrollTo` inside an overlay on the transcript, and
-/// every part of that is invisible to a unit test: whether the tap reaches the
-/// button at all, and whether the scroll it asks for actually happens. The proof
-/// used here is the control's own visibility rule — it exists only while the
-/// reader is away from the bottom, so a working tap makes it disappear.
+/// The proof asserted here is the **scroll**, not the button: the last answer's
+/// action row lives at the very bottom of the transcript, so it is on screen
+/// only when the transcript really is at the bottom. An earlier version of this
+/// test watched the button disappear instead, and that is exactly the assertion
+/// a control which hides itself optimistically can pass without scrolling
+/// anything.
 final class JunoMobileScrollToLatestUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -29,6 +30,13 @@ final class JunoMobileScrollToLatestUITests: XCTestCase {
         let transcript = app.scrollViews["juno.mobile.conversation-detail"].firstMatch
         XCTAssertTrue(transcript.waitForExistence(timeout: 20), app.debugDescription)
 
+        // The bottom-most thing in the transcript: the last answer's action row.
+        let footer = app.buttons["juno.mobile.message-copy"].firstMatch
+        XCTAssertTrue(
+            footer.waitForExistence(timeout: 10),
+            "No action row to scroll back to. On screen:\n\(app.debugDescription)"
+        )
+
         let jump = app.descendants(matching: .any)["juno.mobile.chat-scroll-bottom"].firstMatch
         for _ in 0..<8 where !jump.exists {
             transcript.swipeDown()
@@ -38,19 +46,30 @@ final class JunoMobileScrollToLatestUITests: XCTestCase {
             "Jump-to-latest never appeared. On screen:\n\(app.debugDescription)"
         )
         XCTAssertTrue(jump.isHittable, "Jump-to-latest is on screen but not tappable")
+        // Scrolled away, so the row at the bottom is off screen. If this fails the
+        // test never left the bottom and proves nothing.
+        XCTAssertFalse(footer.isHittable, "Expected to be scrolled away from the bottom")
 
+        add(screenshot(app, named: "before-tap"))
         jump.tap()
 
-        // Back at the bottom, the control's own rule removes it. Still on screen
-        // after the animation means the tap did nothing.
-        let gone = expectation(
-            for: NSPredicate(format: "exists == false"),
-            evaluatedWith: jump
+        let back = expectation(
+            for: NSPredicate(format: "isHittable == true"),
+            evaluatedWith: footer
         )
+        let outcome = XCTWaiter.wait(for: [back], timeout: 6)
+        add(screenshot(app, named: "after-tap"))
         XCTAssertEqual(
-            XCTWaiter.wait(for: [gone], timeout: 6),
+            outcome,
             .completed,
             "The transcript did not scroll to the bottom. On screen:\n\(app.debugDescription)"
         )
+    }
+
+    private func screenshot(_ app: XCUIApplication, named name: String) -> XCTAttachment {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        return attachment
     }
 }

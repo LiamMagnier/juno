@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 /// coordinator's consent and safety envelope.
 public struct ComputerUseSnapshot: Sendable {
     public let isActive: Bool
+    public let activeSessionID: CodeSessionID?
     public let screenCapturePermission: ComputerUsePermissionState
     public let accessibilityPermission: ComputerUsePermissionState
     public let displayBounds: CGRect?
@@ -18,12 +19,14 @@ public struct ComputerUseSnapshot: Sendable {
 
     public init(
         isActive: Bool,
+        activeSessionID: CodeSessionID?,
         screenCapturePermission: ComputerUsePermissionState,
         accessibilityPermission: ComputerUsePermissionState,
         displayBounds: CGRect?,
         journal: [ComputerUseJournalEntry]
     ) {
         self.isActive = isActive
+        self.activeSessionID = activeSessionID
         self.screenCapturePermission = screenCapturePermission
         self.accessibilityPermission = accessibilityPermission
         self.displayBounds = displayBounds
@@ -50,6 +53,17 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
     private var state: State = .idle
     private var journal: [ComputerUseJournalEntry] = []
     private var lastActionAt: Date?
+    /// Changes whenever an active grant is revoked or replaced.
+    ///
+    /// Actor isolation alone is not a cancellation boundary: `perform` yields
+    /// while it asks the driver for bounds and screenshots, so a deactivate or
+    /// emergency stop can run while that action is suspended. Capturing this
+    /// generation lets the resumed action prove that it still owns the same
+    /// consent grant before it reaches input injection.
+    private var activationGeneration: UInt64 = 0
+    /// Only one driver operation may be in flight. The token, rather than a
+    /// Boolean, prevents an older action's `defer` from clearing a newer one.
+    private var inFlightActionID: UUID?
     private let now: @Sendable () -> Date
 
     public init(
@@ -69,12 +83,18 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
     public func snapshot() async -> ComputerUseSnapshot {
         let bounds = try? await driver.displayBounds()
         let isActive: Bool
+        let activeSessionID: CodeSessionID?
         switch state {
-        case .idle: isActive = false
-        case .active: isActive = true
+        case .idle:
+            isActive = false
+            activeSessionID = nil
+        case .active(let sessionID):
+            isActive = true
+            activeSessionID = sessionID
         }
         return ComputerUseSnapshot(
             isActive: isActive,
+            activeSessionID: activeSessionID,
             screenCapturePermission: driver.screenCapturePermission(),
             accessibilityPermission: driver.accessibilityPermission(),
             displayBounds: bounds,
@@ -100,17 +120,28 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
         guard driver.requestAccessibilityPermission() == .granted else {
             throw ComputerUseError.accessibilityPermissionMissing
         }
+        if case .idle = state {
+            activationGeneration &+= 1
+        }
         state = .active(sessionID: sessionID)
     }
 
-    public func deactivate() {
+    public func deactivate(sessionID: CodeSessionID) {
+        guard case .active(sessionID) = state else { return }
         state = .idle
+        activationGeneration &+= 1
+        lastActionAt = nil
     }
 
     /// The kill switch: immediate, unconditional, and always available.
     public func emergencyStop() {
         state = .idle
+        activationGeneration &+= 1
         lastActionAt = nil
+    }
+
+    public func displayBounds() async throws -> CGRect {
+        try await driver.displayBounds()
     }
 
     // MARK: - Actions
@@ -129,6 +160,11 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
         guard activeSession == sessionID else {
             throw ComputerUseError.activeForAnotherSession
         }
+        guard inFlightActionID == nil else {
+            throw ComputerUseError.rateLimited(
+                minimumIntervalSeconds: Self.minimumActionIntervalSeconds
+            )
+        }
         let currentTime = now()
         if let last = lastActionAt,
            currentTime.timeIntervalSince(last) < Self.minimumActionIntervalSeconds
@@ -137,17 +173,44 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
                 minimumIntervalSeconds: Self.minimumActionIntervalSeconds
             )
         }
-        try await validateCoordinates(of: action)
+        let generation = activationGeneration
+        let actionID = UUID()
+        inFlightActionID = actionID
+        defer {
+            if inFlightActionID == actionID {
+                inFlightActionID = nil
+            }
+        }
+
+        do {
+            try await validateCoordinates(of: action)
+            try requireActiveGrant(sessionID: sessionID, generation: generation)
+        } catch {
+            record(
+                action,
+                sessionID: sessionID,
+                succeeded: false,
+                note: String(describing: error)
+            )
+            throw error
+        }
         lastActionAt = currentTime
 
         do {
             let before = try await driver.captureScreen()
+            try requireActiveGrant(sessionID: sessionID, generation: generation)
             if case .screenshot = action {
                 record(action, sessionID: sessionID, succeeded: true, note: nil)
                 return (before, before)
             }
+            // This is the final suspension boundary before input injection. A
+            // stop that ran during coordinate validation or capture invalidates
+            // the generation and cannot fall through to the driver.
+            try requireActiveGrant(sessionID: sessionID, generation: generation)
             try await driver.perform(action)
+            try requireActiveGrant(sessionID: sessionID, generation: generation)
             let after = try await driver.captureScreen()
+            try requireActiveGrant(sessionID: sessionID, generation: generation)
             record(action, sessionID: sessionID, succeeded: true, note: nil)
             return (before, after)
         } catch {
@@ -162,6 +225,21 @@ public actor ComputerUseCoordinator: ComputerUseCoordinating {
     }
 
     // MARK: - Helpers
+
+    private func requireActiveGrant(
+        sessionID: CodeSessionID,
+        generation: UInt64
+    ) throws {
+        guard generation == activationGeneration else {
+            throw ComputerUseError.notActive
+        }
+        guard case let .active(activeSession) = state else {
+            throw ComputerUseError.notActive
+        }
+        guard activeSession == sessionID else {
+            throw ComputerUseError.activeForAnotherSession
+        }
+    }
 
     private func validateCoordinates(of action: ComputerUseActionKind) async throws {
         let point: (Double, Double)?
@@ -245,8 +323,13 @@ public struct SystemComputerUseDriver: ComputerUseDriving {
         }
         let filter = SCContentFilter(display: display, excludingWindows: [])
         let configuration = SCStreamConfiguration()
-        configuration.width = display.width
-        configuration.height = display.height
+        // Capture in the same logical-point coordinate space CGEvent uses.
+        // Using SCDisplay's physical pixel dimensions on Retina displays made
+        // model-selected screenshot coordinates land at half their intended
+        // location.
+        let actionBounds = CGDisplayBounds(display.displayID)
+        configuration.width = max(1, Int(actionBounds.width.rounded()))
+        configuration.height = max(1, Int(actionBounds.height.rounded()))
         configuration.showsCursor = true
         configuration.capturesAudio = false
 
@@ -257,13 +340,19 @@ public struct SystemComputerUseDriver: ComputerUseDriving {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
             data,
-            UTType.png.identifier as CFString,
+            UTType.jpeg.identifier as CFString,
             1,
             nil
         ) else {
             throw ComputerUseError.driverUnavailable(reason: "Could not encode the screen image.")
         }
-        CGImageDestinationAddImage(destination, image, nil)
+        CGImageDestinationAddImage(
+            destination,
+            image,
+            [
+                kCGImageDestinationLossyCompressionQuality: 0.82,
+            ] as CFDictionary
+        )
         guard CGImageDestinationFinalize(destination) else {
             throw ComputerUseError.driverUnavailable(reason: "Could not finish the screen image.")
         }

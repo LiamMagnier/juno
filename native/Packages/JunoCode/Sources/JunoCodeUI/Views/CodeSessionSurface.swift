@@ -65,6 +65,7 @@ public struct CodeSessionCanvas: View {
         Color.clear
             .overlay {
                 content
+                    .safeAreaInset(edge: .top, spacing: 0) { goal }
                     // Order reads bottom-up: the composer is applied last so it
                     // ends up outermost and closest to the window edge, with the
                     // approval card immediately above it and the console above
@@ -83,6 +84,14 @@ public struct CodeSessionCanvas: View {
             // on the next session, which is the same contract every other agent
             // that reads these files offers.
             .task(id: controller.sessionID) { await loadSlashCommands() }
+    }
+
+    @ViewBuilder
+    private var goal: some View {
+        if controller.session.goal != nil {
+            GoalBar(controller: controller)
+                .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     private func loadSlashCommands() async {

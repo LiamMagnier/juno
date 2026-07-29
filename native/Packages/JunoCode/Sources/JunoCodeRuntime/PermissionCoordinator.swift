@@ -16,9 +16,15 @@ public enum AuthorizationOutcome: Equatable, Sendable {
 public actor PermissionCoordinator {
     public static let approvalTimeToLiveSeconds: Double = 15 * 60
 
+    private enum PendingResolution: Sendable {
+        case decided(ApprovalDecision)
+        case revoked(reason: String)
+    }
+
     private let sessionID: CodeSessionID
     private var mode: PermissionMode
-    private var pending: [String: CheckedContinuation<ApprovalDecision, Never>] = [:]
+    private var authorityRevision: UInt64 = 0
+    private var pending: [String: CheckedContinuation<PendingResolution, Never>] = [:]
     private var pendingRequests: [String: ApprovalRequest] = [:]
     private var observers: [UUID: @Sendable (ApprovalUpdate) -> Void] = [:]
 
@@ -35,7 +41,18 @@ public actor PermissionCoordinator {
     public var permissionMode: PermissionMode { mode }
 
     public func setMode(_ newMode: PermissionMode) {
+        let previousMode = mode
         mode = newMode
+        guard newMode.authorityRank < previousMode.authorityRank else { return }
+
+        // An approval is a decision inside the authority envelope that existed
+        // when it was requested. Lowering that envelope revokes every suspended
+        // decision, even when the action would still be approval-gated in the
+        // new mode (critical actions, for example). This also closes the race in
+        // which an approval click and a Code → Ask/Plan transition arrive
+        // together: the resumed authorization observes the changed revision.
+        authorityRevision &+= 1
+        denyAll(reason: "The permission mode changed before the action ran.")
     }
 
     public var pendingApprovals: [ApprovalRequest] {
@@ -82,13 +99,25 @@ public actor PermissionCoordinator {
             )
             pendingRequests[request.id] = request
             notify(.requested(request))
+            let requestAuthorityRevision = authorityRevision
 
-            let decision = await withCheckedContinuation { continuation in
+            let resolution = await withCheckedContinuation { continuation in
                 pending[request.id] = continuation
             }
 
-            guard decision == .approved else {
+            switch resolution {
+            case let .revoked(reason):
+                return .denied(reason: reason)
+            case .decided(.denied):
                 return .denied(reason: "The user declined this action.")
+            case .decided(.approved):
+                break
+            }
+            guard requestAuthorityRevision == authorityRevision else {
+                return .denied(reason: "The permission mode changed before the action ran.")
+            }
+            if case let .deny(reason) = PermissionPolicy.ruling(mode: mode, risk: risk) {
+                return .denied(reason: reason)
             }
             guard request.authorizes(digest: actionDigest, at: Date()) else {
                 return .denied(reason: "The approval expired before the action ran.")
@@ -99,18 +128,34 @@ public actor PermissionCoordinator {
 
     /// Resolves one pending approval. Unknown ids are ignored (idempotent).
     public func resolve(approvalID: String, decision: ApprovalDecision) {
+        resolve(
+            approvalID: approvalID,
+            resolution: .decided(decision),
+            observerDecision: decision
+        )
+    }
+
+    private func resolve(
+        approvalID: String,
+        resolution: PendingResolution,
+        observerDecision: ApprovalDecision
+    ) {
         guard let continuation = pending.removeValue(forKey: approvalID) else { return }
         pendingRequests.removeValue(forKey: approvalID)
-        notify(.resolved(id: approvalID, decision: decision))
-        continuation.resume(returning: decision)
+        notify(.resolved(id: approvalID, decision: observerDecision))
+        continuation.resume(returning: resolution)
     }
 
     /// Denies every pending approval (session stop, cancellation, expiry
     /// sweep, or app termination). Approvals always fail closed.
-    public func denyAll(reason _: String = "Cancelled") {
+    public func denyAll(reason: String = "Cancelled") {
         let ids = Array(pending.keys)
         for id in ids {
-            resolve(approvalID: id, decision: .denied)
+            resolve(
+                approvalID: id,
+                resolution: .revoked(reason: reason),
+                observerDecision: .denied
+            )
         }
     }
 
@@ -118,13 +163,28 @@ public actor PermissionCoordinator {
     public func sweepExpired(now: Date = Date()) {
         let expired = pendingRequests.values.filter { $0.expiresAt <= now }
         for request in expired {
-            resolve(approvalID: request.id, decision: .denied)
+            resolve(
+                approvalID: request.id,
+                resolution: .revoked(reason: "The approval expired before the action ran."),
+                observerDecision: .denied
+            )
         }
     }
 
     private func notify(_ update: ApprovalUpdate) {
         for observer in observers.values {
             observer(update)
+        }
+    }
+}
+
+private extension PermissionMode {
+    var authorityRank: Int {
+        switch self {
+        case .readOnly: 0
+        case .askBeforeChanges: 1
+        case .workspaceWrite: 2
+        case .fullAccess: 3
         }
     }
 }

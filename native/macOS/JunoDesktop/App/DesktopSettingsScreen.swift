@@ -422,17 +422,28 @@ private struct DesktopSettingsToggle: View {
 /// The patch is only sent when the value actually changes: a `Picker` writes its
 /// selection on every layout pass in some styles, and without this guard the
 /// outbox filled with no-op mutations.
-private func junoSettingsBinding<Value: Equatable>(
+/// Every piece this captures is `Sendable`, because `Binding`'s accessors are
+/// `@Sendable` in the macOS 26 SDK. Without the constraints the four captures —
+/// the key path, the metatype, and the two closures — are each rejected under
+/// Swift 6. They read as warnings on some toolchains and as errors on the one CI
+/// builds with, which is how this reached `main` looking clean.
+private func junoSettingsBinding<Value: Equatable & Sendable>(
     _ settings: NativeAccountSettings,
-    _ keyPath: KeyPath<NativeAccountSettings, Value>,
-    update: @escaping (NativeSettingsPatch) -> Void,
-    patch: @escaping (Value) -> NativeSettingsPatch
+    _ keyPath: KeyPath<NativeAccountSettings, Value> & Sendable,
+    update: @escaping @MainActor @Sendable (NativeSettingsPatch) -> Void,
+    patch: @escaping @Sendable (Value) -> NativeSettingsPatch
 ) -> Binding<Value> {
     Binding(
         get: { settings[keyPath: keyPath] },
         set: { value in
             guard value != settings[keyPath: keyPath] else { return }
-            update(patch(value))
+            // SwiftUI drives a `Binding`'s setter on the main actor, but the
+            // accessor itself is non-isolated `@Sendable` in the macOS 26 SDK,
+            // so the isolation has to be re-stated rather than inferred.
+            // `assumeIsolated` records that invariant instead of hiding it in a
+            // `Task`, which would also make the write land a turn late — long
+            // enough for a `Picker` to read back its old value and flicker.
+            MainActor.assumeIsolated { update(patch(value)) }
         }
     )
 }
@@ -501,7 +512,7 @@ private struct DesktopSettingsGeneralPane: View {
     let disabled: Bool
     let unavailableMessage: String?
     let retry: () -> Void
-    let update: (NativeSettingsPatch) -> Void
+    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
 
     @State private var instructionsDraft = ""
     /// What the field was last handed by the account record. Compared against the
@@ -770,7 +781,7 @@ private struct DesktopSettingsAppearancePane: View {
     let disabled: Bool
     let unavailableMessage: String?
     let retry: () -> Void
-    let update: (NativeSettingsPatch) -> Void
+    let update: @MainActor @Sendable (NativeSettingsPatch) -> Void
 
     var body: some View {
         DesktopSettingsPane {

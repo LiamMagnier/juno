@@ -124,7 +124,7 @@ public struct GitCommitTool: CodeTool {
 
     public let name = "git_commit"
     public let description =
-        "Stage the given paths (or all changes when omitted) and create a commit with the message."
+        "Stage the given paths (or all changes when omitted) and create a commit with the message. Commit hooks may execute and always require confirmation."
     public var inputSchema: JSONValue {
         [
             "type": "object",
@@ -136,7 +136,9 @@ public struct GitCommitTool: CodeTool {
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .execute }
+    /// A commit can invoke repository-provided hooks. It therefore stays
+    /// approval-gated even when the session otherwise allows commands.
+    public func assessRisk(input: JSONValue) -> ActionRisk { .critical }
 
     public func summary(input: JSONValue) -> String {
         "Commit: \(input["message"]?.stringValue ?? "?")"

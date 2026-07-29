@@ -43,7 +43,6 @@ public struct CommandClassifier: Sendable {
 
         var worst = ActionRisk.execute
         var worstReason = "Command execution."
-        var sawRedirect = false
 
         for segment in Self.segments(from: tokens) {
             switch Self.classifySegment(segment) {
@@ -55,13 +54,6 @@ public struct CommandClassifier: Sendable {
                     worstReason = reason
                 }
             }
-            if segment.contains(where: { $0.kind == .redirect && $0.text.hasPrefix("/") }) {
-                sawRedirect = true
-            }
-        }
-        if sawRedirect, worst < .critical {
-            worst = .critical
-            worstReason = "Command redirects output to an absolute path."
         }
         return .permitted(risk: worst, reason: worstReason)
     }
@@ -84,19 +76,41 @@ public struct CommandClassifier: Sendable {
     }
 
     private static func classifySegment(_ segment: [ShellToken]) -> CommandVerdict {
-        var words = segment.filter { $0.kind == .word }.map(\.text)
+        let redirectTargets = segment.filter { $0.kind == .redirect }.map(\.text)
+        if redirectTargets.contains(where: \.isEmpty) {
+            return .forbidden(reason: "Redirection is missing a target.")
+        }
+
+        let segmentWords = segment.filter { $0.kind == .word }.map(\.text)
+        var words = segmentWords
+        var environmentAssignments: [String] = []
         // Skip leading VAR=value assignments and `env` wrappers.
         while let first = words.first, first.contains("="), !first.hasPrefix("=") {
+            environmentAssignments.append(first)
             words.removeFirst()
         }
         while words.first == "env" {
             words.removeFirst()
             while let first = words.first, first.contains("=") || first.hasPrefix("-") {
+                if first.contains("="), !first.hasPrefix("-") {
+                    environmentAssignments.append(first)
+                }
                 words.removeFirst()
             }
         }
+        if let assignment = (environmentAssignments + words).first(where: isRiskyAssignment) {
+            let name = assignment.split(separator: "=", maxSplits: 1).first.map(String.init)
+                ?? assignment
+            return .permitted(
+                risk: .critical,
+                reason: "Environment override '\(name)' can change which code is executed."
+            )
+        }
         guard let rawProgram = words.first else {
-            return .permitted(risk: .execute, reason: "Environment assignment only.")
+            if let reason = escapingPathReason(in: segmentWords + redirectTargets) {
+                return .permitted(risk: .critical, reason: reason)
+            }
+            return .permitted(risk: .execute, reason: "Environment inspection or assignment.")
         }
         let program = rawProgram.split(separator: "/").last.map(String.init) ?? rawProgram
         let arguments = Array(words.dropFirst())
@@ -104,57 +118,87 @@ public struct CommandClassifier: Sendable {
         if forbiddenPrograms.contains(program) {
             return .forbidden(reason: "'\(program)' is never run by the agent.")
         }
+        let verdict: CommandVerdict
         switch program {
         case "rm", "rmdir", "unlink":
-            return classifyRemove(program: program, arguments: arguments)
+            verdict = classifyRemove(program: program, arguments: arguments)
         case "dd":
             if arguments.contains(where: { $0.hasPrefix("of=/dev/") }) {
                 return .forbidden(reason: "Writing to raw devices is never allowed.")
             }
-            return .permitted(risk: .critical, reason: "Raw data copy.")
+            verdict = .permitted(risk: .critical, reason: "Raw data copy.")
         case "diskutil":
             if arguments.contains(where: { $0.lowercased().hasPrefix("erase") || $0.lowercased() == "partitiondisk" }) {
                 return .forbidden(reason: "Disk erasure is never allowed.")
             }
-            return .permitted(risk: .critical, reason: "Disk utility invocation.")
+            verdict = .permitted(risk: .critical, reason: "Disk utility invocation.")
         case "git":
-            return classifyGit(arguments: arguments)
-        case "curl", "wget", "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync", "ftp":
-            return .permitted(risk: .critical, reason: "Network access.")
-        case "npm", "pnpm", "yarn", "bun":
-            if arguments.contains(where: { ["install", "add", "i", "update", "upgrade", "publish"].contains($0) }) {
-                return .permitted(risk: .critical, reason: "Dependency installation or publication.")
-            }
-            return .permitted(risk: .execute, reason: "Package script.")
-        case "pip", "pip3", "uv", "brew", "gem", "cargo", "go":
-            if arguments.contains(where: { ["install", "add", "get", "publish", "push"].contains($0) }) {
-                return .permitted(risk: .critical, reason: "Dependency installation or publication.")
-            }
-            return .permitted(risk: .execute, reason: "Toolchain command.")
+            verdict = classifyGit(arguments: arguments)
+        case let executable where networkPrograms.contains(executable):
+            verdict = .permitted(risk: .critical, reason: "Network access.")
+        case "npm", "pnpm", "yarn":
+            verdict = classifyPackageManager(program: program, arguments: arguments)
+        case "pip", "pip3", "brew", "gem":
+            verdict = .permitted(
+                risk: .critical,
+                reason: "Package-manager access can change the system or contact a registry."
+            )
+        case "cargo":
+            verdict = classifyCargo(arguments: arguments)
+        case "go":
+            verdict = classifyGo(arguments: arguments)
+        case "swift":
+            verdict = classifySwift(arguments: arguments)
+        case "find":
+            verdict = classifyFind(arguments: arguments)
+        case "rg", "grep", "egrep", "fgrep":
+            verdict = classifySearch(program: program, arguments: arguments)
         case "chmod", "chown", "chgrp", "chflags":
-            return .permitted(risk: .critical, reason: "Permission or ownership change.")
+            verdict = .permitted(risk: .critical, reason: "Permission or ownership change.")
         case "kill", "killall", "pkill":
-            return .permitted(risk: .critical, reason: "Process termination.")
-        case "sh", "bash", "zsh", "fish", "dash", "ksh":
-            if arguments.contains("-c") {
-                return .permitted(risk: .critical, reason: "Nested shell command string.")
-            }
-            return .permitted(risk: .critical, reason: "Nested shell.")
-        case "eval", "exec", "source":
-            return .permitted(risk: .critical, reason: "Shell evaluation.")
+            verdict = .permitted(risk: .critical, reason: "Process termination.")
+        case let executable where interpreterPrograms.contains(executable):
+            verdict = .permitted(
+                risk: .critical,
+                reason: "'\(program)' can evaluate code or launch another executable."
+            )
+        case "eval", "exec", "source", ".":
+            verdict = .permitted(risk: .critical, reason: "Shell evaluation.")
         case "mv", "cp", "install":
-            if arguments.contains(where: { $0.hasPrefix("/") || $0.hasPrefix("~") }) {
-                return .permitted(risk: .critical, reason: "Touches paths outside the workspace.")
-            }
-            return .permitted(risk: .execute, reason: "File move or copy.")
+            verdict = .permitted(risk: .execute, reason: "File move or copy.")
         case "defaults", "osascript", "open", "security", "codesign", "xattr":
-            return .permitted(risk: .critical, reason: "System-facing command.")
+            verdict = .permitted(risk: .critical, reason: "System-facing command.")
+        case "gh", "docker", "podman", "kubectl", "helm", "terraform", "tofu",
+             "aws", "gcloud", "az":
+            verdict = .permitted(
+                risk: .critical,
+                reason: "External service or machine control."
+            )
+        case let executable where boundedPrograms.contains(executable):
+            verdict = .permitted(risk: .execute, reason: "Bounded developer command.")
         default:
-            if arguments.contains(where: { $0 == "--force" }) {
-                return .permitted(risk: .critical, reason: "Forced operation.")
-            }
-            return .permitted(risk: .execute, reason: "Command execution.")
+            verdict = .permitted(
+                risk: .critical,
+                reason: "Unrecognized executable '\(program)'."
+            )
         }
+
+        if case .forbidden = verdict {
+            return verdict
+        }
+        // Calling a familiar binary through an explicit path can bypass PATH
+        // policy (for example `./git` or `/tmp/swift`). It therefore cannot
+        // inherit the familiar binary's lower risk classification.
+        if rawProgram.contains("/") {
+            return .permitted(risk: .critical, reason: "Explicit executable path.")
+        }
+        if let reason = escapingPathReason(in: segmentWords + redirectTargets) {
+            return .permitted(risk: .critical, reason: reason)
+        }
+        if let flag = arguments.first(where: isUniversallyRiskyArgument) {
+            return .permitted(risk: .critical, reason: "Risky option '\(flag)'.")
+        }
+        return verdict
     }
 
     private static func classifyRemove(program: String, arguments: [String]) -> CommandVerdict {
@@ -188,7 +232,13 @@ public struct CommandClassifier: Sendable {
         var subcommand: String?
         while index < arguments.count {
             let argument = arguments[index]
-            if argument == "-C" || argument == "-c" || argument == "--git-dir" || argument == "--work-tree" {
+            if argument == "-c" || argument.hasPrefix("--config-env") {
+                return .permitted(
+                    risk: .critical,
+                    reason: "Inline Git configuration can invoke external helpers."
+                )
+            }
+            if argument == "-C" || argument == "--git-dir" || argument == "--work-tree" {
                 index += 2
                 continue
             }
@@ -205,39 +255,202 @@ public struct CommandClassifier: Sendable {
         let rest = arguments[(index + 1)...]
         switch subcommand {
         case "push":
-            if rest.contains(where: { ["--force", "-f", "--force-with-lease", "--delete", "--mirror"].contains($0) }) {
-                return .permitted(risk: .critical, reason: "History-rewriting push.")
-            }
             return .permitted(risk: .critical, reason: "Publishes commits to a remote.")
-        case "reset":
-            if rest.contains("--hard") || rest.contains("--merge") {
-                return .permitted(risk: .critical, reason: "Destructive reset.")
+        case "fetch", "pull", "clone", "ls-remote", "submodule", "lfs":
+            return .permitted(risk: .critical, reason: "Git network access.")
+        case "remote":
+            if rest.isEmpty || rest.allSatisfy({ ["-v", "--verbose"].contains($0) }) {
+                return .permitted(risk: .execute, reason: "Read Git remotes.")
             }
-            return .permitted(risk: .execute, reason: "Git reset.")
-        case "clean":
-            return .permitted(risk: .critical, reason: "Deletes untracked files.")
-        case "rebase", "filter-branch", "filter-repo", "reflog":
-            return .permitted(risk: .critical, reason: "Rewrites or expires history.")
-        case "checkout", "switch", "restore":
-            if rest.contains("--force") || rest.contains("-f") {
-                return .permitted(risk: .critical, reason: "Forced checkout discards changes.")
+            if rest.first == "get-url" {
+                return .permitted(risk: .execute, reason: "Read a Git remote URL.")
             }
-            return .permitted(risk: .execute, reason: "Git checkout.")
+            return .permitted(risk: .critical, reason: "Changes Git remote configuration.")
+        case "reset", "clean", "checkout", "switch", "restore", "stash", "rebase",
+             "filter-branch", "filter-repo", "reflog", "commit", "merge",
+             "cherry-pick", "revert", "am", "rm", "worktree", "gc", "prune":
+            return .permitted(
+                risk: .critical,
+                reason: "Git operation can discard work, run hooks, or rewrite repository state."
+            )
         case "branch":
-            if rest.contains("-D") {
-                return .permitted(risk: .critical, reason: "Force-deletes a branch.")
+            if rest.contains(where: {
+                ["-d", "-D", "-m", "-M", "-c", "-C", "--delete", "--move", "--copy", "--force"]
+                    .contains($0)
+            }) {
+                return .permitted(risk: .critical, reason: "Changes an existing Git branch.")
             }
             return .permitted(risk: .execute, reason: "Git branch.")
-        case "stash":
-            if rest.first == "drop" || rest.first == "clear" {
-                return .permitted(risk: .critical, reason: "Drops stashed work.")
+        case "tag":
+            if rest.contains(where: { ["-d", "--delete", "-f", "--force", "-s", "--sign"].contains($0) }) {
+                return .permitted(risk: .critical, reason: "Deletes, replaces, or signs a Git tag.")
             }
-            return .permitted(risk: .execute, reason: "Git stash.")
-        case "remote", "fetch", "pull":
-            return .permitted(risk: .critical, reason: "Network access.")
+            return .permitted(risk: .execute, reason: "Git tag.")
+        case "config":
+            let readOnlyOptions: Set<String> = [
+                "--get", "--get-all", "--get-regexp", "--get-urlmatch",
+                "--list", "-l", "--show-origin", "--show-scope",
+                "--name-only", "--null", "-z",
+            ]
+            if !rest.isEmpty, rest.allSatisfy({ $0.hasPrefix("-") && readOnlyOptions.contains($0) }) {
+                return .permitted(risk: .execute, reason: "Read Git configuration.")
+            }
+            return .permitted(risk: .critical, reason: "Changes or broadly exposes Git configuration.")
+        case "status", "diff", "log", "show", "rev-parse", "rev-list", "describe",
+             "ls-files", "ls-tree", "cat-file", "name-rev", "shortlog", "blame",
+             "grep", "count-objects", "for-each-ref", "merge-base", "show-ref",
+             "symbolic-ref", "verify-pack", "help", "version", "add", "apply", "init":
+            return .permitted(risk: .execute, reason: "Bounded Git operation.")
         default:
-            return .permitted(risk: .execute, reason: "Git \(subcommand).")
+            // Git resolves unknown subcommands through aliases and `git-*`
+            // executables. Treating them as ordinary commands would recreate
+            // the same approval bypass as an unknown top-level executable.
+            return .permitted(risk: .critical, reason: "Unrecognized Git subcommand.")
         }
+    }
+
+    private static func classifyPackageManager(
+        program: String,
+        arguments: [String]
+    ) -> CommandVerdict {
+        guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else {
+            return .permitted(risk: .execute, reason: "\(program) version or help.")
+        }
+        if ["list", "ls", "why"].contains(subcommand) {
+            return .permitted(risk: .execute, reason: "Inspect local package metadata.")
+        }
+        return .permitted(
+            risk: .critical,
+            reason: "\(program) can run package scripts or contact a registry."
+        )
+    }
+
+    private static func classifyCargo(arguments: [String]) -> CommandVerdict {
+        guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else {
+            return .permitted(risk: .execute, reason: "Cargo version or help.")
+        }
+        switch subcommand {
+        case "build", "check", "test", "doc", "fmt", "clippy", "metadata", "tree":
+            return .permitted(risk: .execute, reason: "Cargo workspace command.")
+        default:
+            return .permitted(
+                risk: .critical,
+                reason: "Cargo subcommand can execute a binary, change dependencies, or use the network."
+            )
+        }
+    }
+
+    private static func classifyGo(arguments: [String]) -> CommandVerdict {
+        guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else {
+            return .permitted(risk: .execute, reason: "Go version or help.")
+        }
+        switch subcommand {
+        case "build", "test", "vet", "fmt", "list", "doc":
+            return .permitted(risk: .execute, reason: "Go workspace command.")
+        default:
+            return .permitted(
+                risk: .critical,
+                reason: "Go subcommand can execute code, change dependencies, or use the network."
+            )
+        }
+    }
+
+    private static func classifySwift(arguments: [String]) -> CommandVerdict {
+        if arguments.contains(where: { ["-e", "-interpret", "-frontend"].contains($0) }) {
+            return .permitted(risk: .critical, reason: "Swift interpreter invocation.")
+        }
+        guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else {
+            return .permitted(risk: .execute, reason: "Swift version or help.")
+        }
+        switch subcommand {
+        case "build", "test", "format":
+            return .permitted(risk: .execute, reason: "Swift workspace command.")
+        case "package":
+            if arguments.contains(where: {
+                ["resolve", "update", "edit", "unedit", "reset", "purge-cache"].contains($0)
+            }) {
+                return .permitted(risk: .critical, reason: "Swift package dependency mutation.")
+            }
+            return .permitted(risk: .execute, reason: "Swift package inspection.")
+        default:
+            return .permitted(
+                risk: .critical,
+                reason: "Swift invocation can interpret or run code."
+            )
+        }
+    }
+
+    private static func classifyFind(arguments: [String]) -> CommandVerdict {
+        let activePrimitives: Set<String> = [
+            "-delete", "-exec", "-execdir", "-ok", "-okdir", "-fls", "-fprint", "-fprint0",
+        ]
+        if arguments.contains(where: { activePrimitives.contains($0) || $0 == "-L" }) {
+            return .permitted(
+                risk: .critical,
+                reason: "Find invocation can execute commands, write files, delete, or follow symlinks."
+            )
+        }
+        return .permitted(risk: .execute, reason: "Workspace file search.")
+    }
+
+    private static func classifySearch(
+        program: String,
+        arguments: [String]
+    ) -> CommandVerdict {
+        if arguments.contains(where: {
+            ["--follow", "--dereference-recursive"].contains($0)
+                || (program == "grep" && $0 == "-R")
+                || (program == "rg" && $0 == "-L")
+        }) {
+            return .permitted(risk: .critical, reason: "Search follows symbolic links.")
+        }
+        return .permitted(risk: .execute, reason: "Workspace text search.")
+    }
+
+    private static func escapingPathReason(in words: [String]) -> String? {
+        for word in words where !word.isEmpty {
+            if word.hasPrefix("~") || word.contains("$HOME") || word.contains("${HOME}") {
+                return "Command refers to the user's home directory."
+            }
+            if word.hasPrefix("file://") {
+                return "Command refers to an absolute file URL."
+            }
+
+            var candidates = [word]
+            if let equals = word.firstIndex(of: "=") {
+                candidates.append(String(word[word.index(after: equals)...]))
+            }
+            if word.hasPrefix("@") {
+                candidates.append(String(word.dropFirst()))
+            }
+            if word.hasPrefix("-"), let slash = word.firstIndex(of: "/") {
+                candidates.append(String(word[slash...]))
+            }
+
+            for candidate in candidates {
+                if candidate.hasPrefix("/") {
+                    return "Command refers to an absolute path."
+                }
+                let components = candidate.split(separator: "/", omittingEmptySubsequences: false)
+                if components.contains("..") {
+                    return "Command refers to a parent directory."
+                }
+            }
+        }
+        return nil
+    }
+
+    private static func isUniversallyRiskyArgument(_ argument: String) -> Bool {
+        let name = argument.split(separator: "=", maxSplits: 1).first.map(String.init) ?? argument
+        return riskyArguments.contains(name)
+    }
+
+    private static func isRiskyAssignment(_ argument: String) -> Bool {
+        guard let equals = argument.firstIndex(of: "=") else { return false }
+        let name = String(argument[..<equals])
+        guard !name.hasPrefix("-") else { return false }
+        return riskyEnvironmentNames.contains(name)
+            || riskyEnvironmentPrefixes.contains(where: { name.hasPrefix($0) })
     }
 
     private static let forbiddenPrograms: Set<String> = [
@@ -246,6 +459,58 @@ public struct CommandClassifier: Sendable {
         "mkfs", "newfs", "fdisk",
         "csrutil", "nvram", "kextload", "kextunload", "launchctl", "systemsetup",
         "passwd", "dscl", "sysadminctl", "visudo",
+    ]
+
+    private static let networkPrograms: Set<String> = [
+        "curl", "wget", "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync", "ftp",
+    ]
+
+    private static let interpreterPrograms: Set<String> = [
+        "sh", "bash", "zsh", "fish", "dash", "ksh",
+        "python", "python2", "python3", "pypy", "pypy3",
+        "node", "npx", "deno", "bun", "tsx", "ts-node",
+        "ruby", "perl", "php", "lua", "luajit",
+        "R", "Rscript", "julia", "tclsh", "wish", "expect",
+        "java", "js", "qjs", "groovy", "dotnet-script", "uv",
+    ]
+
+    /// Commands whose ordinary form is useful for workspace inspection or a
+    /// bounded build. Program-specific interpreters, package runners, network
+    /// clients, system tools, and unknown executables are deliberately absent.
+    private static let boundedPrograms: Set<String> = [
+        "pwd", "cd", "pushd", "popd",
+        "ls", "tree", "stat", "file", "basename", "dirname", "readlink", "realpath",
+        "cat", "head", "tail", "cut", "sort", "uniq", "wc", "tr", "cmp", "comm", "diff",
+        "echo", "printf", "true", "false", "test", "[", "expr",
+        "date", "uname", "sw_vers", "whoami", "id", "ps", "env",
+        "md5", "md5sum", "sha1sum", "sha256sum", "shasum",
+        "jq",
+        "swiftc", "xcodebuild", "clang", "clang++", "gcc", "g++",
+        "make", "cmake", "ninja", "ctest",
+        "tsc", "eslint", "prettier", "biome", "swiftlint", "swiftformat",
+    ]
+
+    private static let riskyArguments: Set<String> = [
+        "--force", "--force-with-lease", "--delete", "--overwrite",
+        "--no-preserve-root", "--unsafe", "--unsafe-paths",
+        "--no-sandbox", "--disable-sandbox", "--privileged",
+        "--allow-root", "--global", "--system", "--ext-diff", "--textconv",
+    ]
+
+    private static let riskyEnvironmentNames: Set<String> = [
+        "PATH", "FPATH", "CDPATH", "HOME", "SHELL", "ZDOTDIR",
+        "BASH_ENV", "ENV",
+        "PAGER", "MANPAGER", "EDITOR", "VISUAL", "LESSOPEN",
+        "NODE_OPTIONS", "PYTHONPATH", "PYTHONHOME", "RUBYOPT", "PERL5OPT",
+        "JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS",
+        "MAKEFLAGS", "MFLAGS",
+        "CC", "CXX", "LD", "AR", "RANLIB",
+        "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER",
+        "SWIFT_EXEC", "SWIFT_DRIVER_SWIFT_FRONTEND_EXEC", "SWIFT_DRIVER_CLANG_EXEC",
+    ]
+
+    private static let riskyEnvironmentPrefixes: [String] = [
+        "DYLD_", "LD_", "GIT_CONFIG_", "GIT_SSH", "GIT_EXTERNAL_",
     ]
 }
 
@@ -271,26 +536,26 @@ enum ShellTokenizer {
         var current = ""
         var currentHasSubstitution = false
         var hasCurrent = false
+        var redirectTargetPending = false
         let characters = Array(input)
         var index = 0
 
-        func flushWord() {
-            guard hasCurrent else { return }
-            let kind: ShellTokenKind = current.hasPrefix(">") || current.hasPrefix("<")
-                ? .redirect
-                : .word
-            let text: String
-            if kind == .redirect {
-                text = String(current.drop(while: { $0 == ">" || $0 == "<" }))
-            } else {
-                text = current
+        func flushWord(allowEmptyRedirect: Bool = false) {
+            guard hasCurrent || (redirectTargetPending && allowEmptyRedirect) else {
+                return
             }
+            let kind: ShellTokenKind = redirectTargetPending ? .redirect : .word
             tokens.append(
-                ShellToken(text: text, kind: kind, containsSubstitution: currentHasSubstitution)
+                ShellToken(
+                    text: current,
+                    kind: kind,
+                    containsSubstitution: currentHasSubstitution
+                )
             )
             current = ""
             currentHasSubstitution = false
             hasCurrent = false
+            redirectTargetPending = false
         }
 
         while index < characters.count {
@@ -343,7 +608,7 @@ enum ShellTokenizer {
                 flushWord()
                 index += 1
             case ";", "&", "|":
-                flushWord()
+                flushWord(allowEmptyRedirect: true)
                 // Collapse &&, ||, |&, ; into one control operator token.
                 var op = String(character)
                 while index + 1 < characters.count,
@@ -367,33 +632,28 @@ enum ShellTokenizer {
                 current.append(character)
                 index += 1
             case ">", "<":
-                flushWord()
-                var redirect = String(character)
+                flushWord(allowEmptyRedirect: true)
                 index += 1
-                while index < characters.count, characters[index] == ">" || characters[index] == "&" {
-                    redirect.append(characters[index])
-                    index += 1
-                }
-                while index < characters.count, characters[index] == " " {
-                    index += 1
-                }
-                var target = ""
                 while index < characters.count,
-                      ![" ", "\t", "\n", ";", "&", "|", ">", "<"].contains(String(characters[index]))
+                      [">", "<", "&"].contains(String(characters[index]))
                 {
-                    target.append(characters[index])
                     index += 1
                 }
-                tokens.append(
-                    ShellToken(text: target, kind: .redirect, containsSubstitution: false)
-                )
+                while index < characters.count,
+                      [" ", "\t", "\n"].contains(String(characters[index]))
+                {
+                    index += 1
+                }
+                redirectTargetPending = true
+                currentHasSubstitution =
+                    index < characters.count && characters[index] == "("
             default:
                 hasCurrent = true
                 current.append(character)
                 index += 1
             }
         }
-        flushWord()
+        flushWord(allowEmptyRedirect: true)
         return tokens
     }
 }

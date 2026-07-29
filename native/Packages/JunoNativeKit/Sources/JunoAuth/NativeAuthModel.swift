@@ -20,8 +20,24 @@ public final class NativeAuthModel {
         case unavailable
     }
 
+    /// Whether the server has actually confirmed the session behind `.signedIn`.
+    ///
+    /// `.unreachable` means the app opened on Keychain credentials and a cached
+    /// profile because Juno could not be reached. The user stays in the app on
+    /// their local data; only the freshness of what they see is in question.
+    public enum Connectivity: Equatable, Sendable {
+        case confirmed
+        case unreachable(String)
+
+        public var isUnreachable: Bool {
+            if case .unreachable = self { return true }
+            return false
+        }
+    }
+
     public private(set) var phase: Phase
     public private(set) var lastErrorDescription: String?
+    public private(set) var connectivity: Connectivity = .confirmed
 
     private let runtime: NativeAuthRuntime?
     private let browser: (any NativeSystemBrowserAuthorizing)?
@@ -43,18 +59,44 @@ public final class NativeAuthModel {
         lastErrorDescription = configurationErrorDescription
     }
 
+    /// Runs once per launch. A restore that failed only because Juno was
+    /// unreachable stays retryable — see `retryRestore()` — since that outcome
+    /// is about the network, not about the account.
     public func restore() async {
-        guard !attemptedRestore, let runtime else { return }
+        guard !attemptedRestore else { return }
         attemptedRestore = true
+        await performRestore()
+    }
+
+    /// Re-attempts a restore that ended `.unreachable`, e.g. from a "Try again"
+    /// button or when the app returns to the foreground.
+    public func retryRestore() async {
+        guard connectivity.isUnreachable else { return }
+        await performRestore()
+    }
+
+    private func performRestore() async {
+        guard let runtime else { return }
         phase = .restoring
         lastErrorDescription = nil
         do {
-            if let session = try await runtime.restore() {
+            switch try await runtime.restore() {
+            case .verified(let session):
+                connectivity = .confirmed
                 phase = .signedIn(session)
-            } else {
+            case .unverified(let session, let cause):
+                // Credentials are intact and only the server is missing. Opening
+                // the app on cached data beats a sign-in screen the user cannot
+                // complete while that same server is down.
+                connectivity = .unreachable(cause)
+                lastErrorDescription = cause
+                phase = .signedIn(session)
+            case nil:
+                connectivity = .confirmed
                 phase = .signedOut
             }
         } catch {
+            connectivity = .confirmed
             phase = .signedOut
             lastErrorDescription = error.localizedDescription
         }
@@ -71,6 +113,7 @@ public final class NativeAuthModel {
                 authorizationURL: attempt.authorizationURL,
                 callbackScheme: attempt.callbackScheme
             )
+            connectivity = .confirmed
             phase = .signedIn(
                 try await runtime.completeAuthorization(
                     attempt,
@@ -83,12 +126,38 @@ public final class NativeAuthModel {
         }
     }
 
+    /// Signs in with an email and password, no browser hand-off.
+    ///
+    /// The password is passed straight to the runtime for one request and is
+    /// never held by this model, so it cannot end up in an `@Observable`
+    /// snapshot or a view's state.
+    public func signIn(email: String, password: String) async {
+        guard let runtime else { return }
+        guard phase != .signingIn else { return }
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEmail.isEmpty, !password.isEmpty else { return }
+        phase = .signingIn
+        lastErrorDescription = nil
+        do {
+            let session = try await runtime.signIn(
+                email: trimmedEmail,
+                password: password
+            )
+            connectivity = .confirmed
+            phase = .signedIn(session)
+        } catch {
+            phase = .signedOut
+            lastErrorDescription = error.localizedDescription
+        }
+    }
+
     public func signOut() async {
         guard let runtime else { return }
         let previousPhase = phase
         do {
             try await runtime.signOut()
             lastErrorDescription = nil
+            connectivity = .confirmed
             phase = .signedOut
         } catch let error as NativeAuthRuntimeError
             where error == .localDataPurgeFailed

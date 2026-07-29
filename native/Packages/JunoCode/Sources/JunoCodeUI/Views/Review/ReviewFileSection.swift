@@ -15,6 +15,9 @@ struct ReviewFileHeader: View {
 
     @State private var pendingRestore: Checkpoint?
     @State private var forceRestore: Checkpoint?
+    @State private var confirmsFileRevert = false
+    @State private var confirmsForcedFileRevert = false
+    @State private var fileRevertFailure: String?
     @State private var reverting = false
 
     private var isEditable: Bool {
@@ -76,6 +79,41 @@ struct ReviewFileHeader: View {
         } message: {
             Text("Restoring now discards the content written after it.")
         }
+        .confirmationDialog(
+            "Revert every change to this file?",
+            isPresented: $confirmsFileRevert,
+            titleVisibility: .visible
+        ) {
+            Button("Revert File", role: .destructive) {
+                revertFile(force: false)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This restores \(PathDisplay.fileName(change.path)) from Juno's checkpoints.")
+        }
+        .confirmationDialog(
+            "That file changed since Juno captured it",
+            isPresented: $confirmsForcedFileRevert,
+            titleVisibility: .visible
+        ) {
+            Button("Restore Anyway", role: .destructive) {
+                revertFile(force: true)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Restoring now discards content written after Juno's latest checkpoint.")
+        }
+        .alert(
+            "Could Not Restore File",
+            isPresented: Binding(
+                get: { fileRevertFailure != nil },
+                set: { if !$0 { fileRevertFailure = nil } }
+            )
+        ) {
+            Button("OK") { fileRevertFailure = nil }
+        } message: {
+            Text(fileRevertFailure ?? "The file could not be reverted.")
+        }
     }
 
     @ViewBuilder
@@ -91,11 +129,7 @@ struct ReviewFileHeader: View {
             ProgressView().controlSize(.small).frame(width: 46)
         } else {
             Button("Revert File", role: .destructive) {
-                reverting = true
-                Task {
-                    await review.revertFile(change.path, using: controller)
-                    reverting = false
-                }
+                confirmsFileRevert = true
             }
             .controlSize(.small)
             .disabled(!isEditable)
@@ -160,6 +194,34 @@ struct ReviewFileHeader: View {
         }
     }
 
+    private func revertFile(force: Bool) {
+        reverting = true
+        if force {
+            confirmsForcedFileRevert = false
+        }
+        Task {
+            let result = await review.revertFile(
+                change.path,
+                force: force,
+                using: controller
+            )
+            reverting = false
+            switch result {
+            case .restored:
+                fileRevertFailure = nil
+            case .diverged where !force:
+                // Divergence is the one failure an explicit overwrite can
+                // answer. Operational errors never unlock this action.
+                confirmsForcedFileRevert = true
+            case .diverged:
+                fileRevertFailure =
+                    result.failureMessage ?? "The file still differs from its checkpoint."
+            case let .failed(message):
+                fileRevertFailure = message
+            }
+        }
+    }
+
     /// This file's earlier versions, newest first.
     private var history: [Checkpoint] {
         review.checkpoints[change.path] ?? []
@@ -167,19 +229,33 @@ struct ReviewFileHeader: View {
 
     private func restore(_ checkpoint: Checkpoint, force: Bool) {
         pendingRestore = nil
+        if force {
+            forceRestore = nil
+        }
         Task {
-            let restored = await review.restore(
+            let result = await review.restore(
                 checkpointID: checkpoint.id,
                 path: change.path,
                 force: force,
                 using: controller
             )
-            // The first attempt refuses a divergence rather than overwriting;
-            // the reader gets to answer that question explicitly.
-            if !restored, !force {
-                forceRestore = checkpoint
-            } else {
+            switch result {
+            case .restored:
                 forceRestore = nil
+                fileRevertFailure = nil
+            case .diverged where !force:
+                // A fingerprint mismatch is the only failure an explicit
+                // overwrite can answer.
+                forceRestore = checkpoint
+            case .diverged:
+                forceRestore = nil
+                fileRevertFailure =
+                    result.failureMessage ?? "The file still differs from that version."
+            case let .failed(message):
+                // Missing history, permissions, and I/O failures stay errors;
+                // force would only repeat the same failed operation.
+                forceRestore = nil
+                fileRevertFailure = message
             }
         }
     }

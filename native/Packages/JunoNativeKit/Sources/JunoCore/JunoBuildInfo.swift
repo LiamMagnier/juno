@@ -12,9 +12,9 @@ import Foundation
 /// `native/Config/Base.xcconfig` and `native/Scripts/write-build-metadata.sh`.
 /// Nothing here is secret: it is a version, a commit and a public base URL.
 public struct JunoBuildInfo: Equatable, Sendable {
-    /// `CFBundleShortVersionString`, e.g. `0.1.1`.
+    /// `CFBundleShortVersionString`, e.g. `0.1.2`.
     public let version: String
-    /// `CFBundleVersion`, e.g. `2`.
+    /// `CFBundleVersion`, e.g. `3`.
     public let build: String
     /// Short commit the build was made from, or `unknown` in a plain checkout.
     /// A `-dirty` suffix means the tree had uncommitted changes at build time,
@@ -39,7 +39,7 @@ public struct JunoBuildInfo: Equatable, Sendable {
         self.channel = channel
     }
 
-    /// `0.1.1 (2)` — the form used in the Diagnostics header.
+    /// `0.1.2 (3)` — the form used in the Diagnostics header.
     public var displayVersion: String { "\(version) (\(build))" }
 
     /// Whether this build reports a real commit. A build that cannot say which

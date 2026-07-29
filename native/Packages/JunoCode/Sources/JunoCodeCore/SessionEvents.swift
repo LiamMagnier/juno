@@ -40,6 +40,7 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
     case approvalResolved(ApprovalResolvedEvent)
     case fileChanged(FileChangedEvent)
     case testRunCompleted(TestRunCompletedEvent)
+    case goalUpdated(GoalUpdatedEvent)
     case statusChanged(StatusChangedEvent)
     case errorOccurred(ErrorEvent)
     case runCompleted(RunCompletedEvent)
@@ -244,6 +245,28 @@ public struct TestRunCompletedEvent: Hashable, Codable, Sendable {
         self.testsRun = testsRun
         self.failures = failures
         self.durationSeconds = durationSeconds
+    }
+}
+
+/// Append-only audit entry for a durable goal mutation. The full goal snapshot
+/// makes each event independently inspectable while `sequence` preserves the
+/// authoritative order of changes.
+public struct GoalUpdatedEvent: Hashable, Codable, Sendable {
+    public enum Kind: String, Codable, CaseIterable, Sendable {
+        case created
+        case objectiveChanged
+        case lifecycleChanged
+        case stepAdded
+        case stepStatusChanged
+        case verificationAdded
+    }
+
+    public let kind: Kind
+    public let goal: SessionGoal
+
+    public init(kind: Kind, goal: SessionGoal) {
+        self.kind = kind
+        self.goal = goal
     }
 }
 

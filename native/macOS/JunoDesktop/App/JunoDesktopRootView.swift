@@ -35,7 +35,9 @@ struct JunoDesktopRootView: View {
                 await configuration.authModel.restore()
             }
             .onChange(of: configuration.authModel.phase) { _, phase in
-                updateLifecycle(for: phase)
+                Task {
+                    await updateLifecycle(for: phase)
+                }
             }
             .onChange(of: configuration.syncModel?.synchronizationGeneration) {
                 _, generation in
@@ -59,10 +61,13 @@ struct JunoDesktopRootView: View {
             }
             .onChange(of: configuration.conversationModel?.selectableModels) {
                 _, models in
-                guard let models, !models.isEmpty else { return }
+                // `nil` means the manifest has not loaded. An empty array is an
+                // authoritative revocation and must clear stale capabilities.
+                guard let models else { return }
                 let codeModels = Self.codeModels(from: models)
-                guard !codeModels.isEmpty else { return }
-                workbenchModel?.availableModels = codeModels
+                Task {
+                    await workbenchModel?.setAvailableModels(codeModels)
+                }
             }
     }
 
@@ -70,12 +75,22 @@ struct JunoDesktopRootView: View {
     private var phaseContent: some View {
         switch configuration.authModel.phase {
         case .signedIn(let session):
-            JunoDesktopWorkspaceView(
-                configuration: configuration,
-                session: session,
-                product: productBinding,
-                workbenchModel: workbenchModel
-            )
+            VStack(spacing: 0) {
+                // Shown when the session was restored from the Keychain without
+                // the server confirming it. The workspace below is real, local
+                // and usable; only its freshness is unknown.
+                if case .unreachable(let cause) = configuration.authModel.connectivity {
+                    JunoDesktopOfflineBanner(cause: cause) {
+                        Task { await configuration.authModel.retryRestore() }
+                    }
+                }
+                JunoDesktopWorkspaceView(
+                    configuration: configuration,
+                    session: session,
+                    product: productBinding,
+                    workbenchModel: workbenchModel
+                )
+            }
         case .restoring:
             JunoDesktopLoadingView()
         case .signedOut, .signingIn, .unavailable:
@@ -83,14 +98,26 @@ struct JunoDesktopRootView: View {
         }
     }
 
-    private func updateLifecycle(for phase: NativeAuthModel.Phase) {
+    @MainActor
+    private func updateLifecycle(for phase: NativeAuthModel.Phase) async {
         guard case .signedIn(let session) = phase else {
-            stopAuthenticatedModels()
+            let previousWorkbench = workbenchModel
             workbenchModel = nil
+            stopAuthenticatedModels()
+            await previousWorkbench?.shutdown()
             return
         }
 
         let accountID = session.profile.id
+        if let previousWorkbench = workbenchModel {
+            workbenchModel = nil
+            await previousWorkbench.shutdown()
+            // A sign-out or another account switch can arrive while shutdown
+            // is awaiting controller cancellation.
+            guard case .signedIn(let currentSession) = configuration.authModel.phase,
+                  currentSession.profile.id == accountID
+            else { return }
+        }
         configuration.syncModel?.start(for: accountID)
         configuration.attachmentModel?.start(for: accountID)
         configuration.avatarModel?.start(for: session.profile)
@@ -111,6 +138,7 @@ struct JunoDesktopRootView: View {
         if let runtime = configuration.runtime {
             workbenchModel = WorkbenchModel(
                 dependencies: .standard(
+                    accountID: accountID.rawValue,
                     modelClient: BackendCodeModelClient(
                         streamer: runtime,
                         accountID: accountID
@@ -205,6 +233,42 @@ private struct JunoDesktopLoadingView: View {
 /// silently fell back to the system sans, so the one place the editorial voice
 /// had to appear was the one place it did not. ``JunoSerif`` exists to make that
 /// unrepeatable.
+/// A strip above the workspace saying the obvious out loud: this is your data,
+/// but Juno has not been reachable, so nothing here has been checked against the
+/// server. Non-blocking on purpose — the previous behaviour was to sign the user
+/// out entirely, which threw away a working local workspace to show a sign-in
+/// screen that could not succeed either.
+private struct JunoDesktopOfflineBanner: View {
+    let cause: String
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Image(systemName: "bolt.horizontal.circle")
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Juno is unreachable — showing your local copy")
+                    .font(.callout)
+                Text(cause)
+                    .junoCaption()
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+            }
+            Spacer(minLength: JunoSpace.cozy)
+            Button("Try again", action: retry)
+                .junoGlassButton()
+                .controlSize(.small)
+        }
+        .padding(.horizontal, JunoSpace.roomy)
+        .padding(.vertical, JunoSpace.cozy)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.junoCanvasWarm)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+        }
+        .accessibilityIdentifier("juno.desktop.offline-banner")
+    }
+}
+
 private struct JunoDesktopSignInView: View {
     /// The web's `max-w-sm` card column, and its `h-12 w-12` mark.
     private static let columnWidth: CGFloat = 360
@@ -212,7 +276,28 @@ private struct JunoDesktopSignInView: View {
 
     let authModel: NativeAuthModel
 
+    @State private var email = ""
+    @State private var password = ""
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case email, password }
+
     private var isBusy: Bool { authModel.phase == .signingIn }
+    private var canSubmitPassword: Bool {
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+            && !isBusy
+            && authModel.phase != .unavailable
+    }
+
+    private func submitPassword() {
+        guard canSubmitPassword else { return }
+        let submittedPassword = password
+        // Drop the plaintext from view state as soon as it is handed over; the
+        // model does not retain it either.
+        password = ""
+        Task { await authModel.signIn(email: email, password: submittedPassword) }
+    }
 
     var body: some View {
         VStack(spacing: JunoSpace.section) {
@@ -226,10 +311,12 @@ private struct JunoDesktopSignInView: View {
 
             // The two honest notes the web pairs under its card: what the
             // account is for, and — native-only, because only the app could get
-            // this wrong — where credentials are actually typed.
+            // this wrong — what happens to a password typed here. It is sent
+            // once, over TLS, to Juno's own origin, and never written to disk;
+            // what persists is the device token the server hands back.
             VStack(spacing: JunoSpace.tight) {
                 Text(
-                    "Authentication opens Juno in a system-owned browser session. Passwords are never entered into this app."
+                    "Your password is sent once to Juno and never stored on this Mac. Sign in through the browser instead if your account uses Google."
                 )
                 Text(
                     "By continuing you agree to use Juno responsibly. Your conversations are private to your account."
@@ -262,23 +349,36 @@ private struct JunoDesktopSignInView: View {
             }
             .multilineTextAlignment(.center)
 
-            Button {
-                Task { await authModel.signIn() }
-            } label: {
+            credentialFields
+
+            Button(action: submitPassword) {
                 Group {
                     if isBusy {
                         HStack(spacing: JunoSpace.snug) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Opening secure sign-in…")
+                            Text("Signing in…")
                         }
                     } else {
-                        Text("Sign in to Juno")
+                        Text("Sign in")
                     }
                 }
                 .frame(maxWidth: .infinity)
             }
             .junoProminentGlassButton()
+            .controlSize(.large)
+            .disabled(!canSubmitPassword)
+            .accessibilityIdentifier("Sign in")
+
+            browserDivider
+
+            Button {
+                Task { await authModel.signIn() }
+            } label: {
+                Text("Continue in browser")
+                    .frame(maxWidth: .infinity)
+            }
+            .junoGlassButton()
             .controlSize(.large)
             .disabled(isBusy || authModel.phase == .unavailable)
             .accessibilityIdentifier("Sign in to Juno")
@@ -296,6 +396,41 @@ private struct JunoDesktopSignInView: View {
         }
         .padding(JunoSpace.section)
         .junoCard(cornerRadius: JunoCornerRadius.card)
+    }
+
+    private var credentialFields: some View {
+        VStack(spacing: JunoSpace.cozy) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text("Email")
+                    .junoCaption()
+                TextField("you@example.com", text: $email)
+                    .textContentType(.username)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .email)
+                    .onSubmit { focusedField = .password }
+                    .accessibilityIdentifier("Email")
+            }
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text("Password")
+                    .junoCaption()
+                SecureField("", text: $password)
+                    .textContentType(.password)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($focusedField, equals: .password)
+                    .onSubmit(submitPassword)
+                    .accessibilityIdentifier("Password")
+            }
+        }
+        .disabled(isBusy || authModel.phase == .unavailable)
+    }
+
+    private var browserDivider: some View {
+        HStack(spacing: JunoSpace.cozy) {
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+            Text("or")
+                .junoCaption()
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+        }
     }
 }
 

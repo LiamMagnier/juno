@@ -23,11 +23,11 @@ import Testing
     /// Diagnostics must report the URL the transport dials, not a copy.
     @Test func buildInfoReportsTheSameBackend() {
         let info = JunoBuildInfo(
-            version: "0.1.1", build: "2", gitSHA: "abc123",
+            version: "0.1.2", build: "3", gitSHA: "abc123",
             contractVersion: "1.3.0", channel: "stable"
         )
         #expect(info.apiBaseURL == JunoBackend.productionURLString)
-        #expect(info.displayVersion == "0.1.1 (2)")
+        #expect(info.displayVersion == "0.1.2 (3)")
         #expect(info.hasResolvedCommit)
     }
 

@@ -29,6 +29,13 @@ struct JunoDesktopWorkspaceView: View {
     var initialDestination: DesktopDestination?
 
     @State private var veilOpacity: Double = 0
+    /// A Code-sidebar "New chat" is deliberately not a Code session with no
+    /// folder. It is an ordinary Juno conversation, so it crosses the product
+    /// boundary and is consumed exactly once by the Chat workspace.
+    ///
+    /// A token rather than a Bool means two consecutive requests can never be
+    /// coalesced into one by SwiftUI's state batching.
+    @State private var unscopedChatRequestID: UUID?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -69,7 +76,11 @@ struct JunoDesktopWorkspaceView: View {
                     configuration: configuration,
                     session: session,
                     product: $product,
-                    initialDestination: initialDestination
+                    initialDestination: initialDestination,
+                    unscopedChatRequestID: unscopedChatRequestID,
+                    consumeUnscopedChatRequest: {
+                        unscopedChatRequestID = nil
+                    }
                 )
             } else {
                 ContentUnavailableView(
@@ -88,7 +99,11 @@ struct JunoDesktopWorkspaceView: View {
                     workbenchModel: workbenchModel,
                     codeModel: codeModel,
                     remoteModel: remoteCodeModel,
-                    product: $product
+                    product: $product,
+                    newChat: {
+                        unscopedChatRequestID = UUID()
+                        product = .chat
+                    }
                 )
             } else {
                 ContentUnavailableView(

@@ -1,8 +1,24 @@
+import Foundation
 import JunoChatKit
+import JunoCore
 import Testing
 @testable import JunoDesktop
 
 struct JunoDesktopSmokeTests {
+    @Test
+    func appBundlePublishesResolvedBuildIdentityForDiagnostics() {
+        let bundle = Bundle.main
+        let build = JunoBuildInfo.read(from: bundle)
+
+        #expect(build.version == "0.1.2")
+        #expect(build.build == "3")
+        #expect(build.contractVersion != "unknown")
+        #expect(build.channel != "unknown")
+        #expect(!build.contractVersion.hasPrefix("$("))
+        #expect(!build.channel.hasPrefix("$("))
+        #expect(bundle.object(forInfoDictionaryKey: "JunoGitSHA") != nil)
+    }
+
     @Test
     func productModesHaveStableSceneStorageValues() {
         #expect(DesktopProductMode.chat.rawValue == "chat")

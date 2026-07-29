@@ -93,9 +93,40 @@ public actor CheckpointStore: Checkpointing {
 
     public func removeCheckpoints(for sessionID: CodeSessionID) async throws {
         try loadIfNeeded()
-        for checkpoint in cache.values where checkpoint.sessionID == sessionID {
+        let matching = cache.values.filter { $0.sessionID == sessionID }
+        for checkpoint in matching {
+            let url = fileURL(for: checkpoint.id)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
             cache.removeValue(forKey: checkpoint.id)
-            try? FileManager.default.removeItem(at: fileURL(for: checkpoint.id))
+        }
+    }
+
+    /// Purges a session's persisted checkpoints when its workspace cannot be
+    /// reopened. Deleting a transcript must not depend on a still-valid folder
+    /// bookmark, because checkpoint JSON contains the full pre-edit source.
+    public static func removePersistedCheckpoints(
+        for sessionID: CodeSessionID,
+        directoryURL: URL
+    ) throws {
+        guard FileManager.default.fileExists(atPath: directoryURL.path) else {
+            return
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let files = try FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        )
+        for file in files where file.pathExtension == "json" {
+            let checkpoint = try decoder.decode(
+                Checkpoint.self,
+                from: Data(contentsOf: file)
+            )
+            if checkpoint.sessionID == sessionID {
+                try FileManager.default.removeItem(at: file)
+            }
         }
     }
 

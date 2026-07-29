@@ -198,16 +198,73 @@ final class NativeArtifactAPIClientTests: XCTestCase {
         XCTAssertEqual(request.queryItems, [URLQueryItem(name: "format", value: "docx")])
     }
 
-    func testSandboxEscapesSourceAndPreservesHTMLDocument() {
+    func testSandboxEscapesSourceAndSecuresHTMLDocument() {
         let escaped = NativeArtifactSandbox.document(kind: .code, content: "<script>&")
         XCTAssertTrue(escaped.contains("&lt;script&gt;&amp;"))
         XCTAssertFalse(escaped.contains("<pre><script>"))
 
         let full = "<html><body>hello</body></html>"
-        XCTAssertEqual(
-            NativeArtifactSandbox.document(kind: .html, content: full),
-            full
+        let secured = NativeArtifactSandbox.document(kind: .html, content: full)
+        XCTAssertTrue(secured.contains("<body>hello</body>"))
+        XCTAssertTrue(
+            secured.contains(#"http-equiv="Content-Security-Policy""#)
         )
+        XCTAssertTrue(secured.contains("default-src 'none'"))
+        XCTAssertTrue(secured.contains("connect-src 'none'"))
+        XCTAssertTrue(secured.contains("script-src 'unsafe-inline'"))
+        XCTAssertTrue(secured.contains("base-uri 'none'"))
+    }
+
+    func testThumbnailSandboxDisablesScriptsAndMotion() {
+        let thumbnail = NativeArtifactSandbox.document(
+            kind: .html,
+            content: "<html><head><title>Card</title></head><body><script>run()</script></body></html>",
+            policy: .thumbnail
+        )
+
+        XCTAssertTrue(thumbnail.contains("script-src 'none'"))
+        XCTAssertFalse(thumbnail.contains("script-src 'unsafe-inline'"))
+        XCTAssertTrue(thumbnail.contains(#"id="juno-inert-preview""#))
+        XCTAssertTrue(thumbnail.contains("pointer-events:none"))
+        let securityIndex = try? XCTUnwrap(
+            thumbnail.range(of: #"http-equiv="Content-Security-Policy""#)?.lowerBound
+        )
+        let titleIndex = try? XCTUnwrap(thumbnail.range(of: "<title>")?.lowerBound)
+        XCTAssertNotNil(securityIndex)
+        XCTAssertNotNil(titleIndex)
+        if let securityIndex, let titleIndex {
+            XCTAssertLessThan(securityIndex, titleIndex)
+        }
+    }
+
+    func testSandboxNetworkRulesBlockHierarchicalSchemesButKeepInlineAssets() throws {
+        let data = try XCTUnwrap(
+            NativeArtifactSandbox.networkContentRuleListJSON.data(using: .utf8)
+        )
+        let rules = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        )
+        let filter = try XCTUnwrap(
+            (rules.first?["trigger"] as? [String: String])?["url-filter"]
+        )
+        let expression = try NSRegularExpression(pattern: filter)
+        func isBlocked(_ value: String) -> Bool {
+            expression.firstMatch(
+                in: value,
+                range: NSRange(value.startIndex..., in: value)
+            ) != nil
+        }
+
+        XCTAssertEqual(rules.count, 1)
+        XCTAssertTrue(isBlocked("https://example.com/data.json"))
+        XCTAssertTrue(isBlocked("wss://example.com/socket"))
+        XCTAssertTrue(isBlocked("ftp://example.com/file"))
+        XCTAssertTrue(isBlocked("file:///Users/example/secret"))
+        XCTAssertFalse(isBlocked("data:image/png;base64,AA=="))
+        XCTAssertFalse(isBlocked("blob:null/example"))
+        XCTAssertTrue(rules.allSatisfy { rule in
+            (rule["action"] as? [String: String])?["type"] == "block"
+        })
     }
 
     private func artifactResponse(status: Int = 200) -> HTTPResponse {

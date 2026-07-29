@@ -19,6 +19,67 @@ private struct FakeDriver: ComputerUseDriving {
     }
 }
 
+private actor BlockingComputerUseDriverState {
+    private var captureStarted = false
+    private var captureReleased = false
+    private var captureStartWaiters: [CheckedContinuation<Void, Never>] = []
+    private var captureWaiter: CheckedContinuation<Void, Never>?
+    private var performedActionCount = 0
+
+    func waitForCaptureToStart() async {
+        if captureStarted { return }
+        await withCheckedContinuation { continuation in
+            captureStartWaiters.append(continuation)
+        }
+    }
+
+    func capture() async {
+        captureStarted = true
+        let waiters = captureStartWaiters
+        captureStartWaiters.removeAll()
+        for waiter in waiters {
+            waiter.resume()
+        }
+        if captureReleased { return }
+        await withCheckedContinuation { continuation in
+            if captureReleased {
+                continuation.resume()
+            } else {
+                captureWaiter = continuation
+            }
+        }
+    }
+
+    func releaseCapture() {
+        captureReleased = true
+        captureWaiter?.resume()
+        captureWaiter = nil
+    }
+
+    func recordAction() {
+        performedActionCount += 1
+    }
+
+    var actionCount: Int { performedActionCount }
+}
+
+private struct BlockingComputerUseDriver: ComputerUseDriving {
+    let state: BlockingComputerUseDriverState
+
+    func screenCapturePermission() -> ComputerUsePermissionState { .granted }
+    func accessibilityPermission() -> ComputerUsePermissionState { .granted }
+    func displayBounds() async throws -> CGRect {
+        CGRect(x: 0, y: 0, width: 1_000, height: 800)
+    }
+    func captureScreen() async throws -> Data {
+        await state.capture()
+        return Data([0x89, 0x50])
+    }
+    func perform(_ action: ComputerUseActionKind) async throws {
+        await state.recordAction()
+    }
+}
+
 final class ComputerUseCoordinatorTests: XCTestCase {
     private let sessionID = CodeSessionID()
 
@@ -145,6 +206,67 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         }
     }
 
+    func testEmergencyStopRevokesActionSuspendedDuringCapture() async throws {
+        let driverState = BlockingComputerUseDriverState()
+        let coordinator = ComputerUseCoordinator(
+            driver: BlockingComputerUseDriver(state: driverState)
+        )
+        let sessionID = self.sessionID
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+
+        let action = Task {
+            try await coordinator.perform(
+                .click(x: 20, y: 20),
+                sessionID: sessionID
+            )
+        }
+        await driverState.waitForCaptureToStart()
+        await coordinator.emergencyStop()
+        await driverState.releaseCapture()
+
+        do {
+            _ = try await action.value
+            XCTFail("expected the suspended action to be revoked")
+        } catch let error as ComputerUseError {
+            XCTAssertEqual(error, .notActive)
+        }
+        let actionCount = await driverState.actionCount
+        let state = await coordinator.currentState
+        XCTAssertEqual(actionCount, 0)
+        XCTAssertEqual(state, .idle)
+    }
+
+    func testReactivationDoesNotReviveActionFromPreviousGrant() async throws {
+        let driverState = BlockingComputerUseDriverState()
+        let coordinator = ComputerUseCoordinator(
+            driver: BlockingComputerUseDriver(state: driverState)
+        )
+        let sessionID = self.sessionID
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+
+        let oldAction = Task {
+            try await coordinator.perform(
+                .click(x: 20, y: 20),
+                sessionID: sessionID
+            )
+        }
+        await driverState.waitForCaptureToStart()
+        await coordinator.deactivate(sessionID: sessionID)
+        try await coordinator.activate(sessionID: sessionID, userConsented: true)
+        await driverState.releaseCapture()
+
+        do {
+            _ = try await oldAction.value
+            XCTFail("expected the previous consent generation to stay revoked")
+        } catch let error as ComputerUseError {
+            XCTAssertEqual(error, .notActive)
+        }
+        let actionCount = await driverState.actionCount
+        let state = await coordinator.currentState
+        XCTAssertEqual(actionCount, 0)
+        XCTAssertEqual(state, .active(sessionID: sessionID))
+    }
+
     func testSystemDriverExposesRealDisplayAndPermissionPreflight() async throws {
         let driver = SystemComputerUseDriver()
         let bounds = try await driver.displayBounds()
@@ -158,6 +280,7 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         let coordinator = ComputerUseCoordinator(driver: FakeDriver())
         var snapshot = await coordinator.snapshot()
         XCTAssertFalse(snapshot.isActive)
+        XCTAssertNil(snapshot.activeSessionID)
         XCTAssertEqual(snapshot.screenCapturePermission, .granted)
         XCTAssertEqual(snapshot.accessibilityPermission, .granted)
         XCTAssertEqual(snapshot.displayBounds?.width, 1_000)
@@ -167,6 +290,25 @@ final class ComputerUseCoordinatorTests: XCTestCase {
         _ = try await coordinator.perform(.screenshot, sessionID: sessionID)
         snapshot = await coordinator.snapshot()
         XCTAssertTrue(snapshot.isActive)
+        XCTAssertEqual(snapshot.activeSessionID, sessionID)
         XCTAssertEqual(snapshot.journal.count, 1)
+    }
+
+    func testScopedDeactivationCannotStopAnotherSession() async throws {
+        let coordinator = ComputerUseCoordinator(driver: FakeDriver())
+        let otherSessionID = CodeSessionID(value: "other-session")
+        try await coordinator.activate(
+            sessionID: otherSessionID,
+            userConsented: true
+        )
+
+        await coordinator.deactivate(sessionID: sessionID)
+        var snapshot = await coordinator.snapshot()
+        XCTAssertEqual(snapshot.activeSessionID, otherSessionID)
+
+        await coordinator.deactivate(sessionID: otherSessionID)
+        snapshot = await coordinator.snapshot()
+        XCTAssertFalse(snapshot.isActive)
+        XCTAssertNil(snapshot.activeSessionID)
     }
 }

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Observation
 import JunoCodeCore
@@ -103,20 +104,38 @@ public final class WorkbenchModel {
             self.availableModels = availableModels
         }
 
-        /// Default storage under Application Support/JunoCode.
+        /// Default storage under a one-way account scope in
+        /// Application Support/JunoCode/accounts.
+        ///
+        /// The account identifier never becomes a path component or local
+        /// metadata. Besides avoiding unsafe characters, hashing prevents a
+        /// second macOS user who can inspect the container from learning Juno
+        /// account identifiers from folder names. Most importantly, switching
+        /// accounts cannot reopen another account's transcripts, workspace
+        /// bookmarks, checkpoints or goals.
         public static func standard(
+            accountID: String,
             modelClient: any AgentModelClient,
             availableModels: [ModelOption]
         ) -> Dependencies {
             let base = FileManager.default.urls(
                 for: .applicationSupportDirectory,
                 in: .userDomainMask
-            )[0].appendingPathComponent("JunoCode", isDirectory: true)
+            )[0]
+                .appendingPathComponent("JunoCode", isDirectory: true)
+                .appendingPathComponent("accounts", isDirectory: true)
+                .appendingPathComponent(accountStorageKey(for: accountID), isDirectory: true)
             return Dependencies(
                 storageRootURL: base,
                 modelClient: modelClient,
                 availableModels: availableModels
             )
+        }
+
+        static func accountStorageKey(for accountID: String) -> String {
+            SHA256.hash(data: Data(accountID.utf8))
+                .map { String(format: "%02x", $0) }
+                .joined()
         }
     }
 
@@ -169,7 +188,7 @@ public final class WorkbenchModel {
     /// The models offered in the new-session composer. Seeded from
     /// `dependencies.availableModels` and refreshable once the real manifest
     /// loads after sign-in.
-    public var availableModels: [ModelOption]
+    public private(set) var availableModels: [ModelOption]
 
     /// Canonical model id to human name, for the transcript's attribution line.
     ///
@@ -358,11 +377,51 @@ public final class WorkbenchModel {
             session: session,
             context: context,
             store: sessionStore,
-            modelClient: dependencies.modelClient
+            modelClient: dependencies.modelClient,
+            modelSupportsVision: { [weak self] modelID in
+                self?.availableModels
+                    .first(where: { $0.modelID == modelID })?
+                    .catalog?
+                    .capabilities
+                    .contains(.vision) == true
+            }
         )
         controllers[sessionID] = controller
         await controller.attach()
+        await controller.reconcileModelCapabilities()
         return controller
+    }
+
+    /// Replaces the signed-in account's model manifest and immediately revokes
+    /// capabilities that no longer exist. This is deliberately an async setter:
+    /// a manifest downgrade must stop an active Computer Use grant before the
+    /// caller can consider the update applied.
+    public func setAvailableModels(_ models: [ModelOption]) async {
+        availableModels = models
+        let currentControllers = Array(controllers.values)
+        for controller in currentControllers {
+            await controller.reconcileModelCapabilities()
+        }
+    }
+
+    /// Ends every account-bound activity before the signed-in workbench is
+    /// discarded. Dropping the observable model alone is insufficient: its
+    /// controller tasks, shell commands, approval continuations and shared
+    /// Computer Use coordinator can all outlive the last view that referenced
+    /// them.
+    public func shutdown() async {
+        let currentControllers = Array(controllers.values)
+        controllers.removeAll()
+        for controller in currentControllers {
+            await controller.stop()
+            await controller.detach()
+        }
+        if let storeObserver {
+            await sessionStore.removeObserver(storeObserver)
+            self.storeObserver = nil
+        }
+        contexts.removeAll()
+        selectedSessionID = nil
     }
 
     public func renameSession(id: CodeSessionID, title: String) async {
@@ -380,11 +439,31 @@ public final class WorkbenchModel {
     }
 
     public func deleteSession(id: CodeSessionID) async {
-        if let controller = controllers[id] {
-            await controller.stop()
-            await controller.detach()
+        guard let session = sessions.first(where: { $0.id == id }) else {
+            return
         }
-        try? await sessionStore.deleteSession(id: id)
+        let controller = controllers[id]
+        if let controller {
+            await controller.stop()
+        }
+        do {
+            if let context = contexts[session.workspaceID] {
+                try await context.checkpoints.removeCheckpoints(for: id)
+            } else {
+                try CheckpointStore.removePersistedCheckpoints(
+                    for: id,
+                    directoryURL: dependencies.storageRootURL
+                        .appendingPathComponent("checkpoints")
+                        .appendingPathComponent(session.workspaceID.value)
+                )
+            }
+            try await sessionStore.deleteSession(id: id)
+            await controller?.detach()
+            controllers.removeValue(forKey: id)
+            lastError = nil
+        } catch {
+            lastError = "Could not completely delete the session: \(error)"
+        }
     }
 
     // MARK: - Derived lists

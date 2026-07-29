@@ -1,6 +1,7 @@
 import JunoChatKit
 import JunoCodeBridge
 import JunoCodeCore
+import JunoCodeKit
 import JunoCodeUI
 import Testing
 @testable import JunoDesktop
@@ -102,5 +103,45 @@ struct DesktopCodeModelMappingTests {
         // The session always sends one of the three, so the control can never be
         // empty — an unset thinking control would send an effort nobody chose.
         #expect(option?.supportedReasoningEfforts.isEmpty == false)
+    }
+
+    // MARK: - First-turn launch contract
+
+    @Test
+    func desktopLaunchTargetsMapOnlyRelayedWorkToTheNativeTaskAPI() {
+        #expect(DesktopCodeLaunchTarget.local.nativeTarget == nil)
+        #expect(DesktopCodeLaunchTarget.cloud.nativeTarget == .cloud)
+        #expect(DesktopCodeLaunchTarget.device.nativeTarget == .device)
+    }
+
+    @Test
+    func aLocalDraftPreservesEveryVisibleChoice() {
+        let workspaceID = WorkspaceID(value: "workspace")
+        let draft = DesktopLocalCodeDraft(
+            workspaceID: workspaceID,
+            prompt: "Review this safely",
+            behavior: .plan,
+            permissionMode: .askBeforeChanges,
+            modelID: "anthropic:claude-sonnet-5",
+            reasoningEffort: .high
+        )
+
+        #expect(draft.configuration.location == .local)
+        #expect(draft.configuration.behavior == .plan)
+        #expect(draft.configuration.permissionMode == .askBeforeChanges)
+        #expect(draft.configuration.modelID == "anthropic:claude-sonnet-5")
+        #expect(draft.configuration.reasoningEffort == .high)
+    }
+
+    @Test
+    func firstPromptBecomesAReadableSessionTitle() {
+        #expect(
+            DesktopLocalCodeDraft.title(
+                from: "\n  Fix the authentication race\nand verify the signed build"
+            ) == "Fix the authentication race"
+        )
+        #expect(
+            DesktopLocalCodeDraft.title(from: String(repeating: "a", count: 80)).count == 61
+        )
     }
 }

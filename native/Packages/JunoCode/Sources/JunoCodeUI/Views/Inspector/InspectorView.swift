@@ -117,33 +117,110 @@ struct ChangesTab: View {
     @Bindable var review: ReviewModel
     @State private var selection: String?
     @State private var revertingAll = false
+    @State private var confirmsRevertAll = false
+    @State private var pendingRevertPath: String?
+    @State private var pendingForcedRevertPath: String?
+    @State private var revertFailureTitle = ""
+    @State private var revertFailureMessage: String?
 
     var body: some View {
-        if controller.changes.isEmpty {
-            // One honest empty state. Never placeholder rows behind it: a grid of
-            // grey rectangles under the words "no changes" claims content that
-            // does not exist.
-            JunoEmptyState(
-                title: "No changes yet",
-                message: "Files Juno edits appear here, with the diff one click away.",
-                symbol: "plusminus.circle"
-            )
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            VStack(spacing: 0) {
-                List(controller.changes, selection: $selection) { change in
-                    row(change).tag(change.path)
-                }
-                .listStyle(.inset)
-                .accessibilityIdentifier("juno.code.changes")
-                .onChange(of: selection) {
-                    guard let selection else { return }
-                    review.present(path: selection)
-                }
+        Group {
+            if controller.changes.isEmpty {
+                // One honest empty state. Never placeholder rows behind it: a grid of
+                // grey rectangles under the words "no changes" claims content that
+                // does not exist.
+                JunoEmptyState(
+                    title: "No changes yet",
+                    message: "Files Juno edits appear here, with the diff one click away.",
+                    symbol: "plusminus.circle"
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(spacing: 0) {
+                    List(controller.changes, selection: $selection) { change in
+                        row(change).tag(change.path)
+                    }
+                    .listStyle(.inset)
+                    .accessibilityIdentifier("juno.code.changes")
+                    .onChange(of: selection) {
+                        guard let selection else { return }
+                        review.present(path: selection)
+                    }
 
-                Divider().overlay(Color.junoSeparator)
-                footer
+                    Divider().overlay(Color.junoSeparator)
+                    footer
+                }
             }
+        }
+        .confirmationDialog(
+            "Revert all unreviewed files?",
+            isPresented: $confirmsRevertAll,
+            titleVisibility: .visible
+        ) {
+            Button("Revert All", role: .destructive) {
+                revertingAll = true
+                Task {
+                    let result = await controller.rejectAll()
+                    await review.load(from: controller)
+                    revertingAll = false
+                    if let message = result.failureSummary {
+                        revertFailureTitle = "Some Files Were Not Reverted"
+                        revertFailureMessage = message
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "Juno restores each file from its checkpoint. Files changed afterward are left untouched."
+            )
+        }
+        .confirmationDialog(
+            "Revert this file?",
+            isPresented: Binding(
+                get: { pendingRevertPath != nil },
+                set: { if !$0 { pendingRevertPath = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let path = pendingRevertPath {
+                Button("Revert \(PathDisplay.fileName(path))", role: .destructive) {
+                    pendingRevertPath = nil
+                    revertFile(path, force: false)
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingRevertPath = nil }
+        } message: {
+            Text("The file is restored from Juno's checkpoints unless newer content is detected.")
+        }
+        .confirmationDialog(
+            "That file changed since Juno captured it",
+            isPresented: Binding(
+                get: { pendingForcedRevertPath != nil },
+                set: { if !$0 { pendingForcedRevertPath = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let path = pendingForcedRevertPath {
+                Button("Restore Anyway", role: .destructive) {
+                    pendingForcedRevertPath = nil
+                    revertFile(path, force: true)
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingForcedRevertPath = nil }
+        } message: {
+            Text("Restoring now discards content written after Juno's latest checkpoint.")
+        }
+        .alert(
+            revertFailureTitle,
+            isPresented: Binding(
+                get: { revertFailureMessage != nil },
+                set: { if !$0 { revertFailureMessage = nil } }
+            )
+        ) {
+            Button("OK") { revertFailureMessage = nil }
+        } message: {
+            Text(revertFailureMessage ?? "The restore could not be completed.")
         }
     }
 
@@ -185,12 +262,7 @@ struct ChangesTab: View {
             ProgressView().controlSize(.small)
         }
         Button("Revert All") {
-            revertingAll = true
-            Task {
-                await controller.rejectAll()
-                await review.load(from: controller)
-                revertingAll = false
-            }
+            confirmsRevertAll = true
         }
         .controlSize(.small)
         .disabled(revertingAll || !isEditable)
@@ -249,7 +321,7 @@ struct ChangesTab: View {
             Divider()
             Button("Keep") { controller.acceptChange(path: change.path) }
             Button("Revert", role: .destructive) {
-                Task { await review.revertFile(change.path, using: controller) }
+                pendingRevertPath = change.path
             }
             .disabled(!isEditable)
         }
@@ -261,6 +333,31 @@ struct ChangesTab: View {
     private func open(_ change: TrackedChange) {
         guard let path = try? WorkspacePath(change.path) else { return }
         Task { await review.open(path, using: controller) }
+    }
+
+    private func revertFile(_ path: String, force: Bool) {
+        Task {
+            let result = await review.revertFile(
+                path,
+                force: force,
+                using: controller
+            )
+            switch result {
+            case .restored:
+                break
+            case .diverged where !force:
+                // Only a fingerprint mismatch earns an explicit overwrite
+                // choice. Missing checkpoints and I/O failures remain errors.
+                pendingForcedRevertPath = path
+            case .diverged:
+                revertFailureTitle = "Could Not Revert File"
+                revertFailureMessage =
+                    result.failureMessage ?? "The file still differs from its checkpoint."
+            case let .failed(message):
+                revertFailureTitle = "Could Not Revert File"
+                revertFailureMessage = message
+            }
+        }
     }
 
     /// "modified · Sources/JunoCodeUI/Views" — the state and where it lives.

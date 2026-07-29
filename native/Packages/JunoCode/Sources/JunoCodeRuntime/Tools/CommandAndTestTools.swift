@@ -97,6 +97,7 @@ public struct RunTestsTool: CodeTool {
     public static let defaultTimeoutSeconds: Double = 600
 
     private let tests: any TestRunning
+    private let classifier = CommandClassifier()
 
     public init(tests: any TestRunning) {
         self.tests = tests
@@ -104,36 +105,42 @@ public struct RunTestsTool: CodeTool {
 
     public let name = "run_tests"
     public let description =
-        "Run the project's tests. Omit 'command' to use the detected test command."
+        "Run an explicit project test or verification command. The exact command always requires approval."
     public var inputSchema: JSONValue {
         [
             "type": "object",
             "properties": ["command": ["type": "string"]],
-            "required": [],
+            "required": ["command"],
         ]
     }
 
-    public func assessRisk(input: JSONValue) -> ActionRisk { .execute }
+    public func assessRisk(input: JSONValue) -> ActionRisk {
+        // Test commands execute repository-controlled code: package scripts,
+        // compiler plugins, build phases and test binaries. Keep every exact
+        // invocation approval-bound even in Full Access.
+        .critical
+    }
 
     public func summary(input: JSONValue) -> String {
-        if let command = input["command"]?.stringValue {
-            return "Run tests: \(command)"
+        "Run tests: \(input["command"]?.stringValue ?? "?")"
+    }
+
+    public func precheck(input: JSONValue) -> ToolError? {
+        guard let command = explicitCommand(from: input) else {
+            return .invalidInput(message: "Missing non-empty 'command'.")
         }
-        return "Run the detected test suite"
+        if case let .forbidden(reason) = classifier.classify(command) {
+            return .denied(reason: reason)
+        }
+        return nil
     }
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
-        let command: String
-        if let explicit = input["command"]?.stringValue, !explicit.isEmpty {
-            command = explicit
-        } else {
-            let suggestions = await tests.detectSuggestions()
-            guard let first = suggestions.first else {
-                throw ToolError.executionFailed(
-                    message: "No test toolchain detected; pass an explicit command."
-                )
-            }
-            command = first.command
+        guard let command = explicitCommand(from: input) else {
+            throw ToolError.invalidInput(message: "Missing non-empty 'command'.")
+        }
+        if case let .forbidden(reason) = classifier.classify(command) {
+            throw ToolError.denied(reason: reason)
         }
         var collected = ""
         var result: CommandResult?
@@ -188,5 +195,14 @@ public struct RunTestsTool: CodeTool {
                 )
             ]
         )
+    }
+
+    private func explicitCommand(from input: JSONValue) -> String? {
+        guard let rawCommand = input["command"]?.stringValue else {
+            return nil
+        }
+        let command = rawCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return nil }
+        return command
     }
 }

@@ -219,7 +219,7 @@ struct JunoMobileConnectionsView: View {
     private func row(_ connector: NativeConnector) -> some View {
         JunoCard(padding: 14) {
             HStack(alignment: .center, spacing: 13) {
-                JunoConnectorMark(connector: connector)
+                JunoMobileConnectorTile(connector: connector)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(connector.label)
                         .font(.system(size: 16, weight: .semibold))
@@ -312,10 +312,29 @@ struct JunoMobileConnectionsView: View {
     }
 }
 
-/// A connector's logo: the catalog's own image where there is one, the app's
-/// bundled provider mark for a first-party connector, and a neutral plug where
-/// neither exists. Never a coloured placeholder pretending to be a brand.
-private struct JunoConnectorMark: View {
+/// A connector's real brand mark on its own tile.
+///
+/// The mark itself is ``JunoConnectorMark`` from the design system — the same
+/// type the Mac draws, so the two apps cannot disagree about what GitHub's logo
+/// is. This view is only the tile around it.
+///
+/// It replaced a local version that did two things wrong, one per kind of
+/// connector:
+///
+/// - **The apps Juno ships** (GitHub, Figma, Notion, the Apple three) carry no
+///   `logoURL`, so they fell through to an **SF Symbol tinted coral** — a wrench
+///   for Figma, `chevron.left.forwardslash.chevron.right` for GitHub. A generic
+///   glyph standing in for a brand is the clearest tell that a screen was
+///   assembled rather than designed: the reader knows what GitHub's mark looks
+///   like, and that is not it. They now come from bundled artwork traced from
+///   the website's own `connector-logos.tsx`.
+/// - **The catalog's managed apps** (Gmail, Slack, Drive, Linear…) *do* carry a
+///   `logoURL`, and it was handed to `AsyncImage` — which does not decode the
+///   SVG most of them are served as. Every one of them showed the placeholder.
+///   The shared mark fetches the bytes itself and builds a `UIImage`, which
+///   handles SVG and raster alike, and caches the result so a scrolling
+///   directory does not re-fetch a logo per row.
+private struct JunoMobileConnectorTile: View {
     let connector: NativeConnector
 
     var body: some View {
@@ -324,41 +343,15 @@ private struct JunoConnectorMark: View {
                 .fill(Color.junoCanvas)
             RoundedRectangle(cornerRadius: 11, style: .continuous)
                 .strokeBorder(Color.junoHairline, lineWidth: 1)
-            content
+            JunoConnectorMark(
+                connectorID: connector.id,
+                connectorName: connector.label,
+                logoURL: connector.logoURL,
+                size: 22
+            )
         }
         .frame(width: 40, height: 40)
         .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if let url = connector.logoURL {
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFit().padding(9)
-            } placeholder: {
-                fallback
-            }
-        } else {
-            fallback
-        }
-    }
-
-    private var fallback: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 17))
-            .foregroundStyle(Color.junoAccent)
-    }
-
-    private var symbol: String {
-        switch connector.id {
-        case "github": "chevron.left.forwardslash.chevron.right"
-        case "figma": "paintbrush.pointed"
-        case "notion": "note.text"
-        case "apple-calendar": "calendar"
-        case "apple-mail": "envelope"
-        case "apple-music": "music.note"
-        default: "powerplug"
-        }
     }
 }
 

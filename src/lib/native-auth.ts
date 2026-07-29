@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   NATIVE_AUTH_CODE_TTL_MS,
   NATIVE_REFRESH_TTL_MS,
@@ -137,6 +138,117 @@ export async function exchangeNativeAuthorizationCode(input: {
       id: result.session.id,
       name: result.session.name,
       createdAt: result.session.createdAt.toISOString(),
+    },
+  };
+}
+
+// Brute-force limits for native password sign-in. Deliberately the SAME bucket
+// keys as the web credentials provider in `src/lib/auth.ts`: the limit belongs
+// to the account and the caller, not to the surface they happen to knock on, so
+// an attacker cannot double their budget by alternating web and app.
+const NATIVE_SIGNIN_WINDOW_SEC = 15 * 60;
+const NATIVE_SIGNIN_MAX_PER_EMAIL = 10;
+const NATIVE_SIGNIN_MAX_PER_IP = 30;
+
+/**
+ * Issues device credentials straight from an email/password pair, so the apps
+ * can sign in without handing the user off to a system browser.
+ *
+ * Every rejection — unknown account, wrong password, OAuth-only account,
+ * suspended account, throttled caller — raises the *same* `invalid_grant`. The
+ * response must not tell an unauthenticated caller which accounts exist, and
+ * that matches what the web credentials provider already surfaces (a single
+ * generic CredentialsSignin).
+ */
+export async function signInNativeWithPassword(input: {
+  email: string;
+  password: string;
+  installationId: string;
+  deviceName: string;
+  platform: string;
+  appVersion: string;
+  ip: string;
+}) {
+  // Imported here, not at module scope: `@/lib/password` pulls in `server-only`,
+  // which throws the moment it is required outside a server context. `api-v1.ts`
+  // imports this module purely for `NativeAuthError`, so a top-level import
+  // would drag that guard into every consumer — including the plain-node
+  // contract tests, which have no react-server condition set.
+  const { hashPassword, verifyPassword } = await import("@/lib/password");
+  const invalid = () => new NativeAuthError("invalid_grant", 400, "The credentials are invalid.");
+  const email = input.email.trim().toLowerCase();
+
+  const checks = [
+    rateLimit({
+      key: `signin:email:${email}`,
+      limit: NATIVE_SIGNIN_MAX_PER_EMAIL,
+      windowSec: NATIVE_SIGNIN_WINDOW_SEC,
+    }),
+  ];
+  // No proxy header (plain local dev) means every caller would share one
+  // "unknown" bucket, so the IP net is skipped rather than shared.
+  if (input.ip !== "unknown") {
+    checks.push(
+      rateLimit({
+        key: `signin:ip:${input.ip}`,
+        limit: NATIVE_SIGNIN_MAX_PER_IP,
+        windowSec: NATIVE_SIGNIN_WINDOW_SEC,
+      }),
+    );
+  }
+  const limits = await Promise.all(checks);
+  if (limits.some((result) => !result.success)) throw invalid();
+
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, sessionVersion: true, bannedAt: true, hashedPassword: true },
+  });
+  // OAuth-only accounts have no hash; they must keep using the browser flow.
+  if (!user?.hashedPassword) throw invalid();
+  const { ok, needsUpgrade } = await verifyPassword(input.password, user.hashedPassword);
+  if (!ok) throw invalid();
+  if (user.bannedAt) throw invalid();
+  if (needsUpgrade) {
+    // Best-effort migration of a legacy hash while we hold the plaintext; a
+    // failure here re-upgrades on the next sign-in and must not block this one.
+    try {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { hashedPassword: await hashPassword(input.password) },
+      });
+    } catch {
+      /* retried on the next sign-in */
+    }
+  }
+
+  const refreshToken = randomSecret(48);
+  const refreshTokenExpiresAt = new Date(Date.now() + NATIVE_REFRESH_TTL_MS);
+  const session = await prisma.nativeDeviceSession.create({
+    data: {
+      userId: user.id,
+      installationIdHash: installationHash(input.installationId),
+      name: input.deviceName,
+      platform: input.platform,
+      appVersion: input.appVersion,
+      refreshTokens: {
+        create: {
+          familyId: randomSecret(18),
+          tokenHash: hashSecret(refreshToken),
+          expiresAt: refreshTokenExpiresAt,
+        },
+      },
+    },
+  });
+
+  return {
+    tokenType: "Bearer" as const,
+    ...(await accessTokenFor(user, session.id)),
+    refreshToken,
+    refreshTokenExpiresAt: refreshTokenExpiresAt.toISOString(),
+    deviceSession: {
+      id: session.id,
+      name: session.name,
+      createdAt: session.createdAt.toISOString(),
     },
   };
 }

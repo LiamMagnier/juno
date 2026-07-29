@@ -23,10 +23,19 @@ public struct ComputerScreenshotTool: CodeTool {
 
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let capture = try await computer.perform(.screenshot, sessionID: context.sessionID)
-        // Kept ephemeral and returned only to the current model turn. It is not
-        // written into session events, sync, analytics or the local transcript.
+        let bounds = try await computer.displayBounds()
+        // Kept ephemeral and sent as a real multimodal input to the current
+        // model turn. It is not written into session events, sync, analytics
+        // or the local transcript.
         return ToolResult(
-            content: "data:image/png;base64,\(capture.after.base64EncodedString())"
+            content: """
+            Screenshot captured. Coordinates use macOS display points with \
+            origin (\(Int(bounds.origin.x)), \(Int(bounds.origin.y))) and size \
+            \(Int(bounds.size.width)) × \(Int(bounds.size.height)).
+            """,
+            images: [
+                ModelImage(mediaType: "image/jpeg", data: capture.after, detail: .high),
+            ]
         )
     }
 }

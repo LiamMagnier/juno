@@ -156,6 +156,48 @@ if [ $# -ge 1 ]; then
             fail "preview harness present in release binary ($HITS flags, $SYMS symbols)"
         fi
     fi
+
+    INFO_PLIST="$APP/Contents/Info.plist"
+    if [ ! -f "$INFO_PLIST" ]; then
+        fail "no Info.plist at $INFO_PLIST"
+    else
+        APP_BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$INFO_PLIST" 2>/dev/null)
+        APP_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO_PLIST" 2>/dev/null)
+        APP_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$INFO_PLIST" 2>/dev/null)
+        APP_GIT_SHA=$(/usr/libexec/PlistBuddy -c "Print :JunoGitSHA" "$INFO_PLIST" 2>/dev/null)
+        APP_CONTRACT=$(/usr/libexec/PlistBuddy -c "Print :JunoContractVersion" "$INFO_PLIST" 2>/dev/null)
+        APP_CHANNEL=$(/usr/libexec/PlistBuddy -c "Print :JunoChannel" "$INFO_PLIST" 2>/dev/null)
+        EXPECTED_VERSION=$(sed -n 's/^MARKETING_VERSION = //p' native/Config/Base.xcconfig | head -1)
+        EXPECTED_BUILD=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' native/Config/Base.xcconfig | head -1)
+        EXPECTED_GIT_SHA=$(git rev-parse --short=10 HEAD 2>/dev/null)
+
+        if [ "$APP_BUNDLE_ID" = "com.liammagnier.JunoDesktop" ]; then
+            pass "Stable bundle identifier is $APP_BUNDLE_ID"
+        else
+            fail "unexpected Stable bundle identifier '$APP_BUNDLE_ID'"
+        fi
+        if [ "$APP_VERSION" = "$EXPECTED_VERSION" ] && [ "$APP_BUILD" = "$EXPECTED_BUILD" ]; then
+            pass "bundle version is $APP_VERSION ($APP_BUILD)"
+        else
+            fail "bundle version $APP_VERSION ($APP_BUILD) does not match $EXPECTED_VERSION ($EXPECTED_BUILD)"
+        fi
+        if [ "$APP_GIT_SHA" = "$EXPECTED_GIT_SHA" ]; then
+            pass "bundle commit is $APP_GIT_SHA"
+        else
+            fail "bundle commit '$APP_GIT_SHA' does not match HEAD $EXPECTED_GIT_SHA"
+            info "Run ./native/Scripts/write-build-metadata.sh after the release commit."
+        fi
+        if [ "$APP_CONTRACT" = "$BACKEND_VERSION" ]; then
+            pass "bundle contract is $APP_CONTRACT"
+        else
+            fail "bundle contract '$APP_CONTRACT' does not match source $BACKEND_VERSION"
+        fi
+        if [ "$APP_CHANNEL" = "stable" ]; then
+            pass "bundle channel is stable"
+        else
+            fail "bundle channel is '$APP_CHANNEL', expected stable"
+        fi
+    fi
     echo
 fi
 

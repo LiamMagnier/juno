@@ -1,8 +1,13 @@
 import JunoDesignSystem
+import JunoCodeUI
 import SwiftUI
 #if DEBUG
 import JunoPreviewSupport
 #endif
+
+enum JunoDesktopWindow {
+    static let mainID = "juno.main"
+}
 
 @main
 struct JunoDesktopApp: App {
@@ -35,7 +40,7 @@ struct JunoDesktopApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup(id: JunoDesktopWindow.mainID) {
             #if DEBUG
             if JunoPreviewEnvironment.isActive {
                 JunoDesktopPreviewRoot()
@@ -53,6 +58,13 @@ struct JunoDesktopApp: App {
         .commands {
             JunoDesktopCommands()
         }
+
+        // A real, independently resizable development preview. The scene lives
+        // in `JunoCodeUI`; registering it here is what makes the session
+        // toolbar's Preview action open a window rather than a decorative
+        // control. Each window owns the dev-server process it starts and tears
+        // that process down when it closes.
+        CodePreviewScene()
 
         // A `Settings` scene is what puts Juno's settings behind ⌘, and under the
         // application menu, where a Mac user looks for them. Reaching settings

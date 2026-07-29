@@ -64,6 +64,10 @@ struct DesktopArtifactsScreen: View {
     @State private var deleteTarget: String?
     @State private var pendingFile: DesktopArtifactFile?
     @State private var localErrorDescription: String?
+    @State private var previewReloadID = UUID()
+    /// Artifacts always enter through their visual library. Opening a card flips
+    /// this to the document; Back returns without losing the selected artifact.
+    @State private var libraryVisible = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Derived state
@@ -171,36 +175,14 @@ struct DesktopArtifactsScreen: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationSplitView {
-            artifactIndex
-                .junoSidebarColumn()
-        } detail: {
-            // `Color.clear.overlay`, and the choice is load-bearing. A detail
-            // column reports its ideal height up to the split view, which grows
-            // the window's AppKit split view to satisfy an ideal it cannot
-            // otherwise meet — so a long artifact resizes the *window* instead of
-            // scrolling inside it. A `ScrollView` does not stop that: it
-            // propagates its content's ideal height. `Color.clear` accepts
-            // whatever height it is proposed and an overlay is sized by its base,
-            // so nothing inside this page can reach the window.
-            //
-            // No `.junoReadingCanvas()` here: the warm canvas is painted once, on
-            // the window's own detail column (`DesktopChatWorkspace`). Repainting
-            // it per page is what turned the window into one flat cream field.
-            Color.clear
-                .overlay { canvas }
-                .navigationTitle(artifact?.title ?? "Artifacts")
-                .navigationSubtitle(subtitle)
-                .toolbar { artifactToolbar }
+        Color.clear.overlay {
+            if libraryVisible {
+                artifactLibrary
+            } else {
+                artifactDocument
+            }
         }
-        // Both of these belong to the split view, not to a column, and both
-        // placements have already cost this app a bug. `.inspector` on a *detail
-        // column* makes SwiftUI's hosting view request a constraint update from
-        // inside the window's own constraint pass, and the process takes SIGTRAP
-        // (bisected and documented in `DesktopCodeWorkspace`). `.searchable` on a
-        // *leading column* takes that column's titlebar safe area with it, so the
-        // list starts under the traffic lights and its first rows cannot be
-        // scrolled back into view.
+        .overlay(alignment: .bottom) { statusControl }
         .inspector(isPresented: $historyVisible) {
             versionInspector
                 .inspectorColumnWidth(
@@ -209,7 +191,6 @@ struct DesktopArtifactsScreen: View {
                     max: JunoInspectorMetrics.maximum
                 )
         }
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search artifacts")
         .task(id: model.selectedArtifactID) {
             draft = nil
             selectedVersion = nil
@@ -221,6 +202,16 @@ struct DesktopArtifactsScreen: View {
             guard let id = model.selectedArtifactID else { return }
             await model.openArtifact(id: id)
             mode = canPreview ? .preview : .source
+        }
+        .onAppear {
+            libraryVisible = true
+            historyVisible = false
+        }
+        .onChange(of: model.selectedArtifactID) { _, selected in
+            if selected == nil {
+                libraryVisible = true
+                historyVisible = false
+            }
         }
         .task(id: diffRequest) {
             guard let diffRequest, let artifact else {
@@ -272,6 +263,229 @@ struct DesktopArtifactsScreen: View {
         }
     }
 
+    private var artifactDocument: some View {
+        VStack(spacing: 0) {
+            documentCommandBar
+            Divider()
+            Color.clear.overlay { canvas }
+        }
+        .accessibilityIdentifier("juno.artifact-document")
+    }
+
+    // MARK: - Artifact library
+
+    private var artifactLibrary: some View {
+        VStack(spacing: 0) {
+            artifactLibraryHeader
+            Divider()
+            artifactLibraryContent
+        }
+    }
+
+    private var artifactLibraryHeader: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            HStack(alignment: .bottom, spacing: JunoSpace.section) {
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    Text("Artifacts")
+                        .junoPageHeading()
+                    Text("Pages, diagrams, code and documents Juno built with you.")
+                        .junoRowLabel()
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: JunoSpace.roomy)
+
+                if !model.artifacts.isEmpty {
+                    Text(
+                        model.artifacts.count == 1
+                            ? "1 artifact" : "\(model.artifacts.count) artifacts"
+                    )
+                    .junoCaption()
+                    .monospacedDigit()
+                    .accessibilityIdentifier("juno.artifact-count")
+                }
+            }
+
+            HStack(spacing: JunoSpace.cozy) {
+                HStack(spacing: JunoSpace.tight) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    TextField("Search artifacts", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .accessibilityIdentifier("juno.artifact-search")
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.tertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Clear artifact search")
+                    }
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .frame(height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
+                .frame(maxWidth: 420)
+
+                Menu {
+                    Button("All kinds") { kindFilter = nil }
+                    if !availableKinds.isEmpty {
+                        Divider()
+                        ForEach(availableKinds, id: \.self) { kind in
+                            Button {
+                                kindFilter = kind
+                            } label: {
+                                Label(
+                                    DesktopArtifactKindName.plural(kind),
+                                    systemImage: DesktopArtifactKindName.symbol(kind)
+                                )
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        kindFilter.map(DesktopArtifactKindName.plural) ?? "All kinds",
+                        systemImage: "line.3.horizontal.decrease"
+                    )
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityIdentifier("juno.artifact-kind-filter")
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.top, JunoSpace.section)
+        .padding(.bottom, JunoSpace.roomy)
+        .frame(maxWidth: 1152)
+        .frame(maxWidth: .infinity)
+    }
+
+    @ViewBuilder
+    private var artifactLibraryContent: some View {
+        if visibleArtifacts.isEmpty {
+            if model.artifacts.isEmpty {
+                emptyState
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                JunoEmptyState(
+                    title: "No artifacts match",
+                    message: "Juno searched titles, types, languages and conversations.",
+                    symbol: "magnifyingglass",
+                    actionLabel: "Clear Filters",
+                    action: {
+                        searchText = ""
+                        kindFilter = nil
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        } else {
+            artifactGrid
+        }
+    }
+
+    private var artifactGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(
+                        .adaptive(minimum: 210, maximum: 300),
+                        spacing: JunoSpace.regular,
+                        alignment: .topLeading
+                    )
+                ],
+                alignment: .leading,
+                spacing: JunoSpace.section
+            ) {
+                ForEach(visibleArtifacts) { artifact in
+                    artifactCard(artifact)
+                }
+            }
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.vertical, JunoSpace.section)
+            .frame(maxWidth: 1152)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .accessibilityIdentifier("juno.artifact-library-grid")
+    }
+
+    private func artifactCard(_ artifact: NativeArtifact) -> some View {
+        Button {
+            model.selectedArtifactID = artifact.id
+            libraryVisible = false
+        } label: {
+            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+                artifactCardPreview(artifact)
+
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
+                        .junoRowLabel()
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Text(rowMeta(artifact))
+                        .junoCaption()
+                        .monospacedDigit()
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button("Copy Source") { copySource(of: artifact) }
+                .disabled(artifact.currentContent == nil)
+            Button("Open in New Window") { openInWindow(artifact) }
+                .disabled(artifact.currentContent == nil)
+            Divider()
+            Button("Delete…", role: .destructive) { deleteTarget = artifact.id }
+                .disabled(model.isMutating)
+        }
+        .help(artifact.conversationTitle)
+        .accessibilityIdentifier("juno.artifact-card.\(artifact.id)")
+    }
+
+    @ViewBuilder
+    private func artifactCardPreview(_ artifact: NativeArtifact) -> some View {
+        Color.clear
+            .aspectRatio(4 / 3, contentMode: .fit)
+            .overlay {
+                if let content = artifact.currentContent {
+                    NativeArtifactPreview(
+                        kind: artifact.kind,
+                        content: content,
+                        mode: artifact.kind.supportsRenderedPreview ? .preview : .source,
+                        policy: .thumbnail
+                    )
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                } else {
+                    VStack(spacing: JunoSpace.cozy) {
+                        Image(systemName: DesktopArtifactKindName.symbol(artifact.kind))
+                            .font(.system(.largeTitle, weight: .light))
+                        Text(DesktopArtifactKindName.singular(artifact.kind))
+                            .junoMono()
+                    }
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                }
+            }
+            .clipShape(
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+            )
+            .junoCard()
+    }
+
     private var subtitle: String {
         guard let artifact, let targetVersion else { return "" }
         var parts = [DesktopArtifactKindName.singular(artifact.kind)]
@@ -285,23 +499,18 @@ struct DesktopArtifactsScreen: View {
 
     // MARK: - Index column
 
-    /// The web's artifacts index: a count, the type chips, then the list of
-    /// documents on one raised card over the warm canvas.
+    /// A native document index. Search and type filtering stay in this pane so
+    /// they do not consume the window toolbar or steal the title-bar safe area.
     private var artifactIndex: some View {
-        // Clamped for the same reason the detail column is: a `List` is greedy
-        // vertically, and a margin applied *outside* a greedy child asks the
-        // split view for "the whole column plus 24", which it cannot satisfy
-        // without growing. The base takes the proposed size and the overlay is
-        // sized by it, so the margin is spent inside the column instead.
-        Color.clear
-            .overlay {
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    indexHeader
-                    indexBody
-                }
-                .padding(JunoSpace.cozy)
-            }
-            .safeAreaInset(edge: .bottom, spacing: 0) { statusFooter }
+        VStack(alignment: .leading, spacing: 0) {
+            indexHeader
+            Divider()
+            indexBody
+        }
+        .background(.bar)
+        .frame(width: 380, height: 500)
+        .accessibilityIdentifier("juno.artifact-index")
+        .safeAreaInset(edge: .bottom, spacing: 0) { statusControl }
     }
 
     /// The web's page head, at column scale: the serif title, the line that says
@@ -312,76 +521,91 @@ struct DesktopArtifactsScreen: View {
     /// the surface said what an artifact is or why the reader would keep one,
     /// and the window's own title bar is showing the *open document's* name, so
     /// the collection had no name anywhere on screen.
-    @ViewBuilder
     private var indexHeader: some View {
-        if !model.artifacts.isEmpty {
-            VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                HStack(alignment: .firstTextBaseline) {
-                    // `cardTitle` rather than `pageHeading`: this is a heading
-                    // inside a 264pt column, and the page-scale serif wraps to
-                    // two lines at the sidebar's minimum width.
-                    Text("Artifacts")
-                        .font(JunoSerif.cardTitle)
-                    Spacer(minLength: JunoSpace.snug)
-                    Text(
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Artifacts")
+                    .font(.title2.weight(.semibold))
+                Spacer(minLength: JunoSpace.snug)
+                Text("\(model.artifacts.count)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(
                         model.artifacts.count == 1
                             ? "1 artifact" : "\(model.artifacts.count) artifacts"
                     )
-                    .junoCodeSmall()
-                    .foregroundStyle(.secondary)
                     .accessibilityIdentifier("juno.artifact-count")
-                }
-
-                Text("Everything Juno built with you, newest first.")
-                    .junoCaption()
-                    .fixedSize(horizontal: false, vertical: true)
-
-                if availableKinds.count > 1 { kindChips }
             }
-            .padding(.horizontal, JunoSpace.hairline)
-        }
-    }
 
-    /// Chips rather than a `Picker`, because the web's filter is a *set of
-    /// present types* that changes as the account gains and loses artifacts, and
-    /// a segmented control with a moving number of segments re-lays-out under the
-    /// pointer. They scroll horizontally for the same reason the phone's do: the
-    /// column is narrow and SwiftUI has no wrapping stack.
-    private var kindChips: some View {
-        ScrollView(.horizontal) {
             HStack(spacing: JunoSpace.tight) {
-                chip(nil, label: "All")
-                ForEach(availableKinds, id: \.self) { kind in
-                    chip(kind, label: DesktopArtifactKindName.plural(kind))
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                TextField("Search artifacts", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .accessibilityIdentifier("juno.artifact-search")
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear artifact search")
                 }
             }
-            .padding(.vertical, 1)
-        }
-        .scrollIndicators(.hidden)
-        .scrollBounceBehavior(.basedOnSize)
-        .accessibilityIdentifier("juno.artifact-kind-filter")
-    }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 30)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
 
-    /// Selected state is carried by the outline and the ink, not by a tinted
-    /// fill: the accent is spent on one primary action per surface, and a row of
-    /// filled coral pills would be the loudest thing in the window.
-    private func chip(_ kind: NativeArtifactKind?, label: String) -> some View {
-        let active = kindFilter == kind
-        return Button {
-            kindFilter = kind
-        } label: {
-            Text(label)
-                .junoCodeSmall()
-                .foregroundStyle(active ? Color.junoAccent : Color.secondary)
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.vertical, JunoSpace.hairline)
-                .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(active ? Color.junoAccent : Color.junoBorder)
-                )
+            HStack(spacing: JunoSpace.tight) {
+                Menu {
+                    Button("All kinds") { kindFilter = nil }
+                    if !availableKinds.isEmpty {
+                        Divider()
+                        ForEach(availableKinds, id: \.self) { kind in
+                            Button {
+                                kindFilter = kind
+                            } label: {
+                                Label(
+                                    DesktopArtifactKindName.plural(kind),
+                                    systemImage: DesktopArtifactKindName.symbol(kind)
+                                )
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        kindFilter.map(DesktopArtifactKindName.plural) ?? "All kinds",
+                        systemImage: "line.3.horizontal.decrease"
+                    )
+                    .font(.caption)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .accessibilityIdentifier("juno.artifact-kind-filter")
+
+                Spacer()
+
+                if searchText.isEmpty, kindFilter == nil {
+                    Text("Newest first")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                } else {
+                    Button("Clear") {
+                        searchText = ""
+                        kindFilter = nil
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
+        .padding(JunoSpace.cozy)
     }
 
     /// The card is built only when there are rows to put in it. An empty raised
@@ -393,7 +617,7 @@ struct DesktopArtifactsScreen: View {
             indexEmptyState
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            List(selection: $model.selectedArtifactID) {
+            List(selection: artifactSelection) {
                 ForEach(visibleArtifacts) { artifact in
                     row(artifact)
                         // Clear rather than absent: a list row with no background
@@ -407,12 +631,18 @@ struct DesktopArtifactsScreen: View {
             .listStyle(.inset)
             .scrollContentBackground(.hidden)
             .junoSidebarSelectionTint()
-            .clipShape(
-                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-            )
-            .junoCard()
             .accessibilityIdentifier("juno.artifact-list")
         }
+    }
+
+    private var artifactSelection: Binding<String?> {
+        Binding(
+            get: { model.selectedArtifactID },
+            set: { selection in
+                model.selectedArtifactID = selection
+                if selection != nil { libraryVisible = false }
+            }
+        )
     }
 
     @ViewBuilder
@@ -448,7 +678,7 @@ struct DesktopArtifactsScreen: View {
     /// to quit the app. ``DesktopArtifactStatus`` now turns the raw string into a
     /// sentence, and anything retryable carries the retry.
     @ViewBuilder
-    private var statusFooter: some View {
+    private var statusControl: some View {
         if let status = DesktopArtifactStatus(
             localError: localErrorDescription,
             phase: loadPhase,
@@ -463,9 +693,14 @@ struct DesktopArtifactsScreen: View {
                         .junoCaption()
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 520, alignment: .leading)
                         .textSelection(.enabled)
-                    Spacer(minLength: JunoSpace.tight)
-                    if status.isRetryable {
+                    if localErrorDescription != nil {
+                        Button("Dismiss") {
+                            localErrorDescription = nil
+                        }
+                        .controlSize(.small)
+                    } else if status.isRetryable {
                         Button("Try Again") {
                             localErrorDescription = nil
                             Task { await model.reload() }
@@ -478,8 +713,8 @@ struct DesktopArtifactsScreen: View {
                 .padding(.vertical, JunoSpace.snug)
                 .junoFloatingChrome(cornerRadius: JunoRadius.panel)
             }
-            .padding(.horizontal, JunoSpace.cozy)
-            .padding(.bottom, JunoSpace.cozy)
+            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.bottom, JunoSpace.roomy)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("juno.artifact-status")
         }
@@ -760,9 +995,9 @@ struct DesktopArtifactsScreen: View {
             content: displayedContent,
             mode: .preview
         )
-        .clipShape(RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous))
-        .junoCard()
-        .padding(JunoSpace.region)
+        .id(previewReloadID)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("juno.artifact-preview")
     }
 
     /// The editor is deliberately not inside ``JunoDetailPage``: a `TextEditor`
@@ -770,17 +1005,16 @@ struct DesktopArtifactsScreen: View {
     /// same margin — so switching Preview to Source does not change what kind of
     /// surface the document is sitting on.
     private func sourceEditor(_ artifact: NativeArtifact, version: Int) -> some View {
-        VStack(alignment: .leading, spacing: JunoSpace.regular) {
-            documentHeader(artifact, version: version)
-            TextEditor(text: editorText)
-                .junoMono()
-                .scrollContentBackground(.hidden)
-                .accessibilityLabel("Artifact source")
-                .accessibilityIdentifier("juno.artifact-editor")
-        }
-        .padding(JunoSpace.section)
-        .junoCard()
-        .padding(JunoSpace.region)
+        TextEditor(text: editorText)
+            .junoMono()
+            .scrollContentBackground(.hidden)
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(nsColor: .textBackgroundColor))
+            .accessibilityLabel(
+                "Artifact source for \(artifact.title), version \(version)"
+            )
+            .accessibilityIdentifier("juno.artifact-editor")
     }
 
     private var editorText: Binding<String> {
@@ -952,19 +1186,45 @@ struct DesktopArtifactsScreen: View {
         )
     }
 
-    // MARK: - Toolbar
+    // MARK: - Document commands
 
-    /// Every item is present in every state and disables rather than vanishing: a
-    /// `ToolbarItem` that comes and goes makes SwiftUI rebuild the AppKit toolbar
-    /// under a live window, and it also moves the remaining controls out from
-    /// under the pointer.
-    ///
-    /// Nothing here carries glass of its own. The window toolbar is already the
-    /// material on macOS 26, and a glass button inside a glass bar reads as a
-    /// translucent slab rather than as depth.
-    @ToolbarContentBuilder
-    private var artifactToolbar: some ToolbarContent {
-        ToolbarItem(placement: .primaryAction) {
+    /// Commands belong to the open document, not to the app-wide title bar. The
+    /// stable strip also leaves the main toolbar quiet when the artifact index is
+    /// narrow or the window is resized.
+    private var documentCommandBar: some View {
+        HStack(spacing: JunoSpace.snug) {
+            Button {
+                historyVisible = false
+                libraryVisible = true
+            } label: {
+                Label("All artifacts", systemImage: "chevron.left")
+            }
+            .buttonStyle(.plain)
+            .contentShape(.rect)
+            .help("Back to artifacts")
+            .accessibilityLabel("All artifacts")
+            .accessibilityIdentifier("juno.artifact-library")
+
+            Divider()
+                .frame(height: 24)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    artifact?.title.isEmpty == false
+                        ? artifact?.title ?? "" : "Artifact"
+                )
+                .font(.headline)
+                .lineLimit(1)
+                if !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: JunoSpace.cozy)
+
             Picker("View", selection: $mode) {
                 Text("Preview").tag(NativeArtifactDisplayMode.preview)
                 Text("Source").tag(NativeArtifactDisplayMode.source)
@@ -979,26 +1239,24 @@ struct DesktopArtifactsScreen: View {
                     : "This artifact kind has no native renderer — its source is shown"
             )
             .accessibilityIdentifier("juno.artifact-view-mode")
-        }
 
-        ToolbarItem(placement: .primaryAction) {
             Toggle(isOn: $showingChanges) {
                 Label("Changes", systemImage: "plus.forwardslash.minus")
             }
             .toggleStyle(.button)
+            .labelStyle(.iconOnly)
             .disabled((artifact?.versions.count ?? 0) < 2 || baseVersion == nil)
             .keyboardShortcut("d", modifiers: [.command, .shift])
             .help("Compare this version with an earlier one (⇧⌘D)")
             .accessibilityLabel("Show changes")
             .accessibilityIdentifier("juno.artifact-changes")
-        }
 
-        ToolbarItem(placement: .primaryAction) {
             Button {
                 copyDisplayed()
             } label: {
                 Label(showingChanges ? "Copy Changes" : "Copy Source", systemImage: "doc.on.doc")
             }
+            .labelStyle(.iconOnly)
             .disabled(targetEntry == nil)
             .keyboardShortcut("c", modifiers: [.command, .shift])
             .help(
@@ -1008,9 +1266,17 @@ struct DesktopArtifactsScreen: View {
             )
             .accessibilityLabel(showingChanges ? "Copy changes" : "Copy source")
             .accessibilityIdentifier("juno.artifact-copy")
-        }
 
-        ToolbarItem(placement: .primaryAction) {
+            Button {
+                previewReloadID = UUID()
+            } label: {
+                Label("Reload preview", systemImage: "arrow.clockwise")
+            }
+            .labelStyle(.iconOnly)
+            .disabled(mode != .preview || !canPreview || showingChanges)
+            .help("Reload the interactive preview")
+            .accessibilityIdentifier("juno.artifact-preview-reload")
+
             Button("Save") {
                 guard let artifact else { return }
                 Task { await save(artifact) }
@@ -1019,9 +1285,7 @@ struct DesktopArtifactsScreen: View {
             .keyboardShortcut("s", modifiers: .command)
             .help("Save your edit as a new version (⌘S)")
             .accessibilityIdentifier("juno.artifact-save")
-        }
 
-        ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button("Rename…") {
                     renameValue = artifact?.title ?? ""
@@ -1062,6 +1326,7 @@ struct DesktopArtifactsScreen: View {
             } label: {
                 Label("Artifact actions", systemImage: "ellipsis")
             }
+            .labelStyle(.iconOnly)
             .disabled(artifact == nil || model.isExporting)
             .help("Rename, export or delete this artifact")
             .accessibilityLabel("Artifact actions")
@@ -1069,20 +1334,25 @@ struct DesktopArtifactsScreen: View {
             .popover(isPresented: $renaming, arrowEdge: .bottom) {
                 renameForm
             }
-        }
 
-        ToolbarItem(placement: .primaryAction) {
             Button {
                 historyVisible.toggle()
             } label: {
                 Label("Version history", systemImage: "clock.arrow.circlepath")
             }
+            .labelStyle(.iconOnly)
             .disabled(artifact == nil)
             .keyboardShortcut("i", modifiers: [.command, .option])
             .help("Show version history (⌥⌘I)")
             .accessibilityLabel("Version history")
             .accessibilityIdentifier("juno.artifact-history")
         }
+        .controlSize(.small)
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(minHeight: 52)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.artifact-command-bar")
     }
 
     /// An explicit frame, deliberately: a self-sizing popover over a split view is

@@ -246,6 +246,47 @@ final class ToolRegistryTests: XCTestCase {
         }
     }
 
+    func testTestCommandsAndCommitHooksCannotBypassFullAccessApproval() throws {
+        let runTests = try XCTUnwrap(registry.tool(named: "run_tests"))
+        let gitCommit = try XCTUnwrap(registry.tool(named: "git_commit"))
+
+        XCTAssertEqual(runTests.assessRisk(input: [:]), .critical)
+        for command in [
+            "swift test",
+            "cargo test",
+            "go test ./...",
+            "project-doctor --fix",
+        ] {
+            XCTAssertEqual(
+                runTests.assessRisk(input: ["command": .string(command)]),
+                .critical,
+                "\(command) must remain approval-bound"
+            )
+        }
+        XCTAssertNotNil(registry.validateInput(toolName: "run_tests", input: [:]))
+        XCTAssertEqual(
+            runTests.precheck(input: [:]),
+            .invalidInput(message: "Missing non-empty 'command'.")
+        )
+        XCTAssertEqual(
+            runTests.precheck(input: ["command": " \n\t "]),
+            .invalidInput(message: "Missing non-empty 'command'.")
+        )
+        XCTAssertNotEqual(
+            runTests.actionDigest(input: ["command": "swift test"]),
+            runTests.actionDigest(input: ["command": "cargo test"]),
+            "Approval must bind the exact explicit test command"
+        )
+        XCTAssertNotNil(
+            runTests.precheck(input: ["command": "sudo rm -rf /"])
+        )
+        XCTAssertEqual(gitCommit.assessRisk(input: ["message": "Ship"]), .critical)
+        XCTAssertEqual(
+            PermissionPolicy.ruling(mode: .fullAccess, risk: .critical),
+            .requireApproval
+        )
+    }
+
     func testRunCommandStreamsOutput() async throws {
         nonisolated(unsafe) var streamed: [String] = []
         let context = ToolContext(

@@ -14,9 +14,29 @@ public enum NativeAuthRuntimeError: Error, Equatable, LocalizedError, Sendable {
     }
 }
 
+/// The outcome of restoring a stored session at launch.
+public enum NativeRestoredSession: Equatable, Sendable {
+    /// The server confirmed the credentials and returned this session.
+    case verified(NativeAuthenticatedSession)
+    /// The credentials are still in the Keychain but the server could not be
+    /// asked about them — it was unreachable, erroring, or speaking a contract
+    /// this build does not understand. The session is the last one the server
+    /// *did* confirm, so the app can open on its local data instead of throwing
+    /// the user back to a sign-in screen it cannot even complete while the
+    /// backend is down.
+    case unverified(NativeAuthenticatedSession, cause: String)
+
+    public var session: NativeAuthenticatedSession {
+        switch self {
+        case .verified(let session), .unverified(let session, _): session
+        }
+    }
+}
+
 public actor NativeAuthRuntime {
     private let tokenStore: KeychainAuthTokenStore
     private let installationStore: KeychainInstallationIDStore
+    private let sessionCache: KeychainSessionCacheStore
     private let planner: NativeAuthorizationPlanner
     private let apiClient: NativeAuthAPIClient
     private let coordinator: AuthTokenCoordinator
@@ -26,6 +46,7 @@ public actor NativeAuthRuntime {
     public init(
         tokenStore: KeychainAuthTokenStore,
         installationStore: KeychainInstallationIDStore,
+        sessionCache: KeychainSessionCacheStore,
         planner: NativeAuthorizationPlanner,
         apiClient: NativeAuthAPIClient,
         device: NativeDeviceMetadata,
@@ -33,6 +54,7 @@ public actor NativeAuthRuntime {
     ) {
         self.tokenStore = tokenStore
         self.installationStore = installationStore
+        self.sessionCache = sessionCache
         self.planner = planner
         self.apiClient = apiClient
         coordinator = AuthTokenCoordinator(store: tokenStore, refreshClient: apiClient)
@@ -58,6 +80,7 @@ public actor NativeAuthRuntime {
         return try NativeAuthRuntime(
             tokenStore: tokenStore,
             installationStore: installationStore,
+            sessionCache: KeychainSessionCacheStore(securityClient: securityClient),
             planner: NativeAuthorizationPlanner(origin: origin),
             apiClient: apiClient,
             device: device,
@@ -75,13 +98,42 @@ public actor NativeAuthRuntime {
         callbackURL: URL
     ) async throws -> NativeAuthenticatedSession {
         let code = try planner.authorizationCode(from: callbackURL, for: attempt)
-        let issued = try await apiClient.exchangeAuthorizationCode(
-            code: code,
-            verifier: attempt.verifier,
-            redirectURI: attempt.redirectURI,
-            installationID: attempt.installationID,
-            device: device
+        return try await establishSession(
+            from: try await apiClient.exchangeAuthorizationCode(
+                code: code,
+                verifier: attempt.verifier,
+                redirectURI: attempt.redirectURI,
+                installationID: attempt.installationID,
+                device: device
+            )
         )
+    }
+
+    /// Signs in from an email/password pair, with no system-browser hand-off.
+    ///
+    /// The credentials are used for exactly this one call and are never stored;
+    /// what persists is the same device token set the browser flow produces.
+    public func signIn(
+        email: String,
+        password: String
+    ) async throws -> NativeAuthenticatedSession {
+        let installationID = try await installationStore.loadOrCreate()
+        return try await establishSession(
+            from: try await apiClient.exchangePassword(
+                email: email,
+                password: password,
+                installationID: installationID,
+                device: device
+            )
+        )
+    }
+
+    /// Validates freshly issued credentials, then stores them. Shared by both
+    /// sign-in routes so they cannot drift on device binding, account switching
+    /// or the revoke-on-failure rule.
+    private func establishSession(
+        from issued: NativeIssuedTokens
+    ) async throws -> NativeAuthenticatedSession {
         do {
             let session = try await apiClient.session(accessToken: issued.accessToken)
             guard session.deviceID == issued.deviceID else {
@@ -99,18 +151,28 @@ public actor NativeAuthRuntime {
                 previous.accountID != tokens.accountID
             {
                 try await purgeLocalData(for: previous.accountID)
+                await sessionCache.remove(for: previous.accountID)
             }
             try await coordinator.install(tokens)
+            await sessionCache.store(session)
             return session
         } catch {
-            // The code exchange already created a server device session. Revoke it
-            // if any subsequent validation or secure-persistence step fails.
+            // Issuing the credentials already created a server device session.
+            // Revoke it if any later validation or secure-persistence step fails.
             try? await apiClient.logout(accessToken: issued.accessToken)
             throw error
         }
     }
 
-    public func restore() async throws -> NativeAuthenticatedSession? {
+    /// Restores the stored session, distinguishing "this account is no longer
+    /// valid" from "Juno could not be reached".
+    ///
+    /// Only the first case may sign the user out. Previously *every* thrown
+    /// error mapped to a signed-out app, so an outage — or a contract-version
+    /// bump on the server — logged the user out of a client whose Keychain
+    /// credentials were still perfectly good, and which they then could not
+    /// sign back in to because sign-in needs the same server.
+    public func restore() async throws -> NativeRestoredSession? {
         guard let stored = try await tokenStore.loadActive() else {
             return nil
         }
@@ -124,12 +186,27 @@ public actor NativeAuthRuntime {
             else {
                 throw NativeAuthAPIError.deviceSessionMismatch
             }
-            return session
-        } catch let error as NativeAuthAPIError {
-            if error.invalidatesLocalCredentials {
+            await sessionCache.store(session)
+            return .verified(session)
+        } catch {
+            if let apiError = error as? NativeAuthAPIError,
+                apiError.invalidatesLocalCredentials
+            {
                 try await invalidateLocalAccount(stored.accountID)
+                throw error
             }
-            throw error
+            // A terminal refresh failure purges the credentials inside
+            // `coordinatedAccessToken` before rethrowing. If they are gone the
+            // account really was invalidated, whatever the error looks like.
+            guard try await tokenStore.loadActive() != nil else { throw error }
+            guard let cached = await sessionCache.load(for: stored.accountID),
+                cached.deviceID == stored.deviceID
+            else {
+                // Credentials survive but this install has never completed a
+                // session fetch, so there is no profile to open the app with.
+                throw error
+            }
+            return .unverified(cached, cause: error.localizedDescription)
         }
     }
 
@@ -202,6 +279,7 @@ public actor NativeAuthRuntime {
             remoteError = error
         }
         try await purgeLocalData(for: stored.accountID)
+        await sessionCache.remove(for: stored.accountID)
         try await coordinator.revokeLocally(for: stored.accountID)
         if let remoteError {
             throw remoteError
@@ -210,6 +288,7 @@ public actor NativeAuthRuntime {
 
     private func invalidateLocalAccount(_ accountID: AccountID) async throws {
         try await purgeLocalData(for: accountID)
+        await sessionCache.remove(for: accountID)
         try await coordinator.revokeLocally(for: accountID)
     }
 

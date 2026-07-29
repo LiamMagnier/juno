@@ -20,6 +20,12 @@
     <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
     <string>$(CURRENT_PROJECT_VERSION)</string>
+    <key>JunoGitSHA</key>
+    <string>$(JUNO_GIT_SHA)</string>
+    <key>JunoContractVersion</key>
+    <string>$(JUNO_CONTRACT_VERSION)</string>
+    <key>JunoChannel</key>
+    <string>$(JUNO_CHANNEL)</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>

@@ -14,15 +14,21 @@ public actor AgentOrchestrator {
     public struct Configuration: Sendable {
         public var maximumIterations: Int
         public var maximumToolResultBytes: Int
+        public var maximumToolImageBytes: Int
+        public var maximumToolImages: Int
         public var systemPrompt: String
 
         public init(
             maximumIterations: Int = 40,
             maximumToolResultBytes: Int = 64 * 1_024,
+            maximumToolImageBytes: Int = 8 * 1_024 * 1_024,
+            maximumToolImages: Int = 4,
             systemPrompt: String
         ) {
             self.maximumIterations = maximumIterations
             self.maximumToolResultBytes = maximumToolResultBytes
+            self.maximumToolImageBytes = maximumToolImageBytes
+            self.maximumToolImages = maximumToolImages
             self.systemPrompt = systemPrompt
         }
     }
@@ -112,16 +118,24 @@ public actor AgentOrchestrator {
 
     /// Starts one agent run for a user prompt. Throws when a run is already
     /// in flight.
-    public func submit(prompt: String) async throws {
+    public func submit(prompt: String, modelPrompt: String? = nil) async throws {
         guard runTask == nil else {
             throw OrchestratorError.sessionAlreadyRunning
         }
         try await prepare()
-        conversation.append(.user(prompt))
+        // The transcript stays faithful to what the reader typed while callers
+        // may enrich the model-only turn with explicitly selected, bounded
+        // workspace context. Keeping those two representations separate avoids
+        // dumping source files into the visible conversation.
+        conversation.append(.user(modelPrompt ?? prompt))
         try await store.appendEvent(
             sessionID: sessionID,
             payload: .userPrompt(UserPromptEvent(text: prompt))
         )
+        // Persist the model history before the asynchronous run begins. If the
+        // process exits while the transport is connecting, the transcript and
+        // resumable context still agree that this prompt was submitted.
+        try await store.saveConversation(sessionID: sessionID, messages: conversation)
         try await store.setStatus(id: sessionID, status: .running)
         let task = Task { [weak self] in
             guard let self else { return }
@@ -239,6 +253,7 @@ public actor AgentOrchestrator {
             )
 
             var turnText = ""
+            var turnReasoningSummary = ""
             var toolCalls: [(id: String, name: String, input: JSONValue)] = []
             var stopReason: ModelStopReason?
             lastLiveTextEmit = .distantPast
@@ -252,10 +267,11 @@ public actor AgentOrchestrator {
                         turnText += delta
                         emitLiveText(turnText)
                     case let .reasoningSummary(summary):
-                        _ = try? await store.appendEvent(
-                            sessionID: sessionID,
-                            payload: .reasoningSummary(ReasoningSummaryEvent(summary: summary))
-                        )
+                        // Providers stream reasoning summaries as token-sized
+                        // deltas. Keep those private to the active turn and
+                        // persist one bounded, readable summary instead of one
+                        // transcript event per delta.
+                        turnReasoningSummary += summary
                     case let .toolCallRequested(id, name, input):
                         toolCalls.append((id, name, input))
                     case let .turnCompleted(reason):
@@ -303,6 +319,23 @@ public actor AgentOrchestrator {
             // through the top-of-loop cancellation branch instead of
             // mistaking it for a completed turn.
             if Task.isCancelled { continue }
+            modelRetriesLeft = 1
+            // Images are intentionally one-turn context. Once a successful
+            // model turn has consumed them, retain only the redacted tool
+            // result so subsequent turns do not resend screenshots.
+            conversation = conversation.map(\.persistenceSafe)
+
+            let normalizedReasoning = turnReasoningSummary.trimmingCharacters(
+                in: .whitespacesAndNewlines
+            )
+            if !normalizedReasoning.isEmpty {
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .reasoningSummary(
+                        ReasoningSummaryEvent(summary: normalizedReasoning)
+                    )
+                )
+            }
 
             if !turnText.isEmpty {
                 lastAssistantText = turnText
@@ -313,7 +346,70 @@ public actor AgentOrchestrator {
                 )
             }
 
-            guard stopReason == .toolUse, !toolCalls.isEmpty else {
+            if stopReason == .maxTokens {
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The model reached its output limit before finishing.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The model reached its output limit before finishing. Continue to resume.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+
+            guard let stopReason else {
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The model stream ended without a completion reason.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The model stream ended unexpectedly. Continue to retry.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+
+            if stopReason == .toolUse, toolCalls.isEmpty {
+                try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .errorOccurred(
+                        ErrorEvent(
+                            message: "The model requested tool execution without a valid tool call.",
+                            isRecoverable: true
+                        )
+                    )
+                )
+                await finish(
+                    status: .failed,
+                    summary: "The model returned an incomplete tool request. Continue to retry.",
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
+
+            guard stopReason == .toolUse else {
                 try? await store.saveConversation(sessionID: sessionID, messages: conversation)
                 await finish(
                     status: .completed,
@@ -325,6 +421,7 @@ public actor AgentOrchestrator {
                 return
             }
 
+            var terminalGoalLifecycle: GoalLifecycle?
             for call in toolCalls {
                 if Task.isCancelled { break }
                 conversation.append(.toolCall(id: call.id, name: call.name, input: call.input))
@@ -335,23 +432,87 @@ public actor AgentOrchestrator {
                     }
                     if case let .testRunCompleted(run) = sideEffect {
                         testsPassed = run.passed
+                        if run.passed {
+                            let summary: String
+                            if let testsRun = run.testsRun {
+                                summary =
+                                    "\(testsRun) test\(testsRun == 1 ? "" : "s") passed."
+                            } else {
+                                summary = "Verification command passed."
+                            }
+                            // Verification evidence is minted only from the
+                            // successful runtime event itself. The model-facing
+                            // goal tool cannot self-attest completion.
+                            _ = try? await store.updateGoal(
+                                sessionID: sessionID,
+                                mutation: .addVerificationEvidence(
+                                    summary: summary,
+                                    source: run.command
+                                )
+                            )
+                        }
                     }
                 }
                 let bounded = OutputLimiter.apply(
                     OutputLimit(maximumBytes: configuration.maximumToolResultBytes),
                     to: execution.content
                 )
-                conversation.append(
-                    .toolResult(id: call.id, content: bounded.text, isError: execution.isError)
-                )
+                if execution.images.isEmpty {
+                    conversation.append(
+                        .toolResult(id: call.id, content: bounded.text, isError: execution.isError)
+                    )
+                } else {
+                    conversation.append(
+                        .toolResultWithImages(
+                            id: call.id,
+                            content: bounded.text,
+                            isError: execution.isError,
+                            images: execution.images
+                        )
+                    )
+                }
+                if let lifecycle = try? await store.session(id: sessionID).goal?.lifecycle,
+                   lifecycle != .active
+                {
+                    // A model-authored pause, block, or completion is an
+                    // execution boundary, not merely metadata. Do not execute
+                    // later tool calls from the same model response or begin
+                    // another iteration after the goal has stopped.
+                    terminalGoalLifecycle = lifecycle
+                    break
+                }
             }
             try? await store.saveConversation(sessionID: sessionID, messages: conversation)
+            if let terminalGoalLifecycle {
+                let status: SessionStatus =
+                    terminalGoalLifecycle == .completed ? .completed : .cancelled
+                let summary: String
+                switch terminalGoalLifecycle {
+                case .active:
+                    summary = "Run completed."
+                case .paused:
+                    summary = "Goal paused."
+                case .blocked:
+                    summary = "Goal blocked."
+                case .completed:
+                    summary = "Goal completed."
+                }
+                await finish(
+                    status: status,
+                    summary: summary,
+                    filesChanged: filesChanged.count,
+                    testsPassed: testsPassed,
+                    startedAt: startedAt
+                )
+                return
+            }
         }
     }
 
     private struct ToolExecutionRecord {
         let content: String
         let isError: Bool
+        let images: [ModelImage]
         let sideEffects: [SessionEventPayload]
     }
 
@@ -397,6 +558,7 @@ public actor AgentOrchestrator {
             return ToolExecutionRecord(
                 content: "Action not permitted: \(reason)",
                 isError: true,
+                images: [],
                 sideEffects: []
             )
         }
@@ -429,6 +591,31 @@ public actor AgentOrchestrator {
                 input: call.input,
                 context: context
             )
+            let imageBytes = result.images.reduce(into: 0) { total, image in
+                total += image.data.count
+            }
+            guard result.images.count <= configuration.maximumToolImages,
+                  imageBytes <= configuration.maximumToolImageBytes
+            else {
+                let message = "Tool image output exceeded the safe request limit."
+                _ = try? await store.appendEvent(
+                    sessionID: sessionID,
+                    payload: .toolCompleted(
+                        ToolCompletedEvent(
+                            toolCallID: call.id,
+                            status: .failed,
+                            resultSummary: message,
+                            durationSeconds: Date().timeIntervalSince(startedAt)
+                        )
+                    )
+                )
+                return ToolExecutionRecord(
+                    content: message,
+                    isError: true,
+                    images: [],
+                    sideEffects: []
+                )
+            }
             for sideEffect in result.sideEffects {
                 _ = try? await store.appendEvent(sessionID: sessionID, payload: sideEffect)
             }
@@ -446,6 +633,7 @@ public actor AgentOrchestrator {
             return ToolExecutionRecord(
                 content: result.content,
                 isError: result.isError,
+                images: result.images,
                 sideEffects: result.sideEffects
             )
         } catch is CancellationError {
@@ -460,7 +648,12 @@ public actor AgentOrchestrator {
                     )
                 )
             )
-            return ToolExecutionRecord(content: "Cancelled.", isError: true, sideEffects: [])
+            return ToolExecutionRecord(
+                content: "Cancelled.",
+                isError: true,
+                images: [],
+                sideEffects: []
+            )
         } catch {
             let message = shortDescription(error)
             _ = try? await store.appendEvent(
@@ -477,6 +670,7 @@ public actor AgentOrchestrator {
             return ToolExecutionRecord(
                 content: "Tool failed: \(message)",
                 isError: true,
+                images: [],
                 sideEffects: []
             )
         }
@@ -489,6 +683,11 @@ public actor AgentOrchestrator {
         testsPassed: Bool?,
         startedAt: Date
     ) async {
+        // Image payloads are one-turn capabilities. Redact the reusable
+        // in-memory history on every terminal path as well as successful model
+        // turns, so a transport failure or cancellation cannot resend a stale
+        // screenshot when this orchestrator is reused.
+        conversation = conversation.map(\.persistenceSafe)
         emitLiveText("", force: true)
         _ = try? await store.appendEvent(
             sessionID: sessionID,

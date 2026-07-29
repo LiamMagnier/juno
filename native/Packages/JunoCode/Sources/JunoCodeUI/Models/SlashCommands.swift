@@ -234,6 +234,19 @@ public struct CodeSlashCommandLibrary: Equatable, Sendable {
             behavior: .code
         ),
         CodeSlashCommand(
+            name: "goal",
+            summary: "Run a durable, verified multi-step goal",
+            prompt: """
+                Create a durable goal for the request below with a concise \
+                objective and concrete ordered steps using update_goal. Then \
+                carry it through, updating each step as it changes. Record \
+                specific verification evidence before marking it complete.
+
+                $ARGUMENTS
+                """,
+            behavior: .code
+        ),
+        CodeSlashCommand(
             name: "commit",
             summary: "Stage and describe the working changes",
             prompt: """

@@ -193,4 +193,63 @@ final class PermissionCoordinatorTests: XCTestCase {
         )
         XCTAssertEqual(outcome, .allowed)
     }
+
+    func testAuthorityReductionRevokesPendingApproval() async {
+        let coordinator = PermissionCoordinator(
+            sessionID: sessionID,
+            mode: .askBeforeChanges
+        )
+        let requested = expectation(description: "approval requested")
+        await coordinator.addObserver { update in
+            if case .requested = update {
+                requested.fulfill()
+            }
+        }
+        async let authorization = coordinator.authorize(
+            toolName: "write_file",
+            actionDigest: Self.digest("mode-reduction"),
+            risk: .write,
+            summary: "Write a file"
+        )
+        await fulfillment(of: [requested], timeout: 5)
+
+        await coordinator.setMode(.readOnly)
+
+        let outcome = await authorization
+        XCTAssertEqual(
+            outcome,
+            .denied(reason: "The permission mode changed before the action ran.")
+        )
+        let pendingCount = await coordinator.pendingApprovals.count
+        XCTAssertEqual(pendingCount, 0)
+    }
+
+    func testAuthorityReductionRevokesCriticalApprovalStillGatedInNewMode() async {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let requested = expectation(description: "critical approval requested")
+        await coordinator.addObserver { update in
+            if case .requested = update {
+                requested.fulfill()
+            }
+        }
+        async let authorization = coordinator.authorize(
+            toolName: "run_tests",
+            actionDigest: Self.digest("critical-mode-reduction"),
+            risk: .critical,
+            summary: "Run an exact test command"
+        )
+        await fulfillment(of: [requested], timeout: 5)
+
+        // Critical actions require approval in both modes, but the old request
+        // was made inside a broader authority envelope and must not survive it.
+        await coordinator.setMode(.workspaceWrite)
+
+        let outcome = await authorization
+        XCTAssertEqual(
+            outcome,
+            .denied(reason: "The permission mode changed before the action ran.")
+        )
+        let pendingCount = await coordinator.pendingApprovals.count
+        XCTAssertEqual(pendingCount, 0)
+    }
 }

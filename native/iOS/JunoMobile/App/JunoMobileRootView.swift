@@ -243,7 +243,14 @@ struct JunoMobileRootView: View {
     private var phaseContent: some View {
         switch authModel.phase {
         case .signedIn(let session):
-            authenticatedContent(session: session)
+            VStack(spacing: 0) {
+                if authModel.connectivity.isUnreachable {
+                    JunoMobileOfflineBanner {
+                        Task { await authModel.retryRestore() }
+                    }
+                }
+                authenticatedContent(session: session)
+            }
         case .restoring:
             JunoMobileQuietLoading()
         case .signedOut, .signingIn, .unavailable:
@@ -691,7 +698,7 @@ struct JunoMobileRootView: View {
         return { startVoice() }
     }
 
-    private var memoryAction: ((Bool) -> Void)? {
+    private var memoryAction: (@MainActor @Sendable (Bool) -> Void)? {
         guard let memorySettingsModel else { return nil }
         return { enabled in
             Task {
@@ -1154,37 +1161,124 @@ private struct JunoMobileConversationRow: View {
 private struct JunoMobileSignInView: View {
     let authModel: NativeAuthModel
 
+    @State private var email = ""
+    @State private var password = ""
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable { case email, password }
+
+    private var isBusy: Bool { authModel.phase == .signingIn }
+    private var canSubmitPassword: Bool {
+        !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !password.isEmpty
+            && !isBusy
+    }
+
+    private func submitPassword() {
+        guard canSubmitPassword else { return }
+        let submittedPassword = password
+        // Hand the plaintext over and drop it from view state immediately.
+        password = ""
+        Task { await authModel.signIn(email: email, password: submittedPassword) }
+    }
+
     var body: some View {
-        VStack(spacing: 18) {
-            JunoMark(size: 44)
-            Text("auth.welcome.title")
-                .junoPageHeading()
-            Text("auth.welcome.description")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-            if let error = authModel.lastErrorDescription {
-                Text(error)
-                    .foregroundStyle(.red)
+        ScrollView {
+            VStack(spacing: 18) {
+                JunoMark(size: 44)
+                Text("auth.welcome.title")
+                    .junoPageHeading()
+                Text("auth.welcome.description")
+                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("juno.mobile.auth-error")
-            }
-            if authModel.phase != .unavailable {
-                Button {
-                    Task { await authModel.signIn() }
-                } label: {
-                    if authModel.phase == .signingIn {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Text("auth.sign-in")
-                    }
+                if let error = authModel.lastErrorDescription {
+                    Text(error)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("juno.mobile.auth-error")
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(authModel.phase == .signingIn)
-                .accessibilityIdentifier("juno.mobile.sign-in")
+                if authModel.phase != .unavailable {
+                    credentialFields
+                    Button(action: submitPassword) {
+                        if isBusy {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Text("auth.sign-in.password")
+                                .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!canSubmitPassword)
+                    .accessibilityIdentifier("juno.mobile.sign-in.password")
+
+                    Text("auth.divider.or")
+                        .junoCaption()
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        Task { await authModel.signIn() }
+                    } label: {
+                        Text("auth.sign-in")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(isBusy)
+                    .accessibilityIdentifier("juno.mobile.sign-in")
+
+                    Text("auth.password.disclaimer")
+                        .junoCaption()
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
             }
+            .padding(32)
         }
-        .padding(32)
+        .scrollBounceBehavior(.basedOnSize)
+    }
+
+    private var credentialFields: some View {
+        VStack(spacing: 12) {
+            TextField("auth.email.placeholder", text: $email)
+                .textContentType(.username)
+                .keyboardType(.emailAddress)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($focusedField, equals: .email)
+                .onSubmit { focusedField = .password }
+                .accessibilityIdentifier("juno.mobile.email")
+            SecureField("auth.password.label", text: $password)
+                .textContentType(.password)
+                .focused($focusedField, equals: .password)
+                .onSubmit(submitPassword)
+                .accessibilityIdentifier("juno.mobile.password")
+        }
+        .textFieldStyle(.roundedBorder)
+        .disabled(isBusy)
+    }
+}
+
+/// The mobile counterpart to the desktop offline banner: the workspace below is
+/// the local copy, and Juno has not confirmed it.
+private struct JunoMobileOfflineBanner: View {
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "bolt.horizontal.circle")
+            Text("auth.offline.title")
+                .font(.footnote)
+            Spacer(minLength: 8)
+            Button("auth.offline.retry", action: retry)
+                .font(.footnote)
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial)
+        .accessibilityIdentifier("juno.mobile.offline-banner")
     }
 }
 
