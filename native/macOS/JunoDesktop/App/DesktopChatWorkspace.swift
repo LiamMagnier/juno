@@ -318,6 +318,9 @@ private struct DesktopChatSidebar: View {
         .listStyle(.sidebar)
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear.frame(height: 28)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             accountFooter
         }

@@ -458,21 +458,22 @@ struct DesktopCodeSidebar: View {
             }
 
             Section {
-                Button(action: openRepository) {
-                    Label("Add project…", systemImage: "folder.badge.plus")
-                        .junoRowLabel()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .help("Add a project… (⌘O)")
-                .selectionDisabled()
-                .accessibilityIdentifier("juno.code.add-project")
-
                 if groups.isEmpty {
-                    Text("Projects keep Code sessions and their files together.")
-                        .junoCaption()
-                        .selectionDisabled()
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        Text("Projects keep Code sessions and their files together.")
+                            .junoCaption()
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button(action: openRepository) {
+                            Label("Add project…", systemImage: "folder.badge.plus")
+                                .junoRowLabel()
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add a project… (⌘O)")
+                        .accessibilityIdentifier("juno.code.add-project")
+                    }
+                    .padding(.vertical, JunoSpace.hairline)
+                    .selectionDisabled()
                 } else {
                     ForEach(groups) { group in
                         projectRow(group)
@@ -493,7 +494,19 @@ struct DesktopCodeSidebar: View {
                     }
                 }
             } header: {
-                Text("Projects")
+                HStack {
+                    Text("Projects")
+                    Spacer(minLength: 0)
+                    Button(action: openRepository) {
+                        Image(systemName: "plus")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add a project… (⌘O)")
+                    .accessibilityIdentifier("juno.code.add-project")
+                }
             }
 
             let relayed = relayedRuns(from: allRuns)
@@ -509,6 +522,9 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear.frame(height: 28)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
         }
@@ -977,17 +993,49 @@ struct DesktopCodeFirstRun: View {
     let openRepository: () -> Void
 
     var body: some View {
-        JunoEmptyState(
-            title: "Open a repository",
-            message: """
-                Juno Code works from a folder you choose. File tools stay inside \
-                it; shell commands follow the permission mode you select.
-                """,
-            symbol: "folder.badge.plus",
-            actionLabel: "Open Repository…",
-            action: openRepository
-        )
-        .frame(maxWidth: .infinity, minHeight: 320)
+        VStack(spacing: JunoSpace.roomy) {
+            Spacer()
+            ZStack {
+                Circle()
+                    .fill(Color.junoAccent.opacity(0.12))
+                    .frame(width: 80, height: 80)
+                Image(systemName: "folder.badge.plus")
+                    .font(.system(size: 34, weight: .regular))
+                    .foregroundStyle(Color.junoAccent)
+            }
+
+            VStack(spacing: JunoSpace.snug) {
+                Text("Open a repository")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+
+                Text("Juno Code works from a folder on your Mac. File tools stay inside it, and shell commands follow your permission settings.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 440)
+            }
+
+            Button(action: openRepository) {
+                HStack(spacing: JunoSpace.tight) {
+                    Image(systemName: "folder.badge.plus")
+                    Text("Open Repository…")
+                }
+                .font(.callout.weight(.medium))
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.tight)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Color.junoAccent)
+            .controlSize(.large)
+            .keyboardShortcut("o", modifiers: [.command])
+            .accessibilityIdentifier("juno.code.first-run-open")
+
+            Spacer()
+        }
+        .padding(JunoSpace.region)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .junoReadingCanvas()
     }
 }
 

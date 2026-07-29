@@ -332,18 +332,41 @@ public struct JunoEmptyState: View {
     }
 
     public var body: some View {
-        ContentUnavailableView {
-            Label(title, systemImage: symbol)
-        } description: {
-            if let message {
-                Text(message)
+        VStack(spacing: JunoSpace.roomy) {
+            Spacer()
+            ZStack {
+                Circle()
+                    .fill(Color.junoRaised)
+                    .frame(width: 72, height: 72)
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(Color.secondary)
             }
-        } actions: {
+
+            VStack(spacing: JunoSpace.snug) {
+                Text(title)
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.primary)
+
+                if let message {
+                    Text(message)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 440)
+                }
+            }
+
             if let actionLabel, let perform {
                 Button(actionLabel, action: perform)
-                    .junoProminentGlassButton()
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
+                    .controlSize(.regular)
             }
+            Spacer()
         }
+        .padding(JunoSpace.region)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 #endif
