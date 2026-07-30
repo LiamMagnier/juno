@@ -174,8 +174,13 @@ REQUIREMENT="anchor apple generic and identifier \"$BUNDLE_ID\" and certificate 
 if [ "$NOTARIZE" = 1 ]; then
   REQUIREMENT="$REQUIREMENT and certificate 1[field.1.2.840.113635.100.6.2.6] exists and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
 fi
-codesign --verify --strict -R "$REQUIREMENT" "$APP" \
-  || die "The bundle does not satisfy the requirement the auto-updater enforces."
+# `-R=` with the equals sign: bare `-R` reads its argument as a FILENAME, so an
+# inline requirement becomes "No such file or directory" and then "invalid
+# requirement specification" — which reads as the bundle failing when it is the
+# check that is malformed.
+codesign --verify --strict -R="$REQUIREMENT" "$APP" \
+  || die "The bundle does not satisfy the requirement the auto-updater enforces:
+     $REQUIREMENT"
 
 BUNDLE_VERSION="$(defaults read "$APP/Contents/Info" CFBundleShortVersionString)"
 [ "$BUNDLE_VERSION" = "$VERSION" ] || die "The built app reports $BUNDLE_VERSION, not $VERSION."
