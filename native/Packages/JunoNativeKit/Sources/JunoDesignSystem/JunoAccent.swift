@@ -85,6 +85,18 @@ public enum JunoAccent: String, CaseIterable, Sendable, Identifiable {
             dark: JunoColorToken(hsl: dark)
         )
     }
+
+    /// The raw `--primary` triplet, for effects that need to move *within* the
+    /// accent rather than just paint with it.
+    ///
+    /// ``color`` is enough for anything that tints; it is not enough for the
+    /// voice aura, which has to derive a second hue a fixed distance round the
+    /// wheel from whichever accent is in force. Reading the triplet is the only
+    /// way to do that and still answer the accent picker — the alternative is a
+    /// hard-coded companion that clashes with four of the five accents.
+    public func hsl(dark isDark: Bool) -> (h: Double, s: Double, l: Double) {
+        isDark ? dark : light
+    }
 }
 
 /// The accent currently in force, as one observable value the whole app reads.

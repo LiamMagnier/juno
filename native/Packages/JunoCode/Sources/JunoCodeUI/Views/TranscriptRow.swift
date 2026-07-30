@@ -18,6 +18,10 @@ struct TranscriptContext {
     let pendingApprovalIDs: Set<String>
     /// Loads a sub-agent's own transcript from the shared session store.
     var loadSubAgent: @MainActor @Sendable (CodeSessionID) async -> [SessionEvent] = { _ in [] }
+    /// Loads the current diff for one changed path, against its oldest
+    /// checkpoint. Nil where the change predates a checkpoint or the file is
+    /// gone — in which case the row simply does not offer to open.
+    var loadDiff: @MainActor @Sendable (String) async -> TextDiff? = { _ in nil }
     /// Selects a session in the sidebar.
     var openSession: @MainActor @Sendable (CodeSessionID) -> Void = { _ in }
     /// 0 for the session's own transcript, 1 inside a sub-agent's. A child never
@@ -34,12 +38,14 @@ struct TranscriptContext {
         pendingApprovalIDs: Set<String> = [],
         loadSubAgent: @escaping @MainActor @Sendable (CodeSessionID) async -> [SessionEvent]
             = { _ in [] },
+        loadDiff: @escaping @MainActor @Sendable (String) async -> TextDiff? = { _ in nil },
         openSession: @escaping @MainActor @Sendable (CodeSessionID) -> Void = { _ in },
         depth: Int = 0
     ) {
         self.events = events
         self.pendingApprovalIDs = pendingApprovalIDs
         self.loadSubAgent = loadSubAgent
+        self.loadDiff = loadDiff
         self.openSession = openSession
         self.depth = depth
         var completions: [String: ToolCompletedEvent] = [:]
@@ -72,6 +78,7 @@ struct TranscriptContext {
             events: events,
             pendingApprovalIDs: [],
             loadSubAgent: loadSubAgent,
+            loadDiff: loadDiff,
             openSession: openSession,
             depth: depth + 1
         )
@@ -112,7 +119,7 @@ struct TranscriptRow: View {
                 resolvedApprovalRow(request)
             }
         case let .fileChanged(change):
-            fileChangeRow(change)
+            FileChangeRow(change: change, context: context)
         case let .testRunCompleted(run):
             testRow(run)
         case let .errorOccurred(error):
@@ -185,31 +192,6 @@ struct TranscriptRow: View {
     /// directory truncates, so a 90-character path still identifies its file at
     /// a 900pt window width.
     ///
-    /// The checkpoint indicator is the honest half of this row: it says whether
-    /// the change can still be undone. A change with no checkpoint cannot be
-    /// reverted from the Changes tab, and the reader deserves to know that at
-    /// the moment it happens rather than when Reject fails.
-    private func fileChangeRow(_ change: FileChangedEvent) -> some View {
-        ActivityRow(
-            glyph: glyphName(for: change.kind),
-            tint: tint(for: change.kind),
-            title: PathDisplay.fileName(change.path.value),
-            titleIsCode: true,
-            subtitle: PathDisplay.directory(change.path.value),
-            subtitleTruncation: .head,
-            accessibilityLabel: accessibilityText(for: change)
-        ) {
-            HStack(spacing: JunoSpace.tight) {
-                if change.checkpointID != nil {
-                    Image(systemName: "arrow.uturn.backward.circle")
-                        .foregroundStyle(.tertiary)
-                        .help("Checkpointed before this edit — this change can be reverted")
-                        .accessibilityHidden(true)
-                }
-                DiffStat(added: change.linesAdded, removed: change.linesRemoved)
-            }
-        }
-    }
 
     private func testRow(_ run: TestRunCompletedEvent) -> some View {
         ActivityRow(
@@ -323,29 +305,11 @@ struct TranscriptRow: View {
 
     // MARK: - Helpers
 
-    private func glyphName(for kind: FileChangeKind) -> String {
-        switch kind {
-        case .created: return "plus.circle.fill"
-        case .modified: return "pencil.circle.fill"
-        case .deleted: return "minus.circle.fill"
-        case .moved: return "arrow.right.circle.fill"
-        }
-    }
 
     /// Deletion is the one file change that carries risk, so it is the one that
     /// gets a colour. The rest stay secondary: forty coral glyphs down the
     /// transcript is noise, not emphasis.
-    private func tint(for kind: FileChangeKind) -> Color {
-        kind == .deleted ? .junoDanger : .secondary
-    }
 
-    private func accessibilityText(for change: FileChangedEvent) -> String {
-        var text = "\(change.kind.rawValue) \(change.path.value)"
-        if change.linesAdded > 0 { text += ", \(change.linesAdded) added" }
-        if change.linesRemoved > 0 { text += ", \(change.linesRemoved) removed" }
-        text += change.checkpointID != nil ? ", revertible" : ", not revertible"
-        return text
-    }
 
     private func testDetail(_ run: TestRunCompletedEvent) -> String {
         var parts: [String] = [run.command]
@@ -843,5 +807,155 @@ struct OutputWell: View {
             RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
                 .strokeBorder(Color.junoSeparator)
         )
+    }
+}
+
+// MARK: - File changes
+
+private func glyphName(for kind: FileChangeKind) -> String {
+    switch kind {
+    case .created: return "plus.circle.fill"
+    case .modified: return "pencil.circle.fill"
+    case .deleted: return "minus.circle.fill"
+    case .moved: return "arrow.right.circle.fill"
+    }
+}
+
+private func fileChangeTint(for kind: FileChangeKind) -> Color {
+    kind == .deleted ? .junoDanger : .secondary
+}
+
+private func accessibilityText(for change: FileChangedEvent) -> String {
+    var text = "\(change.kind.rawValue) \(change.path.value)"
+    if change.linesAdded > 0 { text += ", \(change.linesAdded) added" }
+    if change.linesRemoved > 0 { text += ", \(change.linesRemoved) removed" }
+    text += change.checkpointID != nil ? ", revertible" : ", not revertible"
+    return text
+}
+
+/// A file the agent changed, and — on demand — what it changed.
+///
+/// The row itself is unchanged: filename, directory, the checkpoint indicator and
+/// the +/− stat. What is new is that it opens.
+///
+/// The stat was the whole answer before: "+12 −3" and nothing else, with the diff
+/// itself two panes away in the Changes tab. So the transcript could tell you that
+/// something had been rewritten under you while you were reading, and could not
+/// tell you what — which is the moment a reader most wants to look, and the moment
+/// they were most likely to lose their place going to find out.
+///
+/// The diff is fetched only when the row is opened, and only once. A session can
+/// touch hundreds of files, each diff is a checkpoint read plus a file read plus a
+/// Myers diff, and doing that eagerly for rows nobody opens would make scrolling
+/// the transcript pay for content nobody asked for.
+private struct FileChangeRow: View {
+    let change: FileChangedEvent
+    let context: TranscriptContext
+
+    @State private var expanded = false
+    @State private var diff: TextDiff?
+    @State private var loaded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// A deletion has no "after" to diff against, and a change with no checkpoint
+    /// has no "before". Neither can open, and neither pretends it can.
+    private var canOpen: Bool {
+        change.kind != .deleted && change.checkpointID != nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Button {
+                guard canOpen else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                    expanded.toggle()
+                }
+            } label: {
+                ActivityRow(
+                    glyph: glyphName(for: change.kind),
+                    tint: fileChangeTint(for: change.kind),
+                    title: PathDisplay.fileName(change.path.value),
+                    titleIsCode: true,
+                    subtitle: PathDisplay.directory(change.path.value),
+                    subtitleTruncation: .head,
+                    accessibilityLabel: accessibilityText(for: change)
+                ) {
+                    HStack(spacing: JunoSpace.tight) {
+                        if change.checkpointID != nil {
+                            Image(systemName: "arrow.uturn.backward.circle")
+                                .foregroundStyle(.tertiary)
+                                .help("Checkpointed before this edit — this change can be reverted")
+                                .accessibilityHidden(true)
+                        }
+                        DiffStat(added: change.linesAdded, removed: change.linesRemoved)
+                        if canOpen {
+                            Image(systemName: "chevron.right")
+                                .imageScale(.small)
+                                .foregroundStyle(.tertiary)
+                                .rotationEffect(.degrees(expanded ? 90 : 0))
+                        }
+                    }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canOpen)
+            .accessibilityValue(canOpen ? (expanded ? "Expanded" : "Collapsed") : "")
+
+            if expanded {
+                Group {
+                    if let diff, !diff.hunks.isEmpty {
+                        // One block per hunk, each with its own header, because a
+                        // hunk is the unit the line numbers restart at — running
+                        // them together would number the second hunk from the
+                        // first one's end and quietly point at the wrong lines.
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                            ForEach(Array(diff.hunks.enumerated()), id: \.offset) { _, hunk in
+                                JunoAIcssDiff(
+                                    file: PathDisplay.fileName(change.path.value),
+                                    rows: rows(of: hunk)
+                                )
+                            }
+                        }
+                    } else if loaded {
+                        // Loaded and empty is a fact worth stating: the file was
+                        // touched and then put back, so the record has a change
+                        // event and the content has none.
+                        Text("No differences against the checkpoint.")
+                            .junoCaption()
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ProgressView().controlSize(.small)
+                    }
+                }
+                .padding(.leading, JunoSpace.cozy + 18 + JunoSpace.snug)
+                .padding(.trailing, JunoSpace.cozy)
+                .task(id: expanded) {
+                    guard !loaded else { return }
+                    diff = await context.loadDiff(change.path.value)
+                    loaded = true
+                }
+            }
+        }
+    }
+
+    /// `DiffLine` → the AIcss row. A straight crossing: both carry the kind, the
+    /// text and both line numbers, so nothing is derived and nothing is dropped.
+    private func rows(of hunk: DiffHunk) -> [JunoAIcssDiffRow] {
+        hunk.lines.enumerated().map { index, line in
+            let kind: JunoAIcssDiffRow.Kind =
+                switch line.kind {
+                case .added: .added
+                case .removed: .removed
+                case .context: .context
+                }
+            return JunoAIcssDiffRow(
+                id: index,
+                old: line.oldLineNumber,
+                new: line.newLineNumber,
+                kind: kind,
+                text: line.text
+            )
+        }
     }
 }

@@ -26,6 +26,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Hover a model to compare intelligence, speed, context, and cost."
   },
   {
+    "id": "004a9ba05c07915b",
+    "source": "Video — 16:9"
+  },
+  {
     "id": "0053158e65d79389",
     "source": "Group related work, attach files, and let Juno carry context across conversations — when you want it to."
   },
@@ -870,6 +874,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Check your connection and try once more."
   },
   {
+    "id": "1709305c9fa966d1",
+    "source": "Level"
+  },
+  {
     "id": "171ea77b7923cd50",
     "source": "This view couldn&rsquo;t load"
   },
@@ -1104,10 +1112,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "1d4820ce6c1e1469",
     "source": "Load more apps"
-  },
-  {
-    "id": "1d6b903c9d43962a",
-    "source": "pitch 14 (chat card)"
   },
   {
     "id": "1d730670d74964a6",
@@ -2758,6 +2762,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Name it, or leave it blank and Juno will name it from your first chat."
   },
   {
+    "id": "4aff15de2f313404",
+    "source": "Ask anything"
+  },
+  {
     "id": "4b1b8aa3608a26da",
     "source": "Owner"
   },
@@ -2784,6 +2792,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "4bb47f186df233e4",
     "source": "revoked"
+  },
+  {
+    "id": "4bed72580f71c1a8",
+    "source": "Waves along the bottom and up both sides of the chat column, behind the composer. Your turn is the accent; Juno&rsquo;s turn is a companion hue derived from it, so both follow the accent picker."
   },
   {
     "id": "4c0cf76dd350b84d",
@@ -3190,6 +3202,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Compare models"
   },
   {
+    "id": "58fc730eb106e54c",
+    "source": "Settled — no caret"
+  },
+  {
     "id": "5910c059eabab457",
     "source": "Download for macOS"
   },
@@ -3490,6 +3506,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "chatgpt"
   },
   {
+    "id": "60a13ab792ec88be",
+    "source": "In chat — 288px, 14px pitch"
+  },
+  {
     "id": "60acc53f13a5d1bf",
     "source": "Dark"
   },
@@ -3638,6 +3658,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Le responsable du traitement est"
   },
   {
+    "id": "6554bbcaf8673a56",
+    "source": "AIcss reference — 208px, 11px pitch"
+  },
+  {
     "id": "65659145569b894b",
     "source": "Notice"
   },
@@ -3740,6 +3764,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "67c53056c534cb27",
     "source": "Continue in chat"
+  },
+  {
+    "id": "67f2092c9fa04343",
+    "source": "Creating video"
   },
   {
     "id": "67ff9016bbac7d2f",
@@ -4036,10 +4064,6 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "6e5cad2c2c1101d2",
     "source": "Confirm email"
-  },
-  {
-    "id": "6e749162441ef6ea",
-    "source": "May take a minute"
   },
   {
     "id": "6e818ffe86ddf264",
@@ -4930,6 +4954,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Declined:"
   },
   {
+    "id": "85cd61f8c3c8a01e",
+    "source": "Held"
+  },
+  {
     "id": "85eb00994d09e4d0",
     "source": "Content-Type"
   },
@@ -5216,6 +5244,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "8fc6e0e16f6ecf22",
     "source": "Renews"
+  },
+  {
+    "id": "8fd2a4936f5133ab",
+    "source": "Creating image"
   },
   {
     "id": "8fe816331462c4d7",
@@ -5720,6 +5752,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "9b473845f684444f",
     "source": "turn"
+  },
+  {
+    "id": "9b599a4c86fa7c96",
+    "source": "Longer clips can take a couple of minutes."
   },
   {
     "id": "9bc6a53f7ec49024",
@@ -6748,6 +6784,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "b886a1872736c90f",
     "source": "Unknown provider."
+  },
+  {
+    "id": "b88824c12361b6c9",
+    "source": "Voice aura"
   },
   {
     "id": "b8c209cdead61a09",
@@ -8386,6 +8426,10 @@ export const UI_TRANSLATION_CATALOG = [
     "source": "Publish model-release popups and product messages."
   },
   {
+    "id": "e39f87ed89c53747",
+    "source": "Generated your release notes."
+  },
+  {
     "id": "e3b4e711266eb759",
     "source": "Delete your account?"
   },
@@ -8796,6 +8840,10 @@ export const UI_TRANSLATION_CATALOG = [
   {
     "id": "ef4c87b5083fbe48",
     "source": "Save anyway"
+  },
+  {
+    "id": "ef98b35ae322faa5",
+    "source": "Speaking"
   },
   {
     "id": "efa626ed64e8cad9",

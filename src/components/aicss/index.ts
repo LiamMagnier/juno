@@ -23,5 +23,7 @@ export { FileDiff, parseUnifiedDiff } from "@/components/aicss/file-diff";
 export type { DiffRow, DiffRowType } from "@/components/aicss/file-diff";
 export { CitationFooter } from "@/components/aicss/citation-footer";
 export { TodoList } from "@/components/aicss/todo-list";
+// Streaming Text has no component: the caret must live inside the text run, so it
+// is a `::after` on `.prose-juno[data-streaming="true"] > p:last-child`. See the
+// note in globals.css.
 export type { TodoItem, TodoState } from "@/components/aicss/todo-list";
-export { StreamingCaret } from "@/components/aicss/streaming-caret";

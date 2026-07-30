@@ -80,6 +80,9 @@ public struct TranscriptView: View {
             loadSubAgent: { [controller] childID in
                 await controller.subAgentTranscript(childID)
             },
+            loadDiff: { [controller] path in
+                await controller.diff(for: path)
+            },
             openSession: openSession
         )
     }
@@ -148,7 +151,7 @@ struct TranscriptTail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
             if !controller.liveAssistantText.isEmpty {
-                JunoMarkdownText(controller.liveAssistantText)
+                JunoMarkdownText(controller.liveAssistantText, streaming: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Juno is writing: \(controller.liveAssistantText)")
             }

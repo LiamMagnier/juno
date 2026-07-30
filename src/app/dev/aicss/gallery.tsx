@@ -7,7 +7,6 @@ import {
   CitationFooter,
   FileDiff,
   ImageGenerationCanvas,
-  StreamingCaret,
   ThinkingReasoning,
   ThinkingState,
   TodoList,
@@ -244,15 +243,19 @@ export function AicssGallery() {
         </div>
       </Section>
 
-      <Section title="Streaming Text" note="The caret only — Juno has real tokens, so AIcss's typewriter would replay something already on screen. Solid while writing, blinking once idle.">
-        <p className="text-body text-foreground">
-          Generating your release notes
-          <StreamingCaret streaming />
-        </p>
-        <p className="text-body text-foreground">
-          Done
-          <StreamingCaret />
-        </p>
+      <Section
+        title="Streaming Text"
+        note="The caret only — Juno has real tokens, so AIcss's typewriter would replay something already on screen. It is a ::after on the last paragraph, not an element: a cursor has to sit in the text run or it drifts away from the last word on every rewrap."
+      >
+        <div className="prose-juno" data-streaming="true">
+          <p>Generating your release notes</p>
+        </div>
+        <div>
+          <Caption>Settled — no caret</Caption>
+          <div className="prose-juno">
+            <p>Generated your release notes.</p>
+          </div>
+        </div>
       </Section>
     </div>
   );

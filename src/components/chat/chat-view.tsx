@@ -20,6 +20,7 @@ import { CanvasPanel } from "@/components/canvas/canvas-panel";
 import { ThoughtPanelProvider } from "@/components/chat/thought-panel-context";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { RealtimeVoice } from "@/components/voice/realtime-voice";
+import { VoiceAura, voiceAuraStatus } from "@/components/voice/voice-aura";
 import { resolveModel, type ModelId, DEFAULT_MODEL } from "@/lib/models";
 import { STEP_LAB_DEMO_MESSAGE } from "@/lib/step-lab-fixture";
 import { PLANS } from "@/lib/plans";
@@ -1655,6 +1656,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 {!privateMode && !voiceOpen && (
                   <div aria-hidden className="composer-aura composer-aura--docked" />
                 )}
+                {/* The voice field replaces that bloom while a call is live, and
+                    is mounted HERE rather than inside the dock: it has to be a
+                    sibling of the composer for `z-index: -1` to mean "behind the
+                    composer". The dock's own section is z-20, so anything drawn
+                    inside it lands in front of the thing it is lighting. */}
+                {voiceOpen && !privateMode && (
+                  <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
+                )}
                 {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                 {voiceSaveNotice}
                 {composer}
@@ -1726,6 +1735,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                         that mode is deliberately colourless. */}
                     {!privateMode && !voiceOpen && (
                       <div aria-hidden className="composer-aura" />
+                    )}
+                    {voiceOpen && !privateMode && (
+                      <VoiceAura status={voiceAuraStatus(realtimeVoice)} levelRef={realtimeVoice.levelRef} />
                     )}
                     {voiceOpen && <RealtimeVoice voice={realtimeVoice} onClose={closeVoice} />}
                     {voiceSaveNotice}

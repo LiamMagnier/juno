@@ -18,9 +18,10 @@ import UIKit
 /// The screen deliberately draws almost nothing. A voice conversation is heard,
 /// not read, so the only things on it are:
 ///
-/// - **The orb**, driven by ``JunoRealtimeVoiceController/level`` — one number,
-///   because only one party holds the floor at a time, and the meter is what
-///   tells someone their microphone is muted rather than broken.
+/// - **The aura** (``JunoVoiceAura``), driven by
+///   ``JunoRealtimeVoiceController/level`` — one number, because only one party
+///   holds the floor at a time. It is the meter that tells someone their
+///   microphone is muted rather than broken, and its colour is who is talking.
 /// - **The transcript**, which is the record, and the one thing worth scrolling.
 /// - **Three controls**: mute, interrupt, hang up.
 ///
@@ -50,18 +51,23 @@ struct JunoMobileVoiceView: View {
         VStack(spacing: 0) {
             header
             Spacer(minLength: 0)
-            JunoMobileVoiceOrb(
-                level: controller.level,
-                active: isLive,
-                speaking: controller.assistantSpeaking
-            )
             status
-                .padding(.top, 20)
             Spacer(minLength: 0)
             transcript
             controls
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(alignment: .bottom) {
+            // Behind the whole screen, never over it. The transcript and the
+            // three controls have to stay readable at full amplitude — this
+            // reports state, it does not compete for the surface.
+            JunoVoiceAura(
+                level: controller.level,
+                speaking: controller.assistantSpeaking,
+                active: isLive
+            )
+            .frame(height: 320)
+        }
         .background(Color.junoCanvas)
         .task {
             // Started from here, not from the caller: the session's lifetime is
@@ -469,62 +475,3 @@ struct JunoMobileVoiceTranscript {
     let turns: [NativeVoiceTranscriptClient.Turn]
 }
 
-/// The orb: three concentric rings breathing with whoever holds the floor.
-///
-/// Driven by one level, because only one party talks at a time — the controller
-/// already resolves microphone and playback into a single smoothed number, and
-/// showing two meters would invite reading a conversation as a duet.
-///
-/// Reduce Motion holds the rings at rest rather than removing them: the shape is
-/// what says "a voice session is live", and a static ring still says it.
-struct JunoMobileVoiceOrb: View {
-    let level: Double
-    let active: Bool
-    let speaking: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private var amplitude: Double {
-        guard active, !reduceMotion else { return 0 }
-        return min(max(level, 0), 1)
-    }
-
-    var body: some View {
-        ZStack {
-            ForEach(0..<3, id: \.self) { ring in
-                let spread = Double(ring) * 0.24
-                Circle()
-                    .stroke(
-                        Color.junoAccent.opacity(0.32 - Double(ring) * 0.09),
-                        lineWidth: 1.5
-                    )
-                    .frame(width: 150, height: 150)
-                    .scaleEffect(1 + spread + amplitude * (0.16 + spread * 0.4))
-            }
-
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color.junoAccent.opacity(speaking ? 0.95 : 0.78),
-                            Color.junoAccent.opacity(0.5),
-                        ],
-                        center: .center,
-                        startRadius: 4,
-                        endRadius: 84
-                    )
-                )
-                .frame(width: 150, height: 150)
-                .scaleEffect(0.86 + amplitude * 0.18)
-                .shadow(color: Color.junoAccent.opacity(0.35), radius: 28)
-        }
-        .frame(width: 260, height: 260)
-        // A spring, not a linear ramp: the controller already smooths the level
-        // at 30Hz, and animating on top of that with anything slower turns a
-        // consonant into a wobble that arrives after the sound.
-        .animation(.interpolatingSpring(stiffness: 220, damping: 18), value: amplitude)
-        .animation(.easeOut(duration: 0.2), value: speaking)
-        .opacity(active ? 1 : 0.45)
-        .accessibilityHidden(true)
-    }
-}

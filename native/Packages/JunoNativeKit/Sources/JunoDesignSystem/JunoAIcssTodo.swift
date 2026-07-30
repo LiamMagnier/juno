@@ -6,6 +6,14 @@ public struct JunoAIcssTodoItem: Identifiable, Hashable, Sendable {
         case pending
         case active
         case done
+        /// Started and stopped — waiting on something the agent cannot resolve.
+        ///
+        /// AIcss has no such state; its list is pending → active → done. It is
+        /// added because Juno's own plans have it (`GoalStepStatus.blocked`), and
+        /// folding a blocked step into `pending` would say the plan is merely
+        /// waiting its turn when it is actually stuck. That is the one thing a
+        /// reader glancing at a plan most needs to be told.
+        case blocked
     }
 
     public let id: String
@@ -45,6 +53,7 @@ public struct JunoAIcssTodoList: View {
 
     private var done: Int { items.count { $0.state == .done } }
     private var running: Bool { items.contains { $0.state == .active } }
+    private var blocked: Int { items.count { $0.state == .blocked } }
     private var allDone: Bool { !items.isEmpty && done == items.count }
     private var fraction: Double { items.isEmpty ? 0 : Double(done) / Double(items.count) }
 
@@ -96,7 +105,9 @@ public struct JunoAIcssTodoList: View {
         #if os(macOS)
         .onHover { hovering = $0 }
         #endif
-        .accessibilityLabel("\(title) — \(done) of \(items.count) done")
+        .accessibilityLabel(blocked > 0
+            ? "\(title) — \(done) of \(items.count) done, \(blocked) blocked"
+            : "\(title) — \(done) of \(items.count) done")
     }
 
     @ViewBuilder
@@ -111,6 +122,13 @@ public struct JunoAIcssTodoList: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 14))
                     .foregroundStyle(Color.junoSuccess)
+            } else if blocked > 0, !running {
+                // The plan has stopped and cannot continue on its own. A pie here
+                // would keep implying forward motion at whatever fraction it had
+                // reached when it stalled.
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.junoCaution)
             } else if running {
                 pie
             } else {
@@ -162,6 +180,9 @@ public struct JunoAIcssTodoList: View {
             Image(systemName: "checkmark.circle")
                 .foregroundStyle(Color.junoMutedForeground)
                 .opacity(state == .done ? 1 : 0)
+            Image(systemName: "exclamationmark.circle")
+                .foregroundStyle(Color.junoCaution)
+                .opacity(state == .blocked ? 1 : 0)
         }
         .font(.system(size: 14))
         .frame(width: 16, height: 16)
@@ -189,6 +210,13 @@ public struct JunoAIcssTodoList: View {
             Text(item.label)
                 .font(.system(size: 13))
                 .foregroundStyle(Color.junoMutedForeground)
+                .fixedSize(horizontal: false, vertical: true)
+        case .blocked:
+            // Not shining: the shine means "being worked on", and a blocked step
+            // is precisely the one that is not.
+            Text(item.label)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.junoCaution)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

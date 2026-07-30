@@ -268,7 +268,60 @@ public enum NativeChatServerEvent: Equatable, Sendable {
         generationID: String?,
         userMessageID: String?
     )
+    /// Media generation moved a stage. Only `/api/generate` sends these.
+    case mediaProgress(NativeMediaProgress)
     case ping
+}
+
+/// How far a media generation has got.
+///
+/// The server has always sent this frame; both native clients decoded it as a
+/// `ping` and threw it away, so a phone showed nothing at all for the twenty to
+/// ninety seconds an image takes. `pct` is absent on every provider that does not
+/// report one, and is left absent rather than interpolated — a bar that invents
+/// its own progress is worse than no bar, which is why the UI shows the stage and
+/// not a percentage.
+public struct NativeMediaProgress: Equatable, Sendable {
+    public enum Modality: String, Equatable, Sendable {
+        case image
+        case video
+    }
+
+    public let modality: Modality
+    /// The server's own stage word: queued, generating, polling, downloading,
+    /// uploading. Carried verbatim so a stage added server-side shows up here
+    /// without a client release.
+    public let stage: String
+    public let pct: Double?
+
+    public init(modality: Modality, stage: String, pct: Double?) {
+        self.modality = modality
+        self.stage = stage
+        self.pct = pct
+    }
+}
+
+/// One media generation: a prompt, the model that will render it, and the
+/// conversation it belongs to (absent for the first message of a new one).
+public struct NativeMediaGenerationRequest: Equatable, Sendable {
+    public let conversationID: String?
+    public let prompt: String
+    public let modelID: String
+    /// Fixed by the model the caller chose, and carried because the server's
+    /// progress frames do not name it.
+    public let modality: NativeMediaProgress.Modality
+
+    public init(
+        conversationID: String?,
+        prompt: String,
+        modelID: String,
+        modality: NativeMediaProgress.Modality
+    ) {
+        self.conversationID = conversationID
+        self.prompt = prompt
+        self.modelID = modelID
+        self.modality = modality
+    }
 }
 
 public struct NativeChatGenerationRequest: Equatable, Sendable {
@@ -638,17 +691,55 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         return try await streamEvents(body: try JSONEncoder().encode(body), for: accountID)
     }
 
-    /// The shared half: both modes POST to `/api/chat` and read the same
-    /// `text/event-stream` back, so only the body differs. Keeping the response
-    /// handling in one place is what stops incognito quietly missing an event kind
-    /// the normal path learns to handle later.
+    /// A media generation: `/api/generate`, not `/api/chat`.
+    ///
+    /// This endpoint existed on the server from the start and no native client
+    /// ever called it, which is why the model picker's Image and Video sections
+    /// were selectable but inert — picking an image model sent a chat turn for a
+    /// model that does not do chat.
+    ///
+    /// The stream is the same shape as a chat turn's (`meta` → … → `done`), and
+    /// the `done` frame carries a fully serialised message with the generated file
+    /// already attached, so nothing downstream needs a second code path for the
+    /// result. Only `progress` is new.
+    public func mediaGenerationEvents(
+        _ request: NativeMediaGenerationRequest,
+        for accountID: AccountID
+    ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
+        try requireIdentifier(request.modelID)
+        if let conversationID = request.conversationID { try requireIdentifier(conversationID) }
+        let prompt = request.prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The server's own bounds (`prompt: min(1).max(4000)`), enforced here so a
+        // doomed request never costs a round trip or a metered generation.
+        guard !prompt.isEmpty, prompt.count <= 4000 else {
+            throw NativeChatAPIError.malformedResponse
+        }
+        let body = MediaGenerationRequestWire(
+            conversationId: request.conversationID,
+            prompt: prompt,
+            model: request.modelID
+        )
+        return try await streamEvents(
+            path: "/api/generate",
+            mediaModality: request.modality,
+            body: try JSONEncoder().encode(body),
+            for: accountID
+        )
+    }
+
+    /// The shared half: every mode reads the same `text/event-stream` back, so
+    /// only the path and the body differ. Keeping the response handling in one
+    /// place is what stops incognito — or media generation — quietly missing an
+    /// event kind the normal path learns to handle later.
     private func streamEvents(
+        path: String = "/api/chat",
+        mediaModality: NativeMediaProgress.Modality = .image,
         body: Data,
         for accountID: AccountID
     ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
         let response = try await streamer.stream(
             try NativeBearerRequest(
-                path: "/api/chat",
+                path: path,
                 method: .post,
                 headers: try HTTPHeaders([
                     "Accept": "text/event-stream",
@@ -672,13 +763,13 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                     var terminal = false
                     for try await byte in response.bytes {
                         for payload in try parser.consume(byte) {
-                            let event = try decodeEvent(payload)
+                            let event = try decodeEvent(payload, mediaModality: mediaModality)
                             continuation.yield(event)
                             if event.isTerminal { terminal = true }
                         }
                     }
                     for payload in try parser.finish() {
-                        let event = try decodeEvent(payload)
+                        let event = try decodeEvent(payload, mediaModality: mediaModality)
                         continuation.yield(event)
                         if event.isTerminal { terminal = true }
                     }
@@ -717,7 +808,14 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         return wire.cancelled
     }
 
-    private func decodeEvent(_ payload: Data) throws -> NativeChatServerEvent {
+    /// - Parameter mediaModality: what the caller asked to be generated. The
+    ///   `progress` frame does not name it — the server is answering a request
+    ///   whose model already fixed it — so it is carried in rather than guessed.
+    ///   Irrelevant on `/api/chat`, which never sends a progress frame.
+    private func decodeEvent(
+        _ payload: Data,
+        mediaModality: NativeMediaProgress.Modality = .image
+    ) throws -> NativeChatServerEvent {
         let envelope: EventEnvelopeWire
         do { envelope = try JSONDecoder().decode(EventEnvelopeWire.self, from: payload) }
         catch { throw NativeChatAPIError.malformedResponse }
@@ -796,7 +894,18 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 detail: event.detail,
                 url: event.url
             ))
-        case "ping", "progress":
+        case "progress":
+            // The wire frame names a stage and sometimes a percentage; it does
+            // NOT name the modality, because the caller already chose the model.
+            // `mediaModality` is that choice, held for the life of the stream.
+            return .mediaProgress(
+                NativeMediaProgress(
+                    modality: mediaModality,
+                    stage: nonEmpty(envelope.stage, maximum: 40) ?? "generating",
+                    pct: envelope.pct
+                )
+            )
+        case "ping":
             return .ping
         default:
             throw NativeChatAPIError.malformedResponse
@@ -966,6 +1075,15 @@ private struct AppendResponseWire: Decodable {
     let conversationId: String
     let messages: [Message]
 }
+/// `/api/generate`'s body. `conversationId` is OMITTED rather than null-encoded
+/// when absent — the server's schema marks it optional, and an explicit null is
+/// not the same thing as an absent key to a Zod optional.
+private struct MediaGenerationRequestWire: Encodable {
+    let conversationId: String?
+    let prompt: String
+    let model: String
+}
+
 private struct GenerationRequestWire: Encodable {
     let conversationId: String
     let model: String
@@ -1034,10 +1152,13 @@ private struct EventEnvelopeWire: Decodable {
     let event: ActivityWire?
     let error: String?
     let finishReason: String?
+    /// `progress` frames only.
+    let stage: String?
+    let pct: Double?
 
     private enum CodingKeys: String, CodingKey {
         case type, conversationId, userMessageId, title, generationId, text,
-             sources, message, event, error, finishReason
+             sources, message, event, error, finishReason, stage, pct
     }
 
     init(from decoder: any Decoder) throws {
@@ -1048,6 +1169,10 @@ private struct EventEnvelopeWire: Decodable {
         title = try container.decodeIfPresent(String.self, forKey: .title)
         generationId = try container.decodeIfPresent(String.self, forKey: .generationId)
         text = try container.decodeIfPresent(String.self, forKey: .text)
+        stage = try container.decodeIfPresent(String.self, forKey: .stage)
+        // The server sends a fraction on some providers and a percentage on
+        // others; both are tolerated and neither is invented when absent.
+        pct = try container.decodeIfPresent(Double.self, forKey: .pct)
         sources = try container.decodeIfPresent([SourceWire].self, forKey: .sources)
         message = try? container.decodeIfPresent(Message.self, forKey: .message)
         messageText = try? container.decodeIfPresent(String.self, forKey: .message)

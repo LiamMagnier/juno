@@ -157,52 +157,6 @@ public struct JunoAIcssThinkingLabel: View {
     }
 }
 
-/// AIcss "Streaming Text" — the caret, and only the caret.
-///
-/// AIcss's own component fakes the stream with a timer that walks two characters
-/// at a time through a string it already has. Juno has real tokens, so replaying
-/// them would show a slower, wronger copy of what is already on screen.
-///
-/// The caret inverts the usual blink: SOLID while text arrives, blinking once it
-/// stops. A blinking caret under moving text is two things competing to say
-/// "live"; a caret that *starts* blinking is the one moment a blink is news.
-public struct JunoAIcssCaret: View {
-    private let streaming: Bool
-    private let height: Double
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    public init(streaming: Bool, height: Double = 17) {
-        self.streaming = streaming
-        self.height = height
-    }
-
-    public var body: some View {
-        // Solid whenever it is not blinking, so there is one code path and the
-        // caret can never be caught mid-fade by a state change.
-        if streaming || reduceMotion {
-            bar(visible: true)
-        } else {
-            // `step-end`, as in the web's `aicss-caret-blink`: on for half the
-            // second, off for the other half, with no interpolation — a caret
-            // that fades reads as a rendering artefact rather than a cursor.
-            // Parity is taken from absolute time, so a caret that appears
-            // mid-blink is already in phase with every other one on screen.
-            TimelineView(.periodic(from: .distantPast, by: 0.5)) { context in
-                let ticks = context.date.timeIntervalSinceReferenceDate / 0.5
-                bar(visible: Int(ticks.rounded(.down)) % 2 == 0)
-            }
-        }
-    }
-
-    private func bar(visible: Bool) -> some View {
-        Rectangle()
-            .fill(Color.primary)
-            .frame(width: 8, height: height * 1.05)
-            .opacity(visible ? 1 : 0)
-            .accessibilityHidden(true)
-    }
-}
 
 #if DEBUG
 #Preview("AIcss shine") {
@@ -211,10 +165,6 @@ public struct JunoAIcssCaret: View {
         JunoAIcssThinkingLabel("Thinking about your request · 4s")
         JunoAIcssThinkingLabel("Thought for 8.4s", settled: true)
         JunoAIcssThinkingLabel("Generating image", tone: .strong, size: 14)
-        HStack(spacing: 0) {
-            Text("Generating your release no").font(.system(size: 14))
-            JunoAIcssCaret(streaming: true, height: 14)
-        }
     }
     .padding(20)
     .frame(maxWidth: .infinity, alignment: .leading)

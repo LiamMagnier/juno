@@ -1118,7 +1118,11 @@ private struct DesktopMessageRow: View {
                     .frame(maxWidth: 520, alignment: .leading)
                 }
 
-                if message.content.isEmpty, message.isPending {
+                if let progress = message.mediaProgress {
+                    // A generation in flight has no text to render — the picture
+                    // is the answer, and it arrives whole in the `done` frame.
+                    NativeMediaGenerationView(progress: progress)
+                } else if message.content.isEmpty, message.isPending {
                     // The dot matrix and AIcss's shine, as on the phone and the
                     // web. This was a stock `ProgressView` spinner beside "Juno is
                     // working…" — a system control saying nothing of Juno's, next
@@ -1136,7 +1140,9 @@ private struct DesktopMessageRow: View {
                     ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                         switch part {
                         case .text(let text):
-                            JunoMarkdownText(text)
+                            // AIcss's caret rides the last paragraph while tokens
+                            // are still arriving. Same signal as the phone's.
+                            JunoMarkdownText(text, streaming: message.isPending)
                         case .artifact(let artifact):
                             DesktopInlineArtifactCard(
                                 artifact: artifact,
@@ -1569,29 +1575,41 @@ private struct DesktopMessageSources: View {
     }
 }
 
+/// The live run's searches, in AIcss's Web Search block.
+///
+/// What that replaced: a card headed "Research in progress" over a coral bullet
+/// per activity item, showing `detail ?? title` for every kind of event. Three
+/// things were wrong with it. Coral is reserved for what is active or selected,
+/// and every bullet wore it including the finished ones. Every event became a
+/// row, so "Selected model" and "Reasoning mode enabled" sat in a list the reader
+/// would take for search results. And the query the run was actually searching
+/// for — the one thing that answers "what is it doing?" — was never distinguished
+/// from anything else in the list.
+///
+/// Now the query leads and shimmers while the search is open, and only real
+/// sources become rows.
 private struct DesktopResearchActivity: View {
     let items: [NativeChatActivity]
 
+    private var query: String? { NativeSearchActivity.query(in: items) }
+    private var sites: [JunoAIcssSearchSite] { NativeSearchActivity.sites(in: items) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Label("Research in progress", systemImage: "globe")
-                .font(.caption.weight(.semibold))
-            ForEach(items) { item in
-                HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                    Circle()
-                        .fill(Color.junoAccent)
-                        .frame(width: 5, height: 5)
-                    Text(item.detail ?? item.title)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
+        // Nothing to say is no card. Before the first search or visit lands there
+        // is no query and no source, and an empty "Research in progress" card is a
+        // claim that something is being shown.
+        if query != nil || !sites.isEmpty {
+            JunoAIcssWebSearch(
+                query: query,
+                sites: sites,
+                settled: NativeSearchActivity.settled(in: items)
+            )
+            .padding(JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            // A raised card, not a bare fill: without the hairline and the throw
+            // this was a white rectangle on a warm field with no edge to it.
+            .junoCard()
         }
-        .padding(JunoSpace.cozy)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        // A raised card, not a bare fill: without the hairline and the throw this
-        // was a white rectangle on a warm field with no edge to it.
-        .junoCard()
     }
 }
 

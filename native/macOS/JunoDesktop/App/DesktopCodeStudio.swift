@@ -1257,6 +1257,12 @@ struct DesktopCodeDraftDetail: View {
     let openTask: (NativeCodeTask) -> Void
     /// Opens the folder picker, from the "Open a project…" affordance.
     let addProject: () -> Void
+    /// Points the draft at one of the granted projects, or at none.
+    ///
+    /// The composer does not own which project it is in — the window's
+    /// selection does — so this hands the choice back up rather than keeping a
+    /// second copy of it that could disagree with the sidebar.
+    let selectProject: (WorkspaceID?) -> Void
 
     @SceneStorage("juno.desktop.code.launch-target")
     private var storedTarget = DesktopCodeLaunchTarget.local.rawValue
@@ -1616,6 +1622,30 @@ struct DesktopCodeDraftDetail: View {
 
     private var destinationRow: some View {
         HStack(spacing: JunoSpace.snug) {
+            // Only the local destination is a *project*, and only a project is
+            // choosable from here. Cloud picks a repository and Device picks a
+            // computer, and both already have their own control in the row
+            // below — a second one here would be two ways to say one thing.
+            if target == .local {
+                projectMenu
+            } else {
+                destinationIdentity
+            }
+            Spacer(minLength: JunoSpace.tight)
+            Text(destinationDetail)
+                .junoCaption()
+                .lineLimit(1)
+                .truncationMode(.head)
+        }
+        .padding(.horizontal, JunoSpace.tight)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(target.label), \(destinationTitle), \(destinationDetail)")
+    }
+
+    /// The destination, as text. Used where it is a statement rather than a
+    /// choice.
+    private var destinationIdentity: some View {
+        HStack(spacing: JunoSpace.snug) {
             // `.symbolEffect` is an SF Symbol capability; a Juno mark is an
             // image asset and cannot morph, so the two branches differ in more
             // than which glyph they draw.
@@ -1633,15 +1663,78 @@ struct DesktopCodeDraftDetail: View {
                 .junoRowLabel()
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Spacer(minLength: JunoSpace.tight)
-            Text(destinationDetail)
-                .junoCaption()
-                .lineLimit(1)
-                .truncationMode(.head)
         }
-        .padding(.horizontal, JunoSpace.tight)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(target.label), \(destinationTitle), \(destinationDetail)")
+    }
+
+    /// Which project this conversation is in — including none.
+    ///
+    /// The chip used to be a label: it stated "No project" and left the only
+    /// way out on the far side of the window, in a bar above the transcript.
+    /// The thing you want to change is the thing you should be able to click,
+    /// so it is a menu, and every granted project is one item away. "No
+    /// project" stays in the list rather than being an escape hatch, because it
+    /// is a destination in its own right — plenty of questions are better
+    /// answered without handing over a folder.
+    private var projectMenu: some View {
+        Menu {
+            Picker("Project", selection: projectBinding) {
+                JunoIconLabel(verbatim: "No project", icon: .conversation, size: 14)
+                    .tag(WorkspaceID?.none)
+
+                if !workbench.workspaces.isEmpty {
+                    Divider()
+                    ForEach(workbench.workspaces) { record in
+                        JunoIconLabel(
+                            verbatim: record.descriptor.displayName,
+                            icon: .projects,
+                            size: 14
+                        )
+                        .tag(Optional(record.id))
+                    }
+                }
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            Button(action: addProject) {
+                JunoIconLabel(verbatim: "Open a Project…", icon: .new, size: 14)
+            }
+            .keyboardShortcut("o", modifiers: [.command])
+        } label: {
+            HStack(spacing: JunoSpace.snug) {
+                JunoIconView(record == nil ? .conversation : .projects, size: 14)
+                    .foregroundStyle(Color.junoAccent)
+                Text(destinationTitle)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 28)
+            // Liquid Glass, through the shared helper that falls back to a
+            // system material below macOS 26 rather than drawing a flat plate.
+            .background(JunoGlassBackground(cornerRadius: 14))
+            .contentShape(.rect(cornerRadius: 14))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Choose the project this conversation works in")
+        .accessibilityIdentifier("juno.code.draft-project")
+    }
+
+    private var projectBinding: Binding<WorkspaceID?> {
+        Binding(
+            get: { record?.id },
+            set: { next in
+                guard next != record?.id else { return }
+                selectProject(next)
+            }
+        )
     }
 
     private var targetMenu: some View {

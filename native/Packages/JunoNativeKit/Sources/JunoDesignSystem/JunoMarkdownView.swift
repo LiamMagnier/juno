@@ -22,16 +22,39 @@ public struct JunoMarkdownText: View {
 
     private let source: String
     private let blocks: [JunoMarkdownBlock]
+    private let streaming: Bool
 
-    public init(_ source: String) {
+    /// - Parameter streaming: whether tokens are still arriving, which puts
+    ///   AIcss's caret at the end of the last paragraph. See `JunoInlineText` for
+    ///   why it is a glyph in the text run rather than a shape beside it.
+    public init(_ source: String, streaming: Bool = false) {
         self.source = source
         self.blocks = JunoMarkdown.blocks(from: source)
+        self.streaming = streaming
+    }
+
+    /// The caret rides the LAST PARAGRAPH, and only a paragraph.
+    ///
+    /// It has to sit on the text's own baseline, immediately after the final
+    /// glyph — a caret on its own row underneath is a rectangle, not a cursor. So
+    /// it is appended to the paragraph's text run rather than stacked below it,
+    /// which also means it inherits the line's wrapping and moves with the last
+    /// word instead of being pinned to a corner.
+    ///
+    /// When the answer currently ends in a code block, a table or a list, there
+    /// is no paragraph to ride and no caret is drawn. That is the right answer
+    /// rather than a limitation: the thing being written is a structure, and a
+    /// text cursor hanging off the bottom of a table says nothing true about it.
+    private var caretIndex: Int? {
+        guard streaming else { return nil }
+        guard case .paragraph = blocks.last else { return nil }
+        return blocks.count - 1
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: Self.blockSpacing) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                JunoMarkdownBlockView(block: block)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                JunoMarkdownBlockView(block: block, caret: index == caretIndex)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -44,11 +67,14 @@ public struct JunoMarkdownText: View {
 
 private struct JunoMarkdownBlockView: View {
     let block: JunoMarkdownBlock
+    /// Append the streaming caret to this block. Only ever true for the last
+    /// paragraph — see `JunoMarkdownText.caretIndex`.
+    var caret: Bool = false
 
     var body: some View {
         switch block {
         case .paragraph(let text):
-            JunoInlineText(text)
+            JunoInlineText(text, caret: caret)
                 .lineSpacing(JunoMarkdownText.lineSpacing)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -113,8 +139,9 @@ private struct JunoMarkdownBlockView: View {
 /// string is shown rather than an error or an empty row.
 struct JunoInlineText: View {
     private let attributed: AttributedString
+    private let caret: Bool
 
-    init(_ source: String) {
+    init(_ source: String, caret: Bool = false) {
         if let parsed = try? AttributedString(
             markdown: source,
             options: .init(
@@ -127,11 +154,27 @@ struct JunoInlineText: View {
         } else {
             attributed = AttributedString(source)
         }
+        self.caret = caret
     }
 
+    /// AIcss's caret as a glyph rather than a `Rectangle`, because it has to be
+    /// part of the text run: only then does it sit on the baseline, follow the
+    /// last word as the line rewraps, and scale with Dynamic Type. A shape in an
+    /// `HStack` beside the paragraph would pin itself to the block's trailing
+    /// edge and drift away from the words on every wrap.
+    ///
+    /// Solid, never blinking — which is AIcss's rule and is only visible here in
+    /// the state that rule is about: text is arriving, so a second moving thing
+    /// would compete with the text itself for the reader's eye.
     var body: some View {
-        Text(attributed)
-            .tint(Color.junoAccent)
+        Group {
+            if caret {
+                Text(attributed) + Text(verbatim: "\u{2588}").foregroundColor(.primary)
+            } else {
+                Text(attributed)
+            }
+        }
+        .tint(Color.junoAccent)
     }
 }
 

@@ -226,10 +226,15 @@ struct DesktopCodeWorkspace: View {
             allowsMultipleSelection: false,
             onCompletion: grantRepository
         )
+        // The panel is an NSOpenPanel, so New Folder is right there — but
+        // nothing said so, and "choose" reads as "pick one that already
+        // exists". Starting a project from nothing is a real path.
         .fileDialogMessage(
-            Text("Choose the repository or folder Juno Code may read and write in.")
+            Text(
+                "Choose the folder Juno Code may read and write in — or make a new one."
+            )
         )
-        .fileDialogConfirmationLabel(Text("Open Repository"))
+        .fileDialogConfirmationLabel(Text("Open Project"))
         .sheet(isPresented: $isOpeningQuickly) {
             if let controller {
                 OpenQuicklySheet(controller: controller) { path in
@@ -377,7 +382,16 @@ struct DesktopCodeWorkspace: View {
             openTask: { task in
                 selection.wrappedValue = .task(task.id)
             },
-            addProject: { isChoosingRepository = true }
+            addProject: { isChoosingRepository = true },
+            selectProject: { id in
+                // The window's selection is the single source of truth for
+                // which project is open, so the menu writes there rather than
+                // holding its own copy — that is what keeps the sidebar and the
+                // composer from disagreeing about where you are.
+                reviewVisible = false
+                consoleVisible = false
+                selection.wrappedValue = id.map { .repository($0) } ?? .draft
+            }
         )
     }
 

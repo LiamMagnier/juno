@@ -1,4 +1,5 @@
 import JunoChatKit
+import JunoDesignSystem
 import SwiftUI
 
 /// Deep research state above the composer: that the mode is on, what the server
@@ -17,18 +18,39 @@ struct JunoMobileResearchProgress: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if enabled { header }
-            if let step = latestStep { stepRow(step) }
+            searchBlock
             if let degradedWarning { warningRow(degradedWarning) }
         }
         .padding(.horizontal, 14)
         .accessibilityIdentifier("juno.mobile.research-progress")
     }
 
-    /// The most recent step only. The full log belongs in the transcript once
-    /// the turn is finished; a growing list above the composer would push the
-    /// text field around while someone is typing into it.
-    private var latestStep: NativeChatActivity? {
-        activity.last { $0.kind != .warning }
+    /// The searches, in AIcss's Web Search block — the same block the Mac and the
+    /// web show for the same events.
+    ///
+    /// This used to be the latest activity item only, as an SF Symbol beside
+    /// `title` and `detail`, on the reasoning that a growing list above the
+    /// composer would push the text field around while someone types into it.
+    /// That reasoning still holds and this still honours it: the block's own list
+    /// is collapsible and, once folded, the whole thing is one line. What changed
+    /// is that the one line is now the QUERY — the thing a reader is waiting on —
+    /// rather than whichever event happened to arrive last, which was as often
+    /// "Selected model" as it was a search.
+    @ViewBuilder
+    private var searchBlock: some View {
+        let sites = NativeSearchActivity.sites(in: activity)
+        let query = NativeSearchActivity.query(in: activity)
+        if query != nil || !sites.isEmpty {
+            JunoAIcssWebSearch(
+                query: query,
+                sites: sites,
+                settled: NativeSearchActivity.settled(in: activity),
+                // Folded above the composer: the reader is typing, and the rail of
+                // sources is reference rather than status. The query alone is the
+                // status, and it stays visible.
+                defaultOpen: false
+            )
+        }
     }
 
     private var header: some View {
@@ -46,30 +68,6 @@ struct JunoMobileResearchProgress: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func stepRow(_ step: NativeChatActivity) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon(for: step.kind))
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(step.title)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                if let detail = step.detail {
-                    Text(detail)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-            Spacer()
-        }
-        // Announced as one changing status rather than as newly appearing text,
-        // so VoiceOver reports progress instead of re-reading the layout.
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.updatesFrequently)
-    }
 
     /// Shown separately from the steps because it changes what the answer *is*.
     /// A reader who asked for research and silently received plain chat has
@@ -88,18 +86,4 @@ struct JunoMobileResearchProgress: View {
         .accessibilityIdentifier("juno.mobile.research-degraded")
     }
 
-    private func icon(for kind: NativeChatActivity.Kind) -> String {
-        switch kind {
-        case .search: "magnifyingglass"
-        case .visit: "doc.text"
-        case .write: "square.and.pencil"
-        case .reasoning: "brain"
-        case .model, .context: "cpu"
-        case .usage: "gauge"
-        case .done: "checkmark.circle"
-        case .warning: "exclamationmark.triangle"
-        case .tool: "wrench.and.screwdriver"
-        case .unknown: "circle.dotted"
-        }
-    }
 }

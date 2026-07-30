@@ -97,13 +97,11 @@ struct DesktopVoiceView: View {
     @State private var sessionID = UUID()
     @State private var isSaving = false
     @State private var saveError: String?
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             header
             HStack(spacing: 34) {
-                orb
                 VStack(alignment: .leading, spacing: 12) {
                     Text(statusTitle)
                         .font(.title2.weight(.semibold))
@@ -120,7 +118,8 @@ struct DesktopVoiceView: View {
                     }
                     recovery
                 }
-                .frame(maxWidth: 300, alignment: .leading)
+                .frame(maxWidth: 460, alignment: .leading)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 38)
             .padding(.vertical, 28)
@@ -129,6 +128,18 @@ struct DesktopVoiceView: View {
             controls
         }
         .frame(minWidth: 700, idealWidth: 760, minHeight: 560, idealHeight: 620)
+        .background(alignment: .bottom) {
+            // Behind everything on the sheet, never over it. The status text,
+            // the transcript and the controls all have to stay readable while
+            // this is at full amplitude — it reports state, it does not compete
+            // for the surface.
+            JunoVoiceAura(
+                level: controller.level,
+                speaking: controller.assistantSpeaking,
+                active: isLive
+            )
+            .frame(height: 340)
+        }
         .background(Color.junoCanvasWarm)
         .task { await controller.start() }
         .onDisappear { controller.end() }
@@ -234,41 +245,6 @@ struct DesktopVoiceView: View {
         default:
             EmptyView()
         }
-    }
-
-    private var orb: some View {
-        let level = reduceMotion ? 0 : min(max(controller.level, 0), 1)
-        return ZStack {
-            ForEach(0..<3, id: \.self) { ring in
-                Circle()
-                    .stroke(
-                        Color.junoAccent.opacity(0.30 - Double(ring) * 0.08),
-                        lineWidth: 1.5
-                    )
-                    .frame(width: 126, height: 126)
-                    .scaleEffect(1 + Double(ring) * 0.22 + level * 0.16)
-            }
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [
-                            Color.junoAccent.opacity(
-                                controller.assistantSpeaking ? 0.95 : 0.76
-                            ),
-                            Color.junoAccent.opacity(0.46),
-                        ],
-                        center: .center,
-                        startRadius: 4,
-                        endRadius: 66
-                    )
-                )
-                .frame(width: 126, height: 126)
-                .scaleEffect(0.88 + level * 0.16)
-        }
-        .frame(width: 220, height: 220)
-        .animation(.interpolatingSpring(stiffness: 210, damping: 19), value: level)
-        .opacity(isLive ? 1 : 0.45)
-        .accessibilityHidden(true)
     }
 
     @ViewBuilder

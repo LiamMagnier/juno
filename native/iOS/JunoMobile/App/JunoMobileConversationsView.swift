@@ -1140,10 +1140,22 @@ private struct JunoMobileMessageRow: View {
                 clock: clock
             )
 
+            // A generation in flight has no text to render — the picture is the
+            // answer, and it arrives whole in the `done` frame. Until then this
+            // stands in its place rather than under it.
+            if let progress = message.mediaProgress {
+                NativeMediaGenerationView(progress: progress)
+                    .padding(.top, 2)
+            }
+
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                 switch part {
                 case .text(let text):
-                    JunoMarkdownText(text)
+                    // AIcss's caret rides the last paragraph while tokens are
+                    // still arriving — the one live signal the answer body had
+                    // none of, since the thought-process row above settles the
+                    // moment the first token lands.
+                    JunoMarkdownText(text, streaming: message.isPending)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .artifact(let artifact):

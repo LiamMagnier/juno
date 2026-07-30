@@ -96,6 +96,13 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
     public var costUSD: Double?
     /// The reader's rating, as the server holds it.
     public var feedback: NativeChatFeedback?
+    /// Live media-generation progress, while `/api/generate` runs.
+    ///
+    /// Client-transient and never persisted — exactly as `progress` is on the
+    /// web's message model. It exists only between the request and the `done`
+    /// frame that replaces this row with the finished message, and a value that
+    /// survived a reload would be claiming a generation that is not running.
+    public var mediaProgress: NativeMediaProgress?
 
     public init(
         id: String,
@@ -112,7 +119,8 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         isPending: Bool = false,
         errorDescription: String? = nil,
         costUSD: Double? = nil,
-        feedback: NativeChatFeedback? = nil
+        feedback: NativeChatFeedback? = nil,
+        mediaProgress: NativeMediaProgress? = nil
     ) {
         self.id = id
         self.conversationID = conversationID
@@ -128,6 +136,7 @@ public struct NativeChatMessage: Identifiable, Equatable, Sendable {
         self.isPending = isPending
         self.errorDescription = errorDescription
         self.costUSD = costUSD
+        self.mediaProgress = mediaProgress
         self.feedback = feedback
     }
 }
@@ -530,6 +539,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public var researchDegradedWarning: String? {
         researchActivity.last { $0.kind == .warning }?.detail
             ?? researchActivity.last { $0.kind == .warning }?.title
+    }
+
+    /// Live generation progress on the pending assistant row.
+    ///
+    /// Transient by construction: it is set here and cleared by whatever replaces
+    /// the row — the `done` frame's real message, or a failure. There is no path
+    /// that persists it, which is what keeps a reloaded transcript from showing a
+    /// generation that finished hours ago as still running.
+    private func updateMediaProgress(_ progress: NativeMediaProgress, conversationID: String) {
+        updateTransientAssistant(for: conversationID) { $0.mediaProgress = progress }
     }
 
     private func recordActivity(_ activity: NativeChatActivity, conversationID: String) {
@@ -946,6 +965,16 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
         }
     }
 
+    /// The modality this model generates, or nil when it is a chat model.
+    ///
+    /// Read from the catalog the server published. Nil is also the honest answer
+    /// for a model this build has never heard of — an unknown model goes down the
+    /// chat path, which is what every previous build did for every model.
+    private func mediaModality(of modelID: String) -> NativeMediaProgress.Modality? {
+        guard let model = modelCatalog.first(where: { $0.id == modelID }) else { return nil }
+        return NativeMediaProgress.Modality(rawValue: model.modality)
+    }
+
     @discardableResult
     public func sendMessage(
         conversationID: String,
@@ -1084,19 +1113,46 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             let generationID = "juno-native-\(UUID().uuidString.lowercased())"
             activeGenerationID = generationID
             chatPhase = .submitting
-            let events = try await chatClient.generationEvents(
-                NativeChatGenerationRequest(
-                    conversationID: context.conversationID,
-                    modelID: context.modelID,
-                    reasoningEffort: context.reasoningEffort,
-                    generationID: generationID,
-                    deepResearch: context.deepResearch,
-                    webSearch: context.webSearch,
-                    canvasEnabled: context.canvasEnabled,
-                    connectors: context.connectors
-                ),
-                for: context.accountID
-            )
+            // WHICH ENDPOINT. An image or video model is not a chat model and
+            // `/api/chat` cannot run one — which is why the picker's Image and
+            // Video sections were selectable but inert until now. The modality
+            // comes from the catalog rather than from the prompt or the model's
+            // name, so a model added server-side routes correctly with no client
+            // release.
+            let events: AsyncThrowingStream<NativeChatServerEvent, any Error>
+            if let modality = mediaModality(of: context.modelID) {
+                events = try await chatClient.mediaGenerationEvents(
+                    NativeMediaGenerationRequest(
+                        conversationID: context.conversationID,
+                        prompt: context.prompt,
+                        modelID: context.modelID,
+                        modality: modality
+                    ),
+                    for: context.accountID
+                )
+                // The placeholder exists from the first frame rather than from the
+                // first `progress`: the queue wait before a provider answers is
+                // the longest silence in the run, and it is exactly when a reader
+                // decides the app is broken.
+                updateMediaProgress(
+                    NativeMediaProgress(modality: modality, stage: "queued", pct: nil),
+                    conversationID: context.conversationID
+                )
+            } else {
+                events = try await chatClient.generationEvents(
+                    NativeChatGenerationRequest(
+                        conversationID: context.conversationID,
+                        modelID: context.modelID,
+                        reasoningEffort: context.reasoningEffort,
+                        generationID: generationID,
+                        deepResearch: context.deepResearch,
+                        webSearch: context.webSearch,
+                        canvasEnabled: context.canvasEnabled,
+                        connectors: context.connectors
+                    ),
+                    for: context.accountID
+                )
+            }
             var terminal = false
             for try await event in events {
                 try Task.checkCancellation()
@@ -1124,6 +1180,13 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
                     updateAssistantSources(sources, conversationID: context.conversationID)
                 case .activity(let activity):
                     recordActivity(activity, conversationID: context.conversationID)
+                case .mediaProgress(let progress):
+                    // The one stage that is not a stage: `uploading` is Juno
+                    // storing the finished file, so the picture already exists and
+                    // the canvas should stop pretending to be making it. Every
+                    // other stage keeps the placeholder alive.
+                    updateMediaProgress(progress, conversationID: context.conversationID)
+                    chatPhase = .streaming
                 case .completed(let message):
                     completeAssistant(message, conversationID: context.conversationID)
                     retryContexts.removeValue(forKey: context.conversationID)

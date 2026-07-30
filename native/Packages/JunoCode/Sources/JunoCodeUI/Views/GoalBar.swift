@@ -78,6 +78,24 @@ private struct GoalDetails: View {
     @Bindable var controller: SessionController
     let goal: SessionGoal
 
+    /// The goal's steps as AIcss to-dos.
+    ///
+    /// `blocked` survives the crossing: a step that has stopped and cannot
+    /// continue is the one thing a reader glancing at a plan most needs told, and
+    /// folding it into `pending` would say it is merely waiting its turn.
+    private var todoItems: [JunoAIcssTodoItem] {
+        goal.steps.map { step in
+            let state: JunoAIcssTodoItem.State =
+                switch step.status {
+                case .pending: .pending
+                case .inProgress: .active
+                case .completed: .done
+                case .blocked: .blocked
+                }
+            return JunoAIcssTodoItem(id: step.id, label: step.title, state: state)
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JunoSpace.regular) {
@@ -94,23 +112,16 @@ private struct GoalDetails: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    ForEach(Array(goal.steps.enumerated()), id: \.element.id) { index, step in
-                        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
-                            Image(systemName: stepGlyph(step.status))
-                                .foregroundStyle(stepTint(step.status))
-                                .frame(width: 16)
-                            Text("\(index + 1). \(step.title)")
-                                .font(.subheadline)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Spacer(minLength: 0)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            "Step \(index + 1), \(step.title), \(stepStatusLabel(step.status))"
-                        )
-                    }
-                }
+                // AIcss's To-do List, driven by the goal's own steps.
+                //
+                // What it replaced was a numbered list with an SF Symbol per row —
+                // correct, and silent about the two things a reader opens this
+                // popover to learn. It never said how far along the plan was
+                // except by counting glyphs, and the step being worked on right
+                // now looked like every other row apart from its symbol. The
+                // block's header carries the fraction as a determinate pie, and
+                // the running step is the one line that shines.
+                JunoAIcssTodoList(items: todoItems, title: "Steps")
 
                 if !goal.verificationEvidence.isEmpty {
                     Divider()
@@ -187,29 +198,5 @@ private func lifecycleTint(_ lifecycle: GoalLifecycle) -> Color {
     }
 }
 
-private func stepGlyph(_ status: GoalStepStatus) -> String {
-    switch status {
-    case .pending: "circle"
-    case .inProgress: "circle.dotted"
-    case .completed: "checkmark.circle.fill"
-    case .blocked: "exclamationmark.circle.fill"
-    }
-}
 
-private func stepTint(_ status: GoalStepStatus) -> Color {
-    switch status {
-    case .pending: Color.secondary
-    case .inProgress: Color.accentColor
-    case .completed: Color.junoSuccess
-    case .blocked: Color.junoDanger
-    }
-}
 
-private func stepStatusLabel(_ status: GoalStepStatus) -> String {
-    switch status {
-    case .pending: "pending"
-    case .inProgress: "in progress"
-    case .completed: "completed"
-    case .blocked: "blocked"
-    }
-}

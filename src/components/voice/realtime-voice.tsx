@@ -20,7 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { VoiceAura, type VoiceAuraStatus } from "@/components/voice/voice-aura";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { VOICE_PROVIDER_LABELS, VOICE_PROVIDERS } from "@/lib/voice-relay-protocol";
 import { cn, formatUsd } from "@/lib/utils";
@@ -37,25 +36,15 @@ const MIC_OFF_LABEL = "Turn microphone off";
  * only session controls; transcript, typing, and attachments remain in the
  * standard MessageList and Composer.
  *
- * The state of the conversation is reported by ``VoiceAura`` — the light around
- * the edges of the window — rather than by a glyph inside this pill. The dock
- * kept the words (what is happening, what it costs) and gave up the picture:
- * an orb small enough to sit in a toolbar can only ever be decoration, while
- * the same signal spread across the window is legible from across the room and
- * asks for none of your attention to read.
+ * The state of the conversation is reported by ``VoiceAura`` — the waves in the
+ * chat column behind the composer — rather than by a glyph inside this pill.
+ * The dock kept the words (what is happening, what it costs) and gave up the
+ * picture: an orb small enough to sit in a toolbar can only ever be decoration,
+ * while the same signal spread across the column is legible from across the
+ * room and asks for none of your attention to read. The aura itself is mounted
+ * by ChatView, because it has to be a sibling of the composer to sit behind it.
  */
 export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onClose: () => void }) {
-  const auraStatus: VoiceAuraStatus =
-    voice.status === "error"
-      ? "error"
-      : voice.status === "connecting" || voice.status === "reconnecting"
-        ? "thinking"
-        : voice.status !== "live" || voice.muted
-          ? "idle"
-          : voice.assistantSpeaking
-            ? "speaking"
-            : "listening";
-
   const statusLabel =
     voice.status === "connecting"
       ? "Connecting"
@@ -86,7 +75,6 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       aria-label="Voice conversation controls"
       className="relative z-20 mx-auto mb-2 flex w-full flex-col items-center gap-1.5 px-2 motion-safe:animate-rise-in sm:px-0"
     >
-      <VoiceAura status={auraStatus} levelRef={voice.levelRef} />
       {/* Failures speak, they don't hide in a tooltip: the message names the
           fix, and the restart control sits right below it. */}
       {voice.status === "error" && voice.error && (
