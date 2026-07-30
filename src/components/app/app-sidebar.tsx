@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { AppIcons } from "@/lib/app-icons";
 import { usePathname } from "next/navigation";
+import { DownloadMenu } from "@/components/app/download-menu";
 import { UserMenu } from "@/components/app/user-menu";
 import { SidebarMotionIcon } from "@/components/app/sidebar-motion-icon";
 import { JunoMark } from "@/components/brand/logo";
@@ -827,8 +828,15 @@ export function AppSidebar({
         )}
       </div>
 
-      <div className="border-t border-sidebar-border p-2">
-        <UserMenu />
+      {/* The account row and, beside it, the way to get the app. A separate
+          control rather than a row inside the account menu: downloading Juno is
+          not an account setting, and a person looking for it is looking at the
+          bottom-left corner where every app puts "get the desktop version". */}
+      <div className="flex items-center gap-1 border-t border-sidebar-border p-2">
+        <div className="min-w-0 flex-1">
+          <UserMenu />
+        </div>
+        <DownloadMenu />
       </div>
 
       {/* Confirm dialog (replaces window.confirm) */}
