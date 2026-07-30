@@ -1,4 +1,6 @@
 import SwiftUI
+import UniformTypeIdentifiers
+import AppKit
 import JunoCodeCore
 import JunoDesignSystem
 
@@ -116,6 +118,7 @@ public struct Composer: View {
     @State private var fileResults: [FileEntry] = []
     @State private var fileResultsQuery: String?
     @State private var searchingFileQuery: String?
+    @State private var isChoosingAttachment = false
 
     public init(
         controller: SessionController,
@@ -186,7 +189,9 @@ public struct Composer: View {
     }
 
     private var canSend: Bool {
-        !controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        // An attachment with no sentence is a message in its own right.
+        (!controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !controller.pendingAttachments.isEmpty)
             && !isRunning
             && controller.isAgentTransportConfigured
     }
@@ -261,8 +266,13 @@ public struct Composer: View {
             focus: focus,
             submit: submitFromField,
             moveHighlight: highlightHandler,
-            dismissOverlay: dismissHandler
+            dismissOverlay: dismissHandler,
+            attachments: controller.pendingAttachments,
+            removeAttachment: { controller.removeAttachment(id: $0) },
+            addAttachment: { controller.attach($0) }
         ) {
+            attachButton
+
             TurnContractMenu(
                 behavior: Binding(
                     get: { controller.session.configuration.behavior },
@@ -409,6 +419,45 @@ public struct Composer: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Context \(Int(fraction * 100)) percent full")
             .accessibilityIdentifier("juno.code.composer.context")
+        }
+    }
+
+    /// Attach an image to this message.
+    ///
+    /// Only offered where the model can actually see one — an attach control on a
+    /// text-only model is a control that can only ever produce an error.
+    @ViewBuilder
+    private var attachButton: some View {
+        if selectedModel?.catalog?.capabilities.contains(.vision) != false {
+            Button { isChoosingAttachment = true } label: {
+                Image(systemName: "paperclip")
+                    .imageScale(.small)
+                    .frame(width: 20, height: 20)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .disabled(isRunning)
+            .help("Attach an image")
+            .accessibilityLabel("Attach an image")
+            .accessibilityIdentifier("juno.code.composer.attach")
+            .fileImporter(
+                isPresented: $isChoosingAttachment,
+                allowedContentTypes: CodeAttachment.acceptedTypes,
+                allowsMultipleSelection: true
+            ) { result in
+                guard case let .success(urls) = result else { return }
+                for url in urls {
+                    // The panel hands back a security-scoped URL; the read has to
+                    // happen inside the scope or it fails for anything outside the
+                    // app's own container.
+                    let scoped = url.startAccessingSecurityScopedResource()
+                    defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                    if let attachment = CodeAttachment.load(contentsOf: url) {
+                        controller.attach(attachment)
+                    }
+                }
+            }
         }
     }
 
@@ -577,9 +626,15 @@ struct ComposerSurface<Controls: View>: View {
     var moveHighlight: ((Int) -> Void)?
     /// Called on Escape while such an overlay is open.
     var dismissOverlay: (() -> Void)?
+    /// Images already attached to this message, drawn above the field.
+    var attachments: [CodeAttachment] = []
+    var removeAttachment: ((UUID) -> Void)?
+    /// Called with a dropped or pasted image. nil means the host takes none.
+    var addAttachment: ((CodeAttachment) -> Void)?
     @ViewBuilder var controls: () -> Controls
     /// Whether the reader has asked to see a very large draft inline anyway.
     @State private var draftExpanded = false
+    @State private var isDropTargeted = false
 
     init(
         prompt: String,
@@ -588,6 +643,9 @@ struct ComposerSurface<Controls: View>: View {
         submit: @escaping () -> Void,
         moveHighlight: ((Int) -> Void)? = nil,
         dismissOverlay: (() -> Void)? = nil,
+        attachments: [CodeAttachment] = [],
+        removeAttachment: ((UUID) -> Void)? = nil,
+        addAttachment: ((CodeAttachment) -> Void)? = nil,
         @ViewBuilder controls: @escaping () -> Controls
     ) {
         self.prompt = prompt
@@ -596,6 +654,9 @@ struct ComposerSurface<Controls: View>: View {
         self.submit = submit
         self.moveHighlight = moveHighlight
         self.dismissOverlay = dismissOverlay
+        self.attachments = attachments
+        self.removeAttachment = removeAttachment
+        self.addAttachment = addAttachment
         self.controls = controls
     }
 
@@ -613,6 +674,7 @@ struct ComposerSurface<Controls: View>: View {
     var body: some View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
             VStack(spacing: JunoSpace.snug) {
+                attachmentStrip
                 if isHugeDraft && !draftExpanded {
                     collapsedDraftCard
                 } else {
@@ -624,6 +686,127 @@ struct ComposerSurface<Controls: View>: View {
             }
             .padding(JunoSpace.snug)
             .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
+            // The whole composer is the drop target, not just the thumbnails —
+            // there is nothing to aim at before the first image is attached.
+            .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+                guard addAttachment != nil else { return false }
+                receive(providers)
+                return true
+            }
+            .overlay {
+                if isDropTargeted {
+                    RoundedRectangle(
+                        cornerRadius: CGFloat(JunoCornerRadius.composer),
+                        style: .continuous
+                    )
+                    .strokeBorder(Color.junoAccent, lineWidth: 2)
+                    .allowsHitTesting(false)
+                }
+            }
+            .animation(JunoMotion.fast, value: isDropTargeted)
+            .animation(JunoMotion.fast, value: attachments.count)
+        }
+    }
+
+    /// The attached images, as removable thumbnails.
+    @ViewBuilder
+    private var attachmentStrip: some View {
+        if !attachments.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: JunoSpace.snug) {
+                    ForEach(attachments) { attachment in
+                        thumbnail(attachment)
+                    }
+                }
+                .padding(.horizontal, JunoSpace.tight)
+            }
+            .scrollIndicators(.never)
+            .frame(height: 52)
+        }
+    }
+
+    private func thumbnail(_ attachment: CodeAttachment) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = NSImage(data: attachment.image.data) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .strokeBorder(Color.junoHairline)
+            )
+
+            Button {
+                removeAttachment?(attachment.id)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .offset(x: 5, y: -5)
+            .accessibilityLabel("Remove \(attachment.name)")
+        }
+        .help("\(attachment.name) · \(attachment.sizeDescription)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Attached image \(attachment.name)")
+    }
+
+    /// The image currently on the general pasteboard, if there is one.
+    ///
+    /// Reads the declared type so a copied PNG stays a PNG rather than being
+    /// re-encoded; `CodeAttachment` transcodes only what the providers reject.
+    static func pasteboardImage() -> CodeAttachment? {
+        let pasteboard = NSPasteboard.general
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            guard let data = pasteboard.data(forType: type) else { continue }
+            return CodeAttachment.pasted(
+                data: data,
+                declaredMediaType: type == .png ? "image/png" : nil
+            )
+        }
+        // A file copied in Finder arrives as a URL rather than as bytes.
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self]) as? [URL],
+           let url = urls.first,
+           let attachment = CodeAttachment.load(contentsOf: url)
+        {
+            return attachment
+        }
+        return nil
+    }
+
+    /// Turns dropped providers into attachments.
+    ///
+    /// File URLs are tried first: a drag from Finder offers both a URL and the
+    /// image bytes, and the URL is what carries the filename worth showing.
+    private func receive(_ providers: [NSItemProvider]) {
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url, let attachment = CodeAttachment.load(contentsOf: url) else {
+                        return
+                    }
+                    Task { @MainActor in addAttachment?(attachment) }
+                }
+                continue
+            }
+            provider.loadDataRepresentation(
+                forTypeIdentifier: UTType.image.identifier
+            ) { data, _ in
+                guard let data,
+                      let attachment = CodeAttachment.pasted(data: data, declaredMediaType: nil)
+                else { return }
+                Task { @MainActor in addAttachment?(attachment) }
+            }
         }
     }
 
@@ -705,6 +888,20 @@ struct ComposerSurface<Controls: View>: View {
             .onKeyPress(.escape) {
                 guard let dismissOverlay else { return .ignored }
                 dismissOverlay()
+                return .handled
+            }
+            // Cmd-V with an image on the pasteboard.
+            //
+            // Intercepted rather than left to the field because a `TextField` asked
+            // to paste a picture inserts nothing at all — the most common way to
+            // share a screenshot would simply have done nothing. Text pastes fall
+            // straight through via `.ignored`, so ordinary paste is untouched.
+            .onKeyPress(keys: ["v"], phases: .down) { press in
+                guard press.modifiers.contains(.command),
+                      addAttachment != nil,
+                      let attachment = Self.pasteboardImage()
+                else { return .ignored }
+                addAttachment?(attachment)
                 return .handled
             }
             .accessibilityLabel("Message the agent")

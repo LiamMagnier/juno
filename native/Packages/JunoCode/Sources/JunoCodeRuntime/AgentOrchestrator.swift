@@ -137,7 +137,11 @@ public actor AgentOrchestrator {
 
     /// Starts one agent run for a user prompt. Throws when a run is already
     /// in flight.
-    public func submit(prompt: String, modelPrompt: String? = nil) async throws {
+    public func submit(
+        prompt: String,
+        modelPrompt: String? = nil,
+        images: [ModelImage] = []
+    ) async throws {
         guard runTask == nil else {
             throw OrchestratorError.sessionAlreadyRunning
         }
@@ -146,7 +150,8 @@ public actor AgentOrchestrator {
         // may enrich the model-only turn with explicitly selected, bounded
         // workspace context. Keeping those two representations separate avoids
         // dumping source files into the visible conversation.
-        conversation.append(.user(modelPrompt ?? prompt))
+        let turnText = modelPrompt ?? prompt
+        conversation.append(images.isEmpty ? .user(turnText) : .userWithImages(turnText, images))
         try await store.appendEvent(
             sessionID: sessionID,
             payload: .userPrompt(UserPromptEvent(text: prompt))

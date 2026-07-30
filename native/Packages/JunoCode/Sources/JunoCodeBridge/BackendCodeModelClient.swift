@@ -314,6 +314,28 @@ enum AnthropicRequestBuilder {
             switch message {
             case let .user(text):
                 append(role: "user", block: .object(["type": "text", "text": .string(text)]))
+            case let .userWithImages(text, images):
+                // Images first, then the text: Anthropic's own guidance is that a
+                // question placed after the picture it is about answers better.
+                for image in images {
+                    append(
+                        role: "user",
+                        block: .object([
+                            "type": "image",
+                            "source": .object([
+                                "type": .string("base64"),
+                                "media_type": .string(image.mediaType),
+                                "data": .string(image.data.base64EncodedString()),
+                            ]),
+                        ])
+                    )
+                }
+                if !text.isEmpty {
+                    append(
+                        role: "user",
+                        block: .object(["type": "text", "text": .string(text)])
+                    )
+                }
             case let .assistant(text):
                 append(role: "assistant", block: .object(["type": "text", "text": .string(text)]))
             case let .toolCall(id, name, input):
@@ -422,6 +444,28 @@ enum OpenAIChatRequestBuilder {
                     "role": .string("user"),
                     "content": .string(text),
                 ]))
+            case let .userWithImages(text, images):
+                // A parts array rather than a bare string, which is how the
+                // OpenAI-compatible schema carries anything but plain text.
+                var parts: [JSONValue] = images.map { image in
+                    .object([
+                        "type": .string("image_url"),
+                        "image_url": .object([
+                            "url": .string(image.dataURL),
+                            "detail": .string(image.detail.rawValue),
+                        ]),
+                    ])
+                }
+                if !text.isEmpty {
+                    parts.append(.object([
+                        "type": .string("text"),
+                        "text": .string(text),
+                    ]))
+                }
+                messages.append(.object([
+                    "role": .string("user"),
+                    "content": .array(parts),
+                ]))
             case let .assistant(text):
                 messages.append(.object([
                     "role": .string("assistant"),
@@ -516,6 +560,23 @@ enum OpenAIResponsesRequestBuilder {
         var input: [JSONValue] = []
         for message in request.messages {
             switch message {
+            case let .userWithImages(text, images):
+                var parts: [JSONValue] = images.map { image in
+                    .object([
+                        "type": .string("input_image"),
+                        "image_url": .string(image.dataURL),
+                        "detail": .string(image.detail.rawValue),
+                    ])
+                }
+                if !text.isEmpty {
+                    parts.append(
+                        .object(["type": .string("input_text"), "text": .string(text)])
+                    )
+                }
+                input.append(.object([
+                    "role": .string("user"),
+                    "content": .array(parts),
+                ]))
             case let .user(text):
                 input.append(.object([
                     "role": .string("user"),

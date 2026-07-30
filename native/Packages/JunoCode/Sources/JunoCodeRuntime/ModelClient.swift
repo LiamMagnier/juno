@@ -29,6 +29,13 @@ public struct ModelImage: Hashable, Codable, Sendable {
 /// session resumes with its exact context.
 public enum ModelMessage: Hashable, Codable, Sendable {
     case user(String)
+    /// A user turn carrying images the reader attached.
+    ///
+    /// A separate case rather than images on `.user` so every existing pattern
+    /// match over a plain text turn keeps compiling and keeps meaning what it
+    /// said. Like ``toolResultWithImages`` the bytes are ephemeral — see
+    /// ``persistenceSafe``.
+    case userWithImages(String, [ModelImage])
     case assistant(String)
     case toolCall(id: String, name: String, input: JSONValue)
     case toolResult(id: String, content: String, isError: Bool)
@@ -45,6 +52,18 @@ public enum ModelMessage: Hashable, Codable, Sendable {
     /// session store, sync records, analytics, or crash diagnostics.
     public var persistenceSafe: ModelMessage {
         switch self {
+        case let .userWithImages(text, images):
+            // The reader's attachment is *not* retained.
+            //
+            // Same reasoning as a screen capture below, plus a practical one: the
+            // conversation is persisted as JSON, and base64 image bytes in it grow
+            // the session record without bound. What survives is the fact that
+            // something was attached, so a resumed session neither silently drops
+            // the reference nor pretends it still has the picture.
+            let noun = images.count == 1 ? "image" : "images"
+            return .user(
+                text + "\n[\(images.count) attached \(noun) omitted from the session record.]"
+            )
         case let .toolResultWithImages(id, content, isError, _):
             return .toolResult(
                 id: id,

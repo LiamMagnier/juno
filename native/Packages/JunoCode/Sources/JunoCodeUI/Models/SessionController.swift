@@ -312,6 +312,12 @@ public final class SessionController {
     public private(set) var composerFileReferences: [WorkspacePath] = []
     public private(set) var transientError: String?
 
+    /// Images the reader has attached to the message they are composing.
+    ///
+    /// Held here rather than in the composer view so a draft survives navigating
+    /// away and back, exactly as `composerText` does.
+    public internal(set) var pendingAttachments: [CodeAttachment] = []
+
     /// The size of the prompt the provider last billed for this session.
     ///
     /// Reported by the provider rather than counted here — Juno does not tokenize
@@ -656,7 +662,10 @@ public final class SessionController {
 
     public func send() async {
         let prompt = composerText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !prompt.isEmpty else { return }
+        // An attachment on its own is a message. "Look at this" with a screenshot
+        // and no sentence is a normal thing to send, and refusing it would make the
+        // attach control silently do nothing.
+        guard !prompt.isEmpty || !pendingAttachments.isEmpty else { return }
         if let lifecycle = session.goal?.lifecycle,
            lifecycle == .paused || lifecycle == .blocked
         {
@@ -706,17 +715,54 @@ public final class SessionController {
         do {
             try await currentOrchestrator(live).submit(
                 prompt: prompt,
-                modelPrompt: modelPrompt
+                modelPrompt: modelPrompt,
+                images: pendingAttachments.map(\.image)
             )
             runStartedAt = Date()
             composerText = ""
             composerFileReferences = []
+            pendingAttachments = []
         } catch OrchestratorError.sessionAlreadyRunning {
             transientError = "The agent is already running; stop it first."
         } catch {
             transientError = "Could not start the run: \(error)"
         }
     }
+
+    /// Attaches an image the reader dropped, pasted or chose.
+    ///
+    /// Refused rather than silently truncated when the model cannot see: a picture
+    /// sent to a text-only model is either dropped by the provider or, worse,
+    /// billed and ignored, and either way the reader is owed the reason.
+    public func attach(_ attachment: CodeAttachment) {
+        // In preview there is no `live`, and no model manifest either; allowing the
+        // attach there keeps the fixture surfaces working without teaching them
+        // about capabilities.
+        guard live?.modelSupportsVision(session.configuration.modelID) ?? true else {
+            transientError =
+                "\(session.configuration.modelID) cannot see images. Choose a model with vision to attach one."
+            return
+        }
+        guard attachment.image.data.count <= Self.maximumAttachmentBytes else {
+            transientError = "That image is larger than 8 MB."
+            return
+        }
+        guard pendingAttachments.count < Self.maximumAttachments else {
+            transientError = "You can attach up to \(Self.maximumAttachments) images to one message."
+            return
+        }
+        transientError = nil
+        pendingAttachments.append(attachment)
+    }
+
+    public func removeAttachment(id: UUID) {
+        pendingAttachments.removeAll { $0.id == id }
+    }
+
+    /// The per-image and per-message ceilings, matching the orchestrator's own
+    /// limits for tool-result images.
+    static let maximumAttachmentBytes = 8 * 1_024 * 1_024
+    static let maximumAttachments = 4
 
     public func stop() async {
         guard live != nil else {
