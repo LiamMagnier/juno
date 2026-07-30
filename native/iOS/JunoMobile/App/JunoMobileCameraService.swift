@@ -237,14 +237,26 @@ final class JunoCameraCaptureService: @unchecked Sendable {
         return try? AVCaptureDeviceInput(device: device)
     }
 
+    /// Statements, not a switch *expression*, and this is the second time.
+    ///
+    /// Swift 6.3.3 — the newest toolchain on the CI runner image — crashes in
+    /// IRGen emitting the reabstraction thunk an `await` yielding `Bool` needs
+    /// inside a switch expression (`@$sSbScA_pSgIeAghyg_SbIeAghn_TR`), taking
+    /// the whole iOS build down with a compiler backtrace and no source line.
+    /// The crash is in the compiler: the same tree builds clean on Xcode 27.
+    ///
+    /// `e67840c` fixed it exactly this way and `9c84d4c` reverted it along with
+    /// a rewrite it was bundled into, which is why iOS CI has been red since.
+    /// Same behaviour, one more line, and it compiles everywhere.
     private static func authorize() async -> Result<Void, JunoCameraUnavailability> {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: .success(())
+        case .authorized: return .success(())
         case .notDetermined:
-            await AVCaptureDevice.requestAccess(for: .video) ? .success(()) : .failure(.denied)
-        case .denied: .failure(.denied)
-        case .restricted: .failure(.restricted)
-        @unknown default: .failure(.noHardware)
+            let granted = await AVCaptureDevice.requestAccess(for: .video)
+            return granted ? .success(()) : .failure(.denied)
+        case .denied: return .failure(.denied)
+        case .restricted: return .failure(.restricted)
+        @unknown default: return .failure(.noHardware)
         }
     }
 }
