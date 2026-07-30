@@ -172,7 +172,13 @@ struct DesktopCodeWorkspace: View {
             detail
                 .junoReadingCanvas()
                 .navigationTitle(windowTitle)
-                .navigationSubtitle(windowSubtitle)
+                // No `.navigationSubtitle`.
+                //
+                // It restated what the detail column already shows in its own header
+                // one line below — the same path, the same "Folder"/"Git repository"
+                // — so the window said it twice. It also made the titlebar two lines
+                // tall, which is what pushed the leading title block wide enough to
+                // shove the `.principal` product switcher off centre.
                 .toolbar { detailToolbar }
                 // The search field belongs to the **detail** column, not to the
                 // split view and not to the sidebar.
@@ -658,7 +664,10 @@ struct DesktopCodeWorkspace: View {
             DesktopProductSwitcher(selection: $product)
         }
 
-        ToolbarItem(placement: .navigation) {
+        // Trailing, not `.navigation`: that placement draws into the *sidebar's*
+        // titlebar beside the traffic lights, which is how a window action ended up
+        // sitting inside the navigation column.
+        ToolbarItem(placement: .primaryAction) {
             Button(action: newSession) {
                 Label("New session", systemImage: "square.and.pencil")
             }
@@ -705,6 +714,12 @@ struct DesktopCodeWorkspace: View {
                 // it, so the documented way to open a workspace file by name did not
                 // exist in the shipping product. ⌘⇧O because plain ⌘O is already
                 // "Add project…" in the sidebar.
+                Button { isChoosingRepository = true } label: {
+                    Label("Add Project…", systemImage: "folder.badge.plus")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .accessibilityIdentifier("juno.code.add-project")
+
                 Button { isOpeningQuickly = true } label: {
                     Label("Open Quickly…", systemImage: "magnifyingglass")
                 }
@@ -779,7 +794,10 @@ struct DesktopCodeWorkspace: View {
                     .foregroundStyle(status.tint)
             }
         } else {
-            Label("Draft", systemImage: "square.and.pencil")
+            // Not `square.and.pencil`: that is the New-session button's glyph, and
+            // a toolbar drawing the same icon twice a few points apart reads as two
+            // of the same control rather than as an action and a status.
+            Label("Draft", systemImage: "circle.dashed")
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("New session draft")
         }

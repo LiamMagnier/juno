@@ -530,21 +530,23 @@ struct DesktopCodeSidebar: View {
                         }
                     }
                 }
-            } header: {
-                HStack {
-                    Text("Projects")
-                    Spacer(minLength: 0)
-                    Button(action: openRepository) {
-                        Image(systemName: "plus")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Add a project… (⌘O)")
-                    .accessibilityIdentifier("juno.code.add-project")
-                }
             }
+            // No header on this section, deliberately.
+            //
+            // A `.sidebar` List **pins** its section headers to the top of its own
+            // bounds, and a pinned header is not subject to the `safeAreaInset`
+            // that positions the scrolling content — so whichever section came
+            // first drew its title level with the traffic lights and behind the
+            // window's own title, while the rows underneath sat correctly below
+            // them. Raising the inset could not fix it: the header does not move
+            // with the content it heads.
+            //
+            // Nothing is lost by dropping it. "All Projects" is the first row and
+            // names the group better than a static caption did, and adding a
+            // project lives in the session-tools menu (⌘O) and in the empty state.
+            // The remaining sections keep their headers, because none of them is
+            // ever first — Active and Favourites precede them when non-empty, and
+            // Projects always precedes the rest.
 
             let relayed = relayedRuns(from: allRuns)
             if !relayed.isEmpty {
