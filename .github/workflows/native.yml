@@ -204,14 +204,6 @@ jobs:
       - name: Generate projects
         run: ./native/Scripts/generate-projects.sh
 
-      # `SWIFT_COMPILATION_MODE=wholemodule` is a workaround, not a preference.
-      # Swift 6.3.3 (Xcode 26.6, the newest on the runner image) crashes in
-      # IRGen emitting the reabstraction thunk for an `@isolated(any) async ()
-      # -> Bool` closure — `@$sSbScA_pSgIeAghyg_SbIeAghn_TR` — while batch
-      # compiling this target. The crash is in the compiler, not the source: the
-      # same tree builds clean on Xcode 27. Whole-module changes how the thunk
-      # is emitted and steps around it. Remove this when the runner image ships
-      # a toolchain that does not crash.
       - name: Build JunoMobile (Debug simulator, strict)
         run: |
           xcodebuild \
@@ -221,6 +213,5 @@ jobs:
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
-            SWIFT_COMPILATION_MODE=wholemodule \
             CODE_SIGNING_ALLOWED=NO \
             build
