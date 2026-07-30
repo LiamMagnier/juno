@@ -328,6 +328,19 @@ struct DesktopCodeWorkspace: View {
                 remote: remoteModel
             )
 
+        case .allProjects:
+            DesktopCodeAllProjects(
+                workbench: workbenchModel,
+                open: { selection.wrappedValue = .repository($0) },
+                newSession: { selection.wrappedValue = .repository($0) },
+                addProject: { isChoosingRepository = true },
+                revealInFinder: { path in
+                    NSWorkspace.shared.activateFileViewerSelecting([
+                        URL(fileURLWithPath: path)
+                    ])
+                }
+            )
+
         case .repository(let id):
             if let record = workbenchModel.workspaces.first(where: { $0.id == id }) {
                 draft(record)
@@ -548,6 +561,8 @@ struct DesktopCodeWorkspace: View {
             return codeModel.tasks.first { $0.id == id }?.title ?? "Run"
         case .remote:
             return selectedRemoteSummary?.title ?? "Remote session"
+        case .allProjects:
+            return "All Projects"
         case .repository(let id):
             return workbenchModel.workspaces.first { $0.id == id }?
                 .descriptor.displayName ?? "Juno Code"
@@ -584,6 +599,9 @@ struct DesktopCodeWorkspace: View {
             parts = [summary.workspaceName ?? "Remote workspace"]
             if let branch = summary.activeBranch { parts.append(branch) }
             parts.append(CodeRunEnvironment.remote.rawValue)
+        case .allProjects:
+            let count = workbenchModel.workspaces.count
+            return count == 1 ? "1 project" : "\(count) projects"
         case .repository(let id):
             guard let record = workbenchModel.workspaces.first(where: { $0.id == id }) else {
                 return ""
@@ -619,14 +637,25 @@ struct DesktopCodeWorkspace: View {
         // scrolled source list slid its rows under both the switch and the
         // window's traffic lights. It also stays reachable here when the sidebar
         // is collapsed.
-        ToolbarItem(placement: .navigation) {
-            // Same metrics as the Chat window's: the switcher sizes itself, and
-            // the toolbar only supplies the gap to the next control. The two
-            // windows must agree here — the switch is the one control that is in
-            // the same place in both, and a 148pt pill in one and a self-sized
-            // one in the other makes it visibly jump on every mode change.
+        // `.principal`, not `.navigation`.
+        //
+        // `.navigation` placement in a `NavigationSplitView` puts an item in the
+        // **sidebar's** titlebar, alongside the traffic lights — so the top-level
+        // Chat/Code switch sat inside the navigation column, crowding the window
+        // controls and reading as though it belonged to the project list under it.
+        // It is a window-level control, not a sidebar one. `.principal` places it in
+        // the content area's toolbar, where it is still always visible with the
+        // sidebar collapsed.
+        //
+        // Both windows move together: this is the one control that occupies the same
+        // spot in Chat and Code, and a different placement in each would make it jump
+        // on every mode change.
+        ToolbarItem(placement: .principal) {
+            // No width imposed here: the switcher owns its own metrics (see
+            // `DesktopProductSwitcher`). A flat width from the toolbar is what
+            // squeezed the two labels against their segment edges and stopped the
+            // control growing with Dynamic Type.
             DesktopProductSwitcher(selection: $product)
-                .padding(.trailing, JunoSpace.snug)
         }
 
         ToolbarItem(placement: .navigation) {

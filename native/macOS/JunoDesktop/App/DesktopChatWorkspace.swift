@@ -221,15 +221,25 @@ struct DesktopChatWorkspace: View {
         // window's traffic lights. The toolbar is also where macOS puts a
         // top-level mode switch, and it stays reachable when the sidebar is
         // collapsed — which the sidebar version was not.
-        ToolbarItem(placement: .navigation) {
-            // No width here. The switcher owns its own metrics (see
-            // `DesktopProductSwitcher`); a flat width imposed from the toolbar is
-            // what squeezed the two labels against their segment edges and
-            // stopped the control from growing with Dynamic Type. The trailing
-            // padding is the toolbar's business, though: it separates the mode
-            // switch from the New-chat button so the two do not read as one group.
+        // `.principal`, not `.navigation`.
+        //
+        // `.navigation` placement in a `NavigationSplitView` puts an item in the
+        // **sidebar's** titlebar, alongside the traffic lights — so the top-level
+        // Chat/Code switch sat inside the navigation column, crowding the window
+        // controls and reading as though it belonged to the project list under it.
+        // It is a window-level control, not a sidebar one. `.principal` places it in
+        // the content area's toolbar, where it is still always visible with the
+        // sidebar collapsed.
+        //
+        // Both windows move together: this is the one control that occupies the same
+        // spot in Chat and Code, and a different placement in each would make it jump
+        // on every mode change.
+        ToolbarItem(placement: .principal) {
+            // No width imposed here: the switcher owns its own metrics (see
+            // `DesktopProductSwitcher`). A flat width from the toolbar is what
+            // squeezed the two labels against their segment edges and stopped the
+            // control growing with Dynamic Type.
             DesktopProductSwitcher(selection: $product)
-                .padding(.trailing, JunoSpace.snug)
         }
 
         ToolbarItem(placement: .navigation) {

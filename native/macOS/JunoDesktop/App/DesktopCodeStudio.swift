@@ -33,6 +33,13 @@ import SwiftUI
 /// one means "the next session is in here", which is the state the detail column
 /// renders as a draft.
 enum DesktopCodeSidebarItem: Hashable {
+    /// The index of every granted project, rather than one of them.
+    ///
+    /// Selecting a project row means "the next session is in *here*", which is a
+    /// useful thing to mean but not the only one — there was no way to ask "what
+    /// have I given Juno access to?" without reading it off the sidebar, and
+    /// clicking anything under Projects committed you to a specific repository.
+    case allProjects
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -89,6 +96,7 @@ enum DesktopCodeNavigationState {
     static func encode(_ item: DesktopCodeSidebarItem?) -> String {
         switch item {
         case .none: ""
+        case .allProjects: "allProjects"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -100,6 +108,7 @@ enum DesktopCodeNavigationState {
     static func decode(_ raw: String) -> DesktopCodeSidebarItem? {
         let fields = raw.components(separatedBy: unitSeparator)
         switch (fields.first, fields.count) {
+        case ("allProjects", 1): return .allProjects
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -125,6 +134,8 @@ enum DesktopCodeNavigationState {
         case .repository(let id): return repositories.contains(id) ? item : nil
         // A relay session is not in any local list; it is validated by the relay
         // answering, which the detail surface reports honestly on its own.
+        // Always valid: it names the collection, not a member of it.
+        case .allProjects: return item
         case .remote, .none: return item
         }
     }
@@ -486,6 +497,21 @@ struct DesktopCodeSidebar: View {
                     .padding(.vertical, JunoSpace.hairline)
                     .selectionDisabled()
                 } else {
+                    // The index, above the projects it indexes.
+                    //
+                    // Every row under this header commits the reader to one
+                    // repository; without this there was no way to ask what Juno has
+                    // access to overall, which is the question "Projects" looks like
+                    // it should answer.
+                    Label {
+                        Text("All Projects").junoRowLabel()
+                    } icon: {
+                        Image(systemName: "square.grid.2x2")
+                    }
+                    .junoSidebarRowInk()
+                    .badge(groups.count)
+                    .tag(DesktopCodeSidebarItem.allProjects)
+
                     ForEach(groups) { group in
                         projectRow(group)
 
@@ -533,15 +559,19 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        // No hand-inserted top inset.
+        // Clears the titlebar. Same value the Chat sidebar uses, and for the same
+        // reason: a `.sidebar` List in a `NavigationSplitView` is laid out from the
+        // very top of the window, so without this its first section header renders
+        // level with the traffic lights and the first row sits behind them.
         //
-        // There used to be a `Color.clear.frame(height: 28)` here, compensating for
-        // the sidebar being given the titlebar safe area by a `.searchable` attached
-        // to the split view — the bug whose real fix was moving that modifier onto
-        // the **detail** column, where `DesktopCodeWorkspace` now documents it at
-        // length. Both fixes shipped, so the column carried 28pt of dead space above
-        // its first section header on top of the inset the platform already
-        // provides, which is what pushed "Projects" up against the window controls.
+        // This was briefly removed on the theory that it double-counted an inset the
+        // platform already provides. It does not — the platform gives the sidebar no
+        // titlebar inset here, which is exactly why Chat has carried the same 28pt
+        // since it shipped. Restored, and now cross-referenced so the two columns
+        // are visibly one decision rather than two.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear.frame(height: 28)
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
         }
@@ -742,7 +772,9 @@ struct DesktopCodeSidebar: View {
             return id == workspaceID
         case .session(let id):
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
-        case .task, .remote, nil:
+        // The index belongs to no single project, so deleting one never leaves the
+        // reader stranded on it.
+        case .allProjects, .task, .remote, nil:
             return false
         }
     }
@@ -817,9 +849,9 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .repository:
-            // Repository rows carry their own menu; they never reach this row
-            // builder.
+        case .allProjects, .repository:
+            // Neither reaches this row builder: repositories carry their own menu,
+            // and the index is not a run.
             EmptyView()
         }
     }
@@ -1778,5 +1810,136 @@ struct DesktopCodeDraftDetail: View {
                 openTask(task)
             }
         }
+    }
+}
+
+// MARK: - All projects
+
+/// Every folder the reader has granted Juno Code, as one page.
+///
+/// The sidebar answers "which project am I working in"; this answers "what does
+/// Juno have access to, and what has happened in each" — the question the
+/// Projects header looks like it should answer and previously could not, because
+/// every row under it committed you to a single repository.
+///
+/// Deliberately a list rather than a grid of cards: the useful facts here are a
+/// path, a session count and a date, which are text, and a grid would space three
+/// short strings across a window this wide.
+struct DesktopCodeAllProjects: View {
+    @Bindable var workbench: WorkbenchModel
+    let open: (WorkspaceID) -> Void
+    let newSession: (WorkspaceID) -> Void
+    let addProject: () -> Void
+    let revealInFinder: (String) -> Void
+
+    private struct Row: Identifiable {
+        let record: WorkspaceRecord
+        let sessions: Int
+        let active: Int
+        let lastUsed: Date?
+        var id: WorkspaceID { record.id }
+    }
+
+    private var rows: [Row] {
+        workbench.workspaces.map { record in
+            let sessions = workbench.sessions.filter { $0.workspaceID == record.id }
+            return Row(
+                record: record,
+                sessions: sessions.count,
+                active: sessions.filter(\.status.isActive).count,
+                lastUsed: sessions.map(\.updatedAt).max()
+            )
+        }
+    }
+
+    var body: some View {
+        Group {
+            if workbench.workspaces.isEmpty {
+                JunoEmptyState(
+                    title: "No projects yet",
+                    message: """
+                        A project is a folder Juno Code may read and write in. \
+                        Add one to start a session.
+                        """,
+                    symbol: "folder.badge.plus",
+                    actionLabel: "Add Project…",
+                    action: addProject
+                )
+            } else {
+                JunoDetailPage(maxWidth: 820) {
+                    VStack(alignment: .leading, spacing: JunoSpace.regular) {
+                        ForEach(rows) { row in
+                            card(row)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func card(_ row: Row) -> some View {
+        HStack(alignment: .top, spacing: JunoSpace.cozy) {
+            JunoIconView(.projects, size: 20)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                HStack(spacing: JunoSpace.snug) {
+                    Text(row.record.descriptor.displayName)
+                        .junoTitle()
+                    if row.active > 0 {
+                        Text(row.active == 1 ? "1 running" : "\(row.active) running")
+                            .junoCaption()
+                            .foregroundStyle(Color.junoAccent)
+                    }
+                }
+                Text(
+                    (row.record.descriptor.localPathHint as NSString)
+                        .abbreviatingWithTildeInPath
+                )
+                .junoCaption()
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+
+                Text(summary(row))
+                    .junoCaption()
+            }
+
+            Spacer(minLength: JunoSpace.cozy)
+
+            VStack(alignment: .trailing, spacing: JunoSpace.snug) {
+                Button("Open") { open(row.record.id) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
+                    .controlSize(.small)
+                Button("New Session") { newSession(row.record.id) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(JunoSpace.regular)
+        .junoCard(cornerRadius: JunoCornerRadius.card)
+        .contextMenu {
+            Button("Show in Finder") {
+                revealInFinder(row.record.descriptor.localPathHint)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(row.record.descriptor.displayName), \(summary(row))")
+    }
+
+    /// "12 sessions · Git repository · last used yesterday", with absent facts
+    /// dropped rather than printed as empty separators.
+    private func summary(_ row: Row) -> String {
+        var parts: [String] = []
+        parts.append(row.sessions == 1 ? "1 session" : "\(row.sessions) sessions")
+        parts.append(row.record.descriptor.isGitRepository ? "Git repository" : "Folder")
+        if let lastUsed = row.lastUsed {
+            parts.append(
+                "last used \(lastUsed.formatted(.relative(presentation: .named)))"
+            )
+        }
+        return parts.joined(separator: " · ")
     }
 }

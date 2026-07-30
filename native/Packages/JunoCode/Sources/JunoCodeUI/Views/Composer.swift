@@ -685,23 +685,30 @@ struct ComposerSurface<Controls: View>: View {
                 }
             }
             .padding(JunoSpace.snug)
-            .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
+            // Drop feedback is a **tint on the glass**, never a stroke over it.
+            //
+            // A stroked `RoundedRectangle` overlay here is what turned the composer
+            // into a hard-edged rectangle the moment a drag entered the window: the
+            // border is drawn over the material, so the rim light that makes glass
+            // read as having thickness is flattened out and what is left is a
+            // translucent box with a line round it. `junoFloatingChrome`'s own
+            // documentation says exactly this — "real glass carries its own edge …
+            // stroking a hairline over it flattens that back into a translucent
+            // rounded rectangle" — and tinting is the treatment the material
+            // actually supports.
+            .junoGlass(
+                in: RoundedRectangle(
+                    cornerRadius: CGFloat(JunoCornerRadius.composer),
+                    style: .continuous
+                ),
+                tint: isDropTargeted ? Color.junoAccent.opacity(0.28) : nil
+            )
             // The whole composer is the drop target, not just the thumbnails —
             // there is nothing to aim at before the first image is attached.
             .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
                 guard addAttachment != nil else { return false }
                 receive(providers)
                 return true
-            }
-            .overlay {
-                if isDropTargeted {
-                    RoundedRectangle(
-                        cornerRadius: CGFloat(JunoCornerRadius.composer),
-                        style: .continuous
-                    )
-                    .strokeBorder(Color.junoAccent, lineWidth: 2)
-                    .allowsHitTesting(false)
-                }
             }
             .animation(JunoMotion.fast, value: isDropTargeted)
             .animation(JunoMotion.fast, value: attachments.count)

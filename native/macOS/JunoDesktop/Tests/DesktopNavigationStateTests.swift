@@ -103,6 +103,30 @@ struct DesktopNavigationStateTests {
         }
     }
 
+    /// The Projects index survives a relaunch like any other destination.
+    ///
+    /// It encodes as a single field, unlike every other Code destination, so it is
+    /// the one case where a decoder written around "kind + value" pairs would
+    /// silently return nil and drop the reader back to a repository draft.
+    @Test
+    func theAllProjectsIndexRoundTripsThroughSceneStorage() {
+        let encoded = DesktopCodeNavigationState.encode(.allProjects)
+        #expect(DesktopCodeNavigationState.decode(encoded) == .allProjects)
+    }
+
+    /// Selecting the index is never invalidated by what happens to the projects
+    /// under it — it names the collection, not a member of it.
+    @Test
+    func theAllProjectsIndexStaysValidWithNoProjects() {
+        let validated = DesktopCodeNavigationState.validate(
+            .allProjects,
+            sessions: [],
+            tasks: [],
+            repositories: []
+        )
+        #expect(validated == .allProjects)
+    }
+
     /// Scene storage outlives an app update, so a destination this build dropped
     /// must fall back rather than strand the window on a blank pane.
     @Test
