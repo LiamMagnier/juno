@@ -529,6 +529,24 @@ struct DesktopCodeSidebar: View {
                             }
                         }
                     }
+
+                    // An ordinary row, not a button in the section header.
+                    //
+                    // The header this replaces pinned to the top of the List and
+                    // collided with the traffic lights, taking its "+" with it. A
+                    // row scrolls with the content like everything else, and says
+                    // what it does rather than being a bare glyph.
+                    Button(action: openRepository) {
+                        Label("Add project…", systemImage: "folder.badge.plus")
+                            .junoRowLabel()
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Add a project… (⌘O)")
+                    .accessibilityIdentifier("juno.code.add-project")
+                    .selectionDisabled()
                 }
             }
             // No header on this section, deliberately.
