@@ -206,12 +206,27 @@ jobs:
 
       - name: Build JunoMobile (Debug simulator, strict)
         run: |
+          # `SWIFT_COMPILATION_MODE=wholemodule` is a TOOLCHAIN WORKAROUND, not
+          # a preference. Swift 6.3.3 — the newest on the runner image — crashes
+          # in IRGen emitting the reabstraction thunk for an `@isolated(any)
+          # async () -> Bool` closure (`@$sSbScA_pSgIeAghyg_SbIeAghn_TR`) while
+          # batch compiling this target. The crash is in the compiler, not the
+          # source: the same tree builds clean on Xcode 27, and whole-module
+          # changes how the thunk is emitted and steps around it.
+          #
+          # This was added in 89faf77, removed in e67840c in favour of a source
+          # fix, and that fix was reverted with an unrelated rewrite in 9c84d4c,
+          # leaving iOS CI red ever since. The source fix is back too — the two
+          # are belt and braces, because the shape is easy to reintroduce and
+          # `async -> Bool` is an ordinary thing to write. Remove this when the
+          # runner image ships a toolchain that does not crash.
           xcodebuild \
             -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
             -scheme JunoMobile \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            SWIFT_COMPILATION_MODE=wholemodule \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
