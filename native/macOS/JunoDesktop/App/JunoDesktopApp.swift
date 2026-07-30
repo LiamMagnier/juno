@@ -130,7 +130,8 @@ private struct JunoDesktopSettingsScene: View {
                     model: settingsModel,
                     authModel: configuration.authModel,
                     session: session,
-                    accountDataClient: configuration.accountDataClient
+                    accountDataClient: configuration.accountDataClient,
+                    shareClient: configuration.shareClient
                 )
             } else {
                 ContentUnavailableView(

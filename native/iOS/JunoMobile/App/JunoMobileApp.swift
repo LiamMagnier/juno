@@ -41,6 +41,7 @@ struct JunoMobileApp: App {
     /// Suggests what to ask next, under a finished reply.
     private let followUpClient: NativeFollowUpClient?
     private let pullsClient: NativeGitHubPullsClient?
+    private let shareClient: NativeShareClient?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -62,6 +63,7 @@ struct JunoMobileApp: App {
         messageActionsClient = configuration.messageActionsClient
         followUpClient = configuration.followUpClient
         pullsClient = configuration.pullsClient
+        shareClient = configuration.shareClient
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -121,7 +123,8 @@ struct JunoMobileApp: App {
             voiceTranscriptClient: voiceTranscriptClient,
             messageActionsClient: messageActionsClient,
             followUpClient: followUpClient,
-            pullsClient: pullsClient
+            pullsClient: pullsClient,
+            shareClient: shareClient
         )
     }
 
@@ -251,7 +254,8 @@ struct JunoMobileApp: App {
                 voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
                 messageActionsClient: NativeMessageActionsClient(sender: runtime),
                 followUpClient: NativeFollowUpClient(sender: runtime),
-                pullsClient: NativeGitHubPullsClient(sender: runtime)
+                pullsClient: NativeGitHubPullsClient(sender: runtime),
+                shareClient: NativeShareClient(sender: runtime)
             )
         } catch {
             return JunoMobileConfiguration(
@@ -278,7 +282,8 @@ struct JunoMobileApp: App {
                 voiceTranscriptClient: nil,
                 messageActionsClient: nil,
                 followUpClient: nil,
-                pullsClient: nil
+                pullsClient: nil,
+                shareClient: nil
             )
         }
     }
@@ -316,4 +321,5 @@ private struct JunoMobileConfiguration {
     let messageActionsClient: NativeMessageActionsClient?
     let followUpClient: NativeFollowUpClient?
     let pullsClient: NativeGitHubPullsClient?
+    let shareClient: NativeShareClient?
 }

@@ -50,6 +50,7 @@ struct JunoMobileRootView: View {
     var messageActionsClient: NativeMessageActionsClient?
     var followUpClient: NativeFollowUpClient?
     var pullsClient: NativeGitHubPullsClient?
+    var shareClient: NativeShareClient?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -415,7 +416,8 @@ struct JunoMobileRootView: View {
                         syncModel: syncModel,
                         outbox: outbox,
                         accountDataClient: accountDataClient,
-                        requestSender: requestSender
+                        requestSender: requestSender,
+                        shareClient: shareClient
                     )
                 } else {
                     unavailable
@@ -679,6 +681,7 @@ struct JunoMobileRootView: View {
                 setMemoryEnabled: memoryAction,
                 messageActions: messageActionsClient,
                 followUpClient: followUpClient,
+                shareClient: shareClient,
                 accountID: currentSession?.profile.id,
                 voiceID: memorySettingsModel?.settings?.voiceID
             )
@@ -783,7 +786,8 @@ struct JunoMobileRootView: View {
                     syncModel: syncModel,
                     outbox: outbox,
                     accountDataClient: accountDataClient,
-                    requestSender: requestSender
+                    requestSender: requestSender,
+                        shareClient: shareClient
                 )
             } else { unavailable }
         }

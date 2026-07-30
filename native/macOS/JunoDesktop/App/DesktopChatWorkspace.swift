@@ -82,6 +82,9 @@ struct DesktopChatWorkspace: View {
     /// composer consumes this once, so the project page never presents a fake
     /// prompt field.
     @State private var draftPrompt: String?
+    @State private var sharing = false
+    /// One line under the toolbar after a Share, so the copy is acknowledged.
+    @State private var shareNotice: String?
 
     /// The destination in force: the launch override while it stands, otherwise
     /// whatever scene storage restored.
@@ -260,6 +263,44 @@ struct DesktopChatWorkspace: View {
             }
             .help("Search chats, projects and files (⌘⇧F)")
             .accessibilityIdentifier("Search")
+        }
+
+        // Only for a conversation that exists. A draft has nothing to publish,
+        // and an item that is present but inert is worse than one that is absent.
+        if configuration.shareClient != nil, model.selectedConversationID != nil {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    Task { await createShare() }
+                } label: {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+                .disabled(sharing)
+                .help("Create a public link to this conversation")
+                .accessibilityIdentifier("Share")
+            }
+        }
+    }
+
+    /// Publishes the conversation and puts the link on the pasteboard.
+    ///
+    /// The Mac copies rather than opening a share sheet: a link is going into a
+    /// message or a document the reader is already writing, and the pasteboard is
+    /// one step where the sheet is three. The route is idempotent per
+    /// conversation, so pressing Share twice yields the same link.
+    private func createShare() async {
+        guard let client = configuration.shareClient,
+              let conversationID = model.selectedConversationID,
+              case .signedIn(let session) = configuration.authModel.phase,
+              !sharing
+        else { return }
+        sharing = true
+        defer { sharing = false }
+        do {
+            let share = try await client.share(conversationID: conversationID, for: session.profile.id)
+            JunoPasteboard.copy(share.url.absoluteString)
+            shareNotice = "Link copied — anyone with it can read this conversation as it is now."
+        } catch {
+            shareNotice = "The conversation couldn’t be published. Try again in a moment."
         }
     }
 

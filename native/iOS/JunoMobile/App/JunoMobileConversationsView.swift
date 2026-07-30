@@ -47,6 +47,8 @@ struct JunoMobileChatDetailScreen: View {
     var messageActions: NativeMessageActionsClient?
     /// Suggests what to ask next, under a finished reply.
     var followUpClient: NativeFollowUpClient?
+    /// Publishes a conversation behind an unguessable link.
+    var shareClient: NativeShareClient?
     var accountID: AccountID?
     /// The account's read-aloud voice, from Settings.
     var voiceID: String?
@@ -93,6 +95,7 @@ struct JunoMobileChatDetailScreen: View {
                     voiceID: voiceID,
                     messageActions: messageActions,
                     followUpClient: followUpClient,
+                    shareClient: shareClient,
                     accountID: accountID
                 )
             } else {
@@ -153,6 +156,8 @@ private struct JunoMobileDraftChat: View {
     @State private var reasoningEffort: NativeReasoningEffort?
     @State private var thinkingNotice: String?
     @State private var attachments = JunoMobileAttachmentCoordinator()
+
+
     @State private var showingLibrary = false
     @FocusState private var composerFocused: Bool
 
@@ -348,6 +353,8 @@ private struct JunoMobileConversationDetail: View {
     var messageActions: NativeMessageActionsClient?
     /// Suggests what to ask next, under a finished reply.
     var followUpClient: NativeFollowUpClient?
+    /// Publishes a conversation behind an unguessable link.
+    var shareClient: NativeShareClient?
     var accountID: AccountID?
     /// The artifact the reader tapped in the transcript, presented over it.
     @State private var openArtifact: NativeArtifact?
@@ -355,6 +362,31 @@ private struct JunoMobileConversationDetail: View {
     /// the stored row has not arrived. See ``openArtifact(_:)``.
     @State private var inlineArtifact: JunoMobileInlineArtifact?
     @State private var showingLibrary = false
+    /// The link just created, presented to the system share sheet. Held rather
+    /// than shared inline because the link does not exist until the server makes
+    /// it — a `ShareLink` needs its URL up front, and there is none to give.
+    @State private var createdShare: NativeShare?
+    @State private var sharing = false
+    @State private var shareError: String?
+
+    /// Creates the link, then hands it to the system sheet.
+    ///
+    /// The route is idempotent per conversation, so tapping Share twice returns
+    /// the same link rather than littering the account with duplicates.
+    private func createShare() async {
+        guard let shareClient, let accountID, !sharing else { return }
+        sharing = true
+        defer { sharing = false }
+        do {
+            createdShare = try await shareClient.share(
+                conversationID: conversation.id,
+                for: accountID
+            )
+        } catch {
+            shareError = "The conversation couldn’t be published. Try again in a moment."
+        }
+    }
+
     @State private var attachments = JunoMobileAttachmentCoordinator()
     @State private var showingRename = false
     @State private var showingDelete = false
@@ -638,6 +670,14 @@ private struct JunoMobileConversationDetail: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
+                if shareClient != nil {
+                    Button {
+                        Task { await createShare() }
+                    } label: {
+                        Label("Share…", systemImage: "square.and.arrow.up")
+                    }
+                    .disabled(sharing)
+                }
                 Button {
                     editValue = conversation.title
                     showingRename = true

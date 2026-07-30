@@ -50,8 +50,11 @@ struct JunoMobileSettingsView: View {
     /// Nil where the app could not be configured — the row is absent rather than
     /// present and leading to a screen that can only apologise.
     var requestSender: (any NativeAuthenticatedRequestSending)?
+    /// Lists and revokes the account's public links.
+    var shareClient: NativeShareClient?
     @State private var showingSignOut = false
     @State private var showMemoryPage = false
+    @State private var showSharedLinks = false
     @State private var showUsagePage = false
     @State private var showDiagnosticsPage = false
     @State private var showingDeleteAccount = false
@@ -84,6 +87,9 @@ struct JunoMobileSettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(isPresented: $showMemoryPage) {
             JunoMobileMemoryView(model: model)
+        }
+        .navigationDestination(isPresented: $showSharedLinks) {
+            NativeSharedLinksView(client: shareClient, accountID: session?.profile.id)
         }
         .navigationDestination(isPresented: $showUsagePage) {
             if let session {
@@ -279,6 +285,18 @@ struct JunoMobileSettingsView: View {
                         symbol: "brain"
                     ) { showMemoryPage = true }
                     .accessibilityIdentifier("juno.mobile.settings-memory-link")
+
+                    // Beside Memory because both answer "what does the world
+                    // already have of mine?" — and a link is only safe to hand
+                    // out if it can be taken back from somewhere findable.
+                    if shareClient != nil {
+                        JunoSettingsLink(
+                            title: "Shared links",
+                            value: nil,
+                            symbol: "link"
+                        ) { showSharedLinks = true }
+                        .accessibilityIdentifier("juno.mobile.settings-shared-links")
+                    }
                 }
 
                 // The web's Usage page, reachable at last. Offered only where the

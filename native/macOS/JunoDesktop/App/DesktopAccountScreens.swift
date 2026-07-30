@@ -98,6 +98,7 @@ struct DesktopDestinationView: View {
                     authModel: configuration.authModel,
                     session: session,
                     accountDataClient: configuration.accountDataClient,
+                    shareClient: configuration.shareClient,
                     modelCatalog: conversationModel.selectableModels,
                     avatarData: configuration.avatarModel?.imageData,
                     syncModel: configuration.syncModel,

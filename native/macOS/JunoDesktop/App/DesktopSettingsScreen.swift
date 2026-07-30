@@ -41,6 +41,10 @@ struct DesktopSettingsScreen: View {
         case general
         case appearance
         case memory
+        /// Live public links. Beside Memory because both answer "what does the
+        /// world already have of mine?", which is the question a settings screen
+        /// exists to let someone act on.
+        case sharedLinks
         case account
         case usage
         case diagnostics
@@ -52,6 +56,7 @@ struct DesktopSettingsScreen: View {
             case .general: "General"
             case .appearance: "Appearance"
             case .memory: "Memory"
+            case .sharedLinks: "Shared links"
             case .account: "Account"
             case .usage: "Usage"
             case .diagnostics: "Diagnostics"
@@ -63,6 +68,7 @@ struct DesktopSettingsScreen: View {
             case .general: "gearshape"
             case .appearance: "paintpalette"
             case .memory: "brain"
+            case .sharedLinks: "link"
             case .account: "person.crop.circle"
             case .usage: "chart.bar"
             case .diagnostics: "stethoscope"
@@ -74,6 +80,8 @@ struct DesktopSettingsScreen: View {
     let authModel: NativeAuthModel
     let session: NativeAuthenticatedSession
     let accountDataClient: NativeAccountDataClient?
+    /// Lists and revokes the account's public links.
+    let shareClient: NativeShareClient?
     /// The account's model catalog, for the default-model and favourites
     /// controls. Empty until the signed-in manifest arrives, and those two
     /// sections are absent until it does rather than offering an empty menu.
@@ -128,6 +136,10 @@ struct DesktopSettingsScreen: View {
 
             Tab(Pane.memory.label, systemImage: Pane.memory.symbol, value: Pane.memory) {
                 DesktopSettingsMemoryPane(model: model)
+            }
+
+            Tab(Pane.sharedLinks.label, systemImage: Pane.sharedLinks.symbol, value: Pane.sharedLinks) {
+                NativeSharedLinksView(client: shareClient, accountID: session.profile.id)
             }
 
             Tab(Pane.account.label, systemImage: Pane.account.symbol, value: Pane.account) {
