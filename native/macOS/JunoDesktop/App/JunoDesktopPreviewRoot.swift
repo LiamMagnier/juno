@@ -87,7 +87,8 @@ private struct JunoDesktopPreviewWorkspace: View {
             accountDataClient: world.accountDataClient,
             voiceTranscriptClient: NativeVoiceTranscriptClient(sender: sender),
             messageActionsClient: NativeMessageActionsClient(sender: sender),
-            followUpClient: NativeFollowUpClient(sender: sender)
+            followUpClient: NativeFollowUpClient(sender: sender),
+            pullsClient: NativeGitHubPullsClient(sender: sender)
         )
         workbenchModel = WorkbenchModel.preview()
         _product = State(

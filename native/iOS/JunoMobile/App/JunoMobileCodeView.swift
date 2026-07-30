@@ -1,4 +1,5 @@
 import JunoCodeKit
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
@@ -23,8 +24,15 @@ struct JunoMobileCodeView: View {
     /// view is what keeps this feature from needing a second transcript
     /// renderer inside the Code section.
     let startConversation: (String) async -> Void
+    /// The pull requests Juno Code opened. Nil where the app could not be
+    /// configured, in which case the toolbar simply does not offer them.
+    var pullsClient: NativeGitHubPullsClient?
+    var accountID: AccountID?
+    /// Opens the app's connected accounts, for the "connect GitHub" empty state.
+    var openConnections: (() -> Void)?
 
     @State private var prompt = ""
+    @State private var showingPulls = false
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -62,6 +70,29 @@ struct JunoMobileCodeView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await model.refresh() }
+        // A destination rather than a tab: a reader checks on pull requests
+        // between sessions, not while they have one open, so it belongs beside
+        // the session list and not inside it.
+        .toolbar {
+            if pullsClient != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showingPulls = true
+                    } label: {
+                        Image(systemName: "arrow.trianglehead.pull")
+                    }
+                    .accessibilityLabel("Pull requests")
+                    .accessibilityIdentifier("juno.mobile.code.pulls")
+                }
+            }
+        }
+        .navigationDestination(isPresented: $showingPulls) {
+            NativePullsView(
+                client: pullsClient,
+                accountID: accountID,
+                openConnections: openConnections
+            )
+        }
         .navigationDestination(
             isPresented: Binding(
                 get: { model.openTask != nil },

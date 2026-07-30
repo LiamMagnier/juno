@@ -5,6 +5,7 @@ import JunoChatKit
 import JunoCore
 import JunoDesignSystem
 import JunoStorage
+import JunoCodeKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -62,6 +63,12 @@ struct DesktopDestinationView: View {
             } else {
                 unavailable("Artifacts", "The synchronized artifact store is unavailable.")
             }
+        case .pulls:
+            NativePullsView(
+                client: configuration.pullsClient,
+                accountID: session.profile.id,
+                openConnections: { destination = .connections }
+            )
         case .connections:
             if let model = configuration.connectorModel {
                 DesktopConnectionsScreen(model: model)

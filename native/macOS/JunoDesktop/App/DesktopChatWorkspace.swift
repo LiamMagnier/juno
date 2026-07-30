@@ -441,12 +441,16 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     case connections
     case tasks
     case usage
+    /// The pull requests Juno Code opened. A sidebar destination rather than a
+    /// tab inside Code, because a reader checks on PRs between sessions — not
+    /// while they have one open.
+    case pulls
     case settings
 
     var id: Self { self }
 
     static let sidebarCases: [Self] = [
-        .library, .artifacts, .connections, .projects, .tasks, .usage,
+        .library, .artifacts, .connections, .projects, .tasks, .pulls, .usage,
     ]
 
     var label: String {
@@ -459,6 +463,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "Connections"
         case .tasks: "Tasks"
         case .usage: "Usage"
+        case .pulls: "Pull requests"
         case .settings: "Settings"
         }
     }
@@ -473,6 +478,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .connections: "link"
         case .tasks: "clock"
         case .usage: "chart.line.uptrend.xyaxis"
+        case .pulls: "arrow.trianglehead.pull"
         case .settings: "gearshape"
         }
     }
@@ -486,9 +492,9 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .artifacts: .artifacts
         case .connections: .connections
         case .tasks: .tasks
-        // No Juno-drawn glyph for Usage yet, so it falls back to the SF Symbol
+        // No Juno-drawn glyph for these yet, so they fall back to the SF Symbol
         // rather than borrowing another destination's mark.
-        case .usage, .settings: nil
+        case .usage, .pulls, .settings: nil
         }
     }
 }

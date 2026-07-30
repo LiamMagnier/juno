@@ -49,6 +49,7 @@ struct JunoMobileRootView: View {
     /// Backs the transcript's action row — rate, branch, read aloud.
     var messageActionsClient: NativeMessageActionsClient?
     var followUpClient: NativeFollowUpClient?
+    var pullsClient: NativeGitHubPullsClient?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -737,7 +738,10 @@ struct JunoMobileRootView: View {
             if let codeModel {
                 JunoMobileCodeView(
                     model: codeModel,
-                    startConversation: startProjectlessCodeConversation
+                    startConversation: startProjectlessCodeConversation,
+                    pullsClient: pullsClient,
+                    accountID: currentSession?.profile.id,
+                    openConnections: { selection = .connections }
                 )
             } else { unavailable }
         case .tasks:

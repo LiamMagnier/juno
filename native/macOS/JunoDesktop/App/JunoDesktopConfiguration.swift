@@ -34,6 +34,8 @@ struct JunoDesktopConfiguration {
     let messageActionsClient: NativeMessageActionsClient?
     /// Suggests what to ask next, under a finished reply.
     let followUpClient: NativeFollowUpClient?
+    /// The pull requests Juno Code opened.
+    let pullsClient: NativeGitHubPullsClient?
 
     static func live() -> Self {
         do {
@@ -149,7 +151,8 @@ struct JunoDesktopConfiguration {
                 accountDataClient: NativeAccountDataClient(sender: runtime),
                 voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
                 messageActionsClient: NativeMessageActionsClient(sender: runtime),
-                followUpClient: NativeFollowUpClient(sender: runtime)
+                followUpClient: NativeFollowUpClient(sender: runtime),
+                pullsClient: NativeGitHubPullsClient(sender: runtime)
             )
         } catch {
             return unavailable(error.localizedDescription)
@@ -180,7 +183,8 @@ struct JunoDesktopConfiguration {
             accountDataClient: nil,
             voiceTranscriptClient: nil,
             messageActionsClient: nil,
-            followUpClient: nil
+            followUpClient: nil,
+            pullsClient: nil
         )
     }
 }
