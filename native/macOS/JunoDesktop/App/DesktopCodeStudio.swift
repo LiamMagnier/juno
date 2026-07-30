@@ -382,6 +382,10 @@ struct DesktopCodeSidebar: View {
     /// up under the parent's name: the chevron's 12pt frame plus the row spacing.
     private static let childIndent: CGFloat = 12 + JunoSpace.tight + JunoSpace.snug
 
+    /// How far the source list starts below the top of the window. See the
+    /// `safeAreaInset` in `body` for why this clears more than the traffic lights.
+    private static let titlebarClearance: CGFloat = 76
+
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
             sessions: workbench.filteredSessions,
@@ -579,18 +583,19 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        // Clears the titlebar. Same value the Chat sidebar uses, and for the same
-        // reason: a `.sidebar` List in a `NavigationSplitView` is laid out from the
-        // very top of the window, so without this its first section header renders
-        // level with the traffic lights and the first row sits behind them.
+        // Clears the whole titlebar, not just the traffic lights.
         //
-        // This was briefly removed on the theory that it double-counted an inset the
-        // platform already provides. It does not — the platform gives the sidebar no
-        // titlebar inset here, which is exactly why Chat has carried the same 28pt
-        // since it shipped. Restored, and now cross-referenced so the two columns
-        // are visibly one decision rather than two.
+        // A `.sidebar` List in a `NavigationSplitView` is laid out from the very top
+        // of the window, and the titlebar that overlaps it is not just the window
+        // controls: the navigation title is drawn across the sidebar's width too. So
+        // the inset has to clear the *toolbar row*, which is why 28pt — enough for
+        // the traffic lights alone — still left the first row level with them.
+        //
+        // Measured against the rendered window rather than guessed: at 28 the first
+        // row sat beside the traffic lights, and this is the value that puts it
+        // clearly below the whole bar.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 28)
+            Color.clear.frame(height: Self.titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
