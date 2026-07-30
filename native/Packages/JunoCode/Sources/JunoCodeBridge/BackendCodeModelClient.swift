@@ -365,13 +365,28 @@ enum AnthropicRequestBuilder {
         }
         flush()
 
+        // Extended thinking, in whichever of Anthropic's two shapes this model
+        // takes. `maxTokens` is the adjusted ceiling: thinking tokens come out
+        // of the same budget as the answer, so leaving it at the caller's value
+        // would buy depth by truncating the reply.
+        let bits = CodeThinkingWire.anthropicBits(
+            providerModelID: providerModelID,
+            maxTokens: maxTokens,
+            effort: request.reasoningEffort
+        )
         var object: [String: JSONValue] = [
             "model": .string(providerModelID),
-            "max_tokens": .number(Double(maxTokens)),
+            "max_tokens": .number(Double(bits.maxTokens)),
             "system": .string(request.systemPrompt),
             "messages": .array(messages),
             "stream": .bool(true),
         ]
+        if let thinking = bits.thinking {
+            object["thinking"] = thinking
+        }
+        if let outputConfig = bits.outputConfig {
+            object["output_config"] = outputConfig
+        }
         let tools = request.tools.map { tool -> JSONValue in
             .object([
                 "name": .string(tool.name),
@@ -467,6 +482,15 @@ enum OpenAIChatRequestBuilder {
         } else {
             object["max_tokens"] = .number(Double(maxTokens))
         }
+        // Each OpenAI-compatible lab has its own thinking dialect, and several
+        // have none at all. Nothing is sent for those rather than a guess.
+        for (key, value) in CodeThinkingWire.chatParameters(
+            providerID: providerID,
+            providerModelID: providerModelID,
+            effort: request.reasoningEffort
+        ) {
+            object[key] = value
+        }
         if !request.tools.isEmpty {
             object["tools"] = .array(request.tools.map { tool in
                 .object([
@@ -547,11 +571,18 @@ enum OpenAIResponsesRequestBuilder {
             "stream": .bool(true),
             "store": .bool(false),
             "max_output_tokens": .number(Double(maxTokens)),
-            "reasoning": .object([
-                "effort": .string(request.reasoningEffort.rawValue),
-                "summary": .string("detailed"),
-            ]),
         ]
+        // Omitted entirely for a model that publishes no depths, rather than sent
+        // with a default the model may reject.
+        if let effort = CodeThinkingWire.responsesEffort(
+            providerModelID: providerModelID,
+            effort: request.reasoningEffort
+        ) {
+            object["reasoning"] = .object([
+                "effort": .string(effort),
+                "summary": .string("detailed"),
+            ])
+        }
         if !request.tools.isEmpty {
             object["tools"] = .array(request.tools.map { tool in
                 .object([
@@ -728,7 +759,13 @@ struct AnthropicStreamDecoder {
             throw AgentModelClientError.invalidResponse(message: "Malformed model event.")
         }
         switch wire.type {
-        case "message_start", "ping":
+        case "message_start":
+            // The prompt size, once, at the top of the turn. This is the whole
+            // billed prompt — system, tools and the conversation so far — which is
+            // exactly the number a context meter wants.
+            guard let usage = wire.message?.usage else { return [] }
+            return [.usage(inputTokens: usage.inputTokens, outputTokens: usage.outputTokens)]
+        case "ping":
             return []
         case "content_block_start":
             guard let index = wire.index, let block = wire.contentBlock else { return [] }
@@ -767,7 +804,8 @@ struct AnthropicStreamDecoder {
             if let reason = wire.delta?.stopReason {
                 stopReason = Self.mapStopReason(reason)
             }
-            return []
+            guard let usage = wire.usage else { return [] }
+            return [.usage(inputTokens: usage.inputTokens, outputTokens: usage.outputTokens)]
         case "message_stop":
             return [.turnCompleted(stopReason ?? .endTurn)]
         case "error":
@@ -821,15 +859,31 @@ private struct StreamEventWire: Decodable {
         let type: String?
         let message: String?
     }
+    /// Anthropic reports the prompt size once, on `message_start`, and the
+    /// completion size on `message_delta`.
+    struct Usage: Decodable {
+        let inputTokens: Int?
+        let outputTokens: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case inputTokens = "input_tokens"
+            case outputTokens = "output_tokens"
+        }
+    }
+    struct Message: Decodable {
+        let usage: Usage?
+    }
 
     let type: String
     let index: Int?
     let contentBlock: ContentBlock?
     let delta: Delta?
     let error: ErrorBody?
+    let usage: Usage?
+    let message: Message?
 
     private enum CodingKeys: String, CodingKey {
-        case type, index, delta, error
+        case type, index, delta, error, usage, message
         case contentBlock = "content_block"
     }
 }
@@ -897,7 +951,9 @@ private struct RawSSEDecoder {
     }
 }
 
-private struct OpenAIChatStreamDecoder {
+/// Internal rather than private so the decode of the usage-only chunk can be
+/// tested directly; `AnthropicStreamDecoder` alongside it is internal already.
+struct OpenAIChatStreamDecoder {
     private struct ToolBlock {
         var id = ""
         var name = ""
@@ -922,8 +978,20 @@ private struct OpenAIChatStreamDecoder {
         if let error = root["error"]?["message"]?.stringValue {
             throw AgentModelClientError.transport(message: error)
         }
-        guard let choice = root["choices"]?.arrayValue?.first else { return [] }
+        // Read usage *before* the choices guard.
+        //
+        // `stream_options.include_usage` makes the provider send a final chunk whose
+        // `choices` array is empty and whose only payload is `usage`. Guarding on a
+        // first choice therefore dropped the one chunk that carries the token
+        // accounting, on every OpenAI-compatible provider.
         var events: [ModelStreamEvent] = []
+        if let usage = root["usage"], !usage.isNull {
+            events.append(.usage(
+                inputTokens: usage["prompt_tokens"]?.intValue,
+                outputTokens: usage["completion_tokens"]?.intValue
+            ))
+        }
+        guard let choice = root["choices"]?.arrayValue?.first else { return events }
         if let delta = choice["delta"] {
             if let text = delta["content"]?.stringValue, !text.isEmpty {
                 events.append(.textDelta(text))
@@ -1012,7 +1080,17 @@ private struct OpenAIResponsesStreamDecoder {
         case "response.completed":
             guard !completed else { return [] }
             completed = true
-            return [.turnCompleted(sawToolCall ? .toolUse : .endTurn)]
+            var events: [ModelStreamEvent] = []
+            // The Responses API reports the turn's accounting on the completed
+            // envelope rather than as its own chunk.
+            if let usage = root["response"]?["usage"], !usage.isNull {
+                events.append(.usage(
+                    inputTokens: usage["input_tokens"]?.intValue,
+                    outputTokens: usage["output_tokens"]?.intValue
+                ))
+            }
+            events.append(.turnCompleted(sawToolCall ? .toolUse : .endTurn))
+            return events
         case "response.incomplete":
             guard !completed else { return [] }
             completed = true

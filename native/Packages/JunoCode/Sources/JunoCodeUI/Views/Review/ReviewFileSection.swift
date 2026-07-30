@@ -498,16 +498,33 @@ private struct ReviewCommentEditor: View {
             .lineLimit(1...6)
             .focused($focused)
             .accessibilityIdentifier("juno.code.review.note-field")
+            // Return adds the note, Shift-Return breaks the line — handled on the
+            // *field* rather than as an accelerator on the button below.
+            //
+            // The button used to carry `.keyboardShortcut(.return, modifiers:
+            // .command)`, which collided with the composer's Send: the composer
+            // stays visible in the review by design, so two enabled controls in one
+            // window claimed ⌘⏎ and which one fired was left to SwiftUI's traversal
+            // order. Scoping the key to the focused editor removes the ambiguity
+            // instead of renaming it.
+            .onKeyPress(.return, phases: .down) { press in
+                if press.modifiers.contains(.shift) { return .ignored }
+                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return .handled }
+                onSubmit(text)
+                return .handled
+            }
             HStack(spacing: JunoSpace.snug) {
                 Spacer(minLength: 0)
                 Button("Cancel", action: onCancel)
                     .controlSize(.small)
                     .keyboardShortcut(.escape, modifiers: [])
+                // No accelerator: Return on the focused field above is the shortcut,
+                // and a second binding here is what collided with the composer.
                 Button("Add Note") { onSubmit(text) }
                     .controlSize(.small)
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)
-                    .keyboardShortcut(.return, modifiers: .command)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }

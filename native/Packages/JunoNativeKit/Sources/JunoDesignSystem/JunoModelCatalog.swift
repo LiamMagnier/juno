@@ -25,8 +25,31 @@ public enum JunoModelCapability: String, Identifiable, CaseIterable, Sendable {
     case vision
     case search
     case tools
+    /// Can drive Juno Code's screen control on this Mac.
+    ///
+    /// Unlike its siblings this one is **derived rather than reported**, because
+    /// no server publishes it — screen control is a macOS-only feature and the
+    /// manifest has no field for it. It is still a fact about the model rather
+    /// than a guess: driving the screen means reading a screenshot and answering
+    /// with a tool call, so it requires exactly `vision` *and* `tools`, both of
+    /// which the manifest does report. A model without vision cannot see the
+    /// screen it is being asked to click on, which is why `SessionController`
+    /// already refuses to activate capture for one.
+    ///
+    /// See ``computerUse(visionReported:toolsReported:)`` — the derivation lives
+    /// in one place so a picker and a session gate cannot disagree about it.
+    case computerUse
 
     public var id: String { rawValue }
+
+    /// Whether this model can run screen control, from the two capabilities the
+    /// manifest actually reports.
+    public static func computerUse(
+        visionReported: Bool,
+        toolsReported: Bool
+    ) -> Bool {
+        visionReported && toolsReported
+    }
 
     public var label: String {
         switch self {
@@ -34,6 +57,7 @@ public enum JunoModelCapability: String, Identifiable, CaseIterable, Sendable {
         case .vision: "Vision"
         case .search: "Search"
         case .tools: "Tools"
+        case .computerUse: "Screen control"
         }
     }
 
@@ -43,6 +67,19 @@ public enum JunoModelCapability: String, Identifiable, CaseIterable, Sendable {
         case .vision: "eye"
         case .search: "globe"
         case .tools: "wrench.and.screwdriver"
+        case .computerUse: "display"
+        }
+    }
+
+    /// The one-line explanation the spec sheet shows. Only `computerUse` has one:
+    /// the others name themselves, but "Screen control" is a Juno feature rather
+    /// than a model property, so it has to say what it means.
+    public var explanation: String? {
+        switch self {
+        case .computerUse:
+            "Can see the screen and click, so Juno Code can drive this Mac with it."
+        case .reasoning, .vision, .search, .tools:
+            nil
         }
     }
 }
@@ -127,6 +164,22 @@ public struct JunoThinkingLadder: Equatable, Sendable {
 
     /// A model that exposes no thinking control at all.
     public static let unavailable = JunoThinkingLadder(stops: [])
+
+    /// The id of the "thinking off" stop.
+    ///
+    /// A shared constant because two packages have to agree on it without one
+    /// importing the other: `JunoChatKit` writes this id when a model's manifest
+    /// entry reports `canDisable`, and `JunoCodeUI` reads it to decide that the
+    /// session may send *no* thinking parameter. It was a bare `"instant"` string
+    /// literal on the producing side and unknown on the consuming side, which is
+    /// how Code came to silently drop the stop — and with it the off state on more
+    /// than half the catalog.
+    public static let instantStopID = "instant"
+
+    /// Whether this model can have thinking turned off entirely.
+    public var canDisableThinking: Bool {
+        stops.contains { $0.id == Self.instantStopID }
+    }
 
     /// Whether a composer should show a Thinking control at all.
     public var isPresentable: Bool { isAutomatic || !stops.isEmpty }

@@ -164,8 +164,26 @@ struct JunoDesktopRootView: View {
     /// `ModelOption(catalog:)` also narrows the thinking ladder to the depths
     /// the entry actually publishes, so the reasoning control stops offering
     /// three fixed efforts for every model regardless of what it supports.
+    /// Chat models only, and that filter is not redundant with the resolver's.
+    ///
+    /// `CodeModelProviderResolver.supports` answers a question about the
+    /// *provider prefix* — whether `/api/agent` has a path for that lab — so it
+    /// says yes to every id under a lab Juno can reach, including that lab's
+    /// image and video models. The account manifest carries 27 of those, 23 of
+    /// them under providers Code allows, so the picker was offering
+    /// `openai:gpt-image-2`, `google:veo-3.1-generate-preview` and
+    /// `xai:grok-imagine-video` as models to run a coding session on. None of
+    /// them can hold a tool-calling loop; picking one produced a session whose
+    /// first turn failed.
+    ///
+    /// `isChatCapable` is the manifest's own answer rather than a guess made from
+    /// the id, and it is the same predicate the Chat composer already uses to
+    /// keep those entries out of its picker — whose doc comment says exactly this:
+    /// "Image and video generation entries share the manifest but are not
+    /// selectable here … they are a different product."
     static func codeModels(from manifest: [NativeChatModelOption]) -> [ModelOption] {
         manifest
+            .filter(\.isChatCapable)
             .filter { CodeModelProviderResolver.supports($0.id) }
             .map { ModelOption(catalog: $0.junoDescriptor) }
     }

@@ -292,6 +292,14 @@ final class AgentOrchestratorTests: XCTestCase {
         })
     }
 
+    /// `workspaceWrite` rather than `fullAccess`, because the mode has to be one
+    /// where deletion actually stops to ask.
+    ///
+    /// This test is about the loop surviving a denial, and it used full access
+    /// only back when `critical` was gated in *every* mode. Full access now
+    /// proceeds for workspace-bounded work, so asking there would never suspend
+    /// and there would be nothing to deny — see
+    /// `testFullAccessDeletesInsideTheWorkspaceWithoutAsking`.
     func testDenialContinuesLoopWithoutExecuting() async throws {
         let model = ScriptedModelClient(steps: [
             .toolCalls(
@@ -300,7 +308,7 @@ final class AgentOrchestratorTests: XCTestCase {
             ),
             .text("Understood, I left the file alone."),
         ])
-        let (orchestrator, permissions) = makeOrchestrator(model: model, mode: .fullAccess)
+        let (orchestrator, permissions) = makeOrchestrator(model: model, mode: .workspaceWrite)
         let requested = expectation(description: "approval requested")
         nonisolated(unsafe) var approvalID: String?
         await permissions.addObserver { update in
@@ -331,6 +339,76 @@ final class AgentOrchestratorTests: XCTestCase {
             }
             return false
         })
+    }
+
+    /// The complaint this tier split exists to fix: full access asked constantly.
+    ///
+    /// A deletion inside the granted folder is checkpointed and revertible, so a
+    /// session the user has explicitly set to full access carries it out. Nothing
+    /// suspends, and the run reaches `.completed` without an approval event.
+    func testFullAccessDeletesInsideTheWorkspaceWithoutAsking() async throws {
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [("c1", "delete_file", ["path": "src/main.swift"])],
+                text: ""
+            ),
+            .text("Deleted."),
+        ])
+        let (orchestrator, permissions) = makeOrchestrator(model: model, mode: .fullAccess)
+        try await orchestrator.submit(prompt: "Delete main.swift")
+        await orchestrator.awaitCompletion()
+
+        // Hoisted out of the assertion: `XCTAssertTrue` takes an autoclosure,
+        // which cannot await an actor-isolated property.
+        let pending = await permissions.pendingApprovals
+        XCTAssertTrue(
+            pending.isEmpty,
+            "full access must not stop for a workspace-bounded deletion"
+        )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: workspaceURL.appendingPathComponent("src/main.swift").path
+            ),
+            "the deletion must actually have run"
+        )
+        let approvalRequests = await payloads().filter {
+            if case .approvalRequested = $0 { return true }
+            return false
+        }
+        XCTAssertTrue(approvalRequests.isEmpty, "no approval should have been recorded")
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
+    }
+
+    /// The boundary that survives every mode.
+    ///
+    /// `destructive` is above the mode ladder, so full access does *not* waive it
+    /// — a command naming a path outside the grant still suspends and waits.
+    func testFullAccessStillAsksBeforeLeavingTheWorkspace() async throws {
+        let model = ScriptedModelClient(steps: [
+            .toolCalls(
+                [("c1", "run_command", ["command": "cat /etc/passwd"])],
+                text: ""
+            ),
+            .text("Done."),
+        ])
+        let (orchestrator, permissions) = makeOrchestrator(model: model, mode: .fullAccess)
+        let requested = expectation(description: "approval requested")
+        nonisolated(unsafe) var approvalID: String?
+        await permissions.addObserver { update in
+            if case let .requested(request) = update {
+                approvalID = request.id
+                requested.fulfill()
+            }
+        }
+        try await orchestrator.submit(prompt: "Read the password file")
+        await fulfillment(of: [requested], timeout: 5)
+        let id = try XCTUnwrap(approvalID, "full access must still gate an escaping path")
+        await permissions.resolve(approvalID: id, decision: .denied)
+        await orchestrator.awaitCompletion()
+
+        let final = try await store.session(id: session.id)
+        XCTAssertEqual(final.status, .completed)
     }
 
     func testStopCancelsPromptlyEvenWithHungModel() async throws {

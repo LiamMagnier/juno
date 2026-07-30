@@ -65,6 +65,15 @@ public enum NativeModelPresentation {
         if model.supportsVision { chips.append(.vision) }
         if model.supportsWebSearch { chips.append(.search) }
         if model.supportsTools { chips.append(.tools) }
+        // Derived from the two above rather than reported; see
+        // ``JunoModelCapability/computerUse``. Last in the list because it is a
+        // Juno Code capability rather than a property of the model on its own.
+        if JunoModelCapability.computerUse(
+            visionReported: model.supportsVision,
+            toolsReported: model.supportsTools
+        ) {
+            chips.append(.computerUse)
+        }
         return chips
     }
 }

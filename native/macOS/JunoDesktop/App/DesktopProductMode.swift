@@ -53,7 +53,7 @@ struct DesktopProductSwitcher: View {
     /// wants on each side. A minimum rather than a fixed size: the control may
     /// grow for a longer localisation or a larger text size, it may not shrink
     /// below legibility.
-    private static let minimumSegmentWidth: CGFloat = 68
+    private static let minimumSegmentWidth: CGFloat = 58
 
     private var animatedSelection: Binding<DesktopProductMode> {
         Binding(
@@ -76,7 +76,14 @@ struct DesktopProductSwitcher: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .controlSize(.large)
+        // `.regular`, the size every other toolbar control uses.
+        //
+        // At `.large` the switch was the tallest and widest thing in the titlebar —
+        // a chunky pill that dominated the window's own title, and, because two
+        // leading toolbar items share the space before the title, one that squeezed
+        // the session name into a slot narrow enough to truncate ("Fix the design of
+        // Jun…") while the bar had obvious room to spare.
+        .controlSize(.regular)
         .frame(
             minWidth: Self.minimumSegmentWidth * CGFloat(DesktopProductMode.allCases.count)
         )

@@ -34,16 +34,21 @@ public struct CodeSessionCanvas: View {
     /// workspace has been read.
     @State private var slashCommands = CodeSlashCommandLibrary.builtIn
 
+    /// Starts dictation, or nil where the host offers none. See ``Composer``.
+    private let beginDictation: (() -> Void)?
+
     public init(
         controller: SessionController,
         model: WorkbenchModel,
         showsReview: Binding<Bool>,
-        showsConsole: Binding<Bool>
+        showsConsole: Binding<Bool>,
+        beginDictation: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.model = model
         self._showsReview = showsReview
         self._showsConsole = showsConsole
+        self.beginDictation = beginDictation
     }
 
     public var body: some View {
@@ -141,12 +146,65 @@ public struct CodeSessionCanvas: View {
     }
 
     private var composer: some View {
-        Composer(
-            controller: controller,
-            availableModels: model.availableModels,
-            focus: $composerFocused,
-            slashCommands: slashCommands
-        )
+        VStack(spacing: JunoSpace.snug) {
+            transientError
+            Composer(
+                controller: controller,
+                availableModels: model.availableModels,
+                focus: $composerFocused,
+                slashCommands: slashCommands,
+                beginDictation: beginDictation
+            )
+        }
+    }
+
+    /// The last refused action, said out loud.
+    ///
+    /// `SessionController.transientError` is written on 81 paths — a send blocked
+    /// by a paused goal, a transport that is not configured, a failed revert, a
+    /// model change that could not be persisted — and until now the only readers
+    /// were `ReviewModel` and `WorkspaceDocumentEditor`, the second of which is
+    /// itself unreachable. So the session surface swallowed every one of them:
+    /// pressing Send with a paused goal did nothing at all, with no explanation
+    /// anywhere on screen.
+    ///
+    /// Directly above the composer because that is where the refused gesture came
+    /// from, and dismissible because it describes a moment rather than a state.
+    @ViewBuilder
+    private var transientError: some View {
+        if let message = controller.transientError {
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(Color.junoCaution)
+                Text(message)
+                    .junoCaption()
+                    .foregroundStyle(Color.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+                Spacer(minLength: 0)
+                Button {
+                    controller.clearTransientError()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.semibold))
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Dismiss")
+            }
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.snug)
+            .junoPanel(cornerRadius: JunoRadius.row)
+            .overlay(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .strokeBorder(Color.junoCaution.opacity(0.5))
+            )
+            .padding(.horizontal, JunoSpace.roomy)
+            .transition(.opacity)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("juno.code.transient-error")
+        }
     }
 }
 

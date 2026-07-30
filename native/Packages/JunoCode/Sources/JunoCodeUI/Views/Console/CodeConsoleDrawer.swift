@@ -118,6 +118,18 @@ public struct CodeConsoleDrawer: View {
                     NSCursor.pop()
                 }
             }
+            // A pushed cursor outlives the view that pushed it.
+            //
+            // The push/pop pair above is balanced for the ordinary hover in/out, but
+            // `.ended` cannot arrive if the handle goes away while the pointer is
+            // still over it — closing the drawer with ⌥⌘C, switching to Chat, or
+            // closing the window. The resize cursor then stayed as the app's cursor
+            // everywhere, with no handle left to pop it.
+            .onDisappear {
+                guard isPushingResizeCursor else { return }
+                isPushingResizeCursor = false
+                NSCursor.pop()
+            }
             .accessibilityHidden(true)
     }
 

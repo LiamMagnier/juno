@@ -84,7 +84,12 @@ public struct CodeTaskConfiguration: Equatable, Sendable {
     public let mode: CodeInteractionMode
     public let permission: CodePermissionMode
     public let modelID: String
-    public let reasoningEffort: String
+    /// The thinking depth, or nil to send none.
+    ///
+    /// Optional to match the route, whose schema is
+    /// `z.string().max(100).nullable().optional()` — the wire has always accepted
+    /// the absence of a depth, and a session set to Instant has no depth to state.
+    public let reasoningEffort: String?
 
     public init(
         repositoryID: String,
@@ -94,7 +99,7 @@ public struct CodeTaskConfiguration: Equatable, Sendable {
         mode: CodeInteractionMode,
         permission: CodePermissionMode,
         modelID: String,
-        reasoningEffort: String
+        reasoningEffort: String?
     ) throws {
         do {
             try BoundedValue.validateText(repositoryID, field: "repositoryID", maximumUTF8Bytes: 256)
@@ -106,7 +111,13 @@ public struct CodeTaskConfiguration: Equatable, Sendable {
                 allowsNewlines: true
             )
             try BoundedValue.validateText(modelID, field: "modelID", maximumUTF8Bytes: 256)
-            try BoundedValue.validateText(reasoningEffort, field: "reasoningEffort", maximumUTF8Bytes: 64)
+            if let reasoningEffort {
+                try BoundedValue.validateText(
+                    reasoningEffort,
+                    field: "reasoningEffort",
+                    maximumUTF8Bytes: 64
+                )
+            }
         } catch let error as BoundedValueError {
             throw CodeTaskConfigurationError.invalidField(error)
         }

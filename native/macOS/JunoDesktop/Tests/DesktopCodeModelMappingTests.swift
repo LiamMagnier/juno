@@ -22,7 +22,8 @@ import Testing
 struct DesktopCodeModelMappingTests {
     private func manifestEntry(
         id: String = "anthropic:claude-sonnet-5",
-        efforts: [NativeReasoningEffort] = [.low, .medium, .high]
+        efforts: [NativeReasoningEffort] = [.low, .medium, .high],
+        modality: String = "chat"
     ) -> NativeChatModelOption {
         NativeChatModelOption(
             id: id,
@@ -32,9 +33,19 @@ struct DesktopCodeModelMappingTests {
             summary: "Best speed-to-intelligence balance.",
             minimumPlan: "FREE",
             availability: "available",
+            modality: modality,
             supportedReasoningEfforts: efforts,
             canDisableReasoning: false,
-            supportsStreaming: true
+            // The manifest never publishes tiers for a model it also reports as
+            // non-reasoning, and `NativeThinkingScale` returns no stops at all
+            // when `supportsReasoning` is false — so leaving this at its `false`
+            // default made every "publishes depths" fixture silently describe a
+            // model with no ladder.
+            supportsReasoning: !efforts.isEmpty,
+            // The manifest sets `streaming: modality === "chat"`, and
+            // `isChatCapable` reads it. Mirroring that here is what makes the
+            // generation-model case exercise the real predicate.
+            supportsStreaming: modality == "chat"
         )
     }
 
@@ -81,6 +92,23 @@ struct DesktopCodeModelMappingTests {
         #expect(JunoDesktopRootView.codeModels(from: []).isEmpty)
     }
 
+    /// Image and video models must not reach Code's picker.
+    ///
+    /// The provider filter alone could not keep them out: it matches on the
+    /// *provider prefix*, so every id under a lab `/api/agent` can reach passed —
+    /// including that lab's generation models. The account manifest carries 27 of
+    /// them, 23 under providers Code allows, so `openai:gpt-image-2` and
+    /// `xai:grok-imagine-video` were offered as models to run a coding session
+    /// on. Neither can hold a tool-calling loop.
+    @Test
+    func generationModelsAreNotOfferedAsCodingModels() {
+        let image = manifestEntry(id: "openai:gpt-image-2", modality: "image")
+        let video = manifestEntry(id: "xai:grok-imagine-video", modality: "video")
+        let chat = manifestEntry()
+        let options = JunoDesktopRootView.codeModels(from: [image, video, chat])
+        #expect(options.map(\.modelID) == ["anthropic:claude-sonnet-5"])
+    }
+
     // MARK: - Thinking
 
     /// The control must offer the depths the model publishes, not three fixed
@@ -91,18 +119,43 @@ struct DesktopCodeModelMappingTests {
             .codeModels(from: [manifestEntry(efforts: [.low, .high])])
             .first
         let stops = option?.thinkingLadder.stops.map(\.id) ?? []
-        #expect(!stops.isEmpty)
+        #expect(stops == ["low", "high"])
         #expect(stops.allSatisfy { ReasoningEffort(rawValue: $0) != nil })
     }
 
+    /// Kimi K3's real ladder, end to end through the mapping.
+    ///
+    /// `max` is the depth the user reported missing. It could not survive before,
+    /// because the three-value `ReasoningEffort` could not represent it and the
+    /// all-or-nothing guard in `thinkingLadder` therefore discarded the whole
+    /// published ladder and substituted low/medium/high — offering K3 a depth it
+    /// rejects while hiding the deepest one it supports.
     @Test
-    func aModelPublishingNoDepthsStillOffersTheContractLadder() {
+    func kimiK3KeepsItsLowHighMaxLadder() {
+        let option = JunoDesktopRootView
+            .codeModels(from: [
+                manifestEntry(id: "moonshot:kimi-k3", efforts: [.low, .high, .max])
+            ])
+            .first
+        #expect(option?.thinkingLadder.stops.map(\.id) == ["low", "high", "max"])
+        #expect(option?.supportedReasoningEfforts == [.low, .high, .max])
+    }
+
+    /// A model that publishes no depths gets no control and no wire parameter.
+    ///
+    /// This inverts an earlier expectation deliberately. Substituting a ladder
+    /// here drew a depth slider for models that have no depths — and, once the
+    /// bridge started actually sending the thinking parameter, put one on the wire
+    /// for models that reject it outright, which is a 400 on the Mistral line, the
+    /// non-reasoning OpenAI snapshots and the non-thinking Qwen models.
+    @Test
+    func aModelPublishingNoDepthsGetsNoLadderAndNoWireParameter() {
         let option = JunoDesktopRootView
             .codeModels(from: [manifestEntry(efforts: [])])
             .first
-        // The session always sends one of the three, so the control can never be
-        // empty — an unset thinking control would send an effort nobody chose.
-        #expect(option?.supportedReasoningEfforts.isEmpty == false)
+        #expect(option?.supportedReasoningEfforts.isEmpty == true)
+        #expect(option?.takesThinkingParameter == false)
+        #expect(option?.thinkingLadder.isPresentable == false)
     }
 
     // MARK: - First-turn launch contract

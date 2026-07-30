@@ -191,7 +191,17 @@ final class ToolRegistryTests: XCTestCase {
         )
     }
 
-    func testDeleteRequiresApprovalEvenInFullAccess() async throws {
+    /// Deletion is gated up to and including `workspaceWrite`, and a denial
+    /// leaves the file alone.
+    ///
+    /// The mode is `workspaceWrite` rather than the fixture's full access because
+    /// deleting a file *inside the granted folder* is checkpointed and revertible,
+    /// so full access now carries it out without asking — that is the whole point
+    /// of the tier split, and `AgentOrchestratorTests`
+    /// `testFullAccessDeletesInsideTheWorkspaceWithoutAsking` pins it. What must
+    /// never become silent is leaving the folder, which is `destructive`.
+    func testDeleteRequiresApprovalBelowFullAccess() async throws {
+        let permissions = PermissionCoordinator(sessionID: sessionID, mode: .workspaceWrite)
         let requested = expectation(description: "requested")
         nonisolated(unsafe) var requestID: String?
         await permissions.addObserver { update in
@@ -202,7 +212,6 @@ final class ToolRegistryTests: XCTestCase {
         }
         let registry = self.registry!
         let context = self.context()
-        let permissions = self.permissions!
         let invocation = Task {
             try await registry.invoke(
                 toolName: "delete_file",
@@ -246,7 +255,14 @@ final class ToolRegistryTests: XCTestCase {
         }
     }
 
-    func testTestCommandsAndCommitHooksCannotBypassFullAccessApproval() throws {
+    /// Test commands and commit hooks stay approval-bound below full access, and
+    /// their approval binds the *exact* command.
+    ///
+    /// The digest coupling is the security property here and is unchanged: an
+    /// approval for `swift test` may not be replayed for `cargo test`. What
+    /// changed is only which modes stop — `critical` is now waived by full access
+    /// alone.
+    func testTestCommandsAndCommitHooksStayApprovalBoundBelowFullAccess() throws {
         let runTests = try XCTUnwrap(registry.tool(named: "run_tests"))
         let gitCommit = try XCTUnwrap(registry.tool(named: "git_commit"))
 
@@ -281,8 +297,22 @@ final class ToolRegistryTests: XCTestCase {
             runTests.precheck(input: ["command": "sudo rm -rf /"])
         )
         XCTAssertEqual(gitCommit.assessRisk(input: ["message": "Ship"]), .critical)
+        // Gated everywhere below full access…
+        for mode in [PermissionMode.askBeforeChanges, .workspaceWrite] {
+            XCTAssertEqual(
+                PermissionPolicy.ruling(mode: mode, risk: .critical),
+                .requireApproval,
+                "\(mode) must still ask before a test command or a commit"
+            )
+        }
+        // …and carried out by full access, which is what the mode now promises.
         XCTAssertEqual(
             PermissionPolicy.ruling(mode: .fullAccess, risk: .critical),
+            .allow
+        )
+        // The boundary full access does not cross.
+        XCTAssertEqual(
+            PermissionPolicy.ruling(mode: .fullAccess, risk: .destructive),
             .requireApproval
         )
     }

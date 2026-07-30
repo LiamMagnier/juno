@@ -40,7 +40,7 @@ public actor AgentOrchestrator {
     private let store: CodeSessionStore
     private let configuration: Configuration
     private let modelID: String
-    private let reasoningEffort: ReasoningEffort
+    private let reasoningEffort: ReasoningEffort?
 
     private var conversation: [ModelMessage] = []
     private var runTask: Task<Void, Never>?
@@ -48,6 +48,11 @@ public actor AgentOrchestrator {
     private var restored = false
     private var liveTextObserver: (@Sendable (String) -> Void)?
     private var lastLiveTextEmit = Date.distantPast
+    /// The size of the prompt the provider last billed — system prompt, tool
+    /// schemas and the whole conversation — which is what a context meter shows.
+    private var contextTokens: Int?
+    private var lastOutputTokens: Int?
+    private var usageObserver: (@Sendable (Int?, Int?) -> Void)?
 
     public init(
         sessionID: CodeSessionID,
@@ -57,7 +62,7 @@ public actor AgentOrchestrator {
         store: CodeSessionStore,
         configuration: Configuration,
         modelID: String,
-        reasoningEffort: ReasoningEffort
+        reasoningEffort: ReasoningEffort?
     ) {
         self.sessionID = sessionID
         self.model = model
@@ -84,6 +89,19 @@ public actor AgentOrchestrator {
         liveTextObserver = observer
     }
 
+    /// Observes token accounting as the provider reports it: the prompt size that
+    /// is the session's current context, and the last turn's completion size.
+    ///
+    /// Not persisted, for the same reason live text is not: it is a property of the
+    /// turn in flight, and the store is not the place to keep a number that changes
+    /// on every request.
+    public func observeUsage(_ observer: (@Sendable (Int?, Int?) -> Void)?) {
+        usageObserver = observer
+        if usageObserver != nil, contextTokens != nil {
+            observer?(contextTokens, lastOutputTokens)
+        }
+    }
+
     /// Releases the observer this orchestrator holds on the shared permission
     /// coordinator.
     ///
@@ -98,6 +116,7 @@ public actor AgentOrchestrator {
             approvalObserverToken = nil
         }
         liveTextObserver = nil
+        usageObserver = nil
     }
 
     /// Publishes the turn's text so far, at most twenty times a second.
@@ -169,6 +188,9 @@ public actor AgentOrchestrator {
         if approvalObserverToken == nil {
             let store = self.store
             let sessionID = self.sessionID
+            // Bound as a local for the same reason `store` and `sessionID` are: the
+            // observer must not capture the actor.
+            let permissions = self.permissions
             approvalObserverToken = await permissions.addObserver { update in
                 Task {
                     switch update {
@@ -188,9 +210,19 @@ public actor AgentOrchestrator {
                                 ApprovalResolvedEvent(approvalID: id, decision: decision)
                             )
                         )
+                        // Only clear the waiting state once nothing is still waiting.
+                        //
+                        // Several tool calls in one turn can each be gated, and this
+                        // used to clear `hasPendingApproval` and flip the status back
+                        // to `.running` on the *first* resolution. The remaining
+                        // requests were still suspended and their cards still drawn,
+                        // but the session claimed to be running and the sidebar's
+                        // "waiting for approval" marker went out — so a run that was
+                        // blocked on the reader looked like a run that was working.
+                        let stillPending = await permissions.pendingApprovals.isEmpty == false
                         _ = try? await store.updateSession(id: sessionID) { session in
-                            session.hasPendingApproval = false
-                            if session.status == .waitingForApproval {
+                            session.hasPendingApproval = stillPending
+                            if !stillPending, session.status == .waitingForApproval {
                                 session.status = .running
                             }
                         }
@@ -274,6 +306,18 @@ public actor AgentOrchestrator {
                         turnReasoningSummary += summary
                     case let .toolCallRequested(id, name, input):
                         toolCalls.append((id, name, input))
+                    case let .usage(inputTokens, outputTokens):
+                        // Replaced, not accumulated: `inputTokens` is the whole
+                        // billed prompt for this turn, so the newest report *is*
+                        // the current context size. Summing them would count the
+                        // conversation once per turn and race past the window.
+                        if let inputTokens {
+                            contextTokens = inputTokens
+                        }
+                        if let outputTokens {
+                            lastOutputTokens = outputTokens
+                        }
+                        usageObserver?(contextTokens, lastOutputTokens)
                     case let .turnCompleted(reason):
                         stopReason = reason
                     }
@@ -520,7 +564,10 @@ public actor AgentOrchestrator {
         _ call: (id: String, name: String, input: JSONValue)
     ) async -> ToolExecutionRecord {
         let tool = registry.tool(named: call.name)
-        let risk = tool?.assessRisk(input: call.input) ?? .critical
+        // A name the registry does not know gets the highest risk, not merely a
+        // high one: `critical` is now waived by full access, so defaulting there
+        // would let an unrecognised tool call through unreviewed.
+        let risk = tool?.assessRisk(input: call.input) ?? .destructive
         let summary = tool?.summary(input: call.input) ?? call.name
         _ = try? await store.appendEvent(
             sessionID: sessionID,

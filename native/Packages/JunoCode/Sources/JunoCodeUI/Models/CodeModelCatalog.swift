@@ -17,9 +17,12 @@ public extension ReasoningEffort {
     /// meant the same model read differently in two windows of one app.
     var junoLabel: String {
         switch self {
+        case .minimal: "Minimal"
         case .low: "Low"
         case .medium: "Medium"
         case .high: "High"
+        case .xhigh: "Extra high"
+        case .max: "Max"
         }
     }
 
@@ -28,12 +31,15 @@ public extension ReasoningEffort {
 
     /// Depth order, shallowest first. Drives clamping when a model supports a
     /// shorter ladder than the one the session had selected.
+    ///
+    /// Read off `allCases` rather than written out as a second table, for the
+    /// reason the website gives where it does the same thing (`reasoningGlow`
+    /// in `src/lib/model-metrics.ts`): a parallel list of these literals is a
+    /// thing that drifts, and a tier that silently lands at the wrong depth is
+    /// exactly the quiet wrongness that hid `max` in the first place. The enum's
+    /// declaration order *is* depth order, so this cannot disagree with it.
     var junoDepth: Int {
-        switch self {
-        case .low: 0
-        case .medium: 1
-        case .high: 2
-        }
+        ReasoningEffort.allCases.firstIndex(of: self) ?? 0
     }
 
     var junoStop: JunoThinkingStop {
@@ -64,13 +70,20 @@ public extension JunoThinkingLadder {
 }
 
 public extension ModelOption {
-    /// The three depths the Code request contract itself defines.
+    /// The depths offered for a model that publishes no ladder of its own.
     ///
-    /// This is not a claim about any model — it is the set of values
-    /// `SessionConfiguration.reasoningEffort` can hold. A model whose catalog
-    /// entry publishes a shorter ladder narrows it; a model with no catalog entry
-    /// falls back to it, because the session always sends one of these three.
-    static var contractReasoningEfforts: [ReasoningEffort] { ReasoningEffort.allCases }
+    /// Deliberately **not** `ReasoningEffort.allCases`. The enum spans the
+    /// website's full six tiers so a published ladder can be carried verbatim,
+    /// but this value is the opposite kind of thing: a guess, used only when the
+    /// manifest told us nothing about the model. `minimal`, `xhigh` and `max` are
+    /// each rejected outright by some providers — `max` 400s on Mistral, `xhigh`
+    /// on GPT-5.1, `minimal` on the Codex line — so offering them to a model we
+    /// know nothing about would be advertising a depth that fails on send.
+    ///
+    /// Low / medium / high is the band every reasoning provider in the caps
+    /// table accepts some subset of, and it is what Code has always sent. A model
+    /// whose catalog entry publishes a real ladder never reaches this.
+    static var contractReasoningEfforts: [ReasoningEffort] { [.low, .medium, .high] }
 
     /// The catalog entry the selector renders, or the minimum honest stand-in
     /// when this option was built from an id and a name alone.
@@ -99,20 +112,67 @@ public extension ModelOption {
     /// Two guards decide when the catalog's ladder can be used verbatim:
     ///
     /// * **Every stop must map to a `ReasoningEffort`.** The session can only
-    ///   send the three the Code request contract defines; offering a depth that
-    ///   cannot be transmitted would be a control that silently does nothing.
-    /// * **It must not be automatic.** A router that picks its own depth sends
-    ///   no effort at all, which Code has no way to express — those fall back to
-    ///   the contract ladder.
+    ///   send depths the Code request contract defines; offering one that cannot
+    ///   be transmitted would be a control that silently does nothing.
+    /// * **It must not be automatic.** A router picks its own depth per message,
+    ///   which Code has no way to express.
+    ///
+    /// When neither holds and this model published no transmissible depths, the
+    /// answer is ``JunoThinkingLadder/unavailable`` — no control at all. That is
+    /// the honest rendering for a model that does not reason, always reasons, or
+    /// only has an on/off switch, and `JunoThinkingButton` already draws nothing
+    /// for an empty ladder. It used to synthesize low/medium/high here instead,
+    /// which put a depth slider on models with no depths.
+    ///
+    /// The **"instant" stop is carried through**, not required to map. It has no
+    /// `ReasoningEffort` because it is the absence of one: selecting it sets the
+    /// session's effort to nil and the request goes out with no thinking parameter.
+    /// Requiring every stop to map is what used to sink the whole published ladder
+    /// for any model offering an off state — over half the catalog — and take the
+    /// off state with it.
     var thinkingLadder: JunoThinkingLadder {
         if let published = catalog?.thinking,
             !published.isAutomatic,
             !published.stops.isEmpty,
-            published.stops.allSatisfy({ ReasoningEffort(rawValue: $0.id) != nil })
+            published.stops.allSatisfy({
+                $0.id == JunoThinkingLadder.instantStopID
+                    || ReasoningEffort(rawValue: $0.id) != nil
+            })
         {
             return published
         }
+        guard !supportedReasoningEfforts.isEmpty else { return .unavailable }
         return .code(efforts: supportedReasoningEfforts, modelName: displayName)
+    }
+
+    /// Whether this model offers the website's "Instant" — thinking off.
+    var canDisableThinking: Bool {
+        catalog?.thinking.canDisableThinking ?? false
+    }
+
+    /// Re-fits a stored effort onto this model, including the off state.
+    ///
+    /// Returns `.some(nil)` to mean "change it to Instant" and `nil` to mean "it
+    /// already fits" — the double optional is ugly to read but it is the
+    /// distinction the caller needs, and it is why this is separate from
+    /// ``clampingReasoningEffort(_:)``.
+    func refittingEffort(_ effort: ReasoningEffort?) -> ReasoningEffort?? {
+        guard let effort else {
+            // Instant is only valid where the model publishes it. A model that
+            // always reasons has to be given a depth back.
+            return canDisableThinking ? nil : .some(supportedReasoningEfforts.first)
+        }
+        guard let clamped = clampingReasoningEffort(effort) else { return nil }
+        return .some(clamped)
+    }
+
+    /// Whether a thinking parameter may be put on the wire for this model at all.
+    ///
+    /// False means *omit every thinking field*, not "send a default". Sending one
+    /// anyway is a documented hard 400 on the Mistral line, the non-reasoning
+    /// OpenAI snapshots and the non-thinking Qwen models.
+    var takesThinkingParameter: Bool {
+        !supportedReasoningEfforts.isEmpty
     }
 
     /// Re-fits a stored effort onto this model: the deepest supported depth at

@@ -43,11 +43,6 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 /// macOS, and filling it turns a native pane into a grey slab.
 public struct InspectorView: View {
     @Bindable private var controller: SessionController
-    /// The window injects the review it owns, so choosing a file here and reading
-    /// it in the detail column are the same review. Without an injected one the
-    /// inspector still works — it just cannot drive the canvas.
-    @Environment(ReviewModel.self) private var sharedReview: ReviewModel?
-    @State private var localReview = ReviewModel()
     @SceneStorage("juno.code.inspector.pane") private var storedPane =
         CodeInspectorPane.changes.rawValue
 
@@ -55,7 +50,22 @@ public struct InspectorView: View {
         self.controller = controller
     }
 
-    private var review: ReviewModel { sharedReview ?? localReview }
+    /// The session's own review — the same object the canvas renders.
+    ///
+    /// This used to be `@Environment(ReviewModel.self) ?? localReview`, waiting
+    /// for a window that never injected anything: no `.environment(ReviewModel…)`
+    /// exists anywhere in the app or the package, so the fallback was always the
+    /// one taken. The inspector therefore drove a `@State` model nobody rendered,
+    /// and the Changes tab's whole purpose — its own subtitle calls it "the way
+    /// into the review" — silently did nothing. Clicking a changed file loaded a
+    /// diff into a throwaway.
+    ///
+    /// Reading `controller.review` removes the indirection rather than adding the
+    /// missing injection: there is exactly one review per session, the controller
+    /// already owns it (`SessionController.review`), and `CodeSessionSurface`
+    /// hands that same instance to `ReviewCanvasView`. An environment hop could
+    /// only reintroduce the possibility of the two disagreeing.
+    private var review: ReviewModel { controller.review }
 
     private var pane: Binding<CodeInspectorPane> {
         Binding(

@@ -1,4 +1,5 @@
 import Foundation
+import JunoDesignSystem
 
 /// One stop on the Thinking control.
 ///
@@ -14,7 +15,7 @@ public enum NativeThinkingStop: Equatable, Sendable, Identifiable {
 
     public var id: String {
         switch self {
-        case .instant: "instant"
+        case .instant: JunoThinkingLadder.instantStopID
         case .thinking: "thinking"
         case .effort(let effort): effort.rawValue
         }

@@ -12,8 +12,16 @@ public struct DelegateTaskTool: CodeTool {
     private let workspaceID: WorkspaceID
     private let workspaceName: String
     private let modelID: String
-    private let reasoningEffort: ReasoningEffort
+    private let reasoningEffort: ReasoningEffort?
     private let parentSystemPrompt: String
+
+    /// How long a single delegation may run before it is stopped.
+    ///
+    /// A sub-agent blocks the parent's turn for its whole life, so "no limit" means
+    /// one unproductive child can hold the reader's session open forever. Generous
+    /// enough that a real investigation finishes well inside it; short enough that a
+    /// stuck one gives the turn back.
+    private static let budget: Duration = .seconds(10 * 60)
 
     public init(
         model: any AgentModelClient,
@@ -22,7 +30,7 @@ public struct DelegateTaskTool: CodeTool {
         workspaceID: WorkspaceID,
         workspaceName: String,
         modelID: String,
-        reasoningEffort: ReasoningEffort,
+        reasoningEffort: ReasoningEffort?,
         parentSystemPrompt: String
     ) {
         self.model = model
@@ -73,7 +81,11 @@ public struct DelegateTaskTool: CodeTool {
         let title = String(titleSource.prefix(80))
         let configuration = AgentConfiguration(
             modelID: modelID,
-            reasoningEffort: reasoningEffort,
+            // The stored record needs a concrete depth — it is what the inspector
+            // shows for the child and what a resume would restore. The *wire*
+            // decision stays optional and is passed to the orchestrator below, so
+            // a model that takes no thinking parameter still gets none.
+            reasoningEffort: reasoningEffort ?? .medium,
             role: role,
             permissionMode: .readOnly,
             location: .local,
@@ -108,8 +120,35 @@ public struct DelegateTaskTool: CodeTool {
             reasoningEffort: reasoningEffort
         )
         do {
-            try await orchestrator.submit(prompt: task)
-            await orchestrator.awaitCompletion()
+            // Stop has to be able to reach the child, and the child needs an outer
+            // bound.
+            //
+            // `AgentOrchestrator.submit` runs its loop in an *unstructured* `Task`,
+            // which does not inherit cancellation from whoever created it. So the
+            // parent's `stop()` — which cancels the parent's run task and then waits
+            // on `await task.value` — was waiting on a tool call that was itself
+            // waiting on a child nothing had told to stop. Pressing Stop during a
+            // delegation therefore did nothing at all until the sub-agent finished
+            // on its own, however long that took.
+            //
+            // The cancellation handler closes that, and the watchdog covers the case
+            // nobody is watching: a sub-agent had no budget of any kind beyond its
+            // 18-iteration cap, so one that made no progress could hold the parent
+            // open indefinitely.
+            try await withTaskCancellationHandler {
+                try await orchestrator.submit(prompt: task)
+                let watchdog = Task {
+                    try? await Task.sleep(for: Self.budget)
+                    await orchestrator.stop()
+                }
+                await orchestrator.awaitCompletion()
+                watchdog.cancel()
+            } onCancel: {
+                // Detached because `onCancel` is synchronous and the actor hop is
+                // not; the orchestrator's own `stop()` denies pending approvals and
+                // cancels its loop, which is what releases `awaitCompletion` above.
+                Task { await orchestrator.stop() }
+            }
         } catch {
             try? await store.setStatus(id: child.id, status: .failed)
             throw error

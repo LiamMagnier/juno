@@ -35,6 +35,11 @@ public struct CommandClassifier: Sendable {
             return .forbidden(reason: "Command could not be parsed safely.")
         }
         if tokens.contains(where: { $0.containsSubstitution }) {
+            // `$(…)` hides a whole second command from every rule below, so the
+            // classification has to assume the worst about what it expands to.
+            // It stays out of the `destructive` tier because the substitution
+            // itself is not an escape — `echo $(git rev-parse HEAD)` is routine —
+            // but it can never be treated as bounded.
             return .permitted(
                 risk: .critical,
                 reason: "Command uses shell substitution."
@@ -101,14 +106,17 @@ public struct CommandClassifier: Sendable {
         if let assignment = (environmentAssignments + words).first(where: isRiskyAssignment) {
             let name = assignment.split(separator: "=", maxSplits: 1).first.map(String.init)
                 ?? assignment
+            // A DYLD_/LD_/PATH override redirects which binary runs, so it can
+            // substitute anything for a command that looks bounded. Not
+            // something a mode setting may waive.
             return .permitted(
-                risk: .critical,
+                risk: .destructive,
                 reason: "Environment override '\(name)' can change which code is executed."
             )
         }
         guard let rawProgram = words.first else {
             if let reason = escapingPathReason(in: segmentWords + redirectTargets) {
-                return .permitted(risk: .critical, reason: reason)
+                return .permitted(risk: .destructive, reason: reason)
             }
             return .permitted(risk: .execute, reason: "Environment inspection or assignment.")
         }
@@ -126,22 +134,36 @@ public struct CommandClassifier: Sendable {
             if arguments.contains(where: { $0.hasPrefix("of=/dev/") }) {
                 return .forbidden(reason: "Writing to raw devices is never allowed.")
             }
-            verdict = .permitted(risk: .critical, reason: "Raw data copy.")
+            verdict = .permitted(risk: .destructive, reason: "Raw data copy.")
         case "diskutil":
             if arguments.contains(where: { $0.lowercased().hasPrefix("erase") || $0.lowercased() == "partitiondisk" }) {
                 return .forbidden(reason: "Disk erasure is never allowed.")
             }
-            verdict = .permitted(risk: .critical, reason: "Disk utility invocation.")
+            verdict = .permitted(risk: .destructive, reason: "Disk utility invocation.")
         case "git":
             verdict = classifyGit(arguments: arguments)
+        case let executable where remoteAccessPrograms.contains(executable):
+            // A remote shell or a sync to another host acts on a machine this
+            // workspace grant says nothing about.
+            verdict = .permitted(
+                risk: .destructive,
+                reason: "'\(program)' acts on another machine."
+            )
         case let executable where networkPrograms.contains(executable):
             verdict = .permitted(risk: .critical, reason: "Network access.")
         case "npm", "pnpm", "yarn":
             verdict = classifyPackageManager(program: program, arguments: arguments)
-        case "pip", "pip3", "brew", "gem":
+        case "pip", "pip3", "gem":
             verdict = .permitted(
                 risk: .critical,
-                reason: "Package-manager access can change the system or contact a registry."
+                reason: "\(program) can run install hooks or contact a registry."
+            )
+        case "brew":
+            // Homebrew installs and unlinks software for the whole machine, well
+            // outside the folder this session was pointed at.
+            verdict = .permitted(
+                risk: .destructive,
+                reason: "Homebrew changes software outside this workspace."
             )
         case "cargo":
             verdict = classifyCargo(arguments: arguments)
@@ -154,10 +176,17 @@ public struct CommandClassifier: Sendable {
         case "rg", "grep", "egrep", "fgrep":
             verdict = classifySearch(program: program, arguments: arguments)
         case "chmod", "chown", "chgrp", "chflags":
-            verdict = .permitted(risk: .critical, reason: "Permission or ownership change.")
+            verdict = .permitted(
+                risk: .destructive,
+                reason: "Permission or ownership change."
+            )
         case "kill", "killall", "pkill":
-            verdict = .permitted(risk: .critical, reason: "Process termination.")
+            // The target is a process on the user's Mac, chosen by name or pid;
+            // nothing scopes it to this workspace.
+            verdict = .permitted(risk: .destructive, reason: "Process termination.")
         case let executable where interpreterPrograms.contains(executable):
+            // Running the project's own tests and scripts. Arbitrary code, but
+            // code from the folder the session was granted.
             verdict = .permitted(
                 risk: .critical,
                 reason: "'\(program)' can evaluate code or launch another executable."
@@ -167,16 +196,23 @@ public struct CommandClassifier: Sendable {
         case "mv", "cp", "install":
             verdict = .permitted(risk: .execute, reason: "File move or copy.")
         case "defaults", "osascript", "open", "security", "codesign", "xattr":
-            verdict = .permitted(risk: .critical, reason: "System-facing command.")
+            // System preferences, driving other apps, and the keychain.
+            verdict = .permitted(risk: .destructive, reason: "System-facing command.")
         case "gh", "docker", "podman", "kubectl", "helm", "terraform", "tofu",
              "aws", "gcloud", "az":
+            // These act on infrastructure and services, where a mistake is not
+            // recoverable by a workspace checkpoint.
             verdict = .permitted(
-                risk: .critical,
+                risk: .destructive,
                 reason: "External service or machine control."
             )
         case let executable where boundedPrograms.contains(executable):
             verdict = .permitted(risk: .execute, reason: "Bounded developer command.")
         default:
+            // An unknown program is not necessarily dangerous — `just`, `bazel`,
+            // `poetry`, `pytest`, `uvicorn` and every project-local tool land
+            // here — but it is unclassified, so it stays gated everywhere except
+            // full access.
             verdict = .permitted(
                 risk: .critical,
                 reason: "Unrecognized executable '\(program)'."
@@ -186,17 +222,30 @@ public struct CommandClassifier: Sendable {
         if case .forbidden = verdict {
             return verdict
         }
-        // Calling a familiar binary through an explicit path can bypass PATH
-        // policy (for example `./git` or `/tmp/swift`). It therefore cannot
-        // inherit the familiar binary's lower risk classification.
-        if rawProgram.contains("/") {
-            return .permitted(risk: .critical, reason: "Explicit executable path.")
-        }
+        // Naming a path outside the grant — absolute, `..`, `~`, `$HOME`, a
+        // `file://` URL — is destructive whatever the program is.
+        //
+        // Checked *before* the explicit-path rule below, which is a reordering
+        // and not just a move: with the old order `/tmp/swift` returned "explicit
+        // executable path" and never reached this test, so leaving the workspace
+        // and being path-qualified were reported as the same thing at the same
+        // risk. They are now distinguishable, which is what lets the second rule
+        // relax without opening the first.
         if let reason = escapingPathReason(in: segmentWords + redirectTargets) {
-            return .permitted(risk: .critical, reason: reason)
+            return .permitted(risk: .destructive, reason: reason)
+        }
+        // A path-qualified program that got past the check above resolves inside
+        // the workspace: `./gradlew`, `./scripts/test.sh`, `bin/tool`. It still
+        // must not inherit a familiar binary's lower classification — `./git` is
+        // not git — but running a script out of the folder Juno may already write
+        // to is ordinary development, not an escape from it.
+        if rawProgram.contains("/") {
+            return .permitted(risk: .critical, reason: "Executable from the workspace.")
         }
         if let flag = arguments.first(where: isUniversallyRiskyArgument) {
-            return .permitted(risk: .critical, reason: "Risky option '\(flag)'.")
+            // A short, deliberately chosen list: forcing, deleting, disabling a
+            // sandbox, or widening scope to --global/--system.
+            return .permitted(risk: .destructive, reason: "Risky option '\(flag)'.")
         }
         return verdict
     }
@@ -233,8 +282,10 @@ public struct CommandClassifier: Sendable {
         while index < arguments.count {
             let argument = arguments[index]
             if argument == "-c" || argument.hasPrefix("--config-env") {
+                // `git -c core.pager=…` / `-c core.sshCommand=…` runs an
+                // arbitrary external helper of the caller's choosing.
                 return .permitted(
-                    risk: .critical,
+                    risk: .destructive,
                     reason: "Inline Git configuration can invoke external helpers."
                 )
             }
@@ -266,8 +317,15 @@ public struct CommandClassifier: Sendable {
                 return .permitted(risk: .execute, reason: "Read a Git remote URL.")
             }
             return .permitted(risk: .critical, reason: "Changes Git remote configuration.")
+        case "filter-branch", "filter-repo":
+            // Rewrites every commit in the repository. Not something a checkpoint
+            // can put back.
+            return .permitted(
+                risk: .destructive,
+                reason: "Rewrites the repository's entire history."
+            )
         case "reset", "clean", "checkout", "switch", "restore", "stash", "rebase",
-             "filter-branch", "filter-repo", "reflog", "commit", "merge",
+             "reflog", "commit", "merge",
              "cherry-pick", "revert", "am", "rm", "worktree", "gc", "prune":
             return .permitted(
                 risk: .critical,
@@ -461,8 +519,17 @@ public struct CommandClassifier: Sendable {
         "passwd", "dscl", "sysadminctl", "visudo",
     ]
 
+    /// Fetching over the network. Ordinary work for a build or a test suite, so
+    /// these are `critical` rather than `destructive`: the bytes land in the
+    /// workspace.
     private static let networkPrograms: Set<String> = [
-        "curl", "wget", "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync", "ftp",
+        "curl", "wget", "ftp",
+    ]
+
+    /// Acting on *another machine* — a shell, a copy, or a raw socket. The
+    /// workspace grant says nothing about the far end, so no mode waives these.
+    private static let remoteAccessPrograms: Set<String> = [
+        "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync",
     ]
 
     private static let interpreterPrograms: Set<String> = [

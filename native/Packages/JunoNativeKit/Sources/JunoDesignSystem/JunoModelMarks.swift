@@ -227,7 +227,22 @@ public struct JunoModelCapabilityChips: View {
                     }
                 }
             }
-            .accessibilityHidden(true)
+            // One element that reads the whole set, rather than the previous
+            // `accessibilityHidden(true)`.
+            //
+            // Hiding was defensible when every chip restated something already in
+            // the row, but it never was for the compact form — a glyph-only chip
+            // has no visible text to fall back on, so the capabilities were simply
+            // absent for a VoiceOver reader. "Screen control" makes that worse: it
+            // is derived rather than shown anywhere else, so hiding it would hide
+            // the only statement of whether a model can drive the Mac.
+            //
+            // Combined instead of per-chip so a five-capability row is one stop
+            // instead of five.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                capabilities.map(\.label).joined(separator: ", ")
+            )
         }
     }
 }
@@ -291,11 +306,21 @@ public struct JunoModelSpecSheet: View {
 
             if showsHeader, !model.capabilities.isEmpty {
                 JunoModelCapabilityChips(capabilities: model.capabilities)
-                    .accessibilityHidden(false)
                     .accessibilityLabel(
                         "Capabilities: "
                             + model.capabilities.map(\.label).joined(separator: ", ")
                     )
+
+                // A chip that names a Juno feature rather than a model property
+                // says what it means. Only `computerUse` carries one today.
+                ForEach(model.capabilities.filter { $0.explanation != nil }) { capability in
+                    if let explanation = capability.explanation {
+                        Text(explanation)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
 
             // Bars only when real grades were published — a router has none, and

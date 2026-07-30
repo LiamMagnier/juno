@@ -20,14 +20,15 @@ public struct ModelOption: Identifiable, Hashable, Sendable {
     public let displayName: String
     public let catalog: JunoModelDescriptor?
     /// The thinking depths this model actually offers. See
-    /// ``ModelOption/contractReasoningEfforts`` for why the default is all three.
+    /// ``ModelOption/contractReasoningEfforts`` for why the default is the
+    /// conservative low/medium/high band rather than every tier the enum has.
     public let supportedReasoningEfforts: [ReasoningEffort]
 
     public init(
         modelID: String,
         displayName: String,
         catalog: JunoModelDescriptor? = nil,
-        supportedReasoningEfforts: [ReasoningEffort] = ReasoningEffort.allCases
+        supportedReasoningEfforts: [ReasoningEffort] = ModelOption.contractReasoningEfforts
     ) {
         self.modelID = modelID
         self.displayName = displayName
@@ -37,21 +38,28 @@ public struct ModelOption: Identifiable, Hashable, Sendable {
 
     /// Builds an option straight from a catalog entry.
     ///
-    /// The ladder is narrowed to the depths the entry publishes *and* the Code
-    /// request contract can carry. A model whose published ladder shares nothing
-    /// with that contract (a router, or an on/off model) keeps all three, because
-    /// the session still has to send one of them.
+    /// The ladder is exactly the depths the entry publishes, intersected with what
+    /// the Code request contract can carry — and **empty when the entry published
+    /// none**.
+    ///
+    /// Empty is a real answer, not a gap to fill. It is what the manifest sends
+    /// for a model that does not reason at all (`gpt-4o`, `qwen-long`,
+    /// `codestral`), one that always reasons with no exposed control
+    /// (`magistral`, Kimi K2.7), and one with a bare on/off switch. Substituting
+    /// low/medium/high for those — which this used to do — did two visible kinds
+    /// of damage: it drew a depth slider for a model that has no depths, and it
+    /// put a thinking parameter on the wire for a model that rejects one. The
+    /// repo's own provider oracle records the second as a hard 400
+    /// ("reasoning_effort is not enabled for this model"), so the fabricated
+    /// ladder failed every turn on those models rather than merely misreporting.
     public init(catalog: JunoModelDescriptor) {
-        let published = catalog.thinking.stops.compactMap {
-            ReasoningEffort(rawValue: $0.id)
-        }
         self.init(
             modelID: catalog.id,
             displayName: catalog.displayName,
             catalog: catalog,
-            supportedReasoningEfforts: published.isEmpty
-                ? ReasoningEffort.allCases
-                : published
+            supportedReasoningEfforts: catalog.thinking.stops.compactMap {
+                ReasoningEffort(rawValue: $0.id)
+            }
         )
     }
 
@@ -368,6 +376,19 @@ public final class WorkbenchModel {
         if isPreview { return previewController(for: sessionID) }
         #endif
         if let existing = controllers[sessionID] {
+            // Re-attach, because the window detaches a controller as soon as the
+            // reader navigates away from it (`DesktopCodeWorkspace.resolveController`
+            // calls `detach()` on the outgoing one, which is what stops that
+            // session's screen capture). Handing the cached instance back without
+            // this left it with no store observer, so returning to a session showed
+            // a transcript frozen at the moment you left: no new events, no
+            // streaming text, no status change, no approvals, and a Send button
+            // whose enablement is derived from a status that could no longer
+            // update. Every second visit to a session was dead.
+            //
+            // `attach()` guards on `storeObserver == nil`, so this is free when the
+            // controller is already attached and a full re-read when it is not.
+            await existing.attach()
             return existing
         }
         guard let session = sessions.first(where: { $0.id == sessionID }),
@@ -384,6 +405,15 @@ public final class WorkbenchModel {
                     .catalog?
                     .capabilities
                     .contains(.vision) == true
+            },
+            modelTakesThinkingParameter: { [weak self] modelID in
+                // Absent from the manifest is treated as "does not take one",
+                // which is the safe direction: omitting a thinking field costs a
+                // shallower answer, while sending one to a model that refuses it
+                // fails the whole turn.
+                self?.availableModels
+                    .first(where: { $0.modelID == modelID })?
+                    .takesThinkingParameter == true
             }
         )
         controllers[sessionID] = controller

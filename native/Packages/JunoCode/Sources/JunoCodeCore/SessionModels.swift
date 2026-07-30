@@ -81,7 +81,14 @@ public struct WorkspaceDescriptor: Hashable, Codable, Sendable {
 /// Agent launch configuration chosen in the composer before a run.
 public struct AgentConfiguration: Hashable, Codable, Sendable {
     public var modelID: String
-    public var reasoningEffort: ReasoningEffort
+    /// The thinking depth for each turn, or **nil to send no thinking parameter**.
+    ///
+    /// nil is the website's "Instant": the state a model offers whenever its
+    /// manifest entry reports `canDisable`. It is also the only correct request for
+    /// a model that does not reason at all, or that always reasons with no exposed
+    /// control — several providers reject the parameter outright for those, which
+    /// is a 400 rather than a deeper answer.
+    public var reasoningEffort: ReasoningEffort?
     public var behavior: AgentBehavior
     public var role: AgentRole
     public var permissionMode: PermissionMode
@@ -90,7 +97,7 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
 
     public init(
         modelID: String,
-        reasoningEffort: ReasoningEffort = .medium,
+        reasoningEffort: ReasoningEffort? = .medium,
         behavior: AgentBehavior = .code,
         role: AgentRole = .engineer,
         permissionMode: PermissionMode = .askBeforeChanges,
@@ -114,7 +121,13 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     public init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         modelID = try container.decode(String.self, forKey: .modelID)
-        reasoningEffort = try container.decode(ReasoningEffort.self, forKey: .reasoningEffort)
+        // `decodeIfPresent`, so a session written before the effort became
+        // optional still decodes: those records always carry a concrete value, and
+        // a record written with Instant simply omits the key.
+        reasoningEffort = try container.decodeIfPresent(
+            ReasoningEffort.self,
+            forKey: .reasoningEffort
+        )
         behavior = try container.decodeIfPresent(AgentBehavior.self, forKey: .behavior) ?? .code
         role = try container.decode(AgentRole.self, forKey: .role)
         permissionMode = try container.decode(PermissionMode.self, forKey: .permissionMode)
@@ -126,7 +139,9 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(modelID, forKey: .modelID)
-        try container.encode(reasoningEffort, forKey: .reasoningEffort)
+        // `encodeIfPresent`: Instant is the *absence* of the key, which is what
+        // makes it round-trip through a store that predates it.
+        try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
         try container.encode(behavior, forKey: .behavior)
         try container.encode(role, forKey: .role)
         try container.encode(permissionMode, forKey: .permissionMode)
@@ -135,10 +150,27 @@ public struct AgentConfiguration: Hashable, Codable, Sendable {
     }
 }
 
+/// How much thinking the model does before answering.
+///
+/// These are the website's six tiers, verbatim — `REASONING_TIERS` in
+/// `src/lib/model-metrics.ts`. Code used to define only `low/medium/high`, and
+/// that shortfall was not a simplification: it silently truncated every model
+/// whose real ladder reached past `high`. `CodeModelCatalog.thinkingLadder`
+/// only adopts a model's published ladder when *every* stop maps to a case
+/// here, so one unmappable stop discarded the whole ladder and fell back to
+/// three fixed depths. Kimi K3 publishes `low · high · max`; Code therefore
+/// offered it Low / Medium / High — inventing a `medium` the model rejects and
+/// hiding the `max` it actually supports.
+///
+/// Order is depth order, and `allCases` is read as the contract ladder, so a
+/// new tier belongs in its true position rather than appended.
 public enum ReasoningEffort: String, Codable, CaseIterable, Sendable {
+    case minimal
     case low
     case medium
     case high
+    case xhigh
+    case max
 }
 
 /// What the local agent is allowed and instructed to do during the session.

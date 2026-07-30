@@ -27,11 +27,13 @@ public struct ApprovalCard: View {
         self.controller = controller
     }
 
-    /// Only `critical` — destructive, escaping, networked or privilege-elevating
-    /// — gets the danger colour. Tinting every approval red trains the reader to
-    /// dismiss the colour, which is exactly the wrong reflex on this surface.
+    /// Only `destructive` — leaving the workspace, or something no checkpoint can
+    /// undo — gets the danger colour. Tinting every approval red trains the
+    /// reader to dismiss the colour, which is exactly the wrong reflex on this
+    /// surface, and `critical` is now the ordinary "installs a dependency, pushes
+    /// a branch" tier that a full-access session does not even stop for.
     private var tint: Color {
-        request.risk == .critical ? .junoDanger : .junoCaution
+        request.risk == .destructive ? .junoDanger : .junoCaution
     }
 
     /// The one case where "and stop asking" is a fair offer: the reader is being
@@ -49,7 +51,9 @@ public struct ApprovalCard: View {
         case .write: "Changes a file in this folder. The previous version is checkpointed."
         case .execute: "Runs a command in this folder."
         case .critical:
-            "Destructive, networked, or reaches outside this folder. This always asks, in every mode."
+            "Uses the network or runs code from this folder. Full access does not ask for this."
+        case .destructive:
+            "Reaches outside this folder, or cannot be undone. This always asks, in every mode."
         }
     }
 

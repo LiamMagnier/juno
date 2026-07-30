@@ -47,7 +47,12 @@ public enum PermissionModeLabel {
         case .workspaceWrite:
             "Edits inside this folder proceed. Commands still ask."
         case .fullAccess:
-            "Edits and commands proceed. Destructive and networked actions still ask."
+            // Says what the policy now actually does. The old wording — "Destructive
+            // and networked actions still ask" — was the honest description of a
+            // mode that stopped for `npm install` and `git push`, which is not what
+            // anyone selecting full access is asking for. Only leaving the folder
+            // interrupts now, and that one cannot be switched off.
+            "Edits, commands, installs and pushes proceed. Anything reaching outside this folder still asks."
         }
     }
 }
@@ -95,6 +100,14 @@ public struct Composer: View {
     /// the built-ins alone so a caller that has not discovered the workspace's
     /// `.juno/commands` yet still gets a working slash menu.
     let slashCommands: CodeSlashCommandLibrary
+    /// Starts dictation, or nil where the host offers none.
+    ///
+    /// Injected rather than built here: the speech service lives in `JunoVoiceKit`
+    /// and the recording UI in the app target, and `JunoCodeUI` deliberately depends
+    /// on neither — it takes `JunoDesignSystem` and nothing else. A closure keeps
+    /// that boundary while still letting the Code composer offer the same control
+    /// the Chat composer has.
+    let beginDictation: (() -> Void)?
 
     /// Which row the arrow keys are on. Reset every time the query changes, so
     /// the highlight cannot point past the end of a narrowed list.
@@ -108,12 +121,14 @@ public struct Composer: View {
         controller: SessionController,
         availableModels: [ModelOption],
         focus: FocusState<Bool>.Binding? = nil,
-        slashCommands: CodeSlashCommandLibrary = .builtIn
+        slashCommands: CodeSlashCommandLibrary = .builtIn,
+        beginDictation: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.availableModels = availableModels
         self.focus = focus
         self.slashCommands = slashCommands
+        self.beginDictation = beginDictation
     }
 
     /// The `/token` being typed, if the composer is on one.
@@ -263,11 +278,17 @@ public struct Composer: View {
                 )
             )
 
-            Rectangle()
-                .fill(Color.junoHairline)
-                .frame(width: 1, height: 18)
-                .padding(.horizontal, 1)
-                .accessibilityHidden(true)
+            // No painted divider between the controls.
+            //
+            // There was a 1pt `Rectangle` here, and it contradicted two doc comments
+            // in this repo at once: `junoFloatingChrome` says it "deliberately draws
+            // no border" because "real glass carries its own edge — a light scatter
+            // at the rim that reads as thickness. Stroking a hairline over it
+            // flattens that back into a translucent rounded rectangle", and
+            // `ComposerSurface`'s own header calls out "the rejected build stroked a
+            // hairline over the glass". Spacing separates these groups; a drawn line
+            // only muddies the material they sit on.
+            Spacer().frame(width: JunoSpace.snug)
 
             CodeModelSelector(
                 selection: Binding(
@@ -291,6 +312,22 @@ public struct Composer: View {
             )
 
             Spacer(minLength: JunoSpace.snug)
+
+            contextMeter
+
+            if let beginDictation, !isRunning {
+                Button(action: beginDictation) {
+                    Image(systemName: "mic")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Dictate a message")
+                .accessibilityLabel("Dictate a message")
+                .accessibilityIdentifier("juno.code.composer.dictate")
+            }
 
             if isRunning {
                 Button {
@@ -320,6 +357,58 @@ public struct Composer: View {
                 .accessibilityLabel("Send")
                 .accessibilityIdentifier("juno.code.composer.send")
             }
+        }
+    }
+
+    /// How full the model's context window is.
+    ///
+    /// Both numbers are the provider's own: the window comes from the manifest
+    /// entry, and the fill from the `usage` the provider reports on every turn.
+    /// Nothing is estimated, which is why the meter simply does not appear until
+    /// there is a real measurement — a made-up token count is worse than none,
+    /// because it invites the reader to plan around it.
+    @ViewBuilder
+    private var contextMeter: some View {
+        if let used = controller.contextTokens,
+            let window = selectedModel?.catalog?.contextWindowTokens,
+            window > 0
+        {
+            let fraction = min(Double(used) / Double(window), 1)
+            let isTight = fraction >= 0.8
+            HStack(spacing: JunoSpace.tight) {
+                // A ring rather than a bar: it holds its meaning at this size and
+                // does not need a width the control row cannot spare.
+                ZStack {
+                    Circle()
+                        .stroke(Color.junoHairline, lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: fraction)
+                        .stroke(
+                            isTight ? Color.junoCaution : Color.secondary,
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 11, height: 11)
+                .animation(JunoMotion.fast, value: fraction)
+
+                // The percentage is only worth the width once it matters.
+                if isTight {
+                    Text("\(Int(fraction * 100))%")
+                        .junoCaption()
+                        .monospacedDigit()
+                        .foregroundStyle(Color.junoCaution)
+                }
+            }
+            .help(
+                """
+                \(JunoModelFormatting.contextWindow(used)) of \
+                \(JunoModelFormatting.contextWindow(window)) context used
+                """
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Context \(Int(fraction * 100)) percent full")
+            .accessibilityIdentifier("juno.code.composer.context")
         }
     }
 
@@ -489,6 +578,8 @@ struct ComposerSurface<Controls: View>: View {
     /// Called on Escape while such an overlay is open.
     var dismissOverlay: (() -> Void)?
     @ViewBuilder var controls: () -> Controls
+    /// Whether the reader has asked to see a very large draft inline anyway.
+    @State private var draftExpanded = false
 
     init(
         prompt: String,
@@ -508,10 +599,25 @@ struct ComposerSurface<Controls: View>: View {
         self.controls = controls
     }
 
+    /// Past this the draft stops being live in the text field.
+    ///
+    /// Tens of thousands of characters in an auto-sizing `TextField` is a
+    /// per-keystroke relayout of the whole composer — the exact problem
+    /// ``NativePromptLimits`` was written for on the Chat side, which Code did not
+    /// obey because the type lived in `JunoChatKit` and this package cannot import
+    /// it. It now lives in the design system, so both composers use one threshold.
+    private var isHugeDraft: Bool {
+        NativePromptLimits.isHugeDraft(text)
+    }
+
     var body: some View {
         JunoDesktopGlass(spacing: JunoSpace.snug) {
             VStack(spacing: JunoSpace.snug) {
-                textField
+                if isHugeDraft && !draftExpanded {
+                    collapsedDraftCard
+                } else {
+                    textField
+                }
                 HStack(spacing: JunoSpace.tight) {
                     controls()
                 }
@@ -519,6 +625,36 @@ struct ComposerSurface<Controls: View>: View {
             .padding(JunoSpace.snug)
             .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
         }
+    }
+
+    /// A very large paste, described rather than rendered.
+    ///
+    /// The text itself is untouched and is still exactly what gets sent — this only
+    /// stops the field from re-measuring it on every keystroke. Expandable, because
+    /// refusing to show someone their own draft would be worse than the stall.
+    private var collapsedDraftCard: some View {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+            Image(systemName: "doc.plaintext")
+                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Large draft").junoRowLabel()
+                Text(NativePromptLimits.collapsedSummary(for: text))
+                    .junoCaption()
+            }
+            Spacer(minLength: 0)
+            Button("Show") { draftExpanded = true }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+            Button("Clear") { text = "" }
+                .buttonStyle(.borderless)
+                .controlSize(.small)
+                .tint(Color.junoDanger)
+        }
+        .padding(.horizontal, JunoSpace.tight)
+        .padding(.vertical, JunoSpace.snug)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Large draft, \(NativePromptLimits.collapsedSummary(for: text))")
+        .accessibilityIdentifier("juno.code.composer.large-draft")
     }
 
     @ViewBuilder
@@ -529,7 +665,29 @@ struct ComposerSurface<Controls: View>: View {
             .font(.body)
             .padding(.horizontal, JunoSpace.tight)
             .padding(.top, JunoSpace.hairline)
-            .onSubmit(submit)
+            // Return sends, and accepts the highlighted suggestion when a menu is
+            // open. Shift-Return breaks the line.
+            //
+            // This was `.onSubmit(submit)`, which never fired: a vertical-axis
+            // `TextField` inserts a newline on Return instead of submitting, as the
+            // Chat composer's own comment in this repo says
+            // (`DesktopChatWorkspace.swift`: "A vertical `TextField` inserts a
+            // newline on Return by default, so the key has to be intercepted
+            // rather than merely bound"). The consequence was larger than a missing
+            // accelerator: `submitFromField` is also what accepts a slash command
+            // or an `@file` result, so the whole keyboard path through
+            // `SlashCommandMenu` and `FileContextMenu` — arrow keys to move, Return
+            // to choose — was reachable only with the mouse, while ↑/↓ worked and
+            // implied Return would too.
+            .onKeyPress(.return, phases: .down) { press in
+                // Shift-Return falls through to the field's own newline.
+                if press.modifiers.contains(.shift) { return .ignored }
+                submit()
+                // Swallowed rather than ignored even when the send is refused: with
+                // an empty draft, or mid-run, Return must not quietly grow the box
+                // instead of doing what was asked.
+                return .handled
+            }
             // `.onKeyPress` rather than a focusable list: the field keeps focus
             // the whole time, so the reader never stops typing the command's
             // name. `.ignored` hands the key straight back to the field, which
@@ -674,7 +832,8 @@ struct CodeModelSelector: View {
 /// the same binding the reader writes — the session never keeps sending an
 /// effort the model does not support just because the label stopped showing it.
 struct CodeThinkingControl: View {
-    @Binding var selection: ReasoningEffort
+    /// nil is the website's "Instant": no thinking parameter is sent at all.
+    @Binding var selection: ReasoningEffort?
     let model: ModelOption?
     let accessibilityID: String
 
@@ -687,20 +846,29 @@ struct CodeThinkingControl: View {
         JunoThinkingButton(
             ladder: ladder,
             stopID: Binding(
-                get: { selection.rawValue },
+                // The slider speaks stop ids; the session speaks efforts, with the
+                // off state spelled nil. This is the only place the two vocabularies
+                // meet, and "instant" is the word for the gap between them.
+                get: { selection?.rawValue ?? JunoThinkingLadder.instantStopID },
                 set: { stopID in
-                    guard
-                        let stopID,
-                        let effort = ReasoningEffort(rawValue: stopID)
-                    else { return }
+                    guard let stopID else { return }
+                    if stopID == JunoThinkingLadder.instantStopID {
+                        selection = nil
+                        return
+                    }
+                    guard let effort = ReasoningEffort(rawValue: stopID) else { return }
                     selection = effort
                 }
             ),
             accessibilityID: accessibilityID
         )
         .onChange(of: model) { _, newModel in
-            if let clamped = newModel?.clampingReasoningEffort(selection) {
-                selection = clamped
+            // Re-fit across a model change, in both directions: a depth the new
+            // model does not reach clamps down, and Instant on a model that always
+            // reasons becomes its shallowest real depth rather than silently
+            // sending nothing to a provider that requires a value.
+            if let refitted = newModel?.refittingEffort(selection) {
+                selection = refitted
             }
         }
     }

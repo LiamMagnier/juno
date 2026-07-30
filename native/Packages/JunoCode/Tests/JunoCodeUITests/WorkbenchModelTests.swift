@@ -142,6 +142,52 @@ final class WorkbenchModelTests: XCTestCase {
         })
     }
 
+    /// Returning to a session must give back a *live* controller.
+    ///
+    /// The window detaches a controller as soon as the reader navigates away —
+    /// `DesktopCodeWorkspace.resolveController` calls `detach()` on the outgoing
+    /// one, which is what stops that session's screen capture. `controller(for:)`
+    /// then handed the cached instance straight back out of the dictionary without
+    /// re-attaching, so the second visit to any session had no store observer: the
+    /// transcript froze at the moment you left it, streaming text and status
+    /// stopped, approvals never appeared, and Send's enablement was derived from a
+    /// status that could no longer change.
+    func testReturningToADetachedSessionGetsALiveControllerAgain() async throws {
+        let record = await model.addWorkspace(grantedURL: workspaceURL)!
+        // Every `await` is bound to a local before it is asserted on: both
+        // `XCTUnwrap` and `XCTAssert*` take autoclosures, which cannot await.
+        let created = await model.createSession(
+            workspaceID: record.id,
+            configuration: AgentConfiguration(modelID: "test-model")
+        )
+        let session = try XCTUnwrap(created)
+        let resolved = await model.controller(for: session.id)
+        let first = try XCTUnwrap(resolved)
+        let attachedInitially = await first.isObservingStore
+        XCTAssertTrue(attachedInitially, "a fresh controller must be attached")
+
+        // Navigate away.
+        await first.detach()
+        let attachedAfterDetach = await first.isObservingStore
+        XCTAssertFalse(attachedAfterDetach)
+
+        // Navigate back: same instance, but live again.
+        let reresolved = await model.controller(for: session.id)
+        let second = try XCTUnwrap(reresolved)
+        XCTAssertIdentical(second, first, "the controller is cached, by design")
+        let attachedOnReturn = await second.isObservingStore
+        XCTAssertTrue(
+            attachedOnReturn,
+            "returning to a session must re-attach it, or its UI is frozen"
+        )
+        // And it has re-read the transcript rather than trusting stale state.
+        let events = await second.events
+        XCTAssertTrue(events.contains {
+            if case .sessionCreated = $0.payload { return true }
+            return false
+        })
+    }
+
     func testSystemPromptIncludesBoundedRepositoryInstructions() async throws {
         let oversizedInstructions =
             "Use the project formatter.\n"

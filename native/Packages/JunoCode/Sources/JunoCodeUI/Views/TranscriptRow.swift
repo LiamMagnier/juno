@@ -400,9 +400,15 @@ struct TurnContractRow: View {
             Text(text)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if configuration.reasoningEffort != .medium {
-                Text("· \(configuration.reasoningEffort.rawValue) reasoning")
-                    .lineLimit(1)
+            // Medium is the default and goes unsaid. Everything else is stated,
+            // including Instant — a turn that deliberately did no thinking is at
+            // least as worth recording as one that did extra.
+            if let effort = configuration.reasoningEffort {
+                if effort != .medium {
+                    Text("· \(effort.rawValue) reasoning").lineLimit(1)
+                }
+            } else {
+                Text("· thinking off").lineLimit(1)
             }
         }
         .junoCaption()

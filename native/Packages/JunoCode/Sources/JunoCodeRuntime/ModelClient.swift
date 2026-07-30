@@ -75,7 +75,12 @@ public struct ModelTurnRequest: Sendable {
     public let messages: [ModelMessage]
     public let tools: [ModelToolDescriptor]
     public let modelID: String
-    public let reasoningEffort: ReasoningEffort
+    /// The depth to ask for, or nil to send **no thinking parameter at all**.
+    ///
+    /// nil is not "use a default": several providers reject the parameter
+    /// outright for models that do not reason or that always reason, so an
+    /// omitted field is the only correct request for them.
+    public let reasoningEffort: ReasoningEffort?
 
     public init(
         sessionID: CodeSessionID,
@@ -83,7 +88,7 @@ public struct ModelTurnRequest: Sendable {
         messages: [ModelMessage],
         tools: [ModelToolDescriptor],
         modelID: String,
-        reasoningEffort: ReasoningEffort
+        reasoningEffort: ReasoningEffort?
     ) {
         self.sessionID = sessionID
         self.systemPrompt = systemPrompt
@@ -107,6 +112,14 @@ public enum ModelStreamEvent: Sendable {
     /// Product-facing reasoning summary, never raw private reasoning.
     case reasoningSummary(String)
     case toolCallRequested(id: String, name: String, input: JSONValue)
+    /// Token accounting for the turn, as the provider reported it.
+    ///
+    /// `inputTokens` is the whole prompt the provider actually billed — system
+    /// prompt, tool schemas and the full conversation so far — so it *is* the
+    /// session's current context size, not a delta to accumulate. That is what
+    /// makes a context meter possible without Juno re-tokenizing anything itself.
+    /// Either field is nil when the provider did not report it.
+    case usage(inputTokens: Int?, outputTokens: Int?)
     case turnCompleted(ModelStopReason)
 }
 

@@ -26,7 +26,9 @@ final class CommandClassifierTests: XCTestCase {
     func testUnknownExecutablesAndInterpretersAreCritical() {
         XCTAssertEqual(risk("project-doctor --fix"), .critical)
         XCTAssertEqual(risk("./scripts/check"), .critical)
-        XCTAssertEqual(risk("/tmp/project-doctor --fix"), .critical)
+        // Outside the workspace, so it is judged by the path rather than by
+        // being unrecognised — see `testAPathQualifiedProgramIsJudgedByWhereItPoints`.
+        XCTAssertEqual(risk("/tmp/project-doctor --fix"), .destructive)
         XCTAssertEqual(risk("python3 scripts/check.py --verbose"), .critical)
         XCTAssertEqual(risk("node scripts/check.js"), .critical)
         XCTAssertEqual(risk("ruby -e 'puts 1'"), .critical)
@@ -55,46 +57,64 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("rm -rf node_modules"), .critical)
     }
 
+    /// Git splits across both top tiers, and the split is the interesting part:
+    /// pushing, fetching and resetting are ordinary work a full-access session
+    /// carries out, while forcing, widening config scope to `--global`, invoking
+    /// an external helper through `-c`, or rewriting all of history are not.
     func testGitClassification() {
-        XCTAssertEqual(risk("git push --force origin main"), .critical)
+        // Ordinary repository work — gated below full access, carried out by it.
         XCTAssertEqual(risk("git push origin main"), .critical)
         XCTAssertEqual(risk("git reset --hard HEAD~3"), .critical)
         XCTAssertEqual(risk("git reset --soft HEAD~1"), .critical)
         XCTAssertEqual(risk("git clean -fd"), .critical)
         XCTAssertEqual(risk("git rebase -i main"), .critical)
         XCTAssertEqual(risk("git checkout -b feature/x"), .critical)
-        XCTAssertEqual(risk("git checkout --force main"), .critical)
-        XCTAssertEqual(risk("git -C sub status"), .execute)
         XCTAssertEqual(risk("git branch -D old"), .critical)
         XCTAssertEqual(risk("git branch -d old"), .critical)
         XCTAssertEqual(risk("git fetch origin"), .critical)
         XCTAssertEqual(risk("git clone https://example.com/repo.git"), .critical)
-        XCTAssertEqual(risk("git -c alias.audit='!sh audit.sh' audit"), .critical)
-        XCTAssertEqual(risk("git config --global user.name Juno"), .critical)
         XCTAssertEqual(risk("git made-up-subcommand"), .critical)
+        XCTAssertEqual(risk("git -C sub status"), .execute)
+
+        // Never silent, in any mode.
+        XCTAssertEqual(risk("git push --force origin main"), .destructive)
+        XCTAssertEqual(risk("git checkout --force main"), .destructive)
+        XCTAssertEqual(risk("git -c alias.audit='!sh audit.sh' audit"), .destructive)
+        XCTAssertEqual(risk("git config --global user.name Juno"), .destructive)
+        XCTAssertEqual(risk("git filter-branch --all"), .destructive)
     }
 
-    func testNetworkAndInstallersAreCritical() {
+    /// Fetching and installing land in the workspace; reaching another machine or
+    /// changing the whole Mac's software does not.
+    func testNetworkAndInstallers() {
         XCTAssertEqual(risk("curl https://example.com"), .critical)
         XCTAssertEqual(risk("wget https://example.com/x.sh"), .critical)
-        XCTAssertEqual(risk("ssh host ls"), .critical)
         XCTAssertEqual(risk("npm install left-pad"), .critical)
+        XCTAssertEqual(risk("npm ci"), .critical)
         XCTAssertEqual(risk("pip install requests"), .critical)
-        XCTAssertEqual(risk("brew install jq"), .critical)
         XCTAssertEqual(risk("cargo install ripgrep"), .critical)
         XCTAssertEqual(risk("npm run test"), .critical)
         XCTAssertEqual(risk("pnpm exec eslint ."), .critical)
-        XCTAssertEqual(risk("gh pr view"), .critical)
+
+        XCTAssertEqual(risk("ssh host ls"), .destructive)
+        XCTAssertEqual(risk("brew install jq"), .destructive)
+        XCTAssertEqual(risk("gh pr view"), .destructive)
+        XCTAssertEqual(risk("docker compose up"), .destructive)
+        XCTAssertEqual(risk("terraform apply"), .destructive)
     }
 
-    func testShellEscapesAreCritical() {
+    /// Substitution and interpreters hide code but run it here; changing file
+    /// permissions or killing a process acts on the machine.
+    func testShellEscapes() {
         XCTAssertEqual(risk("echo $(cat /etc/passwd)"), .critical)
         XCTAssertEqual(risk("echo `id`"), .critical)
         XCTAssertEqual(risk("bash -c 'rm -rf x'"), .critical)
         XCTAssertEqual(risk("eval ls"), .critical)
-        XCTAssertEqual(risk("chmod +x script.sh"), .critical)
-        XCTAssertEqual(risk("kill -9 1234"), .critical)
         XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .critical)
+
+        XCTAssertEqual(risk("chmod +x script.sh"), .destructive)
+        XCTAssertEqual(risk("kill -9 1234"), .destructive)
+        XCTAssertEqual(risk("osascript -e 'tell app \"Finder\"'"), .destructive)
     }
 
     func testPipelinesTakeTheWorstSegment() {
@@ -103,53 +123,117 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertTrue(isForbidden("ls || sudo id"))
     }
 
-    func testExplicitEscapingPathsAreCritical() {
+    /// Naming anything outside the granted folder is `destructive`, whatever the
+    /// program is and whether it arrives as an argument, a redirect target or an
+    /// environment override.
+    func testEscapingThePathIsDestructive() {
         XCTAssertEqual(risk("echo hi > notes.txt"), .execute)
-        XCTAssertEqual(risk("echo hi > /etc/hosts"), .critical)
-        XCTAssertEqual(risk("echo hi > ../outside.txt"), .critical)
-        XCTAssertEqual(risk(#"echo hi > "../outside.txt""#), .critical)
-        XCTAssertEqual(risk("echo hi > '../outside.txt'"), .critical)
         XCTAssertEqual(risk(#"echo hi > "notes with spaces.txt""#), .execute)
-        XCTAssertEqual(risk("cat /etc/passwd"), .critical)
-        XCTAssertEqual(risk("cat ~/.ssh/config"), .critical)
-        XCTAssertEqual(risk("cat $HOME/.ssh/config"), .critical)
-        XCTAssertEqual(risk("ls ../another-project"), .critical)
-        XCTAssertEqual(risk("git -C ../another-project status"), .critical)
-        XCTAssertEqual(risk("clang -I/usr/local/include file.c"), .critical)
-        XCTAssertEqual(risk("FOO=/private/tmp/value swift build"), .critical)
-        XCTAssertEqual(risk("PATH=bin ls"), .critical)
-        XCTAssertEqual(risk("env PYTHONPATH=helpers swift test"), .critical)
-        XCTAssertEqual(risk("make CC=./scripts/compiler-wrapper"), .critical)
         XCTAssertEqual(risk("swift build 2>&1"), .execute)
+
+        XCTAssertEqual(risk("echo hi > /etc/hosts"), .destructive)
+        XCTAssertEqual(risk("echo hi > ../outside.txt"), .destructive)
+        XCTAssertEqual(risk(#"echo hi > "../outside.txt""#), .destructive)
+        XCTAssertEqual(risk("echo hi > '../outside.txt'"), .destructive)
+        XCTAssertEqual(risk("cat /etc/passwd"), .destructive)
+        XCTAssertEqual(risk("cat ~/.ssh/config"), .destructive)
+        XCTAssertEqual(risk("cat $HOME/.ssh/config"), .destructive)
+        XCTAssertEqual(risk("ls ../another-project"), .destructive)
+        XCTAssertEqual(risk("git -C ../another-project status"), .destructive)
+        XCTAssertEqual(risk("clang -I/usr/local/include file.c"), .destructive)
+        XCTAssertEqual(risk("FOO=/private/tmp/value swift build"), .destructive)
+        XCTAssertEqual(risk("PATH=bin ls"), .destructive)
+        XCTAssertEqual(risk("env PYTHONPATH=helpers swift test"), .destructive)
+        XCTAssertEqual(risk("make CC=./scripts/compiler-wrapper"), .destructive)
     }
 
-    func testRiskyFlagsAndActiveSearchFormsAreCritical() {
-        XCTAssertEqual(risk("swift build --disable-sandbox"), .critical)
+    /// A program named by path is judged by *where the path goes*, not merely by
+    /// being path-qualified.
+    ///
+    /// This ordering is load-bearing. The escaping-path test runs before the
+    /// path-qualified rule, so `/tmp/swift` is caught as leaving the workspace
+    /// while `./gradlew` is recognised as a script in the folder Juno may already
+    /// write to. With the old ordering both returned the same verdict, which is
+    /// why running the project's own build script needed an approval.
+    func testAPathQualifiedProgramIsJudgedByWhereItPoints() {
+        XCTAssertEqual(risk("./gradlew build"), .critical)
+        XCTAssertEqual(risk("./scripts/test.sh"), .critical)
+        XCTAssertEqual(risk("bin/tool --help"), .critical)
+
+        XCTAssertEqual(risk("/tmp/swift build"), .destructive)
+    }
+
+    func testRiskyFlagsAndActiveSearchForms() {
         XCTAssertEqual(risk("find Sources -exec sh -c 'echo x' \\;"), .critical)
         XCTAssertEqual(risk("find Sources -delete"), .critical)
         XCTAssertEqual(risk("rg --follow password Sources"), .critical)
         XCTAssertEqual(risk("grep -R password Sources"), .critical)
+
+        XCTAssertEqual(risk("swift build --disable-sandbox"), .destructive)
     }
 
-    func testFullAccessStillGatesCommandsThatCanEscape() throws {
+    /// The complaint that motivated the tier split: full access asked before most
+    /// of what a coding agent does.
+    ///
+    /// Each of these was `critical` *and* gated in every mode, so a session set to
+    /// full access stopped and waited before running the project's tests,
+    /// installing its dependencies, or executing its own build script.
+    func testFullAccessCarriesOutOrdinaryDevelopmentWithoutAsking() throws {
         let commands = [
             "project-doctor --fix",
             "python3 scripts/check.py",
             "curl https://example.com",
-            "cat /etc/passwd",
-            "echo secret > ../outside.txt",
+            "npm install",
+            "git push origin main",
+            "rm build/cache.json",
+            "./scripts/test.sh",
+            "just build",
+            "pytest -q",
         ]
         for command in commands {
             let classifiedRisk = try XCTUnwrap(
                 risk(command),
                 "expected a permitted risk for \(command)"
             )
-            XCTAssertEqual(classifiedRisk, .critical, command)
             XCTAssertEqual(
                 PermissionPolicy.ruling(mode: .fullAccess, risk: classifiedRisk),
-                .requireApproval,
-                "full access must still ask before \(command)"
+                .allow,
+                "full access must not ask before \(command)"
             )
+            // Still gated one rung down, so the lower modes keep their meaning.
+            XCTAssertEqual(
+                PermissionPolicy.ruling(mode: .workspaceWrite, risk: classifiedRisk),
+                .requireApproval,
+                "workspace write must still ask before \(command)"
+            )
+        }
+    }
+
+    /// …and the boundary that no mode waives.
+    func testFullAccessStillAsksBeforeLeavingTheWorkspace() throws {
+        let commands = [
+            "cat /etc/passwd",
+            "echo secret > ../outside.txt",
+            "ssh host ls",
+            "chmod 777 script.sh",
+            "kill -9 1234",
+            "git push --force origin main",
+            "terraform apply",
+            "PATH=bin ls",
+        ]
+        for command in commands {
+            let classifiedRisk = try XCTUnwrap(
+                risk(command),
+                "expected a permitted risk for \(command)"
+            )
+            XCTAssertEqual(classifiedRisk, .destructive, command)
+            for mode in PermissionMode.allCases where mode != .readOnly {
+                XCTAssertEqual(
+                    PermissionPolicy.ruling(mode: mode, risk: classifiedRisk),
+                    .requireApproval,
+                    "\(mode) must still ask before \(command)"
+                )
+            }
         }
     }
 

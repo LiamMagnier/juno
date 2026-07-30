@@ -82,6 +82,10 @@ let package = Package(
             dependencies: [
                 "JunoCore", "JunoAPI", "JunoAuth", "JunoStorage", "JunoSync",
                 "JunoChatKit",
+                // `NativePromptLimits` moved down into the design system so Juno
+                // Code's composer can obey the same thresholds as Chat's; its
+                // tests still live here.
+                "JunoDesignSystem",
             ]
         ),
         .testTarget(

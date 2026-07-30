@@ -359,6 +359,17 @@ struct DesktopCodeSidebar: View {
     let rename: (CodeSession) -> Void
     @SceneStorage("juno.code.collapsedProjects") private var collapsedProjects = ""
     @State private var projectPendingDeletion: ProjectGroup?
+    /// Which project row the pointer is over, so its actions menu can appear only
+    /// on approach instead of sitting on every row at rest.
+    @State private var hoveredProject: WorkspaceID?
+
+    /// How far a session sits inside its project.
+    ///
+    /// One constant rather than the 22 and 28 that were written separately at the
+    /// two call sites, which is why a session and its project's "No sessions yet"
+    /// placeholder used to hang on different left edges. It lines the child's icon
+    /// up under the parent's name: the chevron's 12pt frame plus the row spacing.
+    private static let childIndent: CGFloat = 12 + JunoSpace.tight + JunoSpace.snug
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -482,12 +493,12 @@ struct DesktopCodeSidebar: View {
                             if group.runs.isEmpty {
                                 Text("No sessions yet")
                                     .junoCaption()
-                                    .padding(.leading, 28)
+                                    .padding(.leading, Self.childIndent)
                                     .selectionDisabled()
                             } else {
                                 ForEach(group.runs) { run in
                                     row(run)
-                                        .padding(.leading, 22)
+                                        .padding(.leading, Self.childIndent)
                                 }
                             }
                         }
@@ -522,9 +533,15 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 28)
-        }
+        // No hand-inserted top inset.
+        //
+        // There used to be a `Color.clear.frame(height: 28)` here, compensating for
+        // the sidebar being given the titlebar safe area by a `.searchable` attached
+        // to the split view — the bug whose real fix was moving that modifier onto
+        // the **detail** column, where `DesktopCodeWorkspace` now documents it at
+        // length. Both fixes shipped, so the column carried 28pt of dead space above
+        // its first section header on top of the inset the platform already
+        // provides, which is what pushed "Projects" up against the window controls.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer
         }
@@ -578,17 +595,34 @@ struct DesktopCodeSidebar: View {
         Set(collapsedProjects.components(separatedBy: "\u{1f}").filter { !$0.isEmpty })
     }
 
-    /// A source-list project has three independent native controls:
-    /// disclosure, selection, and actions. Keeping the `Menu` out of the
-    /// disclosure label gives it a precise accessibility frame on macOS.
+    /// A project row: the platform's selection, one disclosure control, and
+    /// actions that appear on approach.
+    ///
+    /// **The name is not a `Button`, and that is the fix.** It used to be, which
+    /// meant the row had two competing click targets and the `List`'s own
+    /// selection was never what responded — a `Button` inside a selectable row
+    /// consumes the click, so the row was selected only because the button's action
+    /// assigned `selection` by hand. Everything the platform gives a source list
+    /// for free was lost with it: arrow-key traversal past the row, type-select,
+    /// the focus ring, and click-and-drag across rows. `.tag()` on a plain row
+    /// restores all of it, and the assignment by hand is no longer needed.
+    ///
+    /// The disclosure chevron stays a button because it genuinely is a second
+    /// action on one row, and keeping the `Menu` out of the row's own content is
+    /// what gives it a precise accessibility frame on macOS.
     private func projectRow(_ group: ProjectGroup) -> some View {
-        HStack(spacing: JunoSpace.tight) {
-            let isExpanded = !collapsedProjectIDs.contains(group.workspaceID.value)
+        let isExpanded = !collapsedProjectIDs.contains(group.workspaceID.value)
+        return HStack(spacing: JunoSpace.tight) {
             Button {
-                toggleExpansion(for: group.workspaceID)
+                withAnimation(JunoMotion.fast) {
+                    toggleExpansion(for: group.workspaceID)
+                }
             } label: {
-                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                // One glyph rotated rather than two swapped, so the chevron turns
+                // the way every other outline row on the system turns.
+                Image(systemName: "chevron.right")
                     .font(.caption.weight(.semibold))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .frame(width: 12, height: 16)
                     .contentShape(.rect)
             }
@@ -596,32 +630,34 @@ struct DesktopCodeSidebar: View {
             .help(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
             .accessibilityLabel(isExpanded ? "Collapse \(group.name)" : "Expand \(group.name)")
 
-            Button {
-                selection = .repository(group.workspaceID)
-            } label: {
-                Label {
-                    Text(group.name)
-                        .junoRowLabel()
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } icon: {
-                    JunoIconView(.projects, size: 15)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
+            Label {
+                Text(group.name)
+                    .junoRowLabel()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                JunoIconView(.projects, size: 15)
             }
-            .buttonStyle(.plain)
 
-            if !group.runs.isEmpty {
-                Text(group.runs.count.formatted())
-                    .junoCaption()
-                    .monospacedDigit()
-                    .accessibilityLabel("\(group.runs.count) sessions")
+            Spacer(minLength: JunoSpace.hairline)
+
+            // Revealed on approach. Shown unconditionally it put a second glyph on
+            // every project row at rest, which is most of what made the column read
+            // as cluttered — and it duplicates a context menu that is always there.
+            if hoveredProject == group.workspaceID {
+                projectMenu(group)
+                    .transition(.opacity)
             }
-            projectMenu(group)
         }
         .junoSidebarRowInk()
+        // The system's own trailing count, rather than a hand-placed caption. It
+        // gets the platform's metrics, its dimmed-on-selection treatment and its
+        // VoiceOver phrasing for free.
+        .badge(group.runs.count)
         .tag(DesktopCodeSidebarItem.repository(group.workspaceID))
+        .onHover { inside in
+            hoveredProject = inside ? group.workspaceID : nil
+        }
         .contextMenu {
             projectActions(group)
         }

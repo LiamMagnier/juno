@@ -13,6 +13,25 @@ public enum PermissionMode: String, Codable, CaseIterable, Sendable {
 }
 
 /// Risk classification attached to every proposed tool action.
+///
+/// The top two tiers exist because one bucket could not answer two different
+/// questions. `critical` used to mean both "reaches the network or runs
+/// arbitrary code" *and* "could wreck the machine", and because the policy
+/// gated the whole bucket in every mode, a full-access session still stopped to
+/// ask before `npm install`, `git push`, `./scripts/test.sh`, `python -m pytest`
+/// and every executable not on the bounded allowlist. That is most of what a
+/// coding agent does, so "full access" asked for permission constantly — the
+/// mode did not mean what it said.
+///
+/// The line between the two is **whether Juno can bound the effect to the
+/// workspace it was granted**:
+///
+/// - `critical` reaches the network or runs arbitrary code, but lands inside the
+///   granted folder. Ordinary development. Full access proceeds; every lower
+///   mode still asks.
+/// - `destructive` leaves that boundary — the machine's configuration, other
+///   processes, other hosts, raw devices, privileges, or a path outside the
+///   grant. No mode proceeds silently, including full access.
 public enum ActionRisk: String, Codable, CaseIterable, Sendable, Comparable {
     /// Reading or searching inside the workspace.
     case read
@@ -20,9 +39,15 @@ public enum ActionRisk: String, Codable, CaseIterable, Sendable, Comparable {
     case write
     /// Running a command whose effects are bounded to the workspace.
     case execute
-    /// Destructive, escaping, networked, or privilege-elevating actions.
-    /// These always require explicit approval, in every mode.
+    /// Reaches the network or runs arbitrary code, but stays inside the granted
+    /// workspace: a dependency install, a fetch, a push, a test runner, a script
+    /// in the repository. Approval-gated in every mode *except* full access.
     case critical
+    /// Escapes the workspace or cannot be undone: privilege and ownership
+    /// changes, disk utilities, killing processes, system configuration, remote
+    /// shells, infrastructure control, history rewrites, or any path outside the
+    /// grant. **Always requires explicit approval, in every mode.**
+    case destructive
 
     private var rank: Int {
         switch self {
@@ -30,6 +55,7 @@ public enum ActionRisk: String, Codable, CaseIterable, Sendable, Comparable {
         case .write: return 1
         case .execute: return 2
         case .critical: return 3
+        case .destructive: return 4
         }
     }
 
@@ -48,24 +74,41 @@ public enum PermissionRuling: Equatable, Sendable {
 }
 
 /// Pure policy: maps a session permission mode and an action risk to a ruling.
-/// Critical actions require approval in every mode, including full access.
+///
+/// One rule sits above the mode ladder — `destructive` always asks, so no
+/// setting anywhere in the app can grant silent permission to step outside the
+/// granted workspace. Everything else is the ladder the four modes describe, and
+/// full access genuinely means full access within that boundary.
 public enum PermissionPolicy {
     public static func ruling(mode: PermissionMode, risk: ActionRisk) -> PermissionRuling {
         switch (mode, risk) {
-        case (_, .critical):
-            return .requireApproval
+        // Read-only comes first so that it *refuses* rather than asks.
+        //
+        // With the top-tier rule above it — as the equivalent `critical` rule
+        // used to be — a read-only session offered an approval prompt for the
+        // most dangerous class of action, and answering it would have carried the
+        // action out. That contradicts the one thing the mode promises, so the
+        // stricter ruling wins.
         case (.readOnly, .read):
             return .allow
         case (.readOnly, _):
             return .deny(reason: "The session is read-only.")
+        // Above every other mode: there is no way to turn this off, because the
+        // workspace grant is the one promise Juno makes about a folder it was
+        // pointed at.
+        case (_, .destructive):
+            return .requireApproval
         case (.askBeforeChanges, .read):
             return .allow
         case (.askBeforeChanges, _):
             return .requireApproval
         case (.workspaceWrite, .read), (.workspaceWrite, .write):
             return .allow
-        case (.workspaceWrite, .execute):
+        case (.workspaceWrite, .execute), (.workspaceWrite, .critical):
             return .requireApproval
+        // Reads, edits, commands, installs, fetches and pushes all proceed. Only
+        // the `destructive` case above interrupts, which is what the mode's own
+        // description promises.
         case (.fullAccess, _):
             return .allow
         }

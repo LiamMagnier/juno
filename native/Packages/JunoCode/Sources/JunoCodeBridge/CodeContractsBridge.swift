@@ -99,7 +99,7 @@ public enum CodeContractsBridge {
             mode: .code,
             permission: contractPermission(from: configuration.permissionMode),
             modelID: configuration.modelID,
-            reasoningEffort: configuration.reasoningEffort.rawValue
+            reasoningEffort: configuration.reasoningEffort?.rawValue
         )
     }
 }

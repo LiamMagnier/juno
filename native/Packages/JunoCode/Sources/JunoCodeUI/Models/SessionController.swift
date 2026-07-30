@@ -242,6 +242,8 @@ public final class SessionController {
         let permissions: PermissionCoordinator
         let modelClient: any AgentModelClient
         let modelSupportsVision: (String) -> Bool
+        /// Whether a thinking parameter may be sent for this model at all.
+        let modelTakesThinkingParameter: (String) -> Bool
     }
 
     /// The part of the configuration an orchestrator cannot be changed on: its
@@ -252,7 +254,9 @@ public final class SessionController {
     private struct TurnContract: Equatable {
         let behavior: AgentBehavior
         let modelID: String
-        let reasoningEffort: ReasoningEffort
+        /// nil means send no thinking parameter — see
+        /// ``ModelOption/takesThinkingParameter``.
+        let reasoningEffort: ReasoningEffort?
         /// Capability changes arrive with the signed-in model manifest and must
         /// rebuild the tool contract even when the routing model ID is stable.
         let supportsVision: Bool
@@ -307,6 +311,15 @@ public final class SessionController {
     /// literal reference is still present in the prompt.
     public private(set) var composerFileReferences: [WorkspacePath] = []
     public private(set) var transientError: String?
+
+    /// The size of the prompt the provider last billed for this session.
+    ///
+    /// Reported by the provider rather than counted here — Juno does not tokenize
+    /// anything itself, and a locally-estimated number would disagree with the one
+    /// the model is actually charged for. nil until the first turn reports.
+    public internal(set) var contextTokens: Int?
+    /// The last turn's completion size, for the same reason.
+    public internal(set) var lastOutputTokens: Int?
     public private(set) var computerUseActive = false
     public private(set) var computerUseScreenPermission: ComputerUsePermissionState =
         .notDetermined
@@ -328,6 +341,14 @@ public final class SessionController {
     public let review = ReviewModel()
 
     private var storeObserver: UUID?
+
+    /// Whether this controller is currently observing the session store.
+    ///
+    /// A detached controller renders a transcript frozen at the moment it was
+    /// detached, so "is it attached" is the difference between a live session
+    /// surface and a dead one. Exposed read-only so a test can assert it; the
+    /// lifecycle itself stays owned by ``attach()`` and ``detach()``.
+    public var isObservingStore: Bool { storeObserver != nil }
     /// The orchestrator serving the contract the composer currently states,
     /// built on first send and replaced whenever that contract changes.
     private var orchestrator: AgentOrchestrator?
@@ -363,7 +384,8 @@ public final class SessionController {
         context: WorkspaceContext,
         store: CodeSessionStore,
         modelClient: any AgentModelClient,
-        modelSupportsVision: @escaping (String) -> Bool = { _ in false }
+        modelSupportsVision: @escaping (String) -> Bool = { _ in false },
+        modelTakesThinkingParameter: @escaping (String) -> Bool = { _ in true }
     ) {
         self.sessionID = session.id
         self.session = session
@@ -376,7 +398,8 @@ public final class SessionController {
                 mode: behavior == .code ? session.configuration.permissionMode : .readOnly
             ),
             modelClient: modelClient,
-            modelSupportsVision: modelSupportsVision
+            modelSupportsVision: modelSupportsVision,
+            modelTakesThinkingParameter: modelTakesThinkingParameter
         )
         self.workspaceSurface = WorkspaceSurface(
             displayName: context.record.descriptor.displayName,
@@ -400,7 +423,9 @@ public final class SessionController {
         let contract = TurnContract(
             behavior: session.configuration.behavior,
             modelID: session.configuration.modelID,
-            reasoningEffort: session.configuration.reasoningEffort,
+            reasoningEffort: live.modelTakesThinkingParameter(session.configuration.modelID)
+                ? session.configuration.reasoningEffort
+                : nil,
             supportsVision: live.modelSupportsVision(session.configuration.modelID),
             goalUpdatedAt: session.goal?.updatedAt
         )
@@ -418,6 +443,12 @@ public final class SessionController {
         await next.observeLiveText { [weak self] text in
             Task { @MainActor [weak self] in
                 self?.liveAssistantText = text
+            }
+        }
+        await next.observeUsage { [weak self] context, output in
+            Task { @MainActor [weak self] in
+                if let context { self?.contextTokens = context }
+                if let output { self?.lastOutputTokens = output }
             }
         }
         orchestrator = next
@@ -1024,7 +1055,8 @@ public final class SessionController {
         await refreshComputerUse()
     }
 
-    public func setReasoningEffort(_ effort: ReasoningEffort) async {
+    /// Sets the thinking depth, or nil for Instant — no thinking parameter sent.
+    public func setReasoningEffort(_ effort: ReasoningEffort?) async {
         guard let live else {
             session.configuration.reasoningEffort = effort
             return
@@ -1281,9 +1313,26 @@ public final class SessionController {
     /// Flushes the batch into the transcript as one prompt. The batch is only
     /// cleared once the run has actually started, so a failed submit leaves the
     /// notes intact rather than losing work that was never recorded anywhere.
+    /// Dismisses the last refused-action message.
+    ///
+    /// The property is `private(set)`, so the surface that renders it needs a way
+    /// to put it away; it describes a moment, not a state, and it should not
+    /// outlive the reader's acknowledgement of it.
+    public func clearTransientError() {
+        transientError = nil
+    }
+
     @discardableResult
     public func submitReviewComments() async -> Bool {
         guard !reviewComments.isEmpty else { return false }
+        // The composer is the transport for the review batch, so whatever the
+        // reader was typing has to be put back afterwards — on success as well as
+        // on failure.
+        //
+        // Only the failure branch restored it before, so a successful submit
+        // silently threw the draft away: `send()` clears `composerText`, and the
+        // half-written message that was in there when the reader clicked "Submit
+        // review" was simply gone, with the review prompt sent in its place.
         let draft = composerText
         composerText = ReviewComment.prompt(from: reviewComments)
         await send()
@@ -1292,6 +1341,7 @@ public final class SessionController {
             return false
         }
         reviewComments.removeAll()
+        composerText = draft
         return true
     }
 

@@ -70,13 +70,17 @@ public struct TurnConfigurationEvent: Hashable, Codable, Sendable {
     public let behavior: AgentBehavior
     public let permissionMode: PermissionMode
     public let modelID: String
-    public let reasoningEffort: ReasoningEffort
+    /// The depth this turn asked for, or nil when it sent no thinking parameter —
+    /// the reader chose Instant, or the model publishes no control. Optional
+    /// because the transcript records what was actually sent, and "nothing" is a
+    /// real answer; `decodeIfPresent` keeps older records readable.
+    public let reasoningEffort: ReasoningEffort?
 
     public init(
         behavior: AgentBehavior,
         permissionMode: PermissionMode,
         modelID: String,
-        reasoningEffort: ReasoningEffort
+        reasoningEffort: ReasoningEffort?
     ) {
         self.behavior = behavior
         self.permissionMode = permissionMode

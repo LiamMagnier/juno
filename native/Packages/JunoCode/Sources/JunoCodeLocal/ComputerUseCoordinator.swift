@@ -427,26 +427,107 @@ public struct SystemComputerUseDriver: ComputerUseDriving {
     }
 
     private func press(_ key: String) throws {
-        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard let code = Self.keyCodes[normalized] else {
-            throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
-        }
+        let (code, flags) = try Self.resolveChord(key)
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: true),
               let up = CGEvent(keyboardEventSource: nil, virtualKey: code, keyDown: false)
         else {
             throw ComputerUseError.driverUnavailable(reason: "Could not create a key event.")
         }
+        // The flags have to be set on both events. Posting a key-down carrying
+        // `.maskCommand` and a key-up without it leaves the receiving app believing
+        // Command is still held, which turns the *next* ordinary keystroke into
+        // another shortcut.
+        if !flags.isEmpty {
+            down.flags = flags
+            up.flags = flags
+        }
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
     }
 
+    /// Resolves `"cmd+shift+p"`, `"return"` or `"a"` to a key code and modifiers.
+    ///
+    /// Chords are the point. The table below has always had `command` and `shift`
+    /// in it, but only as *standalone* keys — there was no way to express a
+    /// combination, and no letters or digits at all, so an agent driving the screen
+    /// could not press ⌘S to save, ⌘C to copy, or the letter `a`. Every real
+    /// keyboard interaction in a Mac app is a chord or a character, which made
+    /// `computer_press_key` close to useless: it could send Tab, Escape and the
+    /// arrow keys and nothing else.
+    ///
+    /// Pressing a bare modifier still works (`"shift"` alone resolves to its own key
+    /// code) because holding one is occasionally the whole gesture.
+    static func resolveChord(_ key: String) throws -> (CGKeyCode, CGEventFlags) {
+        let normalized = key.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !normalized.isEmpty else {
+            throw ComputerUseError.driverUnavailable(reason: "No key was given.")
+        }
+        // Split on + and -, so both "cmd+s" and "cmd-s" parse. A lone "+" or "-" is
+        // a key in its own right, hence the empty-component filter and the
+        // single-token fast path.
+        let parts = normalized
+            .split(whereSeparator: { $0 == "+" || $0 == "-" })
+            .map(String.init)
+        guard parts.count > 1 else {
+            guard let code = keyCodes[normalized] else {
+                throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
+            }
+            return (code, [])
+        }
+
+        var flags: CGEventFlags = []
+        for modifier in parts.dropLast() {
+            guard let mask = modifierFlags[modifier] else {
+                throw ComputerUseError.driverUnavailable(
+                    reason: "Unsupported modifier '\(modifier)' in '\(key)'."
+                )
+            }
+            flags.insert(mask)
+        }
+        guard let base = parts.last, let code = keyCodes[base] else {
+            throw ComputerUseError.driverUnavailable(reason: "Unsupported key '\(key)'.")
+        }
+        return (code, flags)
+    }
+
+    private static let modifierFlags: [String: CGEventFlags] = [
+        "cmd": .maskCommand, "command": .maskCommand, "meta": .maskCommand,
+        "super": .maskCommand,
+        "shift": .maskShift,
+        "opt": .maskAlternate, "option": .maskAlternate, "alt": .maskAlternate,
+        "ctrl": .maskControl, "control": .maskControl,
+        "fn": .maskSecondaryFn,
+    ]
+
+    /// US ANSI virtual key codes. The layout-independent `kVK_ANSI_*` values, which
+    /// is what `CGEvent(keyboardEventSource:virtualKey:keyDown:)` takes.
     private static let keyCodes: [String: CGKeyCode] = [
+        // Editing and navigation
         "return": 36, "enter": 36, "tab": 48, "space": 49, "delete": 51,
-        "escape": 53, "esc": 53, "command": 55, "shift": 56, "capslock": 57,
-        "option": 58, "control": 59, "rightshift": 60, "rightoption": 61,
-        "rightcontrol": 62, "left": 123, "right": 124, "down": 125, "up": 126,
+        "backspace": 51, "forwarddelete": 117,
+        "escape": 53, "esc": 53, "capslock": 57,
+        "left": 123, "right": 124, "down": 125, "up": 126,
         "home": 115, "end": 119, "pageup": 116, "pagedown": 121,
+        // Bare modifiers, for when holding one is the gesture itself
+        "command": 55, "shift": 56, "option": 58, "control": 59,
+        "rightshift": 60, "rightoption": 61, "rightcontrol": 62,
+        // Function row
         "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
         "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+        // Letters
+        "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
+        "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31, "p": 35,
+        "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9, "w": 13, "x": 7,
+        "y": 16, "z": 6,
+        // Digits
+        "0": 29, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+        "7": 26, "8": 28, "9": 25,
+        // Punctuation an editor actually needs
+        "-": 27, "minus": 27, "=": 24, "equal": 24,
+        "[": 33, "leftbracket": 33, "]": 30, "rightbracket": 30,
+        ";": 41, "semicolon": 41, "'": 39, "quote": 39,
+        "\\": 42, "backslash": 42, ",": 43, "comma": 43,
+        ".": 47, "period": 47, "/": 44, "slash": 44,
+        "`": 50, "grave": 50,
     ]
 }

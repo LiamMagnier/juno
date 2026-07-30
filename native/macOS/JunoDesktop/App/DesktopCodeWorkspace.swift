@@ -50,6 +50,9 @@ struct DesktopCodeWorkspace: View {
     @State private var isChoosingRepository = false
     @State private var renamingSession: CodeSession?
     @State private var renameText = ""
+    @State private var isOpeningQuickly = false
+    /// Whether the dictation capsule is up over the Code canvas.
+    @State private var isDictating = false
     @FocusState private var sidebarSearchFocused: Bool
     @Environment(\.openWindow) private var openWindow
 
@@ -221,6 +224,18 @@ struct DesktopCodeWorkspace: View {
             Text("Choose the repository or folder Juno Code may read and write in.")
         )
         .fileDialogConfirmationLabel(Text("Open Repository"))
+        .sheet(isPresented: $isOpeningQuickly) {
+            if let controller {
+                OpenQuicklySheet(controller: controller) { path in
+                    // Straight into the review's document editor, and the review has
+                    // to be showing for it to be seen — `ReviewModel.open` sets its
+                    // own `isPresented`, but this window owns whether the review
+                    // occupies the detail column at all.
+                    reviewVisible = true
+                    Task { await controller.review.open(path, using: controller) }
+                }
+            }
+        }
         .alert("Rename Session", isPresented: renameBinding) {
             TextField("Title", text: $renameText)
             Button("Rename") { commitRename() }
@@ -247,6 +262,22 @@ struct DesktopCodeWorkspace: View {
             if storedColumnVisibility == "detailOnly" {
                 columnVisibility = .detailOnly
             }
+        }
+        // Leaving Code has to take screen control with it.
+        //
+        // Switching to Chat tears this whole view down — `JunoDesktopWorkspaceView`
+        // instantiates one product at a time — but nothing detached the controller,
+        // so an active capture kept running with both the "Screen control active"
+        // indicator and its Stop button gone from the window. The capability stayed
+        // live and unrevokable from the UI until the reader happened to come back.
+        //
+        // `detach()` is the same teardown used when moving between sessions: it
+        // deactivates this session's capture and drops the store observer.
+        // Re-entering re-attaches, because `WorkbenchModel.controller(for:)` now
+        // re-attaches a cached controller.
+        .onDisappear {
+            guard let controller else { return }
+            Task { await controller.detach() }
         }
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
@@ -364,8 +395,38 @@ struct DesktopCodeWorkspace: View {
             controller: controller,
             model: workbenchModel,
             showsReview: $reviewVisible,
-            showsConsole: $consoleVisible
+            showsConsole: $consoleVisible,
+            beginDictation: {
+                withAnimation(JunoMotion.fast) { isDictating = true }
+            }
         )
+        // The same capsule the Chat composer uses, over the Code canvas.
+        //
+        // The recording UI and the speech service both live outside `JunoCodeUI`
+        // — in this target and in `JunoVoiceKit` — and that package deliberately
+        // depends on neither, so the composer asks for dictation through a closure
+        // and the window supplies the surface. Pulling the voice stack into the
+        // Code UI package to avoid one closure would have been the worse trade.
+        .overlay(alignment: .bottom) {
+            if isDictating {
+                DesktopDictation(
+                    onCancel: {
+                        withAnimation(JunoMotion.fast) { isDictating = false }
+                    },
+                    onStop: { transcript in
+                        appendDictated(transcript, to: controller)
+                        withAnimation(JunoMotion.fast) { isDictating = false }
+                    },
+                    onSend: { transcript in
+                        appendDictated(transcript, to: controller)
+                        withAnimation(JunoMotion.fast) { isDictating = false }
+                        Task { await controller.send() }
+                    }
+                )
+                .padding(JunoSpace.regular)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         // The only glass in this window besides the composer: two transient
         // status controls, grouped in one container so they refract a shared
         // sample and blend instead of seaming where they meet.
@@ -610,6 +671,18 @@ struct DesktopCodeWorkspace: View {
                 .disabled(controller == nil)
                 .accessibilityIdentifier("juno.code.inspector")
 
+                // `OpenQuicklySheet` is a complete 163-line file browser that had
+                // zero call sites: nothing in the app or the package ever presented
+                // it, so the documented way to open a workspace file by name did not
+                // exist in the shipping product. ⌘⇧O because plain ⌘O is already
+                // "Add project…" in the sidebar.
+                Button { isOpeningQuickly = true } label: {
+                    Label("Open Quickly…", systemImage: "magnifyingglass")
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+                .disabled(controller?.context == nil)
+                .accessibilityIdentifier("juno.code.open-quickly")
+
                 Divider()
 
                 Button(action: toggleComputerUse) {
@@ -622,6 +695,9 @@ struct DesktopCodeWorkspace: View {
                     )
                 }
                 .disabled(!supportsComputerUse)
+                // `computerUseHelp` was computed and never attached to anything,
+                // so a dimmed item gave no reason for being dimmed.
+                .help(computerUseHelp)
                 .accessibilityIdentifier("juno.code.computer-use")
             } label: {
                 Label("Session tools", systemImage: "ellipsis.circle")
@@ -631,9 +707,22 @@ struct DesktopCodeWorkspace: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Button(role: .destructive, action: stop) {
+            // Not `role: .destructive`.
+            //
+            // A destructive toolbar button is drawn in the system's red on macOS 26
+            // whether or not it is enabled, which put a permanently red control in
+            // the titlebar — a saturated blob sitting in empty space for the entire
+            // time nothing was running, reading as an error indicator rather than as
+            // a disabled action. Stop is also not destructive in the sense the role
+            // means: it ends a run, it does not discard the reader's work.
+            //
+            // The colour now says something true instead. Red only while there is a
+            // run to stop; otherwise the control keeps its place and greys out like
+            // any other unavailable action.
+            Button(action: stop) {
                 Label("Stop", systemImage: "stop.fill")
             }
+            .tint(isRunning ? Color.junoDanger : nil)
             .keyboardShortcut(".", modifiers: .command)
             .disabled(!isRunning)
             .help("Stop this run immediately (⌘.)")
@@ -688,20 +777,27 @@ struct DesktopCodeWorkspace: View {
         currentStatus?.isActive == true
     }
 
-    /// Screen control is local-only and Code-only: `SystemComputerUseDriver`
-    /// exists on this Mac alone, and Ask and Plan sessions are read-only by
-    /// construction.
+    /// Whether this session can control the screen at all.
+    ///
+    /// Delegates to `SessionController.computerUseUnavailableReason`, which is the
+    /// only thing that knows the full set of conditions — local session, Code
+    /// behavior, a live driver, **and a model that advertises vision**. This used
+    /// to test `behavior == .code` and nothing else, so the menu item was enabled
+    /// for a model that cannot see a screenshot; choosing it enabled the setting
+    /// and then activation failed, which reads as the feature being broken rather
+    /// than as the model being wrong for it.
     private var supportsComputerUse: Bool {
-        guard let controller else { return false }
-        return controller.session.configuration.behavior == .code
+        controller?.computerUseUnavailableReason == nil
     }
 
+    /// The reason, when there is one, so the menu explains itself instead of just
+    /// being dimmed.
     private var computerUseHelp: String {
         guard let controller else {
             return "Screen control is only available for a session running on this Mac."
         }
-        guard controller.session.configuration.behavior == .code else {
-            return "Ask and Plan sessions are read-only, so they cannot control the screen."
+        if let reason = controller.computerUseUnavailableReason {
+            return reason
         }
         return controller.computerUseActive
             ? "Immediately stop screen capture and input control"
@@ -825,6 +921,17 @@ struct DesktopCodeWorkspace: View {
             }
             selection.wrappedValue = .repository(record.id)
         }
+    }
+
+    /// Appends a dictated passage to whatever is already in the composer.
+    ///
+    /// Appended rather than assigned: dictation is a way of adding to a message,
+    /// and replacing a half-typed draft with a transcript would silently discard it.
+    private func appendDictated(_ transcript: String, to controller: SessionController) {
+        let spoken = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !spoken.isEmpty else { return }
+        let existing = controller.composerText.trimmingCharacters(in: .whitespacesAndNewlines)
+        controller.composerText = existing.isEmpty ? spoken : "\(existing) \(spoken)"
     }
 
     private func beginRename(_ session: CodeSession) {
