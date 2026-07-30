@@ -154,8 +154,16 @@ APP="$(find "$BUILD_DIR/export" -maxdepth 1 -name '*.app' | head -1)"
 
 step "Verify the signature"
 codesign --verify --deep --strict --verbose=2 "$APP"
-codesign -dv --verbose=4 "$APP" 2>&1 | grep -q "TeamIdentifier=$CONFIGURED_TEAM" \
-  || die "The signed bundle does not carry team $CONFIGURED_TEAM."
+# Captured, not piped into `grep -q`. Under `pipefail` a `-q` grep exits the
+# moment it matches, `codesign` takes SIGPIPE, and the pipeline reports failure
+# for the case that SUCCEEDED — which is how this first refused a correctly
+# signed bundle.
+SIGNING_INFO="$(codesign -dv --verbose=4 "$APP" 2>&1)"
+case "$SIGNING_INFO" in
+  *"TeamIdentifier=$CONFIGURED_TEAM"*) ;;
+  *) die "The signed bundle does not carry team $CONFIGURED_TEAM.
+$SIGNING_INFO" ;;
+esac
 codesign -d --entitlements - --xml "$APP" >/dev/null
 
 # The exact requirement `DesktopUpdater.swift` enforces on the downloaded
