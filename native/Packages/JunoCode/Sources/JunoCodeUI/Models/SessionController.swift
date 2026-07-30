@@ -237,7 +237,16 @@ public final class SessionController {
     /// executor, checkpoint store, Git service or model transport to reach,
     /// rather than a live one the UI merely declines to call.
     struct Live {
-        let context: WorkspaceContext
+        /// The opened workspace, or nil for a conversation started with no
+        /// project.
+        ///
+        /// The optionality is here rather than on ``live`` deliberately. `live`
+        /// being nil means "this controller is a preview fixture and can touch
+        /// nothing", and `send()` answers that by returning without a word; a
+        /// projectless session is the opposite — fully live, fully able to
+        /// answer, simply without a filesystem. Collapsing the two would give
+        /// the shipping build a Send button that silently swallows messages.
+        let context: WorkspaceContext?
         let store: CodeSessionStore
         let permissions: PermissionCoordinator
         let modelClient: any AgentModelClient
@@ -378,6 +387,18 @@ public final class SessionController {
     private var previewFixture: CodePreviewFixture?
     #endif
 
+    /// Why a reader-initiated action refused, when the session has no project.
+    ///
+    /// Distinct from the preview-mode refusals it sits beside: preview mode is
+    /// a fixture with nothing attached, while this is a live conversation that
+    /// simply has no folder — and the reader can fix it, which is why the
+    /// message says how. Every one of these paths is also hidden or disabled in
+    /// the UI (the panels read `controller.context == nil`); this is the
+    /// backstop for the ones a keyboard shortcut can still reach.
+    static func noProjectMessage(_ action: String) -> String {
+        "This conversation has no project. Open one to \(action)."
+    }
+
     /// The workspace facts the UI displays: never a capability, only text.
     struct WorkspaceSurface {
         var displayName: String
@@ -385,9 +406,13 @@ public final class SessionController {
         var isGitRepository: Bool
     }
 
+    /// - Parameter context: nil for a conversation with no project. The
+    ///   session still runs — model, transcript, goal and permissions all work
+    ///   — but it is built with an empty tool registry and a system prompt that
+    ///   says there is no filesystem, because there is not one.
     public init(
         session: CodeSession,
-        context: WorkspaceContext,
+        context: WorkspaceContext?,
         store: CodeSessionStore,
         modelClient: any AgentModelClient,
         modelSupportsVision: @escaping (String) -> Bool = { _ in false },
@@ -401,16 +426,26 @@ public final class SessionController {
             store: store,
             permissions: PermissionCoordinator(
                 sessionID: session.id,
-                mode: behavior == .code ? session.configuration.permissionMode : .readOnly
+                // Nothing to permit without a workspace, and a stated
+                // permission level the tools cannot honour is worse than none.
+                mode: context == nil
+                    ? .readOnly
+                    : (behavior == .code ? session.configuration.permissionMode : .readOnly)
             ),
             modelClient: modelClient,
             modelSupportsVision: modelSupportsVision,
             modelTakesThinkingParameter: modelTakesThinkingParameter
         )
-        self.workspaceSurface = WorkspaceSurface(
-            displayName: context.record.descriptor.displayName,
-            localPathHint: context.record.descriptor.localPathHint,
-            isGitRepository: context.record.descriptor.isGitRepository
+        self.workspaceSurface = context.map {
+            WorkspaceSurface(
+                displayName: $0.record.descriptor.displayName,
+                localPathHint: $0.record.descriptor.localPathHint,
+                isGitRepository: $0.record.descriptor.isGitRepository
+            )
+        } ?? WorkspaceSurface(
+            displayName: "No project",
+            localPathHint: "",
+            isGitRepository: false
         )
     }
 
@@ -469,7 +504,10 @@ public final class SessionController {
         _ contract: TurnContract,
         live: Live
     ) async -> AgentOrchestrator {
-        var systemPrompt = await live.context.systemPrompt(
+        guard let context = live.context, let workspaceID = session.workspaceID else {
+            return await makeProjectlessOrchestrator(contract, live: live)
+        }
+        var systemPrompt = await context.systemPrompt(
             behavior: contract.behavior,
             role: session.configuration.role
         )
@@ -477,8 +515,8 @@ public final class SessionController {
             systemPrompt += goalSystemPrompt
         }
         var tools = contract.behavior == .code
-            ? live.context.registry.allTools
-            : live.context.registry.inspectionOnly().allTools
+            ? context.registry.allTools
+            : context.registry.inspectionOnly().allTools
         if !contract.supportsVision {
             tools.removeAll { $0.name.hasPrefix("computer_") }
         }
@@ -490,13 +528,13 @@ public final class SessionController {
                     // Sub-agents are inspectable and read-only, and have no
                     // reader gesture with which to activate screen capture.
                     registry: ToolRegistry(
-                        tools: live.context.registry
+                        tools: context.registry
                             .inspectionOnly()
                             .allTools
                             .filter { !$0.name.hasPrefix("computer_") }
                     ),
                     store: live.store,
-                    workspaceID: session.workspaceID,
+                    workspaceID: workspaceID,
                     workspaceName: workspaceSurface.displayName,
                     modelID: contract.modelID,
                     reasoningEffort: contract.reasoningEffort,
@@ -508,6 +546,59 @@ public final class SessionController {
             sessionID: sessionID,
             model: live.modelClient,
             registry: ToolRegistry(tools: tools),
+            permissions: live.permissions,
+            store: live.store,
+            configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
+            modelID: contract.modelID,
+            reasoningEffort: contract.reasoningEffort
+        )
+    }
+
+    /// A conversation with no project: the model, the transcript, and nothing
+    /// else.
+    ///
+    /// The registry is genuinely empty rather than merely unused. Juno Code's
+    /// stated contract to the model is that it works *inside* a workspace and
+    /// must never leave it; with no workspace that sentence has no referent,
+    /// and a tool list the agent could call but that has nowhere to act is the
+    /// exact shape of a security bug. An empty registry makes "no filesystem"
+    /// a property of the type, the way `Live == nil` makes preview mode inert.
+    ///
+    /// Goal tools are dropped for the same reason: Goal Mode's completion
+    /// contract is defined by verification evidence gathered from a working
+    /// tree, and a goal that can never be verified is a goal that can never be
+    /// closed.
+    private func makeProjectlessOrchestrator(
+        _ contract: TurnContract,
+        live: Live
+    ) async -> AgentOrchestrator {
+        let roleInstruction: String
+        switch session.configuration.role {
+        case .engineer:
+            roleInstruction = "Answer as a pragmatic senior engineer."
+        case .reviewer:
+            roleInstruction =
+                "Answer as a rigorous reviewer: prioritize correctness, regressions, security, and missing tests."
+        case .explainer:
+            roleInstruction =
+                "Answer as a patient technical explainer: make the code and decisions easy to understand."
+        }
+        let systemPrompt = """
+        You are Juno Code, a coding agent on macOS. This conversation has no \
+        project open, so you have no tools: no filesystem, no shell, no Git, \
+        no computer control. \(roleInstruction)
+
+        Answer from the conversation itself — the reader's description, and any \
+        code they paste. Reason about designs, explain and review code, write \
+        snippets and whole files inline, and plan work. Where an answer really \
+        does depend on reading the reader's actual code, say so plainly and \
+        tell them to open a project; never guess at file contents, and never \
+        claim to have run, read, or changed anything.
+        """
+        return AgentOrchestrator(
+            sessionID: sessionID,
+            model: live.modelClient,
+            registry: ToolRegistry(tools: []),
             permissions: live.permissions,
             store: live.store,
             configuration: AgentOrchestrator.Configuration(systemPrompt: systemPrompt),
@@ -584,7 +675,7 @@ public final class SessionController {
     /// Name search for the Files tab. Routed through the controller so views
     /// never hold the workspace index directly.
     public func findFiles(nameContains fragment: String, limit: Int) async -> [FileEntry] {
-        guard let live else {
+        guard let live, let context = live.context else {
             #if DEBUG
             let needle = fragment.lowercased()
             return (previewFixture?.allEntries ?? [])
@@ -595,7 +686,7 @@ public final class SessionController {
             return []
             #endif
         }
-        return (try? await live.context.index.findFiles(
+        return (try? await context.index.findFiles(
             nameContains: fragment,
             limit: limit
         )) ?? []
@@ -649,7 +740,7 @@ public final class SessionController {
 
     public func detach() async {
         guard let live else { return }
-        await live.context.computerUse.deactivate(sessionID: sessionID)
+        await live.context?.computerUse.deactivate(sessionID: sessionID)
         computerUseActive = false
         computerUseScreenshot = nil
         if let token = storeObserver {
@@ -833,7 +924,7 @@ public final class SessionController {
 
         var sections: [String] = []
         for path in referenced {
-            guard let result = try? await live.context.files.read(
+            guard let result = try? await live.context?.files.read(
                 path,
                 limit: OutputLimit(
                     maximumBytes: 16 * 1_024,
@@ -889,7 +980,7 @@ public final class SessionController {
             behavior == .code ? session.configuration.permissionMode : .readOnly
         )
         if behavior != .code {
-            await live.context.computerUse.deactivate(sessionID: sessionID)
+            await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseScreenshot = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
@@ -911,9 +1002,11 @@ public final class SessionController {
             transientError = reason
             return
         }
-        guard let live, session.configuration.computerUseEnabled else { return }
+        guard let live, let context = live.context,
+              session.configuration.computerUseEnabled
+        else { return }
         do {
-            try await live.context.computerUse.activate(
+            try await context.computerUse.activate(
                 sessionID: sessionID,
                 userConsented: true
             )
@@ -932,8 +1025,8 @@ public final class SessionController {
     }
 
     public func stopComputerUse() async {
-        guard let live else { return }
-        await live.context.computerUse.emergencyStop()
+        guard let context = live?.context else { return }
+        await context.computerUse.emergencyStop()
         computerUseScreenshot = nil
         await refreshComputerUse()
     }
@@ -952,7 +1045,7 @@ public final class SessionController {
             return
         }
         if !enabled {
-            await live.context.computerUse.deactivate(sessionID: sessionID)
+            await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseScreenshot = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
@@ -964,9 +1057,9 @@ public final class SessionController {
     /// Captures through the coordinator so active-session checks, rate limits,
     /// journaling, and the emergency-stop boundary are never bypassed.
     public func captureComputerUseScreenshot() async {
-        guard let live else { return }
+        guard let context = live?.context else { return }
         do {
-            let captures = try await live.context.computerUse.perform(
+            let captures = try await context.computerUse.perform(
                 .screenshot,
                 sessionID: sessionID
             )
@@ -979,8 +1072,8 @@ public final class SessionController {
     }
 
     public func refreshComputerUse() async {
-        guard let live else { return }
-        let snapshot = await live.context.computerUse.snapshot()
+        guard let context = live?.context else { return }
+        let snapshot = await context.computerUse.snapshot()
         computerUseActive = snapshot.activeSessionID == sessionID
         computerUseScreenPermission = snapshot.screenCapturePermission
         computerUseAccessibilityPermission = snapshot.accessibilityPermission
@@ -1053,7 +1146,7 @@ public final class SessionController {
         }
         let supportsVision = live.modelSupportsVision(modelID)
         if !supportsVision, session.configuration.computerUseEnabled {
-            await live.context.computerUse.deactivate(sessionID: sessionID)
+            await live.context?.computerUse.deactivate(sessionID: sessionID)
             computerUseScreenshot = nil
         }
         _ = try? await live.store.updateSession(id: sessionID) { session in
@@ -1083,7 +1176,7 @@ public final class SessionController {
             return
         }
 
-        await live.context.computerUse.deactivate(sessionID: sessionID)
+        await live.context?.computerUse.deactivate(sessionID: sessionID)
         computerUseScreenshot = nil
         do {
             session = try await live.store.updateSession(id: sessionID) { session in
@@ -1140,8 +1233,9 @@ public final class SessionController {
             transientError = message
             return .failed(message: message)
         }
-        guard let live else {
-            // No checkpoint store in preview: record the review state only.
+        guard let live, live.context != nil else {
+            // No checkpoint store in preview, and none without a project:
+            // record the review state only.
             reviewStates[path] = .rejected
             rebuildDerivedState()
             transientError = nil
@@ -1154,7 +1248,7 @@ public final class SessionController {
         }
         for checkpointID in change.checkpointIDs.reversed() {
             do {
-                try await live.context.checkpoints.restore(id: checkpointID, force: force)
+                try await live.context?.checkpoints.restore(id: checkpointID, force: force)
             } catch let CheckpointError.currentContentDiverged(divergedPath) {
                 let result = FileRevertResult.diverged(path: divergedPath)
                 transientError = result.failureMessage
@@ -1223,16 +1317,20 @@ public final class SessionController {
             transientError = "Preview mode does not revert workspace hunks."
             return false
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("revert changes")
+            return false
+        }
         guard let change = changes.first(where: { $0.path == path }),
               let oldestID = change.checkpointIDs.first,
-              let checkpoint = await live.context.checkpoints.checkpoint(id: oldestID),
+              let checkpoint = await context.checkpoints.checkpoint(id: oldestID),
               let workspacePath = try? WorkspacePath(path)
         else {
             transientError = "The original checkpoint for \(path) is unavailable."
             return false
         }
         do {
-            let current = try await live.context.files.read(
+            let current = try await context.files.read(
                 workspacePath,
                 limit: OutputLimit(
                     maximumBytes: FileOperationService.defaultMaximumFileBytes
@@ -1249,7 +1347,7 @@ public final class SessionController {
                 in: current.content,
                 from: currentDiff
             )
-            let mutation = try await live.context.files.write(
+            let mutation = try await context.files.write(
                 workspacePath,
                 content: reverted,
                 expectedBase: current.fingerprint,
@@ -1300,7 +1398,7 @@ public final class SessionController {
     /// Current diff for one tracked change, computed against its oldest
     /// checkpoint's pre-content.
     public func diff(for path: String) async -> TextDiff? {
-        guard let live else {
+        guard let live, let context = live.context else {
             #if DEBUG
             return previewFixture?.diffs[path]
             #else
@@ -1309,12 +1407,12 @@ public final class SessionController {
         }
         guard let change = changes.first(where: { $0.path == path }),
               let oldestID = change.checkpointIDs.first,
-              let checkpoint = await live.context.checkpoints.checkpoint(id: oldestID),
+              let checkpoint = await context.checkpoints.checkpoint(id: oldestID),
               let workspacePath = try? WorkspacePath(path)
         else { return nil }
         let before = checkpoint.preContent ?? ""
         let after: String
-        if let url = try? live.context.access.resolveForReading(workspacePath),
+        if let url = try? context.access.resolveForReading(workspacePath),
            let current = try? String(contentsOf: url, encoding: .utf8)
         {
             after = current
@@ -1397,8 +1495,8 @@ public final class SessionController {
     /// per-file by construction, so this is a file's history and never a
     /// run-level snapshot.
     public func checkpointHistory(for path: String) async -> [Checkpoint] {
-        guard let live else { return [] }
-        return await live.context.checkpoints
+        guard let context = live?.context else { return [] }
+        return await context.checkpoints
             .checkpoints(for: sessionID)
             .filter { $0.path.value == path }
     }
@@ -1422,8 +1520,13 @@ public final class SessionController {
             transientError = message
             return .failed(message: message)
         }
+        guard let context = live.context else {
+            let message = Self.noProjectMessage("restore a file")
+            transientError = message
+            return .failed(message: message)
+        }
         do {
-            try await live.context.checkpoints.restore(id: id, force: force)
+            try await context.checkpoints.restore(id: id, force: force)
         } catch let CheckpointError.currentContentDiverged(path) {
             let result = FileRevertResult.diverged(path: path)
             transientError = result.failureMessage
@@ -1441,7 +1544,7 @@ public final class SessionController {
             transientError = message
             return .failed(message: message)
         }
-        if let checkpoint = await live.context.checkpoints.checkpoint(id: id) {
+        if let checkpoint = await context.checkpoints.checkpoint(id: id) {
             await refreshTrackedLineStats(for: checkpoint.path.value)
         }
         await refreshWorkspacePanels()
@@ -1478,8 +1581,12 @@ public final class SessionController {
             transientError = "Preview mode does not run Git: no repository is attached."
             return false
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("work with Git")
+            return false
+        }
         do {
-            try await live.context.git.createBranch(named: trimmed)
+            try await context.git.createBranch(named: trimmed)
             await refreshWorkspacePanels()
             return true
         } catch {
@@ -1493,20 +1600,25 @@ public final class SessionController {
     /// Refreshes the inspector panels from the workspace. A preview controller
     /// carries its panels as fixtures, so there is nothing to reload.
     public func refreshWorkspacePanels() async {
-        guard let live else { return }
-        testSuggestions = await live.context.tests.detectSuggestions()
-        instructionFiles = await live.context.instructionFiles()
-        rootEntries = (try? await live.context.index.listDirectory(nil)) ?? []
-        checkpointCount = await live.context.checkpoints.checkpoints(for: sessionID).count
-        if live.context.record.descriptor.isGitRepository {
-            gitStatus = try? await live.context.git.status()
-            gitHistory = (try? await live.context.git.log(limit: 20)) ?? []
+        // Nothing to refresh without a project: the panels these feed are not
+        // shown for a projectless session, and every call below would be a
+        // question about a folder that does not exist.
+        guard let context = live?.context else { return }
+        testSuggestions = await context.tests.detectSuggestions()
+        instructionFiles = await context.instructionFiles()
+        rootEntries = (try? await context.index.listDirectory(nil)) ?? []
+        checkpointCount = await context.checkpoints.checkpoints(for: sessionID).count
+        if context.record.descriptor.isGitRepository {
+            gitStatus = try? await context.git.status()
+            gitHistory = (try? await context.git.log(limit: 20)) ?? []
         }
     }
 
     public func refreshGitHubPullRequest() async {
         guard !isLoadingGitHubStatus else { return }
-        guard let live, live.context.record.descriptor.isGitRepository else {
+        guard let live, let context = live.context,
+              context.record.descriptor.isGitRepository
+        else {
             gitHubPullRequest = nil
             gitHubStatusMessage = "Open a Git repository to load pull requests."
             return
@@ -1514,7 +1626,7 @@ public final class SessionController {
         isLoadingGitHubStatus = true
         defer { isLoadingGitHubStatus = false }
         do {
-            gitHubPullRequest = try await live.context.git.githubPullRequestStatus()
+            gitHubPullRequest = try await context.git.githubPullRequestStatus()
             gitHubStatusMessage = gitHubPullRequest == nil
                 ? "No GitHub pull request is associated with this branch."
                 : nil
@@ -1530,14 +1642,14 @@ public final class SessionController {
     }
 
     public func listDirectory(_ path: WorkspacePath?) async -> [FileEntry] {
-        guard let live else {
+        guard let live, let context = live.context else {
             #if DEBUG
             return previewFixture?.children(of: path) ?? []
             #else
             return []
             #endif
         }
-        return (try? await live.context.index.listDirectory(path)) ?? []
+        return (try? await context.index.listDirectory(path)) ?? []
     }
 
     /// Opens a complete UTF-8 text file for the reader's manual editor. The
@@ -1549,8 +1661,12 @@ public final class SessionController {
             transientError = "Preview mode does not open workspace files."
             return nil
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("open files")
+            return nil
+        }
         do {
-            let result = try await live.context.files.read(
+            let result = try await context.files.read(
                 path,
                 limit: OutputLimit(
                     maximumBytes: FileOperationService.defaultMaximumFileBytes
@@ -1583,8 +1699,12 @@ public final class SessionController {
             transientError = "Preview mode does not write workspace files."
             return nil
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("edit files")
+            return nil
+        }
         do {
-            let mutation = try await live.context.files.write(
+            let mutation = try await context.files.write(
                 document.path,
                 content: content,
                 expectedBase: document.fingerprint,
@@ -1623,12 +1743,16 @@ public final class SessionController {
             transientError = "Preview mode does not run tests: no command executor is attached."
             return
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("run tests")
+            return
+        }
         let toolCallID = "manual-test-\(UUID().uuidString.prefix(8))"
         lastTestRunToolCallID = toolCallID
         isRunningTest = true
         defer { isRunningTest = false }
         do {
-            let result = try await live.context.registry.invoke(
+            let result = try await context.registry.invoke(
                 toolName: "run_tests",
                 input: ["command": .string(command)],
                 context: ToolContext(
@@ -1712,8 +1836,14 @@ public final class SessionController {
             outcome: .running
         )
         appendManualTerminal(channel: .log, text: "$ \(trimmed)\n", toolCallID: toolCallID)
+        guard let context = live.context else {
+            let message = Self.noProjectMessage("run commands")
+            appendManualTerminal(channel: .stderr, text: message + "\n", toolCallID: toolCallID)
+            consoleRun?.outcome = .finished(detail: message, failed: true)
+            return
+        }
         do {
-            let result = try await live.context.registry.invoke(
+            let result = try await context.registry.invoke(
                 toolName: "run_command",
                 input: ["command": .string(trimmed)],
                 context: ToolContext(
@@ -1762,6 +1892,9 @@ public final class SessionController {
     public var consoleUnavailableReason: String? {
         if live == nil {
             return "Preview mode has no command executor attached."
+        }
+        if live?.context == nil {
+            return Self.noProjectMessage("run commands")
         }
         if session.configuration.location != .local {
             return "\(session.configuration.location == .cloud ? "Cloud" : "Remote") "
@@ -1817,15 +1950,19 @@ public final class SessionController {
             transientError = "Preview mode does not run Git: no repository is attached."
             return false
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("commit")
+            return false
+        }
         do {
-            let status = try await live.context.git.status()
+            let status = try await context.git.status()
             let paths = status.files.map(\.path)
             guard !paths.isEmpty else {
                 transientError = "Nothing to commit."
                 return false
             }
-            try await live.context.git.stage(paths: paths)
-            _ = try await live.context.git.commit(message: message)
+            try await context.git.stage(paths: paths)
+            _ = try await context.git.commit(message: message)
             await refreshWorkspacePanels()
             return true
         } catch {
@@ -1846,8 +1983,12 @@ public final class SessionController {
             transientError = "Preview mode does not publish Git branches."
             return nil
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("publish a branch")
+            return nil
+        }
         do {
-            return try await live.context.git.preparePush()
+            return try await context.git.preparePush()
         } catch GitPublishError.detachedHead {
             transientError = "Create or switch to a branch before publishing."
         } catch GitPublishError.noRemote {
@@ -1871,8 +2012,12 @@ public final class SessionController {
             transientError = "Preview mode does not publish Git branches."
             return false
         }
+        guard let context = live.context else {
+            transientError = Self.noProjectMessage("publish a branch")
+            return false
+        }
         do {
-            let output = try await live.context.git.push(confirmedPlan)
+            let output = try await context.git.push(confirmedPlan)
             appendManualTerminal(
                 channel: .stdout,
                 text: output.isEmpty

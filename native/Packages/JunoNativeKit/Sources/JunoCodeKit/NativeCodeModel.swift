@@ -45,7 +45,7 @@ public final class NativeCodeModel {
         didSet {
             guard target != oldValue else { return }
             UserDefaults.standard.set(target.rawValue, forKey: Self.targetKey)
-            if target == .cloud { loadRepositoriesIfNeeded() }
+            if target == .cloud, !isTargetless { loadRepositoriesIfNeeded() }
         }
     }
 
@@ -53,7 +53,28 @@ public final class NativeCodeModel {
     public var selectedDeviceID: String?
     public var selectedWorkspaceKey: String?
 
+    /// Whether the composer is deliberately aimed at nothing.
+    ///
+    /// An explicit mode rather than "no repository happens to be selected",
+    /// because the two are not the same state and the difference is what makes
+    /// the feature survive a pull-to-refresh: `refresh()` auto-selects a device
+    /// and `loadRepositoriesIfNeeded` auto-selects a repository, so an implicit
+    /// "nothing chosen" is silently converted back into a cloud target the next
+    /// time either runs.
+    ///
+    /// Persisted alongside the target for the same reason the target is: a
+    /// reader who chose No Project should not be put back on Cloud by
+    /// relaunching.
+    public var isTargetless: Bool {
+        didSet {
+            guard isTargetless != oldValue else { return }
+            UserDefaults.standard.set(isTargetless, forKey: Self.targetlessKey)
+            if !isTargetless, target == .cloud { loadRepositoriesIfNeeded() }
+        }
+    }
+
     private static let targetKey = "juno.mobile.code.target"
+    private static let targetlessKey = "juno.mobile.code.no-project"
 
     private let client: NativeCodeTaskClient
     private var accountID: AccountID?
@@ -64,6 +85,7 @@ public final class NativeCodeModel {
         self.client = client
         let stored = UserDefaults.standard.string(forKey: Self.targetKey)
         target = stored.flatMap(NativeCodeTarget.init(rawValue:)) ?? .cloud
+        isTargetless = UserDefaults.standard.bool(forKey: Self.targetlessKey)
     }
 
     public var selectedDevice: NativeCodeDevice? {
@@ -80,7 +102,14 @@ public final class NativeCodeModel {
     }
 
     /// Whether the composer can dispatch right now, and why not when it cannot.
+    ///
+    /// A conversation with no project is never blocked: there is no repository
+    /// to pick, no computer to be offline, and no GitHub connector to have
+    /// lapsed. Short-circuiting above the switch rather than patching each arm
+    /// is deliberate — every one of the six reasons below is a fact about a
+    /// target, and this mode has none.
     public var startBlockedReason: String? {
+        if isTargetless { return nil }
         switch target {
         case .cloud:
             if case .unavailable(let failure) = repositories {
@@ -152,7 +181,7 @@ public final class NativeCodeModel {
             lastErrorDescription = nil
             phase = .ready
         }
-        if target == .cloud { loadRepositoriesIfNeeded() }
+        if target == .cloud, !isTargetless { loadRepositoriesIfNeeded() }
     }
 
     public func loadRepositoriesIfNeeded(force: Bool = false) {
@@ -166,7 +195,10 @@ public final class NativeCodeModel {
                 let repos = try await client.repositories(for: accountID)
                 guard self.accountID == accountID else { return }
                 repositories = .ready(repos)
-                if selectedRepository == nil { selectedRepository = repos.first }
+                // Never while the reader has chosen No Project: this line runs
+                // after every refresh, and silently adopting a repository would
+                // take the mode away from them without a gesture.
+                if selectedRepository == nil, !isTargetless { selectedRepository = repos.first }
             } catch NativeCodeError.repositories(let failure) {
                 guard self.accountID == accountID else { return }
                 repositories = .unavailable(failure)
@@ -181,7 +213,7 @@ public final class NativeCodeModel {
     /// resulting session.
     @discardableResult
     public func startTask(prompt: String) async -> NativeCodeTask? {
-        guard let accountID, startBlockedReason == nil else { return nil }
+        guard let accountID, !isTargetless, startBlockedReason == nil else { return nil }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         isMutating = true

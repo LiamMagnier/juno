@@ -47,11 +47,17 @@ public enum SessionEventPayload: Hashable, Codable, Sendable {
 }
 
 public struct SessionCreatedEvent: Hashable, Codable, Sendable {
-    public let workspaceID: WorkspaceID
-    public let workspaceName: String
+    /// Nil when the session was started without a project. The transcript then
+    /// opens on a conversation that has no folder rather than naming one.
+    public let workspaceID: WorkspaceID?
+    public let workspaceName: String?
     public let configuration: AgentConfiguration
 
-    public init(workspaceID: WorkspaceID, workspaceName: String, configuration: AgentConfiguration) {
+    public init(
+        workspaceID: WorkspaceID?,
+        workspaceName: String?,
+        configuration: AgentConfiguration
+    ) {
         self.workspaceID = workspaceID
         self.workspaceName = workspaceName
         self.configuration = configuration

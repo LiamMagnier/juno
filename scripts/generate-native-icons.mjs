@@ -25,7 +25,14 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const lucideDir = join(root, "node_modules/lucide-react/dist/esm/icons");
 
-/** Destination -> Lucide icon file, mirroring `src/lib/app-icons.ts` exactly. */
+/**
+ * Name -> Lucide icon file, mirroring `src/lib/app-icons.ts` exactly: the first
+ * group is `AppIcons` (destinations), the second is `CodeIcons` (the things
+ * Juno Code talks about). Adding a mark means adding it in both places — the
+ * asset name is `nav-<key>` throughout, including for the code group, because
+ * the prefix is only a flat namespace inside the catalog and renaming the
+ * existing eleven would be churn for nothing.
+ */
 const ICONS = {
   home: "home",
   code: "code-2",
@@ -38,6 +45,17 @@ const ICONS = {
   conversation: "message-circle",
   new: "plus",
   search: "search",
+
+  cloud: "cloud",
+  device: "laptop",
+  branch: "git-branch",
+  lock: "lock",
+  permission: "shield-alert",
+  pin: "pin",
+  error: "circle-alert",
+  refresh: "refresh-cw",
+  external: "arrow-up-right",
+  file: "file-text",
 };
 
 const TARGETS = [

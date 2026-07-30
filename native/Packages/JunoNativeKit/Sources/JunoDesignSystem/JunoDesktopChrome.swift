@@ -314,6 +314,7 @@ public struct JunoEmptyState: View {
     private let title: String
     private let message: String?
     private let symbol: String
+    private let junoIcon: JunoIcon?
     private let actionLabel: String?
     private let perform: (() -> Void)?
 
@@ -327,6 +328,27 @@ public struct JunoEmptyState: View {
         self.title = title
         self.message = message
         self.symbol = symbol
+        self.junoIcon = nil
+        self.actionLabel = actionLabel
+        self.perform = action
+    }
+
+    /// The same state, drawn with one of the website's own marks.
+    ///
+    /// Use this wherever the thing that is missing has a glyph on the web — a
+    /// project, a pull request, a connection — so the empty state names it the
+    /// way every other surface does.
+    public init(
+        title: String,
+        message: String? = nil,
+        icon: JunoIcon,
+        actionLabel: String? = nil,
+        action: (() -> Void)? = nil
+    ) {
+        self.title = title
+        self.message = message
+        self.symbol = ""
+        self.junoIcon = icon
         self.actionLabel = actionLabel
         self.perform = action
     }
@@ -338,9 +360,14 @@ public struct JunoEmptyState: View {
                 Circle()
                     .fill(Color.junoRaised)
                     .frame(width: 72, height: 72)
-                Image(systemName: symbol)
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(Color.secondary)
+                if let junoIcon {
+                    JunoIconView(junoIcon, size: 28)
+                        .foregroundStyle(Color.secondary)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 30, weight: .regular))
+                        .foregroundStyle(Color.secondary)
+                }
             }
 
             VStack(spacing: JunoSpace.snug) {

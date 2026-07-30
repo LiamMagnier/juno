@@ -1254,6 +1254,303 @@
   .dark .composer-aura--docked { --aura: .58; }
 
   /*
+   * ——— Voice aura ———
+   *
+   * The composer aura above lights the box you type into. This one lights the
+   * room: while a voice session is live, a band pools along the bottom of the
+   * viewport and two arms climb the left and right edges, dying out by
+   * mid-height so the page is framed rather than boxed in.
+   *
+   * Three independent boxes rather than one inset ring. A ring would have to
+   * carry its own hole, and every way of cutting one — a mask, an inner
+   * shadow, a border-image — quantises the same low alphas twice and bands
+   * along the seam. Three edges that never meet have no seam to band along,
+   * and they are also what the shape actually is: the light belongs at the
+   * bottom, and the sides are its reach, not a second effect.
+   *
+   * Motion is split across two elements per edge on purpose. The audio level
+   * drives `transform` on `__edge`; the idle drift animates `transform` on
+   * `__layer` inside it. Put both on one element and the keyframe animation
+   * wins the property outright — the aura would drift beautifully and ignore
+   * every word said to it.
+   */
+  .voice-aura {
+    position: fixed;
+    inset: 0;
+    /* Above the app chrome (z-40) so the light reads as the window's own, and
+       below dialogs and their backdrops (z-50), which are modal and must not
+       be tinted by a conversation continuing behind them. */
+    z-index: 45;
+    pointer-events: none;
+    overflow: hidden;
+    /* 0…1 from the rAF loop in VoiceAura; the floor per status lives there too,
+       so this only ever needs to be a number. */
+    --voice-level: 0;
+    /* Two variables, not one, because a custom property may not read itself:
+       `--voice-lit: calc(1.3 * var(--voice-lit))` in a .dark rule is a cycle,
+       and a cycle makes BOTH declarations invalid at computed-value time — the
+       aura would not merely be mistuned in dark, it would be unstyled in both
+       themes. The status sets one; the theme multiplies it into the other. */
+    --voice-status-lit: .8;
+    --voice-theme-lit: 1;
+    --voice-lit: calc(var(--voice-status-lit) * var(--voice-theme-lit));
+    --voice-tint: hsl(var(--primary));
+    --voice-tint-alt: hsl(var(--primary));
+    /* The audio response, shaped once and reused by every alpha below. Never
+       zero: a live session that has gone quiet still has to look live. */
+    --voice-gain: calc(.4 + .6 * var(--voice-level));
+    transition: opacity var(--dur-slow) var(--ease-out-soft);
+  }
+  /*
+   * A second hue, one step around the wheel from the accent, is what stops the
+   * field reading as a flat wash of --primary. The two drift on different
+   * periods, so where they overlap the colour moves — which is the whole
+   * illusion. Behind @supports because relative colour is the only way to get
+   * it from an accent the user can change at runtime; without it both layers
+   * are the accent and the aura is merely plainer.
+   */
+  @supports (color: hsl(from red h s l)) {
+    .voice-aura {
+      --voice-tint-alt: hsl(from hsl(var(--primary)) calc(h + 46) calc(s * .92) calc(l * 1.05));
+    }
+  }
+  /* Failure is not a mood to shimmer through: one colour, and the drift stops
+     below. */
+  .voice-aura[data-status="error"] {
+    --voice-tint: hsl(var(--destructive));
+    --voice-tint-alt: hsl(var(--destructive));
+    --voice-status-lit: .5;
+  }
+  /* Muted and connecting both land here: dim, but never dark. A microphone
+     that is off still has to look like a session that is open. */
+  .voice-aura[data-status="idle"] { --voice-status-lit: .42; }
+  .voice-aura[data-status="thinking"] { --voice-status-lit: .66; }
+  .voice-aura[data-status="listening"] { --voice-status-lit: .9; }
+  /* Juno speaking is the loudest the room gets — it is the one state where the
+     light is reporting on something the reader cannot otherwise see coming. */
+  .voice-aura[data-status="speaking"] { --voice-status-lit: 1.12; }
+  /* Warm charcoal swallows a low-alpha wash that warm paper shows plainly —
+     the same correction the composer aura makes. */
+  .dark .voice-aura { --voice-theme-lit: 1.3; }
+
+  /* No transition on the transform: the rAF loop already smooths the level
+     (asymmetrically, so it rises fast and falls slow), and a second smoothing
+     pass in CSS only adds latency between a syllable and the light. */
+  .voice-aura__edge { position: absolute; }
+  .voice-aura__layer {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+
+  /* Bottom: the floor of the effect. Widened past its own box so a drifting
+     layer can never slide its own edge into view. */
+  .voice-aura__edge--bottom {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 38vh;
+    transform-origin: 50% 100%;
+    transform: scaleY(calc(.66 + .34 * var(--voice-level)));
+  }
+  .voice-aura__edge--bottom .voice-aura__layer { inset: 0 -14%; }
+  .voice-aura__edge--bottom .voice-aura__layer--a {
+    background: radial-gradient(
+      ellipse 76% 100% at 46% 100%,
+      hsl(var(--primary) / calc(.30 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.20 * var(--voice-lit) * var(--voice-gain))) 26%,
+      hsl(var(--primary) / calc(.105 * var(--voice-lit) * var(--voice-gain))) 50%,
+      hsl(var(--primary) / calc(.038 * var(--voice-lit) * var(--voice-gain))) 74%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+  .voice-aura__edge--bottom .voice-aura__layer--b {
+    background: radial-gradient(
+      ellipse 62% 92% at 58% 100%,
+      hsl(var(--primary) / calc(.20 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.13 * var(--voice-lit) * var(--voice-gain))) 30%,
+      hsl(var(--primary) / calc(.058 * var(--voice-lit) * var(--voice-gain))) 58%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+
+  /* Sides: the reach. `to right` / `to left` rather than a second ellipse —
+     an edge glow is a ramp off a straight edge, and an ellipse here puts a
+     visible waist in the middle of the arm. */
+  .voice-aura__edge--left,
+  .voice-aura__edge--right {
+    top: 0;
+    bottom: 0;
+    width: min(22vw, 320px);
+  }
+  .voice-aura__edge--left {
+    left: 0;
+    transform-origin: 0% 100%;
+    transform: scaleX(calc(.7 + .3 * var(--voice-level)));
+  }
+  .voice-aura__edge--right {
+    right: 0;
+    transform-origin: 100% 100%;
+    transform: scaleX(calc(.7 + .3 * var(--voice-level)));
+  }
+  /*
+   * Where the arms stop. The mask is what makes this "up the sides and no
+   * further": full strength along the bottom, gone by 52% of the viewport —
+   * so the light never reaches the header, the model picker, or anything else
+   * a reader needs to read. The ramp is hand-shaped rather than linear for the
+   * same reason the composer aura's is: a straight fade spends its length in
+   * the flat middle, which is exactly where 8-bit alpha steps are widest.
+   */
+  .voice-aura__edge--left .voice-aura__layer,
+  .voice-aura__edge--right .voice-aura__layer {
+    -webkit-mask-image: linear-gradient(
+      to top,
+      #000 0%,
+      rgb(0 0 0 / .92) 14%,
+      rgb(0 0 0 / .62) 28%,
+      rgb(0 0 0 / .28) 40%,
+      rgb(0 0 0 / .08) 47%,
+      transparent 53%
+    );
+    mask-image: linear-gradient(
+      to top,
+      #000 0%,
+      rgb(0 0 0 / .92) 14%,
+      rgb(0 0 0 / .62) 28%,
+      rgb(0 0 0 / .28) 40%,
+      rgb(0 0 0 / .08) 47%,
+      transparent 53%
+    );
+  }
+  .voice-aura__edge--left .voice-aura__layer--a {
+    background: linear-gradient(
+      to right,
+      hsl(var(--primary) / calc(.24 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.125 * var(--voice-lit) * var(--voice-gain))) 32%,
+      hsl(var(--primary) / calc(.042 * var(--voice-lit) * var(--voice-gain))) 64%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+  .voice-aura__edge--right .voice-aura__layer--a {
+    background: linear-gradient(
+      to left,
+      hsl(var(--primary) / calc(.24 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.125 * var(--voice-lit) * var(--voice-gain))) 32%,
+      hsl(var(--primary) / calc(.042 * var(--voice-lit) * var(--voice-gain))) 64%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+  .voice-aura__edge--left .voice-aura__layer--b {
+    background: linear-gradient(
+      to right,
+      hsl(var(--primary) / calc(.15 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.06 * var(--voice-lit) * var(--voice-gain))) 44%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+  .voice-aura__edge--right .voice-aura__layer--b {
+    background: linear-gradient(
+      to left,
+      hsl(var(--primary) / calc(.15 * var(--voice-lit) * var(--voice-gain))) 0%,
+      hsl(var(--primary) / calc(.06 * var(--voice-lit) * var(--voice-gain))) 44%,
+      hsl(var(--primary) / 0) 100%
+    );
+  }
+
+  /*
+   * The colour pass. Every gradient above is written twice: the --primary
+   * version is the fallback for browsers without relative colour, and this
+   * block re-states the same ramps in the two drifting tints. Split this way
+   * rather than inlined so the fallback is one plain accent wash instead of
+   * nothing at all.
+   */
+  @supports (color: hsl(from red h s l)) {
+    .voice-aura__edge--bottom .voice-aura__layer--a {
+      background: radial-gradient(
+        ellipse 76% 100% at 46% 100% in oklab,
+        hsl(from var(--voice-tint) h s calc(l * 1.06) / calc(.30 * var(--voice-lit) * var(--voice-gain))) 0%,
+        hsl(from var(--voice-tint) h s l / calc(.20 * var(--voice-lit) * var(--voice-gain))) 26%,
+        hsl(from var(--voice-tint) h calc(s * .96) calc(l * .84) / calc(.105 * var(--voice-lit) * var(--voice-gain))) 50%,
+        hsl(from var(--voice-tint) h calc(s * .9) calc(l * .6) / calc(.038 * var(--voice-lit) * var(--voice-gain))) 74%,
+        hsl(from var(--voice-tint) h calc(s * .86) calc(l * .45) / 0) 100%
+      );
+    }
+    .voice-aura__edge--bottom .voice-aura__layer--b {
+      background: radial-gradient(
+        ellipse 62% 92% at 58% 100% in oklab,
+        hsl(from var(--voice-tint-alt) h s calc(l * 1.04) / calc(.20 * var(--voice-lit) * var(--voice-gain))) 0%,
+        hsl(from var(--voice-tint-alt) h s l / calc(.13 * var(--voice-lit) * var(--voice-gain))) 30%,
+        hsl(from var(--voice-tint-alt) h calc(s * .92) calc(l * .74) / calc(.058 * var(--voice-lit) * var(--voice-gain))) 58%,
+        hsl(from var(--voice-tint-alt) h calc(s * .88) calc(l * .5) / 0) 100%
+      );
+    }
+    .voice-aura__edge--left .voice-aura__layer--a { background: linear-gradient(to right in oklab, var(--voice-arm-a)); }
+    .voice-aura__edge--right .voice-aura__layer--a { background: linear-gradient(to left in oklab, var(--voice-arm-a)); }
+    .voice-aura__edge--left .voice-aura__layer--b { background: linear-gradient(to right in oklab, var(--voice-arm-b)); }
+    .voice-aura__edge--right .voice-aura__layer--b { background: linear-gradient(to left in oklab, var(--voice-arm-b)); }
+    .voice-aura {
+      --voice-arm-a:
+        hsl(from var(--voice-tint) h s calc(l * 1.04) / calc(.24 * var(--voice-lit) * var(--voice-gain))) 0%,
+        hsl(from var(--voice-tint) h calc(s * .96) calc(l * .86) / calc(.125 * var(--voice-lit) * var(--voice-gain))) 32%,
+        hsl(from var(--voice-tint) h calc(s * .9) calc(l * .62) / calc(.042 * var(--voice-lit) * var(--voice-gain))) 64%,
+        hsl(from var(--voice-tint) h calc(s * .86) calc(l * .48) / 0) 100%;
+      --voice-arm-b:
+        hsl(from var(--voice-tint-alt) h s l / calc(.15 * var(--voice-lit) * var(--voice-gain))) 0%,
+        hsl(from var(--voice-tint-alt) h calc(s * .92) calc(l * .78) / calc(.06 * var(--voice-lit) * var(--voice-gain))) 44%,
+        hsl(from var(--voice-tint-alt) h calc(s * .88) calc(l * .55) / 0) 100%;
+    }
+  }
+
+  /*
+   * The drift. Two periods that share no common factor, so the pair never
+   * settles into a loop you can count — which is the difference between a
+   * room breathing and a progress bar. Transform and opacity only: both
+   * composite, so this costs nothing while audio is being decoded on the
+   * same thread.
+   */
+  @keyframes voice-aura-drift-a {
+    0%, 100% { transform: translate3d(-2%, 0, 0) scale(1); opacity: .92; }
+    50%      { transform: translate3d(3%, -3%, 0) scale(1.06); opacity: 1; }
+  }
+  @keyframes voice-aura-drift-b {
+    0%, 100% { transform: translate3d(3%, -1%, 0) scale(1.04); opacity: .74; }
+    50%      { transform: translate3d(-3%, 2%, 0) scale(.97); opacity: 1; }
+  }
+  .voice-aura__layer--a { animation: voice-aura-drift-a 9.5s var(--ease-out-soft) infinite; }
+  .voice-aura__layer--b { animation: voice-aura-drift-b 13.7s var(--ease-out-soft) infinite; }
+  /* Nothing to shimmer about while it fails, and nothing yet while it dials. */
+  .voice-aura[data-status="error"] .voice-aura__layer { animation: none; }
+
+  /*
+   * Reduced motion keeps the aura — it is the only thing on screen saying the
+   * microphone is open, and removing it would remove that answer. What goes is
+   * the part that moves for its own sake: the drift stops and the level rides
+   * opacity instead of scale, so the light still answers the voice without the
+   * field sliding around underneath it.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .voice-aura__layer { animation: none; }
+    .voice-aura__edge { transform: none; transition: none; }
+    .voice-aura { opacity: calc(.62 + .38 * var(--voice-level)); }
+  }
+
+  /* Dither. Same reason as the composer aura: alpha is quantised to 1/255, and
+     a ramp this long steps visibly on a dark screen no matter how it is
+     shaped. Faint fixed noise scatters each step across its own boundary. */
+  .voice-aura__grain {
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/></filter><rect width='140' height='140' filter='url(%23n)'/></svg>");
+    opacity: calc(.05 * var(--voice-gain));
+    mix-blend-mode: overlay;
+    /* Masked to where the light actually is, or the grain paints the whole
+       viewport — including the middle of the page, which has no aura under it
+       to hide in. */
+    -webkit-mask-image: radial-gradient(ellipse 96% 62% at 50% 118%, #000 0%, #000 46%, transparent 88%);
+    mask-image: radial-gradient(ellipse 96% 62% at 50% 118%, #000 0%, #000 46%, transparent 88%);
+  }
+
+  /*
    * The greeting reads ON the aura, and its name is set in the very accent the
    * aura is made of — same hue, close luminance, which is the worst case there
    * is for legibility. Both fixes leave the type itself alone.

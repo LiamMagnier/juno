@@ -19,7 +19,17 @@ export default async function ConversationPage({
 
   // Juno Code sessions get the code surface: same message rendering, but the
   // composer drives remote tasks on the user's Mac instead of /api/chat.
-  if (thread.conversation.kind === "code") {
+  //
+  // Unless the session has no project. Those are the "not in a project"
+  // conversations Juno Code offers before you have opened anything — there is
+  // no Mac and no repository for the code composer to drive, so it would render
+  // a permanently disabled field reading "This session isn't linked to a synced
+  // project folder". They are answered by the chat pipeline instead (see the
+  // matching condition in /api/chat), so they get the chat surface. The two
+  // conditions read the same two columns and must stay inverses.
+  const codeSessionHasTarget =
+    !!thread.conversation.codeWorkspacePath || !!thread.conversation.codeWorkspaceKey;
+  if (thread.conversation.kind === "code" && codeSessionHasTarget) {
     return <CodeSessionView conversation={thread.conversation} initialMessages={thread.messages} />;
   }
 

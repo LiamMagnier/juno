@@ -13,6 +13,16 @@ import SwiftUI
 /// buried in a setting.
 struct JunoMobileCodeView: View {
     @Bindable var model: NativeCodeModel
+    /// Starts a Juno Code conversation that has no project, sends the reader's
+    /// first message into it, and opens it.
+    ///
+    /// Owned by the root view rather than here because it needs the
+    /// conversation store as well as the code model, and because a conversation
+    /// with no project is not a run: it has messages, not a task event log, and
+    /// the screen that renders messages already exists. Handing it to the chat
+    /// view is what keeps this feature from needing a second transcript
+    /// renderer inside the Code section.
+    let startConversation: (String) async -> Void
 
     @State private var prompt = ""
     @FocusState private var composerFocused: Bool
@@ -24,13 +34,25 @@ struct JunoMobileCodeView: View {
             case .idle, .loading:
                 JunoMobileQuietLoading()
             case .failed:
-                ContentUnavailableView {
-                    Label("code.unavailable", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(model.lastErrorDescription ?? String(localized: "code.retry"))
-                } actions: {
-                    Button("Retry") { Task { await model.refresh() } }
-                        .buttonStyle(.borderedProminent)
+                // A reader in No Project mode needs neither the device list nor
+                // the repository list, so a failure to read them must not
+                // replace the one screen they can still use. The inline error
+                // inside `sessions` reports it instead.
+                if model.isTargetless {
+                    sessions
+                } else {
+                    ContentUnavailableView {
+                        Label {
+                            Text("code.unavailable")
+                        } icon: {
+                            JunoIconView(.error, size: 34)
+                        }
+                    } description: {
+                        Text(model.lastErrorDescription ?? String(localized: "code.retry"))
+                    } actions: {
+                        Button("Retry") { Task { await model.refresh() } }
+                            .buttonStyle(.borderedProminent)
+                    }
                 }
             case .ready:
                 sessions
@@ -56,7 +78,10 @@ struct JunoMobileCodeView: View {
     private var sessions: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
-                JunoPageTitle(title: "navigation.code", subtitle: "code.subtitle")
+                JunoPageTitle(
+                    title: "navigation.code",
+                    subtitle: model.isTargetless ? "code.subtitle.none" : "code.subtitle"
+                )
                     .padding(.top, 6)
 
                 if let error = model.lastErrorDescription {
@@ -64,7 +89,7 @@ struct JunoMobileCodeView: View {
                 }
 
                 if model.tasks.isEmpty {
-                    JunoMobileCodeGreeting()
+                    JunoMobileCodeGreeting(targetless: model.isTargetless)
                         .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
                 } else {
                     JunoGroupLabel(text: String(localized: "code.group.sessions"))
@@ -94,7 +119,13 @@ struct JunoMobileCodeView: View {
                     .transition(.opacity)
             }
             VStack(spacing: 8) {
-                TextField("code.composer.placeholder", text: $prompt, axis: .vertical)
+                TextField(
+                    model.isTargetless
+                        ? "code.composer.placeholder.none"
+                        : "code.composer.placeholder",
+                    text: $prompt,
+                    axis: .vertical
+                )
                     .lineLimit(1...6)
                     .textFieldStyle(.plain)
                     .focused($composerFocused)
@@ -139,6 +170,11 @@ struct JunoMobileCodeView: View {
     private func start() {
         let text = prompt
         Task {
+            if model.isTargetless {
+                prompt = ""
+                await startConversation(text)
+                return
+            }
             if await model.startTask(prompt: text) != nil { prompt = "" }
         }
     }
@@ -147,6 +183,10 @@ struct JunoMobileCodeView: View {
 /// The Code home greeting, in the same editorial voice as the chat one so the
 /// two destinations read as one product.
 private struct JunoMobileCodeGreeting: View {
+    /// The promise below is different without a target: there is no pull
+    /// request coming and no folder being worked in.
+    let targetless: Bool
+
     private static let phrases = [
         "code.greeting.building", "code.greeting.task", "code.greeting.next",
         "code.greeting.start", "code.greeting.ready",
@@ -167,7 +207,7 @@ private struct JunoMobileCodeGreeting: View {
                     .minimumScaleFactor(0.7)
                     .lineLimit(2)
             }
-            Text("code.greeting.detail")
+            Text(targetless ? "code.greeting.detail.none" : "code.greeting.detail")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -178,51 +218,89 @@ private struct JunoMobileCodeGreeting: View {
     }
 }
 
-/// "Where does this run" — the Cloud ⇄ Remote toggle and the picker for whichever
-/// is selected, folded into one chip row so the choice is always visible without
-/// occupying a screen of its own.
+/// "Where does this run" — the No project ⇄ Cloud ⇄ Remote toggle and the picker
+/// for whichever is selected, folded into one chip row so the choice is always
+/// visible without occupying a screen of its own.
 private struct JunoMobileCodeTargetPicker: View {
     @Bindable var model: NativeCodeModel
     @State private var picking = false
 
+    /// The three things the reader can aim the composer at.
+    ///
+    /// A local enum rather than a third `NativeCodeTarget` case: the wire
+    /// target is a fact about `/api/code/tasks`, which has exactly two, and
+    /// adding a third there would ripple into task decoding, the "where it
+    /// runs" caption, and a server enum that has no executor for it.
+    private enum Choice: Hashable {
+        case none
+        case cloud
+        case device
+    }
+
+    private var choice: Binding<Choice> {
+        Binding(
+            get: {
+                if model.isTargetless { return .none }
+                return model.target == .cloud ? .cloud : .device
+            },
+            set: { next in
+                switch next {
+                case .none:
+                    model.isTargetless = true
+                case .cloud:
+                    model.isTargetless = false
+                    model.target = .cloud
+                case .device:
+                    model.isTargetless = false
+                    model.target = .device
+                }
+            }
+        )
+    }
+
     var body: some View {
         HStack(spacing: 8) {
-            Picker("code.target", selection: $model.target) {
-                Text("code.target.cloud").tag(NativeCodeTarget.cloud)
-                Text("code.target.remote").tag(NativeCodeTarget.device)
+            Picker("code.target", selection: choice) {
+                Text("code.target.none").tag(Choice.none)
+                Text("code.target.cloud").tag(Choice.cloud)
+                Text("code.target.remote").tag(Choice.device)
             }
             .pickerStyle(.segmented)
-            .frame(width: 152)
+            .frame(width: 210)
             .accessibilityIdentifier("juno.mobile.code-target")
 
-            Button {
-                picking = true
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: model.target == .cloud ? "cloud" : "laptopcomputer")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(label)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+            // Nothing to pick when there is no target: the chip would open a
+            // sheet of repositories for a conversation that will not use one.
+            if !model.isTargetless {
+                Button {
+                    picking = true
+                } label: {
+                    HStack(spacing: 5) {
+                        JunoIconView(model.target == .cloud ? .cloud : .device, size: 13)
+                        Text(label)
+                            .font(.system(size: 13, weight: .medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.down").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 11)
+                    .frame(height: 32)
+                    .modifier(JunoGlassCapsule())
                 }
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 11)
-                .frame(height: 32)
-                .modifier(JunoGlassCapsule())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(label))
-            .sheet(isPresented: $picking) {
-                JunoMobileCodeTargetSheet(model: model)
-                    .presentationDetents([.medium, .large])
-                    .presentationDragIndicator(.visible)
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(label))
+                .sheet(isPresented: $picking) {
+                    JunoMobileCodeTargetSheet(model: model)
+                        .presentationDetents([.medium, .large])
+                        .presentationDragIndicator(.visible)
+                }
             }
         }
     }
 
     private var label: String {
+        if model.isTargetless { return String(localized: "code.target.none.label") }
         switch model.target {
         case .cloud:
             return model.selectedRepository?.fullName
@@ -282,8 +360,7 @@ private struct JunoMobileCodeTargetSheet: View {
                         dismiss()
                     } label: {
                         HStack(spacing: 10) {
-                            Image(systemName: repo.isPrivate ? "lock" : "chevron.left.forwardslash.chevron.right")
-                                .font(.caption)
+                            JunoIconView(repo.isPrivate ? .lock : .branch, size: 14)
                                 .foregroundStyle(.secondary)
                                 .frame(width: 20)
                             VStack(alignment: .leading, spacing: 1) {
@@ -305,7 +382,11 @@ private struct JunoMobileCodeTargetSheet: View {
             .searchable(text: $search, prompt: Text("code.target.search-repos"))
         case .unavailable(let failure):
             ContentUnavailableView {
-                Label("code.target.repos-unavailable", systemImage: "exclamationmark.triangle")
+                Label {
+                    Text("code.target.repos-unavailable")
+                } icon: {
+                    JunoIconView(.error, size: 34)
+                }
             } description: {
                 Text(NativeCodeError.repositories(failure).localizedDescription)
             } actions: {
@@ -344,8 +425,7 @@ private struct JunoMobileCodeTargetSheet: View {
                                 dismiss()
                             } label: {
                                 HStack(spacing: 10) {
-                                    Image(systemName: "folder")
-                                        .font(.caption)
+                                    JunoIconView(.projects, size: 14)
                                         .foregroundStyle(.secondary)
                                         .frame(width: 20)
                                     VStack(alignment: .leading, spacing: 1) {
@@ -396,8 +476,7 @@ private struct JunoMobileCodeTaskRow: View {
         JunoCard(padding: 14) {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 8) {
-                    Image(systemName: task.target == .cloud ? "cloud" : "laptopcomputer")
-                        .font(.caption)
+                    JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
                         .foregroundStyle(.secondary)
                     Text(task.whereItRuns)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -418,7 +497,7 @@ private struct JunoMobileCodeTaskRow: View {
                         .foregroundStyle(.secondary)
                     if task.pullRequestURL != nil {
                         Text("·").foregroundStyle(.tertiary)
-                        Label("code.pull-request", systemImage: "arrow.triangle.pull")
+                        JunoIconLabel("code.pull-request", icon: .pulls, size: 12)
                             .font(.caption)
                             .foregroundStyle(Color.junoAccent)
                     }
@@ -511,8 +590,7 @@ private struct JunoMobileCodeSessionView: View {
         JunoCard(padding: 14) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Image(systemName: task.target == .cloud ? "cloud" : "laptopcomputer")
-                        .font(.caption)
+                    JunoIconView(task.target == .cloud ? .cloud : .device, size: 12)
                         .foregroundStyle(.secondary)
                     Text(task.whereItRuns)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -607,7 +685,11 @@ private struct JunoMobileCodeEventRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .textSelection(.enabled)
         case .error:
-            Label(event.title, systemImage: "exclamationmark.triangle.fill")
+            Label {
+                Text(event.title)
+            } icon: {
+                JunoIconView(.error, size: 15)
+            }
                 .font(.callout)
                 .foregroundStyle(.orange)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -618,11 +700,16 @@ private struct JunoMobileCodeEventRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         default:
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-                    .padding(.top, 2)
+                Group {
+                    if event.kind == .approvalRequest {
+                        JunoIconView(.permission, size: 12)
+                    } else {
+                        Image(systemName: symbol).font(.caption2)
+                    }
+                }
+                .foregroundStyle(.secondary)
+                .frame(width: 14)
+                .padding(.top, 2)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(event.title)
                         .font(.system(size: 13, design: .monospaced))

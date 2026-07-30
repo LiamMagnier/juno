@@ -733,7 +733,10 @@ struct JunoMobileRootView: View {
             } else { unavailable }
         case .code:
             if let codeModel {
-                JunoMobileCodeView(model: codeModel)
+                JunoMobileCodeView(
+                    model: codeModel,
+                    startConversation: startProjectlessCodeConversation
+                )
             } else { unavailable }
         case .tasks:
             if let scheduledTaskModel {
@@ -799,6 +802,36 @@ struct JunoMobileRootView: View {
     private func openConversation(_ id: String) {
         conversationModel?.selectedConversationID = id
         selection = .chat
+    }
+
+    /// Starts a Juno Code conversation with no project and sends its first turn.
+    ///
+    /// It goes through the same create-then-send path a new chat uses —
+    /// `createConversationResolvingID` solves the race where the settled server
+    /// row arrives a beat after the local one is retired, and a second
+    /// implementation of that would be a second place to get it wrong. Only the
+    /// kind differs, and the server already accepts it: the chat pipeline
+    /// answers exactly those `kind: "code"` conversations that have no
+    /// workspace, which is what this creates.
+    private func startProjectlessCodeConversation(_ prompt: String) async {
+        guard let conversationModel else { return }
+        guard let id = await conversationModel.createConversationResolvingID(
+            title: String(prompt.prefix(60)),
+            model: memorySettingsModel?.settings?.defaultModel,
+            kind: "code"
+        ) else { return }
+        // Open first: the transcript should already be on screen when the
+        // answer starts streaming, rather than appearing part-way through it.
+        openConversation(id)
+        _ = conversationModel.sendMessage(
+            conversationID: id,
+            prompt: prompt,
+            modelID: conversationModel.conversations.first { $0.id == id }?.model
+                ?? memorySettingsModel?.settings?.defaultModel
+                ?? conversationModel.selectableModels.first?.id
+                ?? "juno:auto",
+            reasoningEffort: nil
+        )
     }
 
     /// Non-archived conversations, pinned first then newest — the drawer's rule.

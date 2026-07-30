@@ -93,4 +93,66 @@ final class SessionEventsTests: XCTestCase {
         )
         XCTAssertEqual(restored.behavior, .code)
     }
+
+    /// Making `workspaceID` optional changed the on-disk shape of every session
+    /// record. The store is a JSON file on the reader's own Mac, and a decode
+    /// failure there does not degrade gracefully — it empties the entire Code
+    /// section — so both directions are pinned here: a record written before
+    /// this change must still load, and one written without a project must load
+    /// as having none rather than as a corrupt row.
+    func testSessionsWithAndWithoutAProjectBothDecode() throws {
+        let encoder = JSONEncoder()
+        let decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+
+        let projectless = CodeSession(
+            workspaceID: nil,
+            title: "Explain how CRDTs converge",
+            configuration: AgentConfiguration(modelID: "anthropic:claude-sonnet-5"),
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        let roundTripped = try decoder.decode(
+            CodeSession.self,
+            from: encoder.encode(projectless)
+        )
+        XCTAssertNil(roundTripped.workspaceID)
+        XCTAssertEqual(roundTripped.title, "Explain how CRDTs converge")
+
+        let workspaceID = WorkspaceID(value: "ws-1")
+        let withProject = CodeSession(
+            workspaceID: workspaceID,
+            title: "Fix the parser",
+            configuration: AgentConfiguration(modelID: "anthropic:claude-sonnet-5"),
+            createdAt: Date(timeIntervalSince1970: 0),
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        XCTAssertEqual(
+            try decoder.decode(CodeSession.self, from: encoder.encode(withProject)).workspaceID,
+            workspaceID
+        )
+    }
+
+    /// The transcript's opening event carries the same optionality, so a
+    /// projectless session's log is readable rather than a decode failure at
+    /// event zero.
+    func testSessionCreatedEventDecodesWithoutAWorkspace() throws {
+        let payload = SessionEventPayload.sessionCreated(
+            SessionCreatedEvent(
+                workspaceID: nil,
+                workspaceName: nil,
+                configuration: AgentConfiguration(modelID: "anthropic:claude-sonnet-5")
+            )
+        )
+        let data = try JSONEncoder().encode(payload)
+        guard case .sessionCreated(let restored) = try JSONDecoder().decode(
+            SessionEventPayload.self,
+            from: data
+        ) else {
+            return XCTFail("expected a sessionCreated payload")
+        }
+        XCTAssertNil(restored.workspaceID)
+        XCTAssertNil(restored.workspaceName)
+    }
 }

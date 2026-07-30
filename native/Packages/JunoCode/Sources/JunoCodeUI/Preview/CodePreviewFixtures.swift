@@ -628,8 +628,8 @@ enum CodePreviewData {
         }
 
         mutating func created(
-            workspaceID: WorkspaceID,
-            workspaceName: String,
+            workspaceID: WorkspaceID?,
+            workspaceName: String?,
             configuration: AgentConfiguration
         ) {
             append(.sessionCreated(SessionCreatedEvent(

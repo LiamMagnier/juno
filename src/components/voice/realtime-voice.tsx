@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { VoiceOrb, type OrbStatus } from "@/components/signature/voice-orb";
+import { VoiceAura, type VoiceAuraStatus } from "@/components/voice/voice-aura";
 import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { VOICE_PROVIDER_LABELS, VOICE_PROVIDERS } from "@/lib/voice-relay-protocol";
 import { cn, formatUsd } from "@/lib/utils";
@@ -36,9 +36,16 @@ const MIC_OFF_LABEL = "Turn microphone off";
  * Voice stays a lightweight layer over the normal chat. This dock contains
  * only session controls; transcript, typing, and attachments remain in the
  * standard MessageList and Composer.
+ *
+ * The state of the conversation is reported by ``VoiceAura`` — the light around
+ * the edges of the window — rather than by a glyph inside this pill. The dock
+ * kept the words (what is happening, what it costs) and gave up the picture:
+ * an orb small enough to sit in a toolbar can only ever be decoration, while
+ * the same signal spread across the window is legible from across the room and
+ * asks for none of your attention to read.
  */
 export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onClose: () => void }) {
-  const orbStatus: OrbStatus =
+  const auraStatus: VoiceAuraStatus =
     voice.status === "error"
       ? "error"
       : voice.status === "connecting" || voice.status === "reconnecting"
@@ -79,6 +86,7 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
       aria-label="Voice conversation controls"
       className="relative z-20 mx-auto mb-2 flex w-full flex-col items-center gap-1.5 px-2 motion-safe:animate-rise-in sm:px-0"
     >
+      <VoiceAura status={auraStatus} levelRef={voice.levelRef} />
       {/* Failures speak, they don't hide in a tooltip: the message names the
           fix, and the restart control sits right below it. */}
       {voice.status === "error" && voice.error && (
@@ -90,12 +98,15 @@ export function RealtimeVoice({ voice, onClose }: { voice: VoiceController; onCl
         </p>
       )}
       <div className="flex max-w-full items-center gap-0.5 rounded-full border border-border bg-popover/95 p-1 shadow-[0_1px_2px_hsl(var(--foreground)/0.1),0_10px_28px_-20px_hsl(var(--foreground)/0.55)] backdrop-blur-lg supports-[backdrop-filter]:bg-popover/88">
-        <div className="flex min-w-0 items-center gap-2 pl-0.5 pr-1.5">
-          <VoiceOrb status={orbStatus} levelRef={voice.levelRef} className="size-9" />
-          {/* Stacked inside the orb's height so the cost line cannot grow the pill.
-              No aria-live on the cost: it reprices every 5s and would talk over
-              the conversation it is measuring. */}
-          <div className="flex w-[5.75rem] flex-col justify-center gap-0.5 max-[350px]:hidden sm:w-[7.5rem]">
+        {/* Hidden whole on the narrowest phones rather than emptied: with the
+            orb gone this wrapper holds only the words, and keeping its padding
+            around nothing left a visible dent in the pill. */}
+        <div className="flex min-w-0 items-center gap-2 pl-3 pr-1.5 max-[350px]:hidden">
+          {/* Held to the control row's height (h-9, matching the buttons beside
+              it) so the cost line cannot grow the pill. No aria-live on the
+              cost: it reprices every 5s and would talk over the conversation it
+              is measuring. */}
+          <div className="flex h-9 w-[5.75rem] flex-col justify-center gap-0.5 sm:w-[7.5rem]">
             <p
               aria-live="polite"
               className="truncate text-sm font-semibold leading-4 text-foreground"

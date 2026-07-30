@@ -201,7 +201,14 @@ public actor NativeConversationStore<Repository: AccountScopedRepository> {
             switch record.key.namespace {
             case "conversation":
                 let value = try decodeConversation(record)
-                if value.kind == "chat" { conversations[value.id] = value }
+                // "chat" and "code" both belong here. A Juno Code conversation
+                // with no project is answered by the chat pipeline, and
+                // `sendMessage` refuses any conversation this store has never
+                // heard of — so filtering it out here is what would make the
+                // Code section unable to talk to the thing it just created.
+                if value.kind == "chat" || value.kind == "code" {
+                    conversations[value.id] = value
+                }
             case "message":
                 let value = try decodeMessage(record)
                 messages[value.conversationID, default: []].append(value)
@@ -659,7 +666,8 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     public func createConversation(
         title: String = "New chat",
         model: String? = nil,
-        projectID: String? = nil
+        projectID: String? = nil,
+        kind: String = "chat"
     ) async -> String? {
         guard let accountID else { return nil }
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -672,7 +680,7 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
             "type": "conversation.create",
             "clientEntityId": clientID,
             "title": trimmedTitle,
-            "kind": "chat",
+            "kind": kind,
         ]
         if let model {
             let trimmedModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -708,14 +716,19 @@ public final class NativeConversationModel<Repository: AccountScopedRepository> 
     /// just created, so it needs the id that survived, not the one it asked for.
     /// Resolved by diffing the conversation list across the create rather than
     /// by trusting the ordering, which a pinned conversation would break.
+    /// - Parameter kind: `"code"` opens a Juno Code conversation instead of a
+    ///   chat. It goes through this same path rather than a direct POST because
+    ///   the create/settle race solved below is not specific to chats, and a
+    ///   second implementation of it would be a second place to get it wrong.
     public func createConversationResolvingID(
         title: String = "New chat",
         model: String? = nil,
-        projectID: String? = nil
+        projectID: String? = nil,
+        kind: String = "chat"
     ) async -> String? {
         let before = Set(conversations.map(\.id))
         guard let clientID = await createConversation(
-            title: title, model: model, projectID: projectID
+            title: title, model: model, projectID: projectID, kind: kind
         ) else { return nil }
 
         // The create drains and then pulls, but the pulled row can arrive a beat

@@ -7,17 +7,27 @@
  * SidebarMotionIcon — this module is the shared resting glyph set.
  */
 import {
+  AlertCircle,
+  ArrowUpRight,
   CalendarClock,
+  Cloud,
   Code2,
+  FileText,
   Folder,
+  GitBranch,
   GitPullRequest,
   Home,
+  Laptop,
   Layers3,
   Library,
+  Lock,
   MessageCircle,
+  Pin,
   Plug,
   Plus,
+  RefreshCw,
   Search,
+  ShieldAlert,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,3 +46,44 @@ export const AppIcons = {
 } as const satisfies Record<string, LucideIcon>;
 
 export type AppIconName = keyof typeof AppIcons;
+
+/**
+ * The marks Juno Code uses for the things it talks about, as opposed to the
+ * places you can go.
+ *
+ * Split from `AppIcons` because the two answer different questions — that one
+ * is "which destination is this", this one is "what kind of thing is this" —
+ * but they are one vocabulary and are generated into the native apps together
+ * by `scripts/generate-native-icons.mjs`. Everything here is already in use
+ * somewhere under `/code` on the web; nothing was invented for the native
+ * apps, which is the whole point. A concept the website draws with no icon at
+ * all (a diff, a checkpoint, the thinking state) is deliberately absent rather
+ * than given one here — inventing a mark for native only is drift with extra
+ * steps.
+ */
+export const CodeIcons = {
+  /** A cloud run: a fresh machine, ending in a pull request. */
+  cloud: Cloud,
+  /** A run on a real computer — this Mac, or one signed in to Juno Code. */
+  device: Laptop,
+  /** A repository, its default branch, and the base ref of a run. The website
+   *  uses one mark for all three; native does too rather than inventing two. */
+  branch: GitBranch,
+  /** A private repository. */
+  lock: Lock,
+  /** Juno Code asking permission before it does something. */
+  permission: ShieldAlert,
+  /** A pinned session or project. The API field is `starred` and the section
+   *  header says "Pinned", but the mark has always been a pin — never a star. */
+  pin: Pin,
+  /** A failure the reader can act on: a dead connector, an unreachable list. */
+  error: AlertCircle,
+  /** Retry, refresh, reload. Spins while it works. */
+  refresh: RefreshCw,
+  /** Leaves Juno — a pull request on GitHub, a file in Finder. */
+  external: ArrowUpRight,
+  /** A file: an attachment chip, a changed file in a run. */
+  file: FileText,
+} as const satisfies Record<string, LucideIcon>;
+
+export type CodeIconName = keyof typeof CodeIcons;

@@ -55,9 +55,14 @@ public actor CodeSessionStore {
 
     // MARK: - Sessions
 
+    /// - Parameters:
+    ///   - workspaceID: nil for a conversation started with no project. The
+    ///     session is created, persisted and streamed exactly as any other; it
+    ///     simply has no folder, which the runtime reads as "no file or shell
+    ///     tools" rather than as a missing value to fill in later.
     public func createSession(
-        workspaceID: WorkspaceID,
-        workspaceName: String,
+        workspaceID: WorkspaceID?,
+        workspaceName: String?,
         title: String,
         configuration: AgentConfiguration,
         gitBranch: String?

@@ -342,21 +342,33 @@ public final class WorkbenchModel {
 
     // MARK: - Sessions
 
+    /// - Parameter workspaceID: nil starts a conversation with no project.
+    ///
+    /// The nil path deliberately skips `context(for:)` entirely rather than
+    /// failing softly on it: there is no folder to reopen, no bookmark that
+    /// could have lapsed, and no git repository to read a branch from. Asking
+    /// for a context and tolerating nil would conflate "this session has no
+    /// project" with "this session's project could not be opened", which is the
+    /// error the sidebar footer offers a recovery for.
     @discardableResult
     public func createSession(
-        workspaceID: WorkspaceID,
+        workspaceID: WorkspaceID?,
         configuration: AgentConfiguration
     ) async -> CodeSession? {
-        guard let context = await context(for: workspaceID) else { return nil }
+        var context: WorkspaceContext?
+        if let workspaceID {
+            guard let opened = await self.context(for: workspaceID) else { return nil }
+            context = opened
+        }
         do {
             var branch: String?
-            if context.record.descriptor.isGitRepository {
+            if let context, context.record.descriptor.isGitRepository {
                 branch = try? await context.git.status().branch
             }
             let session = try await sessionStore.createSession(
                 workspaceID: workspaceID,
-                workspaceName: context.record.descriptor.displayName,
-                title: "New session",
+                workspaceName: context?.record.descriptor.displayName,
+                title: workspaceID == nil ? "New conversation" : "New session",
                 configuration: configuration,
                 gitBranch: branch
             )
@@ -391,9 +403,14 @@ public final class WorkbenchModel {
             await existing.attach()
             return existing
         }
-        guard let session = sessions.first(where: { $0.id == sessionID }),
-              let context = await context(for: session.workspaceID)
-        else { return nil }
+        guard let session = sessions.first(where: { $0.id == sessionID }) else { return nil }
+        // A projectless session has no context to resolve, and must not be
+        // refused for failing to resolve one.
+        var context: WorkspaceContext?
+        if let workspaceID = session.workspaceID {
+            guard let opened = await self.context(for: workspaceID) else { return nil }
+            context = opened
+        }
         let controller = SessionController(
             session: session,
             context: context,
@@ -477,15 +494,19 @@ public final class WorkbenchModel {
             await controller.stop()
         }
         do {
-            if let context = contexts[session.workspaceID] {
-                try await context.checkpoints.removeCheckpoints(for: id)
-            } else {
-                try CheckpointStore.removePersistedCheckpoints(
-                    for: id,
-                    directoryURL: dependencies.storageRootURL
-                        .appendingPathComponent("checkpoints")
-                        .appendingPathComponent(session.workspaceID.value)
-                )
+            // A projectless session never took a checkpoint — checkpoints are
+            // snapshots of a working tree — so there is nothing to remove.
+            if let workspaceID = session.workspaceID {
+                if let context = contexts[workspaceID] {
+                    try await context.checkpoints.removeCheckpoints(for: id)
+                } else {
+                    try CheckpointStore.removePersistedCheckpoints(
+                        for: id,
+                        directoryURL: dependencies.storageRootURL
+                            .appendingPathComponent("checkpoints")
+                            .appendingPathComponent(workspaceID.value)
+                    )
+                }
             }
             try await sessionStore.deleteSession(id: id)
             await controller?.detach()
@@ -504,6 +525,8 @@ public final class WorkbenchModel {
         return sessions.filter { session in
             session.title.lowercased().contains(query)
                 || workspaceName(for: session.workspaceID).lowercased().contains(query)
+                // "no project" is a thing a reader will type looking for these.
+                || (session.workspaceID == nil && "no project".contains(query))
         }
     }
 
@@ -542,8 +565,12 @@ public final class WorkbenchModel {
         return groups
     }
 
-    public func workspaceName(for id: WorkspaceID) -> String {
-        workspaces.first { $0.id == id }?.descriptor.displayName ?? "Workspace"
+    /// The display name of a session's project — or what to call it when it
+    /// has none. "No project" is stated, never blank: a caption that silently
+    /// omits the project reads as a rendering bug, not as a fact.
+    public func workspaceName(for id: WorkspaceID?) -> String {
+        guard let id else { return "No project" }
+        return workspaces.first { $0.id == id }?.descriptor.displayName ?? "Workspace"
     }
 
     #if DEBUG

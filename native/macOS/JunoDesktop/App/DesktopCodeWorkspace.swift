@@ -307,7 +307,7 @@ struct DesktopCodeWorkspace: View {
                     title: "This session cannot be opened",
                     message: workbenchModel.lastError
                         ?? "Juno could not reopen the folder this session works in.",
-                    symbol: "exclamationmark.triangle",
+                    icon: .error,
                     actionLabel: "Open Repository…",
                     action: { isChoosingRepository = true }
                 )
@@ -347,25 +347,27 @@ struct DesktopCodeWorkspace: View {
                 }
             )
 
+        case .draft:
+            draft(nil)
+
         case .repository(let id):
-            if let record = workbenchModel.workspaces.first(where: { $0.id == id }) {
-                draft(record)
-            } else {
-                DesktopCodeFirstRun { isChoosingRepository = true }
-            }
+            // A repository that is no longer granted is exactly the state a
+            // projectless conversation serves: the reader still has something
+            // to say, and now has one fewer thing to say it about.
+            draft(workbenchModel.workspaces.first { $0.id == id })
 
         case nil:
-            if let record = workbenchModel.workspaces.first {
-                draft(record)
-            } else if isBootstrapping {
+            if isBootstrapping {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                DesktopCodeFirstRun { isChoosingRepository = true }
+                // Opens on the most recent project when there is one, and on a
+                // projectless conversation when there is not — never on a wall.
+                draft(workbenchModel.workspaces.first)
             }
         }
     }
 
-    private func draft(_ record: WorkspaceRecord) -> some View {
+    private func draft(_ record: WorkspaceRecord?) -> some View {
         DesktopCodeDraftDetail(
             record: record,
             workbench: workbenchModel,
@@ -374,7 +376,8 @@ struct DesktopCodeWorkspace: View {
             startLocal: start,
             openTask: { task in
                 selection.wrappedValue = .task(task.id)
-            }
+            },
+            addProject: { isChoosingRepository = true }
         )
     }
 
@@ -537,7 +540,7 @@ struct DesktopCodeWorkspace: View {
     private func approvalJumpControl(_ waiting: [CodeSession]) -> some View {
         if let first = waiting.first {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "hand.raised.fill")
+                JunoIconView(.permission, size: 15)
                     .foregroundStyle(Color.junoCaution)
                 Text(
                     waiting.count == 1
@@ -569,11 +572,13 @@ struct DesktopCodeWorkspace: View {
             return selectedRemoteSummary?.title ?? "Remote session"
         case .allProjects:
             return "All Projects"
+        case .draft:
+            return "New conversation"
         case .repository(let id):
             return workbenchModel.workspaces.first { $0.id == id }?
-                .descriptor.displayName ?? "Juno Code"
+                .descriptor.displayName ?? "New conversation"
         case nil:
-            return workbenchModel.workspaces.first?.descriptor.displayName ?? "Juno Code"
+            return workbenchModel.workspaces.first?.descriptor.displayName ?? "New conversation"
         }
     }
 
@@ -608,9 +613,12 @@ struct DesktopCodeWorkspace: View {
         case .allProjects:
             let count = workbenchModel.workspaces.count
             return count == 1 ? "1 project" : "\(count) projects"
+        case .draft:
+            return "No project"
         case .repository(let id):
             guard let record = workbenchModel.workspaces.first(where: { $0.id == id }) else {
-                return ""
+                // The grant is gone, so this is a projectless composer now.
+                return "No project"
             }
             parts = repositoryFacts(record)
         case nil:
@@ -876,18 +884,22 @@ struct DesktopCodeWorkspace: View {
 
     // MARK: - Actions
 
+    /// "New" means a new draft, as it does in Chat. Creating a persisted
+    /// session before the reader has written anything filled Projects and
+    /// Recents with abandoned "New session" rows and made ⌘N destructive to the
+    /// reader's place in the current transcript.
+    ///
+    /// With no project granted this used to open the folder picker instead —
+    /// ⌘N answered with a file dialog. It now opens the composer, and the
+    /// project is offered from inside it.
     private func newSession() {
-        guard let record = targetRepository else {
-            isChoosingRepository = true
-            return
-        }
-        // "New" means a new draft, as it does in Chat. Creating a persisted
-        // session before the reader has written anything filled Projects and
-        // Recents with abandoned "New session" rows and made ⌘N destructive to
-        // the reader's place in the current transcript.
         reviewVisible = false
         consoleVisible = false
-        selection.wrappedValue = .repository(record.id)
+        if let record = targetRepository {
+            selection.wrappedValue = .repository(record.id)
+        } else {
+            selection.wrappedValue = .draft
+        }
     }
 
     private func openPreview() {
@@ -1148,7 +1160,7 @@ private struct DesktopCodeTaskCanvas: View {
                 if let url = task.pullRequestURL {
                     HStack(spacing: JunoSpace.cozy) {
                         Link(destination: url) {
-                            Label("Open pull request", systemImage: "arrow.up.right.square")
+                            JunoIconLabel(verbatim: "Open pull request", icon: .pulls, size: 14)
                         }
                         Spacer(minLength: 0)
                     }
@@ -1165,10 +1177,15 @@ private struct DesktopCodeTaskCanvas: View {
 
     private func eventRow(_ event: NativeCodeEvent) -> some View {
         HStack(alignment: .top, spacing: JunoSpace.cozy) {
-            Image(systemName: symbol(event.kind))
-                .font(.caption)
-                .foregroundStyle(event.kind == .error ? Color.junoDanger : Color.junoAccent)
-                .frame(width: 18)
+            Group {
+                if let icon = junoIcon(event.kind) {
+                    JunoIconView(icon, size: 13)
+                } else {
+                    Image(systemName: symbol(event.kind)).font(.caption)
+                }
+            }
+            .foregroundStyle(event.kind == .error ? Color.junoDanger : Color.junoAccent)
+            .frame(width: 18)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(event.title).junoRowLabel()
                 if let detail = event.detail {
@@ -1202,6 +1219,21 @@ private struct DesktopCodeTaskCanvas: View {
         case .error: "exclamationmark.triangle"
         case .done: "checkmark.circle"
         case .agent: "person.2"
+        }
+    }
+
+    /// The two event kinds the website has its own mark for.
+    ///
+    /// A transcript is mostly native vocabulary — the web renders tool calls
+    /// and file changes as typed blocks, not as icons — but a permission
+    /// request is a shield everywhere else in Juno and a failure is a circle,
+    /// and a reader who has just seen those marks in the sidebar should not
+    /// meet different ones three inches away.
+    private func junoIcon(_ kind: NativeCodeEvent.Kind) -> JunoIcon? {
+        switch kind {
+        case .approvalRequest, .approvalResponse: .permission
+        case .error: .error
+        default: nil
         }
     }
 
@@ -1413,7 +1445,7 @@ private struct DesktopCodeRelayApproval: View {
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.snug) {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: "hand.raised.fill")
+                JunoIconView(.permission, size: 16)
                     .foregroundStyle(isCritical ? Color.junoDanger : Color.junoCaution)
                 Text("Approval required").junoTitle()
                 Spacer(minLength: 0)

@@ -72,19 +72,29 @@ public struct JunoLogo: View {
     }
 }
 
-/// A product destination's glyph.
+/// A Juno glyph: a product destination, or one of the things Juno Code talks
+/// about.
 ///
 /// These are the website's own icons, not lookalikes: the cases mirror
-/// `src/lib/app-icons.ts` one-for-one, and the assets are generated from the
-/// installed `lucide-react` by `scripts/generate-native-icons.mjs`, so the two
-/// platforms cannot drift. Regenerate rather than editing the SVGs by hand.
+/// `src/lib/app-icons.ts` one-for-one — the first group is its `AppIcons`, the
+/// second its `CodeIcons` — and the assets are generated from the installed
+/// `lucide-react` by `scripts/generate-native-icons.mjs`, so the two platforms
+/// cannot drift. Regenerate rather than editing the SVGs by hand.
 ///
 /// SF Symbols remain correct for *system* affordances — back, close, share,
-/// camera, photo picker — where there is no Juno icon and the platform glyph is
-/// what a user already recognises.
+/// camera, photo picker, chevrons, checkmarks — where there is no Juno icon and
+/// the platform glyph is what a user already recognises. The line is whether
+/// the mark names something in the product or something in the OS: a pull
+/// request is Juno's, a disclosure chevron is Apple's.
 public enum JunoIcon: String, CaseIterable, Sendable {
     case home, code, library, artifacts, projects
     case tasks, connections, pulls, conversation, new, search
+
+    /// Juno Code's vocabulary. `pin` is a pin and never a star, `error` is a
+    /// circle and never a triangle, and `branch` covers repository, default
+    /// branch and base ref alike — each because that is what the web draws.
+    case cloud, device, branch, lock, permission
+    case pin, error, refresh, external, file
 
     /// The asset-catalog name, matching the generator's output.
     public var assetName: String { "nav-\(rawValue)" }
@@ -111,6 +121,39 @@ public struct JunoIconView: View {
             .resizable()
             .scaledToFit()
             .frame(width: size, height: size)
+    }
+}
+
+/// A menu row, button or list row labelled with a Juno icon.
+///
+/// `Label(_:systemImage:)` cannot take one of these — the assets are images,
+/// not symbols — and `Label(_:image:)` renders them at the image's own size,
+/// which is a 24pt box beside 13pt menu text. This pairs the text with a
+/// ``JunoIconView`` sized for the row instead, so a Juno mark can appear
+/// anywhere an SF Symbol label already does.
+public struct JunoIconLabel: View {
+    private let title: Text
+    private let icon: JunoIcon
+    private let size: CGFloat
+
+    public init(_ title: LocalizedStringKey, icon: JunoIcon, size: CGFloat = 15) {
+        self.title = Text(title)
+        self.icon = icon
+        self.size = size
+    }
+
+    public init(verbatim title: String, icon: JunoIcon, size: CGFloat = 15) {
+        self.title = Text(title)
+        self.icon = icon
+        self.size = size
+    }
+
+    public var body: some View {
+        Label {
+            title
+        } icon: {
+            JunoIconView(icon, size: size)
+        }
     }
 }
 

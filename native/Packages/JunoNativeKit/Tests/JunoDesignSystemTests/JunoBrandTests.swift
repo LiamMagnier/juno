@@ -9,10 +9,29 @@ final class JunoBrandTests: XCTestCase {
         XCTAssertEqual(
             Set(JunoIcon.allCases.map(\.rawValue)),
             [
+                // AppIcons — the destinations.
                 "home", "code", "library", "artifacts", "projects",
                 "tasks", "connections", "pulls", "conversation", "new", "search",
+                // CodeIcons — the things Juno Code talks about.
+                "cloud", "device", "branch", "lock", "permission",
+                "pin", "error", "refresh", "external", "file",
             ]
         )
+    }
+
+    /// The marks a Code surface reaches for most, pinned by name so a rename on
+    /// the web side cannot quietly leave the apps drawing the old thing.
+    ///
+    /// `pin` in particular: the API field is `starred` and the section header
+    /// says "Pinned", and the Mac drew a star for exactly that reason until the
+    /// web was checked.
+    func testCodeMarksExistUnderTheNamesTheCodeSurfacesUse() {
+        for name in ["cloud", "device", "branch", "lock", "permission", "pin", "error"] {
+            XCTAssertNotNil(
+                JunoIcon(rawValue: name),
+                "Juno Code draws \(name); the generated set must carry it"
+            )
+        }
     }
 
     /// The asset name is the contract with `scripts/generate-native-icons.mjs`.

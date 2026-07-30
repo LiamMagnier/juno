@@ -518,7 +518,23 @@ public struct SessionGoal: Hashable, Codable, Sendable, Identifiable {
 
 public struct CodeSession: Hashable, Codable, Sendable {
     public let id: CodeSessionID
-    public let workspaceID: WorkspaceID
+    /// The project this session works in, or nil when it has none.
+    ///
+    /// Nil is a real, supported state: a conversation started before any folder
+    /// was granted. Such a session has no filesystem — see
+    /// `SessionController`, which builds it with an empty tool registry and a
+    /// system prompt that says so — and this is the property every layer keys
+    /// off to know that.
+    ///
+    /// It stays a `let`: a session's project is fixed for its lifetime, which
+    /// is what lets the sidebar caption, the window subtitle and the transcript
+    /// header state it once and never re-derive it.
+    ///
+    /// Decoded with `decodeIfPresent` (see the memberwise `Codable` conformance
+    /// below) so that records written before this was optional still load. The
+    /// store is a JSON file on the reader's own disk; a decode failure here
+    /// does not degrade, it empties the whole Code section.
+    public let workspaceID: WorkspaceID?
     public var title: String
     public var status: SessionStatus
     public var configuration: AgentConfiguration
@@ -534,7 +550,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
 
     public init(
         id: CodeSessionID = CodeSessionID(),
-        workspaceID: WorkspaceID,
+        workspaceID: WorkspaceID?,
         title: String,
         status: SessionStatus = .idle,
         configuration: AgentConfiguration,

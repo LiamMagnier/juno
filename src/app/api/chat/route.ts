@@ -1192,11 +1192,20 @@ async function handleChat(req: Request) {
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
-  // Juno Code sessions never run through the chat pipeline: their prompts are
-  // remote tasks executed on the user's Mac (POST /api/code/tasks + the task
-  // event stream). Refuse here so no client path can ever bill a code session
-  // against chat models or append chat-generated messages to it.
-  if (conversation?.kind === "code") {
+  // A Juno Code session that has somewhere to run never goes through the chat
+  // pipeline: its prompts are tasks executed on the user's Mac or in the cloud
+  // (POST /api/code/tasks + the task event stream). Refuse those here so no
+  // client path can bill such a session against chat models or append
+  // chat-generated messages to it.
+  //
+  // A code conversation with NO workspace is the exception, and the condition
+  // below is exactly its inverse. It is the "not in a project" conversation
+  // Juno Code offers before you have opened anything: there is no runner that
+  // could execute it — /api/code/queue needs a device id and the cloud path
+  // needs a repo — so the chat pipeline is not a shortcut around the task
+  // system, it is the only thing that can answer at all. Both conditions read
+  // the same two columns, so a session can never be answerable by both.
+  if (conversation?.kind === "code" && (conversation.codeWorkspacePath || conversation.codeWorkspaceKey)) {
     return NextResponse.json(
       { error: "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat." },
       { status: 409 }

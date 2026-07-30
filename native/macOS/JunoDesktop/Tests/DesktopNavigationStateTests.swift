@@ -127,6 +127,32 @@ struct DesktopNavigationStateTests {
         #expect(validated == .allProjects)
     }
 
+    /// A half-typed conversation with no project survives a relaunch.
+    ///
+    /// It encodes as a single field like the index above, and shares that
+    /// case's hazard: a decoder written around "kind + value" pairs returns nil
+    /// for it, which used to mean the reader landed back on the first-run wall.
+    @Test
+    func theProjectlessDraftRoundTripsThroughSceneStorage() {
+        let encoded = DesktopCodeNavigationState.encode(.draft)
+        #expect(encoded == "draft")
+        #expect(DesktopCodeNavigationState.decode(encoded) == .draft)
+    }
+
+    /// The composer names nothing that can go missing, so nothing that happens
+    /// to sessions, runs or projects can invalidate it. Validating it away is
+    /// how a reader on a fresh install would lose the only screen they can use.
+    @Test
+    func theProjectlessDraftStaysValidWithNothingGranted() {
+        let validated = DesktopCodeNavigationState.validate(
+            .draft,
+            sessions: [],
+            tasks: [],
+            repositories: []
+        )
+        #expect(validated == .draft)
+    }
+
     /// Scene storage outlives an app update, so a destination this build dropped
     /// must fall back rather than strand the window on a blank pane.
     @Test

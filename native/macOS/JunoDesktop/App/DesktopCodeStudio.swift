@@ -40,6 +40,14 @@ enum DesktopCodeSidebarItem: Hashable {
     /// have I given Juno access to?" without reading it off the sidebar, and
     /// clicking anything under Projects committed you to a specific repository.
     case allProjects
+    /// A conversation that has not chosen a project — the composer, with no
+    /// repository behind it.
+    ///
+    /// This is what the Code window opens on for a reader who has granted
+    /// nothing yet, and what "New conversation" selects. It is a destination
+    /// rather than a modal because the reader must be able to leave it, look at
+    /// a project, and come back to what they were typing.
+    case draft
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -97,6 +105,7 @@ enum DesktopCodeNavigationState {
         switch item {
         case .none: ""
         case .allProjects: "allProjects"
+        case .draft: "draft"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -109,6 +118,7 @@ enum DesktopCodeNavigationState {
         let fields = raw.components(separatedBy: unitSeparator)
         switch (fields.first, fields.count) {
         case ("allProjects", 1): return .allProjects
+        case ("draft", 1): return .draft
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -136,6 +146,8 @@ enum DesktopCodeNavigationState {
         // answering, which the detail surface reports honestly on its own.
         // Always valid: it names the collection, not a member of it.
         case .allProjects: return item
+        // Always valid: a draft names nothing that can go missing.
+        case .draft: return item
         case .remote, .none: return item
         }
     }
@@ -192,6 +204,15 @@ enum DesktopCodeNavigationState {
 struct CodeRunStatus {
     let label: String
     let symbol: String
+    /// The website's own mark, where the concept has one.
+    ///
+    /// Most of this vocabulary is native-only: the web draws run status as a
+    /// small tinted dot and has no glyph for queued, running or completed, so
+    /// an SF Symbol there is an elaboration rather than a divergence. Two of
+    /// these states *are* named on the web, though — a permission request is a
+    /// shield and a failure is a circle — and those two must not be a raised
+    /// hand and a cross here.
+    let junoIcon: JunoIcon?
     let tint: Color
     let isActive: Bool
     let needsApproval: Bool
@@ -199,12 +220,14 @@ struct CodeRunStatus {
     private init(
         label: String,
         symbol: String,
+        junoIcon: JunoIcon? = nil,
         tint: Color,
         isActive: Bool,
         needsApproval: Bool = false
     ) {
         self.label = label
         self.symbol = symbol
+        self.junoIcon = junoIcon
         self.tint = tint
         self.isActive = isActive
         self.needsApproval = needsApproval
@@ -225,6 +248,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Needs approval",
                 symbol: "hand.raised.fill",
+                junoIcon: .permission,
                 tint: .junoCaution,
                 isActive: true,
                 needsApproval: true
@@ -242,6 +266,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Failed",
                 symbol: "xmark.circle.fill",
+                junoIcon: .error,
                 tint: .junoDanger,
                 isActive: false
             )
@@ -265,6 +290,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Needs approval",
                 symbol: "hand.raised.fill",
+                junoIcon: .permission,
                 tint: .junoCaution,
                 isActive: true,
                 needsApproval: true
@@ -280,6 +306,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Failed",
                 symbol: "xmark.circle.fill",
+                junoIcon: .error,
                 tint: .junoDanger,
                 isActive: false
             )
@@ -301,6 +328,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Needs approval",
                 symbol: "hand.raised.fill",
+                junoIcon: .permission,
                 tint: .junoCaution,
                 isActive: true,
                 needsApproval: true
@@ -318,6 +346,7 @@ struct CodeRunStatus {
             self.init(
                 label: "Failed",
                 symbol: "xmark.circle.fill",
+                junoIcon: .error,
                 tint: .junoDanger,
                 isActive: false
             )
@@ -338,6 +367,9 @@ struct CodeStatusIndicator: View {
                 ProgressView()
                     .controlSize(.small)
                     .tint(status.tint)
+            } else if let junoIcon = status.junoIcon {
+                JunoIconView(junoIcon, size: 13)
+                    .foregroundStyle(status.tint)
             } else {
                 Image(systemName: status.symbol)
                     .foregroundStyle(status.tint)
@@ -422,9 +454,10 @@ struct DesktopCodeSidebar: View {
         var runsByWorkspace: [WorkspaceID: [DesktopCodeRun]] = [:]
         for run in allRuns {
             guard case .session(let sessionID) = run.item,
-                let session = workbench.sessions.first(where: { $0.id == sessionID })
+                let session = workbench.sessions.first(where: { $0.id == sessionID }),
+                let workspaceID = session.workspaceID
             else { continue }
-            runsByWorkspace[session.workspaceID, default: []].append(run)
+            runsByWorkspace[workspaceID, default: []].append(run)
         }
         // Driven by `workspaces`, not by the sessions, so a repository the reader
         // has granted but not yet worked in still appears — that empty project is
@@ -445,12 +478,21 @@ struct DesktopCodeSidebar: View {
     /// under Recents made the sidebar mostly duplicates. Cloud, dispatched-device
     /// and relay-watched runs have no local `WorkspaceID`; this is their one
     /// durable home after they leave Active.
+    ///
+    /// A conversation started with no project has no `WorkspaceID` either, and
+    /// so belongs here for the same reason — without this it would appear in no
+    /// section at all, and a reader who started one, looked away and came back
+    /// would have lost it permanently.
     private func relayedRuns(from allRuns: [DesktopCodeRun]) -> [DesktopCodeRun] {
         Array(
             allRuns
                 .filter { run in
                     guard !run.status.isActive else { return false }
-                    if case .session = run.item { return false }
+                    if case .session(let id) = run.item {
+                        return workbench.sessions
+                            .first { $0.id == id }?
+                            .workspaceID == nil
+                    }
                     return true
                 }
                 .sorted { $0.updatedAt > $1.updatedAt }
@@ -464,6 +506,21 @@ struct DesktopCodeSidebar: View {
         let groups = projectGroups(from: allRuns)
 
         return List(selection: $selection) {
+            // The way back to a blank composer, always in the same place.
+            //
+            // It is a selectable row rather than a button because it *is* a
+            // destination — the reader can leave a half-typed conversation to
+            // look at a project and select this again to return to it — and
+            // because ⌘N selects the same item, so the two agree.
+            Label {
+                Text("New conversation").junoRowLabel()
+            } icon: {
+                JunoIconView(.new, size: 15)
+            }
+            .junoSidebarRowInk()
+            .tag(DesktopCodeSidebarItem.draft)
+            .accessibilityIdentifier("juno.code.new-conversation")
+
             // Anything running comes first and is never nested. A run needing
             // attention must not be one disclosure triangle away.
             if !active.isEmpty {
@@ -486,7 +543,7 @@ struct DesktopCodeSidebar: View {
             Section {
                 if groups.isEmpty {
                     VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        Text("Projects keep Code sessions and their files together.")
+                        Text("Add a project to let Juno read and change real files.")
                             .junoCaption()
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -510,7 +567,7 @@ struct DesktopCodeSidebar: View {
                     Label {
                         Text("All Projects").junoRowLabel()
                     } icon: {
-                        Image(systemName: "square.grid.2x2")
+                        JunoIconView(.projects, size: 15)
                     }
                     .junoSidebarRowInk()
                     .badge(groups.count)
@@ -791,6 +848,12 @@ struct DesktopCodeSidebar: View {
         workbench.sessions.filter { $0.workspaceID == project.workspaceID }
     }
 
+    /// Whether the selected item is the projectless composer.
+    private var isDraftSelected: Bool {
+        if case .draft = selection { return true }
+        return false
+    }
+
     private func selectionBelongs(to workspaceID: WorkspaceID) -> Bool {
         switch selection {
         case .repository(let id):
@@ -799,7 +862,7 @@ struct DesktopCodeSidebar: View {
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
         // The index belongs to no single project, so deleting one never leaves the
         // reader stranded on it.
-        case .allProjects, .task, .remote, nil:
+        case .allProjects, .draft, .task, .remote, nil:
             return false
         }
     }
@@ -821,8 +884,7 @@ struct DesktopCodeSidebar: View {
             }
             Spacer(minLength: JunoSpace.hairline)
             if isFavorite(run) {
-                Image(systemName: "star.fill")
-                    .imageScale(.small)
+                JunoIconView(.pin, size: 11)
                     .foregroundStyle(Color.junoCaution)
                     .accessibilityLabel("Favorite")
             }
@@ -843,8 +905,10 @@ struct DesktopCodeSidebar: View {
                     Task { await workbench.toggleFavorite(id: id) }
                 }
                 Button("Rename…") { rename(session) }
-                Button("New Session in This Repository") {
-                    newSession(session.workspaceID)
+                if let workspaceID = session.workspaceID {
+                    Button("New Session in This Repository") {
+                        newSession(workspaceID)
+                    }
                 }
                 Divider()
                 Button("Delete", role: .destructive) {
@@ -874,9 +938,9 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .repository:
-            // Neither reaches this row builder: repositories carry their own menu,
-            // and the index is not a run.
+        case .allProjects, .draft, .repository:
+            // None reaches this row builder: repositories carry their own menu,
+            // and neither the index nor the composer is a run.
             EmptyView()
         }
     }
@@ -942,9 +1006,8 @@ struct DesktopCodeSidebar: View {
         } else if let error = workbench.lastError {
             VStack(alignment: .leading, spacing: JunoSpace.snug) {
                 HStack(alignment: .top, spacing: JunoSpace.snug) {
-                    Image(systemName: "exclamationmark.triangle.fill")
+                    JunoIconView(.error, size: 13)
                         .foregroundStyle(Color.junoCaution)
-                        .imageScale(.small)
                     Text(error)
                         .junoCaption()
                         .lineLimit(4)
@@ -1026,7 +1089,8 @@ enum DesktopCodeRunBuilder {
             DesktopCodeRun(
                 item: .session(session.id),
                 title: session.title,
-                workspace: workspaceNames[session.workspaceID] ?? "Workspace",
+                workspace: session.workspaceID
+                    .map { workspaceNames[$0] ?? "Workspace" } ?? "No project",
                 branch: session.gitBranch,
                 environment: .local,
                 status: CodeRunStatus(
@@ -1076,62 +1140,6 @@ enum DesktopCodeRunBuilder {
 
 // MARK: - Pre-session detail states
 
-/// Nothing has ever been opened.
-///
-/// One honest state with one action, not a decorative greeting. The previous
-/// build spent the whole canvas on a wordmark, a target picker, a behaviour
-/// picker and four suggestion cards before the reader had granted access to
-/// anything at all.
-struct DesktopCodeFirstRun: View {
-    let openRepository: () -> Void
-
-    var body: some View {
-        VStack(spacing: JunoSpace.roomy) {
-            Spacer()
-            ZStack {
-                Circle()
-                    .fill(Color.junoAccent.opacity(0.12))
-                    .frame(width: 80, height: 80)
-                Image(systemName: "folder.badge.plus")
-                    .font(.system(size: 34, weight: .regular))
-                    .foregroundStyle(Color.junoAccent)
-            }
-
-            VStack(spacing: JunoSpace.snug) {
-                Text("Open a repository")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(Color.primary)
-
-                Text("Juno Code works from a folder on your Mac. File tools stay inside it, and shell commands follow your permission settings.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 440)
-            }
-
-            Button(action: openRepository) {
-                HStack(spacing: JunoSpace.tight) {
-                    Image(systemName: "folder.badge.plus")
-                    Text("Open Repository…")
-                }
-                .font(.callout.weight(.medium))
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.vertical, JunoSpace.tight)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
-            .controlSize(.large)
-            .keyboardShortcut("o", modifiers: [.command])
-            .accessibilityIdentifier("juno.code.first-run-open")
-
-            Spacer()
-        }
-        .padding(JunoSpace.region)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .junoReadingCanvas()
-    }
-}
-
 /// The three real places a Code run can execute.
 ///
 /// `NativeCodeTarget` intentionally has no local case because it models the
@@ -1162,6 +1170,21 @@ enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The website's mark for this destination, where it has one.
+    ///
+    /// The web offers two targets, Device and Cloud, and draws them as a laptop
+    /// and a cloud. The Mac has a third — *another* of your computers — which
+    /// the web cannot express and therefore has no mark for, so that one keeps
+    /// a system symbol. Giving all three the laptop would say the wrong thing
+    /// twice over.
+    var junoIcon: JunoIcon? {
+        switch self {
+        case .local: .device
+        case .cloud: .cloud
+        case .device: nil
+        }
+    }
+
     var nativeTarget: NativeCodeTarget? {
         switch self {
         case .local: nil
@@ -1178,7 +1201,9 @@ enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
 /// hard-coded values. This value is also the seam that keeps the launch surface
 /// independently testable from the local runtime.
 struct DesktopLocalCodeDraft: Equatable {
-    let workspaceID: WorkspaceID
+    /// nil starts the conversation with no project: no file tools, no shell,
+    /// no Git — see `SessionController.makeProjectlessOrchestrator`.
+    let workspaceID: WorkspaceID?
     let prompt: String
     let behavior: AgentBehavior
     let permissionMode: PermissionMode
@@ -1214,12 +1239,24 @@ struct DesktopLocalCodeDraft: Equatable {
 /// first send creates and starts the run; it never creates an empty session merely
 /// because the reader clicked "New".
 struct DesktopCodeDraftDetail: View {
-    let record: WorkspaceRecord
+    /// The project this conversation will work in, or nil for one that has
+    /// none.
+    ///
+    /// Nil is the ordinary state on a fresh install and a first-class one
+    /// after: the composer is fully usable without it, and the bar at the top
+    /// offers a project rather than demanding one. The screen that used to
+    /// stand here — a wordmark, a paragraph and a single "Open Repository…"
+    /// button — could not be typed into at all, which made "ask Juno a
+    /// question" impossible until you had granted a folder to a tool you had
+    /// not yet been able to ask anything about.
+    let record: WorkspaceRecord?
     let workbench: WorkbenchModel
     let code: NativeCodeModel
     let isStartingLocal: Bool
     let startLocal: (DesktopLocalCodeDraft) -> Void
     let openTask: (NativeCodeTask) -> Void
+    /// Opens the folder picker, from the "Open a project…" affordance.
+    let addProject: () -> Void
 
     @SceneStorage("juno.desktop.code.launch-target")
     private var storedTarget = DesktopCodeLaunchTarget.local.rawValue
@@ -1237,6 +1274,33 @@ struct DesktopCodeDraftDetail: View {
         let prompt: String
         var id: String { title }
     }
+
+    /// Openers for a conversation with no project. Every one of these is
+    /// answerable from the conversation alone — none asks Juno to look at
+    /// something it cannot see, which is what the project suggestions below all
+    /// do.
+    private static let projectlessSuggestions: [Suggestion] = [
+        Suggestion(
+            title: "Explain a concept",
+            symbol: "text.book.closed",
+            prompt: "Explain how "
+        ),
+        Suggestion(
+            title: "Review pasted code",
+            symbol: "checklist",
+            prompt: "Review this code for correctness, edge cases and security risk:\n\n"
+        ),
+        Suggestion(
+            title: "Design an approach",
+            symbol: "list.bullet.clipboard",
+            prompt: "I need to build "
+        ),
+        Suggestion(
+            title: "Debug an error",
+            symbol: "ant",
+            prompt: "I'm getting this error and I don't understand why:\n\n"
+        ),
+    ]
 
     private static let suggestions: [Suggestion] = [
         Suggestion(
@@ -1261,8 +1325,14 @@ struct DesktopCodeDraftDetail: View {
         ),
     ]
 
+    /// Cloud and device runs both need somewhere to run — a repository, or a
+    /// folder on a computer — so a conversation with no project is pinned to
+    /// this Mac. Leaving the stored target in place would restore a reader
+    /// straight onto a composer that `startBlockedReason` refuses, and the
+    /// feature would read as broken on its first use.
     private var target: DesktopCodeLaunchTarget {
-        DesktopCodeLaunchTarget(rawValue: storedTarget) ?? .local
+        guard record != nil else { return .local }
+        return DesktopCodeLaunchTarget(rawValue: storedTarget) ?? .local
     }
 
     private var targetBinding: Binding<DesktopCodeLaunchTarget> {
@@ -1316,6 +1386,9 @@ struct DesktopCodeDraftDetail: View {
 
     private var canSend: Bool {
         guard !trimmedPrompt.isEmpty else { return false }
+        // A projectless conversation only needs a model — there is no
+        // repository, device or workspace for anything else to be blocked on.
+        if record == nil { return !modelID.isEmpty && !isStartingLocal }
         switch target {
         case .local:
             return !modelID.isEmpty && !isStartingLocal
@@ -1332,9 +1405,13 @@ struct DesktopCodeDraftDetail: View {
             Color.clear.overlay(alignment: .bottom) {
                 VStack(spacing: JunoSpace.cozy) {
                     VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                        Text("Start a task")
+                        Text(record == nil ? "Start a conversation" : "Start a task")
                             .font(.title2.weight(.semibold))
-                        Text("Describe the outcome. Juno will inspect the repository before it edits.")
+                        Text(
+                            record == nil
+                                ? "Ask, plan, or think something through. Open a project when you want Juno to read and change real files."
+                                : "Describe the outcome. Juno will inspect the repository before it edits."
+                        )
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }
@@ -1364,10 +1441,59 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
+    @ViewBuilder
     private var repositoryContextBar: some View {
+        if let record {
+            projectContextBar(record)
+        } else {
+            noProjectBar
+        }
+    }
+
+    /// The bar for a conversation with no project.
+    ///
+    /// It states the consequence — no files, no commands — rather than only the
+    /// absence, because "No project" alone reads as a setup step the reader
+    /// skipped rather than as a working mode. The action is an offer sitting
+    /// beside a usable composer, which is the whole difference from the wall
+    /// this replaces.
+    private var noProjectBar: some View {
         HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: record.descriptor.isGitRepository ? "folder.fill" : "folder")
-                .font(.title3)
+            JunoIconView(.projects, size: 19)
+                .foregroundStyle(.tertiary)
+                .frame(width: 28, height: 28)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No project")
+                    .font(.headline)
+                Text("Juno can answer and plan here, but cannot read or change files.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
+            Spacer(minLength: JunoSpace.cozy)
+
+            Button(action: addProject) {
+                JunoIconLabel(verbatim: "Open a Project…", icon: .projects, size: 13)
+            }
+            .buttonStyle(.bordered)
+            .keyboardShortcut("o", modifiers: [.command])
+            .accessibilityIdentifier("juno.code.draft-open-project")
+        }
+        .controlSize(.small)
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(minHeight: 52)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("juno.code.no-project-context")
+    }
+
+    private func projectContextBar(_ record: WorkspaceRecord) -> some View {
+        HStack(spacing: JunoSpace.cozy) {
+            JunoIconView(.projects, size: 19)
                 .foregroundStyle(.secondary)
                 .frame(width: 28, height: 28)
                 .accessibilityHidden(true)
@@ -1403,7 +1529,7 @@ struct DesktopCodeDraftDetail: View {
                     URL(fileURLWithPath: record.descriptor.localPathHint)
                 ])
             } label: {
-                Label("Show in Finder", systemImage: "arrow.forward.square")
+                JunoIconLabel(verbatim: "Show in Finder", icon: .external, size: 14)
             }
             .labelStyle(.iconOnly)
             .help("Show this repository in Finder")
@@ -1424,9 +1550,11 @@ struct DesktopCodeDraftDetail: View {
                 destinationRow
 
                 TextField(
-                    target == .local
-                        ? "Ask Juno to build, fix, review, or explain…"
-                        : "Describe the task to run…",
+                    record == nil
+                        ? "Ask Juno anything about code…"
+                        : target == .local
+                            ? "Ask Juno to build, fix, review, or explain…"
+                            : "Describe the task to run…",
                     text: $prompt,
                     axis: .vertical
                 )
@@ -1454,13 +1582,18 @@ struct DesktopCodeDraftDetail: View {
                 }
 
                 HStack(spacing: JunoSpace.snug) {
-                    targetMenu
+                    // A projectless conversation has exactly one place it can
+                    // run, so the picker would be a control with one working
+                    // choice and two that refuse.
+                    if record != nil {
+                        targetMenu
 
-                    Rectangle()
-                        .fill(Color.junoHairline)
-                        .frame(width: 1, height: 19)
-                        .padding(.horizontal, 2)
-                        .accessibilityHidden(true)
+                        Rectangle()
+                            .fill(Color.junoHairline)
+                            .frame(width: 1, height: 19)
+                            .padding(.horizontal, 2)
+                            .accessibilityHidden(true)
+                    }
 
                     launchControls
 
@@ -1483,9 +1616,19 @@ struct DesktopCodeDraftDetail: View {
 
     private var destinationRow: some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: target.symbol)
-                .foregroundStyle(Color.junoAccent)
-                .contentTransition(.symbolEffect(.replace))
+            // `.symbolEffect` is an SF Symbol capability; a Juno mark is an
+            // image asset and cannot morph, so the two branches differ in more
+            // than which glyph they draw.
+            if let junoIcon = target.junoIcon {
+                JunoIconView(junoIcon, size: 15)
+                    .foregroundStyle(Color.junoAccent)
+                    .transition(.opacity)
+                    .id(target)
+            } else {
+                Image(systemName: target.symbol)
+                    .foregroundStyle(Color.junoAccent)
+                    .contentTransition(.symbolEffect(.replace))
+            }
             Text(destinationTitle)
                 .junoRowLabel()
                 .lineLimit(1)
@@ -1505,14 +1648,26 @@ struct DesktopCodeDraftDetail: View {
         Menu {
             Picker("Run on", selection: targetBinding) {
                 ForEach(DesktopCodeLaunchTarget.allCases) { choice in
-                    Label(choice.label, systemImage: choice.symbol)
-                        .tag(choice)
+                    Group {
+                        if let junoIcon = choice.junoIcon {
+                            JunoIconLabel(verbatim: choice.label, icon: junoIcon, size: 14)
+                        } else {
+                            Label(choice.label, systemImage: choice.symbol)
+                        }
+                    }
+                    .tag(choice)
                 }
             }
         } label: {
-            Label(target.label, systemImage: target.symbol)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Group {
+                if let junoIcon = target.junoIcon {
+                    JunoIconLabel(verbatim: target.label, icon: junoIcon, size: 12)
+                } else {
+                    Label(target.label, systemImage: target.symbol)
+                }
+            }
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -1576,16 +1731,22 @@ struct DesktopCodeDraftDetail: View {
                         .tag(value)
                 }
             }
-            .disabled(behavior != .code)
+            // A permission level governs tools, and a conversation with no
+            // project has none. `SessionController` pins such a session to
+            // read-only regardless; naming a level here that the session will
+            // not use would be the composer claiming a power it does not have.
+            .disabled(behavior != .code || record == nil)
         } label: {
             Label(
-                behavior == .code
+                behavior == .code && record != nil
                     ? "\(AgentBehaviorLabel.text(for: behavior)) · \(PermissionModeLabel.shortText(for: permissionMode))"
                     : AgentBehaviorLabel.text(for: behavior),
                 systemImage: AgentBehaviorLabel.glyph(for: behavior)
             )
             .font(.caption)
-            .foregroundStyle(permissionMode == .fullAccess ? Color.junoCaution : .secondary)
+            .foregroundStyle(
+                permissionMode == .fullAccess && record != nil ? Color.junoCaution : .secondary
+            )
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -1659,7 +1820,7 @@ struct DesktopCodeDraftDetail: View {
 
     private var suggestionsMenu: some View {
         Menu {
-            ForEach(Self.suggestions) { suggestion in
+            ForEach(record == nil ? Self.projectlessSuggestions : Self.suggestions) { suggestion in
                 Button {
                     prompt = suggestion.prompt
                     focused = true
@@ -1705,7 +1866,7 @@ struct DesktopCodeDraftDetail: View {
     private var destinationTitle: String {
         switch target {
         case .local:
-            record.descriptor.displayName
+            record?.descriptor.displayName ?? "No project"
         case .cloud:
             code.selectedRepository?.fullName ?? "Choose a GitHub repository"
         case .device:
@@ -1718,7 +1879,8 @@ struct DesktopCodeDraftDetail: View {
     private var destinationDetail: String {
         switch target {
         case .local:
-            (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath
+            record.map { ($0.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath }
+                ?? "Answers only — no files, no commands"
         case .cloud:
             code.selectedRepository.map { "\($0.defaultBranch) · opens a pull request" }
                 ?? "GitHub Actions"
@@ -1746,7 +1908,9 @@ struct DesktopCodeDraftDetail: View {
     private var footerNote: String {
         switch target {
         case .local:
-            behavior == .code
+            record == nil
+                ? "No files, no commands — open a project when you want Juno to read or change real ones."
+                : behavior == .code
                 ? PermissionModeLabel.explanation(for: permissionMode)
                 : AgentBehaviorLabel.explanation(for: behavior)
         case .cloud:
@@ -1817,7 +1981,7 @@ struct DesktopCodeDraftDetail: View {
         case .local:
             startLocal(
                 DesktopLocalCodeDraft(
-                    workspaceID: record.id,
+                    workspaceID: record?.id,
                     prompt: trimmedPrompt,
                     behavior: behavior,
                     permissionMode: permissionMode,

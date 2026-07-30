@@ -186,6 +186,27 @@ struct DesktopCodeModelMappingTests {
         #expect(draft.configuration.reasoningEffort == .high)
     }
 
+    /// A conversation started with no project carries that fact intact to the
+    /// runtime, which is what selects the empty tool registry. Everything else
+    /// the reader chose still applies — model and thinking depth are not
+    /// features of having a folder.
+    @Test
+    func aProjectlessDraftCarriesNoWorkspaceAndStillRunsLocally() {
+        let draft = DesktopLocalCodeDraft(
+            workspaceID: nil,
+            prompt: "Explain how CRDTs converge",
+            behavior: .code,
+            permissionMode: .askBeforeChanges,
+            modelID: "anthropic:claude-sonnet-5",
+            reasoningEffort: .medium
+        )
+
+        #expect(draft.workspaceID == nil)
+        #expect(draft.configuration.location == .local)
+        #expect(draft.configuration.modelID == "anthropic:claude-sonnet-5")
+        #expect(draft.configuration.reasoningEffort == .medium)
+    }
+
     @Test
     func firstPromptBecomesAReadableSessionTitle() {
         #expect(
