@@ -597,6 +597,8 @@ struct DesktopConversationView: View {
                 DesktopTranscript(
                     model: model,
                     messageActions: configuration.messageActionsClient,
+                    followUpClient: configuration.followUpClient,
+                    draftPrompt: $draftPrompt,
                     accountID: session.profile.id,
                     syncModel: configuration.syncModel
                 )
@@ -747,6 +749,12 @@ private struct DesktopChatDisclaimer: View {
 private struct DesktopTranscript: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
     let messageActions: NativeMessageActionsClient?
+    /// Suggests what to ask next, under a finished reply.
+    let followUpClient: NativeFollowUpClient?
+    /// Picking a suggestion seeds the composer through the same binding the
+    /// sidebar's "start from this" already uses, rather than a second path into
+    /// the same text field.
+    @Binding var draftPrompt: String?
     let accountID: AccountID
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var actionError: String?
@@ -812,6 +820,21 @@ private struct DesktopTranscript: View {
 
                     if model.isGenerating, !model.researchActivity.isEmpty {
                         DesktopResearchActivity(items: model.researchActivity)
+                    }
+
+                    // Under the last reply, once it has settled. Inside the stack
+                    // so it scrolls with the transcript rather than floating over
+                    // it, and clamped to the reading column like everything else.
+                    if let conversationID = model.selectedConversationID {
+                        NativeFollowUpStrip(
+                            conversationID: conversationID,
+                            accountID: accountID,
+                            client: followUpClient,
+                            ready: !model.isGenerating
+                                && model.selectedMessages.last?.role == .assistant,
+                            onPick: { draftPrompt = $0 }
+                        )
+                        .frame(maxWidth: Self.readingWidth, alignment: .leading)
                     }
 
                     if let error = model.chatErrorDescription {
