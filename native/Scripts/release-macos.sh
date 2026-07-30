@@ -209,18 +209,33 @@ fi
 step "Gatekeeper"
 # The app inside the image has to pass on a machine that has never seen it,
 # which is what `spctl --assess` answers.
-MOUNT="$(hdiutil attach "$DMG" -nobrowse -readonly -mountrandom /tmp -plist \
-  | plutil -extract system-entities.0.mount-point raw - 2>/dev/null \
-  || hdiutil attach "$DMG" -nobrowse -readonly | tail -1 | awk '{print $3}')"
+#
+# Attached ONCE. This was `hdiutil attach … | plutil … || hdiutil attach …`,
+# and the fallback is not a fallback: `plutil` fails whenever the first
+# system-entity is the partition scheme rather than the mounted volume, which
+# is most of the time — so the `||` ran a SECOND attach against an image that
+# was already attached and the step died on "Resource busy", leaving two
+# images mounted behind it.
+ATTACH_PLIST="$(hdiutil attach "$DMG" -nobrowse -readonly -mountrandom /tmp -plist)"
+MOUNT="$(printf '%s' "$ATTACH_PLIST" \
+  | xmllint --xpath 'string(//key[text()="mount-point"]/following-sibling::string[1])' - 2>/dev/null)"
+if [ -z "$MOUNT" ]; then
+  printf '%s' "$ATTACH_PLIST" | grep -o '/tmp/dmg\.[A-Za-z0-9]*' | head -1 | read -r MOUNT || true
+fi
+[ -n "$MOUNT" ] && [ -d "$MOUNT" ] || die "The disk image mounted but its mount point could not be read."
+# Detached however this step ends, including a failure: a release run must not
+# leave images attached for the next one to trip over.
+trap 'hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true' EXIT
+
 if spctl --assess --type execute --verbose=4 "$MOUNT/$(basename "$APP")" 2>&1; then
   :
 elif [ "$NOTARIZE" = 1 ]; then
-  hdiutil detach "$MOUNT" -force >/dev/null 2>&1 || true
   die "Gatekeeper rejected the notarized app."
 else
   printf '  (rejected, as expected for a development build)\n'
 fi
 hdiutil detach "$MOUNT" -force >/dev/null
+trap - EXIT
 
 SHA="$(shasum -a 256 "$DMG" | awk '{print $1}')"
 SIZE="$(stat -f%z "$DMG")"
