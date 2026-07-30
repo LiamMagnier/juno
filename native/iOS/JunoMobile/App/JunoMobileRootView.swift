@@ -48,6 +48,7 @@ struct JunoMobileRootView: View {
     var voiceTranscriptClient: NativeVoiceTranscriptClient?
     /// Backs the transcript's action row — rate, branch, read aloud.
     var messageActionsClient: NativeMessageActionsClient?
+    var followUpClient: NativeFollowUpClient?
     // Restores the last-viewed destination across relaunches (per scene).
     @SceneStorage("juno.mobile.selection") private var selection = JunoMobileSection.chat
     @State private var sidebarOpen = false
@@ -676,6 +677,7 @@ struct JunoMobileRootView: View {
                 memoryEnabled: memorySettingsModel?.settings?.memoryEnabled ?? true,
                 setMemoryEnabled: memoryAction,
                 messageActions: messageActionsClient,
+                followUpClient: followUpClient,
                 accountID: currentSession?.profile.id,
                 voiceID: memorySettingsModel?.settings?.voiceID
             )

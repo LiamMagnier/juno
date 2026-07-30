@@ -45,6 +45,8 @@ struct JunoMobileChatDetailScreen: View {
     var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     /// Server-backed message actions — rate, branch, read aloud.
     var messageActions: NativeMessageActionsClient?
+    /// Suggests what to ask next, under a finished reply.
+    var followUpClient: NativeFollowUpClient?
     var accountID: AccountID?
     /// The account's read-aloud voice, from Settings.
     var voiceID: String?
@@ -90,6 +92,7 @@ struct JunoMobileChatDetailScreen: View {
                     readAloud: readAloud,
                     voiceID: voiceID,
                     messageActions: messageActions,
+                    followUpClient: followUpClient,
                     accountID: accountID
                 )
             } else {
@@ -343,6 +346,8 @@ private struct JunoMobileConversationDetail: View {
     var voiceID: String?
     /// Server-backed message actions. Nil where the app could not be configured.
     var messageActions: NativeMessageActionsClient?
+    /// Suggests what to ask next, under a finished reply.
+    var followUpClient: NativeFollowUpClient?
     var accountID: AccountID?
     /// The artifact the reader tapped in the transcript, presented over it.
     @State private var openArtifact: NativeArtifact?
@@ -574,6 +579,18 @@ private struct JunoMobileConversationDetail: View {
                         setFeedback: feedbackAction
                     )
                 }
+
+                // Under the last reply, and only once it has settled. Inside the
+                // same stack so it scrolls with the transcript rather than
+                // floating over it, and after the ForEach so it cannot come
+                // between two messages.
+                NativeFollowUpStrip(
+                    conversationID: conversation.id,
+                    accountID: accountID,
+                    client: followUpClient,
+                    ready: !model.isGenerating && messages.last?.role == .assistant,
+                    onPick: { prompt = $0 }
+                )
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 24)

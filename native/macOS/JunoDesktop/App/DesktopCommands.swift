@@ -55,7 +55,12 @@ struct JunoDesktopCommands: Commands {
                 // the reader closed its last one. The previous command was then
                 // disabled because there was no focused workspace, leaving the
                 // app alive in the menu bar with no way back to its UI.
-                Button("New Window") {
+                Button("New Incognito Window") {
+                openWindow(id: JunoDesktopWindow.incognitoID)
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
+            Button("New Window") {
                     openWindow(id: JunoDesktopWindow.mainID)
                 }
                 .keyboardShortcut("n", modifiers: [.command])

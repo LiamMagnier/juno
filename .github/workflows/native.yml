@@ -64,10 +64,17 @@ jobs:
   # settings the release gates use. `--scratch-path` is deliberately outside the
   # checkout: a `.build` directory inside a File Provider-backed tree picks up
   # resource forks that break product signing.
+  #
+  # `macos-26`, not `macos-15`, and the same for both app jobs below. The image
+  # ships Xcode 26.3, and this project's deployment floor requires it — but a
+  # macOS 15 runner then *runs* what that SDK produced, and its SwiftUI has no
+  # `_TagTraitWritingModifier`, which is what `.tag()` now lowers to. The test
+  # bundle built fine and failed at `dlopen`. Building against one OS's SDK and
+  # running on an older OS is the whole bug; matching them is the fix.
   # ---------------------------------------------------------------------------
   packages:
     name: Swift packages
-    runs-on: macos-15
+    runs-on: macos-26
     strategy:
       fail-fast: false
       matrix:
@@ -99,7 +106,7 @@ jobs:
   # ---------------------------------------------------------------------------
   macos-app:
     name: macOS app
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
@@ -172,7 +179,7 @@ jobs:
   # ---------------------------------------------------------------------------
   ios-app:
     name: iOS app
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 

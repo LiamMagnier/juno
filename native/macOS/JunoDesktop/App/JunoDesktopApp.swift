@@ -7,6 +7,10 @@ import JunoPreviewSupport
 
 enum JunoDesktopWindow {
     static let mainID = "juno.main"
+    /// Incognito is a WINDOW on this platform, not a mode inside the main one.
+    /// Closing it is what erases the conversation, and that reads as a promise
+    /// only if the thing you close is the thing that held it.
+    static let incognitoID = "juno.incognito"
 }
 
 @main
@@ -65,6 +69,18 @@ struct JunoDesktopApp: App {
         // control. Each window owns the dev-server process it starts and tears
         // that process down when it closes.
         CodePreviewScene()
+
+        // ⇧⌘N, as in every browser's private window. `Window` rather than
+        // `WindowGroup`: two incognito windows would be two separate untracked
+        // conversations with one menu item to reach them, and no way to tell
+        // which is which.
+        Window("Incognito", id: JunoDesktopWindow.incognitoID) {
+            if let configuration {
+                DesktopIncognitoWindow(configuration: configuration)
+                    .frame(minWidth: 560, minHeight: 480)
+            }
+        }
+        .defaultSize(width: 720, height: 720)
 
         // A `Settings` scene is what puts Juno's settings behind ⌘, and under the
         // application menu, where a Mac user looks for them. Reaching settings

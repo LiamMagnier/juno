@@ -38,6 +38,8 @@ struct JunoMobileApp: App {
     private let accountDataClient: NativeAccountDataClient?
     private let voiceTranscriptClient: NativeVoiceTranscriptClient?
     private let messageActionsClient: NativeMessageActionsClient?
+    /// Suggests what to ask next, under a finished reply.
+    private let followUpClient: NativeFollowUpClient?
 
     init() {
         let configuration = Self.makeConfiguration()
@@ -57,6 +59,7 @@ struct JunoMobileApp: App {
         accountDataClient = configuration.accountDataClient
         voiceTranscriptClient = configuration.voiceTranscriptClient
         messageActionsClient = configuration.messageActionsClient
+        followUpClient = configuration.followUpClient
         localStore = configuration.localStore
         outbox = configuration.outbox
         attachmentModel = configuration.attachmentModel
@@ -114,7 +117,8 @@ struct JunoMobileApp: App {
             requestSender: requestSender,
             accountDataClient: accountDataClient,
             voiceTranscriptClient: voiceTranscriptClient,
-            messageActionsClient: messageActionsClient
+            messageActionsClient: messageActionsClient,
+            followUpClient: followUpClient
         )
     }
 
@@ -242,7 +246,8 @@ struct JunoMobileApp: App {
                 requestSender: runtime,
                 accountDataClient: NativeAccountDataClient(sender: runtime),
                 voiceTranscriptClient: NativeVoiceTranscriptClient(sender: runtime),
-                messageActionsClient: NativeMessageActionsClient(sender: runtime)
+                messageActionsClient: NativeMessageActionsClient(sender: runtime),
+                followUpClient: NativeFollowUpClient(sender: runtime)
             )
         } catch {
             return JunoMobileConfiguration(
@@ -267,7 +272,8 @@ struct JunoMobileApp: App {
                 requestSender: nil,
                 accountDataClient: nil,
                 voiceTranscriptClient: nil,
-                messageActionsClient: nil
+                messageActionsClient: nil,
+                followUpClient: nil
             )
         }
     }
@@ -303,4 +309,5 @@ private struct JunoMobileConfiguration {
     let accountDataClient: NativeAccountDataClient?
     let voiceTranscriptClient: NativeVoiceTranscriptClient?
     let messageActionsClient: NativeMessageActionsClient?
+    let followUpClient: NativeFollowUpClient?
 }
