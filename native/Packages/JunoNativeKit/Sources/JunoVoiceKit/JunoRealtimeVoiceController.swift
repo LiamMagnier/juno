@@ -32,10 +32,20 @@ public enum JunoRealtimeVoiceError: LocalizedError, Equatable {
         switch self {
         case .notConfigured:
             "Realtime voice isn't configured for this environment."
+        // The two platforms keep the switch in different places, and "Settings"
+        // sends a Mac user to an app that does not have it.
         case .micPermissionDenied:
+            #if os(macOS)
+            "Microphone access was blocked. Allow it in System Settings › Privacy & Security › Microphone."
+            #else
             "Microphone access was blocked. Allow it in Settings to talk to Juno."
+            #endif
         case .speechPermissionDenied:
+            #if os(macOS)
+            "Speech recognition was blocked. This provider transcribes on this Mac — allow it in System Settings › Privacy & Security › Speech Recognition."
+            #else
             "Speech recognition was blocked. This provider needs on-device transcription — allow it in Settings."
+            #endif
         case .tokenFetchFailed(let detail):
             detail.isEmpty ? "Couldn't authorize the voice session." : detail
         case .connectionFailed(let detail):
@@ -245,26 +255,22 @@ public final class JunoRealtimeVoiceController {
 
     /// One line of conversation. Non-final lines are live hypotheses and are
     /// rewritten in place, which is why identity is a `UUID` and not the text.
-    public struct TranscriptLine: Identifiable, Equatable, Sendable {
-        public let id: UUID
-        public var role: JunoVoiceTranscriptRole
-        public var text: String
-        public var final: Bool
-
-        public init(id: UUID = UUID(), role: JunoVoiceTranscriptRole, text: String, final: Bool) {
-            self.id = id
-            self.role = role
-            self.text = text
-            self.final = final
-        }
-    }
+    public typealias TranscriptLine = JunoVoiceTranscriptRecord.Line
 
     /// How many lines are kept. A long session otherwise grows an array that
     /// SwiftUI re-diffs on every partial transcript, several times a second.
-    public static let transcriptCapacity = 200
+    public static let transcriptCapacity = JunoVoiceTranscriptRecord.capacity
 
     public private(set) var phase: Phase = .idle
-    public private(set) var transcript: [TranscriptLine] = []
+
+    /// The conversation as it happened.
+    ///
+    /// Reading through the record rather than storing the array directly is what
+    /// keeps the ordering rule in one testable place — see
+    /// ``JunoVoiceTranscriptRecord``, which exists because getting this wrong
+    /// prints every question underneath its own answer.
+    public var transcript: [TranscriptLine] { record.lines }
+    private var record = JunoVoiceTranscriptRecord()
     /// The provider actually in use — set from the relay's `session.ready`, not
     /// from the request, so a relay that substituted a provider is not
     /// misreported in the UI.
@@ -343,7 +349,7 @@ public final class JunoRealtimeVoiceController {
         }
         closedByUser = false
         reconnectAttempted = false
-        transcript = []
+        record.reset()
         usage = nil
         capabilities = nil
         notice = nil
@@ -565,6 +571,10 @@ public final class JunoRealtimeVoiceController {
 
         case .turn(let turnPhase):
             assistantSpeaking = turnPhase == .start
+            // The answer starts here, whatever arrives next. Recorded on the
+            // relay's own turn frame rather than on the first assistant word,
+            // because some relays send the frame first and some do not.
+            if turnPhase == .start { record.beginAnswer() }
 
         case .interrupted:
             flushPlayback()
@@ -593,35 +603,11 @@ public final class JunoRealtimeVoiceController {
         }
     }
 
-    /// Rewrites the open line for this speaker, or opens one. The relay streams
-    /// each utterance as a growing string, so appending every frame would print
-    /// the same sentence a dozen times as it is spoken.
-    ///
-    /// ORDER BY THE CONVERSATION, NOT BY THE NETWORK. Input transcription
-    /// resolves on its own schedule and routinely lands AFTER the model has begun
-    /// answering, so appending a first user line put the speaker's own words
-    /// underneath the reply to them — the one ordering a conversation cannot
-    /// have. A person spoke before the assistant answered, so the row goes before
-    /// the answer.
+    /// Delegates to ``JunoVoiceTranscriptRecord``, which owns the ordering rule
+    /// and is tested on its own. Nothing about placing a line depends on the
+    /// socket, so nothing about it belongs in the socket's controller.
     private func upsertTranscript(role: JunoVoiceTranscriptRole, text: String, final: Bool) {
-        if let index = transcript.lastIndex(where: { $0.role == role && !$0.final }) {
-            transcript[index].text = text
-            transcript[index].final = final
-        } else if role == .user {
-            // Step back over the trailing run of assistant lines and open the row
-            // at that boundary. With the reader's line already last there is
-            // nothing to step over, and this appends as before.
-            var at = transcript.endIndex
-            while at > transcript.startIndex, transcript[at - 1].role == .assistant {
-                at -= 1
-            }
-            transcript.insert(TranscriptLine(role: role, text: text, final: final), at: at)
-        } else {
-            transcript.append(TranscriptLine(role: role, text: text, final: final))
-        }
-        if transcript.count > Self.transcriptCapacity {
-            transcript.removeFirst(transcript.count - Self.transcriptCapacity)
-        }
+        record.upsert(role: role, text: text, final: final)
     }
 
     private func showNotice(_ message: String) {
@@ -643,15 +629,34 @@ public final class JunoRealtimeVoiceController {
 
     // MARK: Audio engine
 
+    /// Asks for the microphone, through the API that actually prompts on this
+    /// platform.
+    ///
+    /// **This is why voice did nothing on the Mac.** `AVAudioApplication`'s
+    /// record-permission pair is an AVAudioSession-era API: the session it asks
+    /// on behalf of only exists on iOS, and on macOS the call reports a state
+    /// nobody ever transitions out of. So a Mac that had never been granted the
+    /// microphone sat at `.undetermined`, was never prompted, and the guard above
+    /// this turned that into "permission denied" — for a permission the reader
+    /// was never offered. macOS routes microphone consent through TCC, and
+    /// `AVCaptureDevice` is the door.
     private func requestMicPermission() async -> Bool {
+        #if os(macOS)
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized: return true
+        // Denied and restricted are both final: asking again returns false
+        // without prompting, so it would only delay the message that tells the
+        // reader where the real switch is.
+        case .denied, .restricted: return false
+        default: return await AVCaptureDevice.requestAccess(for: .audio)
+        }
+        #else
         switch AVAudioApplication.shared.recordPermission {
         case .granted: return true
-        // Denied is final. Calling `requestRecordPermission()` again returns
-        // false without prompting, so asking would only delay the error copy
-        // that tells the user where the real switch is.
         case .denied: return false
         default: return await AVAudioApplication.requestRecordPermission()
         }
+        #endif
     }
 
     private func startAudioEngine() throws {
@@ -670,7 +675,35 @@ public final class JunoRealtimeVoiceController {
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
         let input = engine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
+
+        #if os(macOS)
+        // What `.voiceChat` buys on iOS, asked for directly here: echo
+        // cancellation so the model does not hear itself through the speakers and
+        // interrupt its own turn, and automatic gain so a laptop's far-field
+        // microphone reaches the relay at a usable level.
+        //
+        // Both matter to what is on screen as well. Without AGC the raw RMS of
+        // someone talking a normal distance from a MacBook sits around 0.01–0.03,
+        // which is why the field barely moved while they were speaking.
+        //
+        // It must be enabled BEFORE the format is read: turning it on re-formats
+        // the node, and a converter built from the old format would then be
+        // wrong. Failure is not fatal — a Mac with no voice-processing-capable
+        // input still holds a conversation, just without the help.
+        try? input.setVoiceProcessingEnabled(true)
+        #endif
+
+        var inputFormat = input.outputFormat(forBus: 0)
+        #if os(macOS)
+        // Some inputs report nothing usable once voice processing is on — an
+        // aggregate device, or a driver that does not implement the unit. Better
+        // a conversation without echo cancellation than no conversation, so the
+        // help is withdrawn and the node re-read rather than the session failing.
+        if inputFormat.sampleRate <= 0 || inputFormat.channelCount == 0 {
+            try? input.setVoiceProcessingEnabled(false)
+            inputFormat = input.outputFormat(forBus: 0)
+        }
+        #endif
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
             throw RealtimeAudioSetupError.noInput
         }
@@ -771,25 +804,57 @@ public final class JunoRealtimeVoiceController {
         playerNode.play()
     }
 
-    /// 30Hz smoothing pump. Same easing constant as `JunoSpeechService` and the
-    /// web's `attachLevelMeter`, so all three clients' meters move alike.
+    /// 30Hz metering pump.
     ///
-    /// Playback decays 14% per tick rather than being cleared: the relay's audio
-    /// frames arrive in bursts, and a level reset between them would strobe the
-    /// orb through zero while the model is still mid-word.
+    /// **Loudness is measured in decibels, not in raw RMS.** The previous version
+    /// multiplied linear RMS by a constant, which is why the field looked inert:
+    /// conversational speech lands around 0.02–0.08 RMS, so `× 4` spent its whole
+    /// range in the bottom third and every syllable moved the light by a few
+    /// points. Hearing is logarithmic — mapping a speech window in dBFS across
+    /// the full 0…1 range is what makes a normal voice reach the top of it, and
+    /// what makes the difference between a whisper and a raised voice visible.
+    ///
+    /// **Attack is fast and decay is slow**, and deliberately not symmetric: the
+    /// light has to jump on a syllable and fall away over a word, matching the
+    /// web's aura (`21` up, `3.6` down, per second). A single rate flickers on
+    /// every consonant, which is what the old `0.25` both ways did.
     private func startMetering() {
         meterTask?.cancel()
         meterTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(33))
+                try? await Task.sleep(for: .milliseconds(Int(Self.meterInterval * 1_000)))
                 guard !Task.isCancelled, let self else { break }
-                let micTarget = self.muted ? 0 : min(1, self.box.micLevel * 4)
-                let playbackTarget = min(1, self.box.playbackLevel * 2.5)
+                let micTarget = self.muted ? 0 : Self.loudness(self.box.micLevel)
+                // Playback decays rather than being cleared: the relay's audio
+                // arrives in bursts, and resetting between them would strobe the
+                // field through zero while the model is still mid-word.
+                let playbackTarget = Self.loudness(self.box.playbackLevel)
                 self.box.playbackLevel *= 0.86
                 let target = max(micTarget, playbackTarget)
-                self.level += (target - self.level) * 0.25
+                let rate = target > self.level ? Self.attackRate : Self.decayRate
+                self.level += (target - self.level) * (1 - exp(-rate * Self.meterInterval))
             }
         }
+    }
+
+    nonisolated static let meterInterval: Double = 0.033
+    /// Per second. The field climbs on a syllable and falls away over a word.
+    nonisolated static let attackRate: Double = 21
+    nonisolated static let decayRate: Double = 3.6
+    /// The quietest speech worth showing, and the loudest worth scaling to.
+    /// −52 dBFS is a soft voice across a desk; −12 is close and emphatic.
+    nonisolated static let quietFloorDB: Double = -52
+    nonisolated static let loudCeilingDB: Double = -12
+
+    /// Linear RMS → 0…1 across a speech window, in decibels.
+    ///
+    /// `nonisolated` because it is pure arithmetic and needs to be testable
+    /// without a main-actor hop, and because the meter pump is the only caller.
+    nonisolated static func loudness(_ rms: Double) -> Double {
+        guard rms > 0 else { return 0 }
+        let decibels = 20 * log10(rms)
+        let range = loudCeilingDB - quietFloorDB
+        return min(1, max(0, (decibels - quietFloorDB) / range))
     }
 
     // MARK: On-device transcription

@@ -168,10 +168,21 @@ public final class NativeLibraryModel {
     public var selection: Set<String> = []
 
     private let client: NativeLibraryClient
+    /// Resolves a chosen file's bytes so the picker can draw it.
+    ///
+    /// Optional because the library list itself does not need one — and because
+    /// a picker that cannot resolve bytes still works, it just shows every card
+    /// in its typed fallback instead of showing the file. That is the honest
+    /// degradation: a missing thumbnail, not a missing picker.
+    private let previewSource: (any NativeFilePreviewResolving)?
     private var accountID: AccountID?
 
-    public init(client: NativeLibraryClient) {
+    public init(
+        client: NativeLibraryClient,
+        previewSource: (any NativeFilePreviewResolving)? = nil
+    ) {
         self.client = client
+        self.previewSource = previewSource
     }
 
     public func start(for accountID: AccountID) {
@@ -205,6 +216,17 @@ public final class NativeLibraryModel {
         } catch {
             lastErrorDescription = NativeFailureMessage.presentable(error)
         }
+    }
+
+    /// Where a file's bytes are, for a thumbnail.
+    ///
+    /// The same route ``NativeProjectModel/accessFile(id:)`` takes: the sync
+    /// `attachment` entity, rehydrated for a fresh signed URL. Library rows and
+    /// project files are the same attachments underneath, so resolving them two
+    /// different ways would only be two things to keep in step.
+    public func accessFile(id: String) async -> NativeProjectFileAccess? {
+        guard let accountID, let previewSource else { return nil }
+        return try? await previewSource.accessFile(id: id, for: accountID)
     }
 
     public func toggle(_ id: String, limit: Int) {

@@ -42,8 +42,20 @@ extension FocusedValues {
 struct JunoDesktopCommands: Commands {
     @FocusedValue(\.junoWorkspaceActions) private var actions
     @Environment(\.openWindow) private var openWindow
+    /// The app-wide updater. `@State` rather than a bare reference so the menu
+    /// re-evaluates when the phase changes — otherwise "Install Update" would
+    /// only appear after something else happened to redraw the menu bar.
+    @State private var updater = DesktopUpdateModel.shared
 
     var body: some Commands {
+        // Where a Mac user looks for this: the application menu, under About.
+        CommandGroup(after: .appInfo) {
+            updateStatusItem
+            Button(updateActionTitle) { updateAction() }
+                .disabled(!updateActionEnabled)
+            Divider()
+        }
+
         CommandGroup(replacing: .newItem) {
             if let actions {
                 Button(actions.currentProduct == .code ? "New Code Session" : "New Chat") {
@@ -107,6 +119,56 @@ struct JunoDesktopCommands: Commands {
                 "Keyboard Shortcuts",
                 destination: URL(string: "\(JunoBackend.productionURLString)/help/shortcuts")!
             )
+        }
+    }
+
+    /// A disabled line stating what the updater knows.
+    ///
+    /// It is present in every state, including "nothing to say", because a menu
+    /// that only sometimes has a status line is one the reader has to *check*
+    /// for. What it must never do is imply an update exists when the check has
+    /// not run — hence the plain "Juno is up to date" only after a real check.
+    @ViewBuilder
+    private var updateStatusItem: some View {
+        switch updater.phase {
+        case .idle:
+            EmptyView()
+        case .checking:
+            Text("Checking for updates…")
+        case .current:
+            Text("Juno \(JunoBuildInfo.current.version) is up to date")
+        case .downloading(let version, let fraction):
+            if let fraction {
+                Text("Downloading \(version) — \(Int((fraction * 100).rounded()))%")
+            } else {
+                Text("Downloading \(version)…")
+            }
+        case .ready(let version):
+            Text("Juno \(version) is ready to install")
+        case .failed(let message):
+            Text(message)
+        case .unsupported(let reason):
+            Text(reason)
+        }
+    }
+
+    private var updateActionTitle: String {
+        if case .ready = updater.phase { return "Install Update and Relaunch" }
+        return "Check for Updates…"
+    }
+
+    private var updateActionEnabled: Bool {
+        switch updater.phase {
+        case .checking, .downloading, .unsupported: false
+        default: true
+        }
+    }
+
+    private func updateAction() {
+        if case .ready = updater.phase {
+            updater.installAndRelaunch()
+        } else {
+            updater.checkNow()
         }
     }
 

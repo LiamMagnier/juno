@@ -130,6 +130,41 @@ public struct NativeAttachmentAPIClient: Sendable {
         )
     }
 
+    /// The bytes of an image the account owns.
+    ///
+    /// `GET /api/attachments/{id}` has always served these — same-origin,
+    /// authenticated, `kind: IMAGE` only — and no native client ever asked. That
+    /// is why the Mac's Library draws a glyph and the word "PNG" where the
+    /// website draws the picture, and why there was nothing on either platform to
+    /// select a region *on*.
+    ///
+    /// The server sniffs the real type and refuses anything that is not an image,
+    /// so a 415 here means the stored object is not what its row claims — not
+    /// that this client asked wrongly.
+    public func imageData(
+        attachmentID: String,
+        for accountID: AccountID
+    ) async throws -> (data: Data, mimeType: String) {
+        let trimmed = attachmentID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.count <= 128,
+            trimmed.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
+        else { throw NativeAttachmentAPIError.malformedResponse }
+
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/attachments/\(trimmed)",
+                headers: try HTTPHeaders(["accept": "image/*"])
+            ),
+            for: accountID
+        )
+        guard (200...299).contains(response.statusCode) else { throw decodeError(response) }
+        let mimeType = response.headers["content-type"]?.lowercased() ?? ""
+        guard mimeType.hasPrefix("image/"), !response.body.isEmpty else {
+            throw NativeAttachmentAPIError.malformedResponse
+        }
+        return (response.body, mimeType)
+    }
+
     private func decodeError(_ response: HTTPResponse) -> NativeAttachmentAPIError {
         let envelope = try? JSONDecoder().decode(
             NativeAPIErrorEnvelope.self, from: response.body

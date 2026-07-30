@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import SwiftUI
 
@@ -39,6 +40,17 @@ import SwiftUI
 /// so they are reported as gaps instead of drawn.
 struct DesktopLibraryScreen: View {
     @Bindable var model: NativeLibraryModel
+    /// Everything the image editor needs. All optional, and the Edit action is
+    /// absent rather than disabled when any of it is missing — a menu item that
+    /// cannot work is worse than one that is not there.
+    var accountID: AccountID?
+    var attachmentClient: NativeAttachmentAPIClient?
+    var generateClient: NativeChatAPIClient?
+    var modelCatalog: [NativeChatModelOption] = []
+    var openConversation: ((String) -> Void)?
+
+    @State private var editing: NativeLibraryItem?
+    @State private var previews = NativeFilePreviewLoader()
 
     /// How the files are drawn. Mirrors the web's `LibraryView`, including the
     /// fact that the choice is remembered — the website persists it under
@@ -124,6 +136,7 @@ struct DesktopLibraryScreen: View {
             .safeAreaInset(edge: .bottom, spacing: 0) { refreshFailure }
             .searchable(text: $searchText, placement: .toolbar, prompt: "Search files")
             .toolbar { libraryToolbar }
+            .sheet(item: $editing) { editSheet($0) }
             .task { await model.refresh() }
             // A file that scrolls out of the filter, or a reload that removes it,
             // must not leave a selection nobody can see or act on.
@@ -285,28 +298,30 @@ struct DesktopLibraryScreen: View {
         .accessibilityAction { toggle(item) }
     }
 
-    /// The tile the website fills with a thumbnail.
+    /// The tile, filled with the file.
     ///
-    /// It carries a typed glyph instead, and that is a limitation rather than a
-    /// style: the desktop library client returns no bytes and no signed URL for
-    /// an item, so there is nothing to draw. Faking a picture-shaped placeholder
-    /// would be worse than saying "PNG" truthfully.
+    /// This carried a typed glyph and the word "PNG", and the reason given was
+    /// that "the desktop library client returns no bytes and no signed URL for an
+    /// item, so there is nothing to draw". That was true of the *library* client
+    /// and never true of the account: the sync `attachment` entity rehydrates a
+    /// signed URL, which is how the phone has been drawing these all along. The
+    /// Mac now takes the same route, through the shared
+    /// ``NativeFilePreviewLoader``.
+    ///
+    /// The typed glyph survives as the fallback, for the file whose bytes really
+    /// cannot be fetched or rendered — a card that says "PNG" truthfully still
+    /// beats a picture-shaped placeholder.
     private func preview(_ item: NativeLibraryItem, isSelected: Bool) -> some View {
-        Color.clear
-            .aspectRatio(1, contentMode: .fit)
-            .overlay {
-                VStack(spacing: JunoSpace.cozy) {
-                    Image(systemName: item.isImage ? "photo" : "doc.text")
-                        .font(.system(.largeTitle, design: .default, weight: .light))
-                        .foregroundStyle(.secondary)
-                    Text(Self.typeLabel(item))
-                        .junoMono()
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+        NativeFilePreviewTile(
+            file: NativeFilePreviewRequest(item),
+            state: previews.state(for: item.id),
+            cornerRadius: JunoRadius.panel
+        )
+            .task(id: item.id) {
+                await previews.load(NativeFilePreviewRequest(item)) {
+                    await model.accessFile(id: item.id)
                 }
-                .accessibilityHidden(true)
             }
-            .junoCard()
             .overlay {
                 // The selection ring is a stroke, never a filled tile: coral is
                 // spent on outlines and one primary action here, as on the web,
@@ -425,10 +440,38 @@ struct DesktopLibraryScreen: View {
     @ViewBuilder
     private func fileMenu(for item: NativeLibraryItem) -> some View {
         let targets = selection.contains(item.id) ? selection : [item.id]
+        // Only an image, and only when there is a model that can edit one. The
+        // manifest says which — see `NativeImageEditSupport`.
+        if item.isImage, canEdit {
+            Button("Edit Image…") { editing = item }
+            Divider()
+        }
         Button(Self.copyTitle(count: targets.count)) { copyNames(for: targets) }
         Divider()
         Button("Refresh", action: refresh)
             .disabled(model.isLoading)
+    }
+
+    private var canEdit: Bool {
+        accountID != nil && attachmentClient != nil && generateClient != nil
+            && modelCatalog.contains { $0.modality == "image" && $0.imageEditSupport != .none }
+    }
+
+    @ViewBuilder
+    private func editSheet(_ item: NativeLibraryItem) -> some View {
+        if let accountID, let attachmentClient, let generateClient {
+            NativeImageEditSheet(
+                attachmentID: item.id,
+                fileName: item.fileName,
+                accountID: accountID,
+                attachments: attachmentClient,
+                client: generateClient,
+                models: modelCatalog,
+                openConversation: openConversation,
+                close: { editing = nil }
+            )
+            .frame(minWidth: 560, minHeight: 640)
+        }
     }
 
     // MARK: - Toolbar

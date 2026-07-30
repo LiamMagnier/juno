@@ -161,7 +161,7 @@ struct DesktopIncognitoChat: View {
                         JunoAIcssThinkingLabel("Thinking about your request", size: 15)
                     }
                 } else {
-                    JunoMarkdownText(
+                    JunoLessonText(
                         turn.content,
                         streaming: model.isStreaming && turn.id == model.turns.last?.id
                     )

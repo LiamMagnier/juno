@@ -1057,6 +1057,13 @@ private struct JunoMobileMessageRow: View {
         NativeMessageContent.plainText(of: message.content)
     }
 
+    /// What speech gets. Same text minus the inline learning blocks — those are
+    /// figures, and a figure read out as YAML is noise. Copy keeps them, because
+    /// pasting a reply somewhere should round-trip the lesson.
+    private var spokenText: String {
+        NativeMessageContent.spoken(of: message.content)
+    }
+
     var body: some View {
         if isUser {
             userBubble
@@ -1212,7 +1219,7 @@ private struct JunoMobileMessageRow: View {
                     // still arriving — the one live signal the answer body had
                     // none of, since the thought-process row above settles the
                     // moment the first token lands.
-                    JunoMarkdownText(text, streaming: message.isPending)
+                    JunoLessonText(text, streaming: message.isPending)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .artifact(let artifact):
@@ -1355,7 +1362,7 @@ private struct JunoMobileMessageRow: View {
                             || readAloud.isPreparing(message.id)
                     ) {
                         readAloud.toggle(
-                            messageID: message.id, text: plainText, voiceID: voiceID
+                            messageID: message.id, text: spokenText, voiceID: voiceID
                         )
                     }
                 }

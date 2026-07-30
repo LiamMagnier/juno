@@ -10,10 +10,20 @@ import SwiftUI
 /// unlinked, with no message of its own — is what the composer sends. The
 /// original message keeps its file.
 ///
-/// Rows rather than a thumbnail grid, matching the project files list this app
-/// already has. A grid would need an authenticated image fetch per cell before
-/// anything could be drawn, and a picker that is blank for a second is worse than
-/// one that is legible immediately.
+/// A grid of the files themselves, the same one the Library screen draws.
+///
+/// It used to be a list of rows: a `photo` or `doc.text` glyph, the filename, the
+/// size. That asks the reader to recognise a screenshot they took last week by
+/// its name, and nobody remembers `IMG_4821.HEIC`. The original reasoning was
+/// that a grid needs an authenticated fetch per cell and "a picker that is blank
+/// for a second is worse than one that is legible immediately" — which was true
+/// when there was nothing to fetch *with*. There is now, the fetch is lazy and
+/// cached, and a cell that has not loaded yet shows its own name and type rather
+/// than nothing. So the objection is answered rather than overruled.
+///
+/// This is the Library's card, its press behaviour and its fallback, from
+/// ``NativeFilePreviewTile`` — not a second look-alike. The two screens list the
+/// same files and had already drifted into two designs once.
 struct JunoMobileLibraryPicker: View {
     @Bindable var model: NativeLibraryModel
     /// How many more files this message can take. The picker enforces the
@@ -23,6 +33,12 @@ struct JunoMobileLibraryPicker: View {
     let attach: ([NativeUploadedAttachment]) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var previews = NativeFilePreviewLoader()
+
+    private let columns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14),
+    ]
 
     var body: some View {
         NavigationStack {
@@ -78,7 +94,7 @@ struct JunoMobileLibraryPicker: View {
 
     private var list: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 12) {
+            LazyVStack(alignment: .leading, spacing: 14) {
                 JunoMobileSegmented(
                     options: NativeLibraryModel.Filter.allCases.map {
                         .init($0, $0.title)
@@ -97,14 +113,9 @@ struct JunoMobileLibraryPicker: View {
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(Color.junoMutedForeground)
 
-                JunoCard(padding: 0) {
-                    VStack(spacing: 0) {
-                        ForEach(
-                            Array(model.visibleItems.enumerated()), id: \.element.id
-                        ) { index, item in
-                            if index > 0 { Divider().padding(.leading, 16) }
-                            row(item)
-                        }
+                LazyVGrid(columns: columns, spacing: 14) {
+                    ForEach(model.visibleItems) { item in
+                        card(item)
                     }
                 }
             }
@@ -126,55 +137,48 @@ struct JunoMobileLibraryPicker: View {
         return "\(model.selection.count) / \(remainingCapacity)"
     }
 
-    private func row(_ item: NativeLibraryItem) -> some View {
+    private func card(_ item: NativeLibraryItem) -> some View {
+        let file = NativeFilePreviewRequest(item)
         let selected = model.selection.contains(item.id)
-        // Unselected rows go quiet at the ceiling rather than vanishing, so the
-        // limit reads as a limit instead of as a list that stopped responding.
+        // Unselected cards go quiet at the ceiling rather than vanishing, so the
+        // limit reads as a limit instead of as a grid that stopped responding.
         let blocked = !selected && model.selection.count >= remainingCapacity
         return Button {
             model.toggle(item.id, limit: remainingCapacity)
         } label: {
-            HStack(spacing: 12) {
-                Image(systemName: item.isImage ? "photo" : "doc.text")
-                    .font(.system(size: 15))
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .frame(width: 22)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(item.fileName)
-                        .font(.system(size: 15, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .foregroundStyle(.primary)
-                    HStack(spacing: 5) {
-                        Text(
-                            ByteCountFormatter.string(
-                                fromByteCount: Int64(item.size), countStyle: .file
-                            )
-                        )
-                        Text("·")
-                        Text(item.createdAt, style: .date)
-                    }
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18))
-                    .foregroundStyle(
-                        selected ? Color.junoAccent : Color.junoMutedForeground.opacity(0.3)
-                    )
+            NativeFilePreviewTile(
+                file: file,
+                state: previews.state(for: item.id),
+                cornerRadius: 26
+            )
+            .overlay {
+                // The selection ring is a stroke over the picture, never a wash
+                // across it: a coral tint over a photograph changes the
+                // photograph, which is the one thing this grid exists to show.
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .strokeBorder(Color.junoAccent, lineWidth: 2)
+                    .opacity(selected ? 1 : 0)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .contentShape(Rectangle())
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        selected ? Color.junoOnAccent : Color.white,
+                        selected ? Color.junoAccent : Color.black.opacity(0.35)
+                    )
+                    .padding(10)
+                    .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
+            }
         }
-        .buttonStyle(JunoSidebarPressStyle())
+        .buttonStyle(NativeFilePreviewPressStyle())
         .disabled(blocked)
         .opacity(blocked ? 0.45 : 1)
-        .accessibilityLabel(item.fileName)
+        .accessibilityLabel("\(item.fileName), \(file.sizeLabel)")
         .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .task(id: item.id) {
+            await previews.load(file) { await model.accessFile(id: item.id) }
+        }
     }
 
     private func commit() {

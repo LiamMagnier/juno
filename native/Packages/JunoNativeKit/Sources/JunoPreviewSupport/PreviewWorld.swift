@@ -27,6 +27,7 @@ public final class PreviewWorld {
     /// The in-memory incognito session. Present in the harness so the ghost and
     /// the mode it opens are inspectable without a real account.
     public let privateChatModel: NativePrivateChatModel
+    public let compareModel: NativeCompareModel
     /// Present so the composer's Attach section renders in the harness. It is
     /// hidden entirely when no model is supplied, which is correct in the app
     /// but made the section invisible to visual QA.
@@ -125,7 +126,13 @@ public final class PreviewWorld {
         privateChatModel = NativePrivateChatModel(
             client: NativeChatAPIClient(transport: sender)
         )
-        libraryModel = NativeLibraryModel(client: NativeLibraryClient(sender: sender))
+        compareModel = NativeCompareModel(
+            client: NativeChatAPIClient(transport: sender)
+        )
+        libraryModel = NativeLibraryModel(
+            client: NativeLibraryClient(sender: sender),
+            previewSource: NativeProjectAPIClient(sender: sender)
+        )
         accountDataClient = NativeAccountDataClient(sender: sender)
     }
 

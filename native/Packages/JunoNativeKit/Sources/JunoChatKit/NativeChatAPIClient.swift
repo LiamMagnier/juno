@@ -29,6 +29,22 @@ public struct NativeModelGrades: Equatable, Sendable {
     }
 }
 
+/// How a model can edit an existing image, as the manifest publishes it.
+///
+/// Never inferred from the provider id. The web keeps this table server-side
+/// (`IMAGE_EDIT_SUPPORT` in `src/lib/models.ts`) and a copy here would drift the
+/// first time a provider ships masking — leaving the app offering a region
+/// selection to a model that ignores it, which is the exact shape of a control
+/// that lies about what it does.
+public enum NativeImageEditSupport: String, Equatable, Sendable {
+    /// Takes a pixel mask marking the region to change.
+    case mask
+    /// Reference-style edits only; the region is guidance, not a boundary.
+    case prompt
+    /// Cannot edit an existing image.
+    case none
+}
+
 public struct NativeModelPricing: Equatable, Sendable {
     /// "economy" | "standard" | "premium" — the server's relative cost class.
     public let priceClass: String
@@ -97,6 +113,9 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     public let supportsWebSearch: Bool
     public let supportsTools: Bool
     public let supportsAttachments: Bool
+    /// What this model can do with an image it is handed. `.none` for every chat
+    /// model, and for an image model on a server too old to publish the field.
+    public let imageEditSupport: NativeImageEditSupport
     public let deprecationNote: String?
 
     /// A streaming chat model — the only kind this composer can send to. Image
@@ -144,6 +163,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         supportsWebSearch: Bool = false,
         supportsTools: Bool = false,
         supportsAttachments: Bool = false,
+        imageEditSupport: NativeImageEditSupport = .none,
         deprecationNote: String? = nil
     ) {
         self.id = id
@@ -172,6 +192,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         self.supportsWebSearch = supportsWebSearch
         self.supportsTools = supportsTools
         self.supportsAttachments = supportsAttachments
+        self.imageEditSupport = imageEditSupport
         self.deprecationNote = deprecationNote
     }
 }
@@ -216,6 +237,42 @@ public struct NativeCompletedChatMessage: Equatable, Sendable {
     public let createdAt: Date
     public let sources: [NativeChatSource]
     public let finishReason: NativeChatFinishReason
+    /// The turn's receipt, exactly as the server billed it.
+    ///
+    /// The `done` frame has always carried these — `serializeMessage` puts them
+    /// there — and native threw them away, which is why Compare could not show
+    /// what an answer cost and the transcript's footer had to wait for the row to
+    /// sync back before it could. Absent stays absent: a provider that reports no
+    /// usage gets no number, rather than a zero that reads as "free".
+    public let promptTokens: Int?
+    public let completionTokens: Int?
+    /// US dollars, estimated by the server from the exact streamed usage
+    /// (cache buckets included). Never computed here.
+    public let costUsd: Double?
+
+    public init(
+        id: String,
+        content: String,
+        reasoning: String?,
+        model: String?,
+        createdAt: Date,
+        sources: [NativeChatSource],
+        finishReason: NativeChatFinishReason,
+        promptTokens: Int? = nil,
+        completionTokens: Int? = nil,
+        costUsd: Double? = nil
+    ) {
+        self.id = id
+        self.content = content
+        self.reasoning = reasoning
+        self.model = model
+        self.createdAt = createdAt
+        self.sources = sources
+        self.finishReason = finishReason
+        self.promptTokens = promptTokens
+        self.completionTokens = completionTokens
+        self.costUsd = costUsd
+    }
 }
 
 /// A step the server reports while working, mirroring the web's
@@ -304,23 +361,70 @@ public struct NativeMediaProgress: Equatable, Sendable {
 /// One media generation: a prompt, the model that will render it, and the
 /// conversation it belongs to (absent for the first message of a new one).
 public struct NativeMediaGenerationRequest: Equatable, Sendable {
+    /// A rectangle on the source image, in normalised 0…1 coordinates from the
+    /// top-left. The server's schema bounds every component to 0…1, so this is
+    /// clamped here rather than being allowed to cost a round trip.
+    public struct Region: Equatable, Sendable {
+        public let x: Double
+        public let y: Double
+        public let width: Double
+        public let height: Double
+
+        public init(x: Double, y: Double, width: Double, height: Double) {
+            func clamp(_ value: Double) -> Double { min(1, max(0, value)) }
+            // Rounded to four places, as the web does. The extra precision is
+            // sub-pixel on any real image and only makes the request larger.
+            func round4(_ value: Double) -> Double { (clamp(value) * 10_000).rounded() / 10_000 }
+            self.x = round4(x)
+            self.y = round4(y)
+            self.width = round4(width)
+            self.height = round4(height)
+        }
+    }
+
+    /// Editing an image the account already has, rather than generating a new one.
+    public struct Edit: Equatable, Sendable {
+        /// The attachment being edited. The server reads its bytes from storage;
+        /// the client never uploads the source again.
+        public let attachmentID: String
+        /// Absent means "the whole image".
+        public let region: Region?
+        /// A `data:image/png;base64,…` mask: transparent inside the region,
+        /// opaque black outside — the OpenAI `images.edit` convention.
+        ///
+        /// Only sent to a model whose ``NativeImageEditSupport`` is `.mask`. A
+        /// `.prompt` model takes the region as guidance and would ignore it, and
+        /// sending an 8 MB PNG to be ignored is not free.
+        public let maskDataURL: String?
+
+        public init(attachmentID: String, region: Region? = nil, maskDataURL: String? = nil) {
+            self.attachmentID = attachmentID
+            self.region = region
+            self.maskDataURL = maskDataURL
+        }
+    }
+
     public let conversationID: String?
     public let prompt: String
     public let modelID: String
     /// Fixed by the model the caller chose, and carried because the server's
     /// progress frames do not name it.
     public let modality: NativeMediaProgress.Modality
+    /// Present only when this is an edit of an existing image.
+    public let edit: Edit?
 
     public init(
         conversationID: String?,
         prompt: String,
         modelID: String,
-        modality: NativeMediaProgress.Modality
+        modality: NativeMediaProgress.Modality,
+        edit: Edit? = nil
     ) {
         self.conversationID = conversationID
         self.prompt = prompt
         self.modelID = modelID
         self.modality = modality
+        self.edit = edit
     }
 }
 
@@ -587,6 +691,11 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 supportsWebSearch: model.capabilities.webSearch ?? false,
                 supportsTools: model.capabilities.tools ?? false,
                 supportsAttachments: model.capabilities.attachments ?? false,
+                // An unknown word from a newer server is `.none`, not a guess:
+                // offering an edit mode this build does not understand would
+                // send a request whose shape the client cannot get right.
+                imageEditSupport: model.capabilities.imageEdit
+                    .flatMap(NativeImageEditSupport.init(rawValue:)) ?? .none,
                 deprecationNote: nonEmpty(model.deprecationNote, maximum: 400)
             )
         }
@@ -714,10 +823,29 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         guard !prompt.isEmpty, prompt.count <= 4000 else {
             throw NativeChatAPIError.malformedResponse
         }
+        if let edit = request.edit {
+            try requireIdentifier(edit.attachmentID)
+            // The server's own ceiling on a decoded mask is 8 MiB; base64 costs
+            // four bytes per three, and the prefix is the rest of the slack.
+            if let mask = edit.maskDataURL {
+                guard mask.hasPrefix(Self.maskPrefix),
+                    mask.utf8.count <= 8 * 1_024 * 1_024 * 4 / 3 + Self.maskPrefix.utf8.count + 4
+                else { throw NativeChatAPIError.malformedResponse }
+            }
+        }
         let body = MediaGenerationRequestWire(
             conversationId: request.conversationID,
             prompt: prompt,
-            model: request.modelID
+            model: request.modelID,
+            edit: request.edit.map { edit in
+                MediaEditWire(
+                    attachmentId: edit.attachmentID,
+                    region: edit.region.map {
+                        MediaRegionWire(x: $0.x, y: $0.y, w: $0.width, h: $0.height)
+                    },
+                    maskDataUrl: edit.maskDataURL
+                )
+            }
         )
         return try await streamEvents(
             path: "/api/generate",
@@ -871,7 +999,10 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 model: message.model,
                 createdAt: createdAt,
                 sources: try (message.sources ?? envelope.sources ?? []).map(decodeSource),
-                finishReason: reason
+                finishReason: reason,
+                promptTokens: message.promptTokens,
+                completionTokens: message.completionTokens,
+                costUsd: message.costUsd
             ))
         case "error":
             guard let message = envelope.messageText ?? envelope.error,
@@ -991,6 +1122,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
         return ordinary.date(from: value)
     }
 
+    static let maskPrefix = "data:image/png;base64,"
+
     private static func isLowercaseHex(_ byte: UInt8) -> Bool {
         (48...57).contains(byte) || (97...102).contains(byte)
     }
@@ -1020,6 +1153,7 @@ private struct ModelCatalogWire: Decodable {
             let webSearch: Bool?
             let tools: Bool?
             let attachments: Bool?
+            let imageEdit: String?
         }
         struct Pricing: Decodable {
             let `class`: String
@@ -1082,6 +1216,25 @@ private struct MediaGenerationRequestWire: Encodable {
     let conversationId: String?
     let prompt: String
     let model: String
+    /// Omitted for a plain generation, so its body is byte-identical to what it
+    /// was before editing existed.
+    let edit: MediaEditWire?
+}
+
+private struct MediaEditWire: Encodable {
+    let attachmentId: String
+    let region: MediaRegionWire?
+    let maskDataUrl: String?
+}
+
+/// The server names these `w` and `h`; Swift names them `width` and `height`.
+/// The wire type is where that translation lives, rather than a Swift property
+/// called `w`.
+private struct MediaRegionWire: Encodable {
+    let x: Double
+    let y: Double
+    let w: Double
+    let h: Double
 }
 
 private struct GenerationRequestWire: Encodable {
@@ -1139,6 +1292,9 @@ private struct EventEnvelopeWire: Decodable {
         let createdAt: String
         let sources: [SourceWire]?
         let finishReason: String?
+        let promptTokens: Int?
+        let completionTokens: Int?
+        let costUsd: Double?
     }
     let type: String
     let conversationId: String?

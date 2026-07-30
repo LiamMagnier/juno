@@ -3915,6 +3915,22 @@
         }
       }
     },
+    "navigation.compare" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comparer"
+          }
+        }
+      }
+    },
     "navigation.code" : {
       "extractionState" : "stale",
       "localizations" : {

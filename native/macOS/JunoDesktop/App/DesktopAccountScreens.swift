@@ -53,7 +53,16 @@ struct DesktopDestinationView: View {
             }
         case .library:
             if let model = configuration.libraryModel {
-                DesktopLibraryScreen(model: model)
+                DesktopLibraryScreen(
+                    model: model,
+                    accountID: session.profile.id,
+                    attachmentClient: configuration.requestSender.map {
+                        NativeAttachmentAPIClient(sender: $0)
+                    },
+                    generateClient: configuration.generateClient,
+                    modelCatalog: conversationModel.modelCatalog,
+                    openConversation: openConversation
+                )
             } else {
                 unavailable("Library", "The authenticated file library is unavailable.")
             }
@@ -84,6 +93,16 @@ struct DesktopDestinationView: View {
                 )
             } else {
                 unavailable("Tasks", "The scheduled-task service is unavailable.")
+            }
+        case .compare:
+            if let compareModel = configuration.compareModel {
+                NativeCompareView(
+                    model: compareModel,
+                    catalog: conversationModel.selectableModels,
+                    accountID: session.profile.id
+                )
+            } else {
+                unavailable("Compare", "The chat transport is unavailable.")
             }
         case .usage:
             DesktopUsageScreen(

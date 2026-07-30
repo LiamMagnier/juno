@@ -70,6 +70,8 @@ private struct JunoDesktopPreviewWorkspace: View {
             avatarModel: nil,
             conversationModel: world.conversationModel,
             privateChatModel: world.privateChatModel,
+            compareModel: world.compareModel,
+            generateClient: nil,
             projectModel: world.projectModel,
             artifactModel: world.artifactModel,
             memorySettingsModel: world.memorySettingsModel,

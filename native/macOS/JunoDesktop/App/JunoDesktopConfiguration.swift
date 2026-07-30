@@ -19,6 +19,14 @@ struct JunoDesktopConfiguration {
     let avatarModel: NativeAvatarModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let privateChatModel: NativePrivateChatModel?
+    /// Compare's transport. Its own client instance for the same reason
+    /// incognito has one: a comparison is a set of ephemeral private turns and
+    /// shares no state with the persisted conversation.
+    let compareModel: NativeCompareModel?
+    /// `/api/generate`, for editing an image the account already has. The same
+    /// endpoint a fresh generation uses; the `edit` payload is what makes it an
+    /// edit, so there is nothing separate to construct.
+    let generateClient: NativeChatAPIClient?
     let projectModel: NativeProjectModel<SQLiteAccountRepository>?
     let artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
@@ -114,6 +122,10 @@ struct JunoDesktopConfiguration {
                 privateChatModel: NativePrivateChatModel(
                     client: NativeChatAPIClient(transport: runtime)
                 ),
+                compareModel: NativeCompareModel(
+                    client: NativeChatAPIClient(transport: runtime)
+                ),
+                generateClient: NativeChatAPIClient(transport: runtime),
                 projectModel: NativeProjectModel(
                     repository: localStore,
                     outbox: outbox,
@@ -147,7 +159,10 @@ struct JunoDesktopConfiguration {
                     client: NativeCodeRemoteClient(sender: runtime)
                 ),
                 libraryModel: NativeLibraryModel(
-                    client: NativeLibraryClient(sender: runtime)
+                    client: NativeLibraryClient(sender: runtime),
+                    // The picker draws the file, which means resolving its
+                    // bytes — the same route the Library screen already takes.
+                    previewSource: NativeProjectAPIClient(sender: runtime)
                 ),
                 requestSender: runtime,
                 accountDataClient: NativeAccountDataClient(sender: runtime),
@@ -173,6 +188,8 @@ struct JunoDesktopConfiguration {
             avatarModel: nil,
             conversationModel: nil,
             privateChatModel: nil,
+            compareModel: nil,
+            generateClient: nil,
             projectModel: nil,
             artifactModel: nil,
             memorySettingsModel: nil,

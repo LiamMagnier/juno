@@ -1,4 +1,5 @@
 import Foundation
+import JunoDesignSystem
 
 /// The client half of Juno's message wire format — the Swift counterpart of
 /// `src/lib/message-content.ts`.
@@ -103,6 +104,31 @@ public enum NativeMessageContent {
                 case .artifact(let artifact): artifact.title
                 }
             }
+            .joined(separator: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The reply as it should be **read aloud**: ``plainText(of:)`` with the
+    /// inline learning blocks removed.
+    ///
+    /// A `:::quiz` is a figure — options, a hint, an answer key, all of it
+    /// meaningless in sequence. Spoken, it is twenty seconds of "question colon
+    /// which is idempotent, options open bracket P O S T comma P U T". Native fed
+    /// exactly that to speech, because until the blocks were parsed there was
+    /// nothing to find them with; the web has a matcher for this and has never
+    /// spoken one.
+    ///
+    /// Copy is deliberately NOT routed through here: pasting a reply into a note
+    /// should round-trip the lesson, and the source is the only form that does.
+    public static func spoken(of raw: String) -> String {
+        parts(of: raw)
+            .map { part in
+                switch part {
+                case .text(let text): JunoLearningBlocks.stripping(from: text)
+                case .artifact(let artifact): artifact.title
+                }
+            }
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }

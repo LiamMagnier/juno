@@ -476,6 +476,11 @@ private struct DesktopChatSidebar: View {
 enum DesktopDestination: String, CaseIterable, Identifiable {
     case chat
     case search
+    /// One prompt, two or three models, side by side. Its own destination rather
+    /// than a mode inside Chat: a comparison is never saved and never becomes a
+    /// conversation, so putting it behind the conversation list would promise a
+    /// history it does not have.
+    case compare
     case projects
     case library
     case artifacts
@@ -491,13 +496,14 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     var id: Self { self }
 
     static let sidebarCases: [Self] = [
-        .library, .artifacts, .connections, .projects, .tasks, .pulls, .usage,
+        .compare, .library, .artifacts, .connections, .projects, .tasks, .pulls, .usage,
     ]
 
     var label: String {
         switch self {
         case .chat: "Chat"
         case .search: "Search"
+        case .compare: "Compare"
         case .projects: "Projects"
         case .library: "Library"
         case .artifacts: "Artifacts"
@@ -513,6 +519,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "bubble.left.and.bubble.right"
         case .search: "magnifyingglass"
+        case .compare: "rectangle.split.2x1"
         case .projects: "folder"
         case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
@@ -535,7 +542,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .tasks: .tasks
         // No Juno-drawn glyph for these yet, so they fall back to the SF Symbol
         // rather than borrowing another destination's mark.
-        case .usage, .pulls, .settings: nil
+        case .compare, .usage, .pulls, .settings: nil
         }
     }
 }
@@ -581,6 +588,10 @@ struct DesktopConversationView: View {
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
     @State private var voiceSession: DesktopVoiceSession?
+    /// Why a spoken conversation could not be opened. An alert rather than an
+    /// inline banner because the reader pressed a button and nothing happened —
+    /// the answer has to arrive where they are looking.
+    @State private var voiceUnavailable: String?
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -594,6 +605,18 @@ struct DesktopConversationView: View {
             .overlay { conversationContent }
             .sheet(item: $voiceSession) { voiceSession in
                 voiceSheet(voiceSession)
+            }
+            .alert(
+                "Voice is unavailable",
+                isPresented: Binding(
+                    get: { voiceUnavailable != nil },
+                    set: { if !$0 { voiceUnavailable = nil } }
+                ),
+                presenting: voiceUnavailable
+            ) { _ in
+                Button("OK") { voiceUnavailable = nil }
+            } message: { reason in
+                Text(reason)
             }
     }
 
@@ -685,10 +708,21 @@ struct DesktopConversationView: View {
         )
     }
 
+    /// Opens a spoken conversation.
+    ///
+    /// The guard used to `return` with nothing said, so on any shell missing
+    /// either half the microphone button was a control that did nothing at all
+    /// when pressed — indistinguishable from a broken app, and impossible to
+    /// report. It now says which half is missing.
     private func startVoice(modelID: String) {
-        guard let sender = configuration.requestSender,
-            configuration.voiceTranscriptClient != nil
-        else { return }
+        guard let sender = configuration.requestSender else {
+            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            return
+        }
+        guard configuration.voiceTranscriptClient != nil else {
+            voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
         voiceSession = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
@@ -857,7 +891,7 @@ private struct DesktopTranscript: View {
                             readAloud: messageActions.map { _ in
                                 {
                                     readAloud(
-                                        NativeMessageContent.plainText(of: message.content)
+                                        NativeMessageContent.spoken(of: message.content)
                                     )
                                 }
                             }
@@ -1212,7 +1246,7 @@ private struct DesktopMessageRow: View {
                         case .text(let text):
                             // AIcss's caret rides the last paragraph while tokens
                             // are still arriving. Same signal as the phone's.
-                            JunoMarkdownText(text, streaming: message.isPending)
+                            JunoLessonText(text, streaming: message.isPending)
                         case .artifact(let artifact):
                             DesktopInlineArtifactCard(
                                 artifact: artifact,
@@ -2606,11 +2640,67 @@ private struct DesktopVoiceGlyph: View {
     }
 }
 
+/// **Attach from Library** — a grid of the files themselves.
+///
+/// It used to be a `List` of rows: an SF Symbol, the filename, the size. That
+/// asks the reader to recognise a screenshot by its name, which nobody can do.
+/// The card, its fallback and its press behaviour are the shared
+/// ``NativeFilePreviewTile`` — the same one the Library screen and the phone's
+/// picker draw, so all three cannot drift into three designs again.
 private struct DesktopLibraryPicker: View {
     @Bindable var model: NativeLibraryModel
     let capacity: Int
     let attach: () async -> Void
     let cancel: () -> Void
+
+    @State private var previews = NativeFilePreviewLoader()
+
+    private let columns = [GridItem(.adaptive(minimum: 132, maximum: 190), spacing: 14)]
+
+    private func card(_ item: NativeLibraryItem) -> some View {
+        let file = NativeFilePreviewRequest(item)
+        let selected = model.selection.contains(item.id)
+        // Unselected cards go quiet at the ceiling rather than vanishing, so the
+        // limit reads as a limit instead of as a grid that stopped responding.
+        let blocked = !selected && model.selection.count >= capacity
+        return Button {
+            model.toggle(item.id, limit: capacity)
+        } label: {
+            NativeFilePreviewTile(
+                file: file,
+                state: previews.state(for: item.id),
+                cornerRadius: JunoRadius.panel
+            )
+            .overlay {
+                // A stroke over the picture, never a wash across it: a coral
+                // tint over a photograph changes the photograph, which is the
+                // one thing this grid exists to show.
+                RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                    .strokeBorder(Color.junoAccent, lineWidth: 2)
+                    .opacity(selected ? 1 : 0)
+            }
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 16))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        selected ? Color.junoOnAccent : Color.white,
+                        selected ? Color.junoAccent : Color.black.opacity(0.35)
+                    )
+                    .padding(8)
+                    .shadow(color: .black.opacity(selected ? 0 : 0.25), radius: 2)
+            }
+        }
+        .buttonStyle(NativeFilePreviewPressStyle())
+        .disabled(blocked)
+        .opacity(blocked ? 0.45 : 1)
+        .help(item.fileName)
+        .accessibilityLabel("\(item.fileName), \(file.sizeLabel)")
+        .accessibilityAddTraits(selected ? [.isSelected, .isButton] : .isButton)
+        .task(id: item.id) {
+            await previews.load(file) { await model.accessFile(id: item.id) }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2648,43 +2738,14 @@ private struct DesktopLibraryPicker: View {
                         )
                     )
                 } else {
-                    List(model.visibleItems) { item in
-                        Button {
-                            model.toggle(item.id, limit: capacity)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(
-                                    systemName: item.isImage
-                                        ? "photo" : "doc"
-                                )
-                                .foregroundStyle(Color.junoAccent)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(item.fileName)
-                                        .lineLimit(1)
-                                    Text(
-                                        ByteCountFormatter.string(
-                                            fromByteCount: Int64(item.size),
-                                            countStyle: .file
-                                        )
-                                    )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(
-                                    systemName: model.selection.contains(item.id)
-                                        ? "checkmark.circle.fill" : "circle"
-                                )
-                                .foregroundStyle(
-                                    model.selection.contains(item.id)
-                                        ? Color.junoAccent : Color.secondary
-                                )
+                    ScrollView {
+                        LazyVGrid(columns: columns, spacing: 14) {
+                            ForEach(model.visibleItems) { item in
+                                card(item)
                             }
-                            .contentShape(.rect)
                         }
-                        .buttonStyle(.plain)
+                        .padding(18)
                     }
-                    .listStyle(.inset)
                 }
             }
             .frame(minHeight: 360)

@@ -1,3 +1,4 @@
+import AppKit
 import JunoDesignSystem
 import JunoCodeUI
 import SwiftUI
@@ -13,8 +14,33 @@ enum JunoDesktopWindow {
     static let incognitoID = "juno.incognito"
 }
 
+/// Two things only AppKit can tell us: the app finished launching, and the app
+/// is about to quit.
+///
+/// Both are the updater's. Launch starts the ten-minute poll; termination is the
+/// moment a staged update can be swapped in without interrupting anyone, which
+/// is the whole reason the updater does not restart the app on its own.
+private final class JunoDesktopAppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            #if DEBUG
+            guard !JunoPreviewEnvironment.isActive else { return }
+            #endif
+            DesktopUpdateModel.shared.start()
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            DesktopUpdateModel.shared.installOnQuitIfStaged()
+        }
+    }
+}
+
 @main
 struct JunoDesktopApp: App {
+    @NSApplicationDelegateAdaptor(JunoDesktopAppDelegate.self) private var appDelegate
+
     /// `nil` only under the DEBUG preview harness, which supplies its own
     /// throwaway world and must never touch the account's real data.
     ///

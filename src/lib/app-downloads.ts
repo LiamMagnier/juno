@@ -21,6 +21,15 @@ export interface AppDownload {
   version: string | null;
   /** Bytes, when the asset reports a size. */
   size: number | null;
+  /**
+   * Lowercase hex SHA-256 of the asset, when GitHub publishes one.
+   *
+   * Read by the Mac app's updater, not by the download menu. Absent for older
+   * releases — GitHub only started returning `digest` on assets recently — and
+   * absent is honest: the updater skips the checksum comparison rather than
+   * pretending it passed one.
+   */
+  sha256: string | null;
   available: boolean;
   /** Shown in place of a version when there is nothing to download yet. */
   note?: string;
@@ -67,6 +76,16 @@ export interface ReleaseAsset {
   name: string;
   browser_download_url: string;
   size?: number;
+  /** `sha256:<hex>` on releases published since GitHub added the field. */
+  digest?: string | null;
+}
+
+/** The asset's digest as lowercase hex, or null when it has none we can use. */
+export function assetSha256(asset: ReleaseAsset | null | undefined): string | null {
+  const raw = asset?.digest?.toLowerCase();
+  if (!raw) return null;
+  const hex = raw.startsWith("sha256:") ? raw.slice("sha256:".length) : raw;
+  return /^[0-9a-f]{64}$/.test(hex) ? hex : null;
 }
 
 export function pickAsset(

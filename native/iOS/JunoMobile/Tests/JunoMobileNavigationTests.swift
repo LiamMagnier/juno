@@ -2,13 +2,26 @@ import XCTest
 @testable import JunoMobile
 
 final class JunoMobileNavigationTests: XCTestCase {
+    /// The identifiers are written into `@SceneStorage`, so one changing renames
+    /// a destination the app has already remembered and strands the reader on a
+    /// blank pane after an update.
+    ///
+    /// Spelled out rather than counted. This was `XCTAssertEqual(count, 9)`,
+    /// which catches a destination being added — the failure it actually
+    /// produced — without saying which, and would have gone stale again on the
+    /// next one. The list is the point: it fails on an addition *and* on a
+    /// removal, and the diff names the destination either way.
     func testNavigationIdentifiersAreStableAndUnique() {
         let identifiers = JunoMobileSection.allCases.map(\.id)
 
-        XCTAssertEqual(identifiers.count, 9)
+        XCTAssertEqual(
+            identifiers,
+            [
+                "chat", "search", "compare", "code", "tasks",
+                "projects", "library", "artifacts", "connections", "settings",
+            ]
+        )
         XCTAssertEqual(Set(identifiers).count, identifiers.count)
-        XCTAssertEqual(identifiers.first, "chat")
-        XCTAssertEqual(identifiers.last, "settings")
     }
 
     /// Juno Code, Tasks and Connections used to be absent because their backends

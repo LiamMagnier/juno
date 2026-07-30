@@ -77,10 +77,6 @@ function startOfDayMs(ms: number): number {
   return Math.floor(ms / DAY_MS) * DAY_MS;
 }
 
-function emptyTotals(): UsageTotals {
-  return { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, costMicroUsd: 0 };
-}
-
 /**
  * Fold a `groupBy` result into the shared totals shape.
  *

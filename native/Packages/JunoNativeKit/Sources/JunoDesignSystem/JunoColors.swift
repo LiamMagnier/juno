@@ -57,6 +57,15 @@ public extension JunoColorToken {
 
     static let hairlineLight = JunoColorToken(unchecked: 0, 0, 0, 0.10)
     static let hairlineDark = JunoColorToken(unchecked: 1, 1, 1, 0.12)
+
+    /// `--source`: `187 62% 34%` / `187 58% 49%`. The web's citation teal.
+    ///
+    /// Added rather than folded into the status ramp because it is not a status:
+    /// it marks *supplementary or sourced* material — a citation, a deep dive's
+    /// quotation rule, a learning card's "Tip" — and reusing `junoSuccess` for it
+    /// would say a tip had passed something.
+    static let sourceLight = JunoColorToken(unchecked: 0.1292, 0.5016, 0.5508)
+    static let sourceDark = JunoColorToken(unchecked: 0.2058, 0.7079, 0.7742)
 }
 
 public extension Color {
@@ -113,6 +122,10 @@ public extension Color {
 
     /// The navigation column, matched to the website's sidebar variables.
     static let junoSidebar = Color.junoAdaptive(light: .sidebarLight, dark: .sidebarDark)
+
+    /// Sourced or supplementary material: a citation, a deep dive's rule, a tip.
+    /// Never a status — see the token's note in ``JunoColorToken/sourceLight``.
+    static let junoSource = Color.junoAdaptive(light: .sourceLight, dark: .sourceDark)
 
     static func junoAdaptive(light: JunoColorToken, dark: JunoColorToken) -> Color {
         #if canImport(UIKit)

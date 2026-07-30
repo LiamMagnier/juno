@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   DOWNLOAD_REPOS,
   PLATFORM_LABELS,
+  assetSha256,
   pickAsset,
   type AppDownload,
   type DownloadPlatform,
@@ -78,6 +79,7 @@ export async function GET() {
       url: asset?.browser_download_url ?? null,
       version: asset ? version(release) : null,
       size: asset?.size ?? null,
+      sha256: assetSha256(asset),
       available: Boolean(asset),
       ...(asset ? {} : { note }),
     };
@@ -95,6 +97,7 @@ export async function GET() {
       url: null,
       version: null,
       size: null,
+      sha256: null,
       available: false,
       note: "On the App Store soon",
     },

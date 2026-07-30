@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Plan } from "@prisma/client";
 import { AUTO_MODEL_INFO, isAutoModelId } from "@/lib/auto-model";
 import { getModelMetrics, reasoningCaps, supportsProMode } from "@/lib/model-metrics";
-import { isSupersededModel, type ModelInfo } from "@/lib/models";
+import { imageEditSupport, isSupersededModel, type ModelInfo } from "@/lib/models";
 import { effectiveMinPlan, planRank } from "@/lib/plans";
 import { PROVIDERS } from "@/lib/providers";
 
@@ -117,6 +117,14 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
         webSearch: model.webSearch,
         attachments: model.modality === "chat" || model.vision,
         streaming: model.modality === "chat",
+        // How this model can edit an existing image: "mask" takes a pixel mask,
+        // "prompt" takes the region as guidance only, "none" cannot edit.
+        //
+        // Published rather than duplicated client-side. The native apps had no
+        // way to know, so a phone would have had to either hard-code a copy of
+        // `IMAGE_EDIT_SUPPORT` — which drifts the first time a provider adds
+        // masking — or offer a region selection to a model that ignores it.
+        imageEdit: model.modality === "image" ? imageEditSupport(model.provider) : "none",
       },
       deprecationNote: model.deprecationNote ?? null,
     };

@@ -9,6 +9,15 @@ public enum NativeProjectFileAccess: Equatable, Sendable {
     case downloaded(Data)
 }
 
+/// Resolving a stored attachment to something a thumbnail can be drawn from.
+///
+/// A protocol so the library picker can share the project client's resolution
+/// without owning a project client — the two list the same attachments through
+/// different models, and only this one capability is common to both.
+public protocol NativeFilePreviewResolving: Sendable {
+    func accessFile(id: String, for accountID: AccountID) async throws -> NativeProjectFileAccess
+}
+
 public struct NativeUploadedProjectFile: Equatable, Sendable {
     public let id: String
     public let fileName: String
@@ -256,3 +265,7 @@ private struct UploadResponseWire: Decodable {
 private struct RenameRequestWire: Encodable {
     let fileName: String
 }
+
+/// The project client already resolves an attachment to bytes or a signed URL,
+/// which is precisely what a thumbnail needs.
+extension NativeProjectAPIClient: NativeFilePreviewResolving {}

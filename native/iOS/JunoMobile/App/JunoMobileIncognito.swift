@@ -361,7 +361,7 @@ private struct JunoMobileIncognitoTurnRow: View {
         } else {
             VStack(alignment: .leading, spacing: 4) {
                 if !turn.content.isEmpty {
-                    JunoMarkdownText(turn.content)
+                    JunoLessonText(turn.content)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {

@@ -1,9 +1,8 @@
 import JunoChatKit
+import JunoCore
 import JunoDesignSystem
 import JunoStorage
-import QuickLookThumbnailing
 import SwiftUI
-import UIKit
 
 /// The Library: everything you have ever attached to a chat or a project, shown
 /// as what it actually is.
@@ -18,11 +17,21 @@ import UIKit
 /// VoiceOver.
 struct JunoMobileLibraryView: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+    /// Everything the image editor needs. All optional, and the Edit action is
+    /// absent rather than disabled when any of it is missing — a menu item that
+    /// cannot work is worse than one that is not there.
+    var accountID: AccountID?
+    var attachmentClient: NativeAttachmentAPIClient?
+    var generateClient: NativeChatAPIClient?
+    var modelCatalog: [NativeChatModelOption] = []
+    var openConversation: ((String) -> Void)?
+
+    @State private var editing: NativeProjectFile?
 
     @State private var filter: JunoLibraryFilter = .all
     @State private var sort: JunoLibrarySort = .newest
     @State private var searchText = ""
-    @State private var previews = JunoLibraryPreviewLoader()
+    @State private var previews = NativeFilePreviewLoader()
     @State private var previewURL: URL?
     @State private var renameFileID: String?
     @State private var renameValue = ""
@@ -74,6 +83,29 @@ struct JunoMobileLibraryView: View {
             Text(localError ?? "Try again.")
         }
         .quickLookPreview($previewURL)
+        .sheet(item: $editing) { file in
+            if let accountID, let attachmentClient, let generateClient {
+                NativeImageEditSheet(
+                    attachmentID: file.id,
+                    fileName: file.fileName,
+                    accountID: accountID,
+                    attachments: attachmentClient,
+                    client: generateClient,
+                    models: modelCatalog,
+                    openConversation: openConversation,
+                    close: { editing = nil }
+                )
+            }
+        }
+    }
+
+    /// Only an image, and only when the manifest says some available model can
+    /// edit one. Offering the action otherwise would open an editor whose
+    /// Generate button could never be pressed.
+    private func canEdit(_ file: NativeProjectFile) -> Bool {
+        file.kind.uppercased() == "IMAGE"
+            && accountID != nil && attachmentClient != nil && generateClient != nil
+            && modelCatalog.contains { $0.modality == "image" && $0.imageEditSupport != .none }
     }
 
     @ToolbarContentBuilder
@@ -113,6 +145,7 @@ struct JunoMobileLibraryView: View {
                             renameFileID = file.id
                         },
                         delete: { Task { await model.deleteFile(id: file.id) } },
+                        edit: canEdit(file) ? { editing = file } : nil,
                         load: { await model.accessFile(id: file.id) }
                     )
                 }
@@ -303,32 +336,35 @@ private struct JunoLibraryChipBackground: ViewModifier {
 /// One file, shown as itself.
 private struct JunoLibraryCard: View {
     let file: NativeProjectFile
-    let previews: JunoLibraryPreviewLoader
+    let previews: NativeFilePreviewLoader
     let open: () -> Void
     let rename: () -> Void
     let delete: () -> Void
+    /// Present only for an image, and only when a model on this account can edit
+    /// one. Absent rather than disabled — see `JunoMobileLibraryView`.
+    let edit: (() -> Void)?
     /// Fetches the bytes. Passed as a closure so the card never holds the model.
     let load: () async -> NativeProjectFileAccess?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var state: JunoLibraryPreviewLoader.State { previews.state(for: file.id) }
+    private var request: NativeFilePreviewRequest { NativeFilePreviewRequest(file) }
 
     var body: some View {
         Button(action: open) {
-            Color.clear
-                .aspectRatio(1, contentMode: .fit)
-                .overlay { surface }
-                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .strokeBorder(Color.junoHairline, lineWidth: 1)
-                }
-                .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            // The card, its fallback and its press behaviour are the shared ones
+            // — the attach-from-Library picker draws exactly this, and the two
+            // had already drifted into two designs once.
+            NativeFilePreviewTile(
+                file: request,
+                state: previews.state(for: file.id),
+                cornerRadius: 26
+            )
         }
-        .buttonStyle(JunoLibraryCardPressStyle())
+        .buttonStyle(NativeFilePreviewPressStyle())
         .contextMenu {
             Button("Open", action: open)
+            if let edit { Button("Edit Image…", action: edit) }
             Button("Rename", action: rename)
             Divider()
             Button("Delete", role: .destructive, action: delete)
@@ -336,54 +372,7 @@ private struct JunoLibraryCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityAddTraits(.isButton)
-        .task(id: file.id) { await previews.load(file, using: load) }
-    }
-
-    @ViewBuilder
-    private var surface: some View {
-        switch state {
-        case .ready(let image):
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFill()
-                // A photo is recognised by its middle; a document is recognised
-                // by its first lines. Cropping a page to its centre shows a
-                // paragraph from nowhere.
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: file.kind == "IMAGE" ? .center : .top
-                )
-                .transition(.opacity)
-        case .loading:
-            // No spinner: most previews land in a few hundred milliseconds and
-            // a grid of spinners reads as the screen being broken.
-            Color.junoSurface
-        case .unavailable:
-            fallback
-        }
-    }
-
-    /// What a file with no renderable preview looks like: still a card, not a
-    /// blank tile — its type, its name and its size.
-    private var fallback: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: file.kind == "IMAGE" ? "photo" : "doc.text")
-                .font(.system(size: 26))
-                .foregroundStyle(.secondary)
-            Spacer(minLength: 0)
-            Text(file.fileName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.primary)
-                .lineLimit(2)
-                .truncationMode(.middle)
-            Text(sizeLabel)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(16)
-        .background(Color.junoSurface)
+        .task(id: file.id) { await previews.load(request, using: load) }
     }
 
     private var sizeLabel: String {
@@ -392,105 +381,6 @@ private struct JunoLibraryCard: View {
 
     private var accessibilityLabel: String {
         "\(file.fileName), \(sizeLabel)"
-    }
-}
-
-/// A card presses in slightly, as a photo in a grid should. No wash: a tint over
-/// a picture changes the picture.
-private struct JunoLibraryCardPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.snappy(duration: 0.16), value: configuration.isPressed)
-    }
-}
-
-// MARK: - Previews
-
-/// Turns a stored file into a thumbnail, once.
-///
-/// Two rules: nothing is fetched until its card is on screen, and nothing is
-/// fetched twice — a grid that re-downloaded on every scroll would cost real
-/// money on a metered connection. Failures are remembered too, so a file the
-/// server cannot serve is attempted once rather than on every appearance.
-@MainActor
-@Observable
-final class JunoLibraryPreviewLoader {
-    enum State: Equatable {
-        case loading
-        case ready(UIImage)
-        case unavailable
-    }
-
-    /// Documents are rendered by QuickLook, which needs the whole file on disk.
-    /// Above this the card falls back to its name and type rather than pulling
-    /// tens of megabytes to draw a 300pt square.
-    static let documentPreviewByteLimit = 25 * 1024 * 1024
-
-    private var cache: [String: State] = [:]
-
-    func state(for id: String) -> State { cache[id] ?? .loading }
-
-    func load(_ file: NativeProjectFile, using access: () async -> NativeProjectFileAccess?) async {
-        guard cache[file.id] == nil else { return }
-        cache[file.id] = .loading
-
-        guard file.kind == "IMAGE" || file.size <= Self.documentPreviewByteLimit else {
-            cache[file.id] = .unavailable
-            return
-        }
-        guard let access = await access() else {
-            cache[file.id] = .unavailable
-            return
-        }
-        guard let data = await Self.bytes(of: access) else {
-            cache[file.id] = .unavailable
-            return
-        }
-
-        let image: UIImage? = file.kind == "IMAGE"
-            ? await JunoImageDownsampler.thumbnail(from: data, maxPixelSize: 700)
-            : await JunoDocumentThumbnail.render(data, fileName: file.fileName)
-        cache[file.id] = image.map(State.ready) ?? .unavailable
-    }
-
-    private static func bytes(of access: NativeProjectFileAccess) async -> Data? {
-        switch access {
-        case .downloaded(let data):
-            return data
-        case .remote(let url):
-            // A signed storage URL: no bearer token, and no reason to route it
-            // through the app's authenticated sender.
-            guard let (data, response) = try? await URLSession.shared.data(from: url),
-                (response as? HTTPURLResponse)?.statusCode ?? 200 < 400
-            else { return nil }
-            return data
-        }
-    }
-}
-
-/// Renders a document's first page with QuickLook — the same thumbnail the
-/// Files app draws, so a PDF looks like that PDF rather than like a PDF.
-enum JunoDocumentThumbnail {
-    static func render(_ data: Data, fileName: String) async -> UIImage? {
-        let ext = URL(fileURLWithPath: fileName).pathExtension
-            .filter { $0.isLetter || $0.isNumber }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                "juno-thumb-\(UUID().uuidString)" + (ext.isEmpty ? "" : ".\(ext)")
-            )
-        guard (try? data.write(to: url, options: [.atomic])) != nil else { return nil }
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        let request = QLThumbnailGenerator.Request(
-            fileAt: url,
-            size: CGSize(width: 600, height: 600),
-            scale: 1,
-            representationTypes: .thumbnail
-        )
-        let representation = try? await QLThumbnailGenerator.shared
-            .generateBestRepresentation(for: request)
-        return representation?.uiImage
     }
 }
 

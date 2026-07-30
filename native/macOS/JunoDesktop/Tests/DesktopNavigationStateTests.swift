@@ -155,10 +155,20 @@ struct DesktopNavigationStateTests {
 
     /// Scene storage outlives an app update, so a destination this build dropped
     /// must fall back rather than strand the window on a blank pane.
+    ///
+    /// The example used to be `"compare"`, which stopped being unknown the day
+    /// Compare shipped — and the test then failed for the right reason at the
+    /// wrong moment. It is now a string no build has ever written, and the second
+    /// case proves the point positively: every destination this build *does* have
+    /// must round-trip, so the fallback can never quietly swallow a real one.
     @Test
     func anUnknownStoredDestinationFallsBackToChat() {
-        #expect(DesktopNavigationState.destination(fromStored: "compare") == .chat)
+        #expect(DesktopNavigationState.destination(fromStored: "moodboard") == .chat)
         #expect(DesktopNavigationState.destination(fromStored: "") == .chat)
+
+        for destination in DesktopDestination.allCases {
+            #expect(DesktopNavigationState.destination(fromStored: destination.rawValue) == destination)
+        }
     }
 
     // MARK: - Window title

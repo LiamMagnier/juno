@@ -31,6 +31,8 @@ struct JunoMobileRootView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     /// The in-memory incognito session. Nil when the app could not be configured.
     var privateChatModel: NativePrivateChatModel?
+    var compareModel: NativeCompareModel?
+    var generateClient: NativeChatAPIClient?
     /// The three server-backed sections. Unlike the models above they hold no
     /// local mirror — connections, scheduled tasks and code sessions live only
     /// on the server, so each screen reads them live and says so when it cannot.
@@ -737,6 +739,14 @@ struct JunoMobileRootView: View {
                     }
                 )
             } else { unavailable }
+        case .compare:
+            if let compareModel, let session = currentSession {
+                NativeCompareView(
+                    model: compareModel,
+                    catalog: conversationModel?.selectableModels ?? [],
+                    accountID: session.profile.id
+                )
+            } else { unavailable }
         case .code:
             if let codeModel {
                 JunoMobileCodeView(
@@ -769,7 +779,14 @@ struct JunoMobileRootView: View {
             } else { unavailable }
         case .library:
             if let projectModel {
-                JunoMobileLibraryView(model: projectModel)
+                JunoMobileLibraryView(
+                    model: projectModel,
+                    accountID: currentSession?.profile.id,
+                    attachmentClient: requestSender.map { NativeAttachmentAPIClient(sender: $0) },
+                    generateClient: generateClient,
+                    modelCatalog: conversationModel?.modelCatalog ?? [],
+                    openConversation: openConversation
+                )
             } else { unavailable }
         case .artifacts:
             if let artifactModel {
