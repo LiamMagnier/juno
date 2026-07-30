@@ -6,8 +6,7 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
 import rehypeKatex from "rehype-katex";
-import { toast } from "sonner";
-import { Check, Copy } from "lucide-react";
+import { AicssCodeBlock, splitHighlightedLines } from "@/components/aicss/code-block";
 import { InlineVisualBlock } from "@/components/chat/inline-visual-block";
 import { MermaidBlock } from "@/components/chat/learning/mermaid-block";
 import { SourceChip } from "@/components/chat/source-chip";
@@ -137,9 +136,18 @@ function closeDangling(block: string): string {
   return closed;
 }
 
+/**
+ * A fenced block, in AIcss's numbered-gutter shell.
+ *
+ * What that replaced: a hairline frame with the language in the header and a
+ * hover-revealed copy button over a plain <pre>. The frame and the one action
+ * survive; the gutter is new, and it is the reason for the change — a model that
+ * says "line 14" is now pointing at something the reader can find without
+ * counting. Highlighting is preserved through `splitHighlightedLines`, which cuts
+ * rehype-highlight's token tree at the newlines instead of re-highlighting per
+ * line (which would break every multi-line string and block comment).
+ */
 function CodeBlock({ children, streaming }: { children: React.ReactNode; streaming?: boolean }) {
-  const ref = React.useRef<HTMLPreElement>(null);
-  const [copied, setCopied] = React.useState(false);
   const lang = langOf(children);
   const raw = textOf(children).replace(/\n$/, "");
 
@@ -152,41 +160,24 @@ function CodeBlock({ children, streaming }: { children: React.ReactNode; streami
     return <MermaidBlock code={raw} />;
   }
 
-  const copy = async () => {
-    const text = ref.current?.innerText ?? "";
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      toast.error("Couldn’t copy to clipboard");
-    }
-  };
-
-  // Sparse chrome, per the flat-transcript law: a hairline frame, the language
-  // in the mono metadata voice, one action. No window dots, no gloss.
   return (
-    <div className="group/code my-4 overflow-hidden rounded-xl border border-border/60 bg-background/35">
-      <div className="flex items-center justify-between gap-2 border-b border-border/50 py-1 pl-3 pr-1">
-        <span className="truncate font-mono text-[10px] text-muted-foreground">{lang ||"code"}</span>
-        {isMermaid ? (
-          <span className="px-2 py-1 font-mono text-caption text-muted-foreground/80">Diagram renders when complete…</span>
-        ) : (
-          <button
-            type="button"
-            onClick={copy}
-            aria-label={copied ? "Copied" : "Copy code"}
-            className="inline-flex items-center gap-1.5 rounded-[8px] px-2 py-1 font-mono text-caption text-muted-foreground opacity-0 transition-[opacity,background-color,color,transform] duration-base ease-out-soft active:scale-[0.97] hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/code:opacity-100 coarse:px-2.5 coarse:py-2 coarse:opacity-100"
-          >
-            {copied ? <Check className="h-3.5 w-3.5 text-success motion-safe:animate-fade-in" /> : <Copy className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
-          </button>
-        )}
-      </div>
-      <pre ref={ref} className="max-h-[520px] overflow-auto px-3 py-2.5 text-[12.5px] leading-6 scroll-fade-y">
-        {children}
-      </pre>
-    </div>
+    <AicssCodeBlock
+      className="my-4"
+      label={lang || "code"}
+      code={raw}
+      // Mid-stream, a fence's highlighting is re-derived on every delta and the
+      // token tree churns; splitting the raw text is stable and identical to look
+      // at until the closing fence lands.
+      lines={streaming ? undefined : splitHighlightedLines(children)}
+      maxBodyHeight={520}
+      action={
+        isMermaid ? (
+          <span className="ml-auto px-2 py-1 font-mono text-caption text-muted-foreground/80">
+            Diagram renders when complete…
+          </span>
+        ) : undefined
+      }
+    />
   );
 }
 

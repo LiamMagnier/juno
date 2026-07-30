@@ -540,53 +540,30 @@ struct DiffStat: View {
 ///
 /// Reasoning is provenance, not content: expanded by default it pushes the
 /// answer off-screen. Collapsed it stays one quiet line the reader can open.
+/// The agent's reasoning, in AIcss's viewport.
+///
+/// What that replaced: a stock `sparkles` glyph beside the trace's first line,
+/// which opened into the whole trace as one unbounded `Text`. Two problems, and
+/// the same two chat had. The glyph was a system symbol for "AI" rather than
+/// anything of Juno's. And the expanded state had no ceiling: a long trace pushed
+/// every row after it — including the tool calls the reader was following — off the
+/// screen, so opening the reasoning cost you your place in the session.
+///
+/// The viewport caps at 180pt and masks, and the collapsed line count is now the
+/// trace's own paragraphs rather than whichever line happened to be first.
 struct ReasoningRow: View {
     let text: String
-    @State private var expanded = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var firstLine: String {
-        text.split(separator: "\n").first.map(String.init) ?? text
+    private var lines: [String] {
+        JunoAIcssReasoningLines.lines(text: text)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            Button {
-                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                    expanded.toggle()
-                }
-            } label: {
-                HStack(spacing: JunoSpace.snug) {
-                    Image(systemName: "sparkles")
-                        .imageScale(.small)
-                        .frame(width: 18)
-                    Text(expanded ? "Reasoning" : firstLine)
-                        .font(.callout)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Image(systemName: "chevron.right")
-                        .imageScale(.small)
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(.secondary)
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
+        JunoAIcssReasoningStream(lines: lines, streaming: false)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, JunoSpace.cozy)
             .accessibilityLabel("Reasoning")
-            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             .accessibilityHint("Shows how Juno approached this step")
-
-            if expanded {
-                Text(text)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 18 + JunoSpace.snug)
-            }
-        }
-        .padding(.horizontal, JunoSpace.cozy)
     }
 }
 

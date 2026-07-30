@@ -942,7 +942,6 @@ private struct DesktopMessageRow: View {
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
-    @State private var reasoningExpanded = false
     @State private var inlineArtifact: DesktopInlineArtifact?
     /// Whether a long prompt is showing in full. Collapsed is the resting state,
     /// as it is on the web.
@@ -960,6 +959,15 @@ private struct DesktopMessageRow: View {
 
     private var plainText: String {
         NativeMessageContent.plainText(of: message.content)
+    }
+
+    /// The lines AIcss's viewport shows, or nil when the model sent no trace.
+    ///
+    /// A display chunking of what the provider sent — never a claim about where its
+    /// steps were. See `JunoAIcssReasoningLines`.
+    private var reasoningLines: [String]? {
+        guard let reasoning = message.reasoning, !reasoning.isEmpty else { return nil }
+        return JunoAIcssReasoningLines.lines(text: reasoning)
     }
 
     /// `rounded-2xl rounded-br-md`: one clipped corner on the trailing-bottom
@@ -1089,26 +1097,41 @@ private struct DesktopMessageRow: View {
 
             case .assistant:
                 VStack(alignment: .leading, spacing: 14) {
-                if let reasoning = message.reasoning, !reasoning.isEmpty {
-                    DisclosureGroup("Thought process", isExpanded: $reasoningExpanded) {
-                        Text(reasoning)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .padding(.top, 8)
-                    }
-                    .font(.caption.weight(.medium))
-                    .tint(.secondary)
+                // THE TRACE, in AIcss's viewport.
+                //
+                // This was a system `DisclosureGroup` over the whole reasoning
+                // trace as one `Text`: a triangle labelled "Thought process" that,
+                // opened, dropped an unbounded wall of prose into the transcript
+                // and pushed the answer off screen. Nothing about it said how long
+                // the run took, and while streaming it grew under the reader on
+                // every delta. The viewport is bounded — 40pt slots clamped to two
+                // lines, capped at 180pt, then masked — so the trace can now be
+                // open by default while the answer is being written, which is when
+                // it is worth anything.
+                if let lines = reasoningLines, !lines.isEmpty {
+                    JunoAIcssReasoningStream(
+                        lines: lines,
+                        streaming: message.isPending,
+                        duration: nil,
+                        showsHeader: !message.isPending
+                    )
+                    .frame(maxWidth: 520, alignment: .leading)
                 }
 
                 if message.content.isEmpty, message.isPending {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Juno is working…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
+                    // The dot matrix and AIcss's shine, as on the phone and the
+                    // web. This was a stock `ProgressView` spinner beside "Juno is
+                    // working…" — a system control saying nothing of Juno's, next
+                    // to a sentence that named the app rather than the work.
+                    HStack(spacing: 10) {
+                        JunoThinkingMatrix()
+                            .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+                        JunoAIcssThinkingLabel("Thinking about your request", size: 15)
                     }
+                    .frame(minHeight: 22)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Thinking about your request")
+                    .accessibilityAddTraits(.updatesFrequently)
                 } else {
                     ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                         switch part {

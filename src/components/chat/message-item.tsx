@@ -12,6 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Markdown } from "@/components/chat/markdown";
 import { ArtifactInlineCard } from "@/components/chat/artifact-inline-card";
 import { VisualLearningBlockRenderer } from "@/components/chat/learning/visual-learning-renderer";
+import { ThinkingState } from "@/components/aicss/thinking-state";
 import { ActivityTimeline } from "@/components/chat/activity-timeline";
 import { SourcesPill } from "@/components/chat/sources-pill";
 import { GenerationPlaceholder } from "@/components/chat/generation-placeholder";
@@ -67,15 +68,16 @@ function StreamStatus({ status }: { status?: GenerationStatus }) {
   return (
     <div role="status" className="flex min-h-10 items-center gap-3 py-1.5 motion-safe:animate-fade-in">
       <ThinkingDots className="text-muted-foreground/65" />
-      <span
-        key={statusCopy}
-        className="min-w-0 truncate text-body-lg leading-6 text-muted-foreground/85 motion-safe:animate-status-glow"
-      >
+      {/* AIcss's Thinking State, matching the live strip in ActivityTimeline —
+          the two are the same moment reached by different routes (this one is
+          the window before any run event has landed), so they must not breathe
+          differently. */}
+      <ThinkingState key={statusCopy} className="min-w-0 truncate text-body-lg leading-6">
         {statusCopy}
         {showClock && (
           <span className="whitespace-nowrap tabular-nums"> · {formatStreamElapsed(elapsedSec)}</span>
         )}
-      </span>
+      </ThinkingState>
     </div>
   );
 }

@@ -3,9 +3,20 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight } from "lucide-react";
-import { ThoughtProcessPanel, buildRun, domainOf, formatSpan, useRunClock } from "@/components/chat/thought-process-panel";
+import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
+import { ThinkingState } from "@/components/aicss/thinking-state";
+import { WebSearchBlock } from "@/components/aicss/web-search";
+import {
+  ThoughtProcessPanel,
+  buildRun,
+  domainOf,
+  formatSpan,
+  toSearchSites,
+  useRunClock,
+} from "@/components/chat/thought-process-panel";
 import { useThoughtPanel } from "@/components/chat/thought-panel-context";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
+import { toReasoningLines } from "@/lib/reasoning-lines";
 import { cn, truncate } from "@/lib/utils";
 import type { ClientActivityEvent } from "@/types/chat";
 
@@ -173,6 +184,13 @@ export function ActivityTimeline({
         .filter(Boolean)
         .join(", ");
 
+  // The lines AIcss's viewport shows. A display chunking of what the provider
+  // sent — never a claim about where its steps were; see reasoning-lines.ts.
+  const reasoningLines = streaming ? toReasoningLines(reasoning, reasoningParts) : [];
+  const searchSites = streaming ? toSearchSites(run.sources) : [];
+  const showSearch = !!streaming && !!run.query;
+  const hasLiveBlocks = reasoningLines.length > 0 || showSearch;
+
   return (
     <>
       <button
@@ -186,9 +204,13 @@ export function ActivityTimeline({
         aria-controls={open ? panelDomId : undefined}
         aria-label={label}
         className={cn(
-          "group/thought relative -mx-2 mb-3 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-xl px-2 py-1.5 text-left",
+          "group/thought relative -mx-2 flex w-[calc(100%+1rem)] items-center overflow-hidden rounded-xl px-2 py-1.5 text-left",
           "transition-colors duration-base ease-out-soft hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background motion-reduce:transition-none coarse:min-h-14",
           streaming ? "min-h-10 gap-3" : "min-h-12 gap-3",
+          // The gap to the answer belongs to whatever is last. With live blocks
+          // below, this row's own margin would open a hole between the label and
+          // the trace it labels.
+          hasLiveBlocks ? "mb-0.5" : "mb-3",
           open && "bg-muted/55"
         )}
       >
@@ -197,17 +219,27 @@ export function ActivityTimeline({
         {streaming ? (
           <>
             <ThinkingDots className="text-muted-foreground/65" />
-            <span
-              key={copyKey}
-              aria-hidden="true"
-              className={cn(
-                "min-w-0 truncate text-body-lg leading-6",
-                live.warning ? "text-warning" : "text-muted-foreground/85 motion-safe:animate-status-glow"
-              )}
-            >
-              {live.message}
-              {run.elapsedMs !== null && <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>}
-            </span>
+            {/* AIcss's Thinking State in place of `animate-status-glow`. Both say
+                "still here" without spending coral on it, but the glow breathed
+                the whole line's opacity — which dims the sentence you are trying
+                to read — where the shine moves a valley of alpha THROUGH the
+                text at full weight. Same node, same slot; on settle it simply
+                stops rather than fading to a different colour. */}
+            {live.warning ? (
+              <span key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6 text-warning">
+                {live.message}
+                {run.elapsedMs !== null && (
+                  <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>
+                )}
+              </span>
+            ) : (
+              <ThinkingState key={copyKey} aria-hidden="true" className="min-w-0 truncate text-body-lg leading-6">
+                {live.message}
+                {run.elapsedMs !== null && (
+                  <span className="whitespace-nowrap tabular-nums"> · {formatLiveSpan(run.elapsedMs)}</span>
+                )}
+              </ThinkingState>
+            )}
           </>
         ) : (
           <>
@@ -226,6 +258,40 @@ export function ActivityTimeline({
           </>
         )}
       </button>
+
+      {/* THE LIVE TRACE, which this component used to refuse to show.
+          The refusal was right about the CONTAINER and got read as being about
+          the content: a raw growing block of provider summary — half sentences,
+          stray code, media queries — reflowed the transcript on every delta and
+          made the answer look broken. AIcss's viewport is the container that
+          answers it. Each line is a 40px slot clamped to two lines, the whole
+          thing caps at 180px and then scrolls behind a mask, and the newest line
+          is translated into view rather than scrolled to. Nothing under the
+          reader moves, and a half-finished sentence is the last of six quiet grey
+          lines instead of a wall.
+
+          `aria-hidden` because message-item mounts this inside an
+          `aria-live="polite"` region: every delta rewrites these nodes, and a
+          screen reader would read the model's entire private reasoning aloud,
+          twice-revised, before ever reaching the answer. The strip's own
+          aria-label already names the state. */}
+      {hasLiveBlocks && (
+        <div aria-hidden="true" className="mb-3 flex flex-col gap-2.5 pl-2">
+          {showSearch && (
+            <WebSearchBlock
+              query={run.query!}
+              sites={searchSites}
+              // Settled once the run has moved past research: the query stops
+              // shimmering the moment the phase it describes is over, not when
+              // the whole answer lands.
+              settled={!run.phases.some((phase) => phase.key === "research" && phase.active)}
+            />
+          )}
+          {reasoningLines.length > 0 && (
+            <ThinkingReasoning lines={reasoningLines} streaming showHeader={false} />
+          )}
+        </div>
+      )}
 
       {/* The portal is the whole trick: the panel stays in THIS React subtree —
           so it keeps receiving the run built from the one clock above — while

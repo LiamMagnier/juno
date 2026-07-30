@@ -1,83 +1,57 @@
 "use client";
 
 import * as React from "react";
+import { ImageGenerationCanvas } from "@/components/aicss/image-generation";
+import { ThinkingState } from "@/components/aicss/thinking-state";
 import { cn } from "@/lib/utils";
 
 /**
  * Media-generation work surface shown while /api/generate runs.
  *
- * ChatGPT / Gemini style: a soft ambient field + smooth shimmer band over a
- * clean aspect-ratio card. Status lives in a quiet footer (stage, %, elapsed).
- * No sketch metaphors — the object being made is suggested by shape only
- * (square for image, 16:9 for video).
+ * AIcss's "Image Generation", in AIcss's own composition: the canvas, then the
+ * label under it. Nothing else.
+ *
+ * WHAT WAS DELETED, AND WHY IT WAS ALL ONE MISTAKE. The block used to be a card
+ * — border, shadow, 1.75rem radius — with a bordered footer strip carrying a
+ * progress bar, a percentage and an mm:ss clock. Five chrome elements around one
+ * unfinished picture:
+ *
+ *   - The clock counted up while nobody could act on the number. It made a
+ *     20-second wait feel measured and a 60-second wait feel broken.
+ *   - The percentage was fiction on every provider that reports no progress: the
+ *     bar ran an indeterminate sweep that looks exactly like a determinate one.
+ *   - The footer's own border cut the card in two, so the thing being made was
+ *     the smaller half of its own container.
+ *
+ * The canvas is now the whole object, and the one moving thing on screen is the
+ * label that says what is happening. The dot lattice is already Juno's mark, so
+ * the placeholder looks like the app rather than like a loading state.
  */
-
-const STAGE_LABELS: Record<string, string> = {
-  queued: "Queued",
-  generating: "Generating",
-  polling: "Rendering",
-  downloading: "Downloading",
-  uploading: "Uploading",
-};
 
 const STAGE_DETAILS: Record<"image" | "video", Record<string, string>> = {
   image: {
-    queued: "Preparing…",
-    generating: "Creating image…",
-    polling: "Refining…",
-    downloading: "Retrieving…",
-    uploading: "Saving…",
+    queued: "Preparing",
+    generating: "Creating image",
+    polling: "Refining",
+    downloading: "Retrieving",
+    uploading: "Saving",
   },
   video: {
-    queued: "Preparing…",
-    generating: "Creating video…",
-    polling: "Rendering…",
-    downloading: "Retrieving…",
-    uploading: "Saving…",
+    queued: "Preparing",
+    generating: "Creating video",
+    polling: "Rendering",
+    downloading: "Retrieving",
+    uploading: "Saving",
   },
 };
 
+/** Title-case fallback for a stage the server grew after this shipped. */
 function friendlyLabel(stage: string): string {
-  return STAGE_LABELS[stage] ?? `${stage.charAt(0).toUpperCase()}${stage.slice(1)}`;
+  return `${stage.charAt(0).toUpperCase()}${stage.slice(1)}`;
 }
 
 function stageDetail(modality: "image" | "video", stage: string): string {
-  return STAGE_DETAILS[modality][stage] ?? `${friendlyLabel(stage)}…`;
-}
-
-function formatElapsed(totalSec: number): string {
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
-function normalizeProgress(pct?: number): number | null {
-  if (pct == null || !Number.isFinite(pct)) return null;
-  // Bare `1` is ambiguous: prefer fractional completion (1 === complete).
-  const normalized = pct >= 0 && pct <= 1 ? pct * 100 : pct;
-  return Math.max(0, Math.min(100, normalized));
-}
-
-/** Soft ambient field + continuous shimmer — shared by image and video. */
-function MediaShimmer({ modality }: { modality: "image" | "video" }) {
-  return (
-    <div className="generation-media" data-modality={modality} aria-hidden="true">
-      <div className="generation-media__field">
-        <span className="generation-media__orb generation-media__orb--a" />
-        <span className="generation-media__orb generation-media__orb--b" />
-        <span className="generation-media__orb generation-media__orb--c" />
-        <span className="generation-media__sheen" />
-        <span className="generation-media__pulse" />
-      </div>
-      {modality === "video" && (
-        <div className="generation-media__play">
-          <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
-            <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
-          </svg>
-        </div>
-      )}
-    </div>
-  );
+  return STAGE_DETAILS[modality][stage] ?? friendlyLabel(stage);
 }
 
 interface GenerationPlaceholderProps {
@@ -85,98 +59,57 @@ interface GenerationPlaceholderProps {
 }
 
 export function GenerationPlaceholder({ progress }: GenerationPlaceholderProps) {
-  const { modality, stage, pct } = progress;
+  const { modality, stage } = progress;
   const isVideo = modality === "video";
-  const label = friendlyLabel(stage);
   const detail = stageDetail(modality, stage);
 
-  const startRef = React.useRef(Date.now());
-  const [elapsed, setElapsed] = React.useState(0);
+  /*
+   * The one number kept, and it is not a clock: video renders genuinely can run
+   * past a minute, and a reader who is not told that will assume a stall and
+   * leave. It appears only once the wait is already long enough to doubt, so it
+   * reads as reassurance rather than as a warning printed in advance.
+   */
+  const [longWait, setLongWait] = React.useState(false);
   React.useEffect(() => {
-    const timer = window.setInterval(
-      () => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)),
-      1000
-    );
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const [stageTransition, setStageTransition] = React.useState<{
-    current: string;
-    previous: string | null;
-  }>(() => ({ current: detail, previous: null }));
-  React.useEffect(() => {
-    setStageTransition((current) =>
-      current.current === detail
-        ? current
-        : { current: detail, previous: current.current }
-    );
-    const timer = window.setTimeout(
-      () => setStageTransition((current) => ({ ...current, previous: null })),
-      280
-    );
+    if (!isVideo) return;
+    const timer = window.setTimeout(() => setLongWait(true), 15_000);
     return () => window.clearTimeout(timer);
-  }, [detail]);
-
-  const displayPct = normalizeProgress(pct);
-  const roundedPct = displayPct == null ? null : Math.round(displayPct);
-  const ariaProgress = roundedPct == null ? "" : `, ${roundedPct} percent`;
-  const longVideoWait = isVideo && elapsed >= 15;
-  const ariaWait = longVideoWait ? ". Longer clips can take a couple of minutes." : "";
+  }, [isVideo]);
 
   return (
     <div
       role="status"
       aria-live="polite"
       aria-atomic="true"
-      aria-label={`${isVideo ? "Video" : "Image"} generation in progress — ${label}${ariaProgress}${ariaWait}`}
+      aria-label={`${isVideo ? "Video" : "Image"} generation in progress — ${detail}`}
       data-modality={modality}
       data-stage={stage}
-      className={cn(
-        "generation-placeholder w-full",
-        isVideo ? "max-w-[min(100%,480px)]" : "max-w-[min(100%,360px)]"
-      )}
+      className={cn("w-full", isVideo ? "max-w-[min(100%,440px)]" : "max-w-[min(100%,288px)]")}
     >
-      <div className="generation-placeholder__viewport">
-        <MediaShimmer modality={modality} />
+      <div className={cn("relative overflow-hidden rounded-xl", isVideo ? "aspect-video" : "aspect-square")}>
+        {/* The lattice opens up from AIcss's 11px: their canvas is 208px, and a
+            pitch tuned for that reads as a texture rather than a field here. */}
+        <ImageGenerationCanvas className="absolute inset-0" pitch={14} />
+        {isVideo && (
+          <div className="generation-media__play">
+            <svg viewBox="0 0 24 24" fill="currentColor" className="generation-media__play-icon">
+              <path d="M9 7.5v9l7.5-4.5L9 7.5z" />
+            </svg>
+          </div>
+        )}
       </div>
 
-      <div className="generation-placeholder__footer" aria-hidden="true">
-        <div
-          className="generation-progress"
-          data-determinate={displayPct != null ? "true" : "false"}
-        >
-          {displayPct != null ? (
-            <span
-              className="generation-progress__value"
-              style={{ transform: `scaleX(${displayPct / 100})` }}
-            />
-          ) : (
-            <span className="generation-progress__indeterminate" />
-          )}
-        </div>
-        <div className="generation-placeholder__status-row">
-          <span className="generation-placeholder__stage">
-            {stageTransition.previous && (
-              <span className="generation-placeholder__stage-previous">
-                {stageTransition.previous}
-              </span>
-            )}
-            <span
-              key={stageTransition.current}
-              className={cn(
-                "generation-placeholder__stage-current",
-                stageTransition.previous && "generation-placeholder__stage-current--entering"
-              )}
-            >
-              {stageTransition.current}
-            </span>
+      <div className="mt-2.5 flex flex-col gap-0.5" aria-hidden="true">
+        {/* Keyed on the stage so a change fades rather than swapping under the
+            shine — one element, so the two animations cannot collide. */}
+        <ThinkingState key={detail} tone="strong" className="text-[0.875rem] motion-safe:animate-fade-in">
+          {detail}
+        </ThinkingState>
+        {longWait && (
+          <span className="text-body text-muted-foreground motion-safe:animate-fade-in">
+            Longer clips can take a couple of minutes.
           </span>
-          <span className="generation-placeholder__metrics">
-            {longVideoWait && <span className="generation-placeholder__hint">May take a minute</span>}
-            {roundedPct != null && <span>{roundedPct}%</span>}
-            <span>{formatElapsed(elapsed)}</span>
-          </span>
-        </div>
+        )}
       </div>
     </div>
   );

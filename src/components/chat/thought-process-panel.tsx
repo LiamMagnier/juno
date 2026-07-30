@@ -2,8 +2,11 @@
 
 import * as React from "react";
 import { ChevronRight, X } from "lucide-react";
+import { ThinkingReasoning } from "@/components/aicss/thinking-reasoning";
+import { WebSearchBlock, type WebSearchSite } from "@/components/aicss/web-search";
 import { ThinkingDots } from "@/components/signature/thinking-dots";
 import { cn } from "@/lib/utils";
+import { toReasoningLines } from "@/lib/reasoning-lines";
 import { toSteps } from "@/lib/reasoning-parts";
 import type { ClientActivityEvent } from "@/types/chat";
 
@@ -39,6 +42,40 @@ export function domainOf(url: string) {
   } catch {
     return url;
   }
+}
+
+/** The AIcss search row's bare display form: host + path, no scheme. */
+function searchLabelOf(url: string) {
+  try {
+    const { hostname, pathname } = new URL(url);
+    return `${hostname.replace(/^www\./, "")}${pathname === "/" ? "" : pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * A run's sources as AIcss search rows.
+ *
+ * EVERY ROW IS `done`, and that is a statement about the data rather than a
+ * shortcut. A `visit` event is emitted at the moment a source has been collected
+ * or read (see the sends in route.ts and deep-research.ts) — there is no event
+ * for "about to fetch this URL", because until the search returns the URL is not
+ * yet known. A pending or fetching row here would therefore be a state this app
+ * cannot observe, drawn in the shape that says it did. The in-flight state lives
+ * where the run genuinely has one: on the label, which shimmers until the search
+ * phase it names is over.
+ *
+ * `pending` and `loading` stay in the component for the callers that can honestly
+ * use them — the Code transcript's own search tool reports per-source progress.
+ */
+export function toSearchSites(sources: RunModel["sources"]): WebSearchSite[] {
+  return sources.map((source) => ({
+    title: source.title,
+    label: searchLabelOf(source.url),
+    url: source.url,
+    state: "done" as const,
+  }));
 }
 
 function parseTs(value: string) {
@@ -95,9 +132,17 @@ export interface RunModel {
   phases: Phase[];
   facts: Fact[];
   calls: Call[];
-  sources: { url: string; domain: string }[];
+  /** `title` is the producer's own `detail` for the visit — the page title, or
+   *  the host when the page had none (see the `visit` sends in route.ts and
+   *  deep-research.ts). Never invented: it falls back to the domain, which is
+   *  what the AIcss search row would have shown anyway. */
+  sources: { url: string; domain: string; title: string }[];
   searches: number;
   sourceCount: number;
+  /** The last query the run actually searched for, verbatim, or null when it
+   *  never ran a search. `T_SEARCHING` only — "Preparing web search" is an
+   *  intent and carries no query. */
+  query: string | null;
   elapsedMs: number | null;
   /** Last warning title, surfaced verbatim. We never editorialise it into a
    *  claim like "Stopped early" — several warnings are non-fatal. */
@@ -158,12 +203,15 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
   // that never reported usage).
   const tEnd = at(usageEv) ?? nowServer ?? at(events[events.length - 1]);
 
-  const sources: { url: string; domain: string }[] = [];
+  const sources: { url: string; domain: string; title: string }[] = [];
   const seen = new Set<string>();
   for (const e of events) {
     if (!e.url || seen.has(e.url)) continue;
     seen.add(e.url);
-    sources.push({ url: e.url, domain: domainOf(e.url) });
+    const domain = domainOf(e.url);
+    // The producer already truncated `detail` to 96 and already fell back to the
+    // host when the page had no title, so there is nothing left to decide here.
+    sources.push({ url: e.url, domain, title: e.detail?.trim() || domain });
   }
 
   const warnings = events.filter((e) => e.kind === "warning");
@@ -257,6 +305,7 @@ export function buildRun(events: ClientActivityEvent[], nowServer: number | null
     sources,
     searches: searchEvs.length,
     sourceCount: sources.length,
+    query: searchEvs[searchEvs.length - 1]?.detail?.trim() || null,
     elapsedMs,
     note: warnings.length ? warnings[warnings.length - 1].title : null,
   };
@@ -383,6 +432,24 @@ export function ThoughtProcessPanel({
    * boundaries that exist are the ones the provider sent.
    */
   const steps = React.useMemo(() => toSteps(reasoningParts), [reasoningParts]);
+
+  /**
+   * The settled AIcss trace, for the providers that HAVE no steps.
+   *
+   * Anthropic, Zhipu, Mistral and Google stream one unbroken block, so `steps` is
+   * null for them and the section used to be a single disclosure over a wall of
+   * prose. This gives those runs something scannable — the trace's own paragraphs
+   * in the 40px viewport — without inventing the step boundaries that
+   * reasoning-parts.ts is explicit must never be inferred. It is wrapping, and it
+   * is numbered nowhere and counted nowhere.
+   *
+   * Rendered only at rest. While streaming, the live strip in the transcript is
+   * already showing this exact stream a column away.
+   */
+  const traceLines = React.useMemo(
+    () => (steps || streaming ? [] : toReasoningLines(reasoning, reasoningParts)),
+    [steps, streaming, reasoning, reasoningParts],
+  );
 
   // Focus moves in on open — the user pressed a control to get here, so the
   // caret follows. Nothing holds it: Tab leaves the panel normally, and
@@ -593,6 +660,16 @@ export function ThoughtProcessPanel({
                 </ol>
               )}
 
+              {traceLines.length > 0 && (
+                <ThinkingReasoning
+                  lines={traceLines}
+                  // Preformatted here so the panel keeps exactly one opinion about
+                  // how long the run took — the same `formatSpan` the header uses.
+                  duration={run.elapsedMs === null ? null : formatSpan(run.elapsedMs)}
+                  className="rounded-2xl border border-border/45 bg-card/65 px-3.5 py-2.5"
+                />
+              )}
+
               <div className="flex flex-col gap-2.5">
                 <button
                   type="button"
@@ -636,23 +713,16 @@ export function ThoughtProcessPanel({
           )}
 
           {/* SOURCES — the durable asset. Survives the stream, addressable,
-              auditable. No Globe glyph: "nytimes.com" already says it is a site. */}
+              auditable.
+              Now AIcss's search rows rather than a cloud of domain pills. The
+              pills spent a whole line each on a host and dropped the page title
+              the producer had already sent us, so five results from one site were
+              five identical chips: breadth to look at, nothing to choose between.
+              A row names the page, then the host, then offers the arrow. */}
           {run.sources.length > 0 && (
             <section className="flex flex-col gap-3">
               <SectionLabel>Sources</SectionLabel>
-              <div className="flex flex-wrap gap-1.5">
-                {run.sources.map((s) => (
-                  <a
-                    key={s.url}
-                    href={s.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="relative inline-flex min-h-8 max-w-full items-center rounded-full border border-border/60 bg-card/70 px-2.5 py-1 font-mono text-caption text-source transition-[background-color,border-color] duration-base ease-out-soft hover:border-source/30 hover:bg-source/5 motion-reduce:transition-none"
-                  >
-                    <span className="truncate">{s.domain}</span>
-                  </a>
-                ))}
-              </div>
+              <WebSearchBlock query={run.query} sites={toSearchSites(run.sources)} settled={!streaming} />
             </section>
           )}
 

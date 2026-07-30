@@ -38,10 +38,17 @@ struct JunoMobileThoughtProcessRow: View {
     private static let gutter: Double = 36
 
     @State private var showingPanel = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hasReasoning: Bool {
         !(reasoning ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The lines AIcss's viewport shows — a display chunking of what the provider
+    /// sent, never a claim about where its steps were. See
+    /// `JunoAIcssReasoningLines`.
+    private var reasoningLines: [String] {
+        guard streaming else { return [] }
+        return JunoAIcssReasoningLines.lines(text: reasoning)
     }
 
     var body: some View {
@@ -49,18 +56,45 @@ struct JunoMobileThoughtProcessRow: View {
         // A model that returns no reasoning trace has nothing to disclose, and
         // the answer itself is the whole receipt.
         if streaming {
-            liveStrip
+            VStack(alignment: .leading, spacing: 6) {
+                liveStrip
+                liveTrace
+            }
+            .padding(.bottom, 12)
         } else if hasReasoning {
             restingStrip
         }
     }
 
+    /// THE LIVE TRACE, which this row used to refuse to show.
+    ///
+    /// The refusal was right about the CONTAINER and got read as being about the
+    /// content: provider summaries arrive as half sentences and stray code, and a
+    /// raw growing block of that reflowed the transcript on every delta. AIcss's
+    /// viewport answers it — 40pt slots clamped to two lines, capped at 180pt and
+    /// then masked, with the newest line translated into view rather than scrolled
+    /// to. Nothing under the reader moves.
+    ///
+    /// Hidden from the accessibility tree deliberately. The strip above is inside
+    /// an updating status and already carries the state in its label; exposed, a
+    /// screen reader would read the model's entire private reasoning aloud,
+    /// twice-revised, before ever reaching the answer.
+    @ViewBuilder
+    private var liveTrace: some View {
+        let lines = reasoningLines
+        if !lines.isEmpty {
+            JunoAIcssReasoningStream(lines: lines, streaming: true, showsHeader: false)
+                .padding(.leading, Self.gutter + 12)
+                .accessibilityHidden(true)
+        }
+    }
+
     // MARK: - Live
 
-    /// Deliberately does **not** preview the reasoning text as it streams.
-    /// Provider summaries arrive as half-finished sentences and stray code, and
-    /// putting that at the top of the transcript made the answer look broken. The
-    /// strip carries the contract instead — what it is doing, and for how long.
+    /// The contract, in one line: what it is doing, and for how long. The trace
+    /// itself sits below in `liveTrace`, in a container that cannot reflow — which
+    /// is what this row previously had no way to provide, and why it used to show
+    /// the sentence alone.
     private var liveStrip: some View {
         HStack(spacing: 12) {
             // The same 36pt gutter the resting dot uses. The web puts the matrix
@@ -75,7 +109,6 @@ struct JunoMobileThoughtProcessRow: View {
             Spacer(minLength: 0)
         }
         .frame(minHeight: 40)
-        .padding(.bottom, 12)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Thought process — in progress")
         .accessibilityAddTraits(.updatesFrequently)
@@ -98,15 +131,18 @@ struct JunoMobileThoughtProcessRow: View {
 
     private func liveText(elapsed: TimeInterval?) -> some View {
         let phrase = JunoMobileRunCopy.live(elapsed: elapsed, writing: writing)
-        return Text(elapsed == nil ? phrase : "\(phrase) · \(JunoMobileRunCopy.liveSpan(elapsed!))")
-            .font(.system(size: 17))
-            .monospacedDigit()
-            .lineLimit(1)
-            .truncationMode(.tail)
-            // The web breathes this sentence toward the foreground rather than
-            // tinting it coral — the waiting state is monochrome on purpose.
-            .foregroundStyle(Color.junoMutedForeground.opacity(0.85))
-            .modifier(JunoMobileStatusGlow(active: !reduceMotion))
+        // AIcss's Thinking State, in place of the opacity breathe this used to
+        // carry. Both say "still here" without spending coral on it, but the
+        // breathe dimmed the whole sentence — including the part being read —
+        // where the shine moves a valley of alpha THROUGH text that stays at full
+        // weight. Reduce Motion is handled inside the modifier, which is why the
+        // `reduceMotion` gate that used to live here is gone.
+        return JunoAIcssThinkingLabel(
+            elapsed == nil ? phrase : "\(phrase) · \(JunoMobileRunCopy.liveSpan(elapsed!))",
+            size: 17
+        )
+        .lineLimit(1)
+        .truncationMode(.tail)
     }
 
     // MARK: - Resting
@@ -188,25 +224,6 @@ private struct JunoMobileThoughtRowStyle: ButtonStyle {
     }
 }
 
-/// The web's `status-glow`: the waiting sentence breathes between muted and
-/// near-foreground over 2.8s. Not a pulse and not coral — a long, shallow move
-/// that says "still here" without competing with the answer that follows.
-private struct JunoMobileStatusGlow: ViewModifier {
-    let active: Bool
-    @State private var bright = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(bright ? 1 : 0.82)
-            .animation(
-                active
-                    ? .easeInOut(duration: 1.4).repeatForever(autoreverses: true)
-                    : nil,
-                value: bright
-            )
-            .onAppear { if active { bright = true } }
-    }
-}
 
 // MARK: - Clock
 
@@ -340,6 +357,22 @@ private struct JunoMobileThoughtProcessPanel: View {
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .kerning(0.5)
                 .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
+
+            // The trace leads; the prose is the evidence behind it. The question
+            // that made someone open this sheet is "what did it do?", and a wall of
+            // serif answers that worse than the model's own lines do — so the lines
+            // come first, foldable, and the full text stays below them.
+            let lines = JunoAIcssReasoningLines.lines(text: reasoning)
+            if !lines.isEmpty {
+                JunoCard(padding: 14) {
+                    JunoAIcssReasoningStream(
+                        lines: lines,
+                        streaming: false,
+                        duration: duration.map(JunoMobileRunCopy.span)
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
 
             JunoCard(padding: 14) {
                 // The serif, at reading size, because this is the model's own

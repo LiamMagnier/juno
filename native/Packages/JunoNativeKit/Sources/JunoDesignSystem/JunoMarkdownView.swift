@@ -135,65 +135,24 @@ struct JunoInlineText: View {
     }
 }
 
-/// A fenced code block: monospaced, horizontally scrollable so column alignment
-/// survives, with the language and a copy action in a quiet header.
+/// A fenced code block, in AIcss's numbered-gutter shell.
 ///
-/// Wrapping is deliberately off. Soft-wrapped code doubles every long line's
-/// height and destroys the indentation the reader is using to parse it.
+/// What that replaced: a quiet header with the language and a copy glyph over one
+/// `Text` of the whole source. The header and the one action survive; the gutter is
+/// new, and it is the reason for the change — a model that says "line 14" is now
+/// pointing at something the reader can find without counting.
+///
+/// Wrapping stays off for the reason the previous block gave and which still
+/// holds: soft-wrapping code doubles a long line's height and destroys the
+/// indentation the reader is using to parse it.
 struct JunoCodeBlock: View {
     let language: String?
     let source: String
-    @State private var didCopy = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: JunoSpacing.compact) {
-                if let language, !language.isEmpty {
-                    Text(language)
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                }
-                Spacer(minLength: 0)
-                Button {
-                    JunoPasteboard.copy(source)
-                    didCopy = true
-                    Task {
-                        try? await Task.sleep(for: .seconds(1.6))
-                        didCopy = false
-                    }
-                } label: {
-                    Label(
-                        didCopy ? "Copied" : "Copy",
-                        systemImage: didCopy ? "checkmark" : "doc.on.doc"
-                    )
-                    .font(.caption2)
-                    .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-                .help(didCopy ? "Copied" : "Copy code")
-                .accessibilityLabel(didCopy ? "Code copied" : "Copy code")
-            }
-            .padding(.horizontal, JunoSpacing.control)
-            .padding(.vertical, JunoSpacing.compact)
-
-            ScrollView(.horizontal) {
-                Text(source)
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .padding(.horizontal, JunoSpacing.control)
-                    .padding(.bottom, JunoSpacing.control)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .scrollIndicators(.automatic)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
-                .fill(Color.junoCanvas)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoCornerRadius.control, style: .continuous)
-                .strokeBorder(Color.junoHairline)
+        JunoAIcssCodeBlock(
+            label: language?.isEmpty == false ? language! : "code",
+            source: source
         )
     }
 }

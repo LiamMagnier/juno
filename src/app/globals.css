@@ -37,6 +37,19 @@
   inherits: true;
   initial-value: 0.5;
 }
+/*
+ * The AIcss to-do header's determinate pie, 0…100% (see .aicss-todo-pie).
+ *
+ * A conic-gradient stop is a raw token like the aura's tint above: unregistered,
+ * the wedge would jump from 2/5 to 3/5 with nothing in between. Registered, one
+ * transition sweeps it — which is the whole reason the header carries a pie
+ * rather than a count.
+ */
+@property --aicss-todo-pie {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
 
 /*
  * Juno design system
@@ -1481,157 +1494,16 @@
     .sheen-sweep::after { display: none; }
   }
 
-  /* Media generation — ChatGPT/Gemini-style ambient shimmer.
-     Soft pill-rounded card, richer orbs, slower organic motion. */
-  .generation-placeholder {
-    position: relative;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) 2.85rem;
-    min-width: 0;
-    overflow: hidden;
-    isolation: isolate;
-    border: 1px solid hsl(var(--border) / .55);
-    border-radius: 1.75rem;
-    background: hsl(var(--card));
-    box-shadow:
-      inset 0 1px 0 hsl(var(--sheen)),
-      0 2px 6px hsl(var(--foreground) / .04),
-      0 18px 48px -22px hsl(var(--foreground) / .22);
-  }
-
-  .generation-placeholder[data-modality="image"] .generation-placeholder__viewport {
-    aspect-ratio: 1 / 1;
-  }
-  .generation-placeholder[data-modality="video"] {
-    grid-template-rows: auto 2.85rem;
-  }
-  .generation-placeholder[data-modality="video"] .generation-placeholder__viewport {
-    aspect-ratio: 16 / 9;
-  }
-
-  .generation-placeholder__viewport {
-    position: relative;
-    min-height: 0;
-    overflow: hidden;
-    /* Match shell radius so the media field clips cleanly at the top corners */
-    border-radius: 1.75rem 1.75rem 0 0;
-    background: hsl(var(--muted) / .45);
-  }
-
-  /* Full-bleed media field */
-  .generation-media {
-    position: absolute;
-    inset: 0;
-  }
-
-  .generation-media__field {
-    position: absolute;
-    inset: 0;
-    overflow: hidden;
-    background:
-      radial-gradient(130% 100% at 18% 12%, hsl(var(--primary) / .18), transparent 58%),
-      radial-gradient(110% 90% at 88% 78%, hsl(15 45% 70% / .14), transparent 55%),
-      radial-gradient(80% 70% at 50% 100%, hsl(var(--primary) / .08), transparent 60%),
-      linear-gradient(
-        155deg,
-        hsl(var(--muted) / .98) 0%,
-        hsl(var(--card)) 45%,
-        hsl(48 28% 94% / .9) 100%
-      );
-  }
-
-  .dark .generation-media__field {
-    background:
-      radial-gradient(130% 100% at 16% 10%, hsl(var(--primary) / .28), transparent 58%),
-      radial-gradient(110% 90% at 90% 82%, hsl(15 40% 45% / .18), transparent 55%),
-      radial-gradient(80% 70% at 50% 100%, hsl(var(--primary) / .12), transparent 60%),
-      linear-gradient(
-        155deg,
-        hsl(var(--muted) / .95) 0%,
-        hsl(var(--card)) 48%,
-        hsl(var(--muted) / .75) 100%
-      );
-  }
-
-  /* Soft drifting orbs — larger blur, more travel, staggered timing */
-  .generation-media__orb {
-    position: absolute;
-    border-radius: 999px;
-    filter: blur(36px);
-    opacity: .7;
-    will-change: transform, opacity;
-  }
-  .generation-media__orb--a {
-    top: -18%;
-    left: -14%;
-    width: 68%;
-    height: 68%;
-    background: hsl(var(--primary) / .34);
-    animation: generation-orb-a 5.8s cubic-bezier(.45, .05, .55, .95) infinite;
-  }
-  .generation-media__orb--b {
-    right: -20%;
-    bottom: -24%;
-    width: 72%;
-    height: 72%;
-    background: hsl(25 50% 68% / .28);
-    animation: generation-orb-b 7.2s cubic-bezier(.45, .05, .55, .95) infinite;
-  }
-  .generation-media__orb--c {
-    top: 28%;
-    left: 22%;
-    width: 48%;
-    height: 48%;
-    background: hsl(0 0% 100% / .55);
-    filter: blur(42px);
-    animation: generation-orb-c 4.6s cubic-bezier(.45, .05, .55, .95) infinite;
-  }
-  .dark .generation-media__orb--c {
-    background: hsl(0 0% 100% / .12);
-  }
-
-  /* Wide diagonal shimmer — brighter peak, longer ease-out, slight pause */
-  .generation-media__sheen {
-    position: absolute;
-    inset: -30% -55%;
-    background: linear-gradient(
-      108deg,
-      transparent 32%,
-      hsl(0 0% 100% / .08) 44%,
-      hsl(0 0% 100% / .55) 50%,
-      hsl(0 0% 100% / .12) 56%,
-      transparent 68%
-    );
-    mix-blend-mode: soft-light;
-    animation: generation-sheen 2.8s cubic-bezier(.4, 0, .2, 1) infinite;
-    will-change: transform;
-  }
-  .dark .generation-media__sheen {
-    background: linear-gradient(
-      108deg,
-      transparent 32%,
-      hsl(0 0% 100% / .04) 44%,
-      hsl(0 0% 100% / .22) 50%,
-      hsl(0 0% 100% / .06) 56%,
-      transparent 68%
-    );
-    mix-blend-mode: screen;
-  }
-
-  /* Center glow breathes with the orbs */
-  .generation-media__pulse {
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 70% 55% at 50% 45%, hsl(var(--primary) / .14), transparent 70%),
-      radial-gradient(circle at 50% 50%, hsl(0 0% 100% / .2), transparent 55%);
-    animation: generation-pulse 3.2s ease-in-out infinite;
-  }
-  .dark .generation-media__pulse {
-    background:
-      radial-gradient(ellipse 70% 55% at 50% 45%, hsl(var(--primary) / .2), transparent 70%),
-      radial-gradient(circle at 50% 50%, hsl(0 0% 100% / .04), transparent 55%);
-  }
+  /* Media generation.
+   *
+   * All that is left is the video play glyph. The block used to be a card with a
+   * bordered footer strip carrying a progress bar, a percentage and an mm:ss
+   * clock, over a field of three blurred orbs, a soft-light sheen sweep and a
+   * breathing radial pulse — nine elements of chrome and animation around one
+   * unfinished picture. The field is now AIcss's point lattice (`.aicss-ig`,
+   * which is Juno's own dot matrix) and the chrome is gone: see the note at the
+   * top of generation-placeholder.tsx for what each piece was getting wrong.
+   */
 
   /* Video-only: soft play glyph in the center */
   .generation-media__play {
@@ -1657,167 +1529,831 @@
     animation: generation-play-breathe 2.6s ease-in-out infinite;
   }
 
-  .generation-placeholder__footer {
-    position: relative;
-    z-index: 3;
-    border-top: 1px solid hsl(var(--border) / .45);
-    background: hsl(var(--card) / .94);
-    backdrop-filter: blur(14px);
-  }
-
-  .generation-progress {
-    position: absolute;
-    top: 0;
-    right: 0;
-    left: 0;
-    height: 2.5px;
-    overflow: hidden;
-    background: hsl(var(--border) / .35);
-  }
-  .generation-progress__value,
-  .generation-progress__indeterminate {
-    position: absolute;
-    inset: 0;
-    display: block;
-    background: linear-gradient(
-      90deg,
-      hsl(var(--primary) / .45),
-      hsl(var(--primary)),
-      hsl(15 60% 62%)
-    );
-    transform-origin: left center;
-  }
-  .generation-progress__value {
-    transition: transform 480ms var(--ease-out-soft);
-  }
-  .generation-progress__indeterminate {
-    right: auto;
-    width: 36%;
-    border-radius: 999px;
-    animation: generation-progress-run 1.85s cubic-bezier(.4, 0, .2, 1) infinite;
-  }
-
-  .generation-placeholder__status-row {
-    display: flex;
-    height: 100%;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0 1.1rem;
-  }
-
-  .generation-placeholder__stage {
-    position: relative;
-    display: grid;
-    min-width: 0;
-    color: hsl(var(--foreground) / .8);
-    font-size: .8125rem;
-    font-weight: 500;
-    letter-spacing: -.01em;
-    line-height: 1.25;
-  }
-  .generation-placeholder__stage-previous,
-  .generation-placeholder__stage-current {
-    grid-area: 1 / 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .generation-placeholder__stage-previous {
-    animation: generation-stage-out 200ms var(--ease-out-soft) both;
-  }
-  .generation-placeholder__stage-current--entering {
-    animation: generation-stage-in 260ms var(--ease-out-soft) both;
-  }
-
-  .generation-placeholder__metrics {
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    gap: .6rem;
-    color: hsl(var(--muted-foreground));
-    font-size: .75rem;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: .01em;
-  }
-  .generation-placeholder__metrics > span + span {
-    padding-left: .6rem;
-    border-left: 1px solid hsl(var(--border) / .7);
-  }
-  .generation-placeholder__hint {
-    color: hsl(var(--muted-foreground) / .9);
-    font-size: .6875rem;
-  }
-
-  @keyframes generation-orb-a {
-    0%   { transform: translate(0, 0) scale(1); opacity: .55; }
-    33%  { transform: translate(14%, 12%) scale(1.12); opacity: .9; }
-    66%  { transform: translate(6%, 18%) scale(1.04); opacity: .7; }
-    100% { transform: translate(0, 0) scale(1); opacity: .55; }
-  }
-  @keyframes generation-orb-b {
-    0%   { transform: translate(0, 0) scale(1); opacity: .5; }
-    40%  { transform: translate(-16%, -12%) scale(1.16); opacity: .85; }
-    70%  { transform: translate(-8%, -18%) scale(1.06); opacity: .62; }
-    100% { transform: translate(0, 0) scale(1); opacity: .5; }
-  }
-  @keyframes generation-orb-c {
-    0%   { transform: translate(0, 0) scale(.92); opacity: .35; }
-    50%  { transform: translate(10%, -10%) scale(1.14); opacity: .7; }
-    100% { transform: translate(0, 0) scale(.92); opacity: .35; }
-  }
-  @keyframes generation-sheen {
-    0%   { transform: translateX(-60%) skewX(-14deg); opacity: 0; }
-    12%  { opacity: 1; }
-    88%  { opacity: 1; }
-    100% { transform: translateX(60%) skewX(-14deg); opacity: 0; }
-  }
-  @keyframes generation-pulse {
-    0%, 100% { opacity: .4; transform: scale(1); }
-    50% { opacity: 1; transform: scale(1.04); }
-  }
   @keyframes generation-play-breathe {
     0%, 100% { opacity: .68; transform: scale(.94); }
     50% { opacity: 1; transform: scale(1.02); }
   }
-  @keyframes generation-progress-run {
-    0%   { transform: translateX(-130%); opacity: .6; }
-    40%  { opacity: 1; }
-    100% { transform: translateX(360%); opacity: .6; }
-  }
-  @keyframes generation-stage-out {
-    from { opacity: 1; transform: translateY(0); }
-    to { opacity: 0; transform: translateY(-4px); }
-  }
-  @keyframes generation-stage-in {
-    from { opacity: 0; transform: translateY(4px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-
   @media (max-width: 380px) {
-    .generation-placeholder { border-radius: 1.4rem; }
-    .generation-placeholder__viewport { border-radius: 1.4rem 1.4rem 0 0; }
-    .generation-placeholder__status-row { padding-inline: .9rem; }
     .generation-media__play-icon { width: 2.4rem; height: 2.4rem; padding: .58rem .52rem .58rem .72rem; }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .generation-media__orb,
-    .generation-media__sheen,
-    .generation-media__pulse,
-    .generation-media__play-icon,
-    .generation-progress__indeterminate,
-    .generation-placeholder__stage-previous,
-    .generation-placeholder__stage-current--entering {
+    .generation-media__play-icon { animation: none; opacity: .9; transform: none; }
+  }
+
+  /* ---- AIcss ----------------------------------------------------------------
+   *
+   * Ported from aicss.dev (Kevin, @kvnkld — components fetched from
+   * `https://www.aicss.dev/r/<slug>`, Beta V1.2, free tier). The library's own
+   * files are plain CSS modules whose every colour is a literal — #1a1a1a text,
+   * #a1a1a1 muted, #e6e8ec hairlines, #15a06a/#dc2626 diff — with dark mode
+   * behind `prefers-color-scheme`.
+   *
+   * NEITHER of those survives contact with this app, so both were changed and
+   * nothing else was:
+   *
+   *   1. Every literal is now the token that already means that thing here, so
+   *      these blocks re-tint with [data-accent] and read correctly on warm
+   *      paper instead of on #fff. A hardcoded grey inside a themed app is a
+   *      component that is right in exactly one theme.
+   *   2. `prefers-color-scheme` → `.dark`. next-themes puts that class on <html>
+   *      and the OS preference is only its default; keyed on the media query,
+   *      every one of these would ignore the app's own theme toggle.
+   *
+   * Geometry, easing curves and keyframe stops are AIcss's, to the frame. Where
+   * a size is stated in the original it is stated here — the point of adopting a
+   * component library is not to redraw it.
+   * ------------------------------------------------------------------------- */
+
+  /*
+   * THE SHINE. One valley of reduced alpha sweeps through the text, rather than a
+   * bright band travelling over it — which is why it reads as breathing rather
+   * than as a loading skeleton. Shared by the thinking label, the search label,
+   * the generation label and the active to-do.
+   *
+   * `--aicss-shine` is the colour the text settles at; the gradient derives its
+   * own valley from it, so a caller only ever names one colour.
+   */
+  .aicss-shine {
+    --aicss-shine: var(--muted-foreground);
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--aicss-shine)) 0%,
+      hsl(var(--aicss-shine)) 30%,
+      hsl(var(--aicss-shine) / .45) 45%,
+      hsl(var(--aicss-shine) / .45) 55%,
+      hsl(var(--aicss-shine)) 70%,
+      hsl(var(--aicss-shine)) 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: aicss-shine 2.25s cubic-bezier(.25, .1, .25, 1) infinite;
+  }
+  /* Settled: the same node keeps its box and simply stops moving, so nothing
+     reflows at the moment a run completes. */
+  .aicss-shine[data-settled="true"] {
+    animation: none;
+    background-image: none;
+    color: hsl(var(--aicss-shine));
+    -webkit-text-fill-color: hsl(var(--aicss-shine));
+  }
+  @keyframes aicss-shine {
+    0%, 18% { background-position: 100% 0; }
+    82%, 100% { background-position: 0% 0; }
+  }
+
+  /* ---- Thinking State ---- */
+  .aicss-thinking {
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+  }
+
+  /* ---- Thinking + Reasoning -------------------------------------------------
+   * A fixed-height viewport that grows with the stream to a cap, then scrolls
+   * behind a soft mask. The 40px sentence slot (2 × 20px, clamped) is what keeps
+   * a live reasoning trace from reflowing the transcript under the reader — the
+   * reason this can be shown at all, where raw streamed prose could not.
+   * ------------------------------------------------------------------------- */
+  .aicss-tr {
+    display: flex;
+    flex-direction: column;
+    animation: aicss-fade-in 320ms cubic-bezier(.22, 1, .36, 1) both;
+  }
+  .aicss-tr-header {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    align-self: flex-start;
+    min-height: 20px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: default;
+  }
+  .aicss-tr-header[data-clickable="true"] { cursor: pointer; }
+  .aicss-tr-label {
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+    letter-spacing: -.005em;
+    /* Softer than the verb, so "for 5s" sits below "Thought" in the hierarchy. */
+    color: hsl(var(--muted-foreground) / .68);
+  }
+  .aicss-tr-verb { color: hsl(var(--muted-foreground)); }
+  .aicss-tr-chevron {
+    flex: none;
+    color: hsl(var(--muted-foreground) / .7);
+    /* The path is drawn as an up-caret; the collapsed summary points down. */
+    transform: rotate(180deg);
+    transition: transform 280ms cubic-bezier(.22, 1, .36, 1), color var(--dur-base) var(--ease-out-soft);
+  }
+  .aicss-tr-header[aria-expanded="true"] .aicss-tr-chevron { transform: rotate(0deg); }
+  .aicss-tr-header[data-clickable="true"]:hover .aicss-tr-chevron { color: hsl(var(--foreground) / .7); }
+  .aicss-tr-collapsible {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: grid-template-rows 320ms cubic-bezier(.22, 1, .36, 1), opacity 220ms ease;
+  }
+  .aicss-tr-collapsible[data-collapsed="true"] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .aicss-tr-inner { min-height: 0; overflow: hidden; }
+  .aicss-tr-viewport {
+    margin-top: 6px;
+    overflow: hidden;
+    transition: height 360ms cubic-bezier(.22, 1, .36, 1);
+  }
+  .aicss-tr-viewport[data-scroll="true"] { overflow-y: auto; scrollbar-width: none; }
+  .aicss-tr-viewport[data-scroll="true"]::-webkit-scrollbar { display: none; }
+  .aicss-tr-stream {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    transition: transform 560ms cubic-bezier(.22, 1, .36, 1);
+    will-change: transform;
+  }
+  .aicss-tr-sentence {
+    margin: 0;
+    height: 40px;
+    line-height: 20px;
+    font-size: 13px;
+    font-weight: 425;
+    letter-spacing: -.005em;
+    color: hsl(var(--muted-foreground));
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    animation: aicss-fade-in 420ms cubic-bezier(.22, 1, .36, 1) both;
+  }
+  @keyframes aicss-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+  /* ---- Image Generation ----------------------------------------------------
+   * The one component that arrived already speaking Juno: a field of points with
+   * a soft mass moving through it. AIcss's 11px pitch is kept — the morph mask
+   * sizes are tuned against it — but exposed so a larger canvas can open it up.
+   * ------------------------------------------------------------------------- */
+  /* AIcss puts the lattice on #fafafa over #fff — a fill you can only just find,
+     which is the point: the canvas is a held space, not a card. Warm paper needs
+     the full muted token to land in the same relationship, because --muted at
+     .45 over a 97%-lightness background is genuinely invisible. No border, per
+     the original: an outline would make it a frame around nothing. */
+  .aicss-ig {
+    --aicss-ig-pitch: 11px;
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    background: hsl(var(--muted));
+  }
+  .dark .aicss-ig { background: hsl(var(--muted) / .55); }
+  .aicss-ig-dots,
+  .aicss-ig-glow {
+    position: absolute;
+    inset: 2px;
+    background-size: var(--aicss-ig-pitch) var(--aicss-ig-pitch);
+    background-repeat: space;
+  }
+  .aicss-ig-dots {
+    background-image: radial-gradient(circle, hsl(var(--muted-foreground)) .7px, transparent 1.3px);
+    opacity: .22;
+  }
+  /*
+   * The mass. Two soft ellipses cut out of a denser point field, drifting the
+   * four corners of the canvas while breathing on a second, shorter cycle — so
+   * the motion never lands on a beat the eye can predict.
+   */
+  .aicss-ig-glow {
+    background-image: radial-gradient(circle, hsl(var(--foreground)) 1.1px, transparent 1.6px);
+    -webkit-mask-image:
+      radial-gradient(ellipse at center, #000 0%, transparent 60%),
+      radial-gradient(ellipse at center, #000 0%, transparent 62%);
+    mask-image:
+      radial-gradient(ellipse at center, #000 0%, transparent 60%),
+      radial-gradient(ellipse at center, #000 0%, transparent 62%);
+    -webkit-mask-repeat: no-repeat, no-repeat;
+    mask-repeat: no-repeat, no-repeat;
+    animation:
+      aicss-ig-morph 4.2s cubic-bezier(.35, 1.55, .65, 1) infinite,
+      aicss-ig-breathe 1.9s cubic-bezier(.66, 0, .34, 1) infinite;
+  }
+  @keyframes aicss-ig-morph {
+    0%   { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
+    25%  { mask-size: 46% 58%, 44% 38%; -webkit-mask-size: 46% 58%, 44% 38%; mask-position: 84% 16%, 66% 30%; -webkit-mask-position: 84% 16%, 66% 30%; }
+    50%  { mask-size: 60% 44%, 38% 46%; -webkit-mask-size: 60% 44%, 38% 46%; mask-position: 82% 84%, 62% 68%; -webkit-mask-position: 82% 84%, 62% 68%; }
+    75%  { mask-size: 48% 54%, 46% 40%; -webkit-mask-size: 48% 54%, 46% 40%; mask-position: 14% 82%, 34% 66%; -webkit-mask-position: 14% 82%, 34% 66%; }
+    100% { mask-size: 52% 46%, 40% 40%; -webkit-mask-size: 52% 46%, 40% 40%; mask-position: 16% 20%, 30% 32%; -webkit-mask-position: 16% 20%, 30% 32%; }
+  }
+  @keyframes aicss-ig-breathe {
+    0%, 100% { opacity: .55; }
+    50% { opacity: 1; }
+  }
+  /* The resolution badge: a fact about the artefact, in the metadata voice. */
+  .aicss-ig-res {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: hsl(var(--card) / .72);
+    backdrop-filter: blur(4px);
+    color: hsl(var(--muted-foreground));
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  /* ---- Web Search ---------------------------------------------------------
+   * The one AIcss block Juno already had the data for: `search` events carry the
+   * query and `visit` events carry the URL, so pending → loading → done is read
+   * off the wire rather than staged on a timer.
+   * ------------------------------------------------------------------------- */
+  .aicss-ws {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 13px;
+    line-height: 1.4;
+    color: hsl(var(--foreground));
+  }
+  .aicss-ws-row { display: flex; align-items: center; gap: 6px; min-height: 20px; }
+  .aicss-ws-row > svg { flex: none; margin-left: -1px; color: hsl(var(--muted-foreground)); }
+  .aicss-ws-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-weight: 550;
+    white-space: nowrap;
+  }
+  .aicss-ws-label .aicss-shine {
+    --aicss-shine: var(--foreground);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .aicss-ws-quote { overflow: hidden; text-overflow: ellipsis; }
+  .aicss-ws-chevron {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: 0;
+    border-radius: 4px;
+    background: none;
+    color: hsl(var(--muted-foreground) / .7);
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-spring), transform 280ms var(--ease-spring);
+  }
+  .aicss-ws-chevron:hover { color: hsl(var(--muted-foreground)); }
+  .aicss-ws-chevron[aria-expanded="false"] { transform: rotate(180deg); }
+  .aicss-ws-collapsible {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: grid-template-rows 320ms var(--ease-spring), opacity 220ms var(--ease-spring);
+  }
+  .aicss-ws-collapsible[data-collapsed="true"] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .aicss-ws-inner { min-height: 0; overflow: hidden; }
+  .aicss-ws-results { position: relative; display: flex; gap: 6px; align-items: stretch; }
+  /* The rail sits under the search glyph's centre, so the results hang off it. */
+  .aicss-ws-rail {
+    flex: none;
+    width: 1px;
+    align-self: stretch;
+    margin-left: 5.5px;
+    border-left: 1px solid hsl(var(--border));
+  }
+  .aicss-ws-list {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 4px 0 2px 6px;
+    list-style: none;
+  }
+  .aicss-ws-site {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    font-size: 12px;
+    line-height: 18px;
+    color: hsl(var(--muted-foreground));
+    opacity: 0;
+    transform: translateY(4px);
+    animation: aicss-ws-enter .34s var(--ease-spring) forwards;
+  }
+  .aicss-ws-site[data-state="done"] { cursor: pointer; }
+  /* Three glyphs in one 12px box, crossfading: dashed ring (pending) → spinning
+     globe (fetching) → check (read). Stacked rather than swapped so the row's
+     baseline never moves as a source resolves. */
+  .aicss-ws-bullet {
+    position: relative;
+    flex: none;
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .aicss-ws-dots,
+  .aicss-ws-globe {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--muted-foreground) / .7);
+  }
+  .aicss-ws-dots { opacity: 1; transition: opacity .32s var(--ease-spring); pointer-events: none; }
+  .aicss-ws-site[data-state="loading"] .aicss-ws-dots,
+  .aicss-ws-site[data-state="done"] .aicss-ws-dots { opacity: 0; }
+  .aicss-ws-globe {
+    opacity: 0;
+    transform: scale(.88);
+    transition: opacity .32s var(--ease-spring), transform .36s var(--ease-spring);
+  }
+  .aicss-ws-site[data-state="loading"] .aicss-ws-globe { opacity: 1; transform: scale(1); }
+  .aicss-ws-site[data-state="done"] .aicss-ws-globe {
+    opacity: 0;
+    transform: scale(.775);
+    transition: opacity .22s var(--ease-spring), transform .26s var(--ease-spring);
+  }
+  .aicss-ws-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(var(--success-ink));
+    opacity: 0;
+    transform: scale(1.175);
+    transition: opacity .24s var(--ease-spring) .06s, transform .28s var(--ease-spring) .06s;
+  }
+  .dark .aicss-ws-check { color: hsl(var(--success)); }
+  .aicss-ws-site[data-state="done"] .aicss-ws-check { opacity: 1; transform: scale(1); }
+  .aicss-ws-title { flex: none; font-weight: 450; white-space: nowrap; color: hsl(var(--foreground)); }
+  .aicss-ws-site[data-state="pending"] .aicss-ws-title { color: hsl(var(--muted-foreground)); }
+  .aicss-ws-sep { flex: none; color: hsl(var(--muted-foreground) / .7); }
+  .aicss-ws-url {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: hsl(var(--muted-foreground));
+    transition: color var(--dur-fast) var(--ease-spring);
+  }
+  /* The arrow only exists once the row is a link worth following. */
+  .aicss-ws-arrow {
+    display: inline-flex;
+    flex: none;
+    margin-left: -2px;
+    color: hsl(var(--muted-foreground) / .7);
+    opacity: 0;
+    transform: rotate(45deg) translate(0, 2px);
+    transition: opacity var(--dur-fast) var(--ease-spring), transform .22s var(--ease-spring);
+  }
+  .aicss-ws-site[data-state="done"]:hover .aicss-ws-arrow { opacity: 1; transform: rotate(45deg) translate(0, 0); }
+  .aicss-ws-site[data-state="done"]:hover .aicss-ws-url { color: hsl(var(--foreground)); }
+  @keyframes aicss-ws-enter { to { opacity: 1; transform: translateY(0); } }
+
+  /* ---- Code Block / File Diff ---------------------------------------------
+   * One shell for both: a hairline card whose header is pulled out to the frame
+   * edge, so the divider under it is the card's own inlay rather than a second
+   * border inside it.
+   * ------------------------------------------------------------------------- */
+  .aicss-cb {
+    overflow: hidden;
+    padding: 12px 16px 16px;
+    border-radius: 12px;
+    background: hsl(var(--card));
+    box-shadow: 0 0 0 1px hsl(var(--border));
+  }
+  .aicss-cb-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -12px -16px 0;
+    padding: 10px 12px 10px 16px;
+    border-bottom: .5px solid hsl(var(--border));
+    font-size: 12.5px;
+  }
+  .aicss-cb-file { display: inline-flex; min-width: 0; align-items: center; gap: 7px; }
+  .aicss-cb-icon { display: block; flex: none; width: 15px; height: 15px; color: hsl(var(--muted-foreground)); }
+  .aicss-cb-lang {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: hsl(var(--foreground));
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12.5px;
+    line-height: 1;
+  }
+  .aicss-cb-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: -7px 0 -7px auto;
+    padding: 3px 3px 3px 7px;
+    border: 0;
+    border-radius: 7px;
+    background: none;
+    color: hsl(var(--muted-foreground));
+    font-size: 12px;
+    cursor: pointer;
+    transition: color var(--dur-fast) var(--ease-out-soft), background-color var(--dur-fast) var(--ease-out-soft);
+  }
+  .aicss-cb-copy:hover { color: hsl(var(--foreground)); background: hsl(var(--muted)); }
+  .aicss-cb-body {
+    position: relative;
+    margin: 0 -16px -16px;
+    padding: 10px 0;
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12.5px;
+    line-height: 20px;
+  }
+  /* Full-height gutter hairline, independent of the body's padding so it runs
+     the whole column rather than stopping short of the first and last row. */
+  .aicss-cb-body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 32px;
+    width: .5px;
+    background: hsl(var(--border));
+  }
+  .aicss-cb-row { display: grid; grid-template-columns: 32px minmax(0, 1fr); }
+  .aicss-cb-ln {
+    padding: 0 7px;
+    color: hsl(var(--muted-foreground) / .8);
+    font-size: 11px;
+    text-align: right;
+    user-select: none;
+  }
+  .aicss-cb-code {
+    padding: 0 12px 0 8px;
+    overflow-x: auto;
+    color: hsl(var(--foreground));
+    white-space: pre;
+    scrollbar-width: none;
+  }
+  .aicss-cb-code::-webkit-scrollbar { display: none; }
+
+  .aicss-diff { font-family: var(--font-mono), ui-monospace, monospace; }
+  .aicss-diff-stat { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; font-size: 12px; line-height: 1; }
+  .aicss-diff-add { color: hsl(var(--success-ink)); }
+  .aicss-diff-del { color: hsl(var(--destructive-ink)); }
+  .dark .aicss-diff-add { color: hsl(var(--success)); }
+  .dark .aicss-diff-del { color: hsl(var(--destructive)); }
+  .aicss-diff-body {
+    position: relative;
+    margin: 0 -16px -16px;
+    padding: 4px 0;
+    overflow: hidden;
+    font-size: 12.5px;
+    line-height: 20px;
+  }
+  /* 32 + 32: two line-number columns, so the hairline lands on the sign gutter.
+     z-index keeps it over the tinted add/del fills. */
+  .aicss-diff-body::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 64px;
+    z-index: 1;
+    width: .5px;
+    background: hsl(var(--border));
+  }
+  .aicss-diff-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px 32px 18px minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .aicss-diff-row .aicss-diff-ln,
+  .aicss-diff-row .aicss-diff-sign {
+    color: hsl(var(--muted-foreground) / .8);
+    font-size: 11px;
+    user-select: none;
+  }
+  .aicss-diff-row .aicss-diff-ln { padding: 0 7px; text-align: right; }
+  .aicss-diff-row .aicss-diff-sign { text-align: center; }
+  .aicss-diff-row code { padding: 0 12px 0 8px; color: hsl(var(--muted-foreground)); white-space: pre; }
+  /* The accent bar carries the sign redundantly with colour: solid for an
+     addition, a hatch for a deletion. Two channels, so the diff survives being
+     read by someone who cannot separate the greens from the reds. */
+  .aicss-diff-row[data-type="add"]::before,
+  .aicss-diff-row[data-type="del"]::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 3px;
+  }
+  .aicss-diff-row[data-type="add"] { background: hsl(var(--success) / .12); }
+  .aicss-diff-row[data-type="add"]::before { background: hsl(var(--success)); }
+  .aicss-diff-row[data-type="add"] .aicss-diff-sign,
+  .aicss-diff-row[data-type="add"] .aicss-diff-ln-new { color: hsl(var(--success-ink)); }
+  .aicss-diff-row[data-type="del"] { background: hsl(var(--destructive) / .12); }
+  .aicss-diff-row[data-type="del"]::before {
+    background: repeating-linear-gradient(
+      45deg,
+      hsl(var(--destructive)) 0,
+      hsl(var(--destructive)) 1.5px,
+      transparent 1.5px,
+      transparent 3px
+    );
+  }
+  .aicss-diff-row[data-type="del"] .aicss-diff-sign,
+  .aicss-diff-row[data-type="del"] .aicss-diff-ln-old { color: hsl(var(--destructive-ink)); }
+  .aicss-diff-row[data-type="add"] code,
+  .aicss-diff-row[data-type="del"] code { color: hsl(var(--foreground)); }
+  .dark .aicss-diff-row[data-type="add"] .aicss-diff-sign,
+  .dark .aicss-diff-row[data-type="add"] .aicss-diff-ln-new { color: hsl(var(--success)); }
+  .dark .aicss-diff-row[data-type="del"] .aicss-diff-sign,
+  .dark .aicss-diff-row[data-type="del"] .aicss-diff-ln-old { color: hsl(var(--destructive)); }
+
+  /* ---- Streaming Text -----------------------------------------------------
+   * AIcss's own component fakes the stream with a setInterval typewriter. Juno
+   * has real tokens, so only the caret is ported — and it inverts the usual
+   * blink: SOLID while text is arriving (motion would compete with the text
+   * itself) and blinking once idle, which is the one moment a blink is news.
+   * ------------------------------------------------------------------------- */
+  .aicss-caret {
+    display: inline-block;
+    width: 8px;
+    height: 1.05em;
+    margin-left: 2px;
+    background: hsl(var(--foreground));
+    vertical-align: text-bottom;
+  }
+  .aicss-caret[data-streaming="false"] { animation: aicss-caret-blink 1s step-end infinite; }
+  @keyframes aicss-caret-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  /* ---- Inline Citations ---------------------------------------------------
+   * Only the reference FOOTER is taken. The inline `[n]` marker stays Juno's
+   * SourceChip: it carries the source's own favicon, which identifies a site
+   * faster than an ordinal does, and it is already load-bearing in
+   * markdown.tsx's citation walk.
+   * ------------------------------------------------------------------------- */
+  .aicss-cite-footer {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid hsl(var(--border));
+  }
+  .aicss-cite-ref {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    color: hsl(var(--muted-foreground));
+    font-size: 12px;
+    line-height: 18px;
+    cursor: pointer;
+  }
+  .aicss-cite-mark {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    background: hsl(var(--muted));
+    color: hsl(var(--muted-foreground));
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .aicss-cite-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: hsl(var(--foreground));
+    font-weight: 450;
+  }
+  .aicss-cite-sep { flex: none; color: hsl(var(--muted-foreground) / .7); }
+  .aicss-cite-host {
+    flex: none;
+    white-space: nowrap;
+    color: hsl(var(--muted-foreground));
+    transition: color .16s var(--ease-out-soft);
+  }
+  .aicss-cite-arrow {
+    display: inline-flex;
+    flex: none;
+    margin-left: -2px;
+    color: hsl(var(--muted-foreground) / .7);
+    opacity: 0;
+    transform: rotate(45deg) translate(0, 2px);
+    transition: opacity .16s var(--ease-out-soft), transform .22s var(--ease-out-soft);
+  }
+  .aicss-cite-ref:hover .aicss-cite-arrow { opacity: 1; transform: rotate(45deg) translate(0, 0); }
+  .aicss-cite-ref:hover .aicss-cite-host { color: hsl(var(--foreground)); }
+
+  /* ---- To-do List ---------------------------------------------------------
+   * A plan that reports against itself. The header's glyph is the status: a list
+   * before the run starts, a determinate pie while it works, a filled check when
+   * it is done — and it swaps to a chevron on hover, because on hover the only
+   * thing you can do with it is fold it.
+   * ------------------------------------------------------------------------- */
+  .aicss-todo {
+    padding: 6px 12px 12px;
+    border-radius: 8px;
+    background: hsl(var(--card));
+    box-shadow: 0 0 0 1px hsl(var(--border));
+    color: hsl(var(--foreground));
+    font-size: 13px;
+  }
+  .aicss-todo-head {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    min-height: 22px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .aicss-todo-head-icon { position: relative; flex: none; width: 16px; height: 16px; color: hsl(var(--muted-foreground)); }
+  .aicss-todo-list-icon,
+  .aicss-todo-chevron,
+  .aicss-todo-head-check,
+  .aicss-todo-pie { position: absolute; inset: 0; margin: auto; transition: opacity 140ms ease; }
+  .aicss-todo-list-icon,
+  .aicss-todo-chevron { width: 13px; height: 13px; }
+  /* A solid glyph reads smaller than an outlined one at the same box, so the
+     check is drawn full size where the others are inset. */
+  .aicss-todo-head-check { width: 16px; height: 16px; color: hsl(var(--success-ink)); }
+  .dark .aicss-todo-head-check { color: hsl(var(--success)); }
+  .aicss-todo-chevron { opacity: 0; transition: opacity 140ms ease, transform 220ms ease; }
+  .aicss-todo-head[aria-expanded="false"] .aicss-todo-chevron { transform: rotate(-90deg); }
+  .aicss-todo-head:hover .aicss-todo-list-icon,
+  .aicss-todo-head:hover .aicss-todo-pie,
+  .aicss-todo-head:hover .aicss-todo-head-check { opacity: 0; }
+  .aicss-todo-head:hover .aicss-todo-chevron { opacity: 1; }
+  .aicss-todo-title { font-weight: 500; }
+  .aicss-todo-count { margin-left: auto; color: hsl(var(--muted-foreground)); font-variant-numeric: tabular-nums; }
+  /* The count rolls rather than cuts: one character slot, old glyph up and out,
+     new one up and in. */
+  .aicss-todo-roll { display: inline-flex; align-items: baseline; }
+  .aicss-todo-digit { display: inline-block; height: 1em; overflow: hidden; line-height: 1em; }
+  .aicss-todo-digit-inner {
+    display: flex;
+    flex-direction: column;
+    transition: transform 350ms cubic-bezier(.4, 0, .2, 1);
+  }
+  .aicss-todo-digit-inner > span { height: 1em; line-height: 1em; }
+  .aicss-todo-digit-inner[data-rolled="true"] { transform: translateY(-1em); }
+  .aicss-todo-pie {
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    color: hsl(var(--foreground));
+    transition: opacity 140ms ease, --aicss-todo-pie 400ms ease;
+  }
+  .aicss-todo-pie::after {
+    content: "";
+    position: absolute;
+    inset: 2.6px;
+    border-radius: 50%;
+    background: conic-gradient(currentColor var(--aicss-todo-pie, 0%), transparent 0);
+  }
+  .aicss-todo-pie-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    color: hsl(var(--muted-foreground));
+  }
+  .aicss-todo-collapsible {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition: grid-template-rows 280ms ease, opacity 200ms ease;
+  }
+  .aicss-todo-collapsible[data-collapsed="true"] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+  .aicss-todo-inner { min-height: 0; overflow: hidden; }
+  .aicss-todo-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 0 0;
+    list-style: none;
+  }
+  .aicss-todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    line-height: 18px;
+    color: hsl(var(--muted-foreground));
+    animation: aicss-todo-in 360ms ease backwards;
+    animation-delay: calc(var(--aicss-todo-i, 0) * 50ms);
+  }
+  @keyframes aicss-todo-in {
+    from { opacity: 0; transform: translateY(-7px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .aicss-todo-icon-wrap { position: relative; flex: none; width: 16px; height: 16px; margin-top: 1px; }
+  .aicss-todo-icon {
+    position: absolute;
+    inset: 0;
+    width: 16px;
+    height: 16px;
+    color: hsl(var(--muted-foreground));
+    opacity: 0;
+    transition: opacity 320ms ease;
+  }
+  .aicss-todo-icon[data-on="true"] { opacity: 1; }
+  .aicss-todo-icon-strong { color: hsl(var(--foreground)); }
+  /* The active label crossfades from muted into a shining foreground copy of
+     itself, layered via data-label so the two states occupy one box and the row
+     cannot shift as a task starts. */
+  .aicss-todo-label { position: relative; color: hsl(var(--muted-foreground)); font-weight: 400; transition: color 360ms ease; }
+  .aicss-todo-label::before {
+    content: attr(data-label);
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--foreground)) 0%,
+      hsl(var(--foreground)) 30%,
+      hsl(var(--foreground) / .45) 45%,
+      hsl(var(--foreground) / .45) 55%,
+      hsl(var(--foreground)) 70%,
+      hsl(var(--foreground)) 100%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 360ms ease;
+  }
+  .aicss-todo-item[data-state="active"] .aicss-todo-label { color: transparent; }
+  .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
+    opacity: 1;
+    animation: aicss-shine 2.25s cubic-bezier(.25, .1, .25, 1) infinite;
+  }
+  .aicss-todo-item[data-state="done"] .aicss-todo-label { color: hsl(var(--muted-foreground)); text-decoration: line-through; }
+
+  /*
+   * REDUCED MOTION. Every one of these blocks says "working" with a number, a
+   * glyph or a state as well as with movement, so stopping the movement costs
+   * nothing — the shine settles to its own end colour, the stream stops
+   * translating, the rows arrive already in place.
+   */
+  @media (prefers-reduced-motion: reduce) {
+    .aicss-shine,
+    .aicss-todo-item[data-state="active"] .aicss-todo-label::before {
       animation: none;
+      background-image: none;
+      color: hsl(var(--aicss-shine, var(--foreground)));
+      -webkit-text-fill-color: hsl(var(--aicss-shine, var(--foreground)));
     }
-    .generation-media__sheen { opacity: .4; transform: none; }
-    .generation-media__orb { opacity: .55; }
-    .generation-media__pulse { opacity: .65; transform: none; }
-    .generation-media__play-icon { opacity: .9; transform: none; }
-    .generation-progress__indeterminate { width: 42%; transform: none; }
-    .generation-progress__value { transition: none; }
-    .generation-placeholder__stage-previous { display: none; }
+    .aicss-tr,
+    .aicss-tr-sentence,
+    .aicss-ws-site,
+    .aicss-todo-item { animation: none; opacity: 1; transform: none; }
+    .aicss-tr-stream,
+    .aicss-tr-viewport,
+    .aicss-tr-collapsible,
+    .aicss-ws-collapsible,
+    .aicss-todo-collapsible,
+    .aicss-todo-digit-inner,
+    .aicss-todo-pie { transition: none; }
+    .aicss-ig-glow { animation: none; opacity: .7; }
+    .aicss-caret[data-streaming="false"] { animation: none; }
   }
 
   /* Markdown prose used in chat messages */
@@ -1846,15 +2382,19 @@
     padding-left: 1em;
     color: hsl(var(--muted-foreground));
   }
-  .prose-juno code:not(pre code) {
+  /* The second :not() is load-bearing. AIcss's block numbers every line, which
+     means one <code> PER LINE and no <pre> to hang them in — so without it every
+     line of every fenced block would be served the inline-code chip: a muted
+     fill, 0.4em of padding and a rounded corner, 40 times down a listing. */
+  .prose-juno code:not(pre code):not(.aicss-cb code) {
     background: hsl(var(--muted));
     padding: 0.15em 0.4em;
     border-radius: 0.35rem;
     font-size: 0.875em;
     font-family: var(--font-mono);
   }
-  /* Code-block chrome (border/radius/header) is owned by the CodeBlock component
-     in markdown.tsx; the bare <pre> only handles scroll + sizing here. */
+  /* Code-block chrome (border/radius/header/gutter) is owned by AicssCodeBlock;
+     a bare <pre> (raw HTML in a message) only handles scroll + sizing here. */
   .prose-juno pre {
     overflow-x: auto;
     font-size: 0.85em;

@@ -1182,27 +1182,31 @@ private struct JunoMobileMessageRow: View {
         .accessibilityLabel("Juno replied")
     }
 
+    /// AIcss's search rows, in place of a horizontal rail of capsules.
+    ///
+    /// The capsules spent a whole 28pt chip on a title and dropped the host
+    /// entirely, so two results from the same site were indistinguishable and the
+    /// row scrolled sideways — which on a phone means half the sources are off
+    /// screen with nothing to say they exist. The rows stack, name the page, then
+    /// the host, and hang off one rail.
+    ///
+    /// `query: nil` is deliberate: the native message model carries sources but not
+    /// the query the model searched for, and the block omits its label row rather
+    /// than inventing one. Every row is `done` — a source on a finished message has
+    /// by definition been read.
     private var sources: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(message.sources, id: \.url) { source in
-                    Link(destination: source.url) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "link").font(.caption2)
-                            Text(source.title).font(.caption).lineLimit(1)
-                        }
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(Color.junoSurface, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.vertical, 1)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-        .scrollIndicators(.hidden)
+        JunoAIcssWebSearch(
+            query: nil,
+            sites: message.sources.map { source in
+                JunoAIcssSearchSite(
+                    title: source.title,
+                    label: JunoAIcssSearchSite.label(for: source.url),
+                    url: source.url,
+                    state: .done
+                )
+            },
+            settled: true
+        )
     }
 
     /// Which model wrote this and what it cost, in the web's monospaced metadata
