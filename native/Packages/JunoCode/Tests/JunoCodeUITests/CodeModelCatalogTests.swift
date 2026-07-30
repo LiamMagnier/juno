@@ -110,7 +110,10 @@ final class CodeModelCatalogTests: XCTestCase {
             )
         )
         // nil — no change needed, Instant is valid here.
-        XCTAssertNil(canDisable.refittingEffort(nil))
+        XCTAssertTrue(
+            canDisable.refittingEffort(nil) == nil,
+            "Instant is valid on this model, so nothing needs refitting"
+        )
     }
 
     /// A depth the new model cannot reach still clamps down.
@@ -121,7 +124,7 @@ final class CodeModelCatalogTests: XCTestCase {
             supportedReasoningEfforts: [.low, .high]
         )
         XCTAssertEqual(option.refittingEffort(.max), .some(.high))
-        XCTAssertNil(option.refittingEffort(.high), "already fits")
+        XCTAssertTrue(option.refittingEffort(.high) == nil, "already fits")
     }
 
     /// A model that *does* publish depths still takes a thinking parameter.

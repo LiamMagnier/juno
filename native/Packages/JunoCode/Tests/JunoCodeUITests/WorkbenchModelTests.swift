@@ -163,25 +163,25 @@ final class WorkbenchModelTests: XCTestCase {
         let session = try XCTUnwrap(created)
         let resolved = await model.controller(for: session.id)
         let first = try XCTUnwrap(resolved)
-        let attachedInitially = await first.isObservingStore
+        let attachedInitially = first.isObservingStore
         XCTAssertTrue(attachedInitially, "a fresh controller must be attached")
 
         // Navigate away.
         await first.detach()
-        let attachedAfterDetach = await first.isObservingStore
+        let attachedAfterDetach = first.isObservingStore
         XCTAssertFalse(attachedAfterDetach)
 
         // Navigate back: same instance, but live again.
         let reresolved = await model.controller(for: session.id)
         let second = try XCTUnwrap(reresolved)
         XCTAssertIdentical(second, first, "the controller is cached, by design")
-        let attachedOnReturn = await second.isObservingStore
+        let attachedOnReturn = second.isObservingStore
         XCTAssertTrue(
             attachedOnReturn,
             "returning to a session must re-attach it, or its UI is frozen"
         )
         // And it has re-read the transcript rather than trusting stale state.
-        let events = await second.events
+        let events = second.events
         XCTAssertTrue(events.contains {
             if case .sessionCreated = $0.payload { return true }
             return false
