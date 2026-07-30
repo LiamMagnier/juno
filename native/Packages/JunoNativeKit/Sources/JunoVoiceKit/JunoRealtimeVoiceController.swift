@@ -596,10 +596,26 @@ public final class JunoRealtimeVoiceController {
     /// Rewrites the open line for this speaker, or opens one. The relay streams
     /// each utterance as a growing string, so appending every frame would print
     /// the same sentence a dozen times as it is spoken.
+    ///
+    /// ORDER BY THE CONVERSATION, NOT BY THE NETWORK. Input transcription
+    /// resolves on its own schedule and routinely lands AFTER the model has begun
+    /// answering, so appending a first user line put the speaker's own words
+    /// underneath the reply to them — the one ordering a conversation cannot
+    /// have. A person spoke before the assistant answered, so the row goes before
+    /// the answer.
     private func upsertTranscript(role: JunoVoiceTranscriptRole, text: String, final: Bool) {
         if let index = transcript.lastIndex(where: { $0.role == role && !$0.final }) {
             transcript[index].text = text
             transcript[index].final = final
+        } else if role == .user {
+            // Step back over the trailing run of assistant lines and open the row
+            // at that boundary. With the reader's line already last there is
+            // nothing to step over, and this appends as before.
+            var at = transcript.endIndex
+            while at > transcript.startIndex, transcript[at - 1].role == .assistant {
+                at -= 1
+            }
+            transcript.insert(TranscriptLine(role: role, text: text, final: final), at: at)
         } else {
             transcript.append(TranscriptLine(role: role, text: text, final: final))
         }

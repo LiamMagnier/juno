@@ -265,7 +265,26 @@ export function useRealtimeVoice(opts: { defaultProvider?: VoiceProviderId } = {
       } else if (text || !final) {
         const attachments = role === "user" && turnId ? turnAttachmentsRef.current.get(turnId) ?? [] : [];
         if (turnId) turnAttachmentsRef.current.delete(turnId);
-        next.push({ id: ++lineIdRef.current, role, text, final, createdAt: new Date().toISOString(), attachments });
+        const line = { id: ++lineIdRef.current, role, text, final, createdAt: new Date().toISOString(), attachments };
+        // ORDER BY THE CONVERSATION, NOT BY THE NETWORK.
+        //
+        // Input transcription resolves on its own schedule and routinely lands
+        // AFTER the model has already begun answering — the branch above says so
+        // for the partial case. Appending a first user line at that point put the
+        // reader's own words underneath the reply to them, which is the one
+        // ordering a conversation can never have.
+        //
+        // A person spoke before the assistant answered, so the row goes before
+        // the answer: walk back over the trailing run of assistant lines and
+        // insert at that boundary. When the last line is already the reader's,
+        // there is nothing to step over and this appends as before.
+        if (role === "user") {
+          let at = next.length;
+          while (at > 0 && next[at - 1].role === "assistant") at--;
+          next.splice(at, 0, line);
+        } else {
+          next.push(line);
+        }
       }
       transcriptRef.current = next;
       return next;

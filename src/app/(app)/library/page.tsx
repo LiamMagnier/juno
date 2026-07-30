@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { requiresViewerCredentials } from "@/lib/image-source";
+import { FilePreview } from "@/components/chat/file-preview";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -10,8 +9,6 @@ import {
   ArrowLeft,
   Check,
   Download,
-  FileText,
-  ImageIcon,
   LayoutGrid,
   List as ListIcon,
   MessageCircle,
@@ -152,37 +149,19 @@ function SelectCheck({
 }
 
 function ItemPreview({ item }: { item: LibItem }) {
-  const [failed, setFailed] = React.useState(false);
-
-  if (item.kind === "IMAGE" && !failed) {
-    return (
-      <a
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label={`Open ${item.fileName}`}
-        className="group/preview relative size-11 shrink-0 overflow-hidden rounded-[10px] bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-      >
-        <Image
-          src={item.url}
-          unoptimized={requiresViewerCredentials(item.url)}
-          alt=""
-          fill
-          sizes="44px"
-          className="object-cover transition-transform duration-base ease-out-soft group-hover/preview:scale-[1.04] motion-reduce:transition-none"
-          onError={() => setFailed(true)}
-        />
-      </a>
-    );
-  }
-
   return (
-    <span
-      className="flex size-11 shrink-0 items-center justify-center rounded-[10px] border border-border/50 bg-muted/35 text-muted-foreground"
-      aria-hidden="true"
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`Open ${item.fileName}`}
+      className="group/preview relative size-11 shrink-0 overflow-hidden rounded-[10px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
     >
-      {item.kind === "IMAGE" ? <ImageIcon className="size-[18px]" /> : <FileText className="size-[18px]" />}
-    </span>
+      {/* No excerpt at 44px — six lines of 8px type is a grey smudge, and the
+          fetch would buy nothing. The extension is what identifies a file at
+          this size, and `FilePreview` falls back to exactly that. */}
+      <FilePreview item={item} className="absolute inset-0" sizes="44px" excerpt={false} />
+    </a>
   );
 }
 
@@ -298,9 +277,6 @@ function MobileItemMenu({
 }
 
 function GridItemPreview({ item }: { item: LibItem }) {
-  const [failed, setFailed] = React.useState(false);
-  const isImage = item.kind === "IMAGE";
-
   return (
     <a
       href={item.url}
@@ -309,28 +285,14 @@ function GridItemPreview({ item }: { item: LibItem }) {
       aria-label={`Open ${item.fileName}`}
       className="group/preview block size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {isImage && !failed ? (
-        <Image
-          src={item.url}
-          unoptimized={requiresViewerCredentials(item.url)}
-          alt=""
-          fill
-          sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
-          className="object-cover transition-transform duration-slow ease-out-soft group-hover/preview:scale-[1.025] motion-reduce:transition-none"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <span className="flex size-full flex-col items-center justify-center gap-3 bg-muted/25 px-4 text-center text-muted-foreground">
-          {isImage ? (
-            <ImageIcon className="size-7 transition-transform duration-base ease-out-soft group-hover/preview:-translate-y-0.5 motion-reduce:transition-none" strokeWidth={1.45} />
-          ) : (
-            <FileText className="size-7 transition-transform duration-base ease-out-soft group-hover/preview:-translate-y-0.5 motion-reduce:transition-none" strokeWidth={1.45} />
-          )}
-          <span className="font-mono text-[10px] font-medium text-foreground/70">
-            {typeLabel(item)}
-          </span>
-        </span>
-      )}
+      {/* Grid view exists to be recognised at a glance, so a document shows its
+          own first lines here rather than the same glyph every other document
+          shows. See `FilePreview`. */}
+      <FilePreview
+        item={item}
+        className="size-full"
+        sizes="(max-width: 639px) 50vw, (max-width: 1023px) 33vw, 25vw"
+      />
     </a>
   );
 }

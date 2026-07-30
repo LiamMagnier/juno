@@ -1,10 +1,9 @@
 "use client";
 
 import * as React from "react";
-import Image from "next/image";
-import { requiresViewerCredentials } from "@/lib/image-source";
 import { toast } from "sonner";
-import { Check, FileText, Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
+import { FilePreview } from "@/components/chat/file-preview";
 import {
   Dialog,
   DialogContent,
@@ -15,7 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
-import { formatBytes, cn } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import type { ClientAttachment } from "@/types/chat";
 
 interface LibItem {
@@ -76,8 +75,6 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
   }, [open, load]);
 
   const filtered = (items ?? []).filter((i) => tab === "all" || i.kind === tab);
-  const images = filtered.filter((i) => i.kind === "IMAGE");
-  const files = filtered.filter((i) => i.kind === "FILE");
   const loading = items === null;
   const empty = !loading && filtered.length === 0;
 
@@ -161,81 +158,46 @@ export function LibraryPicker({ open, onOpenChange, onAttach, existingCount = 0 
               <p className="text-sm text-muted-foreground">Files and images you send in chat collect here.</p>
             </div>
           ) : (
-            <div className="space-y-6">
-              {images.length > 0 && (
-                <section>
-                  {tab ==="all"&& <p className="mb-2 font-mono text-label text-muted-foreground">Images</p>}
-                  <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
-                    {images.map((i) => {
-                      const isSel = selected.has(i.id);
-                      return (
-                        <button
-                          key={i.id}
-                          type="button"
-                          onClick={() => toggle(i.id)}
-                          aria-pressed={isSel}
-                          className={cn(
-                            "group relative aspect-square overflow-hidden rounded-lg border bg-muted shadow-soft transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98]",
-                            isSel && "ring-2 ring-primary"
-                          )}
-                        >
-                          <Image src={i.url} unoptimized={requiresViewerCredentials(i.url)} alt={i.fileName} fill sizes="160px" className="object-cover" />
-                          <span
-                            className={cn(
-                              "absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-md border bg-background/80 backdrop-blur transition-colors",
-                              isSel ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent group-hover:border-primary/70"
-                            )}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent p-1.5 text-caption text-white opacity-0 transition-opacity group-hover:opacity-100">
-                            {i.fileName}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
-
-              {files.length > 0 && (
-                <section>
-                  {tab ==="all"&& <p className="mb-2 font-mono text-label text-muted-foreground">Files</p>}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    {files.map((f) => {
-                      const isSel = selected.has(f.id);
-                      return (
-                        <button
-                          key={f.id}
-                          type="button"
-                          onClick={() => toggle(f.id)}
-                          aria-pressed={isSel}
-                          className={cn(
-                            "pressable group flex items-center gap-3 rounded-lg border bg-card p-2.5 text-left shadow-soft hover:border-primary/35 hover:shadow-float",
-                            isSel && "ring-2 ring-primary"
-                          )}
-                        >
-                          <span
-                            className={cn(
-                              "flex h-5 w-5 shrink-0 items-center justify-center rounded-md border transition-colors",
-                              isSel ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent group-hover:border-primary/70"
-                            )}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </span>
-                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                            <FileText className="h-4 w-4" />
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{f.fileName}</p>
-                            <p className="text-caption text-muted-foreground">{formatBytes(f.size)}</p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </section>
-              )}
+            // ONE GRID, NOT TWO. Images were tiles and files were list rows, so
+            // the same dialog taught two different ways of picking depending on
+            // what you happened to have saved — and the file rows spent their
+            // width on a filename and a byte count while showing nothing of the
+            // file. Everything is a tile now; `FilePreview` decides what goes
+            // inside one.
+            <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+              {filtered.map((i) => {
+                const isSel = selected.has(i.id);
+                return (
+                  <button
+                    key={i.id}
+                    type="button"
+                    onClick={() => toggle(i.id)}
+                    aria-pressed={isSel}
+                    aria-label={i.fileName}
+                    className={cn(
+                      "group relative aspect-square overflow-hidden rounded-lg border bg-muted shadow-soft",
+                      "transition-all duration-base ease-out-soft hover:-translate-y-0.5 hover:shadow-float active:translate-y-0 active:scale-[0.98] motion-reduce:transition-none",
+                      isSel && "ring-2 ring-primary"
+                    )}
+                  >
+                    <FilePreview item={i} className="absolute inset-0" sizes="160px" />
+                    <span
+                      className={cn(
+                        "absolute left-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-md border bg-background/80 backdrop-blur transition-colors",
+                        isSel ? "border-primary bg-primary text-primary-foreground" : "border-border text-transparent group-hover:border-primary/70"
+                      )}
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </span>
+                    {/* The name is the caption, not the content: it appears on
+                        hover over every tile, so an image and a document are
+                        identified the same way. */}
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/65 to-transparent p-1.5 text-left text-caption text-white opacity-0 transition-opacity group-hover:opacity-100 motion-reduce:transition-none">
+                      {i.fileName}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
