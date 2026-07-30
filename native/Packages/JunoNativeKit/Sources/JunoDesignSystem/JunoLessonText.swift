@@ -14,7 +14,7 @@ import SwiftUI
 /// `:::quiz` appearing in a source file is source, not a lesson.
 public struct JunoLessonText: View {
     /// A run of the reply: either prose or one lesson.
-    enum Segment {
+    enum Segment: Sendable {
         case markdown(String)
         case block(JunoLearningBlocks.Parsed)
     }
@@ -55,10 +55,18 @@ public struct JunoLessonText: View {
 
     /// Splits a run into prose and lessons, in source order.
     ///
+    /// `nonisolated` because it is pure string processing and has no business
+    /// needing the main actor. Conforming to `View` infers main-actor isolation
+    /// onto every member, including the static ones — which made this callable
+    /// only from the main actor, and made `NativeMessageContent.spoken` and the
+    /// tests reach across an isolation boundary for a function that touches
+    /// nothing but its argument. The compiler this was written against only
+    /// warned; CI's does not.
+    ///
     /// Whitespace-only prose between two blocks is dropped rather than emitted:
     /// a blank Markdown view still occupies a stack slot, and two adjacent
     /// lessons would have been pushed apart by a gap that came from nothing.
-    static func split(_ source: String) -> [Segment] {
+    nonisolated static func split(_ source: String) -> [Segment] {
         let blocks = JunoLearningBlocks.blocks(in: source)
         guard !blocks.isEmpty else {
             return source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -80,7 +88,7 @@ public struct JunoLessonText: View {
         return segments
     }
 
-    private static func append(_ run: String, to segments: inout [Segment]) {
+    nonisolated private static func append(_ run: String, to segments: inout [Segment]) {
         guard !run.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         segments.append(.markdown(run))
     }
