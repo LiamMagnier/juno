@@ -54,12 +54,14 @@ CONFIGURED_TEAM="$(awk -F'= *' '/^DEVELOPMENT_TEAM/{print $2}' native/Config/Bas
 IDENTITY="$(security find-identity -v -p codesigning \
   | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.*)"/\1/')" || true
 NOTARIZE=1
+IDENTITY_CLASS="Developer ID Application"
 if [ -z "$IDENTITY" ]; then
   # No Developer ID. Fall back to a development certificate so a build can still
   # be produced and installed by hand — but say plainly what that costs, because
   # the two artifacts are not interchangeable and it is the difference between a
   # release and a build.
   NOTARIZE=0
+  IDENTITY_CLASS="Apple Development"
   IDENTITY="$(security find-identity -v -p codesigning \
     | grep "Apple Development" | head -1 | sed -E 's/.*"(.*)"/\1/')" || true
   [ -n "$IDENTITY" ] || {
@@ -121,7 +123,10 @@ xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Stable \
   -archivePath "$BUILD_DIR/archive.xcarchive" \
   ENABLE_HARDENED_RUNTIME=YES \
   DEVELOPMENT_TEAM="$CONFIGURED_TEAM" \
-  CODE_SIGN_IDENTITY="$IDENTITY" \
+  `# The identity CLASS, not the full certificate name. Automatic signing`  \
+  `# rejects a specific certificate — "conflicting provisioning settings" —`  \
+  `# and resolves the class against the team itself.`                        \
+  CODE_SIGN_IDENTITY="$IDENTITY_CLASS" \
   archive
 
 cat > "$BUILD_DIR/export.plist" <<PLIST
