@@ -10,12 +10,22 @@ struct JunoDesktopSmokeTests {
         let bundle = Bundle.main
         let build = JunoBuildInfo.read(from: bundle)
 
-        #expect(build.version == "0.1.2")
-        #expect(build.build == "3")
+        // RESOLVED is the claim, not any particular number. This pinned
+        // `0.1.2` and `3` literally, which made a release fail its own test gate
+        // for the crime of bumping the version — and said nothing about whether
+        // the xcconfig chain had actually reached the plist, which is the thing
+        // that has broken before and the reason this test exists.
+        #expect(build.version.wholeMatch(of: /\d+\.\d+\.\d+/) != nil, "version is \(build.version)")
+        #expect(build.build.wholeMatch(of: /\d+/) != nil, "build is \(build.build)")
+        #expect(build.version != "0.0.0", "the fallback means MARKETING_VERSION never arrived")
+        #expect(build.build != "0", "the fallback means CURRENT_PROJECT_VERSION never arrived")
         #expect(build.contractVersion != "unknown")
         #expect(build.channel != "unknown")
+        // An unsubstituted `$(FOO)` is the specific failure: the variable was
+        // never defined, and the plist carries build syntax as a value.
         #expect(!build.contractVersion.hasPrefix("$("))
         #expect(!build.channel.hasPrefix("$("))
+        #expect(!build.version.hasPrefix("$("))
         #expect(bundle.object(forInfoDictionaryKey: "JunoGitSHA") != nil)
     }
 
