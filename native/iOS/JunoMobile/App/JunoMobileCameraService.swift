@@ -239,19 +239,12 @@ final class JunoCameraCaptureService: @unchecked Sendable {
 
     private static func authorize() async -> Result<Void, JunoCameraUnavailability> {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
-        case .authorized: return .success(())
+        case .authorized: .success(())
         case .notDetermined:
-            // Spelled as two statements rather than folded into the switch
-            // expression above. Swift 6.3.3 crashes in IRGen emitting the
-            // reabstraction thunk for an `await` that yields Bool inside a
-            // switch expression, which took the whole iOS CI build down with a
-            // compiler backtrace and no source line. Same behaviour, one more
-            // line, and it compiles everywhere.
-            let granted = await AVCaptureDevice.requestAccess(for: .video)
-            return granted ? .success(()) : .failure(.denied)
-        case .denied: return .failure(.denied)
-        case .restricted: return .failure(.restricted)
-        @unknown default: return .failure(.noHardware)
+            await AVCaptureDevice.requestAccess(for: .video) ? .success(()) : .failure(.denied)
+        case .denied: .failure(.denied)
+        case .restricted: .failure(.restricted)
+        @unknown default: .failure(.noHardware)
         }
     }
 }
