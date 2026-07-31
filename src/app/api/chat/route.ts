@@ -43,11 +43,12 @@ import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerT
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
 import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
-import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
+import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
-import { estimateGenerationCostUsd, supportsFastMode } from "@/lib/pricing";
-import { mergeUsage, totalInputTokens, type UsageAccumulator } from "@/lib/usage-merge";
+import { supportsFastMode } from "@/lib/pricing";
+import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
+import { buildUsage } from "@/lib/chat-usage";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -219,112 +220,6 @@ const bodySchema = z
 function plural(count: number, singular: string, pluralForm = `${singular}s`) {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
-
-/**
- * Normalize a generation's token usage and build the "Token usage recorded"
- * detail line + cost (tokens + cache + server-tool fees). Floors on streamed
- * answer + reasoning characters so thinking-heavy turns without full usage
- * still bill fairly.
- */
-function buildUsage(
-  model: ModelInfo,
-  raw: {
-    input?: number;
-    output?: number;
-    reasoning?: number;
-    total?: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-    cacheWrite5m?: number;
-    cacheWrite1h?: number;
-    webSearchRequests?: number;
-    xSearchRequests?: number;
-    promptChars?: number;
-    completionChars?: number;
-    reasoningChars?: number;
-  },
-  fastMode = false
-): {
-  detail: string;
-  cost: number;
-  costMicroUsd: number;
-  totalInput: number;
-  output: number;
-  reasoning: number;
-  toolFeesUsd: number;
-  webSearchRequests: number;
-  xSearchRequests: number;
-  cacheWrite5m: number;
-  cacheWrite1h: number;
-  cacheRead: number;
-  cacheWrite: number;
-} {
-  const billed = estimateGenerationCostUsd(model, {
-    // For Anthropic, raw.input is FRESH only; cache is separate. The estimator
-    // bills each bucket at the right rate.
-    promptTokens: raw.input,
-    completionTokens: raw.output,
-    reasoningTokens: raw.reasoning,
-    totalTokens: raw.total,
-    cacheRead: raw.cacheRead,
-    cacheWrite: raw.cacheWrite,
-    cacheWrite5m: raw.cacheWrite5m,
-    cacheWrite1h: raw.cacheWrite1h,
-    webSearchRequests: raw.webSearchRequests,
-    xSearchRequests: raw.xSearchRequests,
-    fastMode,
-    promptChars: raw.promptChars,
-    completionChars: raw.completionChars,
-    reasoningChars: raw.reasoningChars,
-  });
-  const cacheRead = Math.max(0, raw.cacheRead ?? 0);
-  const cacheWrite5m = Math.max(0, raw.cacheWrite5m ?? 0);
-  const cacheWrite1h = Math.max(0, raw.cacheWrite1h ?? 0);
-  const cacheWrite =
-    cacheWrite5m + cacheWrite1h > 0
-      ? cacheWrite5m + cacheWrite1h
-      : Math.max(0, raw.cacheWrite ?? 0);
-  const cachedDisplay = cacheRead + cacheWrite;
-  // Display/persist total input = fresh + all cache (matches Anthropic billing sum).
-  const totalInput = Math.max(
-    billed.promptTokens + cacheRead + cacheWrite,
-    totalInputTokens({
-      input: raw.input,
-      cacheRead: raw.cacheRead,
-      cacheWrite: raw.cacheWrite,
-      cacheWrite5m: raw.cacheWrite5m,
-      cacheWrite1h: raw.cacheWrite1h,
-    })
-  );
-  const searches =
-    Math.max(0, raw.webSearchRequests ?? 0) + Math.max(0, raw.xSearchRequests ?? 0);
-  const detail = [
-    totalInput
-      ? `${totalInput.toLocaleString()} input${cachedDisplay ? ` (${cachedDisplay.toLocaleString()} cached)` : ""}`
-      : null,
-    billed.completionTokens ? `${billed.completionTokens.toLocaleString()} output` : null,
-    searches > 0 ? `${searches.toLocaleString()} ${searches === 1 ? "search" : "searches"}` : null,
-    billed.costUsd > 0 ? formatUsd(billed.costUsd) : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return {
-    detail,
-    cost: billed.costUsd,
-    costMicroUsd: Math.max(0, Math.round(billed.costUsd * 1_000_000)),
-    totalInput,
-    output: billed.completionTokens,
-    reasoning: Math.max(0, raw.reasoning ?? 0),
-    toolFeesUsd: billed.toolFeesUsd,
-    webSearchRequests: Math.max(0, raw.webSearchRequests ?? 0),
-    xSearchRequests: Math.max(0, raw.xSearchRequests ?? 0),
-    cacheWrite5m,
-    cacheWrite1h,
-    cacheRead,
-    cacheWrite,
-  };
-}
-
 function searchToolLabel(provider: ModelInfo["provider"]) {
   if (provider === "anthropic") return "Claude web search";
   if (provider === "google") return "Google Search grounding";
@@ -2276,7 +2171,15 @@ async function handleChat(req: Request) {
             xSearchRequests: usageAcc.xSearchRequests,
             // Floor on real prompt size when the provider under-reports input.
             promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
+            // providerOutputChars, NOT full.length: on a canvas edit `full` is
+            // replaced above by buildArtifactEditMessage — the whole rebuilt
+            // artifact — while the model only emitted the patch. pricing.ts
+            // floors the completion estimate on this (charOut > completion), so
+            // full.length inflated the receipt the user sees. recordSpend below
+            // already used the right value; these two disagreed.
+            // Identical to full.length on every non-canvas turn, since both
+            // accumulate exactly ev.text.
+            completionChars: providerOutputChars,
             reasoningChars: reasoning.length,
           }, servedFast);
 
@@ -2427,7 +2330,9 @@ async function handleChat(req: Request) {
             webSearchRequests: usageAcc.webSearchRequests,
             xSearchRequests: usageAcc.xSearchRequests,
             promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
+            // See the note on the success path: providerOutputChars is what the
+            // model actually emitted, and is what recordSpend below already uses.
+            completionChars: providerOutputChars,
             reasoningChars: reasoning.length,
           }, servedFast);
             // Same version-preserving persistence as the success path — a
