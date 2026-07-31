@@ -1454,6 +1454,23 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
 - **Model registry**: the nightly workflow syncs it from live provider APIs; promote
   worthwhile `DISCOVERED` entries into `CURATED` and run `npm run validate:models`.
 - **Encryption key rotation**: `npm run crypto:rotate`.
+- **Log rotation**: PM2 writes `logs/*.log` unbounded. Run `pm2 install
+  pm2-logrotate` once on the VM (idempotent) or the disk fills eventually.
+- **Health**: `GET /api/health` returns `{ ok, db, version, uptime }` and answers
+  **503** when Postgres is unreachable, so an external uptime monitor needs no
+  special configuration — point it at that URL and alert on non-200. Signed in as
+  an owner (`OWNER_EMAILS`) the same endpoint also returns a per-provider health
+  map; that part is owner-only because it enumerates which model vendors this
+  deployment holds keys for.
+- **Provider health**: `src/lib/provider-health.ts` probes each configured
+  provider with a 1-token completion (10 min TTL, 30 min while a provider is
+  known down) and hides unhealthy providers' models from the catalog. Only
+  auth/billing failures count — 429s and 5xx are ordinary provider weather.
+  A healthy→unhealthy transition raises an operator alert.
+- **Operator alerts**: `alertOperator()` (`src/lib/alerts.ts`) writes a structured
+  `[alert]` line to stderr always, and additionally mails `OWNER_EMAILS` when
+  `RESEND_API_KEY` is set, deduplicated to one message per hour per alert.
+  `grep '\[alert\]' logs/err.log` is the audit trail.
 - **Backups**: see §20.7. There is no backup tooling in this repo — recovery depends
   entirely on the managed provider's configuration. User data export is available
   per-account via `GET /api/account/export` (metadata only for attachments).
