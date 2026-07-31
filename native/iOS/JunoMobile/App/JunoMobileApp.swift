@@ -18,7 +18,6 @@ struct JunoMobileApp: App {
     @State private var syncModel: NativeSyncModel<SQLiteAccountRepository>?
     @State private var conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     @State private var privateChatModel: NativePrivateChatModel?
-    @State private var compareModel: NativeCompareModel?
     @State private var generateClient: NativeChatAPIClient?
     @State private var projectModel: NativeProjectModel<SQLiteAccountRepository>?
     @State private var artifactModel: NativeArtifactModel<SQLiteAccountRepository>?
@@ -51,7 +50,6 @@ struct JunoMobileApp: App {
         _syncModel = State(initialValue: configuration.syncModel)
         _conversationModel = State(initialValue: configuration.conversationModel)
         _privateChatModel = State(initialValue: configuration.privateChatModel)
-        _compareModel = State(initialValue: configuration.compareModel)
         _generateClient = State(initialValue: configuration.generateClient)
         _projectModel = State(initialValue: configuration.projectModel)
         _artifactModel = State(initialValue: configuration.artifactModel)
@@ -91,7 +89,6 @@ struct JunoMobileApp: App {
                         memorySettingsModel: world.memorySettingsModel,
                         searchModel: world.searchModel,
                         privateChatModel: world.privateChatModel,
-                        compareModel: world.compareModel,
                         libraryModel: world.libraryModel,
                         accountDataClient: world.accountDataClient,
                         previewSession: world.session
@@ -119,7 +116,6 @@ struct JunoMobileApp: App {
             memorySettingsModel: memorySettingsModel,
             searchModel: searchModel,
             privateChatModel: privateChatModel,
-            compareModel: compareModel,
             generateClient: generateClient,
             connectorModel: connectorModel,
             scheduledTaskModel: scheduledTaskModel,
@@ -244,9 +240,6 @@ struct JunoMobileApp: App {
                 privateChatModel: NativePrivateChatModel(
                     client: NativeChatAPIClient(transport: runtime)
                 ),
-                compareModel: NativeCompareModel(
-                    client: NativeChatAPIClient(transport: runtime)
-                ),
                 generateClient: NativeChatAPIClient(transport: runtime),
                 connectorModel: NativeConnectorModel(
                     client: NativeConnectorClient(sender: runtime)
@@ -287,7 +280,6 @@ struct JunoMobileApp: App {
                 memorySettingsModel: nil,
                 searchModel: nil,
                 privateChatModel: nil,
-                compareModel: nil,
                 generateClient: nil,
                 connectorModel: nil,
                 scheduledTaskModel: nil,
@@ -327,10 +319,6 @@ private struct JunoMobileConfiguration {
     let memorySettingsModel: NativeMemorySettingsModel<SQLiteAccountRepository>?
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     let privateChatModel: NativePrivateChatModel?
-    /// Compare's transport. Its own client instance for the same reason
-    /// incognito has one: a comparison is a set of ephemeral private turns and
-    /// shares no state with the persisted conversation.
-    let compareModel: NativeCompareModel?
     /// `/api/generate`, for editing an image the account already has. The same
     /// endpoint a fresh generation uses; the `edit` payload is what makes it an
     /// edit, so there is nothing separate to construct.

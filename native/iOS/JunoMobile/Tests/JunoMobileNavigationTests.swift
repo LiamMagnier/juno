@@ -17,7 +17,7 @@ final class JunoMobileNavigationTests: XCTestCase {
         XCTAssertEqual(
             identifiers,
             [
-                "chat", "search", "compare", "code", "tasks",
+                "chat", "search", "code", "tasks",
                 "projects", "library", "artifacts", "connections", "settings",
             ]
         )

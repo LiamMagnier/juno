@@ -10,6 +10,17 @@
 import Foundation
 import Observation
 import Speech
+#if os(macOS)
+// Screen sharing only. AppKit is here for one call — CGImage → JPEG.
+//
+// ScreenCaptureKit is `@preconcurrency` defensively, in the same spirit as
+// AVFoundation above: its filter and configuration are non-Sendable
+// Objective-C classes that cross an `await` in ``runScreenShare(epoch:)``, and
+// this toolchain accepts that while a stricter one need not. Screen share is a
+// detail of one feature; it must not be able to fail the whole package's build.
+import AppKit
+@preconcurrency import ScreenCaptureKit
+#endif
 
 // MARK: - Session failures
 
@@ -158,11 +169,26 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         lock.unlock()
         guard let converter, let captureFormat, let socket else { return }
 
+        // A tap buffer can arrive describing a format with a zero sample rate —
+        // that is what an input device reports as it is being pulled out from
+        // under a live session (AirPods disconnecting, a USB interface unplugged).
+        // Dividing by it gives `+inf`, and `AVAudioFrameCount(_:)` traps on
+        // inf/NaN rather than saturating: "Double value cannot be converted to
+        // UInt32". On the realtime audio thread that is an immediate crash, and
+        // the setup path already guards the same way at `configureAudio`. One
+        // dropped buffer during a route change is not audible; the trap is.
+        guard buffer.format.sampleRate > 0, buffer.frameLength > 0 else { return }
         let ratio = captureFormat.sampleRate / buffer.format.sampleRate
         // The +16 is slack: the resampler can emit a frame or two more than the
         // ratio predicts, and an exactly-sized buffer turns that into an error
         // return and a silent gap in the uplink.
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
+        //
+        // Clamped as well as guarded: `ratio` is finite here, but a pathological
+        // format pair could still scale a 2048-frame buffer past `UInt32.max`,
+        // and the conversion below cannot want more than a second of audio.
+        let projected = (Double(buffer.frameLength) * ratio).rounded(.up)
+        let ceiling = Double(captureFormat.sampleRate)
+        let capacity = AVAudioFrameCount(min(max(projected, 1), ceiling)) + 16
         guard let out = AVAudioPCMBuffer(pcmFormat: captureFormat, frameCapacity: capacity) else {
             return
         }
@@ -287,6 +313,11 @@ public final class JunoRealtimeVoiceController {
     /// `error` frames mid-session for things a conversation survives; promoting
     /// those to ``Phase/error(_:)`` would hang up on a recoverable hiccup.
     public private(set) var notice: String?
+    /// True while this Mac's screen is being streamed to the model. It stays
+    /// false on iPhone by construction: the phone shares a *camera*, and that
+    /// capture session belongs to the app's camera surface, which hands frames
+    /// here through ``sendVideoFrame(_:)``.
+    public private(set) var screenSharing = false
     #if os(iOS)
     public private(set) var speakerOutput = true
     #endif
@@ -309,6 +340,14 @@ public final class JunoRealtimeVoiceController {
     /// otherwise bring an audio engine up behind a dismissed sheet.
     private var closedByUser = false
     private var reconnectAttempted = false
+    #if os(macOS)
+    private var screenShareTask: Task<Void, Never>?
+    /// Bumped by every start and every stop. A capture loop that is already
+    /// unwinding checks it before touching ``screenSharing``, so a stop
+    /// immediately followed by a start cannot have the old loop's last statement
+    /// switch the new one off.
+    private var screenShareEpoch = 0
+    #endif
 
     // On-device transcription — only for providers whose capabilities say the
     // relay has no transcript of its own.
@@ -413,6 +452,13 @@ public final class JunoRealtimeVoiceController {
         // and the model would answer everything twice.
         capabilities = nil
         stopTranscriber()
+        #if os(macOS)
+        // A capture belongs to the provider that accepted it. Stopping it here
+        // is what keeps a switch to a provider without screen support from
+        // leaving the screen being recorded with nothing reading it — the one
+        // failure a purple menu-bar indicator makes very visible.
+        stopScreenShare()
+        #endif
         flushPlayback()
         assistantSpeaking = false
         send(.sessionSwitch(provider: newProvider))
@@ -626,6 +672,215 @@ public final class JunoRealtimeVoiceController {
         guard let socket, let text = message.jsonText else { return }
         socket.send(.string(text)) { _ in }
     }
+
+    // MARK: Video
+
+    /// Ships one JPEG to the model as a `video.frame`.
+    ///
+    /// The encode and the send happen here, on the main actor, and deliberately
+    /// **not** through ``VoiceRelayShuttle``: that box exists for the microphone's
+    /// realtime thread, and base64-encoding a megabyte inside an audio callback
+    /// would miss the buffer deadline the entire uplink depends on. A frame a
+    /// second on the main actor is nothing; a frame a second in the tap is a
+    /// glitch a second.
+    ///
+    /// Silent about every frame it drops, on purpose. This is called on a timer —
+    /// once a second while a screen is shared, and per preview frame from the
+    /// iPhone's camera — so a session that is not live, or a provider that cannot
+    /// see, has to cost nothing rather than produce a notice a second.
+    public func sendVideoFrame(_ jpeg: Data) {
+        guard phase == .live, socket != nil, capabilities?.videoInput == true else { return }
+        guard let encoded = Self.relayFrame(jpeg) else { return }
+        send(.videoFrame(jpegBase64: encoded))
+    }
+
+    /// Base64 for the wire, or nil when the relay would throw the frame away.
+    ///
+    /// The ceiling is checked on the *encoded* string because that is the length
+    /// the relay measures; the check on the raw bytes in front of it only avoids
+    /// allocating a third again as much memory for a frame that is already past
+    /// hope. A frame the relay discards is one the user waited a second for and
+    /// the model never saw, so it is better not to spend the uplink on it.
+    nonisolated static func relayFrame(_ jpeg: Data) -> String? {
+        guard !jpeg.isEmpty, jpeg.count < maxVideoFrameBytes else { return nil }
+        let encoded = jpeg.base64EncodedString()
+        guard encoded.utf8.count < maxVideoFrameBytes else { return nil }
+        return encoded
+    }
+
+    /// The relay forwards a frame only while its base64 payload is under this.
+    nonisolated static let maxVideoFrameBytes = 2_000_000
+    /// Matches the web composer. Past four images a turn, providers start
+    /// answering about the first one and ignoring the rest.
+    nonisolated static let maxTurnImages = 4
+
+    /// Sends one composed turn — text plus up to four images — through the live
+    /// session, the way the web composer does while voice is open.
+    ///
+    /// The images go up as ordinary `video.frame`s first and the text follows,
+    /// because that is the order every provider reads context in. The `turnId`
+    /// is what keeps the turn from being written twice: the relay echoes it back
+    /// on its `transcript` frame, and `displayText` is what the reader is shown
+    /// when the text actually sent to the model is the stand-in prompt below
+    /// rather than anything they typed.
+    ///
+    /// - Returns: false when nothing was sent, so a caller can fall back to the
+    ///   normal chat path instead of quietly losing the message.
+    @discardableResult
+    public func sendTurn(text: String, images: [Data]) async -> Bool {
+        guard phase == .live, let socket else { return false }
+        let requested = Array(images.prefix(Self.maxTurnImages))
+        guard requested.isEmpty || capabilities?.videoInput == true else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        var frames: [String] = []
+        if !requested.isEmpty {
+            frames = await Self.encodeFrames(requested)
+            // Encoding several megabytes takes long enough for the session to
+            // have ended, reconnected or switched provider underneath it.
+            // Comparing the socket by identity is what stops these images from
+            // being attached to a stranger's turn on the socket that replaced
+            // this one; re-reading `capabilities` covers the switch, which keeps
+            // the same socket but leaves capabilities nil until the new
+            // `session.ready` arrives.
+            guard self.socket === socket, phase == .live,
+                capabilities?.videoInput == true
+            else { return false }
+            if frames.count < requested.count {
+                showNotice(
+                    requested.count == 1
+                        ? "That image is too large to share over voice."
+                        : "Some of those images were too large to share over voice."
+                )
+            }
+        }
+
+        guard !trimmed.isEmpty || !frames.isEmpty else { return false }
+        let displayText = trimmed.isEmpty
+            ? (frames.count == 1 ? "Shared an image" : "Shared \(frames.count) images")
+            : trimmed
+        let message = trimmed.isEmpty
+            ? "Please look at the image context I just shared and respond naturally."
+            : trimmed
+        for frame in frames { send(.videoFrame(jpegBase64: frame)) }
+        send(.inputText(message, turnId: UUID().uuidString, displayText: displayText))
+        return true
+    }
+
+    /// Base64 for a whole turn's images, off the main actor.
+    ///
+    /// `nonisolated async` rather than a plain helper: under SE-0338 that is what
+    /// actually leaves the main actor, and four images at the relay's ceiling is
+    /// enough work to drop frames from the orb if it ran here.
+    private nonisolated static func encodeFrames(_ images: [Data]) async -> [String] {
+        images.compactMap(relayFrame)
+    }
+
+    // MARK: Screen share
+
+    #if os(macOS)
+    /// Starts sharing this Mac's main display with the model at about 1 fps.
+    ///
+    /// ScreenCaptureKit rather than the older `CGWindowListCreateImage` path, for
+    /// the permission as much as the deprecation: without screen recording
+    /// consent the CoreGraphics call returns a picture of the desktop wallpaper,
+    /// so a refusal would read as "the model can see my screen and is ignoring
+    /// what is on it". SCK throws, which is a thing this can explain.
+    ///
+    /// A one-second timer around ``SCScreenshotManager`` rather than a live
+    /// `SCStream`: the budget the relay and every provider expect is one frame a
+    /// second, and a stream would deliver sixty and have this discard
+    /// fifty-nine — holding a surface queue and a capture pipeline open for the
+    /// whole conversation to do it.
+    public func startScreenShare() {
+        guard phase == .live, capabilities?.screenInput == true, !screenSharing else { return }
+        screenShareEpoch += 1
+        let epoch = screenShareEpoch
+        screenShareTask?.cancel()
+        screenShareTask = Task { [weak self] in
+            await self?.runScreenShare(epoch: epoch)
+        }
+    }
+
+    /// Idempotent: both the toolbar button and ``end()`` call it, and either can
+    /// come first.
+    public func stopScreenShare() {
+        screenShareEpoch += 1
+        screenShareTask?.cancel()
+        screenShareTask = nil
+        screenSharing = false
+    }
+
+    private func runScreenShare(epoch: Int) async {
+        let content: SCShareableContent
+        do {
+            // Also the permission gate. The first call prompts; a Mac that has
+            // refused throws here rather than handing back an empty display list,
+            // which is the only reason this failure can be named accurately.
+            content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+        } catch {
+            guard screenShareEpoch == epoch else { return }
+            showNotice(
+                "Screen sharing needs permission. Allow Juno in System Settings › Privacy & Security › Screen & System Audio Recording, then try again."
+            )
+            return
+        }
+        guard screenShareEpoch == epoch, !Task.isCancelled, phase == .live,
+            capabilities?.screenInput == true
+        else { return }
+        guard let display = content.displays.first else {
+            showNotice("No display is available to share right now.")
+            return
+        }
+
+        // Matching the web's budget: longest edge 1024, JPEG 0.6. The cap is what
+        // keeps a 6K display under the relay's per-frame ceiling, and asking
+        // ScreenCaptureKit for the smaller image is far cheaper than capturing
+        // full size and scaling it here once a second.
+        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let configuration = SCStreamConfiguration()
+        let longestEdge = Double(max(display.width, display.height))
+        let scale = longestEdge > Self.screenShareMaxEdge
+            ? Self.screenShareMaxEdge / longestEdge
+            : 1
+        configuration.width = max(1, Int((Double(display.width) * scale).rounded()))
+        configuration.height = max(1, Int((Double(display.height) * scale).rounded()))
+        configuration.showsCursor = true
+        screenSharing = true
+
+        while !Task.isCancelled {
+            guard screenShareEpoch == epoch, phase == .live,
+                capabilities?.screenInput == true, socket != nil
+            else { break }
+            if let image = try? await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            ), let jpeg = Self.screenFrameJPEG(from: image) {
+                sendVideoFrame(jpeg)
+            }
+            try? await Task.sleep(for: .seconds(1))
+        }
+        // Only if this loop is still the one that owns the flag — see
+        // ``screenShareEpoch``.
+        if screenShareEpoch == epoch { screenSharing = false }
+    }
+
+    nonisolated static let screenShareMaxEdge: Double = 1024
+    nonisolated static let screenShareQuality: Double = 0.6
+
+    /// One captured frame as JPEG. Synchronous and non-isolated, so it runs
+    /// inline on whichever actor called it — at 1024px that is a couple of
+    /// milliseconds once a second, which is not worth a hop.
+    private nonisolated static func screenFrameJPEG(from image: CGImage) -> Data? {
+        NSBitmapImageRep(cgImage: image).representation(
+            using: .jpeg,
+            properties: [.compressionFactor: screenShareQuality]
+        )
+    }
+    #endif
 
     // MARK: Audio engine
 
@@ -979,6 +1234,11 @@ public final class JunoRealtimeVoiceController {
         meterTask?.cancel(); meterTask = nil
         noticeTask?.cancel(); noticeTask = nil
         stopTranscriber()
+        #if os(macOS)
+        // Before the socket, like the pumps: a capture that outlives the session
+        // is a Mac still recording its own screen for a conversation that is over.
+        stopScreenShare()
+        #endif
         socket?.cancel(with: closeCode, reason: nil)
         socket = nil
         if let engine = audioEngine {

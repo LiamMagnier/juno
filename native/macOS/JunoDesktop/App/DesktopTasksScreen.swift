@@ -3,6 +3,35 @@ import JunoChatKit
 import JunoDesignSystem
 import SwiftUI
 
+/// What the Tasks page and the Tasks inspector both stand on.
+///
+/// The two are no longer one view. `.inspector` attached to a
+/// `NavigationSplitView`'s detail column takes the process down with SIGTRAP —
+/// ``DesktopCodeWorkspace`` carries the bisected report — so the trailing column
+/// is now mounted on the window's split view and this page is only what fills the
+/// detail column. That puts the table and the inspector in two different columns
+/// of one window, and `@State` cannot span them.
+///
+/// It is one object rather than three bindings because the page is built by
+/// `DesktopDestinationView`, which has nothing to hand down: ``DesktopChatWorkspace``
+/// owns this, renders the inspector from it directly, and puts it in the
+/// environment for the page. Selection is here for the obvious reason — the
+/// inspector describes whatever row is selected — and the two pending
+/// presentations are here because the inspector raises the same editor and the
+/// same delete confirmation the table's own menu does, while the page is what
+/// presents them.
+@MainActor
+@Observable
+final class DesktopTasksSurface {
+    /// The `Table`'s selection, and therefore the record the inspector describes.
+    var selectedTaskID: NativeScheduledTask.ID?
+    /// A requested editor. The sheet is presented by the page, never by the
+    /// inspector: a column the reader can close is not a place to present from.
+    var editorRequest: DesktopTaskEditorRequest?
+    /// A requested delete confirmation, presented by the page for the same reason.
+    var deleteTarget: NativeScheduledTask?
+}
+
 /// **Tasks** — the account's scheduled prompts: a cadence, a model, and a
 /// question Juno answers on its own and files into a chat.
 ///
@@ -30,17 +59,26 @@ struct DesktopTasksScreen: View {
     let modelOptions: [NativeChatModelOption]
     let openConversation: (String) -> Void
 
+    /// Whether the trailing column is up.
+    ///
+    /// The `.inspector` this drives belongs to the window (``DesktopChatWorkspace``
+    /// declares the same key), so the key itself is the wire: scene storage is one
+    /// value per key per scene, and both views read and write that one value. The
+    /// toolbar toggle below therefore still opens and closes a column this page
+    /// does not own — and the default stays `true`, because task detail is the
+    /// point of the page rather than an extra.
     @SceneStorage("juno.desktop.tasks.inspector") private var isInspectorShown = true
-    @State private var selectedTaskID: NativeScheduledTask.ID?
+    /// Selection and the two pending presentations, shared with the inspector the
+    /// window renders. Injected by ``DesktopChatWorkspace``, which is the only
+    /// place this page is built.
+    @Environment(DesktopTasksSurface.self) private var surface
     // Soonest-first: the question a schedule answers is "what happens next".
     @State private var sortOrder = [
         KeyPathComparator(\NativeScheduledTask.nextRunAt, order: .forward)
     ]
-    @State private var editorRequest: DesktopTaskEditorRequest?
-    @State private var deleteTarget: NativeScheduledTask?
 
     private var selectedTask: NativeScheduledTask? {
-        task(withID: selectedTaskID)
+        model.task(withID: surface.selectedTaskID)
     }
 
     private var canCreate: Bool {
@@ -48,24 +86,22 @@ struct DesktopTasksScreen: View {
     }
 
     var body: some View {
+        @Bindable var surface = surface
         // `Color.clear.overlay { … }` — the clamp. A detail column reports its
         // ideal size upward and `NavigationSplitView` grows its AppKit split
         // view to satisfy it, so a tall page resizes the *window* instead of
         // being clipped. `Color.clear` accepts whatever height it is proposed
         // and an overlay is sized by its base, so this page can never push back.
+        //
+        // No `.inspector` here. The trailing column is mounted on the window's
+        // split view (``DesktopChatWorkspace``); attached to a detail column it
+        // is the SIGTRAP ``DesktopCodeWorkspace`` bisected, and this page reached
+        // it on a single sidebar click because its flag defaults to showing.
         Color.clear
             .overlay { page }
             .toolbar { tasksToolbar }
-            .inspector(isPresented: $isInspectorShown) {
-                inspectorContent
-                    .inspectorColumnWidth(
-                        min: JunoInspectorMetrics.minimum,
-                        ideal: JunoInspectorMetrics.ideal,
-                        max: JunoInspectorMetrics.maximum
-                    )
-            }
-            .onDeleteCommand { deleteTarget = selectedTask }
-            .sheet(item: $editorRequest) { request in
+            .onDeleteCommand { surface.deleteTarget = selectedTask }
+            .sheet(item: $surface.editorRequest) { request in
                 DesktopTaskEditor(
                     model: model,
                     request: request,
@@ -73,20 +109,22 @@ struct DesktopTasksScreen: View {
                 )
             }
             .confirmationDialog(
-                deleteTarget.map { "Delete “\($0.name)”?" } ?? "",
+                surface.deleteTarget.map { "Delete “\($0.name)”?" } ?? "",
                 isPresented: Binding(
-                    get: { deleteTarget != nil },
-                    set: { if !$0 { deleteTarget = nil } }
+                    get: { surface.deleteTarget != nil },
+                    set: { if !$0 { surface.deleteTarget = nil } }
                 ),
                 titleVisibility: .visible
             ) {
                 Button("Delete Task", role: .destructive) {
-                    guard let target = deleteTarget else { return }
-                    deleteTarget = nil
-                    if selectedTaskID == target.id { selectedTaskID = nil }
+                    guard let target = surface.deleteTarget else { return }
+                    surface.deleteTarget = nil
+                    if surface.selectedTaskID == target.id {
+                        surface.selectedTaskID = nil
+                    }
                     Task { await model.delete(id: target.id) }
                 }
-                Button("Cancel", role: .cancel) { deleteTarget = nil }
+                Button("Cancel", role: .cancel) { surface.deleteTarget = nil }
             } message: {
                 Text(
                     "The schedule stops and its run history is removed. The chat its results were written into is kept."
@@ -271,14 +309,14 @@ struct DesktopTasksScreen: View {
     private var table: some View {
         Table(
             model.tasks.sorted(using: sortOrder),
-            selection: $selectedTaskID,
+            selection: Bindable(surface).selectedTaskID,
             sortOrder: $sortOrder
         ) {
             // The web card's one on-card control, and the change most often
             // wanted. Backed by `setEnabled`, which flips locally and rolls back
             // if the server refuses.
             TableColumn("On", value: \.enabledRank) { task in
-                Toggle("", isOn: enabledBinding(for: task))
+                Toggle("", isOn: taskEnabledBinding(task, in: model))
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.mini)
@@ -348,44 +386,28 @@ struct DesktopTasksScreen: View {
             // "Failed 2 days ago — <reason>" in a single line, because when a
             // run happened and how it went are one fact.
             TableColumn("Last run", value: \.lastRunSortKey) { task in
-                statusCell(task)
+                DesktopTaskStatusCell(task: task)
             }
             .width(min: 160, ideal: 260)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
         .contextMenu(forSelectionType: NativeScheduledTask.ID.self) { ids in
-            if let target = task(withID: ids.first) {
+            if let target = model.task(withID: ids.first) {
                 rowMenu(for: target)
             } else {
                 Button("New Task", action: newTask)
                     .disabled(!canCreate)
             }
         } primaryAction: { ids in
-            guard let target = task(withID: ids.first) else { return }
-            editorRequest = DesktopTaskEditorRequest(task: target)
+            guard let target = model.task(withID: ids.first) else { return }
+            surface.editorRequest = DesktopTaskEditorRequest(task: target)
         }
         .accessibilityIdentifier("juno.desktop.tasks-table")
     }
 
-    /// The last run as the server described it — never a tick that is not backed
-    /// by a `done` row, and never a failure without its reason.
-    @ViewBuilder
-    private func statusCell(_ task: NativeScheduledTask) -> some View {
-        let status = task.statusLine
-        Label {
-            Text(status.text)
-                .lineLimit(1)
-                .truncationMode(.tail)
-        } icon: {
-            Image(systemName: status.symbol)
-        }
-        .foregroundStyle(status.tint)
-        .help(status.help)
-    }
-
     @ViewBuilder
     private func rowMenu(for task: NativeScheduledTask) -> some View {
-        Button("Edit Task…") { editorRequest = DesktopTaskEditorRequest(task: task) }
+        Button("Edit Task…") { surface.editorRequest = DesktopTaskEditorRequest(task: task) }
         Button(task.enabled ? "Pause Task" : "Resume Task") {
             Task { await model.setEnabled(id: task.id, enabled: !task.enabled) }
         }
@@ -396,7 +418,7 @@ struct DesktopTasksScreen: View {
         }
         .disabled(task.conversationID == nil)
         Divider()
-        Button("Delete Task…", role: .destructive) { deleteTarget = task }
+        Button("Delete Task…", role: .destructive) { surface.deleteTarget = task }
     }
 
     // MARK: - Toolbar
@@ -424,7 +446,7 @@ struct DesktopTasksScreen: View {
         ToolbarItem(placement: .primaryAction) {
             Button {
                 guard let task = selectedTask else { return }
-                editorRequest = DesktopTaskEditorRequest(task: task)
+                surface.editorRequest = DesktopTaskEditorRequest(task: task)
             } label: {
                 Label("Edit Task", systemImage: "pencil")
             }
@@ -468,17 +490,43 @@ struct DesktopTasksScreen: View {
         return "Create a scheduled task (⇧⌘N)"
     }
 
-    // MARK: - Inspector
+    // MARK: - Actions
 
-    /// The web card, opened out: the mono cadence, the name in the editorial
-    /// serif, the status line, then the detail a card has no room for.
-    ///
-    /// A grouped `Form` rather than hand-built cards — on macOS it already draws
-    /// its groups as raised rounded surfaces over the window's ground, which is
-    /// the same card-on-canvas relationship the rest of this page is built from,
-    /// and it tracks the platform as that treatment changes.
-    @ViewBuilder
-    private var inspectorContent: some View {
+    private func newTask() {
+        surface.editorRequest = DesktopTaskEditorRequest(
+            draft: NativeScheduledTaskDraft(model: modelOptions.first?.id ?? ""),
+            taskID: nil
+        )
+    }
+}
+
+// MARK: - Inspector
+
+/// **Task details** — the web card, opened out: the mono cadence, the name in the
+/// editorial serif, the status line, then the detail a card has no room for.
+///
+/// A view of its own, rendered by the *window*: `.inspector` on a
+/// `NavigationSplitView`'s detail column is a hard crash, so the column hangs off
+/// the split view in ``DesktopChatWorkspace`` and what it shows lives here. Page
+/// and inspector meet on one ``DesktopTasksSurface`` — this reads the selection
+/// from it and writes back the editor and the delete confirmation the page
+/// presents, so neither the table's menu nor this column can ask for something the
+/// other cannot show.
+///
+/// A grouped `Form` rather than hand-built cards — on macOS it already draws its
+/// groups as raised rounded surfaces over the window's ground, which is the same
+/// card-on-canvas relationship the rest of the page is built from, and it tracks
+/// the platform as that treatment changes.
+struct DesktopTasksInspector: View {
+    let model: NativeScheduledTaskModel
+    let surface: DesktopTasksSurface
+    let openConversation: (String) -> Void
+
+    private var selectedTask: NativeScheduledTask? {
+        model.task(withID: surface.selectedTaskID)
+    }
+
+    var body: some View {
         // Clamped for the same reason the page is: the inspector is a column of
         // the same split view, and a long prompt would otherwise report an ideal
         // height the window would try to grow to satisfy.
@@ -497,11 +545,11 @@ struct DesktopTasksScreen: View {
                             // Not `.junoCaption()`: that sets a secondary
                             // foreground, which would land outside the cell and
                             // erase the status tint a failure depends on.
-                            statusCell(task)
+                            DesktopTaskStatusCell(task: task)
                         }
                         .padding(.vertical, JunoSpace.hairline)
 
-                        Toggle("Enabled", isOn: enabledBinding(for: task))
+                        Toggle("Enabled", isOn: taskEnabledBinding(task, in: model))
                             .toggleStyle(.switch)
                             .tint(Color.junoAccent)
                             .disabled(model.isMutating)
@@ -557,7 +605,7 @@ struct DesktopTasksScreen: View {
 
                     Section {
                         Button("Edit Task…") {
-                            editorRequest = DesktopTaskEditorRequest(task: task)
+                            surface.editorRequest = DesktopTaskEditorRequest(task: task)
                         }
                         Button("Open Results") {
                             guard let conversationID = task.conversationID else { return }
@@ -569,7 +617,9 @@ struct DesktopTasksScreen: View {
                                 ? "This task has not written a chat yet."
                                 : "Open the chat this task writes into."
                         )
-                        Button("Delete Task…", role: .destructive) { deleteTarget = task }
+                        Button("Delete Task…", role: .destructive) {
+                            surface.deleteTarget = task
+                        }
                     }
                 }
                 .formStyle(.grouped)
@@ -611,28 +661,57 @@ struct DesktopTasksScreen: View {
                 .junoCaption()
         }
     }
+}
 
-    // MARK: - Actions
+// MARK: - Shared record views
 
-    private func task(withID id: NativeScheduledTask.ID?) -> NativeScheduledTask? {
+/// The last run as the server described it — never a tick that is not backed by a
+/// `done` row, and never a failure without its reason.
+///
+/// A view rather than a method on either surface: the table's last column and the
+/// inspector's header state the same fact, and two copies of that rendering is how
+/// one run ends up described two ways.
+private struct DesktopTaskStatusCell: View {
+    let task: NativeScheduledTask
+
+    var body: some View {
+        let status = task.statusLine
+        Label {
+            Text(status.text)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        } icon: {
+            Image(systemName: status.symbol)
+        }
+        .foregroundStyle(status.tint)
+        .help(status.help)
+    }
+}
+
+/// The on/off switch, wired straight to the model.
+///
+/// Shared by the table cell and the inspector for the same reason the status line
+/// is: `setEnabled` flips locally and rolls back if the server refuses, and the
+/// two switches are the same switch.
+@MainActor
+private func taskEnabledBinding(
+    _ task: NativeScheduledTask,
+    in model: NativeScheduledTaskModel
+) -> Binding<Bool> {
+    Binding(
+        get: { task.enabled },
+        set: { enabled in
+            Task { await model.setEnabled(id: task.id, enabled: enabled) }
+        }
+    )
+}
+
+private extension NativeScheduledTaskModel {
+    /// The record behind a selection, or nil while nothing is selected — and nil
+    /// again for an id whose task a refresh has since removed.
+    func task(withID id: NativeScheduledTask.ID?) -> NativeScheduledTask? {
         guard let id else { return nil }
-        return model.tasks.first { $0.id == id }
-    }
-
-    private func newTask() {
-        editorRequest = DesktopTaskEditorRequest(
-            draft: NativeScheduledTaskDraft(model: modelOptions.first?.id ?? ""),
-            taskID: nil
-        )
-    }
-
-    private func enabledBinding(for task: NativeScheduledTask) -> Binding<Bool> {
-        Binding(
-            get: { task.enabled },
-            set: { enabled in
-                Task { await model.setEnabled(id: task.id, enabled: enabled) }
-            }
-        )
+        return tasks.first { $0.id == id }
     }
 }
 
@@ -641,7 +720,10 @@ struct DesktopTasksScreen: View {
 /// What the editor sheet was opened with. A box rather than the draft itself:
 /// `sheet(item:)` re-presents whenever the item's id changes, and a draft is a
 /// value that changes on every keystroke.
-private struct DesktopTaskEditorRequest: Identifiable {
+///
+/// Not private: it is the type of a ``DesktopTasksSurface`` field, because the
+/// inspector the window renders asks for the editor the page presents.
+struct DesktopTaskEditorRequest: Identifiable {
     let id = UUID()
     let draft: NativeScheduledTaskDraft
     /// Nil when creating.

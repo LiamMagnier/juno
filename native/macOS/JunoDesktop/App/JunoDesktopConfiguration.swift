@@ -19,10 +19,6 @@ struct JunoDesktopConfiguration {
     let avatarModel: NativeAvatarModel?
     let conversationModel: NativeConversationModel<SQLiteAccountRepository>?
     let privateChatModel: NativePrivateChatModel?
-    /// Compare's transport. Its own client instance for the same reason
-    /// incognito has one: a comparison is a set of ephemeral private turns and
-    /// shares no state with the persisted conversation.
-    let compareModel: NativeCompareModel?
     /// `/api/generate`, for editing an image the account already has. The same
     /// endpoint a fresh generation uses; the `edit` payload is what makes it an
     /// edit, so there is nothing separate to construct.
@@ -35,6 +31,11 @@ struct JunoDesktopConfiguration {
     let scheduledTaskModel: NativeScheduledTaskModel?
     let codeModel: NativeCodeModel?
     let remoteCodeModel: CodeRemoteBrowserModel?
+    /// The other direction: what makes this Mac appear in the phone's Juno Code
+    /// picker at all. Its own client instance rather than `codeModel`'s, because
+    /// the two are unrelated jobs sharing one surface — one reads the account's
+    /// tasks, the other writes this machine's heartbeat.
+    let codeHostModel: DesktopCodeHostModel?
     let libraryModel: NativeLibraryModel?
     let requestSender: (any NativeAuthenticatedRequestSending)?
     let accountDataClient: NativeAccountDataClient?
@@ -122,9 +123,6 @@ struct JunoDesktopConfiguration {
                 privateChatModel: NativePrivateChatModel(
                     client: NativeChatAPIClient(transport: runtime)
                 ),
-                compareModel: NativeCompareModel(
-                    client: NativeChatAPIClient(transport: runtime)
-                ),
                 generateClient: NativeChatAPIClient(transport: runtime),
                 projectModel: NativeProjectModel(
                     repository: localStore,
@@ -158,6 +156,9 @@ struct JunoDesktopConfiguration {
                 remoteCodeModel: CodeRemoteBrowserModel(
                     client: NativeCodeRemoteClient(sender: runtime)
                 ),
+                codeHostModel: DesktopCodeHostModel(
+                    client: NativeCodeTaskClient(sender: runtime, streamer: runtime)
+                ),
                 libraryModel: NativeLibraryModel(
                     client: NativeLibraryClient(sender: runtime),
                     // The picker draws the file, which means resolving its
@@ -188,7 +189,6 @@ struct JunoDesktopConfiguration {
             avatarModel: nil,
             conversationModel: nil,
             privateChatModel: nil,
-            compareModel: nil,
             generateClient: nil,
             projectModel: nil,
             artifactModel: nil,
@@ -198,6 +198,7 @@ struct JunoDesktopConfiguration {
             scheduledTaskModel: nil,
             codeModel: nil,
             remoteCodeModel: nil,
+            codeHostModel: nil,
             libraryModel: nil,
             requestSender: nil,
             accountDataClient: nil,

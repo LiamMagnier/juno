@@ -454,10 +454,17 @@ public final class NativeProjectModel<Repository: AccountScopedRepository> {
             conversationsByProject = snapshot.conversationsByProject
             pendingMutationCount = snapshot.pendingMutationCount
             conflictedMutationCount = snapshot.conflictedMutationCount
+            // A selection that no longer resolves is dropped; an *absent* one is
+            // left absent. Auto-selecting `projects.first` here meant every
+            // reload handed the UI a project to open — and since `projects` is
+            // ordered favourites-first, the Mac's Projects destination opened the
+            // top favourite instead of the index, with no way to reach the index
+            // at all. Both clients set this deliberately when the reader
+            // navigates: the phone from its `navigationDestination` and from
+            // search, the Mac not at all (its route is its own state).
             if let selectedProjectID,
                 !projects.contains(where: { $0.id == selectedProjectID })
             { self.selectedProjectID = nil }
-            if selectedProjectID == nil { selectedProjectID = projects.first?.id }
             lastErrorDescription = snapshot.conflictedMutationCount == 0
                 ? nil : "A project change needs your attention."
             phase = syncModel.phase == .offline ? .offline : .ready

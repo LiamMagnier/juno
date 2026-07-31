@@ -5,219 +5,167 @@ import JunoVoiceKit
 import SwiftUI
 import UIKit
 
-/// **Voice mode** — a spoken conversation with Juno.
+/// One spoken conversation, handed to the chat column through the environment.
 ///
-/// The whole realtime stack already existed: `JunoRealtimeVoiceController` owns
-/// the socket, the audio engine, the PCM conversion, the reconnect and the
-/// on-device recognizer some providers need. What it had was **no caller**. The
-/// composer's primary action has offered a voice glyph since it was written, but
-/// only `if let openVoiceMode` — and nothing in the app ever passed one, so the
-/// button silently fell through to a disabled Send. That is the bug this screen
-/// closes: it is the missing half, not a new feature.
+/// A `@MainActor` class rather than a struct of closures, for two reasons. The
+/// identity is what lets SwiftUI tell one call from the next without comparing
+/// closures it cannot compare; and a globally-isolated class is `Sendable`
+/// whatever it stores, which the same fields in a struct are not.
 ///
-/// The screen deliberately draws almost nothing. A voice conversation is heard,
-/// not read, so the only things on it are:
-///
-/// - **The aura** (``JunoVoiceAura``), driven by
-///   ``JunoRealtimeVoiceController/level`` — one number, because only one party
-///   holds the floor at a time. It is the meter that tells someone their
-///   microphone is muted rather than broken, and its colour is who is talking.
-/// - **The transcript**, which is the record, and the one thing worth scrolling.
-/// - **Three controls**: mute, interrupt, hang up.
-///
-/// Errors are split the way the controller splits them. A denied microphone
-/// offers Settings and *not* Retry — the system will never re-prompt, so a retry
-/// button there is a button that cannot work.
-struct JunoMobileVoiceView: View {
-    @Bindable var controller: JunoRealtimeVoiceController
-    /// Files the spoken turns into a chat. Nil where nothing can be saved — an
-    /// unconfigured shell — in which case the screen says so on the way out
-    /// rather than dropping the conversation in silence.
-    var saveTranscript: ((JunoMobileVoiceTranscript) async -> String?)?
-    /// Called when the reader hangs up. The sheet's dismissal is the caller's to
-    /// arrange, so the session can be torn down before the screen goes.
-    let close: () -> Void
-
+/// It travels through the environment because the composer is several files
+/// below the shell that authorizes a session — the chat screen in between owns
+/// neither and should not have to carry it.
+@MainActor
+final class JunoMobileVoiceSession: Identifiable {
     /// Stable for the life of this call. The save route is idempotent per
     /// session, so a retry after a dropped network updates the same conversation
     /// instead of creating a second one.
-    @State private var sessionID = UUID()
+    let id = UUID()
+    let controller: JunoRealtimeVoiceController
+    /// Files the spoken turns into a chat. Nil where nothing can be saved — an
+    /// unconfigured shell — in which case the dock says so on the way out rather
+    /// than dropping the conversation in silence.
+    let saveTranscript: ((JunoMobileVoiceTranscript) async -> String?)?
+    /// Drops the session from the shell. Called once the transcript is filed, or
+    /// straight away when there is nothing to file.
+    let close: () -> Void
+
+    init(
+        controller: JunoRealtimeVoiceController,
+        saveTranscript: ((JunoMobileVoiceTranscript) async -> String?)?,
+        close: @escaping () -> Void
+    ) {
+        self.controller = controller
+        self.saveTranscript = saveTranscript
+        self.close = close
+    }
+
+    /// True once audio is actually flowing. The one test worth sharing: the
+    /// composer routes a typed turn through the relay only from here, and the
+    /// dock offers barge-in only from here.
+    var isLive: Bool { controller.phase == .live }
+}
+
+extension EnvironmentValues {
+    /// The call in progress, if there is one. Nil is the normal state and means
+    /// "this is an ordinary chat" — every voice-mode degradation in the composer
+    /// keys off exactly this.
+    @Entry var junoVoiceSession: JunoMobileVoiceSession?
+}
+
+/// **The voice dock** — a compact pill directly above the composer, inside the
+/// chat, while a spoken conversation runs.
+///
+/// What this replaces was a `fullScreenCover`: a screen with its own aura, its
+/// own transcript pane and its own three buttons. Taking the whole screen took
+/// the chat with it — the message list, the composer, and with the composer
+/// every attachment control — so "show Juno this photo while we talk" was not
+/// something the app could express. Voice is a **layer over the normal chat**
+/// here, exactly as it is on the web (`chat-view.tsx`), and the camera, the
+/// photo picker and the text field all keep working for free. That is most of
+/// the images-in-voice feature, and none of it is new code.
+///
+/// There is no orb and no transcript pane. The dock kept the words — what is
+/// happening and what it costs — and gave the picture to ``JunoVoiceAura``,
+/// which the composer mounts behind itself: a field spread across the column is
+/// legible at arm's length and asks for none of your attention, while an orb
+/// small enough to sit in a pill can only ever be decoration. The transcript is
+/// gone because the chat it is filed into is already on screen behind this.
+///
+/// Two things here have no counterpart on the web and are kept because they are
+/// better: the speaker/receiver toggle, which only a phone needs, and the
+/// Retry/Discard recovery on a failed save — the relay keeps nothing, so a
+/// dropped save is a conversation that no longer exists anywhere.
+struct JunoMobileVoiceDock: View {
+    let session: JunoMobileVoiceSession
+
     @State private var isSaving = false
     @State private var saveError: String?
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var controller: JunoRealtimeVoiceController { session.controller }
+
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Spacer(minLength: 0)
-            status
-            Spacer(minLength: 0)
-            transcript
-            controls
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(alignment: .bottom) {
-            // Behind the whole screen, never over it. The transcript and the
-            // three controls have to stay readable at full amplitude — this
-            // reports state, it does not compete for the surface.
-            JunoVoiceAura(
-                level: controller.level,
-                speaking: controller.assistantSpeaking,
-                active: isLive
-            )
-            .frame(height: 320)
-        }
-        .background(Color.junoCanvas)
-        .task {
-            // Started from here, not from the caller: the session's lifetime is
-            // this screen's lifetime, and starting it before the screen exists
-            // would bring an audio engine up behind a sheet that has not
-            // appeared yet.
-            await controller.start()
-        }
-        .onDisappear { controller.end() }
-        .accessibilityIdentifier("juno.mobile.voice")
-    }
-
-    private var isLive: Bool {
-        controller.phase == .live || controller.phase == .reconnecting
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack(spacing: 8) {
-            providerMenu
-            Spacer(minLength: 0)
-            #if os(iOS)
-            Button {
-                controller.toggleSpeaker()
-            } label: {
-                Image(
-                    systemName: controller.speakerOutput
-                        ? "speaker.wave.2.fill" : "iphone.gen3.radiowaves.left.and.right"
-                )
-                .font(.system(size: 15))
-                .foregroundStyle(Color.primary.opacity(0.75))
-                .frame(width: 36, height: 36)
-                .modifier(JunoGlassCircle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(
-                controller.speakerOutput ? "voice.speaker.on" : "voice.speaker.off"
-            )
-            #endif
-            Button(action: close) {
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Color.primary.opacity(0.75))
-                    .frame(width: 36, height: 36)
-                    .modifier(JunoGlassCircle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("voice.close")
-            .accessibilityIdentifier("juno.mobile.voice-close")
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-    }
-
-    /// Providers are not interchangeable — some do true speech-to-speech, some
-    /// need this client's own transcript — so the choice stays visible rather
-    /// than being an account setting made once and forgotten. Switching while
-    /// live goes over the open socket: the relay keeps the conversation, so the
-    /// audio path never comes down.
-    private var providerMenu: some View {
-        Menu {
-            ForEach(JunoVoiceProvider.allCases) { provider in
-                Button {
-                    if isLive {
-                        controller.switchProvider(provider)
-                    } else {
-                        Task { await controller.start(provider: provider) }
-                    }
-                } label: {
-                    if provider == controller.provider {
-                        Label(provider.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(provider.displayName)
-                    }
-                }
-            }
-        } label: {
-            JunoMobileMetaChip(
-                title: controller.provider.displayName,
-                systemImage: "waveform"
-            )
-        }
-        .tint(Color.primary)
-        .accessibilityLabel("voice.provider")
-        .accessibilityIdentifier("juno.mobile.voice-provider")
-    }
-
-    // MARK: - Status
-
-    @ViewBuilder
-    private var status: some View {
         VStack(spacing: 8) {
-            Text(statusTitle)
-                .font(.system(size: 17, weight: .medium))
-                .foregroundStyle(.primary)
-                .contentTransition(.opacity)
-
-            if let detail = statusDetail {
-                Text(detail)
-                    .font(.system(size: 13))
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.junoMutedForeground)
-                    .padding(.horizontal, 32)
+            if let message = failureMessage {
+                failureBanner(message)
             }
-
             if let notice = controller.notice {
                 Label(notice, systemImage: "exclamationmark.circle")
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .multilineTextAlignment(.center)
-                    .padding(.horizontal, 32)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .modifier(JunoGlassCapsule())
             }
-
-            // A save that failed is a conversation that exists nowhere — the
-            // relay does not keep it. So this offers Retry and Discard rather
-            // than dismissing, and the transcript is still on screen behind it.
-            if let saveError {
-                VStack(spacing: 8) {
-                    Label(saveError, systemImage: "exclamationmark.triangle")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
-                        .multilineTextAlignment(.center)
-                    HStack(spacing: 14) {
-                        Button("voice.save.retry") { hangUp() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color.junoAccent)
-                        Button("voice.save.discard") { close() }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(Color.junoMutedForeground)
-                    }
-                    .font(.system(size: 14, weight: .medium))
-                }
-                .padding(.horizontal, 32)
-                .accessibilityIdentifier("juno.mobile.voice-save-error")
-            }
-
-            recovery
+            pill
         }
+        .animation(
+            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
+            value: controller.assistantSpeaking
+        )
+        // Ends the call when the chat goes — another section, or a sign-out —
+        // because the alternative is an open microphone with nothing on screen
+        // saying so. It deliberately does **not** start one: `start()` is legal
+        // from `ended`, so a dock that dialled on appearance would silently
+        // redial every time the reader came back to Chat.
+        .onDisappear { controller.end() }
+        .accessibilityIdentifier("juno.mobile.voice")
+    }
+
+    private var pill: some View {
+        HStack(spacing: 0) {
+            status
+            controls
+            #if os(iOS)
+            speakerButton
+            #endif
+            optionsMenu
+            hangUpButton
+        }
+        .padding(4)
+        .modifier(JunoGlassCapsule())
+    }
+
+    // MARK: - Words
+
+    /// Status and cost, in a fixed-width column.
+    ///
+    /// Fixed so that a status changing length — "Listening" to "Juno is
+    /// speaking" — cannot slide every control sideways mid-sentence, and held to
+    /// the control row's height so the cost line cannot grow the pill. The cost
+    /// carries no live announcement: it reprices every few seconds and would
+    /// talk over the conversation it is measuring.
+    private var status: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(statusTitle)
+                .font(.system(size: 14, weight: .semibold))
+                .lineLimit(1)
+                .contentTransition(.opacity)
+            if let costLabel {
+                Text(costLabel)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: 96, height: 34, alignment: .leading)
+        .padding(.leading, 10)
+        .padding(.trailing, 4)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.updatesFrequently)
     }
 
+    /// The web's ladder, so the phone and the browser describe the same call in
+    /// the same words.
     private var statusTitle: LocalizedStringKey {
         switch controller.phase {
-        case .idle: "voice.status.starting"
-        case .connecting: "voice.status.connecting"
+        case .idle, .connecting: "voice.status.connecting"
         case .reconnecting: "voice.status.reconnecting"
-        case .ended: "voice.status.ended"
-        case .error: "voice.status.failed"
+        case .error: "voice.status.unavailable"
+        case .ended: "voice.status.session-ended"
         case .live:
             controller.assistantSpeaking
                 ? "voice.status.speaking"
@@ -225,206 +173,276 @@ struct JunoMobileVoiceView: View {
         }
     }
 
-    private var statusDetail: String? {
+    /// Relay list prices, not billing — hence the tilde. The relay owns the
+    /// provider connection and the per-provider rates, so this is shown as it
+    /// arrives rather than estimated here from elapsed wall time.
+    private var costLabel: String? {
+        guard let usage = controller.usage, usage.estCostUsd > 0 else { return nil }
+        return "~" + Self.usd(usage.estCostUsd)
+    }
+
+    /// `formatUsd` from `src/lib/utils.ts`, digit for digit. A session that has
+    /// cost a tenth of a cent has to read as a tenth of a cent on both clients,
+    /// or one of them looks like it is charging differently.
+    private static func usd(_ amount: Double) -> String {
+        guard amount.isFinite, amount > 0 else { return "$0" }
+        if amount < 0.0001 { return "<$0.0001" }
+        if amount < 0.01 { return String(format: "$%.4f", amount) }
+        if amount < 1 { return String(format: "$%.3f", amount) }
+        return String(format: "$%.2f", amount)
+    }
+
+    /// Why the call is not running, or why the last one could not be filed. A
+    /// failed save wins: it is the only one of the two that still has something
+    /// to lose.
+    private var failureMessage: String? {
+        if saveError != nil { return saveError }
         switch controller.phase {
-        case .error(let error): error.errorDescription
+        case .error(let error): return error.errorDescription
         case .ended(let reason):
-            switch reason {
+            return switch reason {
             case .sessionLimit: String(localized: "voice.ended.limit")
             case .provider: String(localized: "voice.ended.provider")
             case .error: String(localized: "voice.ended.error")
             case .client: nil
             }
-        default: usageLine
+        default: return nil
         }
     }
 
-    /// The relay is the only honest source for cost — it owns the provider
-    /// connection and the per-provider pricing — so this is shown verbatim
-    /// rather than estimated from elapsed wall time.
-    private var usageLine: String? {
-        guard let usage = controller.usage else { return nil }
-        let spoken = Int((usage.audioInSec + usage.audioOutSec).rounded())
-        guard spoken > 0 else { return nil }
-        let cost = usage.estCostUsd
-        let money = cost >= 0.01
-            ? String(format: "$%.2f", cost)
-            : String(format: "$%.3f", cost)
-        return "\(spoken)s · \(money)"
-    }
-
-    /// The one distinction that matters in a failure: a denied permission is
-    /// fixed in Settings and never by trying again.
+    /// Failures speak rather than hide in a tooltip: the line names the fix, and
+    /// the control that applies it sits with it.
     @ViewBuilder
-    private var recovery: some View {
-        switch controller.phase {
-        case .error(let error) where error.isPermissionDenial:
-            Button("voice.open-settings") {
-                guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-                openURL(url)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
-            .padding(.top, 4)
-        case .error, .ended:
-            Button("voice.start-again") {
-                Task { await controller.start() }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(Color.junoAccent)
-            .padding(.top, 4)
-            .accessibilityIdentifier("juno.mobile.voice-restart")
-        default:
-            EmptyView()
-        }
-    }
+    private func failureBanner(_ message: String) -> some View {
+        VStack(spacing: 8) {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .multilineTextAlignment(.center)
 
-    // MARK: - Transcript
-
-    @ViewBuilder
-    private var transcript: some View {
-        if !controller.transcript.isEmpty {
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(controller.transcript) { line in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(
-                                    line.role == .user
-                                        ? "voice.speaker.you" : "voice.speaker.juno"
-                                )
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .kerning(0.4)
-                                .foregroundStyle(Color.junoMutedForeground.opacity(0.65))
-                                Text(line.text)
-                                    .font(.system(size: 15))
-                                    .lineSpacing(2)
-                                    // A live hypothesis is not yet a claim about
-                                    // what was said, and it is rewritten in place
-                                    // several times a second. Dimming it is what
-                                    // stops the reader trusting a half-heard word.
-                                    .foregroundStyle(
-                                        line.final ? Color.primary : Color.primary.opacity(0.55)
-                                    )
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .id(line.id)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: 620)
-                    .frame(maxWidth: .infinity)
+            // A save that failed is a conversation that exists nowhere — the
+            // relay does not keep it — so this offers Retry and Discard rather
+            // than closing, and the transcript is still in the controller behind
+            // it. The Mac has no equivalent; it should.
+            if saveError != nil {
+                HStack(spacing: 14) {
+                    Button("voice.save.retry") { hangUp() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Color.junoAccent)
+                    Button("voice.save.discard") { session.close() }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
-                .frame(maxHeight: 220)
-                .scrollIndicators(.hidden)
-                .mask(
-                    // The fade is what lets the transcript end without a hard
-                    // edge against the controls beneath it.
-                    LinearGradient(
-                        colors: [.clear, .black, .black],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .onChange(of: controller.transcript.last?.id) { _, id in
-                    guard let id else { return }
-                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                        proxy.scrollTo(id, anchor: .bottom)
-                    }
+                .font(.system(size: 14, weight: .medium))
+                .accessibilityIdentifier("juno.mobile.voice-save-error")
+            } else if case .error(let error) = controller.phase, error.isPermissionDenial {
+                // A denied microphone is fixed in Settings and never by trying
+                // again — the system will not re-prompt — so this is the one
+                // failure that offers a deep link instead of a restart.
+                Button("voice.open-settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .font(.system(size: 14, weight: .medium))
             }
-            .accessibilityIdentifier("juno.mobile.voice-transcript")
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .modifier(JunoGlassCapsule())
+        .accessibilityIdentifier("juno.mobile.voice-failure")
     }
 
     // MARK: - Controls
 
+    @ViewBuilder
     private var controls: some View {
-        HStack(spacing: 18) {
+        if isRestartable {
             circleButton(
-                systemImage: controller.muted ? "mic.slash.fill" : "mic.fill",
-                label: controller.muted ? "voice.unmute" : "voice.mute",
-                identifier: "juno.mobile.voice-mute",
-                tint: controller.muted ? Color.orange : Color.primary.opacity(0.8)
+                systemImage: "arrow.clockwise",
+                label: "voice.start-again",
+                identifier: "juno.mobile.voice-restart",
+                tone: .prominent
             ) {
-                controller.setMuted(!controller.muted)
+                saveError = nil
+                Task { await controller.start() }
             }
-            .disabled(!isLive)
-
-            // Barge-in. Only offered while there is something to interrupt —
-            // a disabled hand glyph sitting there through every pause is chrome
+        } else {
+            // Barge-in, offered only while there is something to interrupt. A
+            // permanently disabled glyph sitting through every pause is chrome
             // that means nothing.
-            if controller.assistantSpeaking {
+            if controller.assistantSpeaking, session.isLive {
                 circleButton(
-                    systemImage: "hand.raised.fill",
+                    systemImage: "stop.fill",
                     label: "voice.interrupt",
                     identifier: "juno.mobile.voice-interrupt",
-                    tint: Color.primary.opacity(0.8)
+                    tone: .prominent
                 ) {
                     controller.interrupt()
                 }
                 .transition(.scale.combined(with: .opacity))
             }
-
-            Button {
-                hangUp()
-            } label: {
-                Group {
-                    if isSaving {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "phone.down.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.white)
-                    }
-                }
-                .frame(width: 62, height: 62)
-                .background(Color.red, in: Circle())
+            circleButton(
+                systemImage: controller.muted ? "mic.slash.fill" : "mic.fill",
+                label: controller.muted ? "voice.unmute" : "voice.mute",
+                identifier: "juno.mobile.voice-mute",
+                tone: controller.muted ? .prominent : .quiet
+            ) {
+                controller.setMuted(!controller.muted)
             }
-            .buttonStyle(.plain)
-            .disabled(isSaving)
-            .accessibilityLabel("voice.end")
-            .accessibilityIdentifier("juno.mobile.voice-end")
+            .disabled(!session.isLive)
         }
-        .padding(.top, 16)
-        .padding(.bottom, 28)
-        .animation(
-            JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
-            value: controller.assistantSpeaking
-        )
     }
+
+    /// Restart is offered from a finished or failed session — except after a
+    /// refusal, where ``failureBanner(_:)`` offers Settings instead.
+    private var isRestartable: Bool {
+        switch controller.phase {
+        case .ended: true
+        case .error(let error): !error.isPermissionDenial
+        default: false
+        }
+    }
+
+    #if os(iOS)
+    /// Speaker vs. receiver. Routing only, so it can be flipped mid-sentence —
+    /// and the one control on this dock a desktop has no use for.
+    private var speakerButton: some View {
+        circleButton(
+            systemImage: controller.speakerOutput
+                ? "speaker.wave.2.fill" : "iphone.gen3.radiowaves.left.and.right",
+            label: controller.speakerOutput ? "voice.speaker.on" : "voice.speaker.off",
+            identifier: "juno.mobile.voice-speaker",
+            tone: .quiet
+        ) {
+            controller.toggleSpeaker()
+        }
+    }
+    #endif
+
+    /// Providers are not interchangeable — some do true speech-to-speech, some
+    /// need this client's own transcript, and only some can see — so the choice
+    /// stays visible rather than being an account setting made once and
+    /// forgotten. Switching while live goes over the open socket: the relay keeps
+    /// the conversation, so the audio path never comes down.
+    private var optionsMenu: some View {
+        Menu {
+            Section("voice.provider") {
+                ForEach(JunoVoiceProvider.allCases) { provider in
+                    Button {
+                        if session.isLive {
+                            controller.switchProvider(provider)
+                        } else {
+                            Task { await controller.start(provider: provider) }
+                        }
+                    } label: {
+                        if provider == controller.provider {
+                            Label(provider.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(provider.displayName)
+                        }
+                    }
+                    .disabled(session.isLive && provider == controller.provider)
+                }
+            }
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Color.primary.opacity(0.75))
+                .frame(width: 34, height: 34)
+                .frame(width: 38, height: 44)
+                .contentShape(Rectangle())
+        }
+        .tint(Color.primary)
+        .accessibilityLabel("voice.options")
+        .accessibilityIdentifier("juno.mobile.voice-provider")
+    }
+
+    private var hangUpButton: some View {
+        Button {
+            hangUp()
+        } label: {
+            Group {
+                if isSaving {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "phone.down.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            .frame(width: 34, height: 34)
+            .background(Color.red, in: Circle())
+            .frame(width: 38, height: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isSaving)
+        .accessibilityLabel("voice.end")
+        .accessibilityIdentifier("juno.mobile.voice-end")
+    }
+
+    private enum ControlTone {
+        case quiet
+        case prominent
+    }
+
+    private func circleButton(
+        systemImage: String,
+        label: LocalizedStringKey,
+        identifier: String,
+        tone: ControlTone,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(
+                    tone == .prominent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary)
+                )
+                .frame(width: 34, height: 34)
+                .background(
+                    tone == .prominent ? Color.primary : Color.primary.opacity(0.08),
+                    in: Circle()
+                )
+                // The same 44pt-tall target the composer's own controls carry.
+                .frame(width: 38, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(identifier)
+    }
+
+    // MARK: - Hang up
 
     /// Hang up, then file the conversation.
     ///
     /// **In that order, and the order is the point.** `end()` first, so the
     /// microphone and the socket are down the instant the reader asks — waiting
-    /// for a network round trip with a live mic is the one thing a hang-up button
-    /// must never do. The save then runs against the transcript the controller
-    /// already holds, and the screen stays up with a spinner while it does,
-    /// because dismissing first would leave a failed save with nowhere to report.
-    ///
-    /// A failure keeps the screen open with Retry rather than discarding: the
-    /// relay does not keep the transcript, so a dropped save is a conversation
-    /// that no longer exists anywhere.
+    /// on a network round trip with a live mic is the one thing a hang-up must
+    /// never do. The save then runs against the transcript the controller
+    /// already holds, and the dock stays up with a spinner while it does,
+    /// because closing first would leave a failed save with nowhere to report.
     private func hangUp() {
         controller.end()
-        guard let saveTranscript, !savableTurns.isEmpty else {
-            close()
+        guard let saveTranscript = session.saveTranscript, !savableTurns.isEmpty else {
+            session.close()
             return
         }
         isSaving = true
         saveError = nil
         Task {
             let saved = await saveTranscript(
-                JunoMobileVoiceTranscript(sessionID: sessionID, turns: savableTurns)
+                JunoMobileVoiceTranscript(sessionID: session.id, turns: savableTurns)
             )
             isSaving = false
             guard saved != nil else {
                 saveError = String(localized: "voice.save.failed")
                 return
             }
-            close()
+            session.close()
         }
     }
 
@@ -432,36 +450,36 @@ struct JunoMobileVoiceView: View {
     ///
     /// Non-final lines are dropped: they are live hypotheses the recognizer is
     /// still rewriting, and saving one puts a half-heard sentence into the
-    /// reader's permanent history. The web applies the same filter before it
-    /// posts.
+    /// reader's permanent history. This filter is the whole reason the doc
+    /// comment above existed — and until now it was only the doc comment. The
+    /// Mac has always filtered; the phone was quietly persisting hypotheses.
     private var savableTurns: [NativeVoiceTranscriptClient.Turn] {
         controller.transcript.compactMap { line in
             let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { return nil }
+            guard line.final, !text.isEmpty else { return nil }
             return NativeVoiceTranscriptClient.Turn(
                 role: line.role == .assistant ? .assistant : .user,
                 content: text
             )
         }
     }
+}
 
-    private func circleButton(
-        systemImage: String,
-        label: LocalizedStringKey,
-        identifier: String,
-        tint: Color,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18))
-                .foregroundStyle(tint)
-                .frame(width: 54, height: 54)
-                .modifier(JunoGlassCircle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
-        .accessibilityIdentifier(identifier)
+/// The field, in a view of its own.
+///
+/// A leaf, so that `level` — which the controller republishes about thirty times
+/// a second — invalidates one `Canvas` and nothing else. Read from the
+/// composer's body instead, the same property would re-measure the text field,
+/// the chips and the whole control row on every audio frame.
+struct JunoMobileVoiceField: View {
+    let controller: JunoRealtimeVoiceController
+
+    var body: some View {
+        JunoVoiceAura(
+            level: controller.level,
+            speaking: controller.assistantSpeaking,
+            active: controller.phase == .live || controller.phase == .reconnecting
+        )
     }
 }
 
@@ -474,4 +492,3 @@ struct JunoMobileVoiceTranscript {
     let sessionID: UUID
     let turns: [NativeVoiceTranscriptClient.Turn]
 }
-

@@ -48,6 +48,12 @@ enum DesktopCodeSidebarItem: Hashable {
     /// rather than a modal because the reader must be able to leave it, look at
     /// a project, and come back to what they were typing.
     case draft
+    /// The pull requests Juno Code opened, across every project.
+    ///
+    /// It lives here rather than in Chat's sidebar because a PR is the output of
+    /// a coding session, and the website has always filed it under Code. A
+    /// reader checking on one is in the same product they started it in.
+    case pulls
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -106,6 +112,7 @@ enum DesktopCodeNavigationState {
         case .none: ""
         case .allProjects: "allProjects"
         case .draft: "draft"
+        case .pulls: "pulls"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -119,6 +126,7 @@ enum DesktopCodeNavigationState {
         switch (fields.first, fields.count) {
         case ("allProjects", 1): return .allProjects
         case ("draft", 1): return .draft
+        case ("pulls", 1): return .pulls
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -146,8 +154,9 @@ enum DesktopCodeNavigationState {
         // answering, which the detail surface reports honestly on its own.
         // Always valid: it names the collection, not a member of it.
         case .allProjects: return item
-        // Always valid: a draft names nothing that can go missing.
-        case .draft: return item
+        // Always valid: a draft names nothing that can go missing, and the pull
+        // request list is an account-level page rather than a local record.
+        case .draft, .pulls: return item
         case .remote, .none: return item
         }
     }
@@ -521,6 +530,19 @@ struct DesktopCodeSidebar: View {
             .tag(DesktopCodeSidebarItem.draft)
             .accessibilityIdentifier("juno.code.new-conversation")
 
+            // Pull requests sit beside the composer rather than in Chat's
+            // sidebar, which is where the website has always filed them: a PR is
+            // what a coding session produced, and the reader checking on one is
+            // in the product that opened it.
+            Label {
+                Text("Pull requests").junoRowLabel()
+            } icon: {
+                JunoIconView(.pulls, size: 15)
+            }
+            .junoSidebarRowInk()
+            .tag(DesktopCodeSidebarItem.pulls)
+            .accessibilityIdentifier("juno.code.pulls")
+
             // Anything running comes first and is never nested. A run needing
             // attention must not be one disclosure triangle away.
             if !active.isEmpty {
@@ -862,7 +884,7 @@ struct DesktopCodeSidebar: View {
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
         // The index belongs to no single project, so deleting one never leaves the
         // reader stranded on it.
-        case .allProjects, .draft, .task, .remote, nil:
+        case .allProjects, .draft, .pulls, .task, .remote, nil:
             return false
         }
     }
@@ -938,9 +960,10 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .draft, .repository:
+        case .allProjects, .draft, .pulls, .repository:
             // None reaches this row builder: repositories carry their own menu,
-            // and neither the index nor the composer is a run.
+            // and neither the index, the composer nor the pull request list is a
+            // run.
             EmptyView()
         }
     }

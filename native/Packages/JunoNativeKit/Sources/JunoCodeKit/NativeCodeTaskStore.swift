@@ -45,6 +45,14 @@ public struct NativeCodeDevice: Identifiable, Equatable, Sendable {
         public let key: String?
 
         public var id: String { key ?? path }
+
+        /// Public so a host can describe its own granted folders when it
+        /// registers, not only so the phone can decode someone else's.
+        public init(name: String, path: String, key: String?) {
+            self.name = name
+            self.path = path
+            self.key = key
+        }
     }
 
     public let id: String
@@ -210,6 +218,90 @@ public struct NativeCodeTaskClient: Sendable {
                 online: device.online ?? false
             )
         }
+    }
+
+    /// Announces this machine as a computer that can run local code sessions,
+    /// and refreshes its heartbeat.
+    ///
+    /// The same call does both: the route is an upsert, and `lastSeenAt` is
+    /// written on every POST. `/api/code/devices` calls a device online only
+    /// while its last heartbeat is inside a two-minute window, so a host that
+    /// registers once at launch and then goes quiet disappears from the phone's
+    /// picker three minutes later — registering is not a thing you do, it is a
+    /// thing you keep doing.
+    ///
+    /// `deviceID` is this host's previously assigned id, replayed so a rename
+    /// updates the existing row instead of leaving the old name behind as a
+    /// second, permanently offline computer. Without it the server falls back to
+    /// matching on `(user, name)`, which is why two Macs called "MacBook Pro"
+    /// would otherwise collide.
+    ///
+    /// - Returns: the server's id for this device, to be persisted and replayed.
+    public func registerDevice(
+        deviceID: String?,
+        name: String,
+        platform: String,
+        appVersion: String,
+        workspaces: [NativeCodeDevice.Workspace],
+        sessionCount: Int,
+        activeCount: Int,
+        for accountID: AccountID
+    ) async throws -> String {
+        let response = try await sender.send(
+            try NativeBearerRequest(
+                path: "/api/code/devices",
+                method: .post,
+                headers: try HTTPHeaders([
+                    "accept": "application/json", "content-type": "application/json",
+                ]),
+                body: try JSONEncoder().encode(
+                    RegisterDeviceWire(
+                        deviceId: deviceID,
+                        // The route rejects an empty name and caps it at 200. A
+                        // Mac with no localized name is not a reason to fail
+                        // registration, so an empty one becomes the platform.
+                        name: Self.clamp(name.isEmpty ? "Mac" : name, to: 200),
+                        platform: platform,
+                        appVersion: Self.clamp(appVersion, to: 100),
+                        protocolVersion: Self.protocolVersion,
+                        sessionCount: max(0, sessionCount),
+                        activeCount: max(0, activeCount),
+                        // Clamped to the route's own limits rather than sent raw:
+                        // one over-long path 400s the whole registration, and the
+                        // failure would read as "this Mac is offline".
+                        workspaces: workspaces.prefix(100).compactMap { workspace in
+                            let name = Self.clamp(workspace.name, to: 200)
+                            let path = Self.clamp(workspace.path, to: 1000)
+                            guard !name.isEmpty, !path.isEmpty else { return nil }
+                            return RegisterDeviceWire.Workspace(
+                                name: name,
+                                path: path,
+                                key: workspace.key.map { Self.clamp($0, to: 200) }
+                            )
+                        }
+                    )
+                )
+            ),
+            for: accountID
+        )
+        try requireSuccess(response)
+        guard let wire = try? JSONDecoder().decode(
+            RegisterDeviceResponseWire.self, from: response.body
+        ) else { throw NativeCodeError.malformedResponse }
+        return wire.device.id
+    }
+
+    /// The event-protocol version this client speaks, as
+    /// `src/app/api/code/devices/route.ts` records it.
+    private static let protocolVersion = 1
+
+    /// Trimmed, then cut to the route's maximum. Cut by *character*, because the
+    /// server counts characters too — cutting bytes would split an emoji in a
+    /// folder name and produce a string that fails to decode.
+    private static func clamp(_ value: String, to limit: Int) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+        return String(trimmed.prefix(limit))
     }
 
     public func tasks(limit: Int, for accountID: AccountID) async throws -> [NativeCodeTask] {
@@ -635,6 +727,37 @@ private struct DeviceListWire: Decodable {
     }
 
     let devices: [Device]
+}
+
+/// The registration body, shaped by `postSchema` in
+/// `src/app/api/code/devices/route.ts`.
+///
+/// `deviceId` is encoded only when present: the route's schema marks it
+/// optional, and sending an explicit `null` fails validation rather than being
+/// read as absent.
+private struct RegisterDeviceWire: Encodable {
+    struct Workspace: Encodable {
+        let name: String
+        let path: String
+        let key: String?
+    }
+
+    let deviceId: String?
+    let name: String
+    let platform: String
+    let appVersion: String
+    let protocolVersion: Int
+    let sessionCount: Int
+    let activeCount: Int
+    let workspaces: [Workspace]
+}
+
+private struct RegisterDeviceResponseWire: Decodable {
+    struct Device: Decodable {
+        let id: String
+    }
+
+    let device: Device
 }
 
 private struct TaskListWire: Decodable {

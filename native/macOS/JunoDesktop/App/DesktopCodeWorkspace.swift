@@ -32,6 +32,12 @@ struct DesktopCodeWorkspace: View {
     let workbenchModel: WorkbenchModel
     let codeModel: NativeCodeModel
     let remoteModel: CodeRemoteBrowserModel
+    /// The pull request list's transport, and the account it lists for. Both are
+    /// account-level rather than workspace-level, so they arrive from the window
+    /// that already holds the configuration and the session instead of being
+    /// derived from anything in the workbench.
+    let pullsClient: NativeGitHubPullsClient?
+    let accountID: AccountID?
     @Binding var product: DesktopProductMode
     /// Starts a normal Juno conversation, independent of a repository.
     let newChat: () -> Void
@@ -355,6 +361,14 @@ struct DesktopCodeWorkspace: View {
         case .draft:
             draft(nil)
 
+        case .pulls:
+            // No `openConnections`: Connections is a Chat destination, and there
+            // is no honest channel from this window to a specific Chat page —
+            // only the product switch, which would land the reader on whatever
+            // Chat was last showing. `NativePullsView` drops the button when it
+            // has nowhere to send them, so the empty state still explains itself.
+            NativePullsView(client: pullsClient, accountID: accountID)
+
         case .repository(let id):
             // A repository that is no longer granted is exactly the state a
             // projectless conversation serves: the reader still has something
@@ -588,6 +602,8 @@ struct DesktopCodeWorkspace: View {
             return "All Projects"
         case .draft:
             return "New conversation"
+        case .pulls:
+            return "Pull requests"
         case .repository(let id):
             return workbenchModel.workspaces.first { $0.id == id }?
                 .descriptor.displayName ?? "New conversation"
@@ -629,6 +645,10 @@ struct DesktopCodeWorkspace: View {
             return count == 1 ? "1 project" : "\(count) projects"
         case .draft:
             return "No project"
+        case .pulls:
+            // Deliberately empty: the count is the list's own business, and a
+            // subtitle here would be stale for as long as it took to load.
+            return ""
         case .repository(let id):
             guard let record = workbenchModel.workspaces.first(where: { $0.id == id }) else {
                 // The grant is gone, so this is a projectless composer now.

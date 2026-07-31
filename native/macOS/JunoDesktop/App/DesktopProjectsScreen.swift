@@ -9,15 +9,24 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// A focused project workspace: native index on the left, the selected
-/// project's actual contents on the right.
+/// Projects, as the website has them: an **index** of every project at
+/// `/projects`, and one project's workspace at `/projects/[id]`.
 ///
-/// The previous card-grid-plus-inspector composition produced three competing
-/// hierarchies inside one window: global navigation, oversized cards, then a
-/// cramped 320-point inspector containing the information the user came to
-/// read. This is the macOS document-browser pattern instead. Projects are rows
-/// that can be scanned and keyboard-selected; the selected project receives the
-/// available reading width for its instructions, chats, and files.
+/// **Why a route and not a flag.** This screen used to decide what to show from
+/// two pieces of long-lived state — a `showingProjectBrowser` boolean that
+/// defaulted to *false* (the detail) and the model's `selectedProjectID`, which
+/// the store auto-populated with the top favourite. Clicking Projects in the
+/// sidebar therefore opened whichever project happened to sort first and there
+/// was no path back to the index at all: the boolean reset to "show a detail"
+/// every time the destination switch rebuilt this view. A route whose *root* is
+/// the index cannot express that state, which is the point — the same shape Juno
+/// Code uses for `DesktopCodeSidebarItem.allProjects`, and the same one the
+/// Artifacts screen uses to get from its library to a document.
+///
+/// The model's `selectedProjectID` is deliberately left alone here. It is the
+/// phone's navigation state, set by its own `navigationDestination`; mirroring it
+/// on the Mac is what let a selection outlive a destination switch and re-open a
+/// project the reader had already left.
 struct DesktopProjectsScreen: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
     @Bindable var conversationModel: NativeConversationModel<SQLiteAccountRepository>
@@ -26,26 +35,47 @@ struct DesktopProjectsScreen: View {
     let openConversation: (String) -> Void
     let startConversation: (String, String?) -> Void
 
-    @State private var sortOrder: [KeyPathComparator<DesktopProjectRow>] = []
+    @State private var route = DesktopProjectRoute.index
+    @State private var sort = DesktopProjectSort.updated
     @State private var query = ""
     @State private var showingNewProject = false
     @State private var showingFileImporter = false
+    /// Which project a picked file belongs to.
+    ///
+    /// Held separately from the route because the importer is reachable from the
+    /// index's row menu as well as from an open project, and because reading the
+    /// *model's* selection here is what tied file import to a selection that no
+    /// longer exists.
+    @State private var fileImportTarget: String?
     @State private var editingInstructionsFor: NativeProject?
     @State private var renameTarget: NativeProject?
     @State private var renameDraft = ""
     @State private var deleteTarget: NativeProject?
-    @State private var showingProjectBrowser = false
     @State private var voiceSession: DesktopVoiceSession?
+    /// Why a spoken conversation could not be opened. An alert rather than an
+    /// inline banner because the reader pressed a button and nothing happened —
+    /// the answer has to arrive where they are looking. The same alert Chat has:
+    /// this screen used to `return` in silence, so on any shell missing either
+    /// half the microphone was a control that did nothing at all.
+    @State private var voiceUnavailable: String?
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// The model already orders projects the way the product does — favourites
-    /// first, then most recently updated — so an untouched table shows that
-    /// order and only a clicked header takes it over.
+    /// The project the route is on, if it still exists.
     ///
-    /// The filter matches the web page's: name *and* instructions, because a
+    /// Resolving through the model rather than storing the project itself is what
+    /// makes a deletion — or a sync that drops the record — fall back to the index
+    /// with no extra state to keep in step.
+    private var openProject: NativeProject? {
+        guard case .project(let id) = route else { return nil }
+        return model.projects.first { $0.id == id }
+    }
+
+    /// The index's rows: the search applied, then the chosen sort.
+    ///
+    /// The filter matches the web page's — name *and* instructions, because a
     /// project's instructions are often the only place its subject is written
     /// down.
     private var rows: [DesktopProjectRow] {
@@ -56,22 +86,34 @@ struct DesktopProjectsScreen: View {
                 $0.name.localizedCaseInsensitiveContains(needle)
                     || $0.instructions.localizedCaseInsensitiveContains(needle)
             }
-        let rows = matching.map { project in
-            DesktopProjectRow(
-                project: project,
-                conversationCount: model.conversationsByProject[project.id]?.count ?? 0,
-                fileCount: model.filesByProject[project.id]?.count ?? 0
-            )
-        }
-        return sortOrder.isEmpty ? rows : rows.sorted(using: sortOrder)
+        return matching
+            .map { project in
+                DesktopProjectRow(
+                    project: project,
+                    conversationCount: model.conversationsByProject[project.id]?.count ?? 0,
+                    fileCount: model.filesByProject[project.id]?.count ?? 0
+                )
+            }
+            .sorted(by: sort.precedes)
     }
 
     var body: some View {
+        // `Color.clear.overlay { … }`: a detail-column page that reports an ideal
+        // height resizes the window's split view rather than being clipped by it.
+        // See ``JunoDetailPage``, which is the same clamp with a page inside it.
         Color.clear
-            .overlay { projectWorkspace }
+            .overlay { workspace }
             .overlay(alignment: .bottom) { statusControl }
+            // Belt and braces on top of `@State`'s own default. The destination
+            // switch in ``DesktopDestinationView`` rebuilds this view, so the
+            // route already starts at the index; saying it out loud means the
+            // guarantee survives a future shell that keeps the view alive.
+            .onAppear { route = .index }
             .sheet(isPresented: $showingNewProject) {
-                DesktopNewProjectSheet(model: model)
+                // Straight into the new project, as `router.push` does on the
+                // website — and as this screen used to do by accident, through
+                // the model selection that no longer drives navigation.
+                DesktopNewProjectSheet(model: model) { id in route = .project(id) }
             }
             .sheet(item: $editingInstructionsFor) { project in
                 DesktopProjectInstructionsSheet(project: project) { instructions in
@@ -84,7 +126,7 @@ struct DesktopProjectsScreen: View {
                 allowsMultipleSelection: true
             ) { result in
                 guard case .success(let urls) = result,
-                    let projectID = model.selectedProjectID
+                    let projectID = fileImportTarget
                 else { return }
                 Task {
                     await DesktopProjectFiles.upload(urls, projectID: projectID, model: model)
@@ -107,6 +149,9 @@ struct DesktopProjectsScreen: View {
             ) {
                 Button("Delete project", role: .destructive) {
                     if let target = deleteTarget {
+                        // Back to the index first: the page the reader is looking
+                        // at is about to stop existing.
+                        route = .index
                         Task { await model.deleteProject(id: target.id) }
                     }
                     deleteTarget = nil
@@ -115,132 +160,176 @@ struct DesktopProjectsScreen: View {
             } message: {
                 Text("Chats stay in Juno and are unlinked from the project. The project's files are removed.")
             }
-            .sheet(item: $voiceSession) { session in
-                voiceSheet(session)
+            .alert(
+                "Voice is unavailable",
+                isPresented: Binding(
+                    get: { voiceUnavailable != nil },
+                    set: { if !$0 { voiceUnavailable = nil } }
+                ),
+                presenting: voiceUnavailable
+            ) { _ in
+                Button("OK") { voiceUnavailable = nil }
+            } message: { reason in
+                Text(reason)
             }
-    }
-
-    // MARK: - Workspace
-
-    private var projectWorkspace: some View {
-        Group {
-            if model.projects.isEmpty {
-                projectIndex
-            } else if showingProjectBrowser {
-                projectBrowser
-            } else {
-                projectDetail
-            }
-        }
-        .onChange(of: model.selectedProjectID) { oldValue, newValue in
-            if showingProjectBrowser, oldValue != newValue, newValue != nil {
-                showingProjectBrowser = false
-            }
-        }
-    }
-
-    private var projectBrowser: some View {
-        VStack(spacing: 0) {
-            DesktopScreenHeader(
-                "Projects",
-                subtitle: headerSubtitle
-            ) {
-                Button {
-                    startCreate()
-                } label: {
-                    Label("New project", systemImage: "folder.badge.plus")
-                }
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-            }
-
-            HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search projects", text: $query)
-                    .textFieldStyle(.plain)
-            }
-            .padding(.horizontal, JunoSpace.cozy)
-            .frame(height: 32)
-            .background(.quaternary, in: RoundedRectangle(
-                cornerRadius: JunoRadius.control,
-                style: .continuous
-            ))
-            .frame(maxWidth: 560)
-            .padding(.horizontal, JunoSpace.roomy)
-            .padding(.vertical, JunoSpace.regular)
-
-            Divider()
-            content
-        }
-        .accessibilityIdentifier("Projects browser")
-    }
-
-    private var projectIndex: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Projects")
-                        .font(.title2.weight(.semibold))
-                    Spacer(minLength: JunoSpace.snug)
-                    Text(model.projects.count.formatted())
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .accessibilityLabel(
-                            model.projects.count == 1 ? "1 project" : "\(model.projects.count) projects"
-                        )
-                }
-
-                HStack(spacing: JunoSpace.tight) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundStyle(.tertiary)
-                    TextField("Filter projects", text: $query)
-                        .textFieldStyle(.plain)
-                }
-                .padding(.horizontal, JunoSpace.cozy)
-                .frame(height: 30)
-                .background(.quaternary, in: RoundedRectangle(
-                    cornerRadius: JunoRadius.control,
-                    style: .continuous
-                ))
-                .accessibilityIdentifier("Projects search")
-            }
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.regular)
-            .padding(.bottom, JunoSpace.cozy)
-
-            Divider()
-            content
-        }
-        .background(.bar)
-        .accessibilityIdentifier("Projects index")
-    }
-
-    private var headerSubtitle: String {
-        let total = model.projects.count
-        guard total > 0 else {
-            return "Instructions you set on a project apply to every chat inside it."
-        }
-        guard !trimmedQuery.isEmpty else {
-            return total == 1 ? "1 project" : "\(total) projects"
-        }
-        return "\(rows.count) of \(total) match “\(trimmedQuery)”"
     }
 
     @ViewBuilder
-    private var content: some View {
+    private var workspace: some View {
+        if let project = openProject {
+            DesktopProjectDetail(
+                model: model,
+                conversationModel: conversationModel,
+                configuration: configuration,
+                project: project,
+                openConversation: openConversation,
+                startConversation: { prompt in startConversation(project.id, prompt) },
+                openVoiceMode: { modelID in
+                    startVoice(modelID: modelID, projectID: project.id)
+                },
+                voiceColumn: voiceColumn,
+                addFiles: { beginFileImport(for: project) },
+                editInstructions: { editingInstructionsFor = project },
+                togglePin: { togglePin(project) },
+                renameProject: { startRename(project) },
+                deleteProject: { deleteTarget = project },
+                showAllProjects: { route = .index }
+            )
+        } else {
+            projectIndex
+        }
+    }
+
+    // MARK: - Index
+
+    private var projectIndex: some View {
+        VStack(spacing: 0) {
+            indexHeader
+            Divider()
+            indexContent
+        }
+        .accessibilityIdentifier("Projects index")
+    }
+
+    /// Serif title, count, sort, the one primary action — then one search field.
+    ///
+    /// One header, in the brand's own voice. The screen previously had two for
+    /// the same page, neither of them serif, while the project detail underneath
+    /// was already editorial: the index and the thing it indexes spoke different
+    /// typographic languages.
+    private var indexHeader: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
+                JunoIconView(.projects, size: DesktopProjectMetrics.titleGlyphSize)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                Text("Projects")
+                    .junoPageHeading()
+                if let indexSummary {
+                    Text(indexSummary)
+                        .junoCodeSmall()
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("Projects count")
+                }
+
+                Spacer(minLength: JunoSpace.regular)
+
+                sortMenu
+                Button(action: startCreate) {
+                    Label("New project", systemImage: "plus")
+                }
+                .junoProminentGlassButton()
+                // Registered exactly once on this screen. While the old browser
+                // was showing, two views claimed ⇧⌘N at the same time.
+                .keyboardShortcut("n", modifiers: [.command, .shift])
+                .help("Create a project (⇧⌘N)")
+                .accessibilityIdentifier("New project")
+            }
+
+            searchField
+        }
+        .padding(.horizontal, JunoSpace.region)
+        .padding(.top, JunoSpace.section)
+        .padding(.bottom, JunoSpace.roomy)
+        .frame(maxWidth: DesktopProjectMetrics.indexWidth)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The count, or how much of it the search left. Nil while there is nothing
+    /// to count, so the empty state is not preceded by the word "0".
+    private var indexSummary: String? {
+        let total = model.projects.count
+        guard total > 0 else { return nil }
+        guard trimmedQuery.isEmpty else { return "\(rows.count) of \(total) match" }
+        return total == 1 ? "1 project" : "\(total) projects"
+    }
+
+    /// The screen's only search field. It was built twice, at two heights, under
+    /// two placeholders; a reader who used both saw two different controls doing
+    /// the same job.
+    private var searchField: some View {
+        HStack(spacing: JunoSpace.tight) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            TextField("Search projects…", text: $query)
+                .textFieldStyle(.plain)
+                .accessibilityIdentifier("Projects search")
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear project search")
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(height: DesktopProjectMetrics.searchHeight)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.control, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+    }
+
+    private var sortMenu: some View {
+        Menu {
+            Picker("Sort by", selection: $sort) {
+                ForEach(DesktopProjectSort.allCases) { option in
+                    Text(option.label).tag(option)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        } label: {
+            Label {
+                Text("Sort by: \(sort.label)")
+            } icon: {
+                Image(systemName: "slider.horizontal.3")
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Order the projects below")
+        .accessibilityIdentifier("Projects sort")
+    }
+
+    /// The website's states, in the website's order: failure, then loading, then
+    /// nothing yet, then nothing matching.
+    @ViewBuilder
+    private var indexContent: some View {
         if model.projects.isEmpty {
             switch model.phase {
             case .idle, .loading:
-                ProgressView()
-                    .controlSize(.small)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .accessibilityLabel("Loading projects")
+                DesktopProjectSkeletonGrid()
             case .failed:
                 // Through the shared copy for the same reason the status bar is:
                 // an empty screen whose only explanation is the word "Not found"
                 // tells the reader nothing about what to do next.
                 JunoEmptyState(
-                    title: "Projects unavailable",
+                    title: "Couldn’t load your projects.",
                     message: DesktopStatusCopy(subject: "projects", singular: "project")
                         .humanized(
                             model.lastErrorDescription,
@@ -252,278 +341,93 @@ struct DesktopProjectsScreen: View {
                 )
             case .ready, .offline:
                 JunoEmptyState(
-                    title: "No projects yet",
-                    message: "A project keeps one topic's chats, files and instructions together, and applies those instructions to every chat inside it.",
-                    symbol: "folder",
+                    title: "No projects yet.",
+                    message: "Create one to keep a topic’s chats, instructions, and files together.",
+                    icon: .projects,
                     actionLabel: "New project",
                     action: startCreate
                 )
             }
         } else if rows.isEmpty {
             JunoEmptyState(
-                title: "No projects match your search",
+                title: "No projects match your search.",
                 message: "Juno searched project names and instructions.",
                 symbol: "magnifyingglass",
                 actionLabel: "Clear search",
                 action: { query = "" }
             )
         } else {
-            projectList
+            projectGrid
         }
     }
 
-    private var projectList: some View {
-        List(selection: $model.selectedProjectID) {
-            if rows.contains(where: \.project.starred) {
-                Section("Favourites") {
-                    ForEach(rows.filter(\.project.starred)) { projectListRow($0) }
-                }
-            }
-            Section(rows.contains(where: \.project.starred) ? "All Projects" : "") {
-                ForEach(rows.filter { !$0.project.starred }) { projectListRow($0) }
-            }
-        }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        .junoSidebarSelectionTint()
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                Button(action: startCreate) {
-                    Label("New project", systemImage: "folder.badge.plus")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut("n", modifiers: [.command, .shift])
-                .help("Create a project (⇧⌘N)")
-                .padding(.horizontal, JunoSpace.regular)
-                .padding(.vertical, JunoSpace.cozy)
-                .accessibilityIdentifier("New project")
-            }
-            .background(.bar)
-        }
-        .contextMenu(forSelectionType: DesktopProjectRow.ID.self) { ids in
-            rowMenu(ids)
-        }
-        .onDeleteCommand {
-            if let project = model.selectedProject { deleteTarget = project }
-        }
-        .accessibilityIdentifier("Projects list")
-    }
-
-    private func projectListRow(_ row: DesktopProjectRow) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            Image(systemName: row.project.starred ? "folder.fill" : "folder")
-                .foregroundStyle(row.project.starred ? Color.junoAccent : Color.secondary)
-                .frame(width: 18)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: JunoSpace.tight) {
-                    Text(row.name)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    if row.project.isPending {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .accessibilityLabel("Waiting to sync")
-                    }
-                }
-                Text(row.instructionsPreview)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                Text("\(row.conversationCount) chats · \(row.fileCount) files")
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.tertiary)
-            }
-            Spacer(minLength: JunoSpace.tight)
-        }
-        .junoSidebarRowInk()
-        .padding(.vertical, JunoSpace.hairline)
-        .contentShape(.rect)
-        .onTapGesture {
-            model.selectedProjectID = row.id
-            showingProjectBrowser = false
-        }
-        .tag(row.id)
-        .help(row.instructionsPreview)
-    }
-
-    /// The website's grid of project cards.
-    ///
-    /// This replaced a four-column `Table`. The table was defensible on paper —
-    /// it sorts, it is dense, it is the Mac idiom for tabular data — but a
-    /// project is not a row of numbers. What identifies one is its **name and
-    /// its instructions**, and the instructions are the thing the web page leads
-    /// with and the table could only show as a truncated caption in a 360pt
-    /// column. Side by side with the website the two read as different products,
-    /// which is the complaint this answers.
-    ///
-    /// Selection still drives the inspector, so nothing about the Mac's
-    /// two-pane behaviour is lost; only the presentation of the list changed.
     private var projectGrid: some View {
         ScrollView {
             LazyVGrid(
-                columns: [
-                    GridItem(
-                        .adaptive(
-                            minimum: DesktopProjectGrid.minimumCardWidth,
-                            maximum: DesktopProjectGrid.maximumCardWidth
-                        ),
-                        spacing: JunoSpace.regular,
-                        alignment: .top
-                    )
-                ],
+                columns: DesktopProjectMetrics.gridColumns,
+                alignment: .leading,
                 spacing: JunoSpace.regular
             ) {
-                ForEach(rows) { row in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                     DesktopProjectCard(
                         row: row,
-                        isSelected: model.selectedProjectID == row.id,
-                        open: {
-                            model.selectedProjectID = row.id
-                        },
-                        menu: { rowMenu([row.id]) }
+                        index: index,
+                        open: { route = .project(row.id) },
+                        menu: { projectMenu(row.project) }
                     )
                 }
             }
-            .padding(.bottom, JunoSpace.region)
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.vertical, JunoSpace.section)
+            .frame(maxWidth: DesktopProjectMetrics.indexWidth)
+            .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
         .accessibilityIdentifier("Projects grid")
     }
 
-    private var projectTable: some View {
-        Table(rows, selection: $model.selectedProjectID, sortOrder: $sortOrder) {
-            TableColumn("Project", value: \.name) { row in
-                HStack(spacing: JunoSpace.snug) {
-                    JunoIconView(.projects, size: 15)
-                        .foregroundStyle(.secondary)
-                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                        HStack(spacing: JunoSpace.hairline) {
-                            Text(row.project.name)
-                                .junoRowLabel()
-                                .lineLimit(1)
-                            if row.project.starred {
-                                Image(systemName: "star.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(Color.junoAccent)
-                                    .accessibilityLabel("Favourite")
-                            }
-                            if row.project.isPending {
-                                ProgressView()
-                                    .controlSize(.mini)
-                                    .accessibilityLabel("Waiting to sync")
-                            }
-                        }
-                        // The web's project card shows the instructions under the
-                        // name, and that preview is usually the only thing that
-                        // tells two similarly-named projects apart.
-                        Text(row.instructionsPreview)
-                            .junoCaption()
-                            .lineLimit(1)
-                    }
-                }
-                .help(row.instructionsPreview)
-            }
-            .width(min: 220, ideal: 360)
-
-            TableColumn("Chats", value: \.conversationCount) { row in
-                Text(row.conversationCount.formatted())
-                    .junoCaption()
-                    .monospacedDigit()
-            }
-            .width(min: 56, ideal: 64, max: 96)
-
-            TableColumn("Files", value: \.fileCount) { row in
-                Text(row.fileCount.formatted())
-                    .junoCaption()
-                    .monospacedDigit()
-            }
-            .width(min: 56, ideal: 64, max: 96)
-
-            // Relative, as the web's card footer is ("Updated 3d ago"). The
-            // column still sorts on the real date, and the absolute one is a
-            // pointer away.
-            TableColumn("Updated", value: \.updatedAt) { row in
-                Text(row.updatedAt, format: .relative(presentation: .named))
-                    .junoCaption()
-                    .help(row.updatedAt.formatted(date: .abbreviated, time: .shortened))
-            }
-            .width(min: 110, ideal: 150)
-        }
-        .tableStyle(.inset)
-        // The table's own scroll background is the system control colour, which
-        // reads cool against the card it now sits on.
-        .scrollContentBackground(.hidden)
-        // A short table draws alternating backgrounds for the *remaining* area,
-        // which showed as blank grey phantom rows under the real ones. Off, so
-        // the card's white runs to the bottom edge whatever the row count.
-        .alternatingRowBackgrounds(.disabled)
-        .contextMenu(forSelectionType: DesktopProjectRow.ID.self) { ids in
-            rowMenu(ids)
-        } primaryAction: { ids in
-            guard let id = ids.first else { return }
-            model.selectedProjectID = id
-        }
-        .onDeleteCommand {
-            if let project = model.selectedProject { deleteTarget = project }
-        }
-        .accessibilityIdentifier("Projects table")
-    }
-
+    /// The card's ⋯ menu, and its right-click menu — one definition, because a
+    /// project offers the same things however the reader asks for them.
     @ViewBuilder
-    private func rowMenu(_ ids: Set<DesktopProjectRow.ID>) -> some View {
-        if ids.count == 1, let id = ids.first,
-            let project = model.projects.first(where: { $0.id == id })
-        {
-            Button {
-                Task {
-                    await model.updateProject(id: project.id, starred: !project.starred)
-                }
-            } label: {
-                Label(
-                    project.starred ? "Remove favourite" : "Favourite",
-                    systemImage: project.starred ? "star.slash" : "star"
-                )
-            }
-            .disabled(project.isPending)
-            Button {
-                startRename(project)
-            } label: {
-                Label("Rename…", systemImage: "pencil")
-            }
-            .disabled(project.isPending)
-            Button {
-                model.selectedProjectID = project.id
-                showingFileImporter = true
-            } label: {
-                Label("Add files…", systemImage: "paperclip")
-            }
-            .disabled(project.isPending || model.isPerformingFileAction)
-            Divider()
-            Button(role: .destructive) {
-                deleteTarget = project
-            } label: {
-                Label("Delete project", systemImage: "trash")
-            }
-            .disabled(project.isPending)
-        } else {
-            // Right-clicking the table's empty space selects nothing, and an
-            // empty context menu is worse than no menu.
-            Button {
-                startCreate()
-            } label: {
-                Label("New project", systemImage: "folder.badge.plus")
-            }
+    private func projectMenu(_ project: NativeProject) -> some View {
+        Button {
+            togglePin(project)
+        } label: {
+            Label(
+                project.starred ? "Unpin" : "Pin",
+                systemImage: project.starred ? "pin.slash" : "pin"
+            )
         }
+        .disabled(project.isPending)
+        Button {
+            startRename(project)
+        } label: {
+            Label("Rename…", systemImage: "pencil")
+        }
+        .disabled(project.isPending)
+        // Not on the website's card menu, and kept anyway: dropping files onto a
+        // project is a Mac gesture, and this is the keyboard-and-menu half of it.
+        Button {
+            beginFileImport(for: project)
+        } label: {
+            Label("Add files…", systemImage: "paperclip")
+        }
+        .disabled(project.isPending || model.isPerformingFileAction)
+        Divider()
+        Button(role: .destructive) {
+            deleteTarget = project
+        } label: {
+            Label("Delete project", systemImage: "trash")
+        }
+        .disabled(project.isPending)
     }
+
+    // MARK: - Status
 
     /// The one thing on this screen allowed to float: a transient status control
     /// carrying an outage or a sync conflict, and the two ways out of it. It sits
-    /// over the canvas rather than pushing the table down, so a conflict does not
-    /// re-lay-out the rows the reader is looking at. Real glass, and the controls
+    /// over the canvas rather than pushing the grid down, so a conflict does not
+    /// re-lay-out the cards the reader is looking at. Real glass, and the controls
     /// inside it are plain — glass inside glass has no rim light left to read.
     @ViewBuilder
     private var statusControl: some View {
@@ -561,7 +465,7 @@ struct DesktopProjectsScreen: View {
     /// A conflict is its own state — it has two specific answers rather than a
     /// retry — so it is decided here. Everything else goes through the shared
     /// copy, which is what stops a bare "Not found" or "401" from being printed
-    /// under the table as if it were a sentence.
+    /// under the grid as if it were a sentence.
     private var status: (message: String, symbol: String, isConflict: Bool)? {
         if model.conflictedMutationCount > 0 {
             return (
@@ -580,48 +484,7 @@ struct DesktopProjectsScreen: View {
         return (resolved.message, resolved.symbol, false)
     }
 
-    // MARK: - Project detail
-
-    @ViewBuilder
-    private var projectDetail: some View {
-        if let project = model.selectedProject {
-            DesktopProjectInspector(
-                model: model,
-                conversationModel: conversationModel,
-                configuration: configuration,
-                project: project,
-                openConversation: openConversation,
-                startConversation: { prompt in startConversation(project.id, prompt) },
-                openVoiceMode: { modelID in
-                    startVoice(modelID: modelID, projectID: project.id)
-                },
-                addFiles: { showingFileImporter = true },
-                editInstructions: { editingInstructionsFor = project },
-                toggleFavourite: {
-                    Task {
-                        await model.updateProject(
-                            id: project.id,
-                            starred: !project.starred
-                        )
-                    }
-                },
-                renameProject: { startRename(project) },
-                deleteProject: { deleteTarget = project },
-                showAllProjects: { showingProjectBrowser = true }
-            )
-        } else {
-            // No action here when there are no projects at all: the main region
-            // already offers the one "New project" button, and a second copy of
-            // the same call to action two panes apart reads as two features.
-            JunoEmptyState(
-                title: "No project selected",
-                message: model.projects.isEmpty
-                    ? "Create a project to keep a topic's chats, files and instructions together."
-                    : "Select a project to see its instructions, chats and files.",
-                symbol: "folder"
-            )
-        }
-    }
+    // MARK: - Actions
 
     private func startCreate() {
         showingNewProject = true
@@ -632,11 +495,25 @@ struct DesktopProjectsScreen: View {
         renameTarget = project
     }
 
+    private func togglePin(_ project: NativeProject) {
+        Task { await model.updateProject(id: project.id, starred: !project.starred) }
+    }
+
+    private func beginFileImport(for project: NativeProject) {
+        fileImportTarget = project.id
+        showingFileImporter = true
+    }
+
     private func startVoice(modelID: String, projectID: String) {
-        guard let sender = configuration.requestSender,
-            configuration.voiceTranscriptClient != nil
-        else { return }
-        voiceSession = DesktopVoiceSession(
+        guard let sender = configuration.requestSender else {
+            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            return
+        }
+        guard configuration.voiceTranscriptClient != nil else {
+            voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+        let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
@@ -647,10 +524,22 @@ struct DesktopProjectsScreen: View {
             conversationID: nil,
             projectID: projectID
         )
+        voiceSession = started
+        // Dialled here rather than from the dock — see the same note in
+        // ``DesktopConversationView/startVoice(modelID:)``.
+        Task { await started.controller.start() }
     }
 
-    private func voiceSheet(_ voiceSession: DesktopVoiceSession) -> some View {
-        DesktopVoiceView(
+    /// The live call, as this project's chat column needs it.
+    ///
+    /// Projects routes a saved call **differently from Chat**, and deliberately
+    /// so: there is never an open conversation here, so `conversationID` is
+    /// always nil and the server makes one, which this screen then opens. Chat
+    /// appends to the thread the reader was already in. Do not unify them.
+    private var voiceColumn: DesktopVoiceColumn? {
+        guard let voiceSession else { return nil }
+        return DesktopVoiceColumn(
+            sessionID: voiceSession.id,
             controller: voiceSession.controller,
             saveTranscript: { sessionID, turns in
                 guard let client = configuration.voiceTranscriptClient else {
@@ -684,85 +573,205 @@ struct DesktopProjectsScreen: View {
     }
 }
 
-/// One table row: a project plus the two counts the table compares across rows.
-///
-/// The counts live here rather than being read inside a cell because a sortable
-/// `TableColumn` needs a key path to the value it sorts by, and "chats" and
-/// "files" are counts of two other collections on the model.
-// MARK: - Card
+// MARK: - Route, sort, metrics
 
-private enum DesktopProjectGrid {
-    /// Wide enough for a serif title and two lines of instructions without the
-    /// preview collapsing to three words; narrow enough that a wide window shows
-    /// three across, as the website does.
-    static let minimumCardWidth: CGFloat = 300
-    static let maximumCardWidth: CGFloat = 460
-    /// A floor, not a fixed height: a project with no instructions must not make
-    /// its neighbour in the same row look half-empty.
-    static let minimumCardHeight: CGFloat = 150
+/// Where the Projects destination is. Its root is the index, which is the whole
+/// fix: no value of this type means "open whichever project sorted first".
+private enum DesktopProjectRoute: Equatable {
+    case index
+    case project(String)
 }
 
+/// The website's Sort-by control, with the same three keys.
+///
+/// Pinned projects lead in every order. The store and the sidebar already list
+/// favourites first, and a sort that silently unpinned them would make one
+/// account look like two different products in two places.
+private enum DesktopProjectSort: String, CaseIterable, Identifiable {
+    case updated
+    case name
+    case conversations
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .updated: "Last updated"
+        case .name: "Name"
+        case .conversations: "Conversations"
+        }
+    }
+
+    /// A strict ordering: every key falls through to the id, so two projects that
+    /// tie on the sort key still have a stable, repeatable position.
+    func precedes(_ lhs: DesktopProjectRow, _ rhs: DesktopProjectRow) -> Bool {
+        if lhs.project.starred != rhs.project.starred { return lhs.project.starred }
+        switch self {
+        case .updated:
+            if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+        case .name:
+            let order = lhs.name.localizedStandardCompare(rhs.name)
+            if order != .orderedSame { return order == .orderedAscending }
+        case .conversations:
+            if lhs.conversationCount != rhs.conversationCount {
+                return lhs.conversationCount > rhs.conversationCount
+            }
+        }
+        return lhs.id < rhs.id
+    }
+}
+
+/// The measurements this screen shares, so the index and the detail cannot drift
+/// apart the way two hand-built headers did.
+private enum DesktopProjectMetrics {
+    /// The index's reading width — the website's `max-w-5xl`.
+    static let indexWidth: CGFloat = 1024
+    /// The detail's — the website's `max-w-6xl`. Wider because it carries a
+    /// composer and a context column side by side.
+    static let detailWidth: CGFloat = 1152
+    /// The glyph beside the serif title, at the website's `size-[0.9em]`.
+    static let titleGlyphSize: CGFloat = 25
+    /// One search field, one height.
+    static let searchHeight: CGFloat = 32
+    /// A project card's corner. Deliberately larger than ``JunoRadius/panel`` for
+    /// the same reason ``JunoSettingsMetrics/tileRadius`` is: a card holding a
+    /// title, a paragraph and a footer is a bigger, calmer object than an
+    /// inspector panel, and the website draws it at `rounded-[28px]`.
+    static let cardRadius: CGFloat = 20
+    /// The website's `h-[160px]`, as a floor rather than a fixed height.
+    ///
+    /// `NativeProject` has no cover image even though the web API returns
+    /// `coverUrl`, so there is no 260-point variant here and none is invented:
+    /// the card is designed to read correctly with type alone.
+    static let cardHeight: CGFloat = 160
+    /// Room kept clear at the top-trailing corner for the ⋯ menu, which is an
+    /// overlay so it stays clickable inside the card's own button.
+    static let cardMenuInset: CGFloat = 22
+    /// The context column beside the composer — the website's `20rem`.
+    static let contextColumnWidth: CGFloat = 320
+    /// Under this the detail stacks into one column. Below it the composer would
+    /// be squeezed under 440 points, which is where its own controls start to
+    /// wrap.
+    static let twoColumnThreshold: CGFloat = 820
+
+    /// Two cards across at the full reading width, one when the window is narrow
+    /// — the website's `grid gap-4 sm:grid-cols-2`. A computed property rather
+    /// than a stored one: `GridItem` is a view value, not shared state.
+    static var gridColumns: [GridItem] {
+        [
+            GridItem(
+                .adaptive(minimum: 340, maximum: 560),
+                spacing: JunoSpace.regular,
+                alignment: .top
+            )
+        ]
+    }
+}
+
+// MARK: - Card
+
 /// One project, in the website's card anatomy: serif name, an actions menu, the
-/// instructions preview, then a footer of real counts.
+/// instructions preview, then a footer of real counts on a hairline.
 ///
 /// The instructions preview is the point of the card. It is the only thing that
-/// distinguishes two projects at a glance, and it is what the previous table
-/// could not give room to.
+/// distinguishes two similarly named projects at a glance, and it is what a row
+/// of raw `.caption` text could not give room to.
 private struct DesktopProjectCard<MenuContent: View>: View {
     let row: DesktopProjectRow
-    let isSelected: Bool
+    /// Position in the grid, for the staggered entrance. Capped, as on the web,
+    /// so the fortieth card is not still waiting two seconds in.
+    let index: Int
     let open: () -> Void
     @ViewBuilder var menu: () -> MenuContent
 
     @State private var isHovering = false
+    @State private var hasAppeared = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            titleRow
-            instructions
-            Spacer(minLength: JunoSpace.cozy)
-            Divider()
-            footer
+        Button(action: open) {
+            card
         }
-        .frame(minHeight: DesktopProjectGrid.minimumCardHeight, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .junoCard()
-        .overlay(
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .strokeBorder(
-                    isSelected ? Color.junoAccent.opacity(0.55) : .clear,
-                    lineWidth: 1.5
-                )
-        )
-        .contentShape(.rect)
-        .onTapGesture(perform: open)
+        .buttonStyle(.plain)
+        // An overlay rather than a child of the button's label: a menu inside a
+        // button's label is not clickable, and the website's card has the same
+        // arrangement — a menu that does not open the project it sits on.
+        .overlay(alignment: .topTrailing) { actionsMenu }
+        .contextMenu { menu() }
         .onHover { isHovering = $0 }
+        .offset(y: isHovering ? -2 : 0)
+        .shadow(
+            color: .junoCardShadow,
+            radius: isHovering ? 14 : 0,
+            y: isHovering ? 6 : 0
+        )
         .animation(JunoMotion.fast, value: isHovering)
-        .accessibilityElement(children: .contain)
+        .opacity(hasAppeared ? 1 : 0)
+        .offset(y: hasAppeared ? 0 : 6)
+        .animation(
+            JunoMotion.standard.delay(Double(min(index, 12)) * 0.04),
+            value: hasAppeared
+        )
+        .onAppear { hasAppeared = true }
         .accessibilityLabel(row.name)
         .accessibilityValue(
             "\(row.conversationCount) chats, \(row.fileCount) files. \(row.instructionsPreview)"
         )
-        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("juno.project-card.\(row.id)")
+        .help(row.instructionsPreview)
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            titleRow
+            Text(row.instructionsPreview)
+                .junoCaption()
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, JunoSpace.roomy)
+                .padding(.top, JunoSpace.snug)
+
+            Spacer(minLength: JunoSpace.cozy)
+
+            Divider()
+            footer
+        }
+        .frame(minHeight: DesktopProjectMetrics.cardHeight, alignment: .top)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Clipped before the card fill is applied, so the footer's wash stops at
+        // the corner curve instead of squaring it off.
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: DesktopProjectMetrics.cardRadius,
+                style: .continuous
+            )
+        )
+        .junoCard(cornerRadius: DesktopProjectMetrics.cardRadius)
+        .contentShape(.rect)
     }
 
     private var titleRow: some View {
-        HStack(alignment: .top, spacing: JunoSpace.snug) {
+        HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
             Text(row.name)
                 .font(JunoSerif.cardTitle)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+                .lineLimit(1)
+                .truncationMode(.tail)
             if row.project.starred {
-                Image(systemName: "star.fill")
-                    .font(.caption)
+                JunoIconView(.pin, size: 12)
                     .foregroundStyle(Color.junoAccent)
-                    .accessibilityLabel("Favourite")
+                    .accessibilityLabel("Pinned")
             }
-            Spacer(minLength: JunoSpace.snug)
-            actionsMenu
+            if row.project.isPending {
+                ProgressView()
+                    .controlSize(.mini)
+                    .accessibilityLabel("Waiting to sync")
+            }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, JunoSpace.regular)
-        .padding(.top, JunoSpace.regular)
+        .padding(.leading, JunoSpace.roomy)
+        .padding(.trailing, JunoSpace.roomy + DesktopProjectMetrics.cardMenuInset)
+        .padding(.top, JunoSpace.roomy)
     }
 
     private var actionsMenu: some View {
@@ -774,50 +783,36 @@ private struct DesktopProjectCard<MenuContent: View>: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 18)
-        // Revealed on hover like the web's row actions, but kept in the layout
-        // at all times so the title never reflows under the pointer.
-        .opacity(isHovering || isSelected ? 1 : 0)
-        .accessibilityLabel("Project actions")
-    }
-
-    private var instructions: some View {
-        Text(row.instructionsPreview)
-            .junoCaption()
-            .lineLimit(2)
-            .multilineTextAlignment(.leading)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, JunoSpace.regular)
-            .padding(.top, JunoSpace.snug)
+        .frame(width: DesktopProjectMetrics.cardMenuInset)
+        // Revealed on hover like the website's row actions, but kept in the
+        // layout at all times so the title never reflows under the pointer.
+        .opacity(isHovering ? 1 : 0)
+        .padding(.trailing, JunoSpace.regular)
+        .padding(.top, JunoSpace.regular)
+        .accessibilityLabel("Actions for \(row.name)")
+        .accessibilityIdentifier("juno.project-card-actions.\(row.id)")
     }
 
     private var footer: some View {
         HStack(spacing: JunoSpace.snug) {
-            Text(updatedLabel)
+            Text("Updated \(row.updatedAt.formatted(.relative(presentation: .named)))")
                 .junoCodeSmall()
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
             Spacer(minLength: JunoSpace.snug)
-            count("bubble.left", row.conversationCount, "chats")
-            count("doc", row.fileCount, "files")
-            if row.project.isPending {
-                ProgressView()
-                    .controlSize(.mini)
-                    .accessibilityLabel("Waiting to sync")
-            }
+            count(.conversation, row.conversationCount, "chats")
+            count(.file, row.fileCount, "files")
         }
-        .padding(.horizontal, JunoSpace.regular)
+        .padding(.horizontal, JunoSpace.roomy)
         .padding(.vertical, JunoSpace.cozy)
+        // The canvas colour *inside* a raised card reads as the website's
+        // `bg-muted/10`: a recess, using a token rather than a guessed alpha.
+        .background(Color.junoCanvasWarm)
     }
 
-    private var updatedLabel: String {
-        "Updated " + row.updatedAt.formatted(.relative(presentation: .named))
-    }
-
-    private func count(_ symbol: String, _ value: Int, _ label: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol)
-                .imageScale(.small)
+    private func count(_ icon: JunoIcon, _ value: Int, _ label: String) -> some View {
+        HStack(spacing: JunoSpace.hairline) {
+            JunoIconView(icon, size: 11)
             Text(value.formatted())
                 .monospacedDigit()
         }
@@ -827,6 +822,82 @@ private struct DesktopProjectCard<MenuContent: View>: View {
     }
 }
 
+/// The loading state the website shows: six shaped cards, revealed 50ms apart.
+///
+/// Built from the real card's shape under `.redacted(reason: .placeholder)`
+/// rather than from hand-painted bars, so a change to the card is a change to its
+/// skeleton. A lone spinner used to stand in for this, which told the reader
+/// nothing about what was arriving.
+private struct DesktopProjectSkeletonGrid: View {
+    @State private var hasAppeared = false
+
+    var body: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: DesktopProjectMetrics.gridColumns,
+                alignment: .leading,
+                spacing: JunoSpace.regular
+            ) {
+                ForEach(0..<6, id: \.self) { index in
+                    card
+                        .opacity(hasAppeared ? 1 : 0)
+                        .animation(
+                            JunoMotion.standard.delay(Double(index) * 0.05),
+                            value: hasAppeared
+                        )
+                }
+            }
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.vertical, JunoSpace.section)
+            .frame(maxWidth: DesktopProjectMetrics.indexWidth)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .onAppear { hasAppeared = true }
+        .accessibilityLabel("Loading projects")
+        .accessibilityIdentifier("Projects loading")
+    }
+
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                Text("Project name")
+                    .font(JunoSerif.cardTitle)
+                Text("Two lines of the instructions this project applies to every chat inside it.")
+                    .junoCaption()
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(JunoSpace.roomy)
+
+            Spacer(minLength: JunoSpace.cozy)
+
+            Divider()
+            HStack {
+                Text("Updated recently")
+                Spacer(minLength: JunoSpace.snug)
+                Text("0 · 0")
+            }
+            .junoCodeSmall()
+            .padding(.horizontal, JunoSpace.roomy)
+            .padding(.vertical, JunoSpace.cozy)
+            .background(Color.junoCanvasWarm)
+        }
+        .frame(minHeight: DesktopProjectMetrics.cardHeight, alignment: .top)
+        .redacted(reason: .placeholder)
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: DesktopProjectMetrics.cardRadius,
+                style: .continuous
+            )
+        )
+        .junoCard(cornerRadius: DesktopProjectMetrics.cardRadius)
+        .accessibilityHidden(true)
+    }
+}
+
+/// One card's worth of project: the record plus the two counts the index shows
+/// and can sort on, read once here rather than in every cell.
 private struct DesktopProjectRow: Identifiable {
     let project: NativeProject
     let conversationCount: Int
@@ -836,11 +907,11 @@ private struct DesktopProjectRow: Identifiable {
     var name: String { project.name }
     var updatedAt: Date { project.updatedAt }
 
-    /// The instructions on one line, for the second line of the name cell.
+    /// The instructions on one run of text, for the card's two-line preview.
     ///
     /// Collapsed rather than truncated by `lineLimit` alone: a prompt usually
-    /// opens with a blank line or a heading, so the first *visual* line of the
-    /// raw text is frequently empty and the cell would look broken.
+    /// opens with a heading or a blank line, so the first *visual* line of the
+    /// raw text is frequently empty and the card would look broken.
     var instructionsPreview: String {
         let collapsed = project.instructions
             .split(whereSeparator: \.isNewline)
@@ -851,7 +922,7 @@ private struct DesktopProjectRow: Identifiable {
     }
 }
 
-// MARK: - Inspector
+// MARK: - Detail
 
 private enum DesktopProjectTab: String, CaseIterable, Identifiable {
     case overview
@@ -861,14 +932,15 @@ private enum DesktopProjectTab: String, CaseIterable, Identifiable {
     var label: String { rawValue.capitalized }
 }
 
-/// The selected project, as a native inspector.
+/// One project's page: the website's `/projects/[id]`, column for column.
 ///
-/// A grouped `Form`, because that is how macOS draws exactly the treatment the
-/// website uses: each section becomes a rounded raised card on the inspector's
-/// own background, so the pane reads as white cards on a warm ground without a
-/// single hand-painted fill. The two dates at the top are `LabeledContent`, the
-/// same component the system's own inspectors use for a labelled value.
-private struct DesktopProjectInspector: View {
+/// **What this is not any more.** It was an `HSplitView` whose right-hand pane
+/// repeated the left one — instructions twice, files twice, the counts three
+/// times — so the page argued with itself about which copy was authoritative.
+/// The website's answer, and now this one: Overview is the *working* surface
+/// (composer, chats, and a context card that summarises), Workspace is where the
+/// same instructions and files are actually managed. Never both at once.
+private struct DesktopProjectDetail: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
     @Bindable var conversationModel: NativeConversationModel<SQLiteAccountRepository>
     let configuration: JunoDesktopConfiguration
@@ -876,16 +948,22 @@ private struct DesktopProjectInspector: View {
     let openConversation: (String) -> Void
     let startConversation: (String?) -> Void
     let openVoiceMode: (String) -> Void
+    /// The live call, when there is one. Passed down rather than owned here
+    /// because the screen above owns the session *and* its save routing — see
+    /// ``DesktopProjectsScreen/voiceColumn``.
+    let voiceColumn: DesktopVoiceColumn?
     let addFiles: () -> Void
     let editInstructions: () -> Void
-    let toggleFavourite: () -> Void
+    let togglePin: () -> Void
     let renameProject: () -> Void
     let deleteProject: () -> Void
     let showAllProjects: () -> Void
 
+    @State private var tab = DesktopProjectTab.overview
+    @State private var isWide = true
+    @State private var isDropTargeted = false
     @State private var renameFileTarget: NativeProjectFile?
     @State private var fileNameDraft = ""
-    @State private var tab = DesktopProjectTab.overview
 
     private var conversations: [NativeProjectConversation] {
         model.conversationsByProject[project.id] ?? []
@@ -896,101 +974,87 @@ private struct DesktopProjectInspector: View {
     }
 
     var body: some View {
-        HSplitView {
-            projectPage
-                .frame(minWidth: 620, maxWidth: .infinity)
-
-            contextInspector
-                .frame(minWidth: 280, idealWidth: 330, maxWidth: 400)
-        }
-            // Dropping a file onto the project's details is the same operation as
-            // the Add files… button, and it is the gesture a Mac user tries first.
-            .dropDestination(for: URL.self) { urls, _ in
-                guard !project.isPending, !urls.isEmpty else { return false }
-                Task {
-                    await DesktopProjectFiles.upload(urls, projectID: project.id, model: model)
-                }
-                return true
-            }
-            .alert(
-                "Rename file",
-                isPresented: Binding(
-                    get: { renameFileTarget != nil },
-                    set: { presented in if !presented { renameFileTarget = nil } }
-                )
-            ) {
-                TextField("File name", text: $fileNameDraft)
-                Button("Cancel", role: .cancel) { renameFileTarget = nil }
-                Button("Rename") {
-                    if let target = renameFileTarget {
-                        Task { await model.renameFile(id: target.id, fileName: fileNameDraft) }
-                    }
-                    renameFileTarget = nil
-                }
-            }
-    }
-
-    private var projectPage: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
-                Button(action: showAllProjects) {
-                    Label("All projects", systemImage: "chevron.left")
+                backControl
+                header
+                sectionPicker
+                if tab == .overview {
+                    overview
+                } else {
+                    workspace
+                }
+            }
+            // Width only. The column count changes this page's height, never its
+            // width, so the measurement cannot feed back into itself.
+            .onGeometryChange(for: Bool.self) { proxy in
+                proxy.size.width >= DesktopProjectMetrics.twoColumnThreshold
+            } action: { isWide = $0 }
+            .frame(maxWidth: DesktopProjectMetrics.detailWidth, alignment: .leading)
+            .padding(.horizontal, JunoSpace.region)
+            .padding(.vertical, JunoSpace.section)
+            .frame(maxWidth: .infinity)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        // Dropping a file onto the project is the same operation as Add files…,
+        // and it is the gesture a Mac user tries first.
+        .dropDestination(for: URL.self) { urls, _ in
+            guard !project.isPending, !urls.isEmpty else { return false }
+            Task {
+                await DesktopProjectFiles.upload(urls, projectID: project.id, model: model)
+            }
+            return true
+        } isTargeted: { isDropTargeted = $0 }
+        .alert(
+            "Rename file",
+            isPresented: Binding(
+                get: { renameFileTarget != nil },
+                set: { presented in if !presented { renameFileTarget = nil } }
+            )
+        ) {
+            TextField("File name", text: $fileNameDraft)
+            Button("Cancel", role: .cancel) { renameFileTarget = nil }
+            Button("Rename") {
+                if let target = renameFileTarget {
+                    Task { await model.renameFile(id: target.id, fileName: fileNameDraft) }
+                }
+                renameFileTarget = nil
+            }
+        }
+        .accessibilityIdentifier("Project detail")
+    }
+
+    private var backControl: some View {
+        Button(action: showAllProjects) {
+            Label("All projects", systemImage: "chevron.left")
+                .junoRowLabel()
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Back to every project")
+        .accessibilityIdentifier("All projects")
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            Text("Project")
+                .junoCodeSmall()
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+
+            HStack(alignment: .center, spacing: JunoSpace.cozy) {
+                Text(project.name)
+                    .font(JunoSerif.font(size: 38, relativeTo: .largeTitle, face: .medium))
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                Button(action: renameProject) {
+                    Image(systemName: "pencil")
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("All projects")
-
-                projectHeader
-
-                Picker("Project section", selection: $tab) {
-                    ForEach(DesktopProjectTab.allCases) { tab in
-                        Text(tab.label).tag(tab)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 240)
-                .accessibilityIdentifier("Project section")
-
-                if tab == .overview {
-                    quickStart
-                    projectChats
-                } else {
-                    workspaceOverview
-                }
-            }
-            .frame(maxWidth: 900, alignment: .leading)
-            .padding(.horizontal, JunoSpace.section)
-            .padding(.vertical, JunoSpace.roomy)
-        }
-        .scrollBounceBehavior(.basedOnSize)
-    }
-
-    private var projectHeader: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .center, spacing: JunoSpace.cozy) {
-                VStack(alignment: .leading, spacing: JunoSpace.tight) {
-                    Text("PROJECT")
-                        .font(.caption.weight(.semibold))
-                        .tracking(1.2)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: JunoSpace.snug) {
-                        Text(project.name)
-                            .font(JunoSerif.font(
-                                size: 38,
-                                relativeTo: .largeTitle,
-                                face: .medium
-                            ))
-                            .lineLimit(2)
-                            .textSelection(.enabled)
-                        Button(action: renameProject) {
-                            Image(systemName: "pencil")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Rename project")
-                    }
-                }
+                .disabled(project.isPending)
+                .help("Rename project")
+                .accessibilityLabel("Rename project")
 
                 Spacer(minLength: JunoSpace.regular)
 
@@ -1004,28 +1068,36 @@ private struct DesktopProjectInspector: View {
                 .help("Start a chat with this project's instructions and files")
                 .accessibilityIdentifier("New chat in project")
 
-                projectActions
+                pinControl
+                actionsMenu
             }
 
-            Text(projectSummary)
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            Text(
+                "^[\(conversations.count) chat](inflect: true) · ^[\(files.count) file](inflect: true) · Updated \(project.updatedAt.formatted(.relative(presentation: .named)))"
+            )
+            .junoCodeSmall()
+            .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("Project detail header")
     }
 
-    private var projectActions: some View {
+    private var pinControl: some View {
+        Button(action: togglePin) {
+            JunoIconView(.pin, size: 16)
+                .foregroundStyle(project.starred ? Color.junoAccent : Color.secondary)
+        }
+        .buttonStyle(.plain)
+        .disabled(project.isPending || model.isMutating)
+        .help(project.starred ? "Unpin this project" : "Pin this project")
+        .accessibilityLabel(project.starred ? "Unpin project" : "Pin project")
+        .accessibilityIdentifier("Pin project")
+    }
+
+    private var actionsMenu: some View {
         Menu {
-            Button {
-                toggleFavourite()
-            } label: {
-                Label(
-                    project.starred ? "Remove from Favourites" : "Add to Favourites",
-                    systemImage: project.starred ? "star.slash" : "star"
-                )
-            }
             Button("Rename…", action: renameProject)
+            Button("Edit instructions…", action: editInstructions)
             Button("Add files…", action: addFiles)
             Divider()
             Button("Delete project…", role: .destructive, action: deleteProject)
@@ -1033,14 +1105,45 @@ private struct DesktopProjectInspector: View {
             Label("Project actions", systemImage: "ellipsis")
         }
         .labelStyle(.iconOnly)
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
         .disabled(project.isPending || model.isMutating)
-        .help("Favourite, rename, add files, or delete this project")
+        .help("Rename, edit instructions, add files, or delete this project")
         .accessibilityIdentifier("Project detail actions")
     }
 
-    private var projectSummary: String {
-        "\(conversations.count) chats · \(files.count) files · Updated "
-            + project.updatedAt.formatted(.relative(presentation: .named))
+    private var sectionPicker: some View {
+        Picker("Project section", selection: $tab) {
+            ForEach(DesktopProjectTab.allCases) { tab in
+                Text(tab.label).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 240)
+        .accessibilityIdentifier("Project section")
+    }
+
+    // MARK: Overview
+
+    /// `AnyLayout` rather than two branches of an `if`: the children keep their
+    /// identity across the switch, so dragging the window past the threshold does
+    /// not tear down and rebuild the composer with the reader's draft in it.
+    private var overview: some View {
+        let layout = isWide
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: JunoSpace.section))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: JunoSpace.section))
+        return layout {
+            VStack(alignment: .leading, spacing: JunoSpace.section) {
+                quickStart
+                projectChats
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            contextCard
+                .frame(maxWidth: isWide ? DesktopProjectMetrics.contextColumnWidth : .infinity)
+        }
     }
 
     private var quickStart: some View {
@@ -1056,153 +1159,190 @@ private struct DesktopProjectInspector: View {
             fixedProjectID: project.id,
             didSendConversation: openConversation
         )
+        // Voice happens here, over this project's own composer, rather than in a
+        // sheet — see ``DesktopVoiceDock``.
+        .junoVoiceColumn(voiceColumn)
         .frame(maxWidth: .infinity)
         .disabled(project.isPending)
     }
 
     private var projectChats: some View {
         VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            Text("Chats in this project")
-                .font(.headline)
+            eyebrow("Chats in this project")
             if conversations.isEmpty {
-                ContentUnavailableView(
-                    "No chats yet",
-                    systemImage: "bubble.left",
-                    description: Text("Start above and this project's context will be attached.")
+                DesktopProjectPlaceholder(
+                    title: "No chats yet",
+                    message: "Ask a question in the composer above to start a conversation."
                 )
-                .frame(maxWidth: .infinity, minHeight: 180)
             } else {
-                VStack(spacing: 0) {
-                    ForEach(conversations) { conversation in
-                        Button {
-                            openConversation(conversation.id)
-                        } label: {
-                            HStack(spacing: JunoSpace.cozy) {
-                                Image(systemName: "bubble.left")
-                                    .foregroundStyle(.secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(conversation.title)
-                                        .font(.body.weight(.medium))
-                                        .lineLimit(1)
-                                    Text(
-                                        conversation.lastMessageAt,
-                                        format: .relative(presentation: .named)
-                                    )
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .padding(.horizontal, JunoSpace.regular)
-                            .frame(minHeight: 58)
-                            .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        if conversation.id != conversations.last?.id {
-                            Divider().padding(.leading, 44)
-                        }
-                    }
-                }
-                .background(.background, in: RoundedRectangle(
-                    cornerRadius: JunoRadius.panel,
-                    style: .continuous
-                ))
-                .overlay {
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                        .strokeBorder(Color.junoBorder)
+                ForEach(conversations) { conversation in
+                    chatRow(conversation)
                 }
             }
         }
     }
 
-    private var workspaceOverview: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.section) {
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack {
-                    Text("Instructions")
-                        .font(.headline)
-                    Spacer()
-                    Button("Edit", action: editInstructions)
+    private func chatRow(_ conversation: NativeProjectConversation) -> some View {
+        Button {
+            openConversation(conversation.id)
+        } label: {
+            HStack(spacing: JunoSpace.cozy) {
+                JunoIconView(.conversation, size: 15)
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    Text(conversation.title)
+                        .junoRowLabel()
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                    Text(
+                        "Last message \(conversation.lastMessageAt.formatted(.relative(presentation: .named)))"
+                    )
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
                 }
-                Text(project.instructions.isEmpty ? "No instructions set." : project.instructions)
-                    .font(.body)
-                    .foregroundStyle(project.instructions.isEmpty ? .secondary : .primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Spacer(minLength: JunoSpace.snug)
+                if conversation.pinned {
+                    JunoIconView(.pin, size: 12)
+                        .foregroundStyle(Color.junoAccent)
+                        .accessibilityLabel("Pinned")
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, JunoSpace.regular)
+            .padding(.vertical, JunoSpace.cozy)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .junoCard()
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .help("Open this chat")
+        .accessibilityLabel("Open chat, \(conversation.title)")
+    }
+
+    /// The website's right-hand card: what this project *is*, summarised, beside
+    /// the place the reader works. Every control on it opens the surface that
+    /// owns the thing it summarises — nothing is edited twice.
+    private var contextCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            contextInstructions
+            Divider()
+            contextFiles
+            Divider()
+            contextFacts
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .junoCard()
+        .accessibilityIdentifier("Project context")
+    }
+
+    private var contextInstructions: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack {
+                eyebrow("Instructions")
+                Spacer(minLength: JunoSpace.snug)
+                Button(action: editInstructions) {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(project.isPending || model.isMutating)
+                .help("Edit this project's instructions")
+                .accessibilityLabel("Edit project instructions")
+                .accessibilityIdentifier("Edit project instructions")
             }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-                HStack {
-                    Text("Project files")
-                        .font(.headline)
-                    Spacer()
-                    Button("Add files…", action: addFiles)
+            if project.instructions.isEmpty {
+                DesktopProjectPlaceholder(
+                    message: "No instructions yet — add a prompt Juno follows in every chat here.",
+                    action: editInstructions
+                )
+            } else {
+                Button(action: editInstructions) {
+                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                        // Monospaced: it is a prompt, and its structure is part of
+                        // what the reader is checking.
+                        Text(project.instructions)
+                            .junoCode()
+                            .foregroundStyle(.secondary)
+                            .lineLimit(4)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(instructionsFacts)
+                            .junoCodeSmall()
+                            .foregroundStyle(.tertiary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(JunoSpace.cozy)
+                    .junoPanel(cornerRadius: JunoRadius.control)
+                    .contentShape(.rect)
                 }
-                if files.isEmpty {
-                    Text("No files yet. Drop files anywhere in this workspace or add them here.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(files) { file in
-                        Label(file.fileName, systemImage: symbol(for: file))
+                .buttonStyle(.plain)
+                .help("Edit this project's instructions")
+            }
+        }
+        .padding(JunoSpace.regular)
+    }
+
+    private var instructionsFacts: String {
+        let lines = project.instructions
+            .split(whereSeparator: \.isNewline)
+            .count
+        return "\(project.instructions.count.formatted()) chars · \(lines) lines"
+    }
+
+    private var contextFiles: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            HStack {
+                eyebrow("Files")
+                Spacer(minLength: JunoSpace.snug)
+                Button(action: addFiles) {
+                    Image(systemName: "plus")
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .disabled(project.isPending || model.isPerformingFileAction)
+                .help("Add files to this project")
+                .accessibilityLabel("Add project files")
+                .accessibilityIdentifier("Add project files")
+            }
+
+            if files.isEmpty {
+                DesktopProjectPlaceholder(
+                    message: "Add PDFs, documents, or other text to reference in this project.",
+                    action: addFiles
+                )
+            } else {
+                // Names and sizes only. Managing files — rename, delete, open — is
+                // Workspace's job, and putting the same menu in both places is how
+                // this screen ended up with two of everything.
+                ForEach(files) { file in
+                    HStack(spacing: JunoSpace.snug) {
+                        Image(systemName: DesktopProjectFileFacts.symbol(for: file))
+                            .foregroundStyle(.secondary)
+                            .accessibilityHidden(true)
+                        Text(file.fileName)
+                            .junoCaption()
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: JunoSpace.snug)
+                        Text(DesktopProjectFileFacts.size(of: file))
+                            .junoCodeSmall()
+                            .foregroundStyle(.secondary)
                     }
                 }
             }
         }
         .padding(JunoSpace.regular)
-        .background(.background, in: RoundedRectangle(
-            cornerRadius: JunoRadius.panel,
-            style: .continuous
-        ))
-        .overlay {
-            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                .strokeBorder(Color.junoBorder)
-        }
     }
 
-    private var contextInspector: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: JunoSpace.cozy) {
-                Image(systemName: "folder.fill")
-                    .font(.title3)
-                    .foregroundStyle(Color.junoAccent)
-                    .frame(width: 38, height: 38)
-                    .background(.quaternary, in: RoundedRectangle(
-                        cornerRadius: JunoRadius.row,
-                        style: .continuous
-                    ))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(project.name)
-                        .font(.headline)
-                        .lineLimit(1)
-                    Text("Private project context")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-            .padding(JunoSpace.regular)
-
-            Divider()
-
-            List {
-                instructions
-                projectFiles
-                overview
-            }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-        }
-        .background(.bar)
-    }
-
-    private var overview: some View {
-        Section("Overview") {
+    private var contextFacts: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            eyebrow("Details")
             LabeledContent("Updated") {
                 Text(project.updatedAt.formatted(date: .abbreviated, time: .shortened))
             }
@@ -1214,104 +1354,123 @@ private struct DesktopProjectInspector: View {
                     Text("Waiting to sync")
                 }
             }
-            LabeledContent("Contents") {
-                Text("\(conversations.count) chats · \(files.count) files")
-                    .monospacedDigit()
-            }
+        }
+        .junoCaption()
+        .padding(JunoSpace.regular)
+    }
+
+    // MARK: Workspace
+
+    private var workspace: some View {
+        let layout = isWide
+            ? AnyLayout(HStackLayout(alignment: .top, spacing: JunoSpace.section))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: JunoSpace.section))
+        return layout {
+            instructionsCard
+            filesCard
         }
     }
 
-    private var instructions: some View {
-        Section {
+    private var instructionsCard: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    eyebrow("System instructions")
+                    Text("How Juno behaves in this project")
+                        .font(JunoSerif.cardTitle)
+                }
+                Spacer(minLength: JunoSpace.snug)
+                Button(action: editInstructions) {
+                    Label("Full editor", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+                .disabled(project.isPending || model.isMutating)
+                .accessibilityIdentifier("Open instructions editor")
+            }
+
             if project.instructions.isEmpty {
-                Text("No instructions set.")
-                    .junoCaption()
+                DesktopProjectPlaceholder(
+                    title: "No instructions yet",
+                    message: "Add a prompt Juno reads before every chat in this project.",
+                    action: editInstructions
+                )
             } else {
                 Text(project.instructions)
-                    .junoMono()
-                    .lineLimit(14)
+                    .junoCode()
                     .textSelection(.enabled)
-                    .padding(.vertical, JunoSpace.hairline)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(JunoSpace.cozy)
+                    .junoPanel(cornerRadius: JunoRadius.control)
+                Text("\(instructionsFacts) · Updated \(project.updatedAt.formatted(.relative(presentation: .named)))")
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
             }
-            Button(
-                project.instructions.isEmpty ? "Add instructions…" : "Edit instructions…",
-                action: editInstructions
-            )
-            .disabled(project.isPending || model.isMutating)
-            .accessibilityIdentifier("Edit project instructions")
-        } header: {
-            Text("Instructions")
-        } footer: {
-            Text("Included in every chat in this project.")
+
+            Text("These instructions are prepended to every chat in this project — Juno reads them before your first message, alongside the files below.")
                 .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(JunoSpace.cozy)
+                .junoPanel(cornerRadius: JunoRadius.control)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
     }
 
-    private var chats: some View {
-        Section("Chats") {
-            if conversations.isEmpty {
-                Text("No chats in this project yet.")
-                    .junoCaption()
-            } else {
-                ForEach(conversations) { conversation in
-                    Button {
-                        openConversation(conversation.id)
-                    } label: {
-                        HStack(spacing: JunoSpace.snug) {
-                            JunoIconView(.conversation, size: 14)
-                                .foregroundStyle(.secondary)
-                            VStack(alignment: .leading, spacing: JunoSpace.hairline) {
-                                Text(conversation.title)
-                                    .junoRowLabel()
-                                    .lineLimit(1)
-                                Text(
-                                    conversation.lastMessageAt,
-                                    format: .relative(presentation: .named)
-                                )
-                                .junoCaption()
-                            }
-                            Spacer(minLength: JunoSpace.snug)
-                            if conversation.pinned {
-                                Image(systemName: "pin.fill")
-                                    .font(.caption2)
-                                    .foregroundStyle(Color.junoAccent)
-                                    .accessibilityLabel("Pinned")
-                            }
-                        }
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Open this chat")
-                    .accessibilityLabel("Open chat, \(conversation.title)")
+    private var filesCard: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                    eyebrow("Referenced files")
+                    Text("^[\(files.count) file](inflect: true) · \(DesktopProjectFileFacts.totalSize(of: files))")
+                        .junoCodeSmall()
+                        .foregroundStyle(.secondary)
                 }
+                Spacer(minLength: JunoSpace.snug)
+                Button(action: addFiles) {
+                    Label("Add file", systemImage: "paperclip")
+                }
+                .disabled(project.isPending || model.isPerformingFileAction)
+                .accessibilityIdentifier("Add project files")
             }
-        }
-    }
 
-    private var projectFiles: some View {
-        Section {
             if files.isEmpty {
-                Text("No files yet.")
-                    .junoCaption()
+                DesktopProjectPlaceholder(
+                    title: "No files yet",
+                    message: "Drop files here or click to browse — Juno references them in every chat.",
+                    symbol: "arrow.up.doc",
+                    action: addFiles
+                )
             } else {
                 ForEach(files) { file in
                     fileRow(file)
                 }
             }
-            Button("Add files…", action: addFiles)
-                .disabled(project.isPending || model.isPerformingFileAction)
-                .accessibilityIdentifier("Add project files")
-        } header: {
-            Text("Files")
-        } footer: {
-            Text("Available to every chat in this project. Files can also be dropped here.")
-                .junoCaption()
+
+            Text("Drag and drop anywhere on this page to add files.")
+                .junoCodeSmall()
+                .foregroundStyle(.tertiary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(JunoSpace.regular)
+        .junoCard()
+        .overlay {
+            // The drop lands in this project's files wherever it is released, so
+            // this is the surface that acknowledges it.
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(
+                    isDropTargeted ? Color.junoAccent : .clear,
+                    lineWidth: 2
+                )
+        }
+        .animation(JunoMotion.fast, value: isDropTargeted)
     }
 
     private func fileRow(_ file: NativeProjectFile) -> some View {
         HStack(spacing: JunoSpace.snug) {
-            Image(systemName: symbol(for: file))
+            Image(systemName: DesktopProjectFileFacts.symbol(for: file))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
@@ -1321,13 +1480,15 @@ private struct DesktopProjectInspector: View {
                     Task { await open(file) }
                 } label: {
                     Text(file.fileName)
+                        .junoRowLabel()
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
                 .buttonStyle(.link)
                 .help("Open \(file.fileName)")
-                Text(detail(for: file))
-                    .junoCaption()
+                Text(DesktopProjectFileFacts.detail(for: file))
+                    .junoCodeSmall()
+                    .foregroundStyle(.secondary)
             }
             Spacer(minLength: JunoSpace.snug)
             if model.isPerformingFileAction {
@@ -1348,40 +1509,22 @@ private struct DesktopProjectInspector: View {
             } label: {
                 Label("File options", systemImage: "ellipsis")
             }
-            .menuStyle(.button)
-            .buttonStyle(.borderless)
+            .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
             .disabled(model.isPerformingFileAction)
             .accessibilityLabel("Options for \(file.fileName)")
         }
+        .padding(.horizontal, JunoSpace.cozy)
+        .padding(.vertical, JunoSpace.snug)
+        .junoPanel(cornerRadius: JunoRadius.control)
     }
 
-    /// A glyph for the file's own type, from the MIME type the server recorded.
-    /// No thumbnail: the only way to reach a file's bytes is `accessFile`, which
-    /// flips the model's `isPerformingFileAction` flag and would put every row's
-    /// spinner on and every file action off for as long as previews were loading.
-    private func symbol(for file: NativeProjectFile) -> String {
-        let mime = file.mimeType.lowercased()
-        if mime.hasPrefix("image/") || file.kind.uppercased() == "IMAGE" { return "photo" }
-        if mime.hasPrefix("audio/") { return "waveform" }
-        if mime.hasPrefix("video/") { return "film" }
-        if mime.contains("pdf") { return "doc.richtext" }
-        if mime.contains("csv") || mime.contains("spreadsheet") { return "tablecells" }
-        if mime.hasPrefix("text/") { return "doc.text" }
-        return "doc"
-    }
-
-    /// Size, plus the pixel dimensions when the server recorded them — which it
-    /// does only for images, so this line is what tells a 4000-pixel screenshot
-    /// from a thumbnail without opening either.
-    private func detail(for file: NativeProjectFile) -> String {
-        let size = ByteCountFormatter.string(
-            fromByteCount: Int64(file.size),
-            countStyle: .file
-        )
-        guard let width = file.width, let height = file.height else { return size }
-        return "\(size) · \(width)×\(height)"
+    private func eyebrow(_ text: String) -> some View {
+        Text(text)
+            .junoCodeSmall()
+            .foregroundStyle(.secondary)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func open(_ file: NativeProjectFile) async {
@@ -1395,6 +1538,99 @@ private struct DesktopProjectInspector: View {
             guard (try? data.write(to: url, options: .atomic)) != nil else { return }
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// An empty section *inside* a page — the dashed box the website uses for "no
+/// chats yet", "no instructions yet", "no files yet".
+///
+/// Deliberately not ``JunoEmptyState``: that one owns a whole screen, with a
+/// 72-point circle and a centred column, and using it for a section is how this
+/// screen ended up speaking two empty-state languages at once (plus a bare
+/// `ContentUnavailableView` in a third).
+private struct DesktopProjectPlaceholder: View {
+    var title: String?
+    let message: String
+    var symbol: String?
+    var action: (() -> Void)?
+
+    var body: some View {
+        if let action {
+            Button(action: action) { box }
+                .buttonStyle(.plain)
+        } else {
+            box
+        }
+    }
+
+    private var box: some View {
+        VStack(spacing: JunoSpace.snug) {
+            if let symbol {
+                Image(systemName: symbol)
+                    .font(.title2)
+                    .foregroundStyle(.tertiary)
+            }
+            if let title {
+                Text(title)
+                    .font(JunoSerif.cardTitle)
+            }
+            Text(message)
+                .junoCaption()
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(JunoSpace.roomy)
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(
+                    Color.junoBorder,
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                )
+        )
+        .contentShape(.rect)
+    }
+}
+
+// MARK: - File facts
+
+/// What a project file says about itself, in the two places that show it.
+private enum DesktopProjectFileFacts {
+    /// A glyph for the file's own type, from the MIME type the server recorded.
+    /// No thumbnail: the only way to reach a file's bytes is `accessFile`, which
+    /// flips the model's `isPerformingFileAction` flag and would put every row's
+    /// spinner on and every file action off for as long as previews were loading.
+    static func symbol(for file: NativeProjectFile) -> String {
+        let mime = file.mimeType.lowercased()
+        if mime.hasPrefix("image/") || file.kind.uppercased() == "IMAGE" { return "photo" }
+        if mime.hasPrefix("audio/") { return "waveform" }
+        if mime.hasPrefix("video/") { return "film" }
+        if mime.contains("pdf") { return "doc.richtext" }
+        if mime.contains("csv") || mime.contains("spreadsheet") { return "tablecells" }
+        if mime.hasPrefix("text/") { return "doc.text" }
+        return "doc"
+    }
+
+    static func size(of file: NativeProjectFile) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
+    }
+
+    /// Size, plus the pixel dimensions when the server recorded them — which it
+    /// does only for images, so this line is what tells a 4000-pixel screenshot
+    /// from a thumbnail without opening either.
+    static func detail(for file: NativeProjectFile) -> String {
+        guard let width = file.width, let height = file.height else { return size(of: file) }
+        return "\(size(of: file)) · \(width)×\(height)"
+    }
+
+    /// What the whole set costs, in the same units one file reports. The website
+    /// prints a token estimate here; nothing native has a tokenizer, and a guessed
+    /// one would be a number the reader could not check.
+    static func totalSize(of files: [NativeProjectFile]) -> String {
+        ByteCountFormatter.string(
+            fromByteCount: Int64(files.reduce(0) { $0 + $1.size }),
+            countStyle: .file
+        )
     }
 }
 
@@ -1433,6 +1669,10 @@ private enum DesktopProjectFiles {
 
 private struct DesktopNewProjectSheet: View {
     @Bindable var model: NativeProjectModel<SQLiteAccountRepository>
+    /// Handed the new project's id so the screen can open it. The id is the
+    /// *client* one the outbox was given, which is also the id the project keeps
+    /// while it is pending, so the page opens before the server has answered.
+    let created: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
     @State private var instructions = ""
@@ -1487,14 +1727,15 @@ private struct DesktopNewProjectSheet: View {
                 Button("Create project") {
                     Task {
                         creationError = nil
-                        guard await model.createProject(
+                        guard let id = await model.createProject(
                             name: name,
                             instructions: instructions
-                        ) != nil else {
+                        ) else {
                             creationError = model.lastErrorDescription
                                 ?? "Juno could not create this project."
                             return
                         }
+                        created(id)
                         dismiss()
                     }
                 }

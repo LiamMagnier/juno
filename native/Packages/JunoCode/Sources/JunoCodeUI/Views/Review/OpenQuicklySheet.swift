@@ -84,7 +84,14 @@ public struct OpenQuicklySheet: View {
                 .listStyle(.inset)
             }
         }
-        .frame(minWidth: 560, idealWidth: 640, minHeight: 420, idealHeight: 520)
+        // A fixed size, not an ideal one. A macOS sheet that reports an *ideal*
+        // size makes SwiftUI re-solve it through
+        // `SheetBridge.sheetSize(presentationID:presenterSize:currentSize:)`
+        // every time the parent window's frame changes — and when that frame
+        // change is an `NSAnimation`, that solve trapped and took the process
+        // (EXC_BREAKPOINT, seen in a real 0.2.0 crash report). Open Quickly wants
+        // one size anyway; it has no content that should grow it.
+        .frame(width: 640, height: 520)
         .task(id: query) {
             guard !query.isEmpty else {
                 results = []

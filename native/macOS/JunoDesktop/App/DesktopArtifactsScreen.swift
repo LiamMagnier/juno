@@ -10,14 +10,15 @@ import UniformTypeIdentifiers
 /// reads and edits what Juno produced.
 ///
 /// The shape is the web's artifacts page (`src/app/(app)/artifacts/page.tsx`)
-/// translated into a Mac window rather than transcribed: an index of documents,
+/// translated into a Mac window rather than transcribed: a library of documents,
 /// then the document itself. Six decisions carry that:
 ///
-/// 1. The page is a `NavigationSplitView`: a real index list, a reading canvas,
-///    and version history as a proper `.inspector()`. The `HSplitView` it
-///    replaces had no keyboard navigation, no resizable columns, and drew its own
-///    title strip inside the content — where a Mac window states its identity in
-///    the title bar instead.
+/// 1. The page is one column deep, not two. It is the *content* of the Chat
+///    window's detail column (``DesktopChatWorkspace``), and it shows either the
+///    library of artifacts or one open document — never a navigation column of
+///    its own, which would be a second source list beside the window's real one.
+///    The document carries its own command bar because commands belong to the
+///    open document rather than to the app-wide title bar.
 /// 2. **The body of an artifact is a page, not a pour.** The web puts a document
 ///    on a white `--card` over the warm `--background` and clamps its measure;
 ///    this screen used to render Markdown through `AttributedString` straight
@@ -25,12 +26,12 @@ import UniformTypeIdentifiers
 ///    of unstyled text running past the right edge. Prose now goes through
 ///    `JunoMarkdownText` inside ``JunoDetailPage``, on a ``SwiftUI/View/junoCard()``,
 ///    and wraps.
-/// 3. The index is content, not a second sidebar. This whole screen lives inside
-///    the window's *detail* column, so a `.sidebar`-styled list here reads as a
-///    second vibrant rail beside the real one. It is an inset list with its
-///    scroll background hidden, sitting on one raised card over the warm canvas
-///    — the web's `ul … rounded-[16px] border bg-card`. Selection stays the
-///    platform's, tinted to the web's `--sidebar-accent`.
+/// 3. The library is content, not a second sidebar. This whole screen lives
+///    inside the window's *detail* column, so a `.sidebar`-styled list here would
+///    read as a second vibrant rail beside the real one. What it is instead is the
+///    web's grid: each artifact a live thumbnail of itself on a raised card over
+///    the warm canvas, and opening one replaces the grid with the document rather
+///    than pushing a column.
 /// 4. Editing is not a mode. The latest version's source is always writable and
 ///    `draft` stays `nil` while clean, which is how the web Canvas behaves. Older
 ///    versions render as selectable text rather than as a text editor whose edits
@@ -38,8 +39,20 @@ import UniformTypeIdentifiers
 /// 5. A version the user is only *looking* at cannot be saved over. The one
 ///    floating control on this page is the read-only badge that says so, and
 ///    offers the restore that makes the version writable again.
-/// 6. `.inspector` and `.searchable` are attached to the split view, never to a
-///    column. See ``body`` — both placements have already cost this app a bug.
+/// 6. **This page owns no `.inspector` and no `.searchable`.** Both are window
+///    furniture, and this is content inside a window it does not own. `.inspector`
+///    is the sharp one: attached to a `NavigationSplitView`'s detail column — which
+///    is exactly what this page is — it makes SwiftUI's `NSHostingView` call
+///    `setNeedsUpdateConstraints:` from inside its own `updateConstraints` while
+///    the window's constraint pass is already running, AppKit throws from
+///    `-[NSWindow _postWindowNeedsUpdateConstraints]` and the process takes
+///    SIGTRAP; ``DesktopCodeWorkspace`` carries the bisected report. Version
+///    history is therefore a pane inside the open document — see
+///    ``artifactDocument`` — and the window's one inspector, mounted on the split
+///    view itself in ``DesktopChatWorkspace``, belongs to Tasks. Search is a plain
+///    field in this page's own header for the milder version of the same reason: a
+///    `.searchable` renders in the *window's* titlebar, where a field that filters
+///    this library reads as searching the whole window.
 struct DesktopArtifactsScreen: View {
     @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
 
@@ -55,6 +68,10 @@ struct DesktopArtifactsScreen: View {
     @State private var draft: String?
     @State private var mode = NativeArtifactDisplayMode.preview
     @State private var showingChanges = false
+    /// Whether the version pane is beside the document. Page state, not window
+    /// state: it is only meaningful while a document is open, and it opens closed
+    /// every time — history is something the reader asks for, not a mode they
+    /// return to.
     @State private var historyVisible = false
     @State private var compareBase: Int?
     @State private var diffLines: [DesktopArtifactDiffLine] = []
@@ -183,14 +200,6 @@ struct DesktopArtifactsScreen: View {
             }
         }
         .overlay(alignment: .bottom) { statusControl }
-        .inspector(isPresented: $historyVisible) {
-            versionInspector
-                .inspectorColumnWidth(
-                    min: JunoInspectorMetrics.minimum,
-                    ideal: JunoInspectorMetrics.ideal,
-                    max: JunoInspectorMetrics.maximum
-                )
-        }
         .task(id: model.selectedArtifactID) {
             draft = nil
             selectedVersion = nil
@@ -213,6 +222,22 @@ struct DesktopArtifactsScreen: View {
                 historyVisible = false
             }
         }
+        // The rename popover anchors inside `documentCommandBar`, which only
+        // exists while the document is showing. Going back to the library
+        // destroys that anchor — and a `.popover` whose anchor leaves the
+        // hierarchy while it is still presented makes SwiftUI re-run
+        // `updatePresentations` and call `showRelativeToRect:` against a window
+        // that is already being ordered: an uncaught `NSRemoteView` exception and
+        // SIGTRAP. `JunoThinkingControl` documents the same failure.
+        //
+        // Keyed on `libraryVisible` rather than patched into the three places
+        // that set it (the Back control, `onAppear`, and a sync clearing the
+        // selection), because there is no click to dismiss the popover on two of
+        // those paths and a fourth caller would silently reopen the hole.
+        .onChange(of: libraryVisible) { _, showingLibrary in
+            if showingLibrary { renaming = false }
+        }
+        .onDisappear { renaming = false }
         .task(id: diffRequest) {
             guard let diffRequest, let artifact else {
                 diffLines = []
@@ -263,11 +288,36 @@ struct DesktopArtifactsScreen: View {
         }
     }
 
+    /// The open document, and — when the clock control asks for it — its history
+    /// beside it.
+    ///
+    /// History is a pane *in the page*, not a `.inspector`. This view is the
+    /// content of a `NavigationSplitView`'s detail column, and an inspector
+    /// attached from there takes the process down; see the note at the head of
+    /// this file. The window's own inspector, which does not crash, is not an
+    /// option either: the version list reads and writes this screen's editing
+    /// state — the version being displayed, the compare base, whether the diff is
+    /// showing — and lifting all of that out of the document and into the window
+    /// shell to place a column would move the artifact editor's state machine out
+    /// of the artifact editor.
+    ///
+    /// A fixed width rather than the inspector's full range: with no split view to
+    /// drag against there is no divider, so the pane takes the width an inspector
+    /// column would have opened at. `historyVisible` is only ever set while a
+    /// document is open — the Back control, `onAppear` and a cleared selection all
+    /// return it to `false` — so the library never has to allow for it.
     private var artifactDocument: some View {
         VStack(spacing: 0) {
             documentCommandBar
             Divider()
-            Color.clear.overlay { canvas }
+            HStack(spacing: 0) {
+                Color.clear.overlay { canvas }
+                if historyVisible {
+                    Divider()
+                    versionInspector
+                        .frame(width: JunoInspectorMetrics.ideal)
+                }
+            }
         }
         .accessibilityIdentifier("juno.artifact-document")
     }
@@ -497,177 +547,6 @@ struct DesktopArtifactsScreen: View {
         return parts.joined(separator: " · ")
     }
 
-    // MARK: - Index column
-
-    /// A native document index. Search and type filtering stay in this pane so
-    /// they do not consume the window toolbar or steal the title-bar safe area.
-    private var artifactIndex: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            indexHeader
-            Divider()
-            indexBody
-        }
-        .background(.bar)
-        .frame(width: 380, height: 500)
-        .accessibilityIdentifier("juno.artifact-index")
-        .safeAreaInset(edge: .bottom, spacing: 0) { statusControl }
-    }
-
-    /// The web's page head, at column scale: the serif title, the line that says
-    /// what this collection *is*, the count, then the type chips.
-    ///
-    /// The column previously opened on a bare mono count — "1 artifact" — with
-    /// the list directly beneath it. That is a label, not a heading: nothing on
-    /// the surface said what an artifact is or why the reader would keep one,
-    /// and the window's own title bar is showing the *open document's* name, so
-    /// the collection had no name anywhere on screen.
-    private var indexHeader: some View {
-        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Artifacts")
-                    .font(.title2.weight(.semibold))
-                Spacer(minLength: JunoSpace.snug)
-                Text("\(model.artifacts.count)")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(
-                        model.artifacts.count == 1
-                            ? "1 artifact" : "\(model.artifacts.count) artifacts"
-                    )
-                    .accessibilityIdentifier("juno.artifact-count")
-            }
-
-            HStack(spacing: JunoSpace.tight) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-                TextField("Search artifacts", text: $searchText)
-                    .textFieldStyle(.plain)
-                    .accessibilityIdentifier("juno.artifact-search")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.tertiary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Clear artifact search")
-                }
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 30)
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
-
-            HStack(spacing: JunoSpace.tight) {
-                Menu {
-                    Button("All kinds") { kindFilter = nil }
-                    if !availableKinds.isEmpty {
-                        Divider()
-                        ForEach(availableKinds, id: \.self) { kind in
-                            Button {
-                                kindFilter = kind
-                            } label: {
-                                Label(
-                                    DesktopArtifactKindName.plural(kind),
-                                    systemImage: DesktopArtifactKindName.symbol(kind)
-                                )
-                            }
-                        }
-                    }
-                } label: {
-                    Label(
-                        kindFilter.map(DesktopArtifactKindName.plural) ?? "All kinds",
-                        systemImage: "line.3.horizontal.decrease"
-                    )
-                    .font(.caption)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityIdentifier("juno.artifact-kind-filter")
-
-                Spacer()
-
-                if searchText.isEmpty, kindFilter == nil {
-                    Text("Newest first")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Button("Clear") {
-                        searchText = ""
-                        kindFilter = nil
-                    }
-                    .buttonStyle(.plain)
-                    .font(.caption)
-                }
-            }
-        }
-        .padding(JunoSpace.cozy)
-    }
-
-    /// The card is built only when there are rows to put in it. An empty raised
-    /// panel with an empty-state message floating inside it reads as a broken
-    /// list rather than as an account with nothing in it yet.
-    @ViewBuilder
-    private var indexBody: some View {
-        if visibleArtifacts.isEmpty {
-            indexEmptyState
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            List(selection: artifactSelection) {
-                ForEach(visibleArtifacts) { artifact in
-                    row(artifact)
-                        // Clear rather than absent: a list row with no background
-                        // of its own can pick up the platform's alternating fill,
-                        // which on a white card draws grey bands between real
-                        // rows. Clear also lets the selection through, which an
-                        // opaque per-row fill would hide.
-                        .listRowBackground(Color.clear)
-                }
-            }
-            .listStyle(.inset)
-            .scrollContentBackground(.hidden)
-            .junoSidebarSelectionTint()
-            .accessibilityIdentifier("juno.artifact-list")
-        }
-    }
-
-    private var artifactSelection: Binding<String?> {
-        Binding(
-            get: { model.selectedArtifactID },
-            set: { selection in
-                model.selectedArtifactID = selection
-                if selection != nil { libraryVisible = false }
-            }
-        )
-    }
-
-    @ViewBuilder
-    private var indexEmptyState: some View {
-        if model.artifacts.isEmpty {
-            // The detail column already carries the real empty state; repeating
-            // it here would say the same sentence twice in one window.
-            Color.clear
-        } else {
-            // Reachable only while something is filtering: with no query and no
-            // kind chip the visible set *is* `model.artifacts`, which the branch
-            // above already covered. So the recovery is always offered.
-            JunoEmptyState(
-                title: "No matches",
-                message: "Nothing fits this search and filter.",
-                symbol: "line.3.horizontal.decrease",
-                actionLabel: "Clear Filters",
-                action: {
-                    searchText = ""
-                    kindFilter = nil
-                }
-            )
-        }
-    }
-
     /// A failure, as floating glass over the column rather than a caption welded
     /// to its bottom edge.
     ///
@@ -718,85 +597,6 @@ struct DesktopArtifactsScreen: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("juno.artifact-status")
         }
-    }
-
-    private func row(_ artifact: NativeArtifact) -> some View {
-        HStack(spacing: JunoSpace.cozy) {
-            kindTile(artifact.kind)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(artifact.title.isEmpty ? "Untitled artifact" : artifact.title)
-                    .junoRowLabel()
-                    .lineLimit(1)
-                Text(rowMeta(artifact))
-                    .junoCodeSmall()
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-        }
-        // Pins the row's ink so the pale warm-grey selection cannot invert it —
-        // the platform pushes a white foreground into a focused selected row,
-        // which is right for a saturated accent and invisible on this one.
-        .junoSidebarRowInk()
-        .padding(.vertical, JunoSpace.hairline)
-        .tag(artifact.id)
-        .help(artifact.conversationTitle)
-        // The same actions the toolbar's ⋯ menu offers for the *open* artifact,
-        // available on any row without selecting it first. The website's row
-        // menu carries rename and download too, and a right-click that offered
-        // strictly less than the toolbar was the reason this list felt like a
-        // stub of the web page rather than the same product.
-        .contextMenu {
-            Button("Copy Source") { copySource(of: artifact) }
-                .disabled(artifact.currentContent == nil)
-            Button("Open in New Window") { openInWindow(artifact) }
-                .disabled(artifact.currentContent == nil)
-
-            Divider()
-
-            Button("Rename…") {
-                // Selecting first is what makes the toolbar popover — which
-                // anchors to the open artifact — point at this row's artifact.
-                model.selectedArtifactID = artifact.id
-                renameValue = artifact.title
-                renaming = true
-            }
-            .disabled(model.isMutating)
-
-            Button("Save Source As…") {
-                model.selectedArtifactID = artifact.id
-                exportSource()
-            }
-            .disabled(artifact.currentContent == nil)
-
-            Divider()
-
-            Button("Delete…", role: .destructive) { deleteTarget = artifact.id }
-                .disabled(model.isMutating)
-        }
-    }
-
-    /// The web's leading glyph tile (`size-8 rounded-[10px] border bg-muted/50`).
-    /// A bare symbol on the row's left edge is most of why this list read as
-    /// unfinished: the tile is what gives every row the same left edge to align
-    /// its two lines of text to.
-    private func kindTile(_ kind: NativeArtifactKind) -> some View {
-        Image(systemName: DesktopArtifactKindName.symbol(kind))
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .frame(
-                width: DesktopArtifactMetrics.tile,
-                height: DesktopArtifactMetrics.tile
-            )
-            .background(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .fill(Color.junoMuted)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
-                    .strokeBorder(Color.junoBorder)
-            )
-            .accessibilityHidden(true)
     }
 
     /// The web's mono meta line: what the artifact is, which version, when it
@@ -1057,8 +857,11 @@ struct DesktopArtifactsScreen: View {
         }
     }
 
-    // MARK: - Version history inspector
+    // MARK: - Version history pane
 
+    /// Every version of the open artifact, and the controls that compare and
+    /// restore them. Mounted beside the canvas by ``artifactDocument`` — an
+    /// `.inspector` from here is the crash that note describes.
     @ViewBuilder
     private var versionInspector: some View {
         if let artifact, let targetVersion {

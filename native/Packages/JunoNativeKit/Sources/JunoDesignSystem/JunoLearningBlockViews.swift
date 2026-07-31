@@ -599,13 +599,40 @@ public struct JunoQuizInteraction: View {
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: current)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: showRecap)
         .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: answers)
+        // Grow-only, and deliberately not a reset: the initial value handed to
+        // `_answers` is discarded once this view has an identity, so a quiz that
+        // gains a question leaves `answers` short and `record(answer:)` silently
+        // dropping every answer past the old end. Padding keeps what the reader
+        // already answered; rebuilding the array would throw it away to fix a
+        // bookkeeping problem they never saw.
+        .onChange(of: questions.count) { _, count in
+            if answers.count < count {
+                answers.append(contentsOf: Array(repeating: nil, count: count - answers.count))
+            } else if answers.count > count {
+                answers.removeLast(answers.count - count)
+            }
+        }
     }
 
     // MARK: One question
 
+    /// The answer recorded for a question, or nil when there is none — including
+    /// when there is no such slot.
+    ///
+    /// `answers` is `@State` sized once from `questions.count`, and SwiftUI keeps
+    /// the first value for the life of the view's identity. `questions` is a
+    /// plain `let` the parent can replace. So the two can disagree about how many
+    /// questions there are, and every raw `answers[index]` keyed off a
+    /// `questions` index is an out-of-range trap waiting for a longer quiz to
+    /// land on an established identity. The other accessors in this file already
+    /// guard; these two did not.
+    private func answer(at index: Int) -> Int? {
+        answers.indices.contains(index) ? answers[index] : nil
+    }
+
     @ViewBuilder
     private func question(_ q: JunoLearningBlocks.QuizQuestion) -> some View {
-        let selected = answers.indices.contains(current) ? answers[current] : nil
+        let selected = answer(at: current)
         let answered = selected != nil
         let chosen = selected.flatMap { q.options.indices.contains($0) ? q.options[$0] : nil }
         let correctIndex = q.options.firstIndex(where: \.correct) ?? 0
@@ -659,7 +686,7 @@ public struct JunoQuizInteraction: View {
                         .fill(
                             index == current
                                 ? Color.junoAccent
-                                : answers[index] != nil
+                                : answer(at: index) != nil
                                     ? Color.junoAccent.opacity(0.45)
                                     : Color.junoMutedForeground.opacity(0.25)
                         )
@@ -785,7 +812,7 @@ public struct JunoQuizInteraction: View {
                     if index > 0 {
                         Rectangle().fill(Color.junoHairline.opacity(0.5)).frame(height: 1)
                     }
-                    recapRow(question, answer: answers[index])
+                    recapRow(question, answer: answer(at: index))
                 }
             }
             Button(action: reset) {

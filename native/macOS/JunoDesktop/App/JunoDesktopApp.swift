@@ -137,12 +137,18 @@ struct JunoDesktopApp: App {
 // `JunoDesktopCommands` and the focused-value plumbing it reads live in
 // DesktopCommands.swift.
 
-/// Hosts the settings pane in the `Settings` scene.
+/// Hosts the settings page in the `Settings` scene.
 ///
 /// Settings are account data, so they need a signed-in session and the
 /// synchronized settings model. When neither exists there is genuinely nothing to
 /// configure, and saying so is better than presenting controls whose writes would
 /// be discarded.
+///
+/// **Every argument the workspace passes is passed here too.** This scene used to
+/// hand over five of them, so the ⌘, window silently shipped a degraded copy of
+/// the same screen: no model catalog (so no default model and no favourites), no
+/// avatar, and no sync model or outbox (so Diagnostics reported nothing). One
+/// screen means one set of inputs.
 private struct JunoDesktopSettingsScene: View {
     let configuration: JunoDesktopConfiguration?
 
@@ -157,7 +163,14 @@ private struct JunoDesktopSettingsScene: View {
                     authModel: configuration.authModel,
                     session: session,
                     accountDataClient: configuration.accountDataClient,
-                    shareClient: configuration.shareClient
+                    shareClient: configuration.shareClient,
+                    modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+                    avatarData: configuration.avatarModel?.imageData,
+                    syncModel: configuration.syncModel,
+                    outbox: configuration.outbox
+                    // No `openUsage`: this window has no sidebar to navigate, so
+                    // the tile is absent here rather than offering a link that
+                    // cannot go anywhere. Usage lives in the main window.
                 )
             } else {
                 ContentUnavailableView(
@@ -170,5 +183,33 @@ private struct JunoDesktopSettingsScene: View {
             }
         }
         .frame(minWidth: 520, minHeight: 460)
+        // Applied once, at this window's root. The workspace's detail column
+        // paints the canvas for the sidebar-hosted copy; this window has no
+        // detail column, and the page itself must never paint it a second time.
+        .junoReadingCanvas()
+        .junoAccountAppearance(configuration)
+    }
+}
+
+private extension View {
+    /// The account's stored theme and accent, applied to a window that is not
+    /// the workspace.
+    ///
+    /// These modifiers lived only on `JunoDesktopRootView`, so choosing Dark or
+    /// switching accent in the ⌘, window restyled every window *except the one
+    /// the choice was made in* — the single most confusing possible outcome for a
+    /// control whose entire job is to change how things look.
+    func junoAccountAppearance(_ configuration: JunoDesktopConfiguration?) -> some View {
+        let settings = configuration?.memorySettingsModel?.settings
+        let scheme: ColorScheme? =
+            switch settings?.theme {
+            case .light: .light
+            case .dark: .dark
+            case .system, .none: nil
+            }
+        return preferredColorScheme(scheme)
+            .onChange(of: settings?.accent) { _, accent in
+                JunoAccentSelection.shared.apply(setting: accent)
+            }
     }
 }

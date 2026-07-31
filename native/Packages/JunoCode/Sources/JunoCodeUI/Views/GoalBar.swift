@@ -51,6 +51,17 @@ struct GoalBar: View {
                 .popover(isPresented: $showsDetails, arrowEdge: .top) {
                     GoalDetails(controller: controller, goal: goal)
                 }
+                // The anchor for this popover lives inside `if let goal`, and the
+                // goal can go nil without anyone clicking anything — the agent
+                // completes it, or the session is switched underneath us. A
+                // popover whose anchor leaves the hierarchy while it is still
+                // presented makes SwiftUI re-run `updatePresentations` and call
+                // `showRelativeToRect:` against a window that is already being
+                // ordered, which raises an uncaught `NSRemoteView` exception and
+                // takes the process with SIGTRAP. Same defence as
+                // `JunoThinkingControl`; the difference here is that there is no
+                // outside click to dismiss it first.
+                .onDisappear { showsDetails = false }
             }
             .padding(.horizontal, JunoSpace.regular)
             .padding(.vertical, JunoSpace.snug)

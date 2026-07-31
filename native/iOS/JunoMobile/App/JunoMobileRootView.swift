@@ -31,7 +31,6 @@ struct JunoMobileRootView: View {
     let searchModel: NativeSearchModel<SQLiteAccountRepository>?
     /// The in-memory incognito session. Nil when the app could not be configured.
     var privateChatModel: NativePrivateChatModel?
-    var compareModel: NativeCompareModel?
     var generateClient: NativeChatAPIClient?
     /// The three server-backed sections. Unlike the models above they hold no
     /// local mirror — connections, scheduled tasks and code sessions live only
@@ -58,9 +57,10 @@ struct JunoMobileRootView: View {
     @State private var sidebarOpen = false
     @State private var showingSettings = false
     @State private var incognito = false
-    /// The live voice session, built when one is asked for and torn down with the
-    /// cover that shows it.
-    @State private var voiceController: JunoRealtimeVoiceController?
+    /// The live voice session, built when one is asked for and published to the
+    /// chat column through the environment. Held here rather than in the chat
+    /// screen so a call survives the screen re-rendering underneath it.
+    @State private var voiceSession: JunoMobileVoiceSession?
     #if DEBUG
     /// Set by `JUNO_START_OVERLAY=voice`, and acted on once the account is
     /// signed in — the launch flag fires before `restore()` finishes, and a
@@ -224,8 +224,8 @@ struct JunoMobileRootView: View {
                 libraryModel?.stop()
                 // A voice session outliving the account it was authorized for is
                 // a live microphone on a signed-out device.
-                voiceController?.end()
-                voiceController = nil
+                voiceSession?.controller.end()
+                voiceSession = nil
             }
         }
         .onChange(of: syncModel?.synchronizationGeneration) { _, generation in
@@ -283,29 +283,19 @@ struct JunoMobileRootView: View {
             }
         }
         .sheet(isPresented: $showingSettings) { settingsSheet }
-        // A full-screen cover, not a sheet: a spoken conversation is the whole
-        // interaction while it lasts, and a sheet's dimmed strip of chat above it
-        // invites tapping back into a screen whose composer is now meaningless.
+        // Voice is **not** a presentation any more. It used to be a
+        // `fullScreenCover`, on the argument that a spoken conversation is the
+        // whole interaction while it lasts — and that argument is what made it
+        // impossible to show Juno a photo while talking, because taking the
+        // screen took the composer, the camera and the picker with it. The
+        // session is published here instead and the chat column renders it in
+        // place: a field behind the composer and a dock above it, exactly as
+        // `chat-view.tsx` mounts them.
         //
-        // The binding is derived from the controller rather than kept beside it
-        // as a separate `Bool`. Two sources of truth for one presentation is how
-        // a cover ends up showing with nothing behind it — or, worse here, how a
-        // dismissed cover leaves a live microphone running.
-        .fullScreenCover(
-            isPresented: Binding(
-                get: { voiceController != nil },
-                set: { shown in if !shown { voiceController = nil } }
-            )
-        ) {
-            if let voiceController {
-                JunoMobileVoiceView(
-                    controller: voiceController,
-                    saveTranscript: voiceSaveAction,
-                    close: { self.voiceController = nil }
-                )
-                .tint(Color.junoAccent)
-            }
-        }
+        // Published from the shell rather than from the chat screen because a
+        // call must not end because a screen re-rendered, and because the shell
+        // is where the credential that authorized it lives.
+        .environment(\.junoVoiceSession, voiceSession)
     }
 
     /// Written as a typed property rather than an inline `cond ? method : nil`.
@@ -372,7 +362,7 @@ struct JunoMobileRootView: View {
         }
     }
 
-    /// Builds a voice session for the signed-in account and shows it.
+    /// Builds a voice session for the signed-in account and dials it.
     ///
     /// Built here, on demand, rather than at launch with the other models: a
     /// relay credential is minted per session against a specific account, and at
@@ -380,17 +370,32 @@ struct JunoMobileRootView: View {
     /// anything when either half is missing is what keeps the composer's voice
     /// button honest — `openVoiceMode` is nil in that case, so the button is
     /// never offered at all.
+    ///
+    /// `start()` is called here rather than from the dock's `task`. The dock
+    /// lives in the chat column now, so it can appear a second time over the
+    /// same session — and `start()` is legal from `ended`, which would make that
+    /// second appearance silently redial a call the reader had hung up.
     private func startVoice() {
-        guard voiceController == nil,
+        guard voiceSession == nil,
             let requestSender,
             let session = currentSession
         else { return }
-        voiceController = JunoRealtimeVoiceController(
-            authorization: JunoMobileVoiceAuthorization(
-                sender: requestSender,
-                accountID: session.profile.id
-            )
+        let started = JunoMobileVoiceSession(
+            controller: JunoRealtimeVoiceController(
+                authorization: JunoMobileVoiceAuthorization(
+                    sender: requestSender,
+                    accountID: session.profile.id
+                )
+            ),
+            saveTranscript: voiceSaveAction,
+            close: { voiceSession = nil }
         )
+        voiceSession = started
+        // Chat is where the dock renders, so a call started from anywhere else —
+        // today only the DEBUG launch flag — has to land there or it opens with
+        // no surface to appear on.
+        selection = .chat
+        Task { await started.controller.start() }
     }
 
     /// Whether a spoken conversation can be started at all. Both halves have to
@@ -737,14 +742,6 @@ struct JunoMobileRootView: View {
                         projectModel?.selectedProjectID = id
                         selection = .projects
                     }
-                )
-            } else { unavailable }
-        case .compare:
-            if let compareModel, let session = currentSession {
-                NativeCompareView(
-                    model: compareModel,
-                    catalog: conversationModel?.selectableModels ?? [],
-                    accountID: session.profile.id
                 )
             } else { unavailable }
         case .code:

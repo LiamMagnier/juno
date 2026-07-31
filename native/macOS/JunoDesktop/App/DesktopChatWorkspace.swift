@@ -73,7 +73,18 @@ struct DesktopChatWorkspace: View {
     /// which a nil `overrideDestination` alone cannot.
     @State private var hasSeededOverride = false
     @SceneStorage("juno.desktop.columns") private var storedColumnVisibility = ""
+    /// Whether the Tasks inspector is up. The key is ``DesktopTasksScreen``'s own
+    /// — scene storage is one value per key per scene, so the page's toolbar
+    /// toggle and this window's `.inspector` are reading and writing the same
+    /// flag, and the page keeps its default of showing.
+    @SceneStorage("juno.desktop.tasks.inspector") private var tasksInspectorShown = true
     @State private var columnVisibility = NavigationSplitViewVisibility.all
+    /// The Tasks page's selection and its pending presentations.
+    ///
+    /// Held by the window because the page and the inspector are now two views in
+    /// two different columns of it, and `@State` cannot span them. See
+    /// ``DesktopTasksSurface``.
+    @State private var tasksSurface = DesktopTasksSurface()
     /// Set by Projects immediately before it opens a new draft. The composer
     /// consumes it once so an ordinary toolbar New Chat never inherits an old
     /// project's scope.
@@ -150,11 +161,34 @@ struct DesktopChatWorkspace: View {
                 draftProjectID: $draftProjectID,
                 draftPrompt: $draftPrompt
             )
+            // The Tasks page reads its selection from here; the inspector below
+            // writes it. One object, injected once, because the page is built by
+            // `DesktopDestinationView` — which has nothing of its own to hand it.
+            .environment(tasksSurface)
             .junoReadingCanvas()
             .navigationTitle(windowTitle)
             .navigationSubtitle(windowSubtitle)
             .toolbar { detailToolbar }
         }
+        // `.inspector` goes on the split view, **not** on the detail column, and
+        // not on a page inside it either.
+        //
+        // Tasks and Artifacts each carried their own, presented from the content of
+        // this window's detail column. That is precisely the placement
+        // ``DesktopCodeWorkspace`` bisected to a hard crash: from a detail column
+        // the inspector makes SwiftUI's `NSHostingView` call
+        // `setNeedsUpdateConstraints:` from inside its own `updateConstraints`
+        // while the window's constraint pass is already running for that display
+        // cycle, AppKit throws from `-[NSWindow _postWindowNeedsUpdateConstraints]`
+        // and the process takes SIGTRAP. Tasks defaulted its flag to *shown*, so
+        // one click in the sidebar was the whole reproduction.
+        //
+        // Hoisted here there is one inspector for the window and the binding
+        // decides which destination owns it. Artifacts' version history did not
+        // come with it: it reads and writes the document's editing state — the
+        // displayed version, the compare base, the diff being shown — so it is a
+        // pane inside that page instead. ``DesktopArtifactsScreen`` says why.
+        .inspector(isPresented: inspectorPresentation) { inspector }
         .focusedSceneValue(
             \.junoWorkspaceActions,
             DesktopWorkspaceActions(
@@ -191,6 +225,70 @@ struct DesktopChatWorkspace: View {
         .onChange(of: columnVisibility) { _, visibility in
             storedColumnVisibility = visibility == .detailOnly ? "detailOnly" : "all"
         }
+    }
+
+    /// What the destination in force puts in the trailing column, or nil when it
+    /// has nothing to put there.
+    ///
+    /// Tasks is the only destination that fills it. Artifacts keeps its version
+    /// history as a pane inside its own page — ``DesktopArtifactsScreen`` says why
+    /// — and the rest have nothing to inspect. The model is part of the answer
+    /// rather than checked separately: an account whose scheduled-task service is
+    /// unavailable gets the page's own explanation and no empty column beside it.
+    private var inspectableTasks: NativeScheduledTaskModel? {
+        guard currentDestination == .tasks else { return nil }
+        return configuration.scheduledTaskModel
+    }
+
+    /// Whether the window's one inspector is up.
+    ///
+    /// The write is gated on the same condition as the read. A column dismissed
+    /// while some other surface is showing must not be recorded as the reader
+    /// hiding the *task* inspector, or Tasks would open closed next time for a
+    /// reason that had nothing to do with it.
+    private var inspectorPresentation: Binding<Bool> {
+        Binding(
+            get: { inspectableTasks != nil && tasksInspectorShown },
+            set: { shown in
+                guard inspectableTasks != nil else { return }
+                tasksInspectorShown = shown
+            }
+        )
+    }
+
+    /// The trailing column's content, given the inspector's resize range once
+    /// rather than per destination: a column whose width is redeclared as the
+    /// reader moves through the sidebar is a column AppKit re-lays out on every
+    /// navigation.
+    private var inspector: some View {
+        Group {
+            if let inspectableTasks {
+                DesktopTasksInspector(
+                    model: inspectableTasks,
+                    surface: tasksSurface,
+                    openConversation: openConversation
+                )
+            }
+        }
+        .inspectorColumnWidth(
+            min: JunoInspectorMetrics.minimum,
+            ideal: JunoInspectorMetrics.ideal,
+            max: JunoInspectorMetrics.maximum
+        )
+    }
+
+    /// Opens a conversation some other surface points at — today, the chat a
+    /// scheduled task writes its runs into.
+    ///
+    /// `DesktopDestinationView` performs the same navigation for the pages it
+    /// builds, but the task inspector is no longer one of them: it hangs off this
+    /// window's split view, above anything that view can reach.
+    private func openConversation(_ id: String) {
+        draftProjectID = nil
+        draftPrompt = nil
+        model.isDraftingNewConversation = false
+        model.selectedConversationID = id
+        destination.wrappedValue = .chat
     }
 
     private var windowTitle: String {
@@ -476,41 +574,30 @@ private struct DesktopChatSidebar: View {
 enum DesktopDestination: String, CaseIterable, Identifiable {
     case chat
     case search
-    /// One prompt, two or three models, side by side. Its own destination rather
-    /// than a mode inside Chat: a comparison is never saved and never becomes a
-    /// conversation, so putting it behind the conversation list would promise a
-    /// history it does not have.
-    case compare
     case projects
     case library
     case artifacts
     case connections
     case tasks
     case usage
-    /// The pull requests Juno Code opened. A sidebar destination rather than a
-    /// tab inside Code, because a reader checks on PRs between sessions — not
-    /// while they have one open.
-    case pulls
     case settings
 
     var id: Self { self }
 
     static let sidebarCases: [Self] = [
-        .compare, .library, .artifacts, .connections, .projects, .tasks, .pulls, .usage,
+        .library, .artifacts, .connections, .projects, .tasks, .usage,
     ]
 
     var label: String {
         switch self {
         case .chat: "Chat"
         case .search: "Search"
-        case .compare: "Compare"
         case .projects: "Projects"
         case .library: "Library"
         case .artifacts: "Artifacts"
         case .connections: "Connections"
         case .tasks: "Tasks"
         case .usage: "Usage"
-        case .pulls: "Pull requests"
         case .settings: "Settings"
         }
     }
@@ -519,14 +606,12 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "bubble.left.and.bubble.right"
         case .search: "magnifyingglass"
-        case .compare: "rectangle.split.2x1"
         case .projects: "folder"
         case .library: "books.vertical"
         case .artifacts: "square.stack.3d.up"
         case .connections: "link"
         case .tasks: "clock"
         case .usage: "chart.line.uptrend.xyaxis"
-        case .pulls: "arrow.trianglehead.pull"
         case .settings: "gearshape"
         }
     }
@@ -542,7 +627,7 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .tasks: .tasks
         // No Juno-drawn glyph for these yet, so they fall back to the SF Symbol
         // rather than borrowing another destination's mark.
-        case .compare, .usage, .pulls, .settings: nil
+        case .usage, .settings: nil
         }
     }
 }
@@ -603,9 +688,6 @@ struct DesktopConversationView: View {
         // base, so the chat can never resize the window it lives in.
         Color.clear
             .overlay { conversationContent }
-            .sheet(item: $voiceSession) { voiceSession in
-                voiceSheet(voiceSession)
-            }
             .alert(
                 "Voice is unavailable",
                 isPresented: Binding(
@@ -682,8 +764,16 @@ struct DesktopConversationView: View {
         }
     }
 
-    private func voiceSheet(_ voiceSession: DesktopVoiceSession) -> some View {
-        DesktopVoiceView(
+    /// The live call, as the chat column needs it.
+    ///
+    /// Chat's routing, which is **not** the Projects screen's: the open
+    /// conversation is passed down so the turns append to the thread the reader
+    /// was already in, and the saved id is selected so a call started from a
+    /// draft lands the reader in the conversation the server just created.
+    private var voiceColumn: DesktopVoiceColumn? {
+        guard let voiceSession else { return nil }
+        return DesktopVoiceColumn(
+            sessionID: voiceSession.id,
             controller: voiceSession.controller,
             saveTranscript: { sessionID, turns in
                 guard let client = configuration.voiceTranscriptClient else {
@@ -723,7 +813,7 @@ struct DesktopConversationView: View {
             voiceUnavailable = "Voice is unavailable for this account."
             return
         }
-        voiceSession = DesktopVoiceSession(
+        let started = DesktopVoiceSession(
             controller: JunoRealtimeVoiceController(
                 authorization: JunoDesktopVoiceAuthorization(
                     sender: sender,
@@ -734,6 +824,12 @@ struct DesktopConversationView: View {
             conversationID: model.selectedConversationID,
             projectID: model.selectedConversation?.projectId
         )
+        voiceSession = started
+        // Dialled from here rather than from the dock's `task`. The dock lives
+        // in the chat column now, so it can appear a second time over the same
+        // session — and `start()` is legal from `ended`, which would make that
+        // second appearance silently redial.
+        Task { await started.controller.start() }
     }
 
     private var composer: some View {
@@ -747,6 +843,9 @@ struct DesktopConversationView: View {
             draftPrompt: $draftPrompt,
             openVoiceMode: startVoice
         )
+        // The field behind the composer and the dock above it — scoped to this
+        // column, so the sidebar is never washed by it.
+        .junoVoiceColumn(voiceColumn)
     }
 }
 
@@ -2780,7 +2879,14 @@ private struct DesktopLibraryPicker: View {
             .background(.bar)
             .overlay(alignment: .top) { Divider() }
         }
-        .frame(minWidth: 680, idealWidth: 740, minHeight: 520)
+        // A fixed size, and deliberately **no ideal size**. A sheet that reports
+        // an ideal has to be re-solved whenever its presenter's frame moves, and
+        // when AppKit moves that frame inside an animation SwiftUI traps in
+        // `SheetBridge.sheetSize(presentationID:presenterSize:currentSize:)` —
+        // the crash a real .ips from this app pinned on the old voice sheet,
+        // which was the other view in this file declaring one. Nothing here
+        // needs to grow, so nothing here asks to.
+        .frame(width: 740, height: 560)
         .task {
             model.selection = []
             await model.refresh()

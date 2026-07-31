@@ -86,7 +86,14 @@ public struct NativeFollowUpStrip: View {
             let fetched = await client.suggestions(conversationID: conversationID, for: accountID)
             guard !Task.isCancelled else { return }
             withAnimation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion)) {
-                suggestions = fetched
+                // Deduplicated because the row below is keyed on the string
+                // itself. The server does not promise these are distinct, and a
+                // model that offers the same follow-up twice would hand `ForEach`
+                // two identical ids — which SwiftUI resolves by dropping one row
+                // and diffing the rest wrongly from then on. Order is preserved:
+                // the server ranked them, and a `Set` would throw that away.
+                var seen = Set<String>()
+                suggestions = fetched.filter { seen.insert($0).inserted }
             }
         }
         .accessibilityLabel("Follow-up suggestions")

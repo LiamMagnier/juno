@@ -36,13 +36,24 @@ public enum JunoVoiceProvider: String, Codable, CaseIterable, Identifiable, Send
 
 /// What the negotiated session can actually do, as reported by the relay.
 ///
-/// Decoded verbatim from the wire, including `videoInput`, which this client
-/// never acts on — screen sharing is not part of the native voice surface. The
-/// field stays because the payload is required-keyed: silently narrowing the
-/// shape here is how a future relay change turns into a decode failure that
-/// looks like a dead session.
+/// Both video flags are acted on now: ``videoInput`` gates every
+/// ``JunoVoiceClientMessage/videoFrame(jpegBase64:)`` this client sends, and
+/// ``screenInput`` gates the Mac's screen share specifically — the two are not
+/// the same permission, because OpenAI takes camera frames and images but not a
+/// screen.
+///
+/// `screenInput` is the one key the relay omits rather than sends as `false`,
+/// which is why decoding is hand-written. Every other key is required, and a
+/// synthesized decoder would therefore fail the whole `session.ready` frame the
+/// moment a provider left it out — a session that connects, goes quiet, and logs
+/// nothing anywhere.
 public struct JunoVoiceCapabilities: Codable, Equatable, Sendable {
+    /// The provider accepts JPEG frames at all: the iPhone's camera, and images
+    /// attached to a turn on either platform.
     public var videoInput: Bool
+    /// Narrower than ``videoInput``: the provider accepts a *screen*. Absent on
+    /// the wire means false, not unknown.
+    public var screenInput: Bool
     /// True when the provider hears the audio itself. When false the relay only
     /// has text, and this client must run its own recognizer — the one thing
     /// that makes the session need microphone *and* speech authorization.
@@ -52,11 +63,31 @@ public struct JunoVoiceCapabilities: Codable, Equatable, Sendable {
     /// Surfacing it is what lets the UI warn before the audio simply stops.
     public var maxSessionSec: Int
 
-    public init(videoInput: Bool, trueS2S: Bool, needsClientTranscript: Bool, maxSessionSec: Int) {
+    public init(
+        videoInput: Bool,
+        screenInput: Bool = false,
+        trueS2S: Bool,
+        needsClientTranscript: Bool,
+        maxSessionSec: Int
+    ) {
         self.videoInput = videoInput
+        self.screenInput = screenInput
         self.trueS2S = trueS2S
         self.needsClientTranscript = needsClientTranscript
         self.maxSessionSec = maxSessionSec
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case videoInput, screenInput, trueS2S, needsClientTranscript, maxSessionSec
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        videoInput = try container.decode(Bool.self, forKey: .videoInput)
+        screenInput = try container.decodeIfPresent(Bool.self, forKey: .screenInput) ?? false
+        trueS2S = try container.decode(Bool.self, forKey: .trueS2S)
+        needsClientTranscript = try container.decode(Bool.self, forKey: .needsClientTranscript)
+        maxSessionSec = try container.decode(Int.self, forKey: .maxSessionSec)
     }
 }
 
@@ -71,17 +102,27 @@ public struct JunoVoiceUsage: Codable, Equatable, Sendable {
     public var audioInSec: Double
     public var audioOutSec: Double
     public var estCostUsd: Double
+    /// ``estCostUsd`` split into what the user's speech cost and what the
+    /// model's did. Optional on the wire, and optional here for the same reason:
+    /// not every provider reports token counts the relay can price, and a `0`
+    /// would read as "this turn was free" rather than "nobody knows".
+    public var estCostInUsd: Double?
+    public var estCostOutUsd: Double?
 
     public init(
         provider: JunoVoiceProvider,
         audioInSec: Double,
         audioOutSec: Double,
-        estCostUsd: Double
+        estCostUsd: Double,
+        estCostInUsd: Double? = nil,
+        estCostOutUsd: Double? = nil
     ) {
         self.provider = provider
         self.audioInSec = audioInSec
         self.audioOutSec = audioOutSec
         self.estCostUsd = estCostUsd
+        self.estCostInUsd = estCostInUsd
+        self.estCostOutUsd = estCostOutUsd
     }
 }
 
@@ -171,14 +212,29 @@ public struct JunoVoiceRelayTokenResponse: Decodable, Sendable {
 public enum JunoVoiceClientMessage: Encodable, Sendable {
     case sessionStart(provider: JunoVoiceProvider)
     case sessionSwitch(provider: JunoVoiceProvider)
-    /// The user's words as text. Only sent for providers that cannot hear the
-    /// audio themselves; for everyone else the microphone stream is the input.
-    case inputText(String)
+    /// The user's words as text — from the on-device recognizer for providers
+    /// that cannot hear the audio themselves, or from a composed turn.
+    ///
+    /// `turnId` and `displayText` only travel with a composed turn, and both
+    /// default to absent so the recognizer's call site stays a bare
+    /// `.inputText(text)`. The relay echoes `turnId` back on its `transcript`
+    /// frame, which is how a typed turn lands in the conversation once instead
+    /// of twice; `displayText` is what the reader sees when what was actually
+    /// sent to the model is the stand-in prompt for shared images rather than
+    /// anything they wrote.
+    case inputText(_ text: String, turnId: String? = nil, displayText: String? = nil)
     case controlInterrupt
+    /// One JPEG screen or camera frame, base64 with no `data:` prefix.
+    ///
+    /// The relay forwards a frame only while its base64 payload is non-empty and
+    /// under 2,000,000 characters, and every provider that takes video expects
+    /// about one frame a second — send faster and the frames are billed and
+    /// discarded rather than looked at.
+    case videoFrame(jpegBase64: String)
     case ping
 
     private enum CodingKeys: String, CodingKey {
-        case type, provider, text
+        case type, provider, text, turnId, displayText, jpegBase64
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -190,11 +246,19 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
         case .sessionSwitch(let provider):
             try container.encode("session.switch", forKey: .type)
             try container.encode(provider, forKey: .provider)
-        case .inputText(let text):
+        case .inputText(let text, let turnId, let displayText):
             try container.encode("input.text", forKey: .type)
             try container.encode(text, forKey: .text)
+            // Encoded only when present: the relay reads `turnId` as "this turn
+            // is already on screen", so a null one would suppress the echo that
+            // the recognizer path depends on.
+            try container.encodeIfPresent(turnId, forKey: .turnId)
+            try container.encodeIfPresent(displayText, forKey: .displayText)
         case .controlInterrupt:
             try container.encode("control.interrupt", forKey: .type)
+        case .videoFrame(let jpegBase64):
+            try container.encode("video.frame", forKey: .type)
+            try container.encode(jpegBase64, forKey: .jpegBase64)
         case .ping:
             try container.encode("ping", forKey: .type)
         }
@@ -226,7 +290,8 @@ public enum JunoVoiceRelayMessage: Decodable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case type, provider, capabilities, role, text, final, speaker, phase
-        case audioInSec, audioOutSec, estCostUsd, reason, message
+        case audioInSec, audioOutSec, estCostUsd, estCostInUsd, estCostOutUsd
+        case reason, message
     }
 
     public init(from decoder: any Decoder) throws {
@@ -256,7 +321,16 @@ public enum JunoVoiceRelayMessage: Decodable, Sendable {
                     provider: try container.decode(JunoVoiceProvider.self, forKey: .provider),
                     audioInSec: try container.decode(Double.self, forKey: .audioInSec),
                     audioOutSec: try container.decode(Double.self, forKey: .audioOutSec),
-                    estCostUsd: try container.decode(Double.self, forKey: .estCostUsd)
+                    estCostUsd: try container.decode(Double.self, forKey: .estCostUsd),
+                    // Leniently, because the split is only present for providers
+                    // whose token counts the relay can price — and a usage frame
+                    // that fails to decode takes the running total with it.
+                    estCostInUsd: try container.decodeIfPresent(
+                        Double.self, forKey: .estCostInUsd
+                    ),
+                    estCostOutUsd: try container.decodeIfPresent(
+                        Double.self, forKey: .estCostOutUsd
+                    )
                 )
             )
         case "session.closed":

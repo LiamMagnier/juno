@@ -99,6 +99,8 @@ struct JunoDesktopWorkspaceView: View {
                     workbenchModel: workbenchModel,
                     codeModel: codeModel,
                     remoteModel: remoteCodeModel,
+                    pullsClient: configuration.pullsClient,
+                    accountID: session.profile.id,
                     product: $product,
                     newChat: {
                         unscopedChatRequestID = UUID()

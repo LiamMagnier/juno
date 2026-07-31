@@ -59,6 +59,15 @@ struct JunoDesktopRootView: View {
                 _, accent in
                 JunoAccentSelection.shared.apply(setting: accent)
             }
+            .onChange(of: workbenchModel?.workspaces) { _, workspaces in
+                // The workbench is built at the end of `updateLifecycle` and
+                // loads its grants asynchronously in `bootstrap()`, so there is
+                // no moment during sign-in at which a one-shot copy would be
+                // anything but empty. Watching the property is the only way the
+                // heartbeat carries real folders rather than an empty list the
+                // phone reads as "this Mac has nowhere to work".
+                configuration.codeHostModel?.setWorkspaces(from: workspaces ?? [])
+            }
             .onChange(of: configuration.conversationModel?.selectableModels) {
                 _, models in
                 // `nil` means the manifest has not loaded. An empty array is an
@@ -134,6 +143,10 @@ struct JunoDesktopRootView: View {
             await configuration.codeModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
+        // Registration is presence, not capability — a signed-in Mac saying it
+        // exists — so it starts with everything else rather than behind a
+        // switch. What it does *not* do is accept work; see DesktopCodeHost.swift.
+        configuration.codeHostModel?.start(for: accountID)
 
         if let runtime = configuration.runtime {
             workbenchModel = WorkbenchModel(
@@ -219,6 +232,7 @@ struct JunoDesktopRootView: View {
         configuration.scheduledTaskModel?.stop()
         configuration.codeModel?.stop()
         configuration.remoteCodeModel?.stop()
+        configuration.codeHostModel?.stop()
         configuration.libraryModel?.stop()
     }
 }

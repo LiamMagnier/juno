@@ -70,7 +70,6 @@ private struct JunoDesktopPreviewWorkspace: View {
             avatarModel: nil,
             conversationModel: world.conversationModel,
             privateChatModel: world.privateChatModel,
-            compareModel: world.compareModel,
             generateClient: nil,
             projectModel: world.projectModel,
             artifactModel: world.artifactModel,
@@ -84,6 +83,11 @@ private struct JunoDesktopPreviewWorkspace: View {
             ),
             codeModel: codeModel,
             remoteCodeModel: remoteCodeModel,
+            // Nil on purpose: the preview harness must not announce this Mac as a
+            // code device. It runs against a throwaway world with no account, and
+            // a registration from here would put a fake host in the real one's
+            // list — visible on the reader's phone.
+            codeHostModel: nil,
             libraryModel: world.libraryModel,
             requestSender: sender,
             accountDataClient: world.accountDataClient,

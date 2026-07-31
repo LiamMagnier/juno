@@ -136,7 +136,7 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.exists)
     }
 
-    func testProjectsUseFocusedWorkspaceAndCanStartAScopedChat() {
+    func testProjectsOpenOnTheIndexAndCanStartAScopedChatInsideAProject() {
         let app = XCUIApplication()
         app.launchArguments = [
             "-ApplePersistenceIgnoreState", "YES",
@@ -147,15 +147,19 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         app.launch()
         openMainWindowIfNeeded(in: app)
 
-        let composer = app.textFields["Message Juno"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 12))
-        XCTAssertTrue(app.buttons["juno.desktop.chat-model"].exists)
-        XCTAssertTrue(app.staticTexts["Private project context"].exists)
-        XCTAssertTrue(app.buttons["All projects"].exists)
+        // The index, not a project: the destination used to auto-open whichever
+        // project sorted first, which put the reader inside one project with no
+        // route back to the list.
+        assertShowingProjectIndex(app)
 
-        let newChat = app.buttons["New chat in project"]
-        XCTAssertTrue(newChat.waitForExistence(timeout: 5))
+        openProject(app)
+        XCTAssertTrue(app.buttons["All projects"].exists)
         XCTAssertTrue(app.menuButtons["Project detail actions"].exists)
+
+        let composer = app.textFields["Message Juno"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["juno.desktop.chat-model"].exists)
+        XCTAssertTrue(app.buttons["New chat in project"].exists)
 
         composer.click()
         composer.typeText("Outline the next observation")
@@ -166,6 +170,95 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             app.textFields["Message Juno"].waitForExistence(timeout: 8),
             "Sending from a project must open the real project-scoped transcript."
         )
+    }
+
+    /// The bug this screen shipped with: the index was reachable only from
+    /// *inside* a project, and the boolean that got you there was reset by the
+    /// destination switch — so leaving Projects and coming back always landed on
+    /// a project again.
+    func testProjectsReturnToTheIndexAfterVisitingAProjectAndLeaving() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-ApplePersistenceIgnoreState", "YES",
+            "--juno-ui-preview",
+            "--juno-preview-tab", "projects",
+            "--juno-preview-size", "1240x800",
+        ]
+        app.launch()
+        openMainWindowIfNeeded(in: app)
+
+        assertShowingProjectIndex(app)
+
+        openProject(app)
+        let backToIndex = app.buttons["All projects"]
+        XCTAssertTrue(backToIndex.waitForExistence(timeout: 5))
+        backToIndex.click()
+        assertShowingProjectIndex(app)
+
+        // Into a project, then out of Projects entirely, then back.
+        openProject(app)
+        XCTAssertTrue(app.buttons["All projects"].waitForExistence(timeout: 5))
+
+        clickSidebarDestination("Library", in: app)
+        XCTAssertTrue(
+            app.buttons["All projects"].waitForNonExistence(timeout: 5),
+            "Leaving Projects must leave the project detail behind."
+        )
+
+        clickSidebarDestination("Projects", in: app)
+        assertShowingProjectIndex(app)
+    }
+
+    /// The index is showing, and no project detail is.
+    ///
+    /// Asserted on the cards and the search field rather than on the container's
+    /// identifier: a plain SwiftUI stack does not reliably surface as an element,
+    /// and a card that exists only on the index is the honest proof of where we are.
+    private func assertShowingProjectIndex(
+        _ app: XCUIApplication,
+        line: UInt = #line
+    ) {
+        XCTAssertTrue(
+            app.buttons["juno.project-card.proj-1"].waitForExistence(timeout: 12),
+            "Clicking Projects must land on the index of every project.",
+            line: line
+        )
+        XCTAssertTrue(app.textFields["Projects search"].exists, line: line)
+        XCTAssertFalse(
+            app.buttons["All projects"].exists,
+            "The index is the root — it has nothing to go back to.",
+            line: line
+        )
+        XCTAssertFalse(app.buttons["New chat in project"].exists, line: line)
+    }
+
+    /// Opens the seeded "Astro research" project from the index.
+    private func openProject(_ app: XCUIApplication, line: UInt = #line) {
+        let card = app.buttons["juno.project-card.proj-1"]
+        XCTAssertTrue(card.waitForExistence(timeout: 5), line: line)
+        card.click()
+        XCTAssertTrue(
+            app.buttons["New chat in project"].waitForExistence(timeout: 5),
+            "A card must open that project's own page.",
+            line: line
+        )
+    }
+
+    /// Clicks a destination row in the window's navigation column.
+    ///
+    /// Matched by label rather than by identifier because the sidebar's rows are
+    /// plain `Label`s. Each call site picks a label that is unambiguous *while the
+    /// current screen is showing*, so the row is the only thing carrying it.
+    private func clickSidebarDestination(
+        _ label: String,
+        in app: XCUIApplication,
+        line: UInt = #line
+    ) {
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "No sidebar row for \(label)", line: line)
+        row.click()
     }
 
     func testArtifactsOpenAsAPreviewLibraryThenNavigateToADocument() {

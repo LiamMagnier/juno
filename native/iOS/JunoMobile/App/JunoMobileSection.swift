@@ -6,11 +6,6 @@ import SwiftUI
 enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
     case search
-    /// One prompt, two or three models, side by side. Its own destination rather
-    /// than a mode inside Chat: a comparison is never saved and never becomes a
-    /// conversation, so putting it behind the conversation list would promise a
-    /// history it does not have.
-    case compare
     case code
     case tasks
     case projects
@@ -25,7 +20,6 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "navigation.chat"
         case .search: "navigation.search"
-        case .compare: "navigation.compare"
         case .code: "navigation.code"
         case .tasks: "navigation.tasks"
         case .projects: "navigation.projects"
@@ -48,9 +42,6 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: .new
         case .search: .search
-        // No Juno-drawn glyph for Compare yet, so it falls back to the SF Symbol
-        // rather than borrowing another destination's mark.
-        case .compare: nil
         case .code: .code
         case .tasks: .tasks
         case .projects: .projects
@@ -66,7 +57,6 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         switch self {
         case .chat: "square.and.pencil"
         case .search: "magnifyingglass"
-        case .compare: "rectangle.split.2x1"
         case .code: "chevron.left.forwardslash.chevron.right"
         case .tasks: "clock.badge.checkmark"
         case .projects: "folder"
@@ -85,7 +75,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// (projects, library, artifacts), then the two that *do work* for you
     /// (code, tasks), then the account-level one (connections).
     static let drawerDestinations: [JunoMobileSection] = [
-        .compare, .projects, .library, .artifacts, .code, .tasks, .connections,
+        .projects, .library, .artifacts, .code, .tasks, .connections,
     ]
 
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
@@ -107,7 +97,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search, .compare, .code, .tasks]
+            case .workspace: [.chat, .search, .code, .tasks]
             case .content: [.projects, .library, .artifacts, .connections]
             case .account: [.settings]
             }

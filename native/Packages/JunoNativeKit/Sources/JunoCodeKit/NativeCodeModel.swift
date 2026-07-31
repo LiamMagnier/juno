@@ -76,10 +76,29 @@ public final class NativeCodeModel {
     private static let targetKey = "juno.mobile.code.target"
     private static let targetlessKey = "juno.mobile.code.no-project"
 
+    /// How often the session and computer lists are re-read.
+    ///
+    /// Thirty seconds because the device list is a *heartbeat* view and not a
+    /// pushed one: `/api/code/devices` calls a computer online only while its
+    /// last beat is inside a two-minute window, and hosts beat every sixty
+    /// seconds. Polling at the hosts' own cadence would put a Mac on this list
+    /// up to two beats after it signed in; polling at half of it means one.
+    private static let pollInterval = Duration.seconds(30)
+
+    /// Where the backoff stops. Long enough that a phone with no signal costs
+    /// almost nothing, short enough that coming back into coverage is noticed
+    /// without the reader having to do anything.
+    private static let maximumPollInterval = Duration.seconds(300)
+
     private let client: NativeCodeTaskClient
     private var accountID: AccountID?
     private var streamTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
+    /// Whether the last `refresh()` reached the server at all. Distinct from
+    /// `lastErrorDescription`, which a failed dispatch or a failed cancel also
+    /// writes to — backing the poll off because a *task* was refused would be
+    /// reacting to the wrong fact.
+    private var lastRefreshReachedNothing = false
 
     public init(client: NativeCodeTaskClient) {
         self.client = client
@@ -136,6 +155,38 @@ public final class NativeCodeModel {
         self.accountID = accountID
         phase = .loading
         await refresh()
+        startPolling(for: accountID)
+    }
+
+    /// Keeps both lists current for as long as the account is signed in.
+    ///
+    /// Without this the screen shows whatever it read at sign-in — `pollTask`
+    /// was declared and cancelled but never assigned — so a reader who opened
+    /// Juno before opening their Mac was told "No computers signed in" until
+    /// they thought to pull down. Nothing pushes a device's arrival to the
+    /// phone, so the app was reporting a two-minute-old fact as a current one.
+    ///
+    /// **A backoff rather than a visibility gate.** This model is started at
+    /// sign-in and stopped at sign-out; it is never told whether the Code screen
+    /// is on screen, so any gate written here would be a guess dressed as a
+    /// fact. What it can honestly do is stop asking a server that is not
+    /// answering: every refresh that reaches nothing doubles the wait to a
+    /// five-minute ceiling, and the first success drops straight back to thirty
+    /// seconds. A phone in a tunnel then spends a dozen requests an hour on this
+    /// rather than a hundred and twenty.
+    private func startPolling(for accountID: AccountID) {
+        pollTask = Task { [weak self] in
+            var interval = Self.pollInterval
+            while !Task.isCancelled {
+                try? await Task.sleep(for: interval)
+                guard !Task.isCancelled, let self, self.accountID == accountID else { return }
+                await refresh()
+                guard !Task.isCancelled, self.accountID == accountID else { return }
+                interval = lastRefreshReachedNothing
+                    ? min(interval * 2, Self.maximumPollInterval)
+                    : Self.pollInterval
+            }
+        }
     }
 
     public func stop() {
@@ -155,6 +206,7 @@ public final class NativeCodeModel {
         selectedDeviceID = nil
         selectedWorkspaceKey = nil
         lastErrorDescription = nil
+        lastRefreshReachedNothing = false
         phase = .idle
     }
 
@@ -174,7 +226,8 @@ public final class NativeCodeModel {
                 selectedDeviceID = devices.first(where: \.online)?.id ?? devices.first?.id
             }
         }
-        if loadedTasks == nil, loadedDevices == nil {
+        lastRefreshReachedNothing = loadedTasks == nil && loadedDevices == nil
+        if lastRefreshReachedNothing {
             lastErrorDescription = String(localized: "code.error.unreachable")
             phase = tasks.isEmpty ? .failed : .ready
         } else {

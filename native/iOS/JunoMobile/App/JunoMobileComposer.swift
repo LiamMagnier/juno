@@ -58,9 +58,23 @@ struct JunoMobileComposer: View {
     var composerFocused: FocusState<Bool>.Binding
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    /// The call in progress, published by the shell. Non-nil is what puts the
+    /// dock above this composer, the voice field behind it, and every voice-mode
+    /// degradation below into effect. See ``JunoMobileVoiceSession``.
+    @Environment(\.junoVoiceSession) private var voiceSession
     /// Set while a draft's conversation is being created, so a second tap on
     /// Send cannot create a second conversation.
     @State private var isStarting = false
+    /// Set while a spoken turn is on the wire, so a second tap cannot send the
+    /// same images twice.
+    @State private var isSendingVoiceTurn = false
+    /// Why the last spoken turn was refused. Shown in the same notice row as the
+    /// attachment errors, because it is the same kind of news.
+    @State private var voiceTurnError: String?
+    /// Drives ``JunoComposerAura``'s swell. See ``fireSendSwell()``.
+    @State private var sendSwell = false
+    @State private var sendSwellReset: Task<Void, Never>?
     /// Whether Dictate Mode has taken over the composer.
     @State private var dictating = false
     /// Whether a very large draft has been opened back up for editing. Huge
@@ -84,6 +98,33 @@ struct JunoMobileComposer: View {
 
     private var attachments: [NativeComposerAttachment] {
         attachmentModel?.attachments ?? []
+    }
+
+    // MARK: Voice mode
+
+    /// What the composer becomes while a call is running, and the web's list
+    /// exactly (`composer.tsx`, `voiceActive`): connectors and tools hidden, the
+    /// library closed, dictation gone — it would fight the call for the
+    /// microphone — and attachments narrowed to images.
+    private var voiceActive: Bool { voiceSession != nil }
+
+    /// Past four images a turn, providers start answering about the first one
+    /// and ignoring the rest. The relay enforces the same ceiling; this is here
+    /// so the reader is told before they compose a fifth.
+    private static let maximumVoiceImages = 4
+
+    /// Whether the model on the other end of the call can see at all.
+    ///
+    /// Read from what the relay said in `session.ready` rather than from a list
+    /// of providers kept here, which would be a second copy to drift. Nil while
+    /// connecting reads as "no", so the camera row is not offered a beat before
+    /// it can work.
+    private var voiceCanSeeImages: Bool {
+        voiceSession?.controller.capabilities?.videoInput == true
+    }
+
+    private var canAttachInVoice: Bool {
+        voiceCanSeeImages && attachments.count < Self.maximumVoiceImages
     }
 
     // MARK: Long drafts
@@ -140,6 +181,7 @@ struct JunoMobileComposer: View {
         (prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty)
             || model.isGenerating
             || isStarting
+            || isSendingVoiceTurn
             || conversation?.isPending == true
             || attachmentModel.map { !$0.canSend } == true
     }
@@ -166,6 +208,10 @@ struct JunoMobileComposer: View {
                 notice(importError, symbol: "exclamationmark.circle", tint: Color.orange)
                     .accessibilityIdentifier("juno.mobile.attachment-import-error")
             }
+            if let voiceTurnError {
+                notice(voiceTurnError, symbol: "exclamationmark.circle", tint: Color.orange)
+                    .accessibilityIdentifier("juno.mobile.voice-turn-error")
+            }
 
             // Deep research runs PLAN → SEARCH → READ for tens of seconds before
             // the first token of the report. Without the live step above the
@@ -179,6 +225,14 @@ struct JunoMobileComposer: View {
                     onDisable: { tools.deepResearch = false }
                 )
                 .transition(.opacity)
+            }
+
+            // The call's own controls, directly above the capsule and inside it,
+            // so they ride the keyboard with everything else here rather than
+            // being left behind by it.
+            if let voiceSession {
+                JunoMobileVoiceDock(session: voiceSession)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
 
             // Dictation REPLACES the composer rather than sitting beside it: it
@@ -237,6 +291,23 @@ struct JunoMobileComposer: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
+        // The light behind the composer, and the one place it can be mounted.
+        //
+        // It has to be *here*, on the outer stack, and not on the capsule's own
+        // `.background(JunoGlassBackground…)` a few lines up: a background of
+        // the capsule paints inside the glass, over the text field, and washes
+        // out what is being typed. A background of this stack paints behind the
+        // whole composer, glass included, which is the sibling-at-z-index-minus-one
+        // arrangement the web builds by hand.
+        //
+        // And it has to be inside this view, because this view is what a
+        // `safeAreaInset` moves with the keyboard. Anything anchored to the
+        // screen stays put while the composer rises away from it.
+        //
+        // Never in incognito: that mode is deliberately colourless, and its
+        // composer is a different view entirely (``JunoMobileIncognitoChat``)
+        // which never reaches this line.
+        .background(alignment: .bottom) { auraLayer }
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: sendDisabled)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: generatingHere)
         .animation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion), value: thinkingNotice)
@@ -248,7 +319,71 @@ struct JunoMobileComposer: View {
         .onChange(of: prompt) { _, text in
             if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
         }
+        // A refusal explains a turn that is no longer being attempted, so it
+        // goes with the call it belonged to rather than sitting over the next
+        // typed message.
+        .onChange(of: voiceSession == nil) { _, ended in
+            if ended { voiceTurnError = nil }
+        }
         .task { await applyPreviewFlags() }
+    }
+
+    // MARK: Aura
+
+    /// The two auras, which are mutually exclusive on purpose.
+    ///
+    /// A call replaces the composer's bloom with the voice field for its whole
+    /// duration — the web makes the same swap, and for the same reason: two
+    /// lights under one capsule read as a bug, and while someone is talking the
+    /// thing worth reporting is the conversation, not which model is selected.
+    @ViewBuilder
+    private var auraLayer: some View {
+        if let voiceSession {
+            JunoMobileVoiceField(controller: voiceSession.controller)
+                .frame(height: 240)
+        } else {
+            JunoComposerAura(
+                // The lab's own light, or the account's accent for a model this
+                // client has never heard of — ``JunoProviderGlow/glow(providerID:dark:)``
+                // makes that call, matching the web's `--aura-provider` fallback.
+                tint: JunoProviderGlow.glow(
+                    providerID: selectedModel?.providerID ?? "",
+                    dark: colorScheme == .dark
+                ),
+                // Gated on whether a thinking control is actually on screen,
+                // which is the composer's own test below — not on whether the
+                // model reasons. Models that reason without exposing tiers would
+                // otherwise burn at the dimmest end with no slider anywhere to
+                // explain why.
+                think: JunoProviderGlow.auraThink(
+                    effort: reasoningEffort?.rawValue,
+                    hasEffortControl: thinkingScale?.isPresentable ?? false
+                ),
+                focused: composerFocused.wrappedValue,
+                sending: sendSwell,
+                // The dialled-down variant inside a conversation: there are
+                // messages above it to stay out of the way of.
+                docked: conversation != nil
+            )
+        }
+    }
+
+    /// One swell on an accepted send, cleared on a timer.
+    ///
+    /// A timer and **not** an animation-completion callback. The website hit
+    /// exactly this bug: it drove the swell from a CSS class and removed it on
+    /// `animationend`, and under `prefers-reduced-motion` the keyframes are
+    /// switched off — so the event never arrived and the class stuck for the
+    /// rest of the session. A timer fires whether or not anything animated,
+    /// which is the property that matters.
+    private func fireSendSwell() {
+        sendSwellReset?.cancel()
+        sendSwell = true
+        sendSwellReset = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(1150))
+            guard !Task.isCancelled else { return }
+            sendSwell = false
+        }
     }
 
     /// The quiet offer under a long draft: "That's a long one — attach it as a
@@ -405,37 +540,11 @@ struct JunoMobileComposer: View {
     /// learns one position, and the glyph tells them what it will do.
     private var controlRow: some View {
         HStack(spacing: 6) {
-            JunoMobileComposerActions(
-                projects: projects,
-                selectedProjectID: conversation?.projectId,
-                canPickProject: conversation != nil,
-                canAttach: attachmentModel?.hasCapacity ?? false,
-                canOpenPlugins: openPlugins != nil,
-                tools: tools,
-                // Unknown model → assume it can. The server is the authority and
-                // refuses the flag on a model without the capability; guessing
-                // "no" here would hide the switch while the catalog loads.
-                modelSupportsWebSearch: selectedModel?.supportsWebSearch ?? true,
-                memoryEnabled: memoryEnabled,
-                setMemoryEnabled: setMemoryEnabled,
-                connectors: connectors,
-                setProject: { projectID in
-                    guard let conversation else { return }
-                    await model.setProject(id: conversation.id, projectID: projectID)
-                },
-                open: open,
-                openLibrary: openLibrary.map { open in
-                    {
-                        // Same rule as Camera and Photos: the sheet takes the
-                        // screen, and a keyboard still on its way out while it
-                        // arrives is the layout jump this all exists to remove.
-                        composerFocused.wrappedValue = false
-                        open()
-                    }
-                },
-                startCanvas: startCanvas,
-                openPlugins: { openPlugins?() }
-            )
+            if voiceActive {
+                voiceAddMenu
+            } else {
+                addMenu
+            }
 
             JunoMobileModelControl(
                 models: model.modelCatalog,
@@ -470,11 +579,107 @@ struct JunoMobileComposer: View {
         }
     }
 
+    /// The `+`, in an ordinary chat.
+    private var addMenu: some View {
+        JunoMobileComposerActions(
+            projects: projects,
+            selectedProjectID: conversation?.projectId,
+            canPickProject: conversation != nil,
+            canAttach: attachmentModel?.hasCapacity ?? false,
+            canOpenPlugins: openPlugins != nil,
+            tools: tools,
+            // Unknown model → assume it can. The server is the authority and
+            // refuses the flag on a model without the capability; guessing
+            // "no" here would hide the switch while the catalog loads.
+            modelSupportsWebSearch: selectedModel?.supportsWebSearch ?? true,
+            memoryEnabled: memoryEnabled,
+            setMemoryEnabled: setMemoryEnabled,
+            connectors: connectors,
+            setProject: { projectID in
+                guard let conversation else { return }
+                await model.setProject(id: conversation.id, projectID: projectID)
+            },
+            open: open,
+            openLibrary: openLibrary.map { open in
+                {
+                    // Same rule as Camera and Photos: the sheet takes the
+                    // screen, and a keyboard still on its way out while it
+                    // arrives is the layout jump this all exists to remove.
+                    composerFocused.wrappedValue = false
+                    open()
+                }
+            },
+            startCanvas: startCanvas,
+            openPlugins: { openPlugins?() }
+        )
+    }
+
+    /// The `+`, during a call: **images only**.
+    ///
+    /// A separate menu rather than the full one with rows switched off, which is
+    /// what the web does too. Everything the normal menu offers below "Add" —
+    /// projects, canvas, research, connectors — belongs to a turn the chat route
+    /// composes, and a spoken turn does not go through that route at all. A menu
+    /// of controls that quietly apply to nothing is worse than a short menu.
+    ///
+    /// Files stays visible and disabled rather than being removed, because
+    /// "where did attaching a PDF go" is a question worth answering in place.
+    private var voiceAddMenu: some View {
+        Menu {
+            Section("attachments.add") {
+                Button {
+                    open(.camera)
+                } label: {
+                    Label("attachments.camera", systemImage: "camera")
+                }
+                .disabled(!canAttachInVoice)
+
+                Button {
+                    open(.photos)
+                } label: {
+                    Label("attachments.photos", systemImage: "photo")
+                }
+                .disabled(!canAttachInVoice)
+
+                Button {} label: {
+                    Label("composer.voice.files-chat-only", systemImage: "paperclip")
+                }
+                .disabled(true)
+            }
+            if !voiceCanSeeImages {
+                Section {
+                    Button {} label: {
+                        Label("composer.voice.no-vision", systemImage: "eye.slash")
+                    }
+                    .disabled(true)
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 34, height: 34)
+                .modifier(JunoComposerGlassCircle())
+                .frame(width: 40, height: 44)
+                .contentShape(Rectangle())
+        }
+        // Same three rules as the full menu: source order, ink rather than
+        // accent, and a chosen row must not take the keyboard with it.
+        .menuOrder(.fixed)
+        .tint(Color.primary)
+        .menuActionDismissBehavior(.automatic)
+        .accessibilityLabel("attachments.add")
+        .accessibilityIdentifier("juno.mobile.chat-voice-add")
+    }
+
     /// Offered only where it can actually work. A Simulator with no recognizer,
     /// or a device where speech is restricted, gets no microphone at all rather
     /// than one that opens a capsule and immediately apologises.
+    ///
+    /// And never during a call: Dictate Mode opens a second recognizer on the
+    /// microphone the call already holds.
     private var canDictate: Bool {
-        JunoSpeechService.isSupported && !generatingHere
+        JunoSpeechService.isSupported && !generatingHere && !voiceActive
     }
 
     private var dictateButton: some View {
@@ -635,6 +840,11 @@ struct JunoMobileComposer: View {
     /// makes the two feel like one control rather than a choice.
     private var showsVoiceAction: Bool {
         openVoiceMode != nil
+            // Never during a call. The dock above has the hang-up; a second
+            // control that reopens what is already open is a control that does
+            // nothing, and it would take the slot Send needs to talk into the
+            // conversation.
+            && !voiceActive
             && prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             // A staged attachment is something to send, so the slot stays Send.
             && attachments.isEmpty
@@ -684,6 +894,13 @@ struct JunoMobileComposer: View {
     // MARK: Send
 
     private func send() {
+        // Past the guards that can still refuse the turn, so the aura only
+        // swells for a send that is actually going out.
+        if let voiceSession {
+            sendVoiceTurn(voiceSession)
+            return
+        }
+        fireSendSwell()
         let attachmentIDs = attachmentModel?.uploadedIDs ?? []
         // Read the tools once, here, and let the read disarm research. Reading
         // them again inside `deliver` would mean a draft's send resolved them
@@ -740,6 +957,75 @@ struct JunoMobileComposer: View {
         // The title is generated from the first turn, exactly as the web does —
         // see NativeConversationModel.generateTitleIfNeeded.
         Task { await model.generateTitleIfNeeded(conversationID: conversationID) }
+    }
+
+    // MARK: Sending into a call
+
+    /// Sends the draft — text and up to four images — through the live session
+    /// rather than through the chat route.
+    ///
+    /// This is what makes the composer worth keeping on screen during a call.
+    /// The turn goes over the socket the conversation is already on, so the
+    /// model answers it out loud in context instead of it arriving as a separate
+    /// written exchange the spoken thread knows nothing about.
+    ///
+    /// **The images are new surface, and gated accordingly.** The relay's
+    /// `video.frame` takes JPEG from any source, and the Mac already feeds it
+    /// screen captures — but no web client has ever sent a *camera* frame into a
+    /// call, so there is no precedent to match and no field report to lean on.
+    /// `sendTurn` refuses unless the relay itself said `videoInput`, and so does
+    /// the `+` menu above it: nothing here assumes a provider can see.
+    private func sendVoiceTurn(_ session: JunoMobileVoiceSession) {
+        guard !isSendingVoiceTurn else { return }
+        voiceTurnError = nil
+        guard session.isLive else {
+            // Two different situations with one useless shared message on the
+            // web ("still connecting" for a session that has already hung up).
+            // A finished call needs to say so, because the way out of it — the
+            // red button on the dock — is not the way out of a slow one.
+            voiceTurnError = switch session.controller.phase {
+            case .ended, .error: String(localized: "composer.voice.not-live")
+            default: String(localized: "composer.voice.connecting")
+            }
+            return
+        }
+        let staged = attachments
+        guard staged.count <= Self.maximumVoiceImages else {
+            voiceTurnError = String(localized: "composer.voice.image-limit")
+            return
+        }
+        // `previewData` is the payload the upload model already holds for an
+        // image, which is why this needs no second read and no network. An
+        // attachment without one is either a document or a library clone whose
+        // bytes only ever existed on the server — neither can be shown to a
+        // model over this socket, so the turn is refused rather than silently
+        // sent without them.
+        let images = staged.compactMap(\.previewData)
+        guard images.count == staged.count else {
+            voiceTurnError = String(localized: "composer.voice.images-only")
+            return
+        }
+        guard images.isEmpty || voiceCanSeeImages else {
+            voiceTurnError = String(localized: "composer.voice.no-vision")
+            return
+        }
+
+        fireSendSwell()
+        let text = prompt
+        isSendingVoiceTurn = true
+        Task {
+            let accepted = await session.controller.sendTurn(text: text, images: images)
+            isSendingVoiceTurn = false
+            guard accepted else {
+                voiceTurnError = images.isEmpty
+                    ? String(localized: "composer.voice.send-failed")
+                    : String(localized: "composer.voice.no-vision")
+                return
+            }
+            prompt = ""
+            draftExpanded = false
+            attachmentModel?.clear()
+        }
     }
 }
 
