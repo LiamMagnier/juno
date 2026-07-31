@@ -182,6 +182,49 @@ final class JunoMobileSendSwell {
     }
 }
 
+// MARK: - The bloom, mounted
+
+/// ``JunoComposerAura`` with its swell re-armed a beat behind the caller's.
+///
+/// The aura starts a swell on the **rising edge** of `sending`, so an instance
+/// born with it already true never sees one — and on the phone the send is
+/// exactly what re-mounts the bloom. Two ways round:
+///
+/// - a conversation with no turns yet. `sendMessage` appends the user message
+///   and the placeholder in the same update, so the greeting's full bloom is torn
+///   down and the composer's docked one is *born* mid-swell;
+/// - a new chat, where creating the conversation swaps the draft screen for the
+///   conversation screen under a swell that has already started.
+///
+/// Seeding false and raising the edge on the next pass hands the new bloom the
+/// swell the old one was showing — which is what the browser gets for free,
+/// because a CSS animation starts when the class is present on an element as it
+/// is created. The Mac carries the same shim, as `DesktopChatAuraLayer`; every
+/// iOS mount point goes through this one so the two platforms cannot drift.
+struct JunoMobileAuraLayer: View {
+    let light: JunoMobileAuraLight
+    /// `false` is the empty state's full bloom; `true` the dialled-down variant
+    /// that pools around the capsule inside a conversation.
+    let docked: Bool
+
+    /// The swell flag, one update behind the light's. See above.
+    @State private var sending = false
+
+    var body: some View {
+        JunoComposerAura(
+            tint: light.tint,
+            think: light.think,
+            focused: light.focused,
+            sending: sending,
+            docked: docked,
+            viewport: light.viewport
+        )
+        .onChange(of: light.sending, initial: true) { _, isSending in
+            sending = isSending
+        }
+    }
+}
+
 // MARK: - The greeting
 
 /// The website's home greeting, ported: the mark, a time-of-day phrase, then the
@@ -283,17 +326,10 @@ struct JunoMobileGreeting: View {
     @ViewBuilder
     private var auraLayer: some View {
         if let aura {
-            JunoComposerAura(
-                tint: aura.tint,
-                think: aura.think,
-                focused: aura.focused,
-                sending: aura.sending,
-                // The empty state's full bloom. Docked is for a transcript that
-                // has messages to stay out of the way of; here the sentence is
-                // the only thing on screen and the light is meant to reach it.
-                docked: false,
-                viewport: aura.viewport
-            )
+            // The empty state's full bloom. Docked is for a transcript that has
+            // messages to stay out of the way of; here the sentence is the only
+            // thing on screen and the light is meant to reach it.
+            JunoMobileAuraLayer(light: aura, docked: false)
         }
     }
 

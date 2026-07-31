@@ -113,10 +113,7 @@ struct DesktopCodeQuotaMeter: View {
                 if !plan.isBrowseOnly {
                     DesktopCodeDotFillBar(
                         fraction: fraction,
-                        // Past 90% the meter stops being information and starts
-                        // being a warning — the same threshold, and the same
-                        // colour, the Usage page's plan card already uses.
-                        tint: fraction >= 0.9 ? Color.junoCaution : Color.junoAccent,
+                        tint: tint,
                         dimmed: plan.isUnlimited
                     )
                 }
@@ -136,6 +133,22 @@ struct DesktopCodeQuotaMeter: View {
     /// honest reading of "no cap" is that nothing is left to run out.
     private var fraction: Double {
         plan.isUnlimited ? 1 : min(1, max(0, plan.weekly.fraction))
+    }
+
+    /// Past 90% the meter stops being information and starts being a warning —
+    /// the same threshold, and the same colour, the Usage page's plan card uses.
+    ///
+    /// Read from the plan and not from ``fraction``, which is a *display* value:
+    /// an unlimited plan sets it to 1 to draw a full bar, and choosing the tint
+    /// from that painted the one account that cannot run out in the amber
+    /// reserved for the account that nearly has. The dimming does not rescue it —
+    /// 40% of caution is still caution — so the least constrained plan in the
+    /// product read as the most alarming, distinguishable only by the "No cap"
+    /// beside it. The Usage page never hits this because it draws no meter at all
+    /// for an unlimited plan; this footer has one row and shows the bar either way.
+    private var tint: Color {
+        guard !plan.isUnlimited, fraction >= 0.9 else { return Color.junoAccent }
+        return Color.junoCaution
     }
 
     private var percent: Int { Int((fraction * 100).rounded()) }

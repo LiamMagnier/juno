@@ -138,22 +138,7 @@ private struct JunoMobileThinkingLabel: View {
     let pop: Int
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var panned = false
     @State private var popped = false
-
-    /// `--ultra-from` / `--ultra-to`, with the account's accent at both ends so
-    /// the ramp leaves and returns to the colour the rest of the app is in.
-    private var ramp: [Color] {
-        let from = Color.junoAdaptive(
-            light: JunoColorToken(hsl: (h: 252, s: 1, l: 0.68)),
-            dark: JunoColorToken(hsl: (h: 252, s: 1, l: 0.76))
-        )
-        let to = Color.junoAdaptive(
-            light: JunoColorToken(hsl: (h: 271, s: 0.91, l: 0.65)),
-            dark: JunoColorToken(hsl: (h: 271, s: 0.93, l: 0.73))
-        )
-        return [.junoAccent, from, to, from, .junoAccent]
-    }
 
     var body: some View {
         label
@@ -179,29 +164,71 @@ private struct JunoMobileThinkingLabel: View {
     @ViewBuilder
     private var label: some View {
         if ultra {
-            word
-                .hidden()
-                .overlay {
-                    LinearGradient(colors: ramp, startPoint: .leading, endPoint: .trailing)
-                        // Three times the word's width, travelling a third of
-                        // that each way: the ramp is always over the glyphs, so
-                        // the colour drifts rather than sweeping past.
-                        .scaleEffect(x: 3, anchor: .center)
-                        .offset(x: panned ? 26 : -26)
-                }
-                .mask { word }
-                .onAppear {
-                    guard !reduceMotion else { return }
-                    withAnimation(.linear(duration: 12).repeatForever(autoreverses: true)) {
-                        panned = true
-                    }
-                }
+            JunoMobileThinkingRamp(text: text)
         } else {
-            word
+            JunoMobileThinkingWord(text: text)
         }
     }
+}
 
-    private var word: some View {
+/// The deepest stop's drifting ramp.
+///
+/// A view of its own, and that is the whole point: the travel is driven by a
+/// `@State` flag animated from `false` to `true`, so it can only start from a
+/// flag that is *actually* false. Held one level up — on the chip's label, which
+/// keeps its place in the composer's `HStack` whichever tier is selected — the
+/// flag survived leaving the top tier still `true`, and coming back re-ran the
+/// `onAppear` against a value that was already at its destination: SwiftUI has
+/// nothing to interpolate, so the ramp froze at the far end of its travel for the
+/// rest of the session. Here the state is born and dies with the branch that
+/// draws it.
+private struct JunoMobileThinkingRamp: View {
+    let text: String
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var panned = false
+
+    /// `--ultra-from` / `--ultra-to`, with the account's accent at both ends so
+    /// the ramp leaves and returns to the colour the rest of the app is in.
+    private var ramp: [Color] {
+        let from = Color.junoAdaptive(
+            light: JunoColorToken(hsl: (h: 252, s: 1, l: 0.68)),
+            dark: JunoColorToken(hsl: (h: 252, s: 1, l: 0.76))
+        )
+        let to = Color.junoAdaptive(
+            light: JunoColorToken(hsl: (h: 271, s: 0.91, l: 0.65)),
+            dark: JunoColorToken(hsl: (h: 271, s: 0.93, l: 0.73))
+        )
+        return [.junoAccent, from, to, from, .junoAccent]
+    }
+
+    var body: some View {
+        JunoMobileThinkingWord(text: text)
+            .hidden()
+            .overlay {
+                LinearGradient(colors: ramp, startPoint: .leading, endPoint: .trailing)
+                    // Three times the word's width, travelling a third of that
+                    // each way: the ramp is always over the glyphs, so the
+                    // colour drifts rather than sweeping past.
+                    .scaleEffect(x: 3, anchor: .center)
+                    .offset(x: panned ? 26 : -26)
+            }
+            .mask { JunoMobileThinkingWord(text: text) }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 12).repeatForever(autoreverses: true)) {
+                    panned = true
+                }
+            }
+    }
+}
+
+/// The word itself, shared by both branches so the two states typeset
+/// identically — the ramp is a mask of exactly these glyphs.
+private struct JunoMobileThinkingWord: View {
+    let text: String
+
+    var body: some View {
         Text(text)
             .font(.subheadline.weight(.medium))
             .monospacedDigit()

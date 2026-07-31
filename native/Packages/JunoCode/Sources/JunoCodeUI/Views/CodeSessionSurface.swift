@@ -26,6 +26,8 @@ import SwiftUI
 public struct CodeSessionCanvas: View {
     private let controller: SessionController
     @Bindable private var model: WorkbenchModel
+    /// The window's Review disclosure. Mirrored against
+    /// ``ReviewModel/isPresented`` below rather than read directly — see there.
     @Binding private var showsReview: Bool
     @Binding private var showsConsole: Bool
     @FocusState private var composerFocused: Bool
@@ -80,8 +82,37 @@ public struct CodeSessionCanvas: View {
                     .safeAreaInset(edge: .bottom, spacing: 0) { composer }
             }
             .junoReadingCanvas()
-            .animation(JunoMotion.fast, value: showsReview)
+            .animation(JunoMotion.fast, value: controller.review.isPresented)
             .animation(JunoMotion.fast, value: showsConsole)
+            // One flag decides whether the canvas is reviewing, and it lives on
+            // the review the whole session shares.
+            //
+            // Rendering straight from the window's disclosure flag is what left
+            // `ReviewModel.isPresented` write-only, and with it the inspector's
+            // Changes tab: `present(path:)` and `open(_:using:)` raised a flag no
+            // view read, so clicking a changed file — the tab's stated purpose —
+            // did nothing at all, and Open Quickly only worked because the window
+            // happened to set both by hand.
+            //
+            // The window's flag stays as the mirror rather than the source: it is
+            // a `@SceneStorage` it also spends on its Review toolbar toggle and on
+            // restoring the column across launches, and this package cannot reach
+            // either. Mirrored in both directions, the toggle, the Changes list
+            // and Open Quickly all end up describing the same state.
+            .onChange(of: showsReview, initial: true) { _, visible in
+                // Assigned rather than routed through `present()`/`dismiss()`,
+                // because `present()` also clears `openDocument` and Open Quickly
+                // raises this flag one update before the document it is opening
+                // arrives.
+                if controller.review.isPresented != visible {
+                    controller.review.isPresented = visible
+                }
+            }
+            .onChange(of: controller.review.isPresented) { _, presented in
+                if showsReview != presented {
+                    showsReview = presented
+                }
+            }
             // Read once per session rather than per keystroke: the menu is
             // consulted on every character typed after a slash, and hitting the
             // filesystem there would put a directory listing in the type-ahead
@@ -110,7 +141,7 @@ public struct CodeSessionCanvas: View {
 
     @ViewBuilder
     private var content: some View {
-        if showsReview {
+        if controller.review.isPresented {
             ReviewCanvasView(controller: controller, review: controller.review)
         } else {
             // No session-selection callback by design. A sub-agent's transcript

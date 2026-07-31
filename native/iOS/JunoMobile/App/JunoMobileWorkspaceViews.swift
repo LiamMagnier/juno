@@ -697,7 +697,8 @@ private struct JunoMobileProjectDetail: View {
                     instructionsDraft = project.instructions
                     showingInstructions = true
                 },
-            footnote: "Included in every conversation linked to this project."
+            footnote: "Included in every conversation linked to this project.",
+            identifier: "juno.mobile.project-instructions"
         ) {
             JunoCard {
                 if project.instructions.isEmpty {
@@ -707,7 +708,6 @@ private struct JunoMobileProjectDetail: View {
                 }
             }
         }
-        .accessibilityIdentifier("juno.mobile.project-instructions")
     }
 
     private var conversationsSection: some View {
@@ -786,7 +786,8 @@ private struct JunoMobileProjectDetail: View {
                 : { showingImporter = true },
             footnote: model.selectedFiles.isEmpty
                 ? "Files added here are available to every conversation in the project."
-                : nil
+                : nil,
+            identifier: "juno.mobile.project-files"
         ) {
             JunoCard(padding: 0) {
                 if model.selectedFiles.isEmpty {
@@ -819,7 +820,6 @@ private struct JunoMobileProjectDetail: View {
                 }
             }
         }
-        .accessibilityIdentifier("juno.mobile.project-files")
     }
 
     /// A scrolling stack of cards, not a `List`.

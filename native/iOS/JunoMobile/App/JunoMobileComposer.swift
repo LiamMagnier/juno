@@ -388,15 +388,17 @@ struct JunoMobileComposer: View {
             // the web's one 32rem-tall element actually lands — see
             // ``JunoMobileGreeting``. Mounting it in both places would double
             // every alpha in the ramp.
-            JunoComposerAura(
-                tint: light.tint,
-                think: light.think,
-                focused: light.focused,
-                sending: light.sending,
+            //
+            // Through ``JunoMobileAuraLayer`` rather than straight into
+            // `JunoComposerAura`: this bloom is regularly *born* with the send
+            // already in flight — sending the first message is what takes the
+            // greeting away and puts this one on screen — and an aura born hot
+            // never sees the rising edge its swell needs.
+            JunoMobileAuraLayer(
+                light: light,
                 // The dialled-down variant inside a conversation: there are
                 // messages above it to stay out of the way of.
-                docked: conversation != nil,
-                viewport: light.viewport
+                docked: conversation != nil
             )
         }
     }

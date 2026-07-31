@@ -7,23 +7,45 @@ import JunoDesignSystem
 ///
 /// Nothing here is inferred. There are no token or cost figures because the
 /// local runtime does not report `Usage`, and no progress bars because no tool
-/// reports progress.
+/// reports progress — the running row's spinner is indeterminate for exactly
+/// that reason, and says only that something is executing.
 struct ActivityTab: View {
     @Bindable var controller: SessionController
 
-    private var currentTool: (name: String, summary: String)? {
-        var completed: Set<String> = []
+    /// The tool that has actually started and not finished.
+    ///
+    /// Derived from `toolStarted` minus `toolCompleted` — the same reading
+    /// `CodeToolDigest` gives the transcript's working row — rather than from
+    /// `toolProposed`. The orchestrator appends the proposal *before* it suspends
+    /// in `authorizeInvocation` and only appends `toolStarted` once the call is
+    /// authorized, so counting proposals reported a run blocked on the reader as
+    /// executing. It also reported one forever after a hard quit: the store's
+    /// crash repair appends `statusChanged` and `errorOccurred` and never a
+    /// `toolCompleted`, so the interrupted call stayed open in the transcript.
+    /// Nothing can be executing outside a live run, which is what closes that
+    /// second case whatever the transcript ends on.
+    private var runningTool: (name: String, summary: String)? {
+        guard controller.isRunning else { return nil }
+        let open = CodeToolDigest.runningToolCallIDs(in: controller.events)
+        guard !open.isEmpty else { return nil }
+        // `ToolStartedEvent` carries only an identifier, so the name and the
+        // summary come from the proposal that opened the same call.
         for event in controller.events.reversed() {
-            switch event.payload {
-            case let .toolCompleted(finished):
-                completed.insert(finished.toolCallID)
-            case let .toolProposed(proposed) where !completed.contains(proposed.toolCallID):
+            if case let .toolProposed(proposed) = event.payload,
+               open.contains(proposed.toolCallID)
+            {
                 return (proposed.toolName, proposed.summary)
-            default:
-                continue
             }
         }
         return nil
+    }
+
+    /// The decision the run is blocked on, and how many are queued behind it.
+    /// Read from the approval queue rather than from the transcript so this pane
+    /// and the card above the composer name the same request.
+    private var blockingApproval: (request: ApprovalRequest, others: Int)? {
+        guard let first = controller.pendingApprovals.first else { return nil }
+        return (first, controller.pendingApprovals.count - 1)
     }
 
     var body: some View {
@@ -39,22 +61,11 @@ struct ActivityTab: View {
     private var list: some View {
         List {
             Section("Run") {
-                if let currentTool {
-                    LabeledContent("Running") {
-                        VStack(alignment: .trailing, spacing: 1) {
-                            Text(currentTool.name).junoCode()
-                            Text(currentTool.summary)
-                                .junoCaption()
-                                .lineLimit(2)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-                } else {
-                    // The session's own status belongs to the toolbar and the
-                    // transcript; this pane answers the narrower question of what
-                    // tool is running right now.
-                    LabeledContent("Running", value: "No tool")
-                }
+                // Above the running row because a run waiting on the reader is
+                // the more urgent fact, and because the two are independent: a
+                // parallel turn can have one call executing while another waits.
+                approvalRow
+                runningRow
                 if controller.isRunning, controller.runStartedAt != nil {
                     TimelineView(.periodic(from: .now, by: 1)) { _ in
                         LabeledContent("Elapsed", value: elapsedLabel)
@@ -78,6 +89,71 @@ struct ActivityTab: View {
         }
         .listStyle(.inset)
         .computerUseWatch(controller)
+    }
+
+    // MARK: - What the run is doing
+
+    /// A run blocked on the reader, drawn as blocked.
+    ///
+    /// It carries the approval mark and the caution tint the card above the
+    /// composer uses, so the two surfaces agree at a glance, and it is worded as
+    /// waiting rather than as progress: a pane that reports a blocked run as
+    /// working is a pane that stops the reader looking for the card.
+    @ViewBuilder
+    private var approvalRow: some View {
+        if let blockingApproval {
+            LabeledContent {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(blockingApproval.request.toolName).junoCode()
+                    Text(blockingApproval.request.summary)
+                        .junoCaption()
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                    if blockingApproval.others > 0 {
+                        Text("\(blockingApproval.others) more waiting")
+                            .junoCaption()
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            } label: {
+                Label("Waiting for approval", systemImage: "hand.raised.fill")
+                    .foregroundStyle(Color.junoCaution)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "Waiting for approval: \(blockingApproval.request.toolName), \(blockingApproval.request.summary)"
+            )
+            .accessibilityIdentifier("juno.code.activity.awaiting-approval")
+        }
+    }
+
+    /// The session's own status belongs to the toolbar and the transcript; this
+    /// row answers the narrower question of what tool is executing right now, and
+    /// "No tool" is a real answer to it.
+    @ViewBuilder
+    private var runningRow: some View {
+        if let runningTool {
+            LabeledContent {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text(runningTool.name).junoCode()
+                    Text(runningTool.summary)
+                        .junoCaption()
+                        .lineLimit(2)
+                        .multilineTextAlignment(.trailing)
+                }
+            } label: {
+                HStack(spacing: JunoSpace.tight) {
+                    ProgressView().controlSize(.small)
+                    Text("Running")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Running \(runningTool.name), \(runningTool.summary)")
+            .accessibilityIdentifier("juno.code.activity.running")
+        } else {
+            LabeledContent("Running", value: "No tool")
+                .accessibilityIdentifier("juno.code.activity.running")
+        }
     }
 
     // MARK: - Sub-agents

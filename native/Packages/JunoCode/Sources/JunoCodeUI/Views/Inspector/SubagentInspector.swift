@@ -11,8 +11,8 @@ import JunoDesignSystem
 /// one list of agents, so a run that delegated four times can be read as a list
 /// instead of by scrolling the whole transcript looking for them.
 ///
-/// Clicking a row drills into that agent *inside this pane*, with a back arrow.
-/// It never selects the agent's session: a sub-agent is work happening inside
+/// Clicking a row drills into that agent *inside this pane*, under a named back
+/// control. It never selects the agent's session: a sub-agent is work inside
 /// this conversation, and a panel that navigates away from the conversation to
 /// show it would be re-creating the second chat the whole design removes.
 ///
@@ -236,34 +236,54 @@ private struct SubagentDetailPane: View {
     }
 
     private var header: some View {
-        HStack(spacing: JunoSpace.snug) {
-            Button(action: back) {
-                Image(systemName: "chevron.backward")
-                    .imageScale(.small)
-                    .contentShape(.rect)
+        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+            backControl
+            HStack(spacing: JunoSpace.snug) {
+                SubagentStatusGlyph(status: run.status)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(run.title)
+                        .junoRowLabel()
+                        .lineLimit(2)
+                    Text(SubagentFormatting.label(run.status))
+                        .junoCaption()
+                        .foregroundStyle(SubagentFormatting.tint(run.status))
+                }
+                Spacer(minLength: JunoSpace.tight)
+                SubagentElapsed(run: run)
             }
-            .buttonStyle(.plain)
-            // Deliberately no Escape shortcut: the inspector is a permanently
-            // visible column, and claiming Escape here would swallow it for the
-            // composer and every sheet the window can present.
-            .help("Back to every sub-agent")
-            .accessibilityLabel("Back to every sub-agent")
-            .accessibilityIdentifier("juno.code.subagents.back")
-
-            SubagentStatusGlyph(status: run.status)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(run.title)
-                    .junoRowLabel()
-                    .lineLimit(2)
-                Text(SubagentFormatting.label(run.status))
-                    .junoCaption()
-                    .foregroundStyle(SubagentFormatting.tint(run.status))
-            }
-            Spacer(minLength: JunoSpace.tight)
-            SubagentElapsed(run: run)
         }
         .padding(.horizontal, JunoSpace.cozy)
         .padding(.vertical, JunoSpace.snug)
+    }
+
+    /// The only way out of a report, and sized like one.
+    ///
+    /// It was a bare `chevron.backward` with the content shape on the glyph, so
+    /// the sole exit from this pane was a ~7x11pt target that a click two points
+    /// off missed entirely — while the copy button further down this same pane
+    /// got a full control-sized one. The named destination goes with the size:
+    /// this is a rail with one level in it, and "All sub-agents" says where back
+    /// leads without the reader having to try it.
+    ///
+    /// On its own row rather than beside the title because at the inspector's
+    /// 260pt minimum a text label, the status mark, a two-line agent title and
+    /// the elapsed time do not share a line without the title truncating.
+    private var backControl: some View {
+        Button(action: back) {
+            Label("All sub-agents", systemImage: "chevron.backward")
+                .junoRowLabel()
+                .padding(.vertical, JunoSpace.hairline)
+                .padding(.trailing, JunoSpace.snug)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        // Deliberately no Escape shortcut: the inspector is a permanently
+        // visible column, and claiming Escape here would swallow it for the
+        // composer and every sheet the window can present.
+        .help("Back to every sub-agent")
+        .accessibilityLabel("Back to every sub-agent")
+        .accessibilityIdentifier("juno.code.subagents.back")
     }
 
     @ViewBuilder

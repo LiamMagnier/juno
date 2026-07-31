@@ -67,6 +67,15 @@ struct JunoMobileChatDetailScreen: View {
     /// sending. Held one level up, it survives the swap.
     @State private var tools = JunoMobileComposerTools()
 
+    /// The send swell, owned here for the same reason ``tools`` is.
+    ///
+    /// A send from a draft creates the conversation, and creating it swaps
+    /// `JunoMobileDraftChat` for `JunoMobileConversationDetail` mid-swell. One
+    /// instance per child meant the new screen's bloom was handed a swell that
+    /// had never fired — so the first message of every new chat was the one send
+    /// with no light behind it.
+    @State private var sendSwell = JunoMobileSendSwell()
+
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
         return model.conversations.first { $0.id == id }
@@ -91,6 +100,7 @@ struct JunoMobileChatDetailScreen: View {
                     memoryEnabled: memoryEnabled,
                     setMemoryEnabled: setMemoryEnabled,
                     tools: tools,
+                    sendSwell: sendSwell,
                     readAloud: readAloud,
                     voiceID: voiceID,
                     messageActions: messageActions,
@@ -112,7 +122,8 @@ struct JunoMobileChatDetailScreen: View {
                     connectors: connectors,
                     memoryEnabled: memoryEnabled,
                     setMemoryEnabled: setMemoryEnabled,
-                    tools: tools
+                    tools: tools,
+                    sendSwell: sendSwell
                 )
             }
         }
@@ -150,6 +161,11 @@ private struct JunoMobileDraftChat: View {
     var memoryEnabled: Bool = true
     var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
+    /// Shared with the composer, because on this screen the light it drives is
+    /// behind the greeting rather than behind the capsule — and owned one level
+    /// up, so it outlives this screen when the first message turns the draft
+    /// into a conversation.
+    let sendSwell: JunoMobileSendSwell
 
     @State private var prompt = ""
     @State private var selectedModelID = ""
@@ -161,9 +177,6 @@ private struct JunoMobileDraftChat: View {
     @State private var showingLibrary = false
     /// The column's height, for the voice field — see the conversation screen.
     @State private var chatColumnHeight: CGFloat = 0
-    /// Shared with the composer, because on this screen the light it drives is
-    /// behind the greeting rather than behind the capsule.
-    @State private var sendSwell = JunoMobileSendSwell()
     /// The call in progress. It reaches the home screen because that is where
     /// most calls are started: nothing is selected, so the spoken turns have no
     /// conversation to appear in until the save route makes one on hang-up.
@@ -348,6 +361,11 @@ private struct JunoMobileConversationDetail: View {
     var memoryEnabled: Bool = true
     var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
+    /// Shared with the composer so the swell reaches whichever aura is mounted —
+    /// the greeting's on an empty conversation, the composer's once it has turns.
+    /// Owned one level up so a send made in a draft survives the swap onto this
+    /// screen still swelling.
+    let sendSwell: JunoMobileSendSwell
     /// The screen's one speaker, so two answers cannot read over each other.
     var readAloud: JunoMobileReadAloud?
     var voiceID: String?
@@ -416,9 +434,6 @@ private struct JunoMobileConversationDetail: View {
     /// can be sized from the conversation instead of from the composer's strip.
     /// See ``JunoMobileComposer/auraLayer``.
     @State private var chatColumnHeight: CGFloat = 0
-    /// Shared with the composer so the swell reaches whichever aura is mounted —
-    /// the greeting's on an empty conversation, the composer's once it has turns.
-    @State private var sendSwell = JunoMobileSendSwell()
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     /// Regular width docks the artifact canvas beside the thread instead of

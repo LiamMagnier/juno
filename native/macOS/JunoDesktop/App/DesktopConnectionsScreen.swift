@@ -23,6 +23,13 @@ import SwiftUI
 /// server's own capability line is the card's subtitle, how the authorisation
 /// round trip works is the Connect button's tooltip, and the account-wide caveat
 /// is the page's closing note — the same three places the website puts them.
+///
+/// **The one control this page does not put in the toolbar is search.**
+/// Connections is the only account page the app renders inside *two* different
+/// shells — Chat's window and Juno Code's — and Code's detail column already
+/// spends the window's single search field on its sessions. This page carries its
+/// own field instead, which is a crash fix rather than a preference;
+/// ``searchField`` has the report.
 struct DesktopConnectionsScreen: View {
     @Bindable var model: NativeConnectorModel
     @Environment(\.scenePhase) private var scenePhase
@@ -40,7 +47,6 @@ struct DesktopConnectionsScreen: View {
 
     var body: some View {
         content
-            .searchable(text: $model.query, prompt: "Search apps")
             .toolbar { toolbar }
             .confirmationDialog(
                 disconnectTarget.map { "Disconnect \($0.label)?" } ?? "",
@@ -109,7 +115,7 @@ struct DesktopConnectionsScreen: View {
             VStack(alignment: .leading, spacing: JunoSpace.section) {
                 header
                 notices
-                categories
+                filters
                 results
                 loadMore
                 footnote
@@ -151,7 +157,92 @@ struct DesktopConnectionsScreen: View {
         }
     }
 
-    // MARK: Categories
+    // MARK: Filters
+
+    /// The two ways into a catalog of a thousand apps, as one block. They are a
+    /// pair — a name and a kind — so the gap between them is a control's gap and
+    /// not a section's.
+    private var filters: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            searchField
+            categories
+        }
+    }
+
+    /// Search, as a field in the page rather than as a `.searchable`.
+    ///
+    /// **This is a crash fix, not a layout preference.** Connections is the only
+    /// account page rendered inside two different shells, and Juno Code's detail
+    /// column already declares `.searchable(…, prompt: "Search sessions")` on the
+    /// whole column this page occupies (``DesktopCodeWorkspace``). SwiftUI serves
+    /// one search field per navigation container, so a second one nested inside
+    /// that column is not a cosmetic collision: selecting Connections in the Code
+    /// window threw out of AppKit's layout pass and took SIGTRAP every time.
+    /// Making the *shell's* field conditional would trade one crash for the
+    /// other — adding and removing a `.searchable` rebuilds the AppKit toolbar
+    /// under a live window, which is the rebuild that drove that shell's
+    /// split-view constraint loop, and the reason every item in ``toolbar`` is
+    /// present in every state.
+    ///
+    /// ``DesktopArtifactsScreen`` had already reached the same field for the
+    /// milder version of the reason: a `.searchable` renders in the *window's*
+    /// titlebar, where a control that filters one page's directory reads as
+    /// searching the whole window.
+    ///
+    /// It also closes a hole the toolbar field left open. `NativeConnectorModel`
+    /// is a single instance shared by every window, and `query` drives a
+    /// server-side catalog reload — so a word typed here and left behind used to
+    /// empty the directory in the *other* window, which had no field bound to it
+    /// and therefore no way to clear it. The filter is now visible, and
+    /// clearable, wherever the page is being read.
+    ///
+    /// The shape is the web's own: `connector-directory.tsx` draws a `bg-card`
+    /// input with a leading magnifier immediately above the category chips, which
+    /// is where this one now sits. The titlebar was the divergence, not this.
+    private var searchField: some View {
+        HStack(spacing: JunoSpace.tight) {
+            JunoIconView(.search, size: DesktopConnectorGrid.searchGlyphSize)
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            // The web's placeholder, which names three apps rather than repeating
+            // the label: what a reader needs to know here is that the field
+            // searches a catalog of apps, not that it is a search field.
+            TextField("Search Gmail, Slack, GitHub…", text: $model.query)
+                .textFieldStyle(.plain)
+                .accessibilityLabel("Search apps")
+                .accessibilityIdentifier("connections.search")
+            if !model.query.isEmpty {
+                // An SF Symbol on purpose: clearing a field is an OS affordance
+                // and this is the glyph macOS already uses for it, where the
+                // magnifier beside it names a thing the product has a mark for.
+                Button {
+                    model.query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.tertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear the search")
+                .accessibilityLabel("Clear search")
+                .accessibilityIdentifier("connections.search.clear")
+            }
+        }
+        .padding(.horizontal, JunoSpace.cozy)
+        .frame(height: DesktopConnectorGrid.chipHeight)
+        // Raised and bordered, not a filled pill: the chips below are filters and
+        // read as one control each, while this is somewhere to type. `junoCard`
+        // would be wrong for the same reason — it throws a shadow, and an input
+        // is not a card floating over the page.
+        .background(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .fill(Color.junoRaised)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                .strokeBorder(Color.junoBorder, lineWidth: 1)
+        )
+        .frame(maxWidth: DesktopConnectorGrid.searchFieldWidth, alignment: .leading)
+    }
 
     /// Composio ships around a thousand toolkits, so categories are the only thing
     /// between the reader and an endlessly-paged flat list — which is why they are
@@ -514,8 +605,9 @@ struct DesktopConnectionsScreen: View {
     /// Every item is present in every state and disables rather than vanishing: a
     /// `ToolbarItem` that comes and goes makes SwiftUI rebuild the AppKit toolbar
     /// under a live window, which is what drove this shell's split-view constraint
-    /// loop. The category filter is deliberately *not* here — it is the page's own
-    /// chip row, where the reader can see which category is active.
+    /// loop. Neither the category filter nor the search field is here — both are
+    /// the page's own controls, where the reader can see what is filtering the
+    /// results; ``searchField`` says why that is load-bearing rather than tidy.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
@@ -707,6 +799,13 @@ private enum DesktopConnectorGrid {
     /// inset on all four sides.
     static let markGlyphSize: CGFloat = 22
     static let chipHeight: CGFloat = 30
+    /// The search field, capped rather than stretched: a field the width of a
+    /// 1024pt page invites a sentence, and what this one takes is one app's name.
+    /// Its height is the chip's, so search and categories read as one filter block.
+    static let searchFieldWidth: CGFloat = 320
+    /// The magnifier inside it. Lucide's 2pt stroke at caption size — smaller than
+    /// ``JunoIconView``'s sidebar default, which would outweigh the field's text.
+    static let searchGlyphSize: CGFloat = 14
     /// A status dot. Small enough to read as punctuation beside its label.
     static let statusDot: CGFloat = 6
 

@@ -15,14 +15,17 @@ import UniformTypeIdentifiers
 /// third column beside the transcript (`chat-view.tsx`), and everything below is
 /// that column, down to its width model and the sixteen points it slides in from.
 ///
-/// The dock is a plain `HStack` pane and deliberately **not** `.inspector`,
-/// `.sheet`, `.popover` or an overlay. This surface is the content of a
+/// The dock is plain layout — a trailing inset on the conversation with the
+/// panel drawn in the room it reserved — and deliberately **not** `.inspector`,
+/// `.sheet` or `.popover`. This surface is the content of a
 /// `NavigationSplitView`'s detail column, and an inspector attached from there
 /// makes `NSHostingView` call `setNeedsUpdateConstraints:` from inside its own
 /// `updateConstraints` while the window's constraint pass is running — AppKit
 /// throws and the process takes SIGTRAP. ``DesktopCodeWorkspace`` carries the
 /// bisected report; ``DesktopArtifactsScreen`` docks its version history the same
-/// way for the same reason.
+/// way for the same reason. Nothing here is *presented*: a SwiftUI overlay is a
+/// sibling in the same layout pass, so the constraint machinery never hears
+/// about it.
 
 // MARK: - The open artifact
 
@@ -187,7 +190,8 @@ enum DesktopArtifactCanvasMetrics {
 
 // MARK: - The dock
 
-/// Docks the artifact canvas beside `content` as a real column.
+/// Docks the artifact canvas beside `content` as a real column — and over it,
+/// never instead of it, when the column is too narrow to hold both.
 ///
 /// The transcript keeps its own `safeAreaInset` composer, so the composer spans
 /// the conversation and stops at the divider — which is where the web puts it
@@ -220,11 +224,29 @@ struct DesktopArtifactDock<Content: View>: View {
     @State private var draggingWidth: CGFloat?
     @State private var showingResizeCursor = false
 
+    /// The divider's hit box, which the conversation gives up along with the
+    /// panel itself. One number for the inset and the handle both, so the two
+    /// cannot drift and leave the canvas standing on the transcript.
+    private static var handleWidth: CGFloat { JunoSpace.snug }
+
     /// Whether the column is too narrow to hold both. Only true once the width
     /// has actually been measured — at zero the canvas would flash full-bleed on
     /// the first frame of every open.
     private var isCompact: Bool {
         containerWidth > 0 && containerWidth < DesktopArtifactCanvasMetrics.sideBySideWidth
+    }
+
+    /// Whether the canvas is *covering* the conversation rather than standing
+    /// beside it: the compact column, showing one thing at a time.
+    private var transcriptIsCovered: Bool {
+        artifact != nil && isCompact
+    }
+
+    /// What the canvas takes out of the conversation's width — the panel and the
+    /// divider that resizes it — and nothing when it is closed or covering.
+    private var reservedWidth: CGFloat {
+        guard artifact != nil, !isCompact else { return 0 }
+        return canvasWidth + Self.handleWidth
     }
 
     private var canvasWidth: CGFloat {
@@ -238,35 +260,78 @@ struct DesktopArtifactDock<Content: View>: View {
         return DesktopArtifactCanvasMetrics.clamp(CGFloat(storedWidth), in: containerWidth)
     }
 
+    /// The conversation, with the canvas drawn in the room it reserved — or over
+    /// the whole column when there is not enough room for both.
+    ///
+    /// **`content` is never removed.** It used to be, in the compact case, and
+    /// that one `if` reached a very long way. It took ``DesktopComposer`` with
+    /// it, and a SwiftUI view that leaves the hierarchy takes its `@State` too:
+    /// the half-typed message, Deep research, Web search, the connectors picked
+    /// for this one send, the model chosen for it. It also took the voice dock
+    /// mounted on that composer, and `DesktopVoiceDock` hangs up on
+    /// `onDisappear` — so opening an artifact ended a call that was still being
+    /// spoken, and the dock came back offering to *restart*, which clears the
+    /// record. Dragging the window across ``DesktopArtifactCanvasMetrics/sideBySideWidth``
+    /// with the canvas open did the same thing. The website has never removed
+    /// this node: `hidden lg:flex` is `display: none`, and a hidden node keeps
+    /// its state and its lifetime. So this hides it — and only hides it.
     var body: some View {
-        HStack(spacing: 0) {
-            if artifact == nil || !isCompact {
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+        content
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .opacity(transcriptIsCovered ? 0 : 1)
+            .allowsHitTesting(!transcriptIsCovered)
+            // Disabled as well as untouchable. Hit testing turns the pointer
+            // away, but only `disabled` moves the keyboard off a composer that
+            // is still mounted: a focused text field that is merely invisible
+            // still takes every keystroke aimed at the canvas.
+            .disabled(transcriptIsCovered)
+            .accessibilityHidden(transcriptIsCovered)
+            .padding(.trailing, reservedWidth)
+            .overlay(alignment: .trailing) { canvasColumn }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
+    }
 
-            if let artifact {
+    /// The panel and its divider, laid over the inset they were given.
+    ///
+    /// One instance for both widths — the compact case changes what the canvas is
+    /// *sized* to, never where it sits in the hierarchy — so dragging the window
+    /// across the threshold cannot reset the view the reader was on any more than
+    /// it can reset the composer behind it.
+    @ViewBuilder
+    private var canvasColumn: some View {
+        if let artifact {
+            HStack(spacing: 0) {
                 if !isCompact {
                     resizeHandle
                 }
                 DesktopArtifactCanvas(artifact: artifact, close: close)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .frame(width: isCompact ? nil : canvasWidth)
-                    // Sixteen points and a fade on the way in, a bare fade on the
-                    // way out — the web's `slide-in-from-right-4` / `fade-out`
-                    // pair. The asymmetry is the point: arriving should read as
-                    // the card handing off to the workspace, leaving should read
-                    // as the transcript reclaiming the room.
-                    .transition(
-                        .asymmetric(
-                            insertion: .offset(x: DesktopChatMotion.canvasSlide)
-                                .combined(with: .opacity),
-                            removal: .opacity
-                        )
-                    )
             }
+            // The window's own reading canvas, painted a second time and only
+            // where this panel covers something — the web's `bg-background` on
+            // the same panel. The conversation underneath is already hidden, but
+            // the composer's glass is a system effect rather than something a
+            // parent's opacity is guaranteed to dim, and a covering panel that
+            // can be seen through is not covering.
+            .background {
+                if isCompact {
+                    Color.junoCanvasWarm
+                }
+            }
+            // Sixteen points and a fade on the way in, a bare fade on the way
+            // out — the web's `slide-in-from-right-4` / `fade-out` pair. The
+            // asymmetry is the point: arriving should read as the card handing
+            // off to the workspace, leaving should read as the transcript
+            // reclaiming the room.
+            .transition(
+                .asymmetric(
+                    insertion: .offset(x: DesktopChatMotion.canvasSlide)
+                        .combined(with: .opacity),
+                    removal: .opacity
+                )
+            )
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
     }
 
     /// The divider, and the grip on it.
@@ -280,7 +345,7 @@ struct DesktopArtifactDock<Content: View>: View {
         Rectangle()
             .fill(Color.junoHairline)
             .frame(width: 1)
-            .frame(width: JunoSpace.snug)
+            .frame(width: Self.handleWidth)
             .contentShape(.rect)
             .gesture(
                 DragGesture(minimumDistance: 1)
