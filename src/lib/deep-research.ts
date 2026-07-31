@@ -6,6 +6,8 @@ import { recordSpend } from "@/lib/spend";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
 import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
+// Same helper the chat route uses — this was a third verbatim copy.
+import { sourceHost } from "@/lib/chat-responses";
 import type { ModelInfo } from "@/lib/models";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
@@ -250,14 +252,6 @@ function collectSources(resultLists: ResearchPage[][]): ResearchPage[] {
     }
   }
   return pages;
-}
-
-function sourceHost(url: string): string {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
 }
 
 /** The synthesis contract + numbered corpus, appended to the system prompt. */

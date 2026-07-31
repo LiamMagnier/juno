@@ -13,7 +13,7 @@ import { providerHealthy } from "@/lib/provider-health";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
-import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
+import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
@@ -51,7 +51,21 @@ import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
 import { createStallWatchdog, PROVIDER_IDLE_TIMEOUT_MS, STALL_USER_MESSAGE } from "@/lib/chat-stall";
 import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
-import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
+import {
+  AttachmentClaimError,
+  DurableFirstSubmissionStartError,
+  DurableReceiptLeaseLostError,
+  appendFinishWarning,
+  classifyErrorFinishReason,
+  effectiveReasoningEffort,
+  firstSubmissionRecoveryResponse,
+  generationFailureCode,
+  idempotencyKeyConflictResponse,
+  plural,
+  searchToolLabel,
+  sourceHost,
+} from "@/lib/chat-responses";
+import { REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessages } from "@/lib/moderation-ai";
@@ -64,7 +78,6 @@ import {
   firstSubmissionLeaseHeartbeatOwnsReceipt,
   firstSubmissionLeaseExpiresAt,
   hashFirstSubmission,
-  type FirstSubmissionRecovery,
 } from "@/lib/chat-first-submission";
 import { findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
 import {
@@ -73,7 +86,7 @@ import {
   clientSubmissionMetadataIssue,
   legacyChatClientForOrigin,
 } from "@/lib/chat-origin";
-import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
+import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -219,172 +232,6 @@ const bodySchema = z
     }
   });
 
-function plural(count: number, singular: string, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`;
-}
-function searchToolLabel(provider: ModelInfo["provider"]) {
-  if (provider === "anthropic") return "Claude web search";
-  if (provider === "google") return "Google Search grounding";
-  if (provider === "xai") return "Grok Live Search";
-  return "native web search";
-}
-
-function sourceHost(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-function effectiveReasoningEffort(model: ModelInfo, requested?: ReasoningEffort): ReasoningEffort | undefined {
-  // Coerce to a tier the model actually supports (e.g. "max" -> "high" on Gemini),
-  // so we never send an unsupported effort to the provider.
-  return clampReasoningEffort(model, requested ?? null) ?? undefined;
-}
-
-function isAbortLike(err: unknown): boolean {
-  const e = err as { name?: string; code?: string; message?: string };
-  return e?.name === "AbortError" || e?.code === "ABORT_ERR" || /aborted|aborterror|cancelled|canceled/i.test(e?.message ?? "");
-}
-
-function classifyErrorFinishReason(err: unknown): ChatFinishReason {
-  if (isAbortLike(err)) return "user_stopped";
-  const message = String((err as { message?: string })?.message ?? err ?? "").toLowerCase();
-  if (/network|socket|econn|etimedout|timeout|terminated|fetch failed|connection/i.test(message)) return "network_error";
-  if (/context.*(length|window)|maximum context|context_length_exceeded/i.test(message)) return "model_context_window_exceeded";
-  if (/sensitive|safety|content.?filter/i.test(message)) return "sensitive";
-  return "error";
-}
-
-function generationFailureCode(reason: ChatFinishReason): string {
-  switch (reason) {
-    case "user_stopped":
-      return "GENERATION_STOPPED_BEFORE_OUTPUT";
-    case "network_error":
-      return "GENERATION_NETWORK_ERROR";
-    case "model_context_window_exceeded":
-      return "GENERATION_CONTEXT_LIMIT";
-    case "sensitive":
-      return "GENERATION_SENSITIVE_CONTENT";
-    default:
-      return "GENERATION_FAILED";
-  }
-}
-
-function appendFinishWarning(
-  reason: ChatFinishReason,
-  sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent
-) {
-  if (reason === "stop") return;
-  sendActivity({
-    kind: "warning",
-    title: finishReasonTitle(reason),
-    detail: finishReasonDetail(reason),
-  });
-}
-
-function alreadySubmittedResponse(input: {
-  conversationId: string;
-  userMessageId: string;
-  generationId: string;
-  receiptState: "accepted" | "running" | "completed" | "failed";
-  finishReason: string | null;
-  failureCode: string | null;
-}) {
-  return NextResponse.json(
-    {
-      error: "request_already_submitted",
-      code: "REQUEST_ALREADY_SUBMITTED",
-      message: "This message was already accepted. Open the existing conversation instead of submitting it again.",
-      conversationId: input.conversationId,
-      userMessageId: input.userMessageId,
-      generationId: input.generationId,
-      receiptState: input.receiptState,
-      finishReason: input.finishReason,
-      failureCode: input.failureCode,
-      retryable: false,
-    },
-    { status: 409 }
-  );
-}
-
-function firstSubmissionInProgressResponse(input: { generationId: string }) {
-  return NextResponse.json(
-    {
-      error: "request_in_progress",
-      code: "REQUEST_IN_PROGRESS",
-      message: "This first submission is still being accepted. Retry with the same identifiers.",
-      generationId: input.generationId,
-      receiptState: "claimed",
-      retryable: true,
-    },
-    { status: 409 }
-  );
-}
-
-function firstSubmissionRecoveryResponse(recovery: FirstSubmissionRecovery) {
-  if (recovery.kind === "conflict") return idempotencyKeyConflictResponse(recovery.conversationId);
-  if (recovery.kind === "in_progress") {
-    return firstSubmissionInProgressResponse({ generationId: recovery.generationId });
-  }
-  return alreadySubmittedResponse({
-    conversationId: recovery.conversationId,
-    userMessageId: recovery.userMessageId,
-    generationId: recovery.generationId,
-    receiptState: recovery.state,
-    finishReason: recovery.finishReason,
-    failureCode: recovery.failureCode,
-  });
-}
-
-function idempotencyKeyConflictResponse(conversationId: string, legacyReceiptMissing = false) {
-  return NextResponse.json(
-    {
-      error: "idempotency_key_reused",
-      code: "IDEMPOTENCY_KEY_REUSED",
-      message: legacyReceiptMissing
-        ? "This request predates durable body receipts, so the server cannot prove that the retry body is identical. Use a new submission identifier."
-        : "This idempotency key is already bound to a different first submission.",
-      conversationId,
-      retryable: false,
-    },
-    { status: 409 }
-  );
-}
-
-class AttachmentClaimError extends Error {
-  constructor() {
-    super("One or more attachments are unavailable or already belong to another message.");
-    this.name = "AttachmentClaimError";
-  }
-}
-
-class DurableFirstSubmissionStartError extends Error {
-  readonly generationId: string;
-  readonly conversationId: string;
-  readonly userMessageId: string;
-  readonly failureCode = "GENERATION_START_FAILED";
-
-  constructor(
-    cause: unknown,
-    ids: { generationId: string; conversationId: string; userMessageId: string }
-  ) {
-    super(cause instanceof Error ? cause.message : String(cause));
-    this.name = "DurableFirstSubmissionStartError";
-    this.generationId = ids.generationId;
-    this.conversationId = ids.conversationId;
-    this.userMessageId = ids.userMessageId;
-    this.cause = cause;
-  }
-}
-
-class DurableReceiptLeaseLostError extends Error {
-  constructor() {
-    super("The durable generation lease is no longer owned by this process.");
-    this.name = "DurableReceiptLeaseLostError";
-  }
-}
 
 async function handleChat(req: Request) {
   const user = await getCurrentUser();
