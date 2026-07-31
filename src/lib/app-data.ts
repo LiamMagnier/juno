@@ -77,7 +77,8 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     folders,
     features: {
       billing: isStripeConfigured(),
-      purchasablePlans: purchasablePlans(),
+      purchasablePlans: purchasablePlans("month"),
+      purchasableAnnualPlans: purchasablePlans("year"),
       serverStt: isServerSttConfigured(),
       serverTts: isServerTtsConfigured(),
       // The voice picker lists OpenAI voices, so it must know which provider is live.

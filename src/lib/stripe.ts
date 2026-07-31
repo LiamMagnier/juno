@@ -10,15 +10,39 @@ export function getStripe(): Stripe {
   return stripe;
 }
 
+/**
+ * How often a subscription bills. NOT a plan: an annual PRO subscriber has
+ * exactly the same entitlement as a monthly one, so the Plan enum — and the
+ * database — is unchanged.
+ *
+ * Budgets stay monthly for both. billingPeriodFor walks in month-sized cells
+ * anchored on the subscription boundary, so a Stripe period end a year out
+ * still yields ~31-day budget windows on the subscriber's anniversary day.
+ * Verified before this shipped, because getting it wrong would either hand an
+ * annual subscriber a year of budget at once or never reset them.
+ */
+export type BillingInterval = "month" | "year";
+
 export function planFromPriceId(priceId?: string | null): Plan | null {
   if (!priceId) return null;
-  if (priceId === env.stripe.pricePro) return "PRO";
-  if (priceId === env.stripe.priceMax) return "MAX";
-  if (priceId === env.stripe.priceMax20) return "MAX20";
+  for (const plan of PAID_PLANS) {
+    for (const interval of BILLING_INTERVALS) {
+      if (priceId === priceIdForPlan(plan, interval)) return plan;
+    }
+  }
   return null;
 }
 
-export function priceIdForPlan(plan: Plan): string | undefined {
+const PAID_PLANS = ["PRO", "MAX", "MAX20"] as const;
+const BILLING_INTERVALS: readonly BillingInterval[] = ["month", "year"];
+
+export function priceIdForPlan(plan: Plan, interval: BillingInterval = "month"): string | undefined {
+  if (interval === "year") {
+    if (plan === "PRO") return env.stripe.priceProYearly;
+    if (plan === "MAX") return env.stripe.priceMaxYearly;
+    if (plan === "MAX20") return env.stripe.priceMax20Yearly;
+    return undefined;
+  }
   if (plan === "PRO") return env.stripe.pricePro;
   if (plan === "MAX") return env.stripe.priceMax;
   if (plan === "MAX20") return env.stripe.priceMax20;
@@ -33,13 +57,13 @@ export function priceIdForPlan(plan: Plan): string | undefined {
  * STRIPE_PRICE_MAX20 is missing from this deployment's env. Gate what is sold,
  * never what is honoured.
  */
-export function isPlanPurchasable(plan: Plan): boolean {
-  return Boolean(priceIdForPlan(plan));
+export function isPlanPurchasable(plan: Plan, interval: BillingInterval = "month"): boolean {
+  return Boolean(priceIdForPlan(plan, interval));
 }
 
-/** The paid tiers this deployment can actually sell, cheapest first. */
-export function purchasablePlans(): Plan[] {
-  return (["PRO", "MAX", "MAX20"] as const).filter(isPlanPurchasable);
+/** The paid tiers this deployment can actually sell at a given interval. */
+export function purchasablePlans(interval: BillingInterval = "month"): Plan[] {
+  return PAID_PLANS.filter((plan) => isPlanPurchasable(plan, interval));
 }
 
 export interface ResolvePlanInput {
