@@ -3,7 +3,8 @@ import { NextResponse } from "next/server";
 import type { SubStatus } from "@prisma/client";
 import { prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
-import { getStripe, planFromPriceId } from "@/lib/stripe";
+import { getStripe, planFromPriceId, resolveSubscriptionPlan } from "@/lib/stripe";
+import { alertOperator } from "@/lib/alerts";
 
 export const runtime = "nodejs";
 
@@ -32,7 +33,32 @@ async function syncSubscription(sub: Stripe.Subscription) {
 
   const item = sub.items.data[0];
   const priceId = item?.price.id;
-  const plan = planFromPriceId(priceId) ?? "FREE";
+  const mapped = planFromPriceId(priceId);
+  // An unrecognised price id must never downgrade a paying customer. A legacy
+  // price, a promo, a currency variant, a price created in the Stripe dashboard,
+  // or a STRIPE_PRICE_* env var that wasn't deployed all land here — and
+  // defaulting to FREE would lock the customer out at zero messages
+  // (PLANS.FREE.monthlyMessages === 0) while Stripe keeps charging them. Keep
+  // the plan they already have and alert; every other field still syncs.
+  if (!mapped && sub.status !== "canceled") {
+    alertOperator({
+      kind: "stripe_unknown_price",
+      key: priceId ?? "missing",
+      title: "Stripe sent a price id Juno cannot map to a plan",
+      detail: {
+        priceId: priceId ?? null,
+        customerId,
+        subscriptionId: sub.id,
+        subscriptionStatus: sub.status,
+        keptPlan: record.plan,
+      },
+    });
+  }
+  const plan = resolveSubscriptionPlan({
+    status: sub.status,
+    mappedPlan: mapped,
+    currentPlan: record.plan,
+  });
   // current_period_end lives on the subscription item in recent API versions.
   const periodEndUnix =
     (item as unknown as { current_period_end?: number })?.current_period_end ??
@@ -41,7 +67,7 @@ async function syncSubscription(sub: Stripe.Subscription) {
   await prismaUnguarded.subscription.update({
     where: { id: record.id },
     data: {
-      plan: sub.status === "canceled" ? "FREE" : plan,
+      plan,
       status: mapStatus(sub.status),
       stripeSubscriptionId: sub.id,
       stripePriceId: priceId ?? null,
