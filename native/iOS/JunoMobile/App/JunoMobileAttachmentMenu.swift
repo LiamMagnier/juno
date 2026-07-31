@@ -59,7 +59,7 @@ struct JunoMobileComposerActions: View {
     /// Account-level, unlike everything else in Tools — this is the same switch
     /// as Settings › Memory, surfaced where the web surfaces it.
     var memoryEnabled: Bool = true
-    /// `@MainActor @Sendable` because it is handed straight to a `Binding`'s
+    /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
     /// setter, whose accessors are `@Sendable` in the iOS 26 SDK — a plain
     /// closure there "may introduce data races" under Swift 6. The toggle is
     /// driven on the main actor, so stating that is accurate rather than a
@@ -205,7 +205,22 @@ struct JunoMobileComposerActions: View {
 
         if let setMemoryEnabled {
             Toggle(
-                isOn: Binding(get: { memoryEnabled }, set: setMemoryEnabled)
+                // Called through a closure literal rather than passed as the
+                // setter itself, and this is the whole of the iOS CI crash.
+                //
+                // `Binding.init(set:)` takes an `@isolated(any) @Sendable
+                // (Value) -> Void`, and `Value` is generic, so it is lowered to
+                // `@in_guaranteed`. Handing it an already-`@MainActor` function
+                // *value* therefore needs a thunk that both erases the isolation
+                // and boxes the `Bool` — `$sSbScA_pSgIeAghyg_SbIeAghn_TR`, the
+                // symbol every one of these crash reports names. A closure
+                // literal is `@_inheritActorContext`, so it carries the main
+                // actor natively and no such thunk is emitted at all.
+                //
+                // Verified by symbol, not by hope: that thunk is present in the
+                // app's object files with `set: setMemoryEnabled` and absent
+                // with the literal.
+                isOn: Binding(get: { memoryEnabled }, set: { setMemoryEnabled($0) })
             ) {
                 Label("composer.memory", systemImage: "brain.head.profile")
             }
