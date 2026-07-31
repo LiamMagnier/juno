@@ -54,6 +54,16 @@ const CANVAS_WIDTH_KEY = "juno:canvas-width";
 const CANVAS_MIN_WIDTH = 420;
 const CHAT_MIN_WIDTH = 320;
 
+/**
+ * Whether the system keyboard conventions are Apple's. Only used to decide
+ * whether Ctrl+F belongs to the OS (macOS binds it to "move caret forward" in
+ * any text field) rather than to us.
+ */
+function isApplePlatform() {
+  if (typeof navigator === "undefined") return false;
+  return /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
 function canvasWidthBounds(containerWidth: number) {
   const minWidth = Math.min(CANVAS_MIN_WIDTH, Math.max(320, containerWidth - CHAT_MIN_WIDTH));
   const maxByChat = containerWidth - CHAT_MIN_WIDTH;
@@ -1200,13 +1210,33 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   // conversation. Escape closes and returns focus to the page.
   const [findOpen, setFindOpen] = React.useState(false);
   React.useEffect(() => {
+    // Every early return below shares one rule: never preventDefault unless the
+    // find bar is genuinely about to appear and search what the user is looking
+    // at. Suppressing the browser's own find and putting nothing usable in its
+    // place is worse than not binding the key at all.
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f") return;
       // Only take the shortcut when there is actually a transcript to search.
       // The find bar renders inside the `hasMessages` branch, so on an empty
       // chat preventDefault would suppress the BROWSER's find and show nothing
-      // in its place — strictly worse than not binding at all.
+      // in its place.
       if (!hasMessages) return;
+      // On macOS, Ctrl+F inside a text field is the system emacs binding for
+      // "move the caret forward one character". Taking it there replaces a
+      // keystroke people use continuously with a search bar.
+      const target = e.target as HTMLElement | null;
+      const editing =
+        target?.isContentEditable ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLInputElement;
+      if (isApplePlatform() && e.ctrlKey && !e.metaKey && editing) return;
+      // The canvas code editor is a plain textarea with no find of its own, so
+      // the browser's is the only one that searches the code on screen. This bar
+      // would search the chat transcript instead — the wrong content entirely.
+      if (target?.closest("[data-code-surface]")) return;
+      // A modal is open: the bar renders behind the overlay, so the keystroke
+      // would look like it did nothing while still killing native find.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
       e.preventDefault();
       setFindOpen(true);
     };
