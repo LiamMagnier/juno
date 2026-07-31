@@ -69,26 +69,16 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public init() {}
 
     public func read(_ item: SecurityKeychainItem) throws -> Data? {
-        var query = baseQuery(for: item)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
-        var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
-        switch status {
-        case errSecSuccess:
-            guard let data = result as? Data else {
-                throw SecurityKeychainClientError.invalidResult
-            }
+        if let data = try copyValue(for: item, dataProtection: true) {
             return data
-        case errSecItemNotFound:
-            return nil
-        default:
-            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
         }
+        return try migrateLegacyItem(item)
     }
 
     public func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
+        // Clear any legacy copy first, so the value this call writes is the only
+        // one left on disk rather than shadowing a stale readable token.
+        _ = try migrateLegacyItem(item)
         let attributes = newItemAttributes(data, for: item)
 
         let addStatus = SecItemAdd(attributes as CFDictionary, nil)
@@ -117,6 +107,11 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         _ data: Data,
         for item: SecurityKeychainItem
     ) throws -> Bool {
+        // An item that exists only in the legacy keychain is still PRESENT. Miss
+        // that and this returns true for "inserted", which is how a freshly
+        // generated database key would come to replace the one the existing
+        // store was encrypted with.
+        if try migrateLegacyItem(item) != nil { return false }
         let status = SecItemAdd(
             newItemAttributes(data, for: item) as CFDictionary,
             nil
@@ -132,7 +127,19 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     }
 
     public func delete(_ item: SecurityKeychainItem) throws -> Bool {
-        let status = SecItemDelete(baseQuery(for: item) as CFDictionary)
+        var removed = try remove(item, dataProtection: true)
+        // Sign-out has to clear the legacy copy too, or the token it was asked
+        // to destroy stays readable on disk.
+        if try remove(item, dataProtection: false) { removed = true }
+        return removed
+    }
+
+    private func remove(
+        _ item: SecurityKeychainItem,
+        dataProtection: Bool
+    ) throws -> Bool {
+        let query = baseQuery(for: item, dataProtection: dataProtection)
+        let status = SecItemDelete(query as CFDictionary)
         switch status {
         case errSecSuccess:
             return true
@@ -143,23 +150,92 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         }
     }
 
-    private func baseQuery(for item: SecurityKeychainItem) -> [String: Any] {
+    private func copyValue(
+        for item: SecurityKeychainItem,
+        dataProtection: Bool
+    ) throws -> Data? {
+        var query = baseQuery(for: item, dataProtection: dataProtection)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data else {
+                throw SecurityKeychainClientError.invalidResult
+            }
+            return data
+        case errSecItemNotFound:
+            return nil
+        default:
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
+        }
+    }
+
+    /// Moves an item written before this client set `kSecUseDataProtectionKeychain`
+    /// out of the legacy keychain, returning its value if there was one.
+    ///
+    /// Without this, turning the attribute on reads as data loss rather than a
+    /// storage change: the old items are still on disk, but a data-protection
+    /// query cannot see them, so every lookup returns "not found". For the auth
+    /// tokens that would be a spurious sign-out. This same client also holds the
+    /// local database encryption key, and a missing key with an existing
+    /// `accounts.sqlite3` is unrecoverable from inside the app — the launch path
+    /// throws `.missingEncryptionKey`, every model comes back nil, and the user
+    /// gets "Juno cannot unlock the existing local account database" with the
+    /// sign-in button hidden.
+    ///
+    /// A no-op on iOS, which has always defaulted to the data-protection keychain.
+    @discardableResult
+    private func migrateLegacyItem(_ item: SecurityKeychainItem) throws -> Data? {
+        #if os(macOS)
+        guard let data = try copyValue(for: item, dataProtection: false) else {
+            return nil
+        }
+        // Write the new copy BEFORE dropping the old one. If this is interrupted
+        // in between, the secret is duplicated — recoverable. The other order
+        // destroys it.
+        let status = SecItemAdd(
+            newItemAttributes(data, for: item) as CFDictionary,
+            nil
+        )
+        guard status == errSecSuccess || status == errSecDuplicateItem else {
+            throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
+        }
+        _ = try remove(item, dataProtection: false)
+        return data
+        #else
+        return nil
+        #endif
+    }
+
+    private func baseQuery(
+        for item: SecurityKeychainItem,
+        dataProtection: Bool = true
+    ) -> [String: Any] {
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: item.service,
             kSecAttrAccount as String: item.account,
             kSecAttrSynchronizable as String: false,
-            // Without this, macOS routes these items to the LEGACY file-based
-            // keychain, which ignores kSecAttrAccessible outright — so the
-            // AfterFirstUnlockThisDeviceOnly protection class declared below was
-            // silently doing nothing there, and the bearer tokens it guards were
-            // not protected as the code claimed. iOS already defaults to the
-            // data-protection keychain, so this only changes macOS behaviour.
-            //
-            // It must be on EVERY query, not just writes: an item written to the
-            // data-protection keychain is invisible to a legacy-keychain read.
-            kSecUseDataProtectionKeychain as String: true,
         ]
+        // Without this, macOS routes these items to the LEGACY file-based
+        // keychain, which ignores kSecAttrAccessible outright — so the
+        // AfterFirstUnlockThisDeviceOnly protection class declared below was
+        // silently doing nothing there, and the bearer tokens it guards were not
+        // protected as the code claimed. iOS already defaults to the
+        // data-protection keychain, so this only changes macOS behaviour.
+        //
+        // It must be on EVERY query, not just writes: the two keychains cannot
+        // see each other's items. `dataProtection: false` is how
+        // `migrateLegacyItem` reaches what previous versions wrote, and is only
+        // ever passed on macOS.
+        #if os(macOS)
+        query[kSecUseDataProtectionKeychain as String] = dataProtection
+        #else
+        query[kSecUseDataProtectionKeychain as String] = true
+        #endif
         if let accessGroup = item.accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup
         }
