@@ -8,7 +8,7 @@ import { openAIPromptCacheRequestFields, openAISystemMessage } from "@/lib/opena
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
-import type { McpToolset } from "@/lib/mcp";
+import { toWireTools, type McpToolset } from "@/lib/mcp";
 
 const clients = new Map<Provider, OpenAI>();
 
@@ -352,7 +352,7 @@ export async function* streamOpenAICompat(
   if (webSearch && model.provider === "xai") {
     params.search_parameters = { mode: "auto", return_citations: true };
   }
-  if (hasTools) params.tools = toolset!.tools;
+  if (hasTools) params.tools = toWireTools(toolset!.tools);
 
   const seen = new Set<string>();
   const c = client(model.provider);
