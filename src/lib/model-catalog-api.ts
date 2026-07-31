@@ -2,6 +2,7 @@ import { discoverModels } from "@/lib/model-discovery";
 import { getModelMetrics } from "@/lib/model-metrics";
 import { GEN_MODELS, type ModelInfo } from "@/lib/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
+import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
 
 // The native manifest builder lives in its own module because this one reaches
@@ -10,12 +11,22 @@ import { isVideoGenSupported } from "@/lib/video-gen";
 export { nativeModelCatalog } from "@/lib/native-model-manifest";
 
 export async function loadAvailableModels(): Promise<ModelInfo[]> {
+  // Refresh stale provider verdicts in the background. Never awaited: this
+  // function is on the critical path of /api/v1/bootstrap, and probing 14
+  // providers inline would stall app load.
+  ensureProviderHealthFresh();
+
   const configured = new Set(configuredProviders());
   const chat = await discoverModels();
   const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);
-  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+  // A provider whose key is revoked or out of credit is hidden, not listed and
+  // broken. Health defaults to true, so a provider that has never been probed
+  // is unaffected — the catalog can only shrink on positive evidence.
+  return [...byId.values()]
+    .filter((model) => providerHealthy(model.provider))
+    .sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**
@@ -50,8 +61,9 @@ export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
         kind: PROVIDERS[model.provider].kind,
         model: model.providerModel,
         label: model.name,
-        // loadAvailableModels only returns models from configured providers, so
-        // every chat entry here is callable through the proxy.
+        // loadAvailableModels only returns models from providers that are both
+        // configured and passing their health probe, so every chat entry here
+        // is callable through the proxy.
         available: true,
         vision: model.vision,
         contextWindow: model.contextWindow ?? metrics.contextTokens,

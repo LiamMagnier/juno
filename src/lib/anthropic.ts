@@ -4,6 +4,7 @@ import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { personalitySystemPrompt } from "@/lib/personalities";
+import { providerApiKey } from "@/lib/providers";
 import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -19,7 +20,20 @@ let anthropic: Anthropic | null = null;
 
 export function getAnthropic(): Anthropic {
   // maxRetries handles transient 429/5xx/overloaded errors on the initial request.
-  if (!anthropic) anthropic = new Anthropic({ apiKey: env.anthropicApiKey, maxRetries: 2 });
+  //
+  // The key goes through providerApiKey() rather than env.anthropicApiKey so it
+  // gets the same normalization every other provider's key gets (trim, strip one
+  // layer of surrounding quotes, drop stray CR/LF — see providers.ts readEnv).
+  // env.anthropicApiKey is a raw process.env read, so a key pasted with quotes
+  // or a trailing newline used to 401 here while reading as configured
+  // everywhere else — and would make the health probe disagree with live
+  // traffic, which is the one thing a probe must never do.
+  if (!anthropic) {
+    anthropic = new Anthropic({
+      apiKey: providerApiKey("anthropic") ?? env.anthropicApiKey,
+      maxRetries: 2,
+    });
+  }
   return anthropic;
 }
 

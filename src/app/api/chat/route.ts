@@ -9,6 +9,7 @@ import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
+import { providerHealthy } from "@/lib/provider-health";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
@@ -687,6 +688,14 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
+  // Fallback must stay plan-aware: only pick a configured model the plan allows.
+  const eligible = (m: ModelInfo) =>
+    m.modality === "chat" &&
+    !m.comingSoon &&
+    !isAutoModelId(m.id) &&
+    isProviderConfigured(m.provider) &&
+    canUseModel(plan, m.id);
+
   if (
     !modelInfo ||
     isAutoModelId(modelInfo.id) ||
@@ -694,15 +703,24 @@ async function handleChat(req: Request) {
     !isProviderConfigured(modelInfo.provider) ||
     !canUseModel(plan, modelInfo.id)
   ) {
-    // Fallback must stay plan-aware: only pick a configured model the plan allows.
-    modelInfo = MODEL_LIST.find(
-      (m) =>
-        m.modality === "chat" &&
-        !m.comingSoon &&
-        !isAutoModelId(m.id) &&
-        isProviderConfigured(m.provider) &&
-        canUseModel(plan, m.id)
-    );
+    // Prefer a provider that is actually answering; a configured-but-dead one
+    // is better than nothing, so it stays as the second choice.
+    modelInfo = MODEL_LIST.find((m) => eligible(m) && providerHealthy(m.provider)) ?? MODEL_LIST.find(eligible);
+  } else if (!providerHealthy(modelInfo.provider)) {
+    // The requested model's provider is failing auth or billing, so this
+    // generation cannot succeed. DEFAULT_MODEL is Anthropic, so an Anthropic
+    // outage would otherwise route every new chat straight into an error.
+    // Reroute rather than stream a guaranteed failure — but only if there is
+    // somewhere healthy to go.
+    const alternative = MODEL_LIST.find((m) => eligible(m) && providerHealthy(m.provider));
+    if (alternative) {
+      console.warn("[chat] rerouting off an unhealthy provider", {
+        from: modelInfo.id,
+        to: alternative.id,
+        provider: modelInfo.provider,
+      });
+      modelInfo = alternative;
+    }
   }
   if (!modelInfo) {
     const msg =
