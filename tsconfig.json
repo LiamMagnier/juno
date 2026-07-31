@@ -5,6 +5,19 @@
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
+    // Free today (verified: zero errors each). They are cheap to keep and each
+    // one has caught a real class of bug elsewhere.
+    "noUnusedLocals": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "useUnknownInCatchVariables": true,
+    // NOT enabled, with the cost measured on 2026-07-31 so the decision can be
+    // revisited rather than rediscovered:
+    //   noUncheckedIndexedAccess        → 416 errors
+    //   noPropertyAccessFromIndexSignature → 452 errors
+    //   exactOptionalPropertyTypes      → 247 errors
+    //   noUnusedParameters              →   1 error (the `_`-prefix convention
+    //                                       is handled by eslint instead)
     "noEmit": true,
     "esModuleInterop": true,
     "module": "esnext",

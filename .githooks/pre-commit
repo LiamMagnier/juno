@@ -1,0 +1,23 @@
+#!/bin/sh
+# Enabled by `npm install` (see the "prepare" script in package.json), which
+# points git at this directory. Bypass with `git commit --no-verify`.
+#
+# Deliberately fast: lint only, on the staged files. The full gate — the i18n
+# catalog, `tsc --noEmit`, and `npm test` — runs in CI on every pull request,
+# and typechecking the whole project on every commit is too slow to survive.
+set -e
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(ts|tsx|mjs|js)$' || true)
+[ -z "$staged" ] && exit 0
+
+echo "pre-commit: eslint on $(echo "$staged" | wc -l | tr -d ' ') staged file(s)…"
+# shellcheck disable=SC2086
+npx eslint --no-warn-ignored $staged
+
+# A secret in a commit is unrecoverable once pushed. Cheap belt-and-braces on
+# top of .gitignore.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '(^|/)\.env($|\.)|\.pem$|\.p12$|\.p8$'; then
+  echo "pre-commit: refusing to commit what looks like a secret file." >&2
+  echo "  If this is deliberate, re-run with --no-verify." >&2
+  exit 1
+fi
