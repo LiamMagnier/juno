@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getObjectBytes } from "@/lib/storage";
+import { headObject } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -32,7 +32,13 @@ const PREVIEWABLE = [
 
 /** Enough for six or seven lines in the tile, and small enough to be free. */
 const MAX_CHARS = 900;
-/** Read a little more than we return: UTF-8 runs up to 4 bytes per character. */
+/**
+ * Read a little more than we return: UTF-8 runs up to 4 bytes per character.
+ *
+ * This is the *only* amount ever read. The route used to fetch the whole object
+ * and then slice off this prefix, so previewing a 200 MB CSV cost 200 MB of RSS
+ * to render six lines — and the library requests up to 300 tiles at a time.
+ */
 const MAX_BYTES = MAX_CHARS * 4;
 
 function isPreviewable(mimeType: string): boolean {
@@ -50,7 +56,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // exists — the same no-existence-oracle rule the file route follows.
   const attachment = await prisma.attachment.findFirst({
     where: { id, userId: user.id },
-    select: { storageKey: true, mimeType: true, size: true },
+    select: { storageKey: true, mimeType: true },
   });
   if (!attachment) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (!isPreviewable(attachment.mimeType)) {
@@ -58,12 +64,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   try {
-    const { bytes } = await getObjectBytes(attachment.storageKey);
-    const head = bytes.subarray(0, MAX_BYTES);
+    // `size` is the object's real length, not the row's recorded one — it is
+    // what tells the tile whether there is more text than it is showing.
+    const { size, prefix } = await headObject(attachment.storageKey, MAX_BYTES);
     // `fatal: false` on purpose: a prefix can cut a multi-byte character in half,
     // and one replacement glyph at the end of an excerpt is a better outcome
     // than throwing away the preview.
-    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(head);
+    const decoded = new TextDecoder("utf-8", { fatal: false }).decode(prefix);
 
     // A binary file that slipped past the mime check reads as replacement
     // characters. Two per hundred is enough to call it: real prose in any script
@@ -77,7 +84,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({
       text,
       previewable: true,
-      truncated: bytes.length > head.length || decoded.length > MAX_CHARS,
+      truncated: size > prefix.byteLength || decoded.length > MAX_CHARS,
     });
   } catch {
     // A missing object is not an error worth surfacing — the tile falls back to

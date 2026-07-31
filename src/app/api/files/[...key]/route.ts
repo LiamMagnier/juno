@@ -53,14 +53,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
     return new NextResponse("Not found", { status: 404 });
   }
 
-  // Enough bytes for every signature in sniffImageMime/sniffVideoMime (the
-  // longest looks at byte 11). Reading the prefix rather than the object is
-  // what keeps memory flat: a 1 GB video used to be pulled entirely into RSS
-  // just to decide its content type, and PM2 restarts the backend at ~1400 MB —
-  // taking every in-flight SSE stream on the box with it.
+  // Reading the prefix rather than the object is what keeps memory flat: a 1 GB
+  // video used to be pulled entirely into RSS just to decide its content type,
+  // and PM2 restarts the backend at ~1400 MB — taking every in-flight SSE stream
+  // on the box with it.
   let head;
   try {
-    head = await headObject(k, 16);
+    head = await headObject(k, MIME_SNIFF_BYTES);
   } catch {
     return new NextResponse("Not found", { status: 404 });
   }
