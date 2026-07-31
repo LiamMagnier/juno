@@ -1,0 +1,15 @@
+-- The platform daily budget ceiling aggregates ApiSpend across ALL accounts:
+--   SELECT sum("costMicroUsd") FROM "ApiSpend" WHERE "createdAt" >= <utc midnight>
+-- with no userId predicate. The existing index is ("userId", "createdAt"), and
+-- Postgres will not range-scan a composite index whose leading column is absent
+-- from the query, so this degrades to a sequential scan of the fastest-growing
+-- table in the schema — on the chat hot path, once per minute per process.
+--
+-- Built without CONCURRENTLY on purpose. Prisma runs each migration file inside
+-- a transaction and CREATE INDEX CONCURRENTLY cannot run in one; the usual
+-- workaround is a bare COMMIT first, which takes the statement outside Prisma's
+-- transaction and leaves a half-applied migration behind if the build fails.
+-- Since `migrate deploy` runs before pm2 reloads, a failed migration blocks the
+-- whole deploy — so the write lock on a table this size is much the cheaper
+-- risk. Revisit if ApiSpend ever gets large enough for the lock to be felt.
+CREATE INDEX IF NOT EXISTS "ApiSpend_createdAt_idx" ON "ApiSpend" ("createdAt");

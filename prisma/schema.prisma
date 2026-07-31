@@ -769,6 +769,12 @@ model ApiSpend {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  // The platform-wide daily total (platform-budget.ts) filters on createdAt with
+  // no userId, and Postgres cannot range-scan a composite index whose leading
+  // column is absent from the predicate — so that query would seq-scan the
+  // fastest-growing table in the schema, once a minute per process, before a
+  // chat can start streaming.
+  @@index([createdAt])
 }
 
 // ----------------------------------------------------------------------------
