@@ -230,3 +230,31 @@ jobs:
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Unit tests
+        # The iOS job compiled and stopped. JunoMobileTests — 56 tests across
+        # seven files — had never been run by CI, while the macOS job has run
+        # its equivalent all along. A test suite nothing executes is not
+        # coverage, it is a file.
+        #
+        # A concrete simulator, not `generic/platform=iOS Simulator`: the build
+        # above can target the generic destination, but `test` needs a device to
+        # run on. The name is resolved from what the runner image actually has
+        # rather than pinned, so a new image with a newer iPhone does not turn
+        # this red.
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys; ds=json.load(sys.stdin)['devices']; \
+                print(next(d['name'] for rt in sorted(ds) if 'iOS' in rt for d in ds[rt] if d['name'].startswith('iPhone')))")
+          echo "Running JunoMobileTests on $device"
+          xcodebuild \
+            -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+            -scheme JunoMobile \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$device" \
+            -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            -only-testing:JunoMobileTests \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            CODE_SIGNING_ALLOWED=NO \
+            test
