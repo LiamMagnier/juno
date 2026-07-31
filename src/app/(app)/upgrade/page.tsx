@@ -214,6 +214,29 @@ export default function UpgradePage() {
           <Info className="h-3.5 w-3.5" />
           Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.
         </p>
+        {/*
+          The terms were reachable from the landing footer and the sign-in page,
+          but not from the one screen where money changes hands. A consumer
+          agreeing to a subscription should be one click from what they are
+          agreeing to, at the moment they agree to it.
+        */}
+        <p className="mt-2 text-caption text-muted-foreground">
+          By subscribing you accept the{" "}
+          <a
+            href="/legal/cgu"
+            className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary"
+          >
+            terms of service
+          </a>{" "}
+          and the{" "}
+          <a
+            href="/legal/confidentialite"
+            className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary"
+          >
+            privacy policy
+          </a>
+          .
+        </p>
       </div>
     </div>
   );
