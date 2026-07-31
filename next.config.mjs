@@ -2,21 +2,50 @@
  * The storage hosts images may legitimately be optimized from: the public bucket
  * URL when one is set, and the S3 endpoint itself for presigned URLs (which is
  * what getViewUrl falls back to when S3_PUBLIC_URL is absent).
+ *
+ * The endpoint contributes TWO hosts, because the presigner does not
+ * necessarily use the one written in S3_ENDPOINT. With S3_FORCE_PATH_STYLE
+ * unset or "false" — the default in src/lib/env.ts — the AWS SDK addresses the
+ * bucket as a subdomain (`bucket.endpoint-host/key`) rather than a path
+ * (`endpoint-host/bucket/key`). remotePatterns matches hostnames exactly unless
+ * a wildcard is written, so allowing only the bare endpoint host would 400
+ * every presigned image — precisely the case this function exists to cover.
+ * Both forms are listed rather than a `*.` wildcard, which would also admit
+ * every other bucket on the same provider.
  */
 function storageImagePatterns() {
   const patterns = [];
   const seen = new Set();
-  for (const raw of [process.env.S3_PUBLIC_URL, process.env.S3_ENDPOINT]) {
+  const allow = (hostname) => {
+    if (!hostname || seen.has(hostname)) return;
+    seen.add(hostname);
+    patterns.push({ protocol: "https", hostname });
+  };
+  const bucket = process.env.S3_BUCKET;
+  for (const [raw, isEndpoint] of [
+    [process.env.S3_PUBLIC_URL, false],
+    [process.env.S3_ENDPOINT, true],
+  ]) {
     if (!raw) continue;
     try {
       const { protocol, hostname } = new URL(raw);
-      if (protocol !== "https:" || seen.has(hostname)) continue;
-      seen.add(hostname);
-      patterns.push({ protocol: "https", hostname });
+      if (protocol !== "https:") continue;
+      allow(hostname);
+      if (isEndpoint && bucket) allow(`${bucket}.${hostname}`);
     } catch {
       // Not a URL — nothing to allow.
     }
   }
+  // These are baked in at BUILD time, and the build reads .env written from the
+  // PROD_ENV secret while the VM keeps its own runtime .env — so a storage key
+  // present on the VM but missing from PROD_ENV yields an empty list here and
+  // silently 400s every image, with a green build and a green deploy. Say what
+  // was allowed, so the deploy log can be checked against the running config.
+  console.log(
+    patterns.length
+      ? `[next.config] storage image hosts: ${patterns.map((p) => p.hostname).join(", ")}`
+      : "[next.config] storage image hosts: none (local-disk storage, or S3_* absent from the build env)",
+  );
   return patterns;
 }
 
