@@ -308,12 +308,19 @@ Focus ring `2px solid hsl(var(--ring))` at 2px offset for buttons and links.
 
 **Text fields are the exception: no accent, no ring — the border just darkens.**
 `Input`, `Textarea` and `SelectTrigger` opt out of the global outline and focus
-with `border-foreground/30` and nothing else. They used to carry `ring-[3px]
+with `border-foreground/70` and nothing else. They used to carry `ring-[3px]
 ring-ring/25` over `border-primary/60`; because browsers grant `:focus-visible`
 to text inputs on *pointer* focus and not only keyboard, merely clicking a field
 bloomed a wide coral wash that read as an overlay stuck on the box. The same
 rule covers the composer's model search and onboarding's memory textarea, and
 the Compare composer shell focuses to `border-border` instead of coral.
+
+> That opt-out was first written as `border-foreground/30`, which computes to
+> **1.89:1** against `--background` in light and 2.52:1 in dark — below the 3:1
+> WCAG 1.4.11 needs for a focus indicator, and *worse* than the 4.08:1 ring it
+> replaced. The diagnosis was right and the value overshot. `/70` is 5.95:1
+> light and 8.11:1 dark, keeps the no-ring/no-accent decision intact, and cannot
+> bloom on pointer focus because it is only a border colour.
 
 **Coral is for state, not for furniture.** The sidebar's resize handle painted a
 full-height `bg-primary/60` bar while dragging — the loudest thing on screen for

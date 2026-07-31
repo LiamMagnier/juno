@@ -2084,7 +2084,7 @@ export function Composer({
                                     onKeyDown={(event) => event.stopPropagation()}
                                     placeholder="Search connected apps…"
                                     aria-label="Search connected apps"
-                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/30"
+                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
                                   />
                                 </label>
                               </div>
@@ -2339,8 +2339,11 @@ export function Composer({
         </div>
       </div>
       </div>
+      {/* Full-opacity token: /45 computed to ~2:1, and this is the line that
+          tells people the model can be wrong — the one disclaimer that has to
+          be readable. */}
       {!hideDisclaimer && (
-        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground/45">
+        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">
           {privateMode ? "Incognito chats are not saved or added to memory." : "Juno can be wrong — worth a second look on anything that matters."}
         </p>
       )}

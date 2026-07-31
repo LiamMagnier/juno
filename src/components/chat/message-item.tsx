@@ -802,7 +802,10 @@ export function MessageItem({
         {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground/60">
+              {/* No /60 modifier: at this size it computes to 2.43:1 light /
+                  3.35:1 dark, and WCAG 1.4.3 wants 4.5:1. The token at full
+                  opacity is 5.32 / 7.07 and already reads as secondary. */}
+              <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground">
                 {modelName}
                 {hasUsage ? `${modelName ? " · " : ""}${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens` : ""}
                 {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}
