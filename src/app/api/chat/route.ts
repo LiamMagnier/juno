@@ -42,7 +42,7 @@ import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
+import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
 import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
@@ -86,7 +86,7 @@ import {
   clientSubmissionMetadataIssue,
   legacyChatClientForOrigin,
 } from "@/lib/chat-origin";
-import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason } from "@/types/chat";
+import type { ClientSource, ChatFinishReason } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -563,16 +563,8 @@ async function handleChat(req: Request) {
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (chunk: StreamChunk) => {
-          try {
-            controller.enqueue(encodeChunk(chunk));
-          } catch {
-            /* client disconnected */
-          }
-        };
-        const activityLog: ClientActivityEvent[] = [];
+        const { send, sendActivity, activityLog } = createSseSender(controller);
         const sourceUrls = new Set<string>();
-        let activityCounter = 0;
         let full = "";
         let reasoning = "";
         // Parallel to `reasoning`, not a replacement for it: the flat text is
@@ -600,17 +592,6 @@ async function handleChat(req: Request) {
         let finishReason: ChatFinishReason = "stop";
         let spendRecorded = false;
         const webSources: ClientSource[] = [];
-
-        const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
-          const entry: ClientActivityEvent = {
-            ...event,
-            id: `activity-${Date.now()}-${activityCounter++}`,
-            createdAt: new Date().toISOString(),
-          };
-          activityLog.push(entry);
-          send({ type: "activity", event: entry });
-          return entry;
-        };
 
         send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
         // Heartbeat: models with hidden reasoning can stream nothing for
@@ -1655,16 +1636,8 @@ async function handleChat(req: Request) {
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
-      const send = (chunk: StreamChunk) => {
-        try {
-          controller.enqueue(encodeChunk(chunk));
-        } catch {
-          /* client disconnected — keep going so the answer is still saved */
-        }
-      };
-      const activityLog: ClientActivityEvent[] = [];
+      const { send, sendActivity, activityLog } = createSseSender(controller);
       const sourceUrls = new Set<string>();
-      let activityCounter = 0;
       let full = "";
       let providerOutputChars = 0;
       let targetedArtifactContent: string | null = null;
@@ -1690,17 +1663,6 @@ async function handleChat(req: Request) {
       let writingStarted = false;
       let finishReason: ChatFinishReason = "stop";
       let spendRecorded = false;
-
-      const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
-        const entry: ClientActivityEvent = {
-          ...event,
-          id: `activity-${Date.now()}-${activityCounter++}`,
-          createdAt: new Date().toISOString(),
-        };
-        activityLog.push(entry);
-        send({ type: "activity", event: entry });
-        return entry;
-      };
 
       /**
        * Persist the assistant's answer. A normal turn appends a new Message row.
