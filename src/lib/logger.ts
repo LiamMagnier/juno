@@ -75,11 +75,13 @@ export function logSync(level: LogLevel, event: string, fields: Record<string, u
 }
 
 /**
- * Only in development, and only when JUNO_DEBUG is set.
+ * Only when JUNO_DEBUG is set — in any environment, production included.
  *
  * The per-turn auto-routing line was `console.info` on every single message —
  * useful while building the router, pure volume in production, where it is the
- * chattiest thing in the log.
+ * chattiest thing in the log. Setting JUNO_DEBUG on the VM to chase an incident
+ * turns all of that back on, deliberately; it is off by default because the
+ * variable is unset, not because production is special-cased.
  */
 export function logDebug(event: string, fields: Record<string, unknown> = {}): void {
   if (!process.env.JUNO_DEBUG) return;
