@@ -100,7 +100,7 @@ as a max-effort reasoning run needs; a 15 s heartbeat keeps nginx's
 ## 2. Repository layout
 
 ```
-prisma/schema.prisma        Data model (49 models, 13 enums) + migrations/
+prisma/schema.prisma        Data model (48 models, 13 enums) + migrations/
 src/
   app/
     (auth)/                 sign-in, sign-up, forgot/reset-password
@@ -108,7 +108,7 @@ src/
                             connections, compare, library, artifacts, tasks,
                             roadmap, profile, settings, upgrade, admin/*
     (legal)/                CGU, privacy, legal notices (French)
-    api/                    ~120 route handlers (see per-section endpoint tables)
+    api/                    127 route handlers (see per-section endpoint tables)
     app-auth/               browser side of the native PKCE device-authorization flow
     share/[token]/          public read-only share pages (no auth)
     suspended/              banned-account landing
@@ -900,6 +900,10 @@ by `NEXT_PUBLIC_VOICE_RELAY_URL`.
 
 ### 11.1 Plans (`src/lib/plans.ts`)
 
+Prices below are the numbers rendered on `/upgrade`, in **EUR**. Note that
+`src/lib/plans.ts` comments its `price` field as USD while the UI renders `€`, and
+`src/lib/spend.ts` defines the real ceilings in EUR — reconcile these before launch.
+
 | Plan | Price | Monthly messages | Upload MB | Voice / Canvas / Web search |
 |---|---|---|---|---|
 | FREE | 0 | **0** (browse/history only) | 5 | – / ✓ / – |
@@ -971,7 +975,8 @@ sets `User.bannedAt` (blocks sign-in, kills sessions on the next request, routes
 
 **Admin = owner**, resolved purely from the `OWNER_EMAILS` env list (`src/lib/owner.ts`,
 `admin.ts`) — there is no admin role column. Admin API routes return **404** (not 403) to
-non-owners to hide the surface. Surfaces: `/api/admin/users` (search, plan edit, ban/unban
+non-owners to hide the surface — except the three `admin/announcements*` routes, which
+still return 403 and are therefore an existence oracle for the admin surface. Surfaces: `/api/admin/users` (search, plan edit, ban/unban
 — owners are unbannable/undeletable), `/api/admin/moderation` (the flag queue),
 `/api/admin/announcements` (+ `/upload`, 100 MB, magic-byte verified). **Announcements**
 (`Announcement` + `AnnouncementDismissal`) surface the newest published, active,
@@ -1194,7 +1199,7 @@ in `SyncCompaction`; `EntityRevision` (current state) is never pruned. A cookie-
 
 ## 17. Data model
 
-Prisma schema: `prisma/schema.prisma` (49 models, 13 enums). Message `content`,
+Prisma schema: `prisma/schema.prisma` (48 models, 13 enums). Message `content`,
 `reasoning`, and `reasoningParts` are **encrypted at rest** (AES-256-GCM,
 `src/lib/message-crypto.ts`); connector tokens and OAuth tokens are likewise encrypted.
 Every relation cascades from `User` (account deletion is a single cascading delete).
@@ -1300,11 +1305,12 @@ gracefully when absent.
 | `NEXT_PUBLIC_APP_URL` | Public origin (reset links, OAuth callbacks, native token issuer, Apple MCP dial-in). |
 | `AUTH_URL` | Public origin for Auth.js redirects behind nginx (else sign-out → localhost). |
 
-> **`DIRECT_URL`** is present in `.env.example` (and referenced by the deploy
-> guides) but is **not currently wired** — `prisma/schema.prisma`'s datasource reads
-> only `DATABASE_URL`. It's a no-op today; to use a separate non-pooled URL for
-> migrations, add `directUrl = env("DIRECT_URL")` to the datasource. Otherwise it
-> can be dropped.
+| `DIRECT_URL` | Connection used for **schema operations only** (`migrate deploy` / `db push` / `db execute`) — wired as `directUrl` in `prisma/schema.prisma`. On Supabase, point it at the **session** pooler, the same as `DATABASE_URL`. |
+
+> **`DIRECT_URL` is load-bearing, not optional.** `.github/workflows/deploy.yml`
+> hard-fails the deploy when it is missing or empty, because migrations run over
+> it rather than over the runtime pooler (see §20.2 for the two failure modes
+> that forced this).
 
 ### Optional (feature degrades when absent)
 | Group | Vars |
@@ -1345,18 +1351,20 @@ runbooks). **nginx** (443, TLS via Certbot) reverse-proxies:
 
 ### 20.2 Database (Neon / Postgres)
 
-Juno runs on hosted **PostgreSQL** — the reference deployment uses **Neon**
-(Supabase works identically). Neon exposes two hostnames for the same database, and
-Juno uses **both**:
+Juno runs on hosted **PostgreSQL** — the reference deployment uses **Supabase**
+(`eu-west-1`); Neon works identically. Juno uses **two** connection strings:
 
 - **Pooled host** (`…-pooler…`, PgBouncer) — this is what `DATABASE_URL` points at
   and what the running app uses. Pooling is essential because many short-lived
   request handlers each open a connection; the pooler keeps Postgres from exhausting
   its connection slots.
-- **Direct host** (non-pooled) — used **only for schema operations** (`prisma migrate
-  deploy` / `db push` / `db execute`). The deploy derives it by stripping `-pooler`
-  from `DATABASE_URL` at migrate time. Two hard-won reasons migrations must not run
-  over the pooler:
+- **A second connection string** (`DIRECT_URL`) — used **only for schema
+  operations** (`prisma migrate deploy` / `db push` / `db execute`), wired as
+  `directUrl` in `prisma/schema.prisma`. This used to be derived by stripping
+  `-pooler` from `DATABASE_URL`, which only ever worked because Neon happened to
+  name its hosts that way and was a silent no-op on any other provider; it is now
+  an explicit environment variable the deploy validates. Two hard-won reasons
+  migrations must not run over the runtime pooler:
   - **P3009 poisoning** — through PgBouncer, Prisma's write that marks a migration
     *completed* in `_prisma_migrations` can be dropped, leaving a "failed" record
     that makes every later deploy refuse to run.
@@ -1365,9 +1373,10 @@ Juno uses **both**:
     deploy therefore also sets `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK=1` (safe here
     because the GitHub Actions concurrency group already serializes deploys).
 
-`prisma/schema.prisma`'s datasource reads `DATABASE_URL` only — there is no
-`directUrl`; the direct host is computed on the fly during deploy (which is why the
-`DIRECT_URL` env var is currently a no-op — see §19). **Migration history:** early
+On Supabase, **both** strings should be the Supavisor **session** pooler (port
+5432): the *transaction* pooler (6543) multiplexes connections and cannot keep the
+prepared statements Prisma needs, and the *direct* host (`db.<ref>.supabase.co`)
+resolves to IPv6 only, which the deploy VM cannot reach. **Migration history:** early
 production used `db push`; `scripts/baseline-production-migrations.mjs` converges that
 history once, after which `prisma migrate deploy` runs reviewed migrations
 exclusively. The **change-capture triggers** that power the native sync feed (§16)
@@ -1377,13 +1386,19 @@ free tier is enough.
 
 ### 20.3 Continuous deployment (GitHub Actions)
 
-Pushing to `main` deploys automatically — the low-RAM VM never has to build. Three
-workflows live in `.github/workflows/`:
+Pushing to `main` deploys automatically — the low-RAM VM never has to build. Four
+workflows live in `.github/workflows/`; the fourth, **`native.yml`**, gates the
+Swift surface (shared packages, the generated API contract, and both app builds)
+and is documented in `docs/native/TESTING.md` rather than here.
 
-**`deploy.yml` — Deploy to VM** (on push to `main` + manual dispatch; concurrency group
-`deploy-main`, cancel-in-progress):
+**`deploy.yml` — Deploy to VM** (on push to `main`, on every pull request, and on
+manual dispatch; concurrency group `deploy-main`, cancel-in-progress). Pull requests
+run the `test` job only — `build-and-deploy` is guarded on `github.event_name !=
+'pull_request'`:
 
-1. **`test` job** — `npm ci` → `npx tsc --noEmit` → `npm test` → `npm run lint`. A
+1. **`test` job** — `npm ci` → `npm run i18n:extract` → `npx tsc --noEmit` →
+   `npm test` → `npm run lint`. The catalog step is needed because
+   `src/lib/i18n-catalog.generated.ts` is generated rather than tracked. A
    failure here blocks the deploy. (This is the real type-check gate; the production
    `next build` itself ignores type errors so it can finish on the VM's RAM budget.)
 2. **`build-and-deploy` job** — writes the production `.env` from the **`PROD_ENV`**
@@ -1464,6 +1479,12 @@ npm run tasks:runner   # the scheduled-task worker (juno-scheduler)
 Tests (`tests/*.test.ts` + `scripts/test-*.ts`, run via `tsx`) cover auth token/locale
 helpers, message crypto, moderation logic (with provider keys scrubbed to force fail-open),
 memory backfill/suppression, clarify, and the code-remote-sessions ordering/planner logic.
+
+> **What is not covered, stated plainly:** `POST /api/chat` (the 2,600-line core), the
+> Stripe webhook and plan transitions, per-route authorization, the provider adapters,
+> and the budget/spend arithmetic in `src/lib/spend.ts` all have **no tests**. The
+> `tests/*.test.ts` glob does not recurse, so a test added in a subdirectory will be
+> silently skipped by `npm test`.
 Local dev: `npm install`, `cp .env.example .env`, `npx prisma migrate dev`, `npm run dev`
 → <http://localhost:3000>. For voice, run the relay with `RELAY_ENABLE_MOCK=1` and set
 `NEXT_PUBLIC_VOICE_RELAY_URL=ws://localhost:8787`.

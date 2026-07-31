@@ -53,13 +53,15 @@ npm run i18n:extract   # regenerate the static UI translation catalog
 ## Where things live
 
 - `docs/JUNO.md` — complete documentation (read this first).
-- `prisma/schema.prisma` — the data model (49 models, migrations in `prisma/migrations/`).
-- `src/app/api/` — ~120 route handlers; `src/lib/` — all backend logic.
+- `prisma/schema.prisma` — the data model (48 models, 45 migrations in `prisma/migrations/`).
+- `src/app/api/` — 127 route handlers; `src/lib/` — all backend logic.
 - `relay/` — the standalone realtime-voice WebSocket service (see `relay/README.md`).
 - `runner/agent-core/` — vendored agent core for cloud Code (see its `VENDORED.md`).
 - `deploy/` — `deploy.sh`, PM2 config, nginx template, and the VM setup guides
   ([Oracle](deploy/VM_SETUP_GUIDE.md) · [GCP](deploy/GCP_SETUP_GUIDE.md)).
 - `contracts/openapi/juno-native-v1.yaml` — the versioned `/api/v1` backend contract.
+- `native/` — the macOS and iOS apps and their shared Swift packages (see
+  [`docs/native/README.md`](docs/native/README.md)).
 
 ## Deployment
 
