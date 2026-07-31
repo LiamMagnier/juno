@@ -6,6 +6,7 @@ name: Deploy to VM
 on:
   push:
     branches: [main]
+  pull_request: # gate every PR on the same checks that gate main
   workflow_dispatch: {} # manual "Run workflow" button
 
 concurrency:
@@ -26,6 +27,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The UI translation catalog is generated, not tracked (predev/prebuild
+      # normally do this). Typecheck imports it, so build it first.
+      - name: Generate the i18n catalog
+        run: npm run i18n:extract
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -37,6 +43,8 @@ jobs:
 
   build-and-deploy:
     needs: test
+    # Pull requests run the `test` job only — never a deploy.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
