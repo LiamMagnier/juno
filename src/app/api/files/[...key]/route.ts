@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
 import { headObject, openObjectStream } from "@/lib/storage";
-import { sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { MIME_SNIFF_BYTES, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
 import { contentRangeHeader, parseRangeHeader, unsatisfiedRangeHeader } from "@/lib/http-range";
 
 export const runtime = "nodejs";
