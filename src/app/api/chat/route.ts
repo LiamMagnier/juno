@@ -50,6 +50,7 @@ import { supportsFastMode } from "@/lib/pricing";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
 import { createStallWatchdog, PROVIDER_IDLE_TIMEOUT_MS, STALL_USER_MESSAGE } from "@/lib/chat-stall";
+import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -841,17 +842,23 @@ async function handleChat(req: Request) {
           const budgetRates = modelRatesMicroUsdPerToken(modelId);
           const budgetCeilingMicro = budget.remainingMicroUsd;
           const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
-          const enforceStreamBudget = () => {
-            if (budgetCeilingMicro == null || budgetHalted) return;
-            const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
-            const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
-            const projected = inTok * budgetRates.input + outTok * budgetRates.output;
-            if (projected >= budgetCeilingMicro) {
+          const budgetGuard = createStreamBudgetGuard({
+            ceilingMicroUsd: budgetCeilingMicro,
+            rates: budgetRates,
+            inputChars: inputCharsForBudget,
+            usage: () => ({
+              promptTokens,
+              completionTokens,
+              outputChars: full.length,
+              reasoningChars: reasoning.length,
+            }),
+            onHalt: () => {
               budgetHalted = true;
               sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
               generationController.abort();
-            }
-          };
+            },
+          });
+          const enforceStreamBudget = () => budgetGuard.enforce();
 
           for await (const ev of streamChat({
             model: modelInfo,
@@ -2094,17 +2101,23 @@ async function handleChat(req: Request) {
       const budgetCeilingMicro = budget.remainingMicroUsd;
       const inputCharsForBudget = synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
       let budgetHalted = false;
-      const enforceStreamBudget = () => {
-        if (budgetCeilingMicro == null || budgetHalted) return;
-        const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
-        const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
-        const projected = inTok * budgetRates.input + outTok * budgetRates.output;
-        if (projected >= budgetCeilingMicro) {
+      const budgetGuard = createStreamBudgetGuard({
+        ceilingMicroUsd: budgetCeilingMicro,
+        rates: budgetRates,
+        inputChars: inputCharsForBudget,
+        usage: () => ({
+          promptTokens,
+          completionTokens,
+          outputChars: full.length,
+          reasoningChars: reasoning.length,
+        }),
+        onHalt: () => {
           budgetHalted = true;
           sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
           generationController.abort();
-        }
-      };
+        },
+      });
+      const enforceStreamBudget = () => budgetGuard.enforce();
 
       // Declared outside the try because the catch reads `stalled` to tell a
       // wedged provider from a user Stop — aborting makes the SDK throw its
