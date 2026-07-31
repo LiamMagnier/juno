@@ -571,7 +571,11 @@ export function useChat(opts: UseChatOptions) {
                 )
               );
               if (chunk.quota) opts.onQuota?.(chunk.quota);
-              toast.error(chunk.message);
+              // No toast: the same string is already on the failed turn, with a
+              // "Try again" button next to it. The inline card is the better
+              // surface — anchored to the turn that failed, and actionable.
+              // It also stopped a red toast firing on a deliberate Stop, which
+              // arrives here as an error frame with finishReason "user_stopped".
               break;
             }
           }
@@ -601,7 +605,7 @@ export function useChat(opts: UseChatOptions) {
                   : m
               )
             );
-            toast.error("The connection dropped before the response finished.");
+            // Already written onto the turn as errorMessage/content above.
           }
         }
       } catch (err) {
@@ -633,7 +637,7 @@ export function useChat(opts: UseChatOptions) {
                 : m
             )
           );
-          toast.error(message);
+          // Already rendered inline on the failed turn.
         }
       } finally {
         if (stopFallbackRef.current != null) {
