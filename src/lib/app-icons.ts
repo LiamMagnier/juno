@@ -27,6 +27,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Settings,
   ShieldAlert,
   type LucideIcon,
 } from "lucide-react";
@@ -43,6 +44,12 @@ export const AppIcons = {
   conversation: MessageCircle,
   new: Plus,
   search: Search,
+  /** The web reaches Settings from the user menu rather than the rail, and draws
+   *  it with this same mark (`user-menu.tsx`). It lives here because the native
+   *  apps *do* give it a sidebar row, and without an entry the generator had
+   *  nothing to emit — so that row fell back to SF Symbols' `gearshape`, the one
+   *  non-Lucide glyph in an otherwise Lucide column. */
+  settings: Settings,
 } as const satisfies Record<string, LucideIcon>;
 
 export type AppIconName = keyof typeof AppIcons;
