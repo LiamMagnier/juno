@@ -47,7 +47,8 @@ export interface ClientSpend {
   budgetMicroUsd: number | null;
   /** EUR per USD of model spend (display conversion; defaults to 1). */
   eurPerUsd: number;
-  /** Rolling windows shown as percentages (no euro figures surfaced). */
+  /** Rolling windows, as percentages. The period total is shown in euros
+   *  alongside them — see the Usage tile in settings. */
   windows: { session: ClientUsageWindow; weekly: ClientUsageWindow };
   /** Billing cycle info for the "renews / cancels" line. */
   billing: {
