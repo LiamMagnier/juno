@@ -49,6 +49,7 @@ import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { supportsFastMode } from "@/lib/pricing";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
+import { logDebug } from "@/lib/logger";
 import { createStallWatchdog, PROVIDER_IDLE_TIMEOUT_MS, STALL_USER_MESSAGE } from "@/lib/chat-stall";
 import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
 import {
@@ -431,7 +432,7 @@ async function handleChat(req: Request) {
       routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
         pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
       }`;
-      console.info("[chat:auto]", {
+      logDebug("chat.auto", {
         level: pick.complexity.level,
         minIntelligence: pick.complexity.minIntelligence,
         reasons: pick.complexity.reasons,

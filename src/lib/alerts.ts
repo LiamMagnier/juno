@@ -1,5 +1,6 @@
 import "server-only";
 import { sendEmail } from "@/lib/email";
+import { logAsync } from "@/lib/logger";
 
 /**
  * Operator alerts — the "something is wrong with the deployment" channel, as
@@ -102,7 +103,7 @@ export function alertOperator(input: AlertInput): void {
   const dedupeKey = input.key ? `${input.kind}:${input.key}` : input.kind;
   const severity = input.severity ?? "critical";
 
-  console.error("[alert]", {
+  logAsync("error", "alert", {
     kind: input.kind,
     ...(input.key ? { key: input.key } : {}),
     severity,
