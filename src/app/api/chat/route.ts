@@ -767,68 +767,79 @@ async function handleChat(req: Request) {
         // Heartbeat: models with hidden reasoning can stream nothing for
         // minutes; periodic pings keep proxies from dropping the idle SSE.
         const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
-        sendActivity({
-          kind: "context",
-          title: "Reading private context",
-          detail: `${plural(privateHistory.length, "message")} · not stored`,
-        });
-        sendActivity({
-          kind: "model",
-          title: "Selected model",
-          detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
-        });
-        if (activeConnectors.length) {
-          sendActivity({
-            kind: "tool",
-            title: "Connected tools ready",
-            detail: activeConnectors.map((c) => c.label).join(" · "),
-          });
-        }
-        const reasoningEffort = effectiveReasoningEffort(
-          modelInfo,
-          autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
-        );
-        if (reasoningEffort) {
-          sendActivity({
-            kind: "reasoning",
-            title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
-            detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
-          });
-        } else if (isAutoModelId(requestedId)) {
-          sendActivity({
-            kind: "reasoning",
-            title: "Auto thinking",
-            detail: "Instant — no extra reasoning for this prompt",
-          });
-        }
-        if (useWebSearch) {
-          sendActivity({
-            kind: "search",
-            title: "Preparing web search",
-            detail: searchToolLabel(modelInfo.provider),
-          });
-        }
-
-        // Hard mid-stream budget ceiling: the instant the running cost of THIS
-        // generation would push the user past their remaining plan budget, abort
-        // the provider stream so they cannot be billed a cent beyond it.
-        const budgetRates = modelRatesMicroUsdPerToken(modelId);
-        const budgetCeilingMicro = budget.remainingMicroUsd;
-        const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
+        // The try starts HERE, immediately after the interval exists, not 60
+        // lines further down at the streaming loop. Everything between — model
+        // resolution, the budget guard's setup, the activity preamble — used to
+        // run unprotected, and the `finally` that clears this interval and calls
+        // unregisterGeneration lives inside the try. A throw in that window
+        // leaked a 15s timer for the life of the process and left the
+        // generation registered forever. The normal path has an equivalent
+        // top-level handler on its stream; this branch had none.
+        //
+        // Declared out here because the catch below reads it to tell a
+        // budget-triggered abort from a real failure.
         let budgetHalted = false;
-        const enforceStreamBudget = () => {
-          if (budgetCeilingMicro == null || budgetHalted) return;
-          const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
-          const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
-          const projected = inTok * budgetRates.input + outTok * budgetRates.output;
-          if (projected >= budgetCeilingMicro) {
-            budgetHalted = true;
-            sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
-            generationController.abort();
-          }
-        };
-
         try {
+          sendActivity({
+            kind: "context",
+            title: "Reading private context",
+            detail: `${plural(privateHistory.length, "message")} · not stored`,
+          });
+          sendActivity({
+            kind: "model",
+            title: "Selected model",
+            detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
+          });
+          if (activeConnectors.length) {
+            sendActivity({
+              kind: "tool",
+              title: "Connected tools ready",
+              detail: activeConnectors.map((c) => c.label).join(" · "),
+            });
+          }
+          const reasoningEffort = effectiveReasoningEffort(
+            modelInfo,
+            autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+          );
+          if (reasoningEffort) {
+            sendActivity({
+              kind: "reasoning",
+              title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
+              detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
+            });
+          } else if (isAutoModelId(requestedId)) {
+            sendActivity({
+              kind: "reasoning",
+              title: "Auto thinking",
+              detail: "Instant — no extra reasoning for this prompt",
+            });
+          }
+          if (useWebSearch) {
+            sendActivity({
+              kind: "search",
+              title: "Preparing web search",
+              detail: searchToolLabel(modelInfo.provider),
+            });
+          }
+
+          // Hard mid-stream budget ceiling: the instant the running cost of THIS
+          // generation would push the user past their remaining plan budget, abort
+          // the provider stream so they cannot be billed a cent beyond it.
+          const budgetRates = modelRatesMicroUsdPerToken(modelId);
+          const budgetCeilingMicro = budget.remainingMicroUsd;
+          const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
+          const enforceStreamBudget = () => {
+            if (budgetCeilingMicro == null || budgetHalted) return;
+            const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
+            const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
+            const projected = inTok * budgetRates.input + outTok * budgetRates.output;
+            if (projected >= budgetCeilingMicro) {
+              budgetHalted = true;
+              sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+              generationController.abort();
+            }
+          };
+
           for await (const ev of streamChat({
             model: modelInfo,
             system,
@@ -1101,7 +1112,13 @@ async function handleChat(req: Request) {
     // Fire-and-forget moderation of the private message (never stored, but the
     // policy still applies). Runs after the response settles so it adds no latency.
     if (moderate) {
-      after(() => moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }));
+      // redactPreview stays — private content must never reach a flag preview
+      // (tests/chat-moderation.test.ts pins this). The .catch does not: without
+      // it a moderation failure here is an unhandled rejection, where the saved
+      // path has always swallowed its own.
+      after(() =>
+        moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }).catch(() => {})
+      );
     }
 
     return new Response(stream, { headers: SSE_HEADERS });
@@ -2080,6 +2097,7 @@ async function handleChat(req: Request) {
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
           fastMode: useFastMode,
+          audit: { userId: user.id, conversationId },
         })) {
           if (ev.type === "text") {
             if (!writingStarted) {
@@ -2234,7 +2252,12 @@ async function handleChat(req: Request) {
         appendFinishWarning(finishReason, sendActivity);
         sendActivity({
           kind: "done",
-          title: "Finished response",
+          // Was hardcoded "Finished response" for every finish reason, so a turn
+          // cut short by the token limit reported the same title as one that
+          // completed. The private path already had this right; a saved chat and
+          // the identical private chat should not describe themselves
+          // differently.
+          title: finishReason === "stop" ? "Finished response" : finishReasonTitle(finishReason),
           detail: webSources.length ? plural(webSources.length, "source") : undefined,
         });
         const assistantWithActivity = await prisma.message.update({

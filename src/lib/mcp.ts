@@ -9,6 +9,7 @@ import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
 import { env, isComposioConfigured } from "@/lib/env";
 import { wrapUntrusted } from "@/lib/untrusted-content";
 import { classifyToolAccess, type ToolAccess, type ToolAccessHints } from "@/lib/tool-access";
+import { recordToolInvocation, settleToolInvocation } from "@/lib/tool-audit";
 import type { Connection } from "@prisma/client";
 
 /*
@@ -210,12 +211,18 @@ function stringifyToolResult(res: unknown): string {
   return JSON.stringify(res).slice(0, 30_000);
 }
 
+/** Who a toolset's calls belong to. Every dispatch is logged against this. */
+export interface McpToolsetContext {
+  userId: string;
+  conversationId?: string | null;
+}
+
 /**
  * Open MCP connections for the given connectors and expose their tools as
  * OpenAI-style function tools. Tool names are namespaced `<connector>__<tool>`.
  * Always `close()` when the generation ends (best-effort in a finally).
  */
-export async function openMcpToolset(active: ActiveConnector[]): Promise<McpToolset> {
+export async function openMcpToolset(active: ActiveConnector[], ctx: McpToolsetContext): Promise<McpToolset> {
   const clients = new Map<string, Client>();
   const tools: McpFunctionTool[] = [];
   const routing = new Map<string, { connectorId: string; toolName: string; label: string; access: ToolAccess }>();
@@ -286,15 +293,37 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
      */
     async execute(toolName, args, signal) {
       const route = routing.get(toolName);
+      // An unroutable name never reached a connector, so there is nothing to
+      // audit: this is the model hallucinating a tool, not a call happening.
       if (!route) return wrapUntrusted(toolName, `Unknown tool: ${toolName}`);
       const client = clients.get(route.connectorId);
       const label = `${route.label} · ${route.toolName}`;
-      if (!client) return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
+
+      const auditId = await recordToolInvocation({
+        userId: ctx.userId,
+        conversationId: ctx.conversationId,
+        connectorId: route.connectorId,
+        toolName: route.toolName,
+        functionName: toolName,
+        access: route.access,
+        args,
+        derivedFromUntrusted: false,
+        status: "executed",
+      });
+
+      if (!client) {
+        await settleToolInvocation(auditId, { status: "failed", error: "connector unavailable" });
+        return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
+      }
+      const startedAt = Date.now();
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
+        await settleToolInvocation(auditId, { status: "executed", durationMs: Date.now() - startedAt });
         return wrapUntrusted(label, stringifyToolResult(res));
       } catch (err) {
-        return wrapUntrusted(label, `Tool error: ${err instanceof Error ? err.message : String(err)}`);
+        const detail = err instanceof Error ? err.message : String(err);
+        await settleToolInvocation(auditId, { status: "failed", error: detail, durationMs: Date.now() - startedAt });
+        return wrapUntrusted(label, `Tool error: ${detail}`);
       }
     },
     async close() {

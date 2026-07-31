@@ -62,6 +62,13 @@ export async function* streamChat(opts: {
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: boolean;
+  /**
+   * Who connector tool calls are attributed to in the audit trail, and which
+   * conversation they belong to. Required whenever `connectors` is non-empty:
+   * a tool call acting with a user's own credentials that cannot be traced back
+   * to that user is precisely the call worth refusing.
+   */
+  audit?: { userId: string; conversationId?: string | null };
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
@@ -96,10 +103,20 @@ export async function* streamChat(opts: {
   // Everyone else: we open the MCP tools here and run the tool loop ourselves.
   let toolset: McpToolset | undefined;
   if (active.length) {
-    try {
-      toolset = await openMcpToolset(active);
-    } catch {
-      toolset = undefined;
+    if (!opts.audit) {
+      // A caller that hands over connectors without an audit identity is a bug,
+      // and the safe way to fail is with no tools rather than with untraceable
+      // ones — the answer still streams, it just cannot reach the user's
+      // accounts. Loud, because it is silent from the user's side.
+      console.error("[llm] connectors supplied without an audit context — tools disabled", {
+        connectors: active.map((c) => c.id),
+      });
+    } else {
+      try {
+        toolset = await openMcpToolset(active, opts.audit);
+      } catch {
+        toolset = undefined;
+      }
     }
   }
   try {
