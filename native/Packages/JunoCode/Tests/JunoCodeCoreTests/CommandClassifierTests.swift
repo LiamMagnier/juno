@@ -61,6 +61,29 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("node --eval=\'console.log(1)\'"), .destructive)
     }
 
+    /// The same letters mean unrelated things to different interpreters, and
+    /// `.destructive` asks for approval in EVERY mode — full access included. So
+    /// a shared flag set does not just mis-label these, it stops an agent dead on
+    /// the commands a TypeScript or Java repo runs on nearly every turn.
+    func testFlagsThatOnlyLookLikeInlinePrograms() {
+        // -cp is the classpath; -c/-p are config and project files.
+        XCTAssertEqual(risk("java -cp build/classes Main"), .critical)
+        XCTAssertEqual(risk("npx tsc -p tsconfig.json"), .critical)
+        XCTAssertEqual(risk("npx eslint . -c .eslintrc.json"), .critical)
+        XCTAssertEqual(risk("npx jest -c jest.config.js"), .critical)
+        XCTAssertEqual(risk("deno -c deno.json run main.ts"), .critical)
+        // -p here selects a pytest plugin, -E ignores PYTHONPATH; neither is code.
+        XCTAssertEqual(risk("python3 -m pytest -p no:cacheprovider"), .critical)
+        XCTAssertEqual(risk("python3 -E scripts/check.py"), .critical)
+        // perl/ruby -c is `--check`: it parses the file and runs nothing at all.
+        XCTAssertEqual(risk("perl -c script.pl"), .critical)
+        XCTAssertEqual(risk("ruby -c app.rb"), .critical)
+
+        // Still caught when a value-taking flag comes first, which a scan that
+        // stopped at the leading flag run would walk straight past.
+        XCTAssertEqual(risk("python3 -W ignore -c 'import os'"), .destructive)
+    }
+
     func testForbiddenProgramsAreRejectedEverywhere() {
         XCTAssertTrue(isForbidden("sudo rm -rf cache"))
         XCTAssertTrue(isForbidden("su root"))
