@@ -157,6 +157,10 @@ export function useChat(opts: UseChatOptions) {
     setArtifacts(opts.initialArtifacts);
     setStatus("idle");
     setPendingClarification(null);
+    // Conversation-identity reset, deliberately keyed ONLY on conversationId.
+    // opts.initialMessages/initialArtifacts are captured as the values for that
+    // conversation; adding them would wipe live local state every time the
+    // parent re-rendered with a new array literal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
@@ -336,6 +340,9 @@ export function useChat(opts: UseChatOptions) {
     });
 
     void recoverDroppedStream(placeholderId, userMessageId, seq, Date.now() + RESUME_POLL_WINDOW_MS);
+    // Reattach runs once per conversation. recoverDroppedStream polls for up to
+    // an hour, so re-running this on any other dependency change would start a
+    // second, overlapping recovery loop against the same generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 

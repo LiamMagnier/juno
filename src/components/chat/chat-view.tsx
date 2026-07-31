@@ -518,6 +518,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   React.useEffect(() => {
     if (!currentConversationId || privateMode) return;
     if (chat.messages.some((m) => m.role === "USER" && m.content.trim())) scheduleAutoTitle("first_user", 160);
+    // Keyed on messages.LENGTH, not the array: titling should fire when a turn
+    // is added, not on every streamed delta that replaces the array identity.
+    // chat.messages is read for its current contents at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
@@ -534,6 +537,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         scheduleAutoTitle(latestAssistant.finishReason === "user_stopped" ? "stopped" : "completed", 420);
       }
     }
+    // Same reason as above: chat.messages is read fresh inside, but re-running
+    // on every delta would re-schedule the title on each streamed character.
+    // The status edge and the turn count are the real triggers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.status, chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
@@ -745,6 +751,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // Clear ?q= so a refresh doesn't resend.
       window.history.replaceState({}, "", "/chat");
     }
+    // Deliberately fires only on the prompt arriving. autoSentRef already makes
+    // this once-only, and depending on `chat` would re-run it every time the
+    // hook's identity changed — i.e. re-send the prompt mid-conversation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
