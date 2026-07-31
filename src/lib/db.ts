@@ -27,8 +27,6 @@ import { PrismaClient } from "@prisma/client";
  *    NextAuth queries by provider identifiers before a session exists.
  *  - FeatureRequest and FeatureComment, owned via `authorId` and deliberately
  *    world-readable (the public roadmap).
- *  - The models in UNGUARDED_OWNED_MODELS below, which are staged work rather
- *    than a decision that they are safe.
  *
  * tests/ownership-guard.test.ts reads prisma/schema.prisma and fails when a
  * model carrying an ownership column is in neither list — so this stops being a
@@ -36,6 +34,10 @@ import { PrismaClient } from "@prisma/client";
  *
  * Known gap: GUARDED_OPERATIONS covers reads, updates and deletes but not
  * `upsert`, `count`, `aggregate` or `groupBy`, all of which take a `where`.
+ * Closing it is its own audit rather than a one-line addition — the sync PUT in
+ * api/code/devices/[deviceId]/sessions/route.ts upserts by the
+ * `deviceId_sessionId` key with no userId in the where, and would start
+ * throwing in development the moment `upsert` joins the set.
  */
 
 /**
@@ -79,6 +81,21 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   // Added by the tool-audit work; its only unscoped write is a settle-by-primary-key
   // that deliberately uses prismaUnguarded (see src/lib/tool-audit.ts).
   ["ToolInvocation", "userId"],
+  // The last eight. Each had call sites that reached the database without a
+  // userId — not leaks (every one was already behind an ownership check, an
+  // owner-only admin gate, or a capability like a share token), but nothing
+  // stopped the next one from being a leak. The genuinely global paths now say
+  // so with prismaUnguarded: public share pages, PKCE redemption, the admin
+  // moderation queue, and the cross-user scheduler sweep. Everything else had
+  // the userId in hand already and now puts it in the where.
+  ["Share", "userId"],
+  ["ScheduledTask", "userId"],
+  ["ModerationFlag", "userId"],
+  ["CodeRemoteSession", "userId"],
+  ["CodeRemoteSessionEvent", "userId"],
+  ["CodeSessionCommand", "userId"],
+  ["NativeDeviceSession", "userId"],
+  ["NativeAuthorizationCode", "userId"],
 ]);
 
 /**
@@ -88,23 +105,11 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
  * that every model carrying an ownership column is either guarded or listed
  * here, so a new one cannot be added without someone making this choice.
  *
- * These eight all carry `userId` and every current call site is scoped, behind
- * an owner-only admin gate, or genuinely global — no known leak. What they lack
- * is the dev-time tripwire. Guarding them requires converting ~17 call sites in
- * the same commit (the native bearer-token path among them, which would
- * otherwise break every native client against a dev server), so it is staged
- * separately rather than bundled in here.
+ * Empty, and worth keeping empty. The eight models that used to sit here are
+ * all guarded now; adding a name back is a deliberate act that needs a reason
+ * on the same line.
  */
-export const UNGUARDED_OWNED_MODELS = new Set([
-  "Share", // public /s/<token> pages resolve by token, before any user exists
-  "ScheduledTask", // the worker scans and claims across all users
-  "ModerationFlag", // owner-only admin surface
-  "CodeRemoteSession",
-  "CodeRemoteSessionEvent",
-  "CodeSessionCommand",
-  "NativeDeviceSession", // bearer auth identifies the user FROM the session row
-  "NativeAuthorizationCode", // PKCE redemption identifies the user FROM the code
-]);
+export const UNGUARDED_OWNED_MODELS = new Set<string>([]);
 
 const GUARDED_OPERATIONS = new Set([
   "findMany",
