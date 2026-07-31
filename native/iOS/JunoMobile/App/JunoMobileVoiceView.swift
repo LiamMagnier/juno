@@ -21,6 +21,10 @@ final class JunoMobileVoiceSession: Identifiable {
     /// session, so a retry after a dropped network updates the same conversation
     /// instead of creating a second one.
     let id = UUID()
+    /// When the call began. It exists to date the transient rows in
+    /// ``liveMessages(conversationID:)`` with something that does not change on
+    /// every read — see the note there.
+    let startedAt = Date()
     let controller: JunoRealtimeVoiceController
     /// Files the spoken turns into a chat. Nil where nothing can be saved — an
     /// unconfigured shell — in which case the dock says so on the way out rather
@@ -44,6 +48,52 @@ final class JunoMobileVoiceSession: Identifiable {
     /// composer routes a typed turn through the relay only from here, and the
     /// dock offers barge-in only from here.
     var isLive: Bool { controller.phase == .live }
+
+    /// **The call as it is being spoken, as ordinary chat messages.**
+    ///
+    /// The web's `voiceMessages` (`chat-view.tsx`), ported: spoken turns are
+    /// appended after the persisted ones and rendered as ordinary bubbles,
+    /// marked still-streaming until the recognizer settles them. There is no
+    /// transcript pane on either client, and this is why — the words belong in
+    /// the conversation they are part of, in the same shapes as everything else
+    /// in it.
+    ///
+    /// **These rows are transient and must stay that way.** Nothing here writes
+    /// to the store; ``JunoMobileVoiceDock`` files the finished turns on hang-up
+    /// and a second writer would give the reader the conversation twice.
+    ///
+    /// A line is opened the instant a turn begins and carries no text for a
+    /// beat, so blank ones are dropped rather than flickering an empty bubble
+    /// ahead of every sentence.
+    ///
+    /// - Parameter conversationID: The chat these turns will eventually be filed
+    ///   into. Empty from the home screen, where the call has no conversation
+    ///   yet and the save route makes one. Nothing on screen reads it — the row
+    ///   needs the field, not the value.
+    func liveMessages(conversationID: String = "") -> [NativeChatMessage] {
+        controller.transcript.compactMap { line in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return NativeChatMessage(
+                id: "voice-\(line.id.uuidString)",
+                conversationID: conversationID,
+                clientID: nil,
+                role: line.role == .assistant ? .assistant : .user,
+                content: text,
+                reasoning: nil,
+                model: nil,
+                // One date for the whole call rather than `Date()` per read.
+                // This is rebuilt several times a second while someone is
+                // talking, and a field that changes on every rebuild makes every
+                // row differ from itself.
+                createdAt: startedAt,
+                revision: 0,
+                // The web's `streaming: !line.final`. A non-final line is a live
+                // hypothesis being rewritten, not something that was said.
+                isPending: !line.final
+            )
+        }
+    }
 }
 
 extension EnvironmentValues {
@@ -69,8 +119,10 @@ extension EnvironmentValues {
 /// happening and what it costs — and gave the picture to ``JunoVoiceAura``,
 /// which the composer mounts behind itself: a field spread across the column is
 /// legible at arm's length and asks for none of your attention, while an orb
-/// small enough to sit in a pill can only ever be decoration. The transcript is
-/// gone because the chat it is filed into is already on screen behind this.
+/// small enough to sit in a pill can only ever be decoration. The pane is gone
+/// because the spoken turns now appear in the chat behind this, as ordinary
+/// bubbles — see ``JunoMobileVoiceSession/liveMessages(conversationID:)``. Until
+/// they did, this doc comment was the only place the transcript existed.
 ///
 /// Two things here have no counterpart on the web and are kept because they are
 /// better: the speaker/receiver toggle, which only a phone needs, and the
@@ -471,8 +523,38 @@ struct JunoMobileVoiceDock: View {
 /// a second — invalidates one `Canvas` and nothing else. Read from the
 /// composer's body instead, the same property would re-measure the text field,
 /// the chips and the whole control row on every audio frame.
+///
+/// **The box is the whole design here.** ``JunoVoiceAura`` derives everything —
+/// how far the band climbs, how high the two arms reach — from the rectangle it
+/// is handed, so a field given the composer's own strip draws two flames beside
+/// the text field, and one given the column draws light around the conversation.
+/// The web sizes it `min(30rem, 46vh)` of the chat column and anchors it a
+/// little below the column's bottom (`.voice-aura`, `globals.css`); this takes
+/// the same fractions of the column's measured height.
 struct JunoMobileVoiceField: View {
     let controller: JunoRealtimeVoiceController
+    /// The chat column's own height, measured by the screen that owns it. Zero
+    /// only for the frame or two before the first geometry callback.
+    var columnHeight: CGFloat = 0
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    /// `height: min(30rem, 46vh)`, in order.
+    private static let maximumHeight: CGFloat = 480
+    private static let columnShare: CGFloat = 0.46
+    /// `bottom: -1.25rem`: the band's core sits just below the column so what
+    /// shows is light spilling up it rather than a bright rule across its foot.
+    private static let underhang: CGFloat = 20
+    /// Before the column has been measured. Deliberately the strip this replaced
+    /// rather than zero: a host that forgets to pass a height should look like
+    /// the old build, not like a broken one.
+    private static let unmeasuredHeight: CGFloat = 260
+
+    private var height: CGFloat {
+        guard columnHeight > 0 else { return Self.unmeasuredHeight }
+        return min(Self.maximumHeight, columnHeight * Self.columnShare)
+    }
 
     var body: some View {
         JunoVoiceAura(
@@ -480,6 +562,21 @@ struct JunoMobileVoiceField: View {
             speaking: controller.assistantSpeaking,
             active: controller.phase == .live || controller.phase == .reconnecting
         )
+        .frame(height: height)
+        // Negative, so the aura keeps its full height while the box the layout
+        // sees ends 20pt higher — bottom-aligned, that hangs the band below the
+        // composer exactly as the web's negative `bottom` does.
+        .padding(.bottom, -Self.underhang)
+        // `voice-aura-in`: arriving mid-sentence is worse than arriving late, so
+        // the field fades up instead of appearing at full strength the frame the
+        // socket opens. Reduce Motion keeps the field and drops only the fade —
+        // a live microphone has to stay visible.
+        .opacity(appeared ? 1 : 0)
+        .task {
+            withAnimation(JunoMotion.reduced(.easeOut(duration: 0.36), when: reduceMotion)) {
+                appeared = true
+            }
+        }
     }
 }
 

@@ -55,6 +55,12 @@ struct JunoMobileComposer: View {
     /// Creates the conversation a draft send belongs to and returns its id.
     /// Nil inside an existing conversation.
     var startConversation: (() async -> String?)?
+    /// How tall the chat column is, measured by the screen that owns it.
+    ///
+    /// The voice field is sized from this rather than from anything the composer
+    /// can see, because the light belongs to the conversation and the composer
+    /// occupies a strip at the bottom of it. See ``auraLayer``.
+    var chatColumnHeight: CGFloat = 0
     var composerFocused: FocusState<Bool>.Binding
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -336,11 +342,32 @@ struct JunoMobileComposer: View {
     /// duration — the web makes the same swap, and for the same reason: two
     /// lights under one capsule read as a bug, and while someone is talking the
     /// thing worth reporting is the conversation, not which model is selected.
+    ///
+    /// **The voice field is scoped to the column but mounted here, and that is a
+    /// choice rather than an accident.** On the web the field is a sibling of the
+    /// composer inside `.composer-aura-host` — a stacking context whose only job
+    /// is to make `z-index: -1` mean "behind the composer" — and it overflows
+    /// upward to `min(30rem, 46vh)`, framing the reading area from below. This
+    /// background is that same arrangement: it paints behind the composer, glass
+    /// included, and is free to overflow into the transcript above.
+    ///
+    /// The phone adds one constraint the browser does not have. This composer is
+    /// installed as a `.safeAreaInset(edge: .bottom)`, and the inset's content is
+    /// the *only* thing in the chat screen that rises with the keyboard — the
+    /// scroll view keeps its frame and grows its safe area instead. A field
+    /// anchored to the transcript, or to the screen, would therefore stay behind
+    /// the keyboard the moment anyone typed during a call. So the mount point
+    /// stays here, where it inherits keyboard tracking for free, and what changes
+    /// is the box: ``chatColumnHeight`` carries the column's own measurement down
+    /// so the field can be sized from the conversation rather than from the strip
+    /// it happens to be mounted in.
     @ViewBuilder
     private var auraLayer: some View {
         if let voiceSession {
-            JunoMobileVoiceField(controller: voiceSession.controller)
-                .frame(height: 240)
+            JunoMobileVoiceField(
+                controller: voiceSession.controller,
+                columnHeight: chatColumnHeight
+            )
         } else {
             JunoComposerAura(
                 // The lab's own light, or the account's accent for a model this

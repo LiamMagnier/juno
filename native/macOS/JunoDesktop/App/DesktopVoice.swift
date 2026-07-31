@@ -19,6 +19,14 @@ import SwiftUI
 /// file a retried save as a second conversation. Held here, it cannot move.
 struct DesktopVoiceSession: Identifiable {
     let id = UUID()
+    /// When the call was dialled.
+    ///
+    /// The only honest stamp there is for a spoken line: `TranscriptLine`
+    /// carries none, because a hypothesis rewritten five times a second has no
+    /// single moment it happened at. The live view needs *a* date to build a
+    /// message row from, and one that changes on every frame would make every
+    /// row look new to SwiftUI on every partial transcript.
+    let startedAt = Date()
     let controller: JunoRealtimeVoiceController
     let modelID: String
     let conversationID: String?
@@ -113,29 +121,42 @@ struct DesktopVoiceColumn {
 }
 
 extension View {
-    /// Mounts a live call around this composer: the field behind it, the dock
-    /// directly above it.
+    /// The dock, directly above this composer.
+    func junoVoiceDock(_ column: DesktopVoiceColumn?) -> some View {
+        modifier(DesktopVoiceDockLayer(column: column))
+    }
+
+    /// Mounts the field behind **this whole surface**, anchored to its bottom.
     ///
-    /// Applied to the composer rather than to the screen, because the field has
-    /// to be scoped to the chat column. A background on the window would wash
-    /// the sidebar, which is the one thing the web is explicit about — the aura
-    /// is a sibling of the composer there for exactly this reason.
+    /// Applied to the chat column, never to the window: the light stops where
+    /// the conversation does, because the sidebar is a different surface with
+    /// its own state. That is the one thing the web is explicit about
+    /// (`globals.css`, `.voice-aura`), and a `.background` is what enforces it —
+    /// it can only ever be the size of what it is behind.
+    ///
+    /// The field frames the *reading area*, which is why it belongs here rather
+    /// than on the composer. Behind the composer alone it is a strip the width
+    /// of a text field, and `JunoVoiceAura` derives both its arms and its band
+    /// from the box it is given — so a small box does not produce a small
+    /// version of the effect, it produces a different one: two flames in the
+    /// bottom corners with no band between them.
+    func junoVoiceField(_ column: DesktopVoiceColumn?) -> some View {
+        modifier(DesktopVoiceFieldLayer(column: column))
+    }
+
+    /// Both, around a composer that is the entire voice surface.
+    ///
+    /// For a host with no conversation column to light — a project overview,
+    /// where the composer sits in the middle of a page of other things. The
+    /// chat column applies ``junoVoiceDock(_:)`` and ``junoVoiceField(_:)``
+    /// separately, because there the two belong to different boxes.
     func junoVoiceColumn(_ column: DesktopVoiceColumn?) -> some View {
-        modifier(DesktopVoiceColumnLayer(column: column))
+        modifier(DesktopVoiceComposerLayer(column: column))
     }
 }
 
-private struct DesktopVoiceColumnLayer: ViewModifier {
+private struct DesktopVoiceDockLayer: ViewModifier {
     let column: DesktopVoiceColumn?
-
-    /// `.voice-aura`'s `height: min(30rem, 46vh)`, resolved for a Mac window.
-    ///
-    /// The cap is what the number is *for*: the field's band reaches
-    /// `min(height * 0.46, 150)`, so anything under about 330 quietly shortens
-    /// the light and the effect stops reading as waves. The previous 260 sat
-    /// well inside that — the same shape the browser draws, cropped to two
-    /// thirds, which is most of why the Mac looked worse than the web.
-    private static let fieldHeight: CGFloat = 460
 
     func body(content: Content) -> some View {
         VStack(spacing: 0) {
@@ -147,23 +168,76 @@ private struct DesktopVoiceColumnLayer: ViewModifier {
             }
             content
         }
-        // Behind the dock *and* the composer, which is the whole arrangement:
-        // the web mounts the aura as a sibling at `z-index: -1` inside the host
-        // that carries both, so the light passes under the pill as well as
-        // under the composer. A `.background` on the pair is that, natively —
-        // and anything drawn inside the dock would land in front of the thing
-        // it is lighting.
-        .background(alignment: .bottom) {
+    }
+}
+
+private struct DesktopVoiceFieldLayer: ViewModifier {
+    let column: DesktopVoiceColumn?
+
+    /// `.voice-aura`'s `height: min(30rem, 46vh)`, in points.
+    ///
+    /// Both halves matter. The proportion is what makes the field frame the
+    /// conversation on any window — a fixed strip is a fraction of a tall
+    /// window and most of a short one. The cap is what stops it swallowing a
+    /// full-screen display: past it the light is no longer coming from an edge.
+    private static let heightCap: CGFloat = 460
+    private static let heightRatio: CGFloat = 0.46
+
+    func body(content: Content) -> some View {
+        content.background(alignment: .bottom) {
             if let column {
-                DesktopVoiceField(controller: column.controller)
-                    .frame(height: Self.fieldHeight)
-                    // `bottom: -1.25rem`. The band's brightest edge belongs
-                    // just past the composer, in the disclaimer's band, so the
-                    // light looks like it is coming from under the column
-                    // rather than stopping at a seam.
-                    .offset(y: JunoSpace.roomy)
+                // Sized from the column it is behind, not from a number. The
+                // aura's band reaches `min(height * 0.46, 150)` and its arms
+                // `min(width * 0.15, 96)`, so the box is the whole design: hand
+                // it the column and it draws the web's field, hand it a strip
+                // and it draws a strip's worth of it.
+                GeometryReader { proxy in
+                    DesktopVoiceField(controller: column.controller)
+                        .frame(
+                            height: min(Self.heightCap, proxy.size.height * Self.heightRatio)
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
+                // The field now reaches both edges of the column, and its 9pt
+                // blur reaches a little past them. Clipped, so the softening
+                // cannot put a glow on the sidebar's side of the divider —
+                // which is the whole reason the aura is scoped here at all.
+                .clipped()
             }
         }
+    }
+}
+
+/// The composer-scoped arrangement: the dock above, the field behind the pair.
+///
+/// The field's height is fixed here rather than taken from the host, because the
+/// host is a composer — a couple of hundred points tall at most, and 46% of that
+/// is not a field, it is a hairline. A surface that *is* a column takes
+/// ``DesktopVoiceFieldLayer`` instead.
+private struct DesktopVoiceComposerLayer: ViewModifier {
+    let column: DesktopVoiceColumn?
+
+    private static let fieldHeight: CGFloat = 460
+
+    func body(content: Content) -> some View {
+        content
+            .junoVoiceDock(column)
+            // Behind the dock *and* the composer, which is the whole
+            // arrangement: the web mounts the aura as a sibling at
+            // `z-index: -1` inside the host that carries both, so the light
+            // passes under the pill as well as under the composer. Anything
+            // drawn inside the dock would land in front of the thing it is
+            // lighting.
+            .background(alignment: .bottom) {
+                if let column {
+                    DesktopVoiceField(controller: column.controller)
+                        .frame(height: Self.fieldHeight)
+                        // `bottom: -1.25rem`. The band's brightest edge belongs
+                        // just past the composer so the light looks like it is
+                        // coming from under it rather than stopping at a seam.
+                        .offset(y: JunoSpace.roomy)
+                }
+            }
     }
 }
 

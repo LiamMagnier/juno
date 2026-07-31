@@ -711,7 +711,13 @@ struct DesktopConversationView: View {
     @ViewBuilder
     private var conversationContent: some View {
         Group {
-            if model.selectedConversation == nil {
+            // A live call takes the greeting's place even before a single word
+            // has been said, which is the web's `hasMessages || voiceOpen`
+            // (`chat-view.tsx`). Without it the most common way to start a
+            // call — pressing the microphone on the home screen — is the one
+            // place the spoken conversation could never be read, because a
+            // draft has no message list to append it to.
+            if model.selectedConversation == nil, voiceSession == nil {
                 // Greeting and composer are one centred group; the fine print is
                 // pinned to the foot of the page rather than carried along under
                 // the composer. That is the web's own split (`chat-view.tsx`):
@@ -748,6 +754,7 @@ struct DesktopConversationView: View {
                 // behind it and the material finally has something to bend.
                 DesktopTranscript(
                     model: model,
+                    voiceMessages: voiceMessages,
                     messageActions: configuration.messageActionsClient,
                     followUpClient: configuration.followUpClient,
                     draftPrompt: $draftPrompt,
@@ -761,6 +768,38 @@ struct DesktopConversationView: View {
                     }
                 }
             }
+        }
+        // The field behind the whole column — the conversation and the composer
+        // both — scoped to it, so the sidebar is never washed by it.
+        .junoVoiceField(voiceColumn)
+    }
+
+    /// The spoken conversation as it is happening, as ordinary message rows.
+    ///
+    /// The web's `voiceMessages` (`chat-view.tsx`), reproduced: the live lines
+    /// are appended after the persisted ones and rendered by the same row, with
+    /// a line the recognizer is still rewriting marked as still arriving. They
+    /// are **transient** — nothing here writes them anywhere. Hanging up is what
+    /// files a conversation, from the controller's own record, and only the
+    /// final lines (``DesktopVoiceDock``); a row built here that also persisted
+    /// would file every half-heard hypothesis twice.
+    private var voiceMessages: [NativeChatMessage] {
+        guard let voiceSession else { return [] }
+        return voiceSession.controller.transcript.compactMap { line in
+            let text = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            return NativeChatMessage(
+                id: "voice-\(line.id.uuidString)",
+                conversationID: model.selectedConversationID ?? "",
+                clientID: nil,
+                role: line.role == .assistant ? .assistant : .user,
+                content: text,
+                reasoning: nil,
+                model: nil,
+                createdAt: voiceSession.startedAt,
+                revision: 0,
+                isPending: !line.final
+            )
         }
     }
 
@@ -843,9 +882,9 @@ struct DesktopConversationView: View {
             draftPrompt: $draftPrompt,
             openVoiceMode: startVoice
         )
-        // The field behind the composer and the dock above it — scoped to this
-        // column, so the sidebar is never washed by it.
-        .junoVoiceColumn(voiceColumn)
+        // The dock only. The field this composer used to carry is now behind
+        // the whole column — see ``conversationContent``.
+        .junoVoiceDock(voiceColumn)
     }
 }
 
@@ -928,6 +967,11 @@ private struct DesktopChatDisclaimer: View {
 
 private struct DesktopTranscript: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
+    /// The live spoken turns, if a call is running. Kept apart from
+    /// `model.selectedMessages` rather than merged into the store: these belong
+    /// to the call, not to the conversation, and a store that held them would
+    /// have to decide when to take them out again.
+    let voiceMessages: [NativeChatMessage]
     let messageActions: NativeMessageActionsClient?
     /// Suggests what to ask next, under a finished reply.
     let followUpClient: NativeFollowUpClient?
@@ -968,6 +1012,7 @@ private struct DesktopTranscript: View {
                     ForEach(model.selectedMessages) { message in
                         DesktopMessageRow(
                             message: message,
+                            isVoice: false,
                             modelDisplayName: message.model.map(displayName(forModelID:)),
                             isLastAssistant: message.id == lastAssistantMessageID,
                             copy: {
@@ -996,6 +1041,34 @@ private struct DesktopTranscript: View {
                             }
                         )
                             .id(message.id)
+                    }
+
+                    // The call, in the transcript it belongs to. Same rows, same
+                    // reading column, appended after the persisted turns — the
+                    // web's arrangement, and the reason it has no transcript
+                    // pane: a spoken conversation is the conversation, not a
+                    // second view of one.
+                    ForEach(voiceMessages) { message in
+                        DesktopMessageRow(
+                            message: message,
+                            isVoice: true,
+                            modelDisplayName: nil,
+                            isLastAssistant: false,
+                            copy: {
+                                copy(NativeMessageContent.plainText(of: message.content))
+                            },
+                            regenerate: nil,
+                            branch: nil,
+                            setFeedback: nil,
+                            readAloud: nil
+                        )
+                        // A line the recognizer has not finalized is a
+                        // hypothesis it is still rewriting several times a
+                        // second, and it is frequently wrong. Dimmed, it reads
+                        // as something being heard; at full strength it reads as
+                        // something that was said.
+                        .opacity(message.isPending ? 0.55 : 1)
+                        .id(message.id)
                     }
 
                     if model.isGenerating, !model.researchActivity.isEmpty {
@@ -1049,6 +1122,12 @@ private struct DesktopTranscript: View {
                 withAnimation(.easeOut(duration: 0.18)) {
                     proxy.scrollTo("transcript-bottom", anchor: .bottom)
                 }
+            }
+            // Unanimated, unlike a sent message: a partial transcript lands
+            // several times a second, and a 180ms scroll restarted that often
+            // never arrives anywhere.
+            .onChange(of: voiceMessages) { _, _ in
+                proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
             .onChange(of: model.chatPhase) { _, _ in
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
@@ -1133,6 +1212,14 @@ private struct DesktopTranscript: View {
 
 private struct DesktopMessageRow: View {
     let message: NativeChatMessage
+    /// Whether this is a spoken turn from a call that is still running.
+    ///
+    /// It suppresses the footer and the action row, as `isVoice` does on the web
+    /// (`message-item.tsx`), and for the same reason: there is no row behind it
+    /// yet. Regenerate, Branch and the feedback thumbs all address a message the
+    /// server knows about, and this one exists only in the controller until the
+    /// call is hung up and filed.
+    let isVoice: Bool
     /// The model's human name, resolved from the account catalog by the caller.
     ///
     /// The footer used to render `message.model` directly, which is the canonical
@@ -1141,7 +1228,10 @@ private struct DesktopMessageRow: View {
     let modelDisplayName: String?
     let isLastAssistant: Bool
     let copy: () -> Void
-    let regenerate: () -> Void
+    /// Nil where there is nothing on the server to regenerate — the same
+    /// absence `branch` and `setFeedback` express, rather than a closure that
+    /// does nothing.
+    let regenerate: (() -> Void)?
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
@@ -1365,7 +1455,7 @@ private struct DesktopMessageRow: View {
                     DesktopMessageSources(sources: message.sources)
                 }
 
-                if let footerLine {
+                if let footerLine, !isVoice {
                     Text(footerLine)
                         .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.tertiary)
@@ -1382,7 +1472,7 @@ private struct DesktopMessageRow: View {
                         .textSelection(.enabled)
                 }
 
-                if !message.isPending {
+                if !message.isPending, !isVoice {
                     HStack(spacing: 4) {
                         messageAction(
                             "Copy",
@@ -1403,7 +1493,7 @@ private struct DesktopMessageRow: View {
                                 action: branch
                             )
                         }
-                        if isLastAssistant {
+                        if isLastAssistant, let regenerate {
                             messageAction(
                                 "Regenerate",
                                 symbol: "arrow.clockwise",

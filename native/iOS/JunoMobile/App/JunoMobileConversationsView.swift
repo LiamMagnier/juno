@@ -159,6 +159,12 @@ private struct JunoMobileDraftChat: View {
 
 
     @State private var showingLibrary = false
+    /// The column's height, for the voice field — see the conversation screen.
+    @State private var chatColumnHeight: CGFloat = 0
+    /// The call in progress. It reaches the home screen because that is where
+    /// most calls are started: nothing is selected, so the spoken turns have no
+    /// conversation to appear in until the save route makes one on hang-up.
+    @Environment(\.junoVoiceSession) private var voiceSession
     @FocusState private var composerFocused: Bool
 
     /// Whether the reader has actually chosen a model on this screen.
@@ -184,10 +190,42 @@ private struct JunoMobileDraftChat: View {
         )
     }
 
+    /// The greeting, or — once someone is talking — what they have said.
+    ///
+    /// A call from here has no conversation behind it to fall back on, so
+    /// without this the whole of a spoken exchange happens under an unchanged
+    /// "Good evening, Liam". The greeting returns when the session closes and
+    /// the saved turns take over.
+    @ViewBuilder
+    private var column: some View {
+        if voiceMessages.isEmpty {
+            JunoMobileGreeting(name: profileName)
+        } else {
+            ScrollView {
+                // The transcript's own metrics, so a spoken turn is the same
+                // shape here as it will be in the chat it is filed into.
+                LazyVStack(spacing: 24) {
+                    JunoMobileVoiceLines(messages: voiceMessages)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 24)
+                .frame(maxWidth: 768)
+                .frame(maxWidth: .infinity)
+            }
+            .defaultScrollAnchor(.bottom)
+        }
+    }
+
+    /// The live half of the call. Empty when no session is running.
+    private var voiceMessages: [NativeChatMessage] {
+        voiceSession?.liveMessages() ?? []
+    }
+
     var body: some View {
-        JunoMobileGreeting(name: profileName)
+        column
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.junoCanvas)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatColumnHeight = $0 }
             .accessibilityIdentifier("juno.mobile.chat-draft")
             .navigationTitle("navigation.chat")
             .navigationBarTitleDisplayMode(.inline)
@@ -225,6 +263,7 @@ private struct JunoMobileDraftChat: View {
                             model: selectedModelID.isEmpty ? nil : selectedModelID
                         )
                     },
+                    chatColumnHeight: chatColumnHeight,
                     composerFocused: $composerFocused
                 )
             }
@@ -410,7 +449,14 @@ private struct JunoMobileConversationDetail: View {
     @State private var runStartedAt: Date?
     @State private var settledRunID: String?
     @State private var settledRunDuration: TimeInterval?
+    /// The chat column's own height, handed to the composer so the voice field
+    /// can be sized from the conversation instead of from the composer's strip.
+    /// See ``JunoMobileComposer/auraLayer``.
+    @State private var chatColumnHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The call in progress, published by the shell. Read here as well as in the
+    /// composer because the spoken turns belong in this transcript.
+    @Environment(\.junoVoiceSession) private var voiceSession
     @FocusState private var composerFocused: Bool
 
     /// Whether the reader has actually chosen a model on this screen.
@@ -453,6 +499,13 @@ private struct JunoMobileConversationDetail: View {
 
     private var messages: [NativeChatMessage] {
         model.messages(for: conversation.id)
+    }
+
+    /// The live half of a spoken conversation, if one is running. Transient —
+    /// the dock files the finished turns on hang-up, and these disappear with
+    /// the session that produced them.
+    private var voiceMessages: [NativeChatMessage] {
+        voiceSession?.liveMessages(conversationID: conversation.id) ?? []
     }
 
     /// Opens the artifact a transcript card stands for. **Always.**
@@ -562,11 +615,18 @@ private struct JunoMobileConversationDetail: View {
 
     /// Changes whenever streamed content grows or a message is added, driving
     /// the follow-the-stream auto-scroll.
+    ///
+    /// The spoken lines count too: during a call they are the only thing growing
+    /// at the bottom of the transcript, and left out of this the reader watches a
+    /// conversation scroll off the foot of the screen.
     private var streamSignature: Int {
         let last = messages.last
+        let voice = voiceMessages
         return messages.count
             + (last?.content.count ?? 0)
             + (last?.reasoning?.count ?? 0)
+            + voice.count
+            + (voice.last?.content.count ?? 0)
     }
 
     private var selectedModel: NativeChatModelOption? {
@@ -578,7 +638,7 @@ private struct JunoMobileConversationDetail: View {
     /// checker times out on the combined expression.
     @ViewBuilder
     private var transcript: some View {
-        if messages.isEmpty {
+        if messages.isEmpty && voiceMessages.isEmpty {
             // A conversation with no turns is the same moment as a draft, so it
             // gets the same greeting rather than a "No messages yet" placard.
             // `containerRelativeFrame` gives it the scroll view's own height so
@@ -601,8 +661,13 @@ private struct JunoMobileConversationDetail: View {
                         readAloud: readAloud,
                         voiceID: voiceID,
                         // Only the last answer, as the web does: regenerating an
-                        // earlier one would discard every turn after it.
-                        regenerate: message.id == messages.last?.id
+                        // earlier one would discard every turn after it. During
+                        // a call it is not the last answer — the spoken lines
+                        // below it are — which is exactly why the web's own
+                        // `isLast` is computed over the displayed messages and
+                        // not over the filed ones.
+                        regenerate: voiceSession == nil
+                            && message.id == messages.last?.id
                             && message.role == .assistant
                             && !model.isGenerating
                             ? { model.retryLastMessage(conversationID: conversation.id) }
@@ -612,6 +677,11 @@ private struct JunoMobileConversationDetail: View {
                     )
                 }
 
+                // The call, still being spoken, after the messages that are
+                // already filed — the web's `[...chat.messages, ...voiceMessages]`
+                // in the order it means.
+                JunoMobileVoiceLines(messages: voiceMessages)
+
                 // Under the last reply, and only once it has settled. Inside the
                 // same stack so it scrolls with the transcript rather than
                 // floating over it, and after the ForEach so it cannot come
@@ -620,7 +690,13 @@ private struct JunoMobileConversationDetail: View {
                     conversationID: conversation.id,
                     accountID: accountID,
                     client: followUpClient,
-                    ready: !model.isGenerating && messages.last?.role == .assistant,
+                    // Never during a call: the strip keys off the last *filed*
+                    // message, so it would open between the persisted turns and
+                    // the spoken ones — and "ask this next" is not an offer to
+                    // make to someone who is mid-sentence.
+                    ready: voiceSession == nil
+                        && !model.isGenerating
+                        && messages.last?.role == .assistant,
                     onPick: { prompt = $0 }
                 )
             }
@@ -744,6 +820,12 @@ private struct JunoMobileConversationDetail: View {
         // instead of their own.
         .accessibilityIdentifier("juno.mobile.conversation-detail")
         .background(Color.junoCanvas)
+        // The chat column, measured where it is: this scroll view spans the
+        // whole column — the composer is a safe-area inset *inside* it, not a
+        // sibling below it — so its height is the column's height, and the voice
+        // field takes its 46% from here. Measuring anything the composer can
+        // reach on its own would only ever measure the composer.
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatColumnHeight = $0 }
         // Both are needed and they do different jobs. `defaultScrollAnchor`
         // keeps the bottom pinned as the answer grows — that is what makes a
         // streaming reply stay in view without anyone asking it to. The
@@ -850,6 +932,7 @@ private struct JunoMobileConversationDetail: View {
                 attachmentCoordinator: attachments,
                 openPlugins: openPlugins,
                 openVoiceMode: openVoiceMode,
+                chatColumnHeight: chatColumnHeight,
                 composerFocused: $composerFocused
             )
         }
@@ -994,6 +1077,41 @@ private struct JunoMobileConversationTitle: View {
     }
 }
 
+/// The live half of a spoken conversation, as ordinary bubbles.
+///
+/// There is no voice-shaped row here and there should not be one: what the
+/// reader hears is what they will find in this chat afterwards, so it is shown
+/// in the shapes the chat already uses — the reader's own words in a bubble on
+/// the trailing edge, Juno's as running text — and the only thing that marks a
+/// line as live is that it is dimmed until the recognizer settles it.
+///
+/// **Dimmed, and that is the whole signal.** A non-final line is a hypothesis
+/// being rewritten several times a second: the words visibly change under the
+/// eye, and rendering them at full weight claims a sentence was said that may
+/// not have been. The screens this replaced dimmed them for the same reason.
+private struct JunoMobileVoiceLines: View {
+    let messages: [NativeChatMessage]
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Enough to read at arm's length, far enough from settled text that the
+    /// difference is not a trick of the light.
+    private static let provisional: Double = 0.55
+
+    var body: some View {
+        ForEach(messages) { message in
+            JunoMobileMessageRow(message: message, voice: true)
+                .opacity(message.isPending ? Self.provisional : 1)
+                // The settle is the one moment worth animating: a line snapping
+                // to full weight is how the reader learns it is now a fact.
+                .animation(
+                    JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
+                    value: message.isPending
+                )
+        }
+    }
+}
+
 /// One turn.
 ///
 /// The two roles are shaped differently on purpose, matching the web: the
@@ -1024,6 +1142,16 @@ private struct JunoMobileMessageRow: View {
     var regenerate: (() -> Void)?
     var branch: ((String) -> Void)?
     var setFeedback: ((String, NativeChatFeedback?) -> Void)?
+    /// Whether this is a line of a call in progress rather than a filed message.
+    ///
+    /// The web's `message.voice`, and it withholds the same two things. The run
+    /// trace, because a spoken answer is not produced by a run this client
+    /// watched — the dock above says whether Juno is speaking, and a second
+    /// "Writing…" over every partial line contradicts it. And the action row,
+    /// because rating, branching from or regenerating a turn that exists nowhere
+    /// yet has nothing to act on; all six controls arrive with the saved message
+    /// when the call is filed.
+    var voice: Bool = false
 
     @State private var copied = false
 
@@ -1196,13 +1324,15 @@ private struct JunoMobileMessageRow: View {
         VStack(alignment: .leading, spacing: 4) {
             // The run trace leads the answer, as it does on the web: what Juno is
             // doing belongs above the thing it produced, not in a footnote under
-            // it.
-            JunoMobileThoughtProcessRow(
-                streaming: message.isPending,
-                writing: !message.content.isEmpty,
-                reasoning: message.reasoning,
-                clock: clock
-            )
+            // it. Never on a spoken line — see ``voice``.
+            if !voice {
+                JunoMobileThoughtProcessRow(
+                    streaming: message.isPending,
+                    writing: !message.content.isEmpty,
+                    reasoning: message.reasoning,
+                    clock: clock
+                )
+            }
 
             // A generation in flight has no text to render — the picture is the
             // answer, and it arrives whole in the `done` frame. Until then this
@@ -1250,7 +1380,7 @@ private struct JunoMobileMessageRow: View {
                     .foregroundStyle(.orange)
             }
 
-            if !message.isPending { actionRow }
+            if !message.isPending && !voice { actionRow }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu { copyButton }

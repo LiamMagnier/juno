@@ -103,6 +103,7 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     private var storedCaptureFormat: AVAudioFormat?
     private var storedSpeechRequest: SFSpeechAudioBufferRecognitionRequest?
     private var storedMuted = false
+    private var storedAssistantSpeaking = false
     private var storedMicLevel: Double = 0
     private var storedPlaybackLevel: Double = 0
 
@@ -122,6 +123,25 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
     var muted: Bool {
         get { lock.lock(); defer { lock.unlock() }; return storedMuted }
         set { lock.lock(); defer { lock.unlock() }; storedMuted = newValue }
+    }
+
+    /// True while Juno holds the floor, and the reason the uplink goes quiet.
+    ///
+    /// **This is half-duplex, and it is what stops Juno answering itself.** The
+    /// speakers are feeding the microphone, so anything uploaded while the model
+    /// is talking is the model's own voice coming back — which it hears as the
+    /// user interrupting, and replies to. Voice-processing IO cancels that echo
+    /// when it initialises, but it does not always: `startAudioEngine` falls back
+    /// to a plain graph precisely because the voice-processing unit refuses on
+    /// Macs whose input and output are different devices. On that rung there is
+    /// no canceller at all, so suppressing the send is the only thing between a
+    /// working call and a conversation the model has with itself.
+    ///
+    /// The web enforces exactly this for exactly this reason. Barge-in is the
+    /// on-screen Interrupt control, not talking over the answer.
+    var assistantSpeaking: Bool {
+        get { lock.lock(); defer { lock.unlock() }; return storedAssistantSpeaking }
+        set { lock.lock(); defer { lock.unlock() }; storedAssistantSpeaking = newValue }
     }
 
     var micLevel: Double {
@@ -148,6 +168,11 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
         storedSpeechRequest = nil
         storedMicLevel = 0
         storedPlaybackLevel = 0
+        // A session that ends mid-answer leaves this true, and a stale true is a
+        // microphone that never uploads again. The controller does re-assign
+        // `assistantSpeaking` on the next start, but a teardown invariant should
+        // not depend on a distant assignment to be safe.
+        storedAssistantSpeaking = false
     }
 
     /// The whole uplink, on the audio thread: meter, feed the recognizer,
@@ -164,7 +189,11 @@ private final class VoiceRelayShuttle: @unchecked Sendable {
             }
             micLevel = Double((sum / Float(buffer.frameLength)).squareRoot())
         }
-        guard !muted else { return }
+        // Metering continues above this line and the send stops below it. The
+        // level is what tells someone their microphone is muted rather than
+        // broken, and it is what the aura is drawn from — a field that froze
+        // whenever Juno spoke would report the session as dead.
+        guard !muted, !assistantSpeaking else { return }
         speechRequest?.append(buffer)
 
         // One acquisition for the three values the conversion needs: taking the
@@ -315,7 +344,15 @@ public final class JunoRealtimeVoiceController {
     /// and the playback level while the model does. One number, because the orb
     /// only ever shows whoever currently holds the floor.
     public private(set) var level: Double = 0
-    public private(set) var assistantSpeaking = false
+    /// Mirrored onto the audio shuttle on every change, because the uplink reads
+    /// it from the audio thread to hold half-duplex — see
+    /// ``VoiceRelayShuttle/assistantSpeaking``. A `didSet` rather than an
+    /// assignment beside each of the six places this moves: the one that gets
+    /// forgotten is the one where Juno starts answering itself, and that failure
+    /// looks like a model bug rather than a missing line.
+    public private(set) var assistantSpeaking = false {
+        didSet { box.assistantSpeaking = assistantSpeaking }
+    }
     public private(set) var muted = false
     /// A non-fatal relay notice, cleared after a few seconds. The relay sends
     /// `error` frames mid-session for things a conversation survives; promoting
