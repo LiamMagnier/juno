@@ -2515,6 +2515,14 @@ struct DesktopComposer: View {
     /// ``Color/junoOnAccent`` rather than a hardcoded white: the accent is an
     /// account setting, and white on the amber and sage accents fails contrast —
     /// which is the entire reason the design system carries an on-accent token.
+    ///
+    /// Every variant states a `Circle` content shape. SwiftUI hit-tests a button
+    /// by what its label *draws*, not by the frame around it, and all three
+    /// glyphs are small ink in a 36pt frame — the voice bars are five 2pt
+    /// capsules, roughly 110pt² inside 1296pt², so nine tenths of the circle the
+    /// reader aims at was dead. `Circle` rather than `.rect` because
+    /// ``View/accentGlassAction(active:)`` draws a circle: claiming the corners
+    /// would make the button react where it visibly is not.
     private var primaryAction: some View {
         Group {
             if model.isGenerating {
@@ -2525,6 +2533,7 @@ struct DesktopComposer: View {
                         .font(.caption.weight(.bold))
                         .frame(width: 36, height: 36)
                         .foregroundStyle(Color.junoOnAccent)
+                        .contentShape(.circle)
                 }
                 .accentGlassAction(active: true)
                 .help("Stop generating")
@@ -2540,6 +2549,7 @@ struct DesktopComposer: View {
                     DesktopVoiceGlyph()
                         .frame(width: 36, height: 36)
                         .foregroundStyle(Color.junoOnAccent)
+                        .contentShape(.circle)
                 }
                 .accentGlassAction(active: !selectedModelID.isEmpty)
                 .disabled(selectedModelID.isEmpty)
@@ -2556,6 +2566,7 @@ struct DesktopComposer: View {
                         .foregroundStyle(
                             canSend ? Color.junoOnAccent : Color.secondary
                         )
+                        .contentShape(.circle)
                 }
                 .accentGlassAction(active: canSend)
                 .disabled(!canSend)

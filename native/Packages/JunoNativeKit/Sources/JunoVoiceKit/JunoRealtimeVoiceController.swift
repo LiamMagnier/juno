@@ -7,7 +7,15 @@
 // the Xcode 27 toolchain available here. It is deliberately narrow: scoped to
 // one import, so everything else in JunoVoiceKit stays fully checked.
 @preconcurrency import AVFoundation
+// CoreAudio's two error headers, imported by name rather than reached through
+// AVFoundation: ``JunoRealtimeVoiceController/audioFailure(_:)`` matches on
+// `kAudioUnitErr_*` and `kAudioHardware*` so that the mapping reads as the
+// constants a developer will grep for, and not as a table of negative integers
+// whose meanings are famously easy to transpose.
+import AudioToolbox
+import CoreAudio
 import Foundation
+import OSLog
 import Observation
 import Speech
 #if os(macOS)
@@ -505,12 +513,21 @@ public final class JunoRealtimeVoiceController {
         }
 
         // Reconnects reuse the running engine. Rebuilding it would re-arm the
-        // audio session and swallow the first word after the gap.
-        if audioEngine == nil {
+        // audio session and swallow the first word after the gap — but only a
+        // *running* engine is worth reusing. A route change stops the engine
+        // underneath a live session (AirPods walking out of range, an interface
+        // unplugged), and reconnecting onto that carcass hands the reader a
+        // conversation with no audio in either direction and no error to
+        // explain it.
+        if audioEngine?.isRunning != true {
             do {
                 try startAudioEngine()
             } catch {
-                phase = .error(.audioEngineFailed(error.localizedDescription))
+                // Already a ``JunoRealtimeVoiceError``: the audio path maps
+                // CoreAudio's OSStatus onto something actionable itself, and
+                // re-wrapping it in `.audioEngineFailed(_:)` here would flatten
+                // the refusal case the UI turns into a Settings link.
+                phase = .error(error)
                 return
             }
         }
@@ -914,22 +931,99 @@ public final class JunoRealtimeVoiceController {
         #endif
     }
 
-    private func startAudioEngine() throws {
+    /// Brings the audio graph up: once with the hardware's help, once without.
+    ///
+    /// **The two attempts are why voice starts on the Mac at all.** The first
+    /// rung asks the input node for voice processing, and that request is only
+    /// honoured at *initialisation* time — `setVoiceProcessingEnabled(true)`
+    /// merely sets a flag, so a Mac whose input and output are different devices
+    /// (a USB microphone with sound going out over HDMI, an aggregate device, a
+    /// driver with no voice-processing unit, or a voice processor another engine
+    /// in this process already holds) reports a perfectly plausible input format
+    /// and then fails inside `engine.start()`. Nothing readable before `start()`
+    /// predicts it, so the only way to find out is to try — and the shipped
+    /// build had no second try, which is how the reader ended up looking at
+    /// `-10875` above the dock.
+    ///
+    /// The second rung drops voice processing and takes the format the hardware
+    /// actually reports, on a brand-new engine. There is no third: a plain input
+    /// node on the plain hardware format is the simplest thing this process can
+    /// ask CoreAudio for, so a third attempt would fail identically and only
+    /// delay the message.
+    private func startAudioEngine() throws(JunoRealtimeVoiceError) {
         #if os(iOS)
         // `.voiceChat` is what buys echo cancellation: without it the model
         // hears itself through the speaker and interrupts its own turn.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.defaultToSpeaker, .allowBluetoothHFP]
-        )
-        try session.setActive(true, options: .notifyOthersOnDeactivation)
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: [.defaultToSpeaker, .allowBluetoothHFP]
+            )
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            Self.audioLog.error(
+                "Voice session activation failed: \(Self.diagnostic(error), privacy: .public)"
+            )
+            throw Self.audioFailure(error)
+        }
         #endif
 
+        // Whatever a previous session left behind still holds this process's
+        // claim on the input device, and a second engine built on top of that
+        // claim is one of the ways a perfectly good microphone produces an
+        // initialisation failure. Costs nothing when there is nothing to drop.
+        disposeAudioGraph()
+
+        do {
+            try buildAudioGraph(voiceProcessing: true)
+        } catch {
+            Self.audioLog.error(
+                "Voice start failed, voice processing: \(Self.diagnostic(error), privacy: .public)"
+            )
+            do {
+                try buildAudioGraph(voiceProcessing: false)
+            } catch {
+                Self.audioLog.error(
+                    "Voice start failed, raw format: \(Self.diagnostic(error), privacy: .public)"
+                )
+                throw Self.audioFailure(error)
+            }
+        }
+    }
+
+    /// One attempt at a complete graph: left running on success, left as though
+    /// it had never been built on failure.
+    ///
+    /// The order here is load-bearing twice.
+    ///
+    /// The player is connected to `mainMixerNode` **before** the input format is
+    /// read, because touching the mixer is what instantiates the output half of
+    /// the graph — and with voice processing on, input and output are one unit.
+    /// Read the input format first and it describes a node that is about to be
+    /// reconfigured underneath it.
+    ///
+    /// And the format is read **as late as possible**, immediately before the
+    /// converter and the tap that are built from it. On macOS the default input
+    /// device and its sample rate can change at any moment, from anything: a
+    /// headset connecting, another app claiming the device, the user in Sound
+    /// settings. A converter built from a format the node has since left
+    /// resamples wrong, and a tap installed with one raises an Objective-C
+    /// exception rather than returning an error.
+    ///
+    /// - Parameter voiceProcessing: Echo cancellation and automatic gain from
+    ///   the input node's voice-processing unit. Ignored on iOS, where the
+    ///   session's `.voiceChat` mode has already asked for both.
+    private func buildAudioGraph(voiceProcessing: Bool) throws {
         let engine = AVAudioEngine()
         let player = AVAudioPlayerNode()
         let input = engine.inputNode
+        // Any exit but the last one leaves a half-built graph holding the input
+        // device open, and the caller's retry is about to ask that same device
+        // for a different configuration.
+        var started = false
+        defer { if !started { Self.unwind(engine: engine, player: player) } }
 
         #if os(macOS)
         // What `.voiceChat` buys on iOS, asked for directly here: echo
@@ -941,27 +1035,13 @@ public final class JunoRealtimeVoiceController {
         // someone talking a normal distance from a MacBook sits around 0.01–0.03,
         // which is why the field barely moved while they were speaking.
         //
-        // It must be enabled BEFORE the format is read: turning it on re-formats
-        // the node, and a converter built from the old format would then be
-        // wrong. Failure is not fatal — a Mac with no voice-processing-capable
-        // input still holds a conversation, just without the help.
-        try? input.setVoiceProcessingEnabled(true)
+        // `try?` because a driver with no voice-processing unit refuses right
+        // here, and a conversation without echo cancellation is still a
+        // conversation. The drivers that *accept* the flag and then fail to
+        // initialise are what the caller's second attempt exists for.
+        if voiceProcessing { try? input.setVoiceProcessingEnabled(true) }
         #endif
 
-        var inputFormat = input.outputFormat(forBus: 0)
-        #if os(macOS)
-        // Some inputs report nothing usable once voice processing is on — an
-        // aggregate device, or a driver that does not implement the unit. Better
-        // a conversation without echo cancellation than no conversation, so the
-        // help is withdrawn and the node re-read rather than the session failing.
-        if inputFormat.sampleRate <= 0 || inputFormat.channelCount == 0 {
-            try? input.setVoiceProcessingEnabled(false)
-            inputFormat = input.outputFormat(forBus: 0)
-        }
-        #endif
-        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
-            throw RealtimeAudioSetupError.noInput
-        }
         // Model speech arrives as PCM16 mono 24 kHz. Scheduling Float32 mono
         // 24 kHz and letting the mixer resample is what keeps this correct on
         // hardware that runs its output at 44.1 kHz.
@@ -969,13 +1049,20 @@ public final class JunoRealtimeVoiceController {
             let capture = AVAudioFormat(
                 commonFormat: .pcmFormatInt16, sampleRate: 16_000,
                 channels: 1, interleaved: true
-            ),
-            let converter = AVAudioConverter(from: inputFormat, to: capture)
+            )
         else {
             throw RealtimeAudioSetupError.formatUnavailable
         }
         engine.attach(player)
         engine.connect(player, to: engine.mainMixerNode, format: playback)
+
+        let inputFormat = Self.usableInputFormat(of: input)
+        guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
+            throw RealtimeAudioSetupError.noInput
+        }
+        guard let converter = AVAudioConverter(from: inputFormat, to: capture) else {
+            throw RealtimeAudioSetupError.formatUnavailable
+        }
         box.configureCapture(converter: converter, captureFormat: capture)
         box.muted = muted
 
@@ -984,16 +1071,210 @@ public final class JunoRealtimeVoiceController {
         input.removeTap(onBus: 0)
         Self.installMicTap(on: input, format: inputFormat, box: box)
         engine.prepare()
-        do {
-            try engine.start()
-        } catch {
-            input.removeTap(onBus: 0)
-            throw error
-        }
+        try engine.start()
+
+        started = true
         player.play()
         audioEngine = engine
         playerNode = player
         playbackFormat = playback
+    }
+
+    /// The input node's format now, with voice processing withdrawn if enabling
+    /// it left the node describing nothing recordable.
+    ///
+    /// Behind a helper so the caller can bind a `let`: some inputs — an
+    /// aggregate device, a driver that does not implement the unit — report zero
+    /// channels or a zero sample rate once the voice processor is attached, and
+    /// a conversation without echo cancellation beats no conversation at all.
+    private nonisolated static func usableInputFormat(
+        of input: AVAudioInputNode
+    ) -> AVAudioFormat {
+        let format = input.outputFormat(forBus: 0)
+        #if os(macOS)
+        if format.sampleRate <= 0 || format.channelCount == 0 {
+            try? input.setVoiceProcessingEnabled(false)
+            return input.outputFormat(forBus: 0)
+        }
+        #endif
+        return format
+    }
+
+    /// Takes an engine apart far enough that the audio device is genuinely free.
+    ///
+    /// `stop()` alone is not enough in either direction. The tap has to come off
+    /// first, or a buffer already in flight is handed to a block whose format has
+    /// gone away; and the voice-processing unit has to be released afterwards, or
+    /// the *device* stays configured for a session that no longer exists — which
+    /// is the state a retry cannot recover from, because it would read the dead
+    /// session's sample rate straight back out of the hardware.
+    private nonisolated static func unwind(engine: AVAudioEngine, player: AVAudioPlayerNode?) {
+        engine.inputNode.removeTap(onBus: 0)
+        player?.stop()
+        engine.stop()
+        #if os(macOS)
+        try? engine.inputNode.setVoiceProcessingEnabled(false)
+        #endif
+        if let player, engine.attachedNodes.contains(player) { engine.detach(player) }
+    }
+
+    /// Releases the running graph and forgets it.
+    ///
+    /// Shared by ``teardown(closeCode:)`` and by ``startAudioEngine()``, because
+    /// *setup* needs it every bit as much as shutdown does: a start that failed
+    /// halfway, or an engine a route change stopped, still owns this process's
+    /// claim on the input device.
+    private func disposeAudioGraph() {
+        if let engine = audioEngine { Self.unwind(engine: engine, player: playerNode) }
+        audioEngine = nil
+        playerNode = nil
+        playbackFormat = nil
+    }
+
+    // MARK: Audio failures
+
+    /// Where the OSStatus goes now that the reader is handed a sentence instead.
+    private nonisolated static let audioLog = Logger(
+        subsystem: "com.liammagnier.juno", category: "voice.audio"
+    )
+
+    /// Domain, numeric code and framework text — for the log, and nowhere else.
+    /// A voice bug report without the OSStatus is one nobody can act on.
+    nonisolated static func diagnostic(_ error: any Error) -> String {
+        let failure = error as NSError
+        return "\(failure.domain) \(failure.code): \(failure.localizedDescription)"
+    }
+
+    /// AVFAudio's error domain, which the framework does not export as a symbol.
+    nonisolated static let avfAudioErrorDomain = "com.apple.coreaudio.avfaudio"
+
+    /// Translates whatever CoreAudio threw into a failure whose first sentence
+    /// names something the reader can do.
+    ///
+    /// This exists because of one shipped screenshot: "The operation couldn't be
+    /// completed. (com.apple.coreaudio.avfaudio error -10875.)", floating above
+    /// the voice dock. `AVAudioEngine` reports OSStatus verbatim and
+    /// `localizedDescription` has nothing to add, so the reader gets a number and
+    /// no next step — while the number, the one genuinely useful part, ends up
+    /// buried in a sentence nobody is going to retype into a bug report. So the
+    /// code goes to ``audioLog`` and, wherever the advice is not already
+    /// specific, into a parenthetical.
+    ///
+    /// Every case below is reachable from this path. Note that `-10875` is
+    /// `kAudioUnitErr_FailedInitialization` and **not** the format error it is
+    /// almost universally mistaken for — that one is `-10868`, and the two call
+    /// for opposite advice, which is the whole reason for spelling the constants
+    /// out here.
+    nonisolated static func audioFailure(_ error: any Error) -> JunoRealtimeVoiceError {
+        // The setup errors raised in this file are already sentences.
+        if let setup = error as? RealtimeAudioSetupError {
+            return .audioEngineFailed(setup.errorDescription ?? "")
+        }
+        let failure = error as NSError
+        // Only these two domains put an OSStatus in `code`. Decoding any other
+        // domain's `code` as one would attach a confident, wholly unrelated
+        // message to a failure it knows nothing about.
+        guard failure.domain == avfAudioErrorDomain || failure.domain == NSOSStatusErrorDomain,
+            let status = OSStatus(exactly: failure.code)
+        else {
+            return .audioEngineFailed(error.localizedDescription)
+        }
+
+        // Built up front rather than per case, because the audio unit and the
+        // HAL have *different numbers for the same situation* and only one of
+        // each pair is even visible to Swift on a given platform. Naming the
+        // situation once is what keeps the two branches saying the same thing.
+        #if os(macOS)
+        let elsewhere = "Choose a different input in System Settings › Sound"
+        #else
+        let elsewhere = "Disconnect any audio accessory"
+        #endif
+        let wrongFormat =
+            "Juno can't record from this input's audio format. \(elsewhere), then start "
+            + "voice again. (audio error \(status))"
+        let busy =
+            "The microphone is busy. Quit whatever else is recording — a call, a screen "
+            + "recorder — and start voice again. (audio error \(status))"
+        #if os(macOS)
+        let deviceGone =
+            "The microphone Juno was using is no longer there. \(elsewhere), then start "
+            + "voice again. (audio error \(status))"
+        #endif
+
+        switch status {
+        case kAudioUnitErr_Unauthorized:
+            return .micPermissionDenied
+
+        // "The audio unit is unable to be initialized." By the time this is
+        // reached ``startAudioEngine()`` has already retried against the plain
+        // hardware format, so the configuration is not what is wrong — what is
+        // left is that this process is not really allowed to record.
+        // `AVCaptureDevice.authorizationStatus` answers out of a TCC cache, and
+        // a build shipped under a changed signature (0.2.0 → 0.3.0) can read
+        // back `.authorized` for a grant the audio HAL has already dropped.
+        // Reported as the refusal it nearly always is, so the UI offers Privacy
+        // Settings rather than a retry that would fail in exactly the same way.
+        //
+        // iOS keeps the generic message: there the record permission is asked
+        // through `AVAudioApplication`, which does not go stale the same way, so
+        // the same code there is much more likely to be the session.
+        case kAudioUnitErr_FailedInitialization:
+            #if os(macOS)
+            return .micPermissionDenied
+            #else
+            return .audioEngineFailed(
+                "Juno couldn't open the microphone. Close anything else that might be "
+                    + "using it, then try again. (audio error \(status))"
+            )
+            #endif
+
+        // Another voice processor in this process is already initialised —
+        // dictation, or a session that has not finished letting go of one.
+        case kAudioUnitErr_MultipleVoiceProcessors:
+            return .audioEngineFailed(
+                "The microphone is already in use by another part of Juno. Stop dictation, "
+                    + "then start voice again. (audio error \(status))"
+            )
+
+        case kAudioUnitErr_FormatNotSupported, kAudioUnitErr_InvalidPropertyValue:
+            return .audioEngineFailed(wrongFormat)
+
+        case kAudioUnitErr_CannotDoInCurrentContext:
+            return .audioEngineFailed(busy)
+
+        case kAudioUnitErr_NoConnection, kAudioUnitErr_Uninitialized,
+            kAudioUnitErr_InvalidElement:
+            return .audioEngineFailed(
+                "Juno couldn't build the audio path for this conversation. Start voice "
+                    + "again. (audio error \(status))"
+            )
+
+        #if os(macOS)
+        // The HAL's own codes, which reach a Swift caller only on macOS — the
+        // platform with a device list to be wrong about in the first place.
+        case kAudioDeviceUnsupportedFormatError:
+            return .audioEngineFailed(wrongFormat)
+
+        case kAudioHardwareNotRunningError, kAudioHardwareNotReadyError:
+            return .audioEngineFailed(busy)
+
+        case kAudioHardwareBadDeviceError, kAudioHardwareBadObjectError:
+            return .audioEngineFailed(deviceGone)
+        #endif
+
+        default:
+            #if os(macOS)
+            return .audioEngineFailed(
+                "Juno couldn't start recording on this Mac. Start voice again, or choose a "
+                    + "different input in System Settings › Sound. (audio error \(status))"
+            )
+            #else
+            return .audioEngineFailed(
+                "Juno couldn't start recording on this iPhone. Start voice again. "
+                    + "(audio error \(status))"
+            )
+            #endif
+        }
     }
 
     /// Installs the microphone tap from a **non-isolated** context.
@@ -1241,15 +1522,7 @@ public final class JunoRealtimeVoiceController {
         #endif
         socket?.cancel(with: closeCode, reason: nil)
         socket = nil
-        if let engine = audioEngine {
-            engine.inputNode.removeTap(onBus: 0)
-            playerNode?.stop()
-            engine.stop()
-            if let playerNode { engine.detach(playerNode) }
-        }
-        audioEngine = nil
-        playerNode = nil
-        playbackFormat = nil
+        disposeAudioGraph()
         box.reset()
         level = 0
         assistantSpeaking = false
