@@ -9,6 +9,10 @@ type ActiveGeneration = {
   stopped: boolean;
 };
 
+// Per-process, in memory. Correct with the ONE PM2 instance that runs today;
+// with a second, POST /api/chat/cancel reaches the wrong process and silently
+// returns { ok: true, cancelled: false }. See docs/OPEN_DECISIONS.md before
+// adding an instance.
 const globalState = globalThis as typeof globalThis & {
   __junoActiveGenerations?: Map<string, ActiveGeneration>;
 };
