@@ -50,8 +50,8 @@ jobs:
     name: API contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -80,7 +80,7 @@ jobs:
       matrix:
         package: [JunoNativeKit, JunoCode]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select the newest installed Xcode
         run: |
@@ -108,7 +108,7 @@ jobs:
     name: macOS app
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Require an Xcode new enough for the deployment floor
         run: |
@@ -181,7 +181,7 @@ jobs:
     name: iOS app
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Select the newest installed Xcode
         run: |

@@ -17,10 +17,21 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
+          # Pinned to the major the VM actually runs (provisioned from
+          # NodeSource setup_20.x — see deploy/VM_SETUP_GUIDE.md step 4 and
+          # deploy/GCP_SETUP_GUIDE.md step 4), NOT to the newest LTS. This job
+          # builds the artifact that `build-and-deploy` ships to that VM, so
+          # build-time and runtime must not diverge.
+          #
+          # Node 20 went end-of-life in April 2026, so this pin is a stopgap.
+          # Moving it forward is a THREE-part change that lands together, in
+          # this order: upgrade the VM's Node first, then this file (both jobs),
+          # then package.json `engines`. Bumping only this file would build on a
+          # newer major and run the result on an older one.
           node-version: 20
           cache: npm
 
@@ -47,10 +58,12 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
+          # Must stay equal to the `test` job's pin above, which explains why
+          # this tracks the VM's Node major rather than the newest LTS.
           node-version: 20
           cache: npm
 
