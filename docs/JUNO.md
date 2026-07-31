@@ -1349,7 +1349,7 @@ runbooks). **nginx** (443, TLS via Certbot) reverse-proxies:
 (`npm start`, `:3000`, ~1.4 GB restart ceiling, raised HTTP header size),
 `juno-voice-relay` (`relay/`, `:8787`), and `juno-scheduler` (`tasks:runner`).
 
-### 20.2 Database (Neon / Postgres)
+### 20.2 Database (Supabase / Postgres)
 
 Juno runs on hosted **PostgreSQL** — the reference deployment uses **Supabase**
 (`eu-west-1`); Neon works identically. Juno uses **two** connection strings:
@@ -1408,7 +1408,7 @@ run the `test` job only — `build-and-deploy` is guarded on `github.event_name 
    paths are never wiped: `.env*` (VM secrets), `.uploads` (locally-stored
    avatars/attachments), `logs`, `node_modules`, `.next/cache`. Changed/rotated
    `PROD_ENV` keys are upserted into the VM's runtime `.env` (with an `.env.bak`
-   rollback), preserving any VM-only keys. On the VM it then runs the Neon-direct-host
+   rollback), preserving any VM-only keys. On the VM it then runs the `DIRECT_URL`
    migrations (§20.2), a conditional `npm ci` (only when the lockfile hash changed),
    `prisma generate`, an nginx header-buffer patch if needed, and
    `pm2 startOrReload deploy/ecosystem.config.js --update-env` + `pm2 save`.
@@ -1454,8 +1454,61 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
 - **Model registry**: the nightly workflow syncs it from live provider APIs; promote
   worthwhile `DISCOVERED` entries into `CURATED` and run `npm run validate:models`.
 - **Encryption key rotation**: `npm run crypto:rotate`.
-- **Backups**: rely on Neon's branching/point-in-time restore; user data export is
-  available per-account via `GET /api/account/export`.
+- **Backups**: see §20.7. There is no backup tooling in this repo — recovery depends
+  entirely on the managed provider's configuration. User data export is available
+  per-account via `GET /api/account/export` (metadata only for attachments).
+
+### 20.7 Backup & disaster recovery — **unverified**
+
+> **Status: not confirmed.** Nothing in this repository backs the database up.
+> There is no `pg_dump`, no `wal-g`, no backup workflow, no backup cron. Recovery
+> depends entirely on how the managed Supabase project is configured, and that is
+> not knowable from the code. Until an operator confirms the two answers below,
+> assume Juno has **no recoverable backup**.
+
+This section previously claimed backups relied on "Neon's branching/point-in-time
+restore". That was wrong twice over: the reference deployment is **Supabase**, not
+Neon (§20.2), and no restore capability was ever verified.
+
+**What an operator must confirm in the Supabase dashboard** (neither is visible
+from the repo, and the local `.env` is not authoritative — production env lives in
+the `PROD_ENV` GitHub Actions secret):
+
+1. **The project's plan tier.** Supabase's Free tier has no point-in-time recovery
+   and no scheduled backups; daily backups begin on Pro. On Free, a bad migration
+   or an accidental delete is unrecoverable.
+2. **The actual backup/retention configuration** — whether PITR is enabled, and the
+   retention window in days.
+
+**Why the retention answer is load-bearing, not academic.** Two jobs delete data on
+a schedule or on demand: the weekly `npm run sync:prune` (`deploy/VM_SETUP_GUIDE.md`,
+30-day default window) and the cascading account delete. If retention is shorter than
+the time it takes to *notice* a bad prune, backups do not help.
+
+**Uploads are a separate failure domain, and currently a worse one.** In the `.env`
+this repo was reviewed against, `S3_BUCKET`, `S3_ACCESS_KEY_ID` and
+`S3_SECRET_ACCESS_KEY` are all empty, so `isStorageConfigured()` is false and every
+attachment, avatar and generated image is written to the VM's local `.uploads`
+directory (§13). That means:
+
+- user uploads have **no** redundancy of any kind — they exist on one always-free VM's
+  disk and nowhere else;
+- they survive deploys only because `deploy.yml`'s rsync `--delete` explicitly
+  excludes `.uploads`. That exclusion is the entire backup strategy for user files;
+- a database restore would come back referencing attachment rows whose bytes are gone.
+
+`GET /api/account/export` writes attachment *metadata*, not bytes, so it is not a
+substitute. Configuring S3 (any S3-compatible bucket) is the fix; until then, a
+restore drill that only proves the database comes back gives false confidence.
+
+**Restore drill.** Once the plan tier is known, restore into a scratch project and
+record the date, the method, the measured RTO and what was verified (rows, and
+separately Storage objects) here. On the Free tier there is nothing to drill —
+the finding is then "no backups exist", which is itself the result to record.
+
+Any dump must go through the Supavisor **session** pooler (5432) for the reasons in
+§20.2 — never the transaction pooler (6543), never `db.<ref>.supabase.co` (IPv6-only).
+Do not commit a backup script carrying a connection string.
 
 ---
 
