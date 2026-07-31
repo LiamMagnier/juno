@@ -1,3 +1,25 @@
+/**
+ * The storage hosts images may legitimately be optimized from: the public bucket
+ * URL when one is set, and the S3 endpoint itself for presigned URLs (which is
+ * what getViewUrl falls back to when S3_PUBLIC_URL is absent).
+ */
+function storageImagePatterns() {
+  const patterns = [];
+  const seen = new Set();
+  for (const raw of [process.env.S3_PUBLIC_URL, process.env.S3_ENDPOINT]) {
+    if (!raw) continue;
+    try {
+      const { protocol, hostname } = new URL(raw);
+      if (protocol !== "https:" || seen.has(hostname)) continue;
+      seen.add(hostname);
+      patterns.push({ protocol: "https", hostname });
+    } catch {
+      // Not a URL — nothing to allow.
+    }
+  }
+  return patterns;
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -11,9 +33,30 @@ const nextConfig = {
   // any bundler edge cases with its dynamic requires.
   serverExternalPackages: ["bcryptjs"],
   images: {
-    // Allow rendering avatars/thumbnails served from the configured storage host.
+    /*
+     * hostname: "**" made /_next/image an open proxy: any visitor could make
+     * the server fetch an arbitrary HTTPS URL and serve the bytes back from
+     * Juno's own origin.
+     *
+     * What actually needs to be here is small. Source-citation favicons do NOT
+     * — they render through a plain <img> pointed at each source's own origin
+     * (see src/components/chat/source-chip.tsx), deliberately bypassing the
+     * optimizer, so arbitrary hosts were never needed for them. Attachments and
+     * avatars stored locally resolve to relative /api/files/... URLs, which
+     * remotePatterns does not govern either.
+     *
+     * That leaves Google account avatars and, when S3 is configured, the
+     * storage host.
+     *
+     * Note these are baked in at BUILD time. Changing S3_PUBLIC_URL or
+     * S3_ENDPOINT requires a rebuild, not just a restart, or images from the
+     * new host will 400.
+     */
     remotePatterns: [
-      { protocol: "https", hostname: "**" },
+      // Google is the only OAuth provider configured (src/lib/auth.ts); it
+      // serves avatars from lh3/lh4/lh5/lh6.googleusercontent.com.
+      { protocol: "https", hostname: "*.googleusercontent.com" },
+      ...storageImagePatterns(),
     ],
   },
   // Baseline security headers. A full Content-Security-Policy is future work:
