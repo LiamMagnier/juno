@@ -1,6 +1,6 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import type { ToolAccess } from "@/lib/tool-access";
 
 /**
@@ -95,7 +95,11 @@ export async function settleToolInvocation(
 ): Promise<void> {
   if (!id) return;
   try {
-    await prisma.toolInvocation.update({
+    // Unguarded deliberately: `id` is a primary key this process minted in
+    // recordToolInvocation moments ago, so there is no requesting user to scope
+    // to and no row another user could name. The model itself IS guarded, so
+    // any future query that isn't keyed like this gets caught.
+    await prismaUnguarded.toolInvocation.update({
       where: { id },
       data: {
         status: outcome.status,
