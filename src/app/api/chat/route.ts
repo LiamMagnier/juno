@@ -10,6 +10,7 @@ import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
+import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
 import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
@@ -722,6 +723,23 @@ async function handleChat(req: Request) {
       modelInfo = alternative;
     }
   }
+  // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
+  // set). Degrade to the cheapest capable model rather than refusing: a slower
+  // answer beats a 500, and it keeps the product usable while an operator
+  // decides what to do. Per-user budgets are enforced separately by checkBudget.
+  if (modelInfo && (await isPlatformBudgetExceeded())) {
+    const cheapest = MODEL_LIST.filter((m) => eligible(m) && providerHealthy(m.provider)).sort(
+      (a, b) => a.cost - b.cost
+    )[0];
+    if (cheapest && cheapest.cost < modelInfo.cost) {
+      console.warn("[chat] platform budget exceeded — degrading model", {
+        from: modelInfo.id,
+        to: cheapest.id,
+      });
+      modelInfo = cheapest;
+    }
+  }
+
   if (!modelInfo) {
     const msg =
       configuredProviders().length === 0
