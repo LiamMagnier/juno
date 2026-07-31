@@ -1,3 +1,4 @@
+import type { Plan } from "@prisma/client";
 import type { ClientConversation, ClientQuota } from "@/types/chat";
 import type { Provider } from "@/lib/providers";
 
@@ -66,6 +67,10 @@ export interface AppBootstrap {
   folders: ClientFolder[];
   features: {
     billing: boolean;
+    /** Paid tiers whose Stripe price id is configured, so they can be offered.
+     *  A tier missing from this list must not render a buy button — checkout
+     *  would 503. Existing subscribers on such a tier keep it regardless. */
+    purchasablePlans: Plan[];
     /** Server speech-to-text is configured — dictation transcribes with a real
      *  STT model instead of the browser's (poor, English-biased) recognizer. */
     serverStt: boolean;

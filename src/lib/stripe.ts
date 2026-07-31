@@ -25,9 +25,21 @@ export function priceIdForPlan(plan: Plan): string | undefined {
   return undefined;
 }
 
-/** A plan tier can only be *offered* when its Stripe price id is configured. */
+/**
+ * A plan tier can only be *offered* when its Stripe price id is configured.
+ *
+ * This is deliberately separate from whether a plan is *recognised*: an
+ * existing MAX20 subscriber must keep their entitlement even if
+ * STRIPE_PRICE_MAX20 is missing from this deployment's env. Gate what is sold,
+ * never what is honoured.
+ */
 export function isPlanPurchasable(plan: Plan): boolean {
   return Boolean(priceIdForPlan(plan));
+}
+
+/** The paid tiers this deployment can actually sell, cheapest first. */
+export function purchasablePlans(): Plan[] {
+  return (["PRO", "MAX", "MAX20"] as const).filter(isPlanPurchasable);
 }
 
 export interface ResolvePlanInput {

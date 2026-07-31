@@ -26,7 +26,22 @@ export default function UpgradePage() {
   const { quota, features } = useApp();
   const currentPlan = quota.plan;
   const [loading, setLoading] = React.useState<Plan | null>(null);
+
+  // Only offer a tier whose Stripe price id is configured — checkout returns
+  // 503 "Plan price is not configured." otherwise, so rendering the button at
+  // all is a broken promise. A subscriber already on an unconfigured tier still
+  // sees it, because it is their current plan and hiding it would be a lie.
+  const offerable = React.useCallback(
+    (plan: Plan) => features.purchasablePlans.includes(plan) || plan === currentPlan,
+    [features.purchasablePlans, currentPlan]
+  );
+
+  const maxTiers = MAX_TIERS.filter((t) => offerable(t.id));
   const [maxTier, setMaxTier] = React.useState<MaxTier>(currentPlan === "MAX20" ? "MAX20" : "MAX");
+  // The stored tier can fall out of the offerable set (env change, or the
+  // initial "MAX" default on a deployment that only sells ×20).
+  const activeMaxTier: MaxTier | null =
+    maxTiers.find((t) => t.id === maxTier)?.id ?? maxTiers[0]?.id ?? null;
 
   const checkout = async (plan: Plan) => {
     setLoading(plan);
@@ -87,7 +102,9 @@ export default function UpgradePage() {
     );
   };
 
-  const maxPlan = PLANS[maxTier];
+  const maxPlan = activeMaxTier ? PLANS[activeMaxTier] : null;
+  const showPro = offerable("PRO");
+  const cardCount = 1 + (showPro ? 1 : 0) + (maxPlan ? 1 : 0);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -115,7 +132,12 @@ export default function UpgradePage() {
           </div>
         )}
 
-        <div className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
+        <div
+          className={cn(
+            "mt-8 grid items-stretch gap-4",
+            cardCount === 3 ? "md:grid-cols-3" : cardCount === 2 ? "md:grid-cols-2" : "md:max-w-sm"
+          )}
+        >
           {/* Free */}
           <PlanCard
             name={PLANS.FREE.name}
@@ -129,57 +151,63 @@ export default function UpgradePage() {
           </PlanCard>
 
           {/* Pro — most popular */}
-          <PlanCard
-            name={PLANS.PRO.name}
-            tagline={PLANS.PRO.tagline}
-            price={`${PLANS.PRO.price} €`}
-            priceSuffix="HT/mo"
-            features={PLANS.PRO.features}
-            popular
-            delay={70}
-          >
-            {cta("PRO", "default")}
-          </PlanCard>
+          {showPro && (
+            <PlanCard
+              name={PLANS.PRO.name}
+              tagline={PLANS.PRO.tagline}
+              price={`${PLANS.PRO.price} €`}
+              priceSuffix="HT/mo"
+              features={PLANS.PRO.features}
+              popular
+              delay={70}
+            >
+              {cta("PRO", "default")}
+            </PlanCard>
+          )}
 
           {/* Max — one card, switch between ×5 and ×20 */}
-          <PlanCard
-            name="Max"
-            tagline={maxPlan.tagline}
-            price={`${maxPlan.price} €`}
-            priceSuffix="HT/mo"
-            features={maxPlan.features}
-            accent
-            delay={140}
-            header={
-              <div
-                role="tablist"
-                aria-label="Max tier"
-                className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
-              >
-                {MAX_TIERS.map((t) => {
-                  const active = maxTier === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setMaxTier(t.id)}
-                      className={cn(
-                        "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
-                        active
-                          ? "bg-card text-foreground shadow-pop"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {t.multiplier}
-                    </button>
-                  );
-                })}
-              </div>
-            }
-          >
-            {cta(maxTier, "outline")}
-          </PlanCard>
+          {maxPlan && activeMaxTier && (
+            <PlanCard
+              name="Max"
+              tagline={maxPlan.tagline}
+              price={`${maxPlan.price} €`}
+              priceSuffix="HT/mo"
+              features={maxPlan.features}
+              accent
+              delay={140}
+              header={
+                maxTiers.length > 1 ? (
+                  <div
+                    role="tablist"
+                    aria-label="Max tier"
+                    className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+                  >
+                    {maxTiers.map((t) => {
+                      const active = activeMaxTier === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setMaxTier(t.id)}
+                          className={cn(
+                            "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
+                            active
+                              ? "bg-card text-foreground shadow-pop"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          {t.multiplier}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : undefined
+              }
+            >
+              {cta(activeMaxTier, "outline")}
+            </PlanCard>
+          )}
         </div>
 
         <p className="mt-6 flex items-center gap-1.5 text-caption text-muted-foreground">

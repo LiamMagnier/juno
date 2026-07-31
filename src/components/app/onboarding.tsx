@@ -467,7 +467,14 @@ export function Onboarding() {
             </p>
 
             <div className="mt-5 space-y-2.5">
-              {PLAN_LIST.map((plan) => {
+              {PLAN_LIST.filter(
+                // A tier with no configured Stripe price cannot be bought —
+                // its checkout 503s — so it must not be offered here either.
+                (plan) =>
+                  plan.id === "FREE" ||
+                  plan.id === currentPlan ||
+                  features.purchasablePlans.includes(plan.id)
+              ).map((plan) => {
                 const isCurrent = plan.id === currentPlan;
                 const popular = plan.id === "PRO";
                 const msgs =

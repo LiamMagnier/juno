@@ -6,6 +6,7 @@ import { getQuota } from "@/lib/usage";
 import { checkBudget, eurPerUsd, getUsageWindows, billingPeriodFor } from "@/lib/spend";
 import { env, isStripeConfigured, isStorageAvailable, isServerSttConfigured, isServerTtsConfigured } from "@/lib/env";
 import { isEmailEnabled } from "@/lib/email";
+import { purchasablePlans } from "@/lib/stripe";
 import { configuredProviders } from "@/lib/providers";
 import { providerSupportsWebSearch } from "@/lib/models";
 import { isWebSearchConfigured } from "@/lib/web-search";
@@ -76,6 +77,7 @@ export async function getAppBootstrap(user: SessionUser): Promise<AppBootstrap> 
     folders,
     features: {
       billing: isStripeConfigured(),
+      purchasablePlans: purchasablePlans(),
       serverStt: isServerSttConfigured(),
       serverTts: isServerTtsConfigured(),
       // The voice picker lists OpenAI voices, so it must know which provider is live.
