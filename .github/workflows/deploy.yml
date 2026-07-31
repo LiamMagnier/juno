@@ -78,6 +78,51 @@ jobs:
           printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
 
+      - name: Snapshot the current build for rollback
+        env:
+          VM_USER: ${{ secrets.VM_USER }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+        run: |
+          # The rsync below is `--delete` straight over the live directory, so
+          # until now the previous version stopped existing the moment a deploy
+          # started. Rolling back a bad release meant revert, rebuild, redeploy,
+          # migrate — twenty minutes with the bad build serving throughout.
+          #
+          # One local copy on the VM first. Same disk, hardlinked via
+          # --link-dest, so it costs seconds and almost no space instead of the
+          # ~1.4 GB a plain copy would take on an always-free VM.
+          #
+          # The hardlink is safe because rsync writes a temp file and renames —
+          # the deploy creates NEW inodes rather than truncating the ones the
+          # snapshot points at. Verified. It stops being safe the moment anyone
+          # adds --inplace to the deploy rsync below, which would edit the
+          # snapshot's own inodes: DO NOT, or make this a plain copy first.
+          #
+          # Persistent paths are excluded for the same reason they are excluded
+          # from the deploy rsync: node_modules and .next/cache are large and
+          # rebuilt anyway, and .env/.uploads/logs must never be captured into a
+          # snapshot that could later be restored over newer state.
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new \
+            "$VM_USER@$VM_HOST" 'bash -s' <<'REMOTE'
+          set -e
+          if [ -d ~/juno ]; then
+            mkdir -p ~/juno-previous
+            rsync -a --delete --link-dest=$HOME/juno \
+              --exclude '.git' \
+              --exclude 'node_modules' \
+              --exclude 'relay/node_modules' \
+              --exclude '.next/cache' \
+              --exclude 'logs' \
+              --exclude '.uploads' \
+              --exclude '.env' \
+              --exclude '.env.*' \
+              ~/juno/ ~/juno-previous/
+            echo "snapshot: $(du -sh ~/juno-previous | cut -f1) in ~/juno-previous"
+          else
+            echo "no existing build to snapshot (first deploy)"
+          fi
+          REMOTE
+
       - name: Ship build to the VM
         env:
           VM_USER: ${{ secrets.VM_USER }}

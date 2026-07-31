@@ -1465,6 +1465,38 @@ key is skipped, and a failed fetch never prunes.
 **`code-runner.yml` — Cloud Code runner** (dispatched per cloud Code task) is
 documented in §9.3.
 
+### 20.3b Rolling back a bad deploy
+
+The deploy rsyncs `--delete` straight over the live directory, so before this
+existed the previous version stopped existing the moment a deploy began — a bad
+release meant revert → rebuild → redeploy → migrate, with the bad build serving
+for the twenty minutes that took.
+
+`deploy.yml` now snapshots the running build to `~/juno-previous` first
+(hardlinked, so it costs seconds and almost no space). To roll back:
+
+```bash
+ssh <vm> 'cd ~ && rsync -a --delete \
+  --exclude ".env" --exclude ".env.*" --exclude ".uploads" \
+  --exclude "logs" --exclude "node_modules" --exclude ".next/cache" \
+  juno-previous/ juno/ && pm2 reload deploy/ecosystem.config.js --update-env'
+```
+
+Three things this does **not** do, and you must think about each:
+
+- **It does not roll back the database.** Migrations are applied before the
+  reload and Prisma has no down-migrations. Rolling code back under a migrated
+  schema is only safe because every migration is additive — which is exactly the
+  expand/contract rule in §20.2b, and the reason that rule is not optional.
+- **It keeps only one generation.** The snapshot is overwritten on the next
+  deploy, so roll back *before* deploying again.
+- **It does not restore `.env`.** The runtime env is excluded on purpose; the
+  merge step keeps its own `.env.bak`.
+
+The fuller scheme — `~/juno-releases/<sha>` with a `current` symlink, so rollback
+is re-pointing a link and several generations are kept — is still worth doing.
+This is the version that needed no restructuring of the deploy path.
+
 ### 20.4 Manual deploy (`deploy/deploy.sh`)
 
 For a deploy from the VM itself (or first-time setup), `deploy/deploy.sh` is the
