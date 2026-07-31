@@ -57,7 +57,15 @@ jobs:
       - name: Write production .env (single source of truth = PROD_ENV secret)
         env:
           PROD_ENV: ${{ secrets.PROD_ENV }}
-        run: printf '%s\n' "$PROD_ENV" > .env
+        run: |
+          printf '%s\n' "$PROD_ENV" > .env
+          # GET /api/health reports the running build so an uptime monitor — and
+          # whoever is deciding whether a rollback actually took effect — can
+          # tell which commit answered. Nothing else sets it: the fallbacks in
+          # the route are Vercel-only or require an npm-script parent, and PM2
+          # launches from deploy/ecosystem.config.js, so without this line the
+          # endpoint reports "unknown" forever.
+          printf 'GIT_SHA=%s\n' "$GITHUB_SHA" >> .env
 
       - name: Install dependencies
         run: npm ci
