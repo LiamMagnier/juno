@@ -390,6 +390,17 @@ async function handleChat(req: Request) {
   let modelInfo: ModelInfo | undefined;
   /** When Auto routes, override the client's thinking slider with the pick. */
   let autoReasoningEffort: import("@/types/chat").ReasoningEffort | null | undefined;
+  /**
+   * Why this model, in one line, streamed to the user as an activity event.
+   *
+   * "Auto" previously logged its reasoning server-side and told the user
+   * nothing — so a router that picked badly, or a reroute off a dead provider,
+   * was indistinguishable from the product being slow or dumb. Routing you can
+   * see is the point of routing you can trust.
+   */
+  let routingNote: string | null = null;
+  /** Set when the model actually used is NOT the one that was asked for. */
+  let routingWarning: string | null = null;
   if (isAutoModelId(requestedId)) {
     const routingMessage =
       input.preflightClarification
@@ -417,6 +428,9 @@ async function handleChat(req: Request) {
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
+      routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
+        pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
+      }`;
       console.info("[chat:auto]", {
         level: pick.complexity.level,
         minIntelligence: pick.complexity.minIntelligence,
@@ -481,6 +495,7 @@ async function handleChat(req: Request) {
         to: alternative.id,
         provider: modelInfo.provider,
       });
+      routingWarning = `${modelInfo.name} is unavailable right now — answered with ${alternative.name} instead.`;
       modelInfo = alternative;
     }
   }
@@ -495,6 +510,7 @@ async function handleChat(req: Request) {
         from: modelInfo.id,
         to: cheapest.id,
       });
+      routingWarning = `Answered with ${cheapest.name} to stay within today's capacity.`;
       modelInfo = cheapest;
     }
   }
@@ -630,8 +646,11 @@ async function handleChat(req: Request) {
           sendActivity({
             kind: "model",
             title: "Selected model",
-            detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
+            detail: routingNote ?? `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
           });
+          if (routingWarning) {
+            sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
+          }
           if (activeConnectors.length) {
             sendActivity({
               kind: "tool",
@@ -1823,8 +1842,11 @@ async function handleChat(req: Request) {
       sendActivity({
         kind: "model",
         title: "Selected model",
-        detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
+        detail: routingNote ?? `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
       });
+      if (routingWarning) {
+        sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
+      }
       if (activeConnectors.length) {
         sendActivity({
           kind: "tool",
