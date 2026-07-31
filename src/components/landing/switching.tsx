@@ -22,7 +22,7 @@ const STEPS: { term: string; body: string }[] = [
   },
   {
     term: "Drop it into Juno",
-    body: "Settings → Import history. Titles and dates come across intact, and re-uploading the same archive never duplicates a conversation.",
+    body: "Profile → Import history. Titles and dates come across intact, and re-uploading the same archive never duplicates a conversation.",
   },
   {
     term: "Keep reading it here",
