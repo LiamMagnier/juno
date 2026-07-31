@@ -697,6 +697,20 @@ async function handleChat(req: Request) {
     isProviderConfigured(m.provider) &&
     canUseModel(plan, m.id);
 
+  /**
+   * Cheapest eligible model, NOT the first in registry order.
+   *
+   * Registry order is a display order — its first chat entry is a frontier
+   * model. Falling back to it costs roughly 40x the cheapest capable model per
+   * request, silently, on the path taken precisely when something has already
+   * gone wrong. Nobody chose that model, so nobody should be billed as if they
+   * had.
+   */
+  const cheapestEligible = (requireHealthy: boolean): ModelInfo | undefined =>
+    MODEL_LIST.filter((m) => eligible(m) && (!requireHealthy || providerHealthy(m.provider))).sort(
+      (a, b) => a.cost - b.cost
+    )[0];
+
   if (
     !modelInfo ||
     isAutoModelId(modelInfo.id) ||
@@ -706,14 +720,17 @@ async function handleChat(req: Request) {
   ) {
     // Prefer a provider that is actually answering; a configured-but-dead one
     // is better than nothing, so it stays as the second choice.
-    modelInfo = MODEL_LIST.find((m) => eligible(m) && providerHealthy(m.provider)) ?? MODEL_LIST.find(eligible);
+    modelInfo = cheapestEligible(true) ?? cheapestEligible(false);
   } else if (!providerHealthy(modelInfo.provider)) {
     // The requested model's provider is failing auth or billing, so this
     // generation cannot succeed. DEFAULT_MODEL is Anthropic, so an Anthropic
     // outage would otherwise route every new chat straight into an error.
     // Reroute rather than stream a guaranteed failure — but only if there is
     // somewhere healthy to go.
-    const alternative = MODEL_LIST.find((m) => eligible(m) && providerHealthy(m.provider));
+    //
+    // pickAutoModel does not consult provider health, so Auto lands here too:
+    // it picks the cheapest model overall, which may sit on a dead provider.
+    const alternative = cheapestEligible(true);
     if (alternative) {
       console.warn("[chat] rerouting off an unhealthy provider", {
         from: modelInfo.id,
@@ -728,9 +745,7 @@ async function handleChat(req: Request) {
   // answer beats a 500, and it keeps the product usable while an operator
   // decides what to do. Per-user budgets are enforced separately by checkBudget.
   if (modelInfo && (await isPlatformBudgetExceeded())) {
-    const cheapest = MODEL_LIST.filter((m) => eligible(m) && providerHealthy(m.provider)).sort(
-      (a, b) => a.cost - b.cost
-    )[0];
+    const cheapest = cheapestEligible(true);
     if (cheapest && cheapest.cost < modelInfo.cost) {
       console.warn("[chat] platform budget exceeded — degrading model", {
         from: modelInfo.id,

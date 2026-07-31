@@ -1510,10 +1510,13 @@ a schedule or on demand: the weekly `npm run sync:prune` (`deploy/VM_SETUP_GUIDE
 the time it takes to *notice* a bad prune, backups do not help.
 
 **Uploads are a separate failure domain, and currently a worse one.** In the `.env`
-this repo was reviewed against, `S3_BUCKET`, `S3_ACCESS_KEY_ID` and
-`S3_SECRET_ACCESS_KEY` are all empty, so `isStorageConfigured()` is false and every
-attachment, avatar and generated image is written to the VM's local `.uploads`
-directory (§13). That means:
+this repo was reviewed against, `S3_ENDPOINT`, `S3_BUCKET` and `S3_PUBLIC_URL` are
+all set — but `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are **empty**.
+`isStorageConfigured()` requires the bucket *and both credentials*, so it is false,
+`usesLocalDisk()` is true, and every attachment, avatar and generated image is
+written to the VM's local `.uploads` directory (§13) despite the bucket being
+configured. This is easy to misread: the presence of `S3_PUBLIC_URL` suggests
+uploads are on a CDN, and they are not. That means:
 
 - user uploads have **no** redundancy of any kind — they exist on one always-free VM's
   disk and nowhere else;
