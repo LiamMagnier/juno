@@ -1201,14 +1201,18 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   const [findOpen, setFindOpen] = React.useState(false);
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setFindOpen(true);
-      }
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f") return;
+      // Only take the shortcut when there is actually a transcript to search.
+      // The find bar renders inside the `hasMessages` branch, so on an empty
+      // chat preventDefault would suppress the BROWSER's find and show nothing
+      // in its place — strictly worse than not binding at all.
+      if (!hasMessages) return;
+      e.preventDefault();
+      setFindOpen(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [hasMessages]);
   const handleSpeak = (id: string, text: string) => {
     if (speakingId === id) {
       tts.stop();
