@@ -149,6 +149,16 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
             kSecAttrService as String: item.service,
             kSecAttrAccount as String: item.account,
             kSecAttrSynchronizable as String: false,
+            // Without this, macOS routes these items to the LEGACY file-based
+            // keychain, which ignores kSecAttrAccessible outright — so the
+            // AfterFirstUnlockThisDeviceOnly protection class declared below was
+            // silently doing nothing there, and the bearer tokens it guards were
+            // not protected as the code claimed. iOS already defaults to the
+            // data-protection keychain, so this only changes macOS behaviour.
+            //
+            // It must be on EVERY query, not just writes: an item written to the
+            // data-protection keychain is invisible to a legacy-keychain read.
+            kSecUseDataProtectionKeychain as String: true,
         ]
         if let accessGroup = item.accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup

@@ -186,11 +186,31 @@ public struct CommandClassifier: Sendable {
             verdict = .permitted(risk: .destructive, reason: "Process termination.")
         case let executable where interpreterPrograms.contains(executable):
             // Running the project's own tests and scripts. Arbitrary code, but
-            // code from the folder the session was granted.
-            verdict = .permitted(
-                risk: .critical,
-                reason: "'\(program)' can evaluate code or launch another executable."
-            )
+            // code from the folder the session was granted — which is precisely
+            // what `critical` means and why full access proceeds.
+            //
+            // An INLINE program breaks that assumption. `python3 -c "…"`,
+            // `node -e "…"`, `bash -c "…"` run code the model wrote, not code
+            // from the granted folder, and the string is opaque to every rule in
+            // this file: an `rm -rf /`, a `chmod`, a `curl | sh` inside it is
+            // never seen. So it is not ordinary development — it escapes the
+            // workspace boundary, which is the definition of `destructive`.
+            //
+            // This is load-bearing beyond the risk ladder: the macOS entitlements
+            // file justifies disabling the App Sandbox on the soundness of this
+            // classifier, and an unread `-c` string is the one input it cannot
+            // reason about at all.
+            if hasInlineProgramArgument(arguments) {
+                verdict = .permitted(
+                    risk: .destructive,
+                    reason: "'\(program)' runs an inline program this classifier cannot inspect."
+                )
+            } else {
+                verdict = .permitted(
+                    risk: .critical,
+                    reason: "'\(program)' can evaluate code or launch another executable."
+                )
+            }
         case "eval", "exec", "source", ".":
             verdict = .permitted(risk: .critical, reason: "Shell evaluation.")
         case "mv", "cp", "install":
@@ -531,6 +551,40 @@ public struct CommandClassifier: Sendable {
     private static let remoteAccessPrograms: Set<String> = [
         "nc", "ncat", "telnet", "ssh", "scp", "sftp", "rsync",
     ]
+
+    /// Flags that make an interpreter execute a string ARGUMENT rather than a
+    /// file from the workspace.
+    ///
+    /// Deliberately matched on the whole token: `-c` is the flag, while a path
+    /// like `-config.py` is not, and `--eval=…` is handled by the prefix check
+    /// below because it carries its program inline just the same.
+    private static let inlineProgramFlags: Set<String> = [
+        "-c",            // sh, bash, zsh, python, ruby, perl, php
+        "-e",            // node, perl, ruby
+        "--eval",        // node, deno, bun
+        "-p", "--print", // node -p, perl -p
+        "--command",
+        "-E",            // R -e variants / perl
+        "--exec",
+    ]
+
+    /// True when the interpreter was handed a program on the command line.
+    private static func hasInlineProgramArgument(_ arguments: [String]) -> Bool {
+        for argument in arguments {
+            if inlineProgramFlags.contains(argument) { return true }
+            // `--eval=…`, `--command=…`: the program is inline in one token.
+            if let separator = argument.firstIndex(of: "="),
+               inlineProgramFlags.contains(String(argument[argument.startIndex..<separator])) {
+                return true
+            }
+            // Clustered short flags a shell accepts, e.g. `sh -lc "…"`.
+            if argument.hasPrefix("-"), !argument.hasPrefix("--"), argument.count > 2,
+               argument.dropFirst().allSatisfy({ $0.isLetter }), argument.contains("c") {
+                return true
+            }
+        }
+        return false
+    }
 
     private static let interpreterPrograms: Set<String> = [
         "sh", "bash", "zsh", "fish", "dash", "ksh",
