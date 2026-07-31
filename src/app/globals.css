@@ -21,7 +21,9 @@
  * imported file's `@layer components { … }` had nothing to merge into.
  *
  * It is not a purge problem: those classes are used in .tsx files and the
- * content glob (`./src/**/*.{ts,tsx}`) finds them.
+ * content glob in tailwind.config.ts (src, ts + tsx) finds them. Written out
+ * rather than pasted: the glob contains a star-slash, which ends this comment
+ * and makes the rest of the file parse as CSS — "Unknown word", whole build.
  *
  * So: any split has to solve the layer-ownership problem first — not merely put
  * the imports in the right order. Verify the same way if you attempt it. Build,

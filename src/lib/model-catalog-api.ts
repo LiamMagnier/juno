@@ -1,6 +1,7 @@
 import { discoverModels } from "@/lib/model-discovery";
-import { getModelMetrics } from "@/lib/model-metrics";
-import { GEN_MODELS, type ModelInfo } from "@/lib/models";
+import { prisma } from "@/lib/prisma";
+import { getModelMetrics, latestPerFamily, sortModelsForDisplay } from "@/lib/model-metrics";
+import { GEN_MODELS, resolveModel, type ModelInfo } from "@/lib/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
@@ -21,12 +22,67 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
   const generated = GEN_MODELS.filter((model) => configured.has(model.provider) && (model.modality !== "video" || isVideoGenSupported(model)));
   const byId = new Map<string, ModelInfo>();
   for (const model of [...chat, ...generated]) byId.set(model.id, model);
-  // A provider whose key is revoked or out of credit is hidden, not listed and
-  // broken. Health defaults to true, so a provider that has never been probed
-  // is unaffected — the catalog can only shrink on positive evidence.
-  return [...byId.values()]
-    .filter((model) => providerHealthy(model.provider))
-    .sort((a, b) => a.id.localeCompare(b.id));
+  // Every configured lab is listed, INCLUDING one whose account is out of
+  // credit or whose key is rejected.
+  //
+  // This used to end in `.filter((model) => providerHealthy(model.provider))`,
+  // on the reasoning that a model which cannot answer should not be offered.
+  // What that produced was worse than the problem: an unfunded Anthropic
+  // account deleted Claude — every model, on the website, on iOS and on macOS
+  // at once — with no message anywhere saying why, because the manifest has no
+  // way to say "this lab is down" (availability is available|coming_soon|
+  // requires_plan). A whole lab silently ceasing to exist reads as a bug in
+  // Juno, not as a billing state of one provider account, and it is not
+  // recoverable from the UI: the models are simply gone.
+  //
+  // Health did not stop being useful, it stopped being a *filter*. It still
+  // reports through /api/health, still alerts an operator on the down/recovered
+  // transition, still marks `available` on the runner catalog below, and
+  // /api/chat still reroutes a request off a dead provider with a visible
+  // warning instead of streaming a guaranteed failure — which is the honest
+  // place to handle it, because that is the moment there is a user to tell.
+  return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * The catalog the model pickers are handed: every configured lab, one entry per
+ * product line, newest first.
+ *
+ * Split from `loadAvailableModels` because the two audiences want opposite
+ * things. A picker wants the shortest true list — Opus 5, not Opus 5 / 4.8 /
+ * 4.7 / 4.6 / 4.5. The cloud runner wants the *whole* catalog, because a task
+ * already running was pinned to whatever model it started with, and a model
+ * that vanished from the picker still has to be callable.
+ *
+ * `keepIds` is the exception that makes the short list safe: a model the
+ * account has actually SELECTED stays listed even once it is superseded. A
+ * picker cannot render a selection that is not among its options — the settings
+ * dropdown draws an empty box, and a native client re-points the conversation
+ * onto something else — and every account whose default was never changed is in
+ * exactly that position, because the stored default predates the models that
+ * replaced it. Offering one extra model the user already chose is a much
+ * smaller lie than showing them a blank control.
+ */
+export async function loadSelectableModels(keepIds: Iterable<string> = []): Promise<ModelInfo[]> {
+  const all = await loadAvailableModels();
+  const selectable = latestPerFamily(all);
+  const listed = new Set(selectable.map((model) => model.id));
+  const keep = new Set([...keepIds].map((id) => resolveModel(id)?.id).filter((id): id is string => Boolean(id)));
+  const pinned = all.filter((model) => keep.has(model.id) && !listed.has(model.id));
+  return pinned.length ? sortModelsForDisplay([...selectable, ...pinned]) : selectable;
+}
+
+/**
+ * Model ids this account has actually selected, for `loadSelectableModels`'
+ * `keepIds`. Just the saved default today — the one selection the server knows
+ * about without walking every conversation.
+ */
+export async function accountPinnedModelIds(userId: string): Promise<string[]> {
+  const settings = await prisma.settings.findUnique({
+    where: { userId },
+    select: { defaultModel: true },
+  });
+  return settings?.defaultModel ? [settings.defaultModel] : [];
 }
 
 /**
@@ -61,10 +117,13 @@ export function backendAgentCatalog(models: ModelInfo[]): BackendAgentModel[] {
         kind: PROVIDERS[model.provider].kind,
         model: model.providerModel,
         label: model.name,
-        // loadAvailableModels only returns models from providers that are both
-        // configured and passing their health probe, so every chat entry here
-        // is callable through the proxy.
-        available: true,
+        // The runner is the one consumer that still wants the health verdict as
+        // a value: it picks a provider to route a whole task through with no
+        // user present to warn, so advertising a lab whose account is dead
+        // would burn a task on a guaranteed 401. It was hardcoded `true` back
+        // when loadAvailableModels had already dropped unhealthy providers;
+        // now that the catalog lists them, the flag has to carry the fact.
+        available: providerHealthy(model.provider),
         vision: model.vision,
         contextWindow: model.contextWindow ?? metrics.contextTokens,
       };

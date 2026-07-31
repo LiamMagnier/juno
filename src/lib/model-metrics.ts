@@ -1,4 +1,4 @@
-import { isSupersededModel, type ModelInfo } from "@/lib/models";
+import { isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
@@ -372,6 +372,76 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
     if (costDelta !== 0) return costDelta;
     return a.name.localeCompare(b.name);
   });
+}
+
+/**
+ * One model per product line: the newest live entry of each
+ * (lab, modality, family), superseded entries dropped.
+ *
+ * The registry keeps every generation a provider still serves, because a
+ * conversation pinned to Opus 4.8 has to keep resolving and `RETIRED_MODELS`
+ * has to keep having somewhere to migrate to. But a *picker* showing Opus 5
+ * next to 4.8, 4.7, 4.6 and 4.5 is five ways to say "Opus", and the four older
+ * ones are never the right answer — so the catalog the pickers are handed is
+ * filtered here instead of at the registry.
+ *
+ * Two passes, because neither alone is enough:
+ *  - **Superseded entries go.** A curated `legacy`/`deprecated` status is the
+ *    registry's own statement that something newer replaced it.
+ *  - **Then one per family.** Discovery keeps finding models the registry has
+ *    not been curated for yet — a live `gemini-3.6-flash` arrives as `current`
+ *    beside the curated `gemini-3.5-flash`, and both are current, so only the
+ *    family collapse removes the duplicate. Discovered entries carry the family
+ *    slug their `FAMILIES` rule assigns (model-discovery-core.ts), which is why
+ *    they land in the same bucket as the curated one they supersede.
+ *
+ * "Newest" is whatever `sortModelsForDisplay` ranks first inside a lab, so this
+ * cannot disagree with the order the list is rendered in: generation, then
+ * release date, then intelligence.
+ *
+ * A model with no family is its own family (keyed by id) — never merged away on
+ * a guess. Returns display order, so callers do not need to sort again.
+ */
+export function latestPerFamily<T extends ModelInfo>(models: T[]): T[] {
+  const winners = new Map<string, T>();
+  for (const model of models) {
+    if (isSupersededModel(model)) continue;
+    const family = (model.family ?? model.id).toLowerCase();
+    const key = `${model.provider}|${model.modality ?? "chat"}|${family}`;
+    const held = winners.get(key);
+    if (!held || newerInFamily(model, held) < 0) winners.set(key, model);
+  }
+  return sortModelsForDisplay([...winners.values()]);
+}
+
+/**
+ * Which of two models from the SAME product line to keep. Negative keeps `a`.
+ *
+ * Deliberately not `sortModelsForDisplay`'s comparator. That one mixes rules
+ * that are individually sensible but jointly non-transitive (generation, then
+ * release, then grades), which a sort is allowed to resolve in any consistent
+ * way — fine for laying out a list, useless for picking a winner, because the
+ * answer then depends on what else happened to be in the array. This runs
+ * pairwise over one family and always gives the same answer for the same pair.
+ */
+function newerInFamily(a: ModelInfo, b: ModelInfo): number {
+  // 1. Version, when both names carry one. This is what lets a freshly
+  //    discovered Gemini 3.6 Flash replace the curated 3.5 the day it ships.
+  const genA = modelGeneration(a.name);
+  const genB = modelGeneration(b.name);
+  if (genA !== null && genB !== null && genA !== genB) return genB - genA;
+  // 2. Otherwise the curated entry. Both describe the same model, but only the
+  //    curated one has a verified name, price, context window and release date —
+  //    discovery's is `prettifyModelName` over an id. Losing that swapped
+  //    "Mistral Medium 3.5" for a bare "Mistral Medium" pointing at a snapshot.
+  const curatedDelta = Number(!Object.hasOwn(MODELS, a.id)) - Number(!Object.hasOwn(MODELS, b.id));
+  if (curatedDelta !== 0) return curatedDelta;
+  // 3. Then the later release; an entry with no date at all sorts last.
+  const relDelta = (b.released ?? "").localeCompare(a.released ?? "");
+  if (relDelta !== 0) return relDelta;
+  const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+  if (intelDelta !== 0) return intelDelta;
+  return a.id.localeCompare(b.id);
 }
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {

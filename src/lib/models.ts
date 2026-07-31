@@ -51,12 +51,20 @@ export interface ModelInfo {
 // NOTE: these regexes + guess functions are declared BEFORE the registry
 // because it is built at module load and calls guessReasoning/guessCost
 // (avoids a temporal-dead-zone "before initialization" crash).
-const VISION_RE = /(4o|gpt-5|gpt-4\.1|gemini|claude|minimax-m3|mimo-v2\.5-pro|kimi-k2\.[5-9]|vision|vl|pixtral|maverick|scout|llava|glm-5v|-image)/i;
+// These only ever describe a model NOBODY has curated — a version a provider
+// started serving since the registry was last hand-checked. Their version
+// bounds are therefore open-ended (`gpt-(?:[5-9]|\d\d)`, not `gpt-5`): a
+// heuristic pinned to today's numbers answers "no" for every model newer than
+// itself, and since discovery now surfaces the next generation and the picker
+// shows only the newest of each line, that wrong "no" would land on the entry
+// a lab's users actually see. GPT-6 Sol reporting `reasoning: false` takes the
+// thinking control away and stops the request carrying a reasoning parameter.
+const VISION_RE = /(4o|gpt-(?:[5-9]|\d\d)|gpt-4\.1|gemini|claude|minimax-m[3-9]|mimo-v(?:2\.5-pro|[3-9])|kimi-k(?:2\.[5-9]|[3-9])|vision|vl|pixtral|maverick|scout|llava|glm-\d+v|-image)/i;
 const FREE_RE = /(flash|mini|nano|lite|haiku|air|small|8b|14b|free|highspeed|v4-flash)/i;
-const EXPENSIVE_RE = /(opus|fable|mythos|gpt-5\.\d-pro|^o\d|-o\d|large|grok-4|reasoner|ultra|max\b|405b|magistral-medium|v4-pro)/i;
+const EXPENSIVE_RE = /(opus|fable|mythos|gpt-\d+(?:\.\d+)?-pro|^o\d|-o\d|large|grok-(?:[4-9]|\d\d)|reasoner|ultra|max\b|405b|magistral-medium|v[4-9]-pro)/i;
 const CHEAP_RE = /(flash|mini|nano|lite|air|small|haiku|8b|tiny|turbo|free)/i;
 const REASONING_RE =
-  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-5|magistral|deepseek-(r|v4)|[-/]r1|qwq|qwen3(\.[5-9]|-(max|235|30|vl))|qwen-(plus|flash)|claude-(opus|sonnet|haiku-4)|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(4|build)|kimi-k2)/i;
+  /(fable|mythos|reasoner|thinking|^o\d|-o\d|gpt-(?:[5-9]|\d\d)|magistral|deepseek-(r|v[4-9])|[-/]r1|qwq|qwen3(\.[5-9]|-(max|235|30|vl))|qwen[\d.]*-(plus|flash|max)|claude-(opus|sonnet|haiku-[4-9])|minimax-m[2-9]|mimo-v[2-9]|glm-(4\.[6-9]|[5-9])|gemini-[2-9]\.[5-9]|gemini-[3-9]|grok-(?:[4-9]|\d\d|build)|kimi-k[2-9])/i;
 
 export function guessVision(providerModel: string): boolean {
   return VISION_RE.test(providerModel);
@@ -246,8 +254,12 @@ const CURATED: ModelInfo[] = [
   def({ provider: "zhipu", id: "glm-4.5-flash", name: "GLM-4.5 Flash", family: "glm-flash", status: "legacy", released: "2025-07", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 128_000, description: "Older free-tier model." }),
 
   // —— Moonshot / Kimi ——
-  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi-k3", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Moonshot's flagship — 2.5T-parameter reasoner with 1M context, selectable thinking effort (low/high/max), and image/video input." }),
-  def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Kimi flagship — multimodal (image + video input) with toggleable thinking." }),
+  // K3 is the K-line flagship, not a parallel product: it carried its own
+  // `kimi-k3` family only so that two `current` entries could coexist while K2.6
+  // was still the recommended one. Under one family the picker shows the newest
+  // Kimi and nothing else, which is what K3 shipping means.
+  def({ provider: "moonshot", id: "kimi-k3", name: "Kimi K3", family: "kimi", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Moonshot's flagship — 2.5T-parameter reasoner with 1M context, selectable thinking effort (low/high/max), and image/video input." }),
+  def({ provider: "moonshot", id: "kimi-k2.6", name: "Kimi K2.6", family: "kimi", status: "legacy", released: "2026-04", minPlan: "PRO", vision: true, cost: 2, contextWindow: 262_144, description: "Previous Kimi flagship — multimodal (image + video input) with toggleable thinking, superseded by K3." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code", name: "Kimi K2.7 Code", family: "kimi-code", status: "current", released: "2026-06", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Strongest Kimi coding model — always-on thinking, agentic coding." }),
   def({ provider: "moonshot", id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code High-Speed", family: "kimi-code-highspeed", status: "current", released: "2026-06", minPlan: "PRO", cost: 3, contextWindow: 262_144, description: "K2.7 Code served at ~180 tok/s for latency-sensitive agent loops." }),
   def({ provider: "moonshot", id: "kimi-k2.5", name: "Kimi K2.5", family: "kimi", status: "legacy", released: "2026-01", minPlan: "FREE", vision: true, cost: 1, contextWindow: 262_144, description: "Cheaper multimodal Kimi, superseded by K2.6." }),
@@ -461,7 +473,7 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   // while glm-image returns 200 on the same key.
   "zhipu:cogview-4": "zhipu:glm-image",
   // Moonshot — the whole kimi-k2 (K2.0) series was discontinued 2026-05-25.
-  "moonshot:kimi-k2": "moonshot:kimi-k2.6",
+  "moonshot:kimi-k2": "moonshot:kimi-k3",
   // DeepSeek — coder merged into chat back in 2024; id no longer valid.
   "deepseek:deepseek-coder": "deepseek:deepseek-v4-flash",
   // xAI — May 15, 2026 retirement wave + ids that never existed.
@@ -472,8 +484,12 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
-  // Keep qwen3-max → 3.7 (pay-as-you-go). 3.8-max-preview is Token Plan only.
-  "qwen:qwen3-max": "qwen:qwen3.7-max",
+  // Was pinned to 3.7 Max because 3.8-max-preview is Token Plan only, but 3.7
+  // Max is `legacy` — so this migrated a retired id onto a model the pickers do
+  // not offer, which `validate:models` has been failing on. A retired id has to
+  // land somewhere selectable; Token Plan is a billing question for the account,
+  // not a reason to strand the migration on a hidden model.
+  "qwen:qwen3-max": "qwen:qwen3.8-max-preview",
   "qwen:qwen3.8-max": "qwen:qwen3.8-max-preview",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.6-flash",
