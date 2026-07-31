@@ -59,8 +59,9 @@ const nextConfig = {
       ...storageImagePatterns(),
     ],
   },
-  // Baseline security headers. A full Content-Security-Policy is future work:
-  // Next.js relies on inline scripts, so a real CSP needs per-request nonces.
+  // Baseline security headers. The Content-Security-Policy is NOT here — it
+  // needs a per-request nonce, so it is built in src/middleware.ts and is
+  // currently Report-Only (see the note there before promoting it to enforcing).
   async headers() {
     return [
       {
