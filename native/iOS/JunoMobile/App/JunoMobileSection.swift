@@ -30,17 +30,23 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         }
     }
 
-    /// The website's own glyph for this destination, or nil where the web has
-    /// none and a system symbol is the honest choice.
+    /// The website's own glyph for this destination.
     ///
     /// These come from `src/lib/app-icons.ts` by way of
     /// `scripts/generate-native-icons.mjs`, so a destination looks the same on
-    /// the phone as it does in the browser. Settings is deliberately absent: the
-    /// web shell has no Settings glyph in that module, and `gearshape` is what a
-    /// person already recognises.
+    /// the phone as it does in the browser — and, just as importantly, the same
+    /// as it does on the Mac.
+    ///
+    /// Two marks were out of step and are not any more. Chat is `home`, which is
+    /// what `AppIcons.home` draws for that destination on the web and what the
+    /// Mac's sidebar has always used; `new` is a plus, and a plus belongs on the
+    /// control that *starts* a chat, not on the destination that lists them.
+    /// Settings is `settings`, now that the shared icon set carries one — it fell
+    /// back to `gearshape` before, the only SF Symbol in an otherwise Lucide
+    /// column, which read as a glyph borrowed from another product.
     var junoIcon: JunoIcon? {
         switch self {
-        case .chat: .new
+        case .chat: .home
         case .search: .search
         case .code: .code
         case .tasks: .tasks
@@ -48,7 +54,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .library: .library
         case .artifacts: .artifacts
         case .connections: .connections
-        case .settings: nil
+        case .settings: .settings
         }
     }
 

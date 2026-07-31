@@ -410,13 +410,19 @@ struct DesktopConnectionsScreen: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    /// Every one of these names a thing the website has a mark for — a connector
+    /// and a search — so they use those rather than SF's `powerplug` and
+    /// `magnifyingglass`. The category state is the exception: a category is a
+    /// filter this screen invented for the Mac's wider column, and the web draws
+    /// it with no glyph at all, so it keeps the platform's own grid symbol rather
+    /// than borrowing a mark that names something else.
     @ViewBuilder
     private var emptyState: some View {
         if model.showsConnectedOnly {
             JunoEmptyState(
                 title: "No connected apps",
                 message: "Connect an app and Juno can work with it from a chat.",
-                symbol: "powerplug",
+                icon: .connections,
                 actionLabel: "Show all apps",
                 action: { model.showsConnectedOnly = false }
             )
@@ -424,7 +430,7 @@ struct DesktopConnectionsScreen: View {
             JunoEmptyState(
                 title: "No matching apps",
                 message: "Nothing matches “\(trimmedQuery)”.",
-                symbol: "magnifyingglass",
+                icon: .search,
                 actionLabel: "Clear search",
                 action: { model.query = "" }
             )
@@ -440,7 +446,7 @@ struct DesktopConnectionsScreen: View {
             JunoEmptyState(
                 title: "No apps available",
                 message: "This account has no connectors to show.",
-                symbol: "powerplug",
+                icon: .connections,
                 actionLabel: "Refresh",
                 action: { Task { await model.refresh() } }
             )

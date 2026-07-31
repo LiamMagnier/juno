@@ -87,13 +87,18 @@ struct JunoMobileUsageView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Picker("Range", selection: $range) {
-                ForEach(NativeUsageRange.allCases) { value in
-                    Text(value.label).tag(value)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            // Juno's own switch, not `.pickerStyle(.segmented)`. The system
+            // control fills its selected segment with the app tint, which put a
+            // slab of coral across the top of this page — and the website's
+            // equivalent is neutral: `bg-background text-foreground`, with the
+            // accent kept for what is actually an action.
+            JunoMobileSegmented(
+                options: NativeUsageRange.allCases.map {
+                    JunoMobileSegmented<NativeUsageRange>.Option($0, $0.label)
+                },
+                selection: $range,
+                accessibilityLabel: "Range"
+            )
             .accessibilityIdentifier("juno.mobile.usage.range")
         }
         .padding(.top, 4)
@@ -362,7 +367,11 @@ private struct JunoMobileUsageSurfaces: View {
 
 /// One proportion bar. The track stays visible at zero, so a surface with no
 /// spend reads as "nothing here" rather than as a missing row.
-private struct JunoMobileUsageBar: View {
+///
+/// Internal rather than private: the Code section draws the same two plan meters
+/// in its account row, and a second bar built to look like this one is a bar
+/// free to stop looking like it.
+struct JunoMobileUsageBar: View {
     let fraction: Double
     var tint: Color = .junoAccent
 

@@ -45,6 +45,7 @@ const ICONS = {
   conversation: "message-circle",
   new: "plus",
   search: "search",
+  settings: "settings",
 
   cloud: "cloud",
   device: "laptop",

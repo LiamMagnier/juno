@@ -40,6 +40,19 @@ final class SessionEventsTests: XCTestCase {
             .runCompleted(
                 RunCompletedEvent(summary: "Fixed", filesChanged: 1, testsPassed: true, durationSeconds: 12)
             ),
+            .subagentUpdated(
+                SubagentUpdateEvent(
+                    agentID: "call_2#0",
+                    toolCallID: "call_2",
+                    childSessionID: CodeSessionID(value: "child-1"),
+                    title: "Map the reconnect callers",
+                    task: "Find every caller of reconnectLoop().",
+                    role: .reviewer,
+                    status: .running,
+                    currentActivity: "Search for “reconnectLoop(”",
+                    startedAt: Date(timeIntervalSince1970: 10)
+                )
+            ),
         ]
         let encoder = JSONEncoder()
         let decoder = JSONDecoder()
@@ -54,6 +67,44 @@ final class SessionEventsTests: XCTestCase {
             let decoded = try decoder.decode(SessionEvent.self, from: data)
             XCTAssertEqual(decoded, event)
         }
+    }
+
+    /// The Mac and the cloud runner are read through one panel, so they have to
+    /// spell a sub-agent's states the same way. These raw values are the
+    /// TypeScript union in `runner/agent-core/src/subagents.ts`; changing one
+    /// side alone silently makes "Done" mean two different things.
+    func testSubagentStatusMatchesTheCloudRunnersVocabulary() {
+        XCTAssertEqual(
+            Set(SubagentStatus.allCases.map(\.rawValue)),
+            [
+                "queued", "preparing", "running", "waiting_approval",
+                "completed", "failed", "cancelled", "interrupted",
+            ]
+        )
+        XCTAssertEqual(
+            Set(SubagentStatus.allCases.filter(\.isTerminal).map(\.rawValue)),
+            ["completed", "failed", "cancelled", "interrupted"],
+            "the same four the web's agent cards treat as terminal"
+        )
+    }
+
+    /// A child's report is capped where the runner caps its own, so one
+    /// runaway sub-agent cannot write an unbounded string into the parent's
+    /// append-only transcript.
+    func testASubagentSummaryIsCappedOnTheWayIn() {
+        let update = SubagentUpdateEvent(
+            agentID: "a",
+            toolCallID: "call",
+            childSessionID: nil,
+            title: "Long",
+            task: "Say a lot.",
+            role: .engineer,
+            status: .completed,
+            summary: String(repeating: "x", count: 5_000)
+        )
+        XCTAssertEqual(
+            update.summary?.count, SubagentUpdateEvent.maximumSummaryCharacters
+        )
     }
 
     func testTerminalAndActiveStatuses() {

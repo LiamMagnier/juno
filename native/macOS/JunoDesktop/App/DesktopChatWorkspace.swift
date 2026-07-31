@@ -492,9 +492,14 @@ private struct DesktopChatSidebar: View {
     private func conversationRow(_ conversation: NativeConversation) -> some View {
         HStack(spacing: JunoSpace.tight) {
             if conversation.pinned {
-                Image(systemName: "pin.fill")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                // Juno's own pin, not SF's, and the one place coral is spent in
+                // this column. The web's sidebar is greyscale apart from exactly
+                // two `fill-primary` marks — the pinned conversation and the
+                // starred project — and the Code sidebar already draws this
+                // concept as `JunoIconView(.pin)`. Two clients drawing the same
+                // idea with two different glyphs is the drift this unifies.
+                JunoIconView(.pin, size: 12)
+                    .foregroundStyle(Color.junoAccent)
                     .accessibilityLabel("Pinned")
             }
             Text(conversation.title)
@@ -625,9 +630,13 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
         case .artifacts: .artifacts
         case .connections: .connections
         case .tasks: .tasks
-        // No Juno-drawn glyph for these yet, so they fall back to the SF Symbol
-        // rather than borrowing another destination's mark.
-        case .usage, .settings: nil
+        case .settings: .settings
+        // Usage is the one destination the web draws with no glyph at all — the
+        // user menu renders the quota itself, in the dot signature. Borrowing a
+        // chart mark from another icon set to fill the hole would be native-only
+        // drift, so this keeps the SF fallback until the signature earns a place
+        // in the rail.
+        case .usage: nil
         }
     }
 }
@@ -672,11 +681,27 @@ struct DesktopConversationView: View {
     let session: NativeAuthenticatedSession
     @Binding var draftProjectID: String?
     @Binding var draftPrompt: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var voiceSession: DesktopVoiceSession?
     /// Why a spoken conversation could not be opened. An alert rather than an
     /// inline banner because the reader pressed a button and nothing happened —
     /// the answer has to arrive where they are looking.
     @State private var voiceUnavailable: String?
+    /// The artifact the canvas is showing, or nil when it is closed.
+    ///
+    /// Held **here**, not on the message row that mentions it. A docked column
+    /// has to be a sibling of the transcript, and the row is one cell inside a
+    /// `LazyVStack` that the scroll view is free to tear down — which is what
+    /// made the sheet this replaces a presentation whose presenter could vanish
+    /// underneath it. The row now only says "open this".
+    @State private var openArtifact: DesktopChatArtifact?
+    /// Everything the composer bloom is driven by. See ``DesktopChatAuraState``
+    /// for why it cannot live inside the composer.
+    @State private var aura = DesktopChatAuraState()
+    /// The conversation column's own height, which is what the aura's `54vh` and
+    /// `26vh` caps are measured against. Without it the bloom falls back to its
+    /// absolute cap and is taller on a short window than the web ever draws it.
+    @State private var columnHeight: CGFloat = 0
 
     var body: some View {
         // Clamped through `Color.clear.overlay { … }`, for the reason
@@ -687,7 +712,28 @@ struct DesktopConversationView: View {
         // takes whatever height it is proposed and an overlay is sized by its
         // base, so the chat can never resize the window it lives in.
         Color.clear
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                columnHeight = $0
+            }
             .overlay { conversationContent }
+            // The canvas closes when a conversation does. It belongs to the
+            // thread it was opened from, and a panel that survived the switch
+            // would be describing a reply that is no longer on screen.
+            .onChange(of: model.selectedConversationID) { _, _ in
+                openArtifact = nil
+            }
+            // The web's COEXISTENCE RULE, in the one shape this window has for
+            // it: the canvas and a live call are both large right-hand claims on
+            // the conversation column, and the call also lights the whole column
+            // with its own field. Starting one dismisses the other.
+            .onChange(of: voiceSession?.id) { _, started in
+                guard started != nil, openArtifact != nil else { return }
+                withAnimation(
+                    JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)
+                ) {
+                    openArtifact = nil
+                }
+            }
             .alert(
                 "Voice is unavailable",
                 isPresented: Binding(
@@ -710,68 +756,114 @@ struct DesktopConversationView: View {
     /// rectangle of its own.
     @ViewBuilder
     private var conversationContent: some View {
-        Group {
-            // A live call takes the greeting's place even before a single word
-            // has been said, which is the web's `hasMessages || voiceOpen`
-            // (`chat-view.tsx`). Without it the most common way to start a
-            // call — pressing the microphone on the home screen — is the one
-            // place the spoken conversation could never be read, because a
-            // draft has no message list to append it to.
-            if model.selectedConversation == nil, voiceSession == nil {
-                // Greeting and composer are one centred group; the fine print is
-                // pinned to the foot of the page rather than carried along under
-                // the composer. That is the web's own split (`chat-view.tsx`):
-                // `justify-center` on the group, a `shrink-0` disclaimer at the
-                // bottom of the column. Two flexible `Spacer`s with different
-                // minimums approximated it and left the disclaimer floating a
-                // third of the way up on a tall window.
-                //
-                // Pinning it as a bottom inset also makes the two branches of this
-                // view agree: the transcript pins its chrome the same way, so the
-                // disclaimer does not jump vertically the moment a chat starts.
-                VStack(spacing: JunoSpace.section) {
-                    DesktopDraftGreeting(profileName: profileName)
-                    composer
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    DesktopChatDisclaimer()
-                }
-            } else {
-                // No in-content title strip. The conversation's title and its
-                // last-updated stamp are the window's `navigationTitle` and
-                // `navigationSubtitle`, which is where a Mac window says what it
-                // is showing. Repeating it in a bordered bar directly underneath
-                // the toolbar said the same thing twice and cost 42pt of the
-                // reading canvas.
-                //
-                // The composer is a *safe-area inset*, not the last row of a
-                // `VStack`, and that is what makes it glass. Stacked, it occupied
-                // its own band of canvas — a rectangle of `--background` with
-                // nothing behind it — so the glass had nothing to refract and read
-                // as a flat white pill. As an inset the transcript keeps the full
-                // height and scrolls *underneath* the composer, so messages pass
-                // behind it and the material finally has something to bend.
-                DesktopTranscript(
-                    model: model,
-                    voiceMessages: voiceMessages,
-                    messageActions: configuration.messageActionsClient,
-                    followUpClient: configuration.followUpClient,
-                    draftPrompt: $draftPrompt,
-                    accountID: session.profile.id,
-                    syncModel: configuration.syncModel
-                )
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    VStack(spacing: 0) {
-                        composer
-                        DesktopChatDisclaimer()
-                    }
-                }
+        // A live call takes the greeting's place even before a single word has
+        // been said, which is the web's `hasMessages || voiceOpen`
+        // (`chat-view.tsx`). Without it the most common way to start a call —
+        // pressing the microphone on the home screen — is the one place the
+        // spoken conversation could never be read, because a draft has no
+        // message list to append it to.
+        if model.selectedConversation == nil, voiceSession == nil {
+            draftColumn
+        } else {
+            // The canvas is a **column**, not a presentation. It sits beside the
+            // conversation exactly as the website's does, so the reply the
+            // artifact came out of stays readable next to it — which is the whole
+            // difference between docking and covering.
+            DesktopArtifactDock(artifact: openArtifact, close: closeArtifact) {
+                transcriptColumn
             }
+        }
+    }
+
+    /// The home screen: greeting on its bloom, composer under it, fine print
+    /// pinned to the foot.
+    ///
+    /// The disclaimer is a bottom inset rather than a third row of the stack —
+    /// the web's own split (`justify-center` on the group, a `shrink-0`
+    /// disclaimer at the bottom of the column). Two flexible `Spacer`s with
+    /// different minimums approximated it and left the fine print floating a
+    /// third of the way up a tall window. Pinning it also makes the two branches
+    /// of this view agree, so it does not jump the moment a chat starts.
+    private var draftColumn: some View {
+        VStack(spacing: JunoSpace.section) {
+            DesktopDraftGreeting(
+                profileName: profileName,
+                aura: aura,
+                viewport: columnHeight > 0 ? columnHeight : nil
+            )
+            composer
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            DesktopChatDisclaimer()
         }
         // The field behind the whole column — the conversation and the composer
         // both — scoped to it, so the sidebar is never washed by it.
         .junoVoiceField(voiceColumn)
+    }
+
+    /// The conversation and its composer.
+    ///
+    /// No in-content title strip. The conversation's title and its last-updated
+    /// stamp are the window's `navigationTitle` and `navigationSubtitle`, which is
+    /// where a Mac window says what it is showing. Repeating it in a bordered bar
+    /// directly under the toolbar said the same thing twice and cost 42pt of the
+    /// reading canvas.
+    ///
+    /// The composer is a *safe-area inset*, not the last row of a `VStack`, and
+    /// that is what makes it glass. Stacked, it occupied its own band of canvas —
+    /// a rectangle of `--background` with nothing behind it — so the glass had
+    /// nothing to refract and read as a flat white pill. As an inset the
+    /// transcript keeps the full height and scrolls *underneath* the composer, so
+    /// messages pass behind it and the material finally has something to bend.
+    ///
+    /// The inset spans this column alone, which is why the canvas docks around it
+    /// rather than inside it: the composer belongs to the conversation, and a
+    /// composer stretched under an artifact would be offering to send into it.
+    private var transcriptColumn: some View {
+        DesktopTranscript(
+            model: model,
+            voiceMessages: voiceMessages,
+            messageActions: configuration.messageActionsClient,
+            followUpClient: configuration.followUpClient,
+            draftPrompt: $draftPrompt,
+            accountID: session.profile.id,
+            syncModel: configuration.syncModel,
+            openArtifact: open(artifact:)
+        )
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                composer
+                DesktopChatDisclaimer()
+            }
+            // The docked bloom — a third of the light, short enough to pool
+            // around the capsule instead of washing up the transcript. Suppressed
+            // during a call: the voice field below already lights this column,
+            // and two lights under one capsule read as a bug. The web makes the
+            // same swap.
+            .background(alignment: .bottom) {
+                if voiceSession == nil {
+                    DesktopChatAuraLayer(
+                        state: aura,
+                        docked: true,
+                        viewport: columnHeight > 0 ? columnHeight : nil
+                    )
+                }
+            }
+        }
+        .junoVoiceField(voiceColumn)
+    }
+
+    private func open(artifact: NativeMessageContent.ArtifactReference) {
+        withAnimation(JunoMotion.reduced(DesktopChatMotion.canvasEnter, when: reduceMotion)) {
+            openArtifact = DesktopChatArtifact(reference: artifact)
+        }
+    }
+
+    private func closeArtifact() {
+        withAnimation(JunoMotion.reduced(DesktopChatMotion.canvasExit, when: reduceMotion)) {
+            openArtifact = nil
+        }
     }
 
     /// The spoken conversation as it is happening, as ordinary message rows.
@@ -880,80 +972,14 @@ struct DesktopConversationView: View {
             connectorModel: configuration.connectorModel,
             draftProjectID: $draftProjectID,
             draftPrompt: $draftPrompt,
-            openVoiceMode: startVoice
+            openVoiceMode: startVoice,
+            aura: aura
         )
         // The dock only. The field this composer used to carry is now behind
         // the whole column — see ``conversationContent``.
         .junoVoiceDock(voiceColumn)
     }
 }
-
-/// The home greeting, laid out the way the web lays it out.
-///
-/// The web's `grid-cols-[1fr_auto_1fr]` (`empty-state.tsx`) is not incidental:
-/// only the middle cell carries text, so the phrase sits on the column's **true**
-/// horizontal centre and the mark flanks it without moving it. An `HStack` of
-/// mark + text centres the *pair* instead, which pushes the greeting left of
-/// centre by half the mark — and the composer directly beneath it is centred, so
-/// the two read as misaligned. Reproduced here with two equally-flexible outer
-/// cells, which is what `1fr … 1fr` means.
-///
-/// The serif is real Newsreader, not a fallback: the faces are copied into the
-/// app bundle's `Resources` and `ATSApplicationFontsPath` is `.`, so
-/// ``JunoSerif/isBundled`` resolves the PostScript names and `greeting(compact:)`
-/// returns the custom face. Nothing here should ask for `Font.custom("Newsreader")`
-/// — that family name resolves nothing and falls back to the system sans in
-/// silence.
-private struct DesktopDraftGreeting: View {
-    let profileName: String?
-
-    /// The web's `sm:h-[1.83rem]` mark, at the root font size the site ships.
-    private static let markSize: CGFloat = 29
-
-    private var firstName: String? {
-        JunoGreeting.firstName(from: profileName)
-    }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 0) {
-            // The mark's cell: flexible, contents end-aligned, so the mark hugs
-            // the phrase from the left exactly as `justify-end pr-[0.38em]` does.
-            JunoMark(size: Self.markSize)
-                .padding(.trailing, JunoSpace.regular)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-
-            Text(greeting)
-                .font(JunoSerif.greeting(compact: false))
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // The web's mirror column. `Color.clear` has no intrinsic size, so it
-            // can only ever absorb slack — it cannot report a height back up and
-            // therefore cannot influence the detail column that contains it.
-            Color.clear
-                .frame(maxWidth: .infinity)
-                .accessibilityHidden(true)
-        }
-        .padding(.horizontal, JunoSpace.region)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var greeting: AttributedString {
-        let phrase = JunoGreeting.phrase(
-            forHour: Calendar.current.component(.hour, from: Date())
-        )
-        var text = AttributedString(firstName == nil ? phrase : "\(phrase), ")
-        if let firstName {
-            var name = AttributedString(firstName)
-            name.font = JunoSerif.greetingName(compact: false)
-            name.foregroundColor = Color.junoAccent
-            text.append(name)
-        }
-        return text
-    }
-}
-
 
 private struct DesktopChatDisclaimer: View {
     var body: some View {
@@ -981,8 +1007,17 @@ private struct DesktopTranscript: View {
     @Binding var draftPrompt: String?
     let accountID: AccountID
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    /// Asks the conversation column to dock the canvas. A row cannot own that
+    /// panel — see ``DesktopConversationView/openArtifact``.
+    let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var actionError: String?
     @State private var speechPlayback = DesktopSpeechPlayback()
+    /// The index from which rows rise in, so opening a conversation does not
+    /// replay every entrance it ever had. See ``noteMessages(from:to:)``.
+    @State private var animateFrom = Int.max
+    /// The conversation whose count `animateFrom` was last seeded against.
+    @State private var settledConversationID: String?
 
     /// The web's `max-w-3xl` reading column.
     static let readingWidth: CGFloat = 768
@@ -1009,7 +1044,8 @@ private struct DesktopTranscript: View {
                 // numbers this replaces were freehand and read slightly airier
                 // than the site at the same window width.
                 LazyVStack(alignment: .leading, spacing: JunoSpace.section) {
-                    ForEach(model.selectedMessages) { message in
+                    ForEach(Array(model.selectedMessages.enumerated()), id: \.element.id) {
+                        index, message in
                         DesktopMessageRow(
                             message: message,
                             isVoice: false,
@@ -1038,8 +1074,10 @@ private struct DesktopTranscript: View {
                                         NativeMessageContent.spoken(of: message.content)
                                     )
                                 }
-                            }
+                            },
+                            openArtifact: openArtifact
                         )
+                            .modifier(DesktopMessageRise(rises: index >= animateFrom))
                             .id(message.id)
                     }
 
@@ -1060,7 +1098,10 @@ private struct DesktopTranscript: View {
                             regenerate: nil,
                             branch: nil,
                             setFeedback: nil,
-                            readAloud: nil
+                            readAloud: nil,
+                            // A spoken turn carries no artifact tag: it is a
+                            // recognizer's line, not a written reply.
+                            openArtifact: { _ in }
                         )
                         // A line the recognizer has not finalized is a
                         // hypothesis it is still rewriting several times a
@@ -1118,7 +1159,21 @@ private struct DesktopTranscript: View {
                 .padding(.horizontal, JunoSpace.region)
                 .padding(.vertical, JunoSpace.section)
             }
-            .onChange(of: model.selectedMessages) { _, _ in
+            // `initial: true` so a conversation opens at its latest turn even when
+            // the messages were already in hand — which is the case every time the
+            // canvas takes the whole column on a narrow window and gives it back.
+            .onChange(of: model.selectedMessages, initial: true) { previous, current in
+                noteMessages(from: previous.count, to: current.count)
+                // Animated only when a turn actually arrived. The other two cases
+                // are the transcript being drawn for the first time and a reply
+                // growing token by token — travelling 180ms from a position the
+                // reader never saw reads as the page moving on its own, and a
+                // 180ms scroll restarted several times a second never arrives
+                // anywhere. The same reasoning as the voice branch below.
+                guard current.count != previous.count else {
+                    proxy.scrollTo("transcript-bottom", anchor: .bottom)
+                    return
+                }
                 withAnimation(.easeOut(duration: 0.18)) {
                     proxy.scrollTo("transcript-bottom", anchor: .bottom)
                 }
@@ -1133,6 +1188,31 @@ private struct DesktopTranscript: View {
                 proxy.scrollTo("transcript-bottom", anchor: .bottom)
             }
         }
+    }
+
+    /// Decides which rows are new enough to rise in.
+    ///
+    /// The web seeds the same index at mount and calls it `animateFrom`
+    /// (`message-list.tsx`) — it gets away with one line because its list mounts
+    /// with the messages already in hand. A store that loads asynchronously does
+    /// not: selecting a conversation sets the id first and the transcript arrives
+    /// a moment later, so "everything that appeared since the last render" would
+    /// mean the entire history every time a chat is opened.
+    private func noteMessages(from previous: Int, to current: Int) {
+        guard settledConversationID == model.selectedConversationID else {
+            // A conversation that has only just been selected has not loaded yet,
+            // so whatever arrives first is its history — however short — and
+            // history must not replay. It is not recorded as settled until
+            // something actually lands, or an empty first pass would count as the
+            // load and the real one would animate.
+            if current > 0 { settledConversationID = model.selectedConversationID }
+            animateFrom = current
+            return
+        }
+        // A send appends the reader's own turn and then the reply's placeholder,
+        // one at a time. Anything larger is a block landing — a sync catching up,
+        // a branch being read — and that is history again.
+        animateFrom = current - previous > 2 ? current : previous
     }
 
     private func copy(_ content: String) {
@@ -1210,6 +1290,42 @@ private struct DesktopTranscript: View {
     }
 }
 
+/// The web's `rise-in`, applied to a message that has just arrived.
+///
+/// `rises` is what keeps a scrolled history still. A `LazyVStack` builds a row
+/// the moment it comes into view and destroys it again when it leaves, so a
+/// transition driven by appearance alone replays for every old message the reader
+/// scrolls back to — the row genuinely *is* appearing, it is simply not new. The
+/// index gate answers the question appearance cannot.
+private struct DesktopMessageRise: ViewModifier {
+    let rises: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var risen: Bool
+
+    /// A row that is not rising starts *already* risen rather than being set
+    /// there by `onAppear`. Seeded the other way it spent its first frame at zero
+    /// opacity, which on a lazily-built stack means every old message flickers as
+    /// the reader scrolls back through the conversation.
+    init(rises: Bool) {
+        self.rises = rises
+        _risen = State(initialValue: !rises)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(risen ? 1 : 0)
+            .offset(y: risen ? 0 : DesktopChatMotion.riseDistance)
+            .onAppear {
+                guard rises, !reduceMotion else {
+                    risen = true
+                    return
+                }
+                withAnimation(DesktopChatMotion.riseIn) { risen = true }
+            }
+    }
+}
+
 private struct DesktopMessageRow: View {
     let message: NativeChatMessage
     /// Whether this is a spoken turn from a call that is still running.
@@ -1235,7 +1351,11 @@ private struct DesktopMessageRow: View {
     let branch: (() -> Void)?
     let setFeedback: ((NativeChatFeedback?) -> Void)?
     let readAloud: (() -> Void)?
-    @State private var inlineArtifact: DesktopInlineArtifact?
+    /// Hands an artifact up to the conversation column, which owns the canvas.
+    /// This row only says which one — it cannot hold the panel, because a
+    /// `LazyVStack` is free to tear the row down while the reader is still
+    /// reading it.
+    let openArtifact: (NativeMessageContent.ArtifactReference) -> Void
     /// Whether a long prompt is showing in full. Collapsed is the resting state,
     /// as it is on the web.
     @State private var promptExpanded = false
@@ -1441,11 +1561,7 @@ private struct DesktopMessageRow: View {
                                 artifact: artifact,
                                 open: artifact.streaming
                                     ? nil
-                                    : {
-                                        inlineArtifact = DesktopInlineArtifact(
-                                            reference: artifact
-                                        )
-                                    }
+                                    : { openArtifact(artifact) }
                             )
                         }
                     }
@@ -1531,12 +1647,6 @@ private struct DesktopMessageRow: View {
                     .textSelection(.enabled)
             }
         }
-        .sheet(item: $inlineArtifact) { artifact in
-            DesktopInlineArtifactView(
-                artifact: artifact,
-                close: { inlineArtifact = nil }
-            )
-        }
     }
 
     private func messageAction(
@@ -1556,15 +1666,6 @@ private struct DesktopMessageRow: View {
     }
 }
 
-private struct DesktopInlineArtifact: Identifiable {
-    let reference: NativeMessageContent.ArtifactReference
-    var id: String { reference.id }
-
-    var kind: NativeArtifactKind {
-        NativeArtifactKind(rawValue: reference.kind.uppercased()) ?? .code
-    }
-}
-
 /// An artifact referenced inline in an answer.
 ///
 /// Built from the web's `artifact-inline-card.tsx`: a raised card, a glyph in its
@@ -1573,40 +1674,21 @@ private struct DesktopInlineArtifact: Identifiable {
 /// stays quiet on purpose; on the web the artifact's *content* is the visual
 /// event, which is also why the icon is not painted coral. Coral is spent on one
 /// primary action per surface, and a card in a transcript is not it.
+///
+/// The card is a launcher and nothing more: it hands the artifact up and
+/// ``DesktopArtifactCanvas`` docks beside the conversation. Names come from
+/// ``DesktopArtifactKindLabel`` so the card and the panel it opens cannot
+/// describe the same object differently.
 private struct DesktopInlineArtifactCard: View {
     let artifact: NativeMessageContent.ArtifactReference
     let open: (() -> Void)?
 
-    /// The web's `ICONS` map, in SF Symbols. Falls through to the code glyph for
-    /// a kind this client does not know, which is honest: an artifact of an
-    /// unrecognised kind is still source.
     private var glyph: String {
-        switch artifact.kind.uppercased() {
-        case "HTML": "globe"
-        case "REACT": "curlybraces.square"
-        case "SVG": "square.on.circle"
-        case "MERMAID": "flowchart"
-        case "MARKDOWN": "doc.text"
-        default: "chevron.left.forwardslash.chevron.right"
-        }
+        DesktopArtifactKindLabel.symbol(forWireKind: artifact.kind)
     }
 
-    /// The kind, spelled the way the product spells it.
-    ///
-    /// Not `kind.capitalized`: the wire value is upper-case, so that produced
-    /// "Html", "Svg" and "React" — the first two are wrong as words and all three
-    /// were the card's most prominent metadata. Unknown kinds fall back to the
-    /// wire value untouched, which is honest rather than title-cased nonsense.
     private var kindLabel: String {
-        switch artifact.kind.uppercased() {
-        case "HTML": "HTML"
-        case "REACT": "React"
-        case "CODE": "Code"
-        case "SVG": "SVG"
-        case "MARKDOWN": "Markdown"
-        case "MERMAID": "Diagram"
-        default: artifact.kind
-        }
+        DesktopArtifactKindLabel.title(forWireKind: artifact.kind)
     }
 
     /// The web's mono line: the kind, then the language when the model named one.
@@ -1679,56 +1761,6 @@ private struct DesktopInlineArtifactCard: View {
                 ? "Writing artifact \(artifact.title)"
                 : "Open artifact \(artifact.title), \(metadata)"
         )
-    }
-}
-
-private struct DesktopInlineArtifactView: View {
-    let artifact: DesktopInlineArtifact
-    let close: () -> Void
-    @State private var mode = NativeArtifactDisplayMode.preview
-
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(artifact.reference.title)
-                        .font(.title2.weight(.semibold))
-                    Text("From this conversation")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if artifact.kind.supportsRenderedPreview {
-                    Picker("View", selection: $mode) {
-                        Text("Preview").tag(NativeArtifactDisplayMode.preview)
-                        Text("Source").tag(NativeArtifactDisplayMode.source)
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 180)
-                }
-                ShareLink(item: artifact.reference.content) {
-                    Image(systemName: "square.and.arrow.up")
-                }
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                }
-            }
-            .padding(16)
-            .background(.bar)
-            .overlay(alignment: .bottom) { Divider() }
-
-            NativeArtifactPreview(
-                kind: artifact.kind,
-                content: artifact.reference.content,
-                mode: mode
-            )
-            // Padding inside the greedy frame: reversed, this asks the parent
-            // for "everything plus 32", which a split view resolves by oversizing.
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .frame(minWidth: 760, minHeight: 560)
-        .background(Color.junoCanvas)
     }
 }
 
@@ -1949,6 +1981,13 @@ struct DesktopComposer: View {
     /// Called after the first message is accepted, so an embedded project
     /// composer can move to the real transcript it just created.
     var didSendConversation: ((String) -> Void)? = nil
+    /// The bloom this composer feeds, when the surface it is on has one.
+    ///
+    /// Optional because the project overview embeds this same composer in the
+    /// middle of a page of other things — the website puts no aura there either,
+    /// and a light under a card in a list would be claiming that card is the
+    /// screen.
+    var aura: DesktopChatAuraState? = nil
 
     @State private var prompt = ""
     @State private var selectedModelID = ""
@@ -2213,6 +2252,11 @@ struct DesktopComposer: View {
             consumeDraftProject()
             consumeDraftPrompt()
             focused = true
+            // Published here as well as from the `onChange` pair below, because a
+            // composer that opens on the model it already had changes nothing —
+            // and the bloom would sit on the accent until the reader happened to
+            // pick something.
+            publishAura()
         }
         // Every transient presentation is torn down with the composer.
         //
@@ -2255,7 +2299,29 @@ struct DesktopComposer: View {
         .onChange(of: draftPrompt) { _, _ in
             consumeDraftPrompt()
         }
-        .onChange(of: selectedModelID) { _, _ in configureThinking() }
+        .onChange(of: selectedModelID) { _, _ in
+            configureThinking()
+            publishAura()
+        }
+        .onChange(of: thinkingStopID) { _, _ in publishAura() }
+        .onChange(of: focused) { _, hasFocus in aura?.focused = hasFocus }
+    }
+
+    /// Hands the bloom its two derived inputs.
+    ///
+    /// `hasEffortControl` is the test of whether a slider is *actually on screen*
+    /// — the composer's own gate a few lines up — and deliberately not "does this
+    /// model reason". Eleven shipped models declare reasoning and expose no
+    /// tiers, and Auto resolves the full ladder while showing no slider at all;
+    /// either would leave the page burning at its dimmest with nothing on screen
+    /// to explain why.
+    private func publishAura() {
+        guard let aura else { return }
+        aura.providerID = selectedModel?.providerID ?? ""
+        aura.think = JunoProviderGlow.auraThink(
+            effort: reasoningEffort?.rawValue,
+            hasEffortControl: thinkingScale?.isPresentable ?? false
+        )
     }
 
     private func consumeDraftProject() {
@@ -2723,6 +2789,10 @@ struct DesktopComposer: View {
 
     private func send() {
         guard canSend else { return }
+        // Past the guard that can still refuse the turn, and before the work —
+        // the swell answers the keystroke, not the round trip. The web sets its
+        // flag in exactly the same place inside `sendFromComposer`.
+        aura?.fireSendSwell()
         let content = prompt
         let modelID = selectedModelID
         let effort = reasoningEffort

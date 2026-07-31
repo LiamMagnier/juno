@@ -51,6 +51,7 @@ struct DesktopLibraryScreen: View {
 
     @State private var editing: NativeLibraryItem?
     @State private var previews = NativeFilePreviewLoader()
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How the files are drawn. Mirrors the web's `LibraryView`, including the
     /// fact that the choice is remembered — the website persists it under
@@ -323,11 +324,16 @@ struct DesktopLibraryScreen: View {
                 }
             }
             .overlay {
-                // The selection ring is a stroke, never a filled tile: coral is
-                // spent on outlines and one primary action here, as on the web,
-                // and a saturated fill behind a file name would be unreadable.
+                // A stroke, never a filled tile — a saturated fill behind a file
+                // name would be unreadable — and a *greyscale* stroke, because
+                // that is what the page it is modelled on draws: the web's
+                // selected library card is `border-foreground/40 ring-1
+                // ring-foreground/35` (`library/page.tsx:318`), with no
+                // `--primary` anywhere on the page. Coral was a native
+                // invention, and one that put the accent on a selection state —
+                // the exact thing the shell spent this pass removing.
                 RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                    .strokeBorder(Color.junoAccent, lineWidth: 2)
+                    .strokeBorder(Color.primary.opacity(0.4), lineWidth: 2)
                     .opacity(isSelected ? 1 : 0)
             }
             .overlay(alignment: .topLeading) {
@@ -335,10 +341,25 @@ struct DesktopLibraryScreen: View {
                     .padding(JunoSpace.snug)
                     .opacity(isSelected || hoveredID == item.id ? 1 : 0)
             }
+            // The web's `group-hover/card:-translate-y-0.5` — the tile rises a
+            // couple of points under the pointer while the name below it stays
+            // put, which is what tells a reader the picture is the thing they can
+            // act on. `.offset` and not a frame change, so the lift cannot move
+            // the hover region out from under the pointer and flicker.
+            .offset(y: hoveredID == item.id ? -2 : 0)
+            .animation(
+                JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
+                value: hoveredID == item.id
+            )
     }
 
     /// The web's `SelectCheck`: a way to build a selection without knowing that
     /// ⌘-click exists. It appears on hover and stays while the file is selected.
+    ///
+    /// Checked inverts to `bg-foreground text-background`, which is the web's own
+    /// treatment (`library/page.tsx:141-144`) and the same rule the connections
+    /// filter chip already follows: a selection state is stated by inverting the
+    /// ink, not by spending the accent on it.
     private func selectionBadge(_ item: NativeLibraryItem, isSelected: Bool) -> some View {
         Button {
             toggle(item)
@@ -347,7 +368,7 @@ struct DesktopLibraryScreen: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .symbolRenderingMode(.palette)
-                        .foregroundStyle(Color.junoOnAccent, Color.junoAccent)
+                        .foregroundStyle(Color.junoCanvasWarm, Color.primary)
                 } else {
                     Image(systemName: "circle")
                         .foregroundStyle(.secondary)
@@ -372,8 +393,12 @@ struct DesktopLibraryScreen: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } icon: {
+                    // Neutral, as the web draws every file glyph on this page
+                    // (`text-muted-foreground`, `library/page.tsx:359`). A coral
+                    // icon in *every* row is the accent describing nothing: it
+                    // marked no state and distinguished no file from any other.
                     Image(systemName: item.isImage ? "photo" : "doc.text")
-                        .foregroundStyle(Color.junoAccent)
+                        .foregroundStyle(Color.junoMutedForeground)
                 }
                 .help(item.fileName)
             }
@@ -411,6 +436,12 @@ struct DesktopLibraryScreen: View {
         // Rows carry three columns of numbers and identifiers; alternating
         // backgrounds are what keeps the eye on one file across them.
         .tableStyle(.inset(alternatesRowBackgrounds: true))
+        // Selection in the web's warm grey rather than the app accent macOS
+        // reaches for. A `Table` publishes no per-row background, so unlike the
+        // search list this is the only lever the platform offers here — and it
+        // is the right one: the table keeps drawing its own selection, including
+        // the range a ⇧-click builds and the inactive-window state.
+        .junoSidebarSelectionTint()
         // The table supplies its own row fills, so the card underneath only has
         // to provide the white ground, the hairline and the throw. Without
         // hiding the scroll background the table would paint the window's own
@@ -540,10 +571,13 @@ struct DesktopLibraryScreen: View {
                 action: refresh
             )
         } else if model.items.isEmpty {
+            // The website's own empty library draws `AppIcons.library`
+            // (`library/page.tsx:726`); a stack of books is a mark from another
+            // product. Same for the no-match state below and its search glyph.
             JunoEmptyState(
                 title: "Your library is empty",
                 message: "Files and images you share with Juno appear here automatically.",
-                symbol: "books.vertical",
+                icon: .library,
                 actionLabel: "Refresh",
                 action: refresh
             )
@@ -551,7 +585,7 @@ struct DesktopLibraryScreen: View {
             JunoEmptyState(
                 title: "No matching files",
                 message: noMatchMessage,
-                symbol: "magnifyingglass",
+                icon: .search,
                 actionLabel: clearLabel,
                 action: clearNarrowing
             )

@@ -2,17 +2,25 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The three things the inspector is *for*.
+/// The four things the inspector is *for*.
 ///
 /// The pane's width decides what can honestly live in it: lists can, editors and
-/// viewports cannot. So the inspector keeps exactly the three list-shaped
-/// concerns and nothing else. The diff moved to the review canvas, machine
-/// output to the console drawer, the preview to its own window and the file tree
-/// to Open Quickly — each because it needs a width or a lifetime a 320pt trailing
-/// column cannot give it.
+/// viewports cannot. So the inspector keeps exactly the list-shaped concerns and
+/// nothing else. The diff moved to the review canvas, machine output to the
+/// console drawer, the preview to its own window and the file tree to Open
+/// Quickly — each because it needs a width or a lifetime a 320pt trailing column
+/// cannot give it.
+///
+/// Sub-agents earned a segment of their own rather than staying a section of
+/// Activity. A delegated run is several concurrent agents with their own names,
+/// states and durations; folded under a heading between "what tool is running"
+/// and the screen-capture controls, the one surface that answers "what is
+/// happening in parallel right now" was three scroll positions from the top of a
+/// pane the reader had no reason to open.
 public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
     case changes
     case activity
+    case subagents
     case repository
 
     public var id: String { rawValue }
@@ -21,7 +29,24 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .changes: "Changes"
         case .activity: "Activity"
+        case .subagents: "Sub-agents"
         case .repository: "Repository"
+        }
+    }
+
+    /// What the segmented control says.
+    ///
+    /// Shorter than ``label`` because a fourth segment costs every other one
+    /// about 20pt: at the inspector's 260pt minimum a segment has roughly 55pt
+    /// of text to work with, and a picker whose labels truncate to "Reposi…" is
+    /// worse than one that abbreviates on purpose. The full names stay on the
+    /// tooltip and the accessibility label.
+    public var segmentLabel: String {
+        switch self {
+        case .changes: "Changes"
+        case .activity: "Activity"
+        case .subagents: "Agents"
+        case .repository: "Repo"
         }
     }
 
@@ -30,7 +55,8 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         case .changes: "Files this session changed, and the way into the review"
         // Screen control lives here, so the help names it: a reader looking for
         // the kill switch should not have to open three panes to find it.
-        case .activity: "What the run is doing, what it delegated, and its screen control"
+        case .activity: "What the run is doing, and its screen control"
+        case .subagents: "Every sub-agent this session delegated, running and finished"
         case .repository: "Branch, working tree, commits and pull request"
         }
     }
@@ -38,9 +64,9 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 
 /// The trailing inspector.
 ///
-/// Three labelled segments instead of nine glyph tabs behind an overflow menu.
-/// Nothing here paints its own background: an inspector is a vibrant region on
-/// macOS, and filling it turns a native pane into a grey slab.
+/// Labelled segments instead of nine glyph tabs behind an overflow menu. Nothing
+/// here paints its own background: an inspector is a vibrant region on macOS,
+/// and filling it turns a native pane into a grey slab.
 public struct InspectorView: View {
     @Bindable private var controller: SessionController
     @SceneStorage("juno.code.inspector.pane") private var storedPane =
@@ -78,7 +104,9 @@ public struct InspectorView: View {
         VStack(spacing: 0) {
             Picker("Inspector pane", selection: pane) {
                 ForEach(CodeInspectorPane.allCases) { candidate in
-                    Text(candidate.label).tag(candidate)
+                    Text(candidate.segmentLabel)
+                        .accessibilityLabel(candidate.label)
+                        .tag(candidate)
                 }
             }
             .pickerStyle(.segmented)
@@ -99,6 +127,8 @@ public struct InspectorView: View {
                     ChangesTab(controller: controller, review: review)
                 case .activity:
                     ActivityTab(controller: controller)
+                case .subagents:
+                    SubagentPane(controller: controller)
                 case .repository:
                     RepositoryTab(controller: controller)
                 }
@@ -148,9 +178,23 @@ struct ChangesTab: View {
             } else {
                 VStack(spacing: 0) {
                     List(controller.changes, selection: $selection) { change in
-                        row(change).tag(change.path)
+                        row(change)
+                            // Pinned inside the row, where it outranks the
+                            // emphasis style the selected row pushes in. White
+                            // ink on the pale selection fill below would be
+                            // invisible.
+                            .junoSidebarRowInk()
+                            .tag(change.path)
                     }
                     .listStyle(.inset)
+                    // macOS paints a focused list selection in the *app's*
+                    // accent, and Juno's accent asset is coral — so choosing a
+                    // changed file lit a full-width saturated orange bar inside
+                    // Juno Code's inspector. The web spends coral on one primary
+                    // action and never on a whole row; its selected row is
+                    // `--sidebar-accent`, a warm grey barely a step off the
+                    // surface, which is exactly what this tint installs.
+                    .junoSidebarSelectionTint()
                     .accessibilityIdentifier("juno.code.changes")
                     .onChange(of: selection) {
                         guard let selection else { return }

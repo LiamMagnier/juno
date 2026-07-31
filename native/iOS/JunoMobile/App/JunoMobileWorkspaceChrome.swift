@@ -49,6 +49,13 @@ struct JunoMobileSegmented<Value: Hashable>: View {
                     Text(option.title)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(selected ? Color.primary : Color.junoMutedForeground)
+                        // A switch that wraps is not a switch. This one is now
+                        // used inside the Code composer, where three options,
+                        // a repository chip and Send share one line on a small
+                        // phone — so the labels give up a little size under
+                        // pressure rather than breaking onto a second row.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
                         .padding(.horizontal, 14)
                         .frame(height: 28)
                         .background {

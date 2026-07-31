@@ -535,6 +535,24 @@ public struct CodeSession: Hashable, Codable, Sendable {
     /// store is a JSON file on the reader's own disk; a decode failure here
     /// does not degrade, it empties the whole Code section.
     public let workspaceID: WorkspaceID?
+    /// The session that delegated this one, when it is a sub-agent rather than a
+    /// conversation the reader started.
+    ///
+    /// This is the difference between a sub-agent that runs *inside* a
+    /// conversation and one that appears beside it. A child used to be an
+    /// ordinary peer session — the sidebar had no way to tell it apart, so a
+    /// delegated investigation surfaced as a second chat under the project, which
+    /// is the one thing delegation is supposed to avoid. Every list surface now
+    /// filters on this; nothing else about a child session changes, so it keeps
+    /// its own transcript, its own status and its own store entry, and stays
+    /// fully addressable by the panel that shows it.
+    ///
+    /// Nil means "top level", which is what every record written before this
+    /// field existed decodes to — the synthesized `Codable` conformance reads an
+    /// optional with `decodeIfPresent`, so an older session keeps behaving
+    /// exactly as it did. It stays a `let` for the same reason `workspaceID`
+    /// does: parentage is fixed at creation.
+    public let parentSessionID: CodeSessionID?
     public var title: String
     public var status: SessionStatus
     public var configuration: AgentConfiguration
@@ -548,9 +566,15 @@ public struct CodeSession: Hashable, Codable, Sendable {
     public let createdAt: Date
     public var updatedAt: Date
 
+    /// True when this session is a sub-agent of another. The sidebar, the
+    /// project groups and the recents list all read this rather than the title,
+    /// which is presentation and can be renamed.
+    public var isSubagent: Bool { parentSessionID != nil }
+
     public init(
         id: CodeSessionID = CodeSessionID(),
         workspaceID: WorkspaceID?,
+        parentSessionID: CodeSessionID? = nil,
         title: String,
         status: SessionStatus = .idle,
         configuration: AgentConfiguration,
@@ -564,6 +588,7 @@ public struct CodeSession: Hashable, Codable, Sendable {
     ) {
         self.id = id
         self.workspaceID = workspaceID
+        self.parentSessionID = parentSessionID
         self.title = title
         self.status = status
         self.configuration = configuration

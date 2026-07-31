@@ -479,21 +479,30 @@ struct JunoMobileArtifactsView: View {
         .scrollBounceBehavior(.basedOnSize)
     }
 
+    /// The web's `bg-foreground text-background` inversion, not the accent.
+    ///
+    /// Coral is spent on primary actions and never on a filter — a row of chips
+    /// where the selected one is the brightest thing on the screen reads as five
+    /// buttons of which one is urgent. Ink-on-canvas says "this one" just as
+    /// clearly and costs the accent nothing. The Mac's connector chips already
+    /// follow this rule; this is the phone catching up.
     private func chip(_ kind: NativeArtifactKind?, label: String) -> some View {
         let active = kindFilter == kind
         return Button {
-            kindFilter = kind
+            withAnimation(JunoMobileMotion.easeOutSoft(JunoMobileMotion.durBase)) {
+                kindFilter = kind
+            }
         } label: {
             Text(label)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(active ? Color.white : Color.primary)
+                .foregroundStyle(active ? Color.junoCanvas : Color.primary)
                 .padding(.horizontal, 13)
                 .frame(height: 32)
                 .background(
-                    Capsule().fill(active ? Color.junoAccent : Color.primary.opacity(0.06))
+                    Capsule().fill(active ? Color.primary : Color.primary.opacity(0.06))
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(JunoMobileChipPressStyle())
         .accessibilityAddTraits(active ? [.isButton, .isSelected] : .isButton)
     }
 
@@ -1009,13 +1018,27 @@ private struct JunoMobileProjectDetail: View {
     }
 }
 
-/// Internal, not private: the chat transcript presents this over the conversation
-/// when an artifact card is tapped, which is the phone's answer to the web docking
-/// its canvas beside the thread.
+/// Internal, not private: the chat transcript shows this beside the thread on a
+/// wide screen and over it on a phone, which is the two shapes the website's
+/// canvas takes.
+///
+/// **Two chromes, one screen.** Pushed from the Artifacts list this is a *page*:
+/// the navigation bar owns the title and the actions, and the artifact's identity
+/// is stated once in the editorial serif below it. Opened from a conversation it
+/// is the web's *canvas* instead — `close` is non-nil — and it draws
+/// `canvas-panel.tsx`'s own header: the title small and semibold, a monospaced
+/// meta line under it, then the view switch, share and the close control on one
+/// line. That mode deliberately sets no `navigationTitle` and adds no toolbar
+/// items: docked, it is a pane inside the *conversation's* navigation stack, and
+/// either one would rename the chat the reader is still looking at.
 struct JunoMobileArtifactDetail: View {
     @Bindable var model: NativeArtifactModel<SQLiteAccountRepository>
     let artifact: NativeArtifact
     let openConversation: (String) -> Void
+    /// Dismisses the canvas. Non-nil only where this view *is* the presentation —
+    /// the docked pane and the phone's sheet. Nil when pushed as a page, where
+    /// the navigation bar's back button already does this job.
+    var close: (() -> Void)?
     @State private var selectedVersion = 0
     @State private var displayMode = NativeArtifactDisplayMode.preview
     @State private var showingRename = false
@@ -1153,25 +1176,99 @@ struct JunoMobileArtifactDetail: View {
         }
     }
 
-    /// Header, then one switch, then the artifact — with the artifact getting the
-    /// screen.
-    ///
-    /// What this replaces: a coral text button standing in for a link to the
-    /// conversation, a full-width `.segmented` `Picker`, a naked `Picker` for the
-    /// version, and a second coral row reading "Share source" — four competing
-    /// controls stacked above a hairline, and *then* the thing the screen is
-    /// about. The identity is now stated once at the top, the facts are quiet
-    /// chips, Share is an icon beside the switch, and the artifact starts higher
-    /// up the screen than it used to end.
-    var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                header
+    /// The website's canvas header: identity, then one line of monospaced facts,
+    /// then the controls. `canvas-panel.tsx` draws the same three things in the
+    /// same order, and the mono line is what makes an artifact read as a *file*
+    /// rather than as another card in the chat.
+    private var canvasHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(artifact.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(metaLine)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(Color.junoMutedForeground)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 6)
+                if let version, version.version != artifact.currentVersion {
+                    restoreButton
+                }
+                actionsMenu
+                if let close {
+                    Button(action: close) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Color.primary)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close artifact")
+                    .accessibilityIdentifier("juno.mobile.artifact-close")
+                }
+            }
+
+            HStack(spacing: 10) {
+                if artifact.versions.count > 1 { versionChip }
                 controls
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 14)
+        }
+        .padding(.horizontal, 14)
+        // Taller at the top than the bottom: presented as a sheet there is no
+        // navigation bar above this, only the drag indicator, and a title that
+        // starts flush under it reads as a collision.
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+        // `bg-card/50` over a hairline: the header is chrome, so it reads one
+        // step off the canvas the artifact itself sits on.
+        .background(Color.junoSurface.opacity(0.5))
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Color.junoHairline)
+                .frame(height: 1)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// `runtime · where it came from · version`, the web's own order.
+    private var metaLine: String {
+        var parts = [kindName]
+        if let language = artifact.language, !language.isEmpty {
+            parts.append(language.uppercased())
+        }
+        parts.append("From this conversation")
+        parts.append("v\(selectedVersion == 0 ? artifact.currentVersion : selectedVersion)")
+        return parts.joined(separator: " · ")
+    }
+
+    private var restoreButton: some View {
+        Button("Restore") {
+            guard let version else { return }
+            Task { await model.restoreArtifact(id: artifact.id, version: version.version) }
+        }
+        .disabled(model.isMutating)
+    }
+
+    /// Whichever header this presentation calls for, then the artifact itself.
+    private var surface: some View {
+        VStack(spacing: 0) {
+            if close == nil {
+                VStack(alignment: .leading, spacing: 12) {
+                    header
+                    controls
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 14)
+            } else {
+                canvasHeader
+            }
 
             if let version {
                 NativeArtifactPreview(
@@ -1188,8 +1285,9 @@ struct JunoMobileArtifactDetail: View {
                     RoundedRectangle(cornerRadius: JunoCornerRadius.card, style: .continuous)
                         .strokeBorder(Color.junoHairline, lineWidth: 1)
                 )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 16)
+                .padding(.horizontal, close == nil ? 16 : 12)
+                .padding(.top, close == nil ? 0 : 12)
+                .padding(.bottom, close == nil ? 16 : 12)
             } else {
                 ContentUnavailableView(
                     "Version unavailable",
@@ -1199,50 +1297,74 @@ struct JunoMobileArtifactDetail: View {
             }
         }
         .background(Color.junoCanvas)
-        .navigationTitle(artifact.title)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            if let version, version.version != artifact.currentVersion {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Restore") {
-                        Task {
-                            await model.restoreArtifact(
-                                id: artifact.id,
-                                version: version.version
-                            )
-                        }
+    }
+
+    /// The navigation chrome, applied **only** in page mode.
+    ///
+    /// Docked, this view is a pane inside the conversation's own navigation
+    /// stack: a `navigationTitle` here would rename the chat the reader is still
+    /// looking at, and a `toolbar` would move the artifact's actions onto the
+    /// conversation's bar. Both live in ``canvasHeader`` in that mode instead.
+    @ViewBuilder
+    private func pageChrome(_ content: some View) -> some View {
+        if close == nil {
+            content
+                .navigationTitle(artifact.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if let version, version.version != artifact.currentVersion {
+                        ToolbarItem(placement: .topBarTrailing) { restoreButton }
                     }
-                    .disabled(model.isMutating)
+                    ToolbarItem(placement: .topBarTrailing) { actionsMenu }
                 }
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Edit") {
-                        editValue = artifact.currentContent ?? ""
-                        showingEditor = true
-                    }
-                    .disabled(artifact.currentContent == nil)
-                    Button("Rename") {
-                        renameValue = artifact.title
-                        showingRename = true
-                    }
-                    if !model.availableExportFormats.isEmpty {
-                        Section("Export") {
-                            ForEach(model.availableExportFormats, id: \.rawValue) { format in
-                                Button(format.rawValue.uppercased()) { export(format) }
-                            }
-                        }
-                    }
-                    Button("Delete", role: .destructive) { showingDelete = true }
-                } label: {
-                    Image(systemName: "ellipsis")
-                }
-                .tint(Color.primary)
-                .disabled(model.isMutating || model.isExporting)
-                .accessibilityLabel("Artifact actions")
-                .accessibilityIdentifier("juno.mobile.artifact-menu")
-            }
+        } else {
+            content
         }
+    }
+
+    /// The overflow, shared by the page's navigation bar and the canvas header so
+    /// an artifact opened from a chat can do everything one opened from the
+    /// library can.
+    private var actionsMenu: some View {
+        Menu {
+            Button("Edit") {
+                editValue = artifact.currentContent ?? ""
+                showingEditor = true
+            }
+            .disabled(artifact.currentContent == nil)
+            Button("Rename") {
+                renameValue = artifact.title
+                showingRename = true
+            }
+            if !model.availableExportFormats.isEmpty {
+                Section("Export") {
+                    ForEach(model.availableExportFormats, id: \.rawValue) { format in
+                        Button(format.rawValue.uppercased()) { export(format) }
+                    }
+                }
+            }
+            Button("Delete", role: .destructive) { showingDelete = true }
+        } label: {
+            Image(systemName: "ellipsis")
+        }
+        .tint(Color.primary)
+        .disabled(model.isMutating || model.isExporting)
+        .accessibilityLabel("Artifact actions")
+        .accessibilityIdentifier("juno.mobile.artifact-menu")
+    }
+
+    /// Header, then one switch, then the artifact — with the artifact getting the
+    /// screen.
+    ///
+    /// What this replaces: a coral text button standing in for a link to the
+    /// conversation, a full-width `.segmented` `Picker`, a naked `Picker` for the
+    /// version, and a second coral row reading "Share source" — four competing
+    /// controls stacked above a hairline, and *then* the thing the screen is
+    /// about. The identity is now stated once at the top, the facts are quiet
+    /// chips, Share is an icon beside the switch, and the artifact starts higher
+    /// up the screen than it used to end.
+    var body: some View {
+        pageChrome(surface)
         .onAppear {
             selectedVersion = artifact.currentVersion
             displayMode = artifact.kind.supportsRenderedPreview ? .preview : .source

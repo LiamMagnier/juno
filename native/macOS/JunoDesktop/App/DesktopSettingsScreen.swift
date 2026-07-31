@@ -675,6 +675,12 @@ private extension View {
 /// Used where a tile's job is to lead somewhere rather than to hold a control,
 /// so those tiles read as one kind of thing instead of each inventing its own
 /// button.
+///
+/// The glyph is neutral. The website's settings page spends `--primary` on
+/// exactly two things — a plan's feature ticks and the tick beside a chosen
+/// option — and never on the icon of a row that merely leads somewhere. A coral
+/// glyph on every navigation row made the accent mean "this is a row" rather
+/// than "this is the one thing to do here", which is the whole job it has.
 private struct DesktopSettingsAction: View {
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
@@ -688,7 +694,7 @@ private struct DesktopSettingsAction: View {
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 Image(systemName: symbol)
                     .font(.system(size: 15))
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 22)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {

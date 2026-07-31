@@ -10,10 +10,6 @@ import JunoDesignSystem
 /// reports progress.
 struct ActivityTab: View {
     @Bindable var controller: SessionController
-    /// Selects a sub-agent's own session in the sidebar. Absent when the host has
-    /// no selection to drive, in which case the row still expands in place and the
-    /// control is not offered at all rather than offered and inert.
-    var selectSession: ((CodeSessionID) -> Void)?
 
     private var currentTool: (name: String, summary: String)? {
         var completed: Set<String> = []
@@ -73,7 +69,7 @@ struct ActivityTab: View {
                 )
             }
 
-            subagentsSection
+            delegationSummary
 
             // Consent, the two TCC grants, the captured display, the latest
             // capture and the action record — see `ComputerUsePane.swift` for
@@ -86,15 +82,29 @@ struct ActivityTab: View {
 
     // MARK: - Sub-agents
 
-    /// Delegated tasks, and what each one's own session recorded.
+    /// How much of this run is happening in parallel, and nothing more.
     ///
-    /// `CodeSession` has no parent link and the local runtime emits no live child
-    /// status, so a row states the delegating call's state and loads the child's
-    /// real transcript when it is opened. Nothing is estimated in between: there
-    /// is no progress bar, because nothing reports progress. The section and its
-    /// rows live in `SubagentInspector.swift`.
-    private var subagentsSection: some View {
-        SubagentSection(controller: controller, selectSession: selectSession)
+    /// The agents themselves moved to their own pane. What belongs here is the
+    /// same question this pane already answers about tools — *what is the run
+    /// doing right now* — for which the count of live agents is the answer and a
+    /// second list of them would be a duplicate. It is drawn only while a
+    /// delegation exists, so a session that never delegated carries no row about
+    /// delegation.
+    @ViewBuilder
+    private var delegationSummary: some View {
+        let runs = controller.subagents
+        let active = runs.filter(\.isActive).count
+        if !runs.isEmpty {
+            Section("Delegation") {
+                LabeledContent(
+                    "Sub-agents",
+                    value: active > 0
+                        ? "\(active) of \(runs.count) running"
+                        : "\(runs.count) finished"
+                )
+                .help("Open the Sub-agents pane to read each one")
+            }
+        }
     }
 
     private var elapsedLabel: String {

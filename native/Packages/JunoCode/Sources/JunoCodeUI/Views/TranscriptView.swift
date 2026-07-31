@@ -14,7 +14,6 @@ public struct TranscriptView: View {
     /// Model identifiers are opaque outside the workbench, so the display names
     /// come in from the caller that knows them.
     let modelDisplayNames: [String: String]
-    let openSession: @MainActor @Sendable (CodeSessionID) -> Void
     var focus: FocusState<Bool>.Binding?
 
     /// The transcript's measure. Long-form agent prose past roughly 90
@@ -25,12 +24,10 @@ public struct TranscriptView: View {
     public init(
         controller: SessionController,
         modelDisplayNames: [String: String] = [:],
-        openSession: @escaping @MainActor @Sendable (CodeSessionID) -> Void = { _ in },
         focus: FocusState<Bool>.Binding? = nil
     ) {
         self.controller = controller
         self.modelDisplayNames = modelDisplayNames
-        self.openSession = openSession
         self.focus = focus
     }
 
@@ -83,7 +80,8 @@ public struct TranscriptView: View {
             loadDiff: { [controller] path in
                 await controller.diff(for: path)
             },
-            openSession: openSession
+            subagents: controller.subagents,
+            subagentActivity: controller.subagentActivity
         )
     }
 

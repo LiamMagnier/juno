@@ -113,10 +113,14 @@ public struct CodeSessionCanvas: View {
         if showsReview {
             ReviewCanvasView(controller: controller, review: controller.review)
         } else {
+            // No session-selection callback by design. A sub-agent's transcript
+            // opens inside this one, under the call that delegated it; handing
+            // the transcript a way to change `selectedSessionID` is what used to
+            // let "Open sub-agent" replace the reader's conversation with the
+            // child's.
             TranscriptView(
                 controller: controller,
                 modelDisplayNames: model.modelDisplayNames,
-                openSession: { model.selectedSessionID = $0 },
                 focus: $composerFocused
             )
         }

@@ -90,6 +90,13 @@ public enum JunoIcon: String, CaseIterable, Sendable {
     case home, code, library, artifacts, projects
     case tasks, connections, pulls, conversation, new, search
 
+    /// The web reaches Settings from the user menu rather than the rail, so this
+    /// mark had no destination row to be generated for and the native sidebars —
+    /// which do have one — fell back to `gearshape`. One SF Symbol sitting in a
+    /// column of Lucide marks reads as a glyph borrowed from another product,
+    /// which is exactly the drift this enum exists to prevent.
+    case settings
+
     /// Juno Code's vocabulary. `pin` is a pin and never a star, `error` is a
     /// circle and never a triangle, and `branch` covers repository, default
     /// branch and base ref alike — each because that is what the web draws.

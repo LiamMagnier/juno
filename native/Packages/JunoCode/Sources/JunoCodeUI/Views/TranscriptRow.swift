@@ -22,8 +22,12 @@ struct TranscriptContext {
     /// checkpoint. Nil where the change predates a checkpoint or the file is
     /// gone — in which case the row simply does not offer to open.
     var loadDiff: @MainActor @Sendable (String) async -> TextDiff? = { _ in nil }
-    /// Selects a session in the sidebar.
-    var openSession: @MainActor @Sendable (CodeSessionID) -> Void = { _ in }
+    /// The sub-agents this session delegated, grouped by the call that asked for
+    /// them, so a `delegate_task` row can show its own agents without walking
+    /// the event list again.
+    var subagents: [String: [SubagentRun]] = [:]
+    /// What each running sub-agent is doing right now, keyed by its session.
+    var subagentActivity: [CodeSessionID: String] = [:]
     /// 0 for the session's own transcript, 1 inside a sub-agent's. A child never
     /// nests further: `DelegateTaskTool` cannot delegate, so there is nothing
     /// deeper to show, and an unbounded tree in a transcript is a maze.
@@ -39,14 +43,16 @@ struct TranscriptContext {
         loadSubAgent: @escaping @MainActor @Sendable (CodeSessionID) async -> [SessionEvent]
             = { _ in [] },
         loadDiff: @escaping @MainActor @Sendable (String) async -> TextDiff? = { _ in nil },
-        openSession: @escaping @MainActor @Sendable (CodeSessionID) -> Void = { _ in },
+        subagents: [SubagentRun] = [],
+        subagentActivity: [CodeSessionID: String] = [:],
         depth: Int = 0
     ) {
         self.events = events
         self.pendingApprovalIDs = pendingApprovalIDs
         self.loadSubAgent = loadSubAgent
         self.loadDiff = loadDiff
-        self.openSession = openSession
+        self.subagents = Dictionary(grouping: subagents, by: \.toolCallID)
+        self.subagentActivity = subagentActivity
         self.depth = depth
         var completions: [String: ToolCompletedEvent] = [:]
         var outputs: [String: [ToolOutputEvent]] = [:]
@@ -72,6 +78,11 @@ struct TranscriptContext {
     func output(forToolCall id: String) -> [ToolOutputEvent] { outputs[id] ?? [] }
     func decision(forApproval id: String) -> ApprovalDecision? { approvalDecisions[id] }
 
+    /// The sub-agents one `delegate_task` call asked for, in the order it asked.
+    func subagents(forToolCall id: String) -> [SubagentRun] {
+        subagents[id] ?? []
+    }
+
     /// The context for a sub-agent's own transcript.
     func child(events: [SessionEvent]) -> TranscriptContext {
         TranscriptContext(
@@ -79,7 +90,6 @@ struct TranscriptContext {
             pendingApprovalIDs: [],
             loadSubAgent: loadSubAgent,
             loadDiff: loadDiff,
-            openSession: openSession,
             depth: depth + 1
         )
     }
@@ -550,15 +560,18 @@ struct ToolActivityRow: View {
 
     private var isRunning: Bool { completion == nil }
 
-    /// The sub-agent this call delegated to, when it got far enough to create
-    /// one. Correlated through the marker line the tool returns, which is the
-    /// only link there is: a child is an ordinary session with no parent field.
-    private var childSessionID: CodeSessionID? {
-        guard proposed.toolName == SubagentDigest.toolName,
-              context.depth == 0,
-              let summary = completion?.resultSummary
-        else { return nil }
-        return SubagentDigest.childSessionID(in: summary)
+    /// The sub-agents this call delegated, live.
+    ///
+    /// They exist from the moment the call is authorised, not from the moment it
+    /// returns: the runtime records each agent's lifecycle in this transcript, so
+    /// a delegation in flight is a named list of agents with their own statuses
+    /// rather than a spinner on a row called `delegate_task`. Nested only one
+    /// deep, because a sub-agent cannot delegate.
+    private var delegated: [SubagentRun] {
+        guard proposed.toolName == SubagentDigest.toolName, context.depth == 0 else {
+            return []
+        }
+        return context.subagents(forToolCall: proposed.toolCallID)
     }
 
     /// Only an unfinished or failed call is worth opening on sight. A succeeded
@@ -566,7 +579,30 @@ struct ToolActivityRow: View {
     private var hasDetail: Bool {
         !output.isEmpty
             || !(completion?.resultSummary.isEmpty ?? true)
-            || childSessionID != nil
+            || !delegated.isEmpty
+    }
+
+    /// "2 running · 1 done" — what a delegation is doing, on the collapsed row.
+    ///
+    /// This replaced the tool's own name as the subtitle for `delegate_task`.
+    /// The name said nothing a reader could act on while four agents worked
+    /// underneath it, and the row was the only thing on screen describing them.
+    private var delegationSubtitle: String? {
+        let runs = delegated
+        guard !runs.isEmpty else { return nil }
+        // Queued is counted apart from running rather than folded into it. An
+        // agent waiting for a concurrency slot — or for the reader to authorise
+        // the call — is not working, and saying it is would be the row claiming
+        // progress that is not happening.
+        let queued = runs.filter { $0.status == .queued || $0.status == .preparing }.count
+        let running = runs.filter { $0.status == .running || $0.status == .waitingForApproval }
+            .count
+        let done = runs.count - queued - running
+        var parts: [String] = []
+        if running > 0 { parts.append("\(running) running") }
+        if queued > 0 { parts.append("\(queued) queued") }
+        if done > 0 { parts.append("\(done) done") }
+        return parts.joined(separator: " · ")
     }
 
     var body: some View {
@@ -586,7 +622,7 @@ struct ToolActivityRow: View {
                             .font(.callout)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        Text(proposed.toolName)
+                        Text(delegationSubtitle ?? proposed.toolName)
                             .junoCodeSmall()
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -645,8 +681,8 @@ struct ToolActivityRow: View {
             if !output.isEmpty {
                 OutputWell(lines: output.map { ($0.text, $0.channel) }, maxHeight: 200)
             }
-            if let childSessionID {
-                SubAgentTranscript(childSessionID: childSessionID, context: context)
+            ForEach(delegated) { run in
+                SubAgentTranscript(run: run, context: context)
             }
         }
     }
@@ -690,16 +726,23 @@ struct ToolActivityRow: View {
 
 // MARK: - Sub-agents
 
-/// A delegated sub-agent's own transcript, expandable in place.
+/// One delegated sub-agent, in the conversation that delegated it.
 ///
-/// The child is a real session in the same store, so it renders through the same
-/// rows as its parent rather than through a summary of them — a sub-agent that
-/// read six files and concluded the wrong thing is only inspectable if its steps
-/// are the same shape as everything else in the window. Loaded when the reader
-/// asks, because a run can delegate several times and eagerly reading every
-/// child's transcript would mean a disk read per row.
+/// This is the "behind the scenes, but visible" half of delegation. The agent is
+/// named, its state is live, and its own steps open *here* — under the call that
+/// asked for them, in the parent's own transcript. There is deliberately no way
+/// out of this row: the previous build offered "Open sub-agent", which swapped
+/// the whole workbench onto the child's session and left the reader in a second
+/// conversation they then had to navigate back out of. Everything that link led
+/// to is below it instead.
+///
+/// The child's transcript is loaded when the reader asks, because a run can
+/// delegate four agents and eagerly reading every one of them would mean a disk
+/// read per row. It reloads while the agent is still working, because a
+/// transcript read once mid-run would freeze at whatever the agent had done at
+/// the moment it was opened.
 struct SubAgentTranscript: View {
-    let childSessionID: CodeSessionID
+    let run: SubagentRun
     let context: TranscriptContext
 
     @State private var events: [SessionEvent] = []
@@ -707,65 +750,168 @@ struct SubAgentTranscript: View {
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var activity: String {
+        guard run.isActive else { return "" }
+        if let child = run.childSessionID,
+           let live = context.subagentActivity[child],
+           !live.isEmpty
+        {
+            return live
+        }
+        return run.currentActivity
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: JunoSpace.tight) {
-            HStack(spacing: JunoSpace.snug) {
-                Button {
-                    withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
-                        expanded.toggle()
-                    }
-                } label: {
-                    HStack(spacing: JunoSpace.hairline) {
-                        Image(systemName: "chevron.right")
-                            .imageScale(.small)
-                            .rotationEffect(.degrees(expanded ? 90 : 0))
-                        Text("Sub-agent transcript")
-                    }
-                    .font(.caption)
-                    .contentShape(.rect)
+            Button {
+                guard run.childSessionID != nil else { return }
+                withAnimation(JunoMotion.reduced(JunoMotion.fast, when: reduceMotion)) {
+                    expanded.toggle()
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Sub-agent transcript")
-                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
-
-                Button("Open sub-agent") {
-                    context.openSession(childSessionID)
-                }
-                .buttonStyle(.link)
-                .font(.caption)
-                .help("Select this sub-agent's session in the sidebar")
-
-                Spacer(minLength: 0)
-            }
-
-            if expanded {
-                if loaded, events.isEmpty {
-                    Text("This sub-agent's transcript is no longer in the store.")
-                        .junoCaption()
-                } else if !loaded {
-                    ProgressView().controlSize(.small)
-                } else {
-                    // Left rule rather than a nested card: the child's rows are
-                    // the same rows, one indent in.
-                    VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                        ForEach(events) { event in
-                            TranscriptRow(event: event, context: context.child(events: events))
+            } label: {
+                HStack(spacing: JunoSpace.snug) {
+                    SubagentStatusGlyph(status: run.status)
+                        .frame(width: 14, alignment: .center)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(run.title)
+                            .font(.caption.weight(.medium))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        if !activity.isEmpty {
+                            Text(activity)
+                                .junoCodeSmall()
+                                .foregroundStyle(.tertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
                         }
                     }
-                    .padding(.leading, JunoSpace.snug)
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(Color.junoSeparator)
-                            .frame(width: 1)
+                    Spacer(minLength: JunoSpace.snug)
+                    SubagentElapsed(run: run)
+                    if run.childSessionID != nil {
+                        Image(systemName: "chevron.right")
+                            .imageScale(.small)
+                            .foregroundStyle(.tertiary)
+                            .rotationEffect(.degrees(expanded ? 90 : 0))
                     }
+                }
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(run.childSessionID == nil)
+            .accessibilityLabel(SubagentFormatting.accessibilityLabel(run))
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+            .accessibilityHint("Shows this sub-agent's own steps in place")
+
+            if expanded, let childSessionID = run.childSessionID {
+                Group {
+                    if loaded, events.isEmpty {
+                        Text("This sub-agent has not recorded anything yet.")
+                            .junoCaption()
+                    } else if !loaded {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        // Left rule rather than a nested card: the child's rows
+                        // are the same rows, one indent in.
+                        VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                            ForEach(events) { event in
+                                TranscriptRow(
+                                    event: event,
+                                    context: context.child(events: events)
+                                )
+                            }
+                        }
+                        .padding(.leading, JunoSpace.snug)
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(Color.junoSeparator)
+                                .frame(width: 1)
+                        }
+                    }
+                }
+                // Keyed on the activity as well as on the disclosure, so an open
+                // row follows the agent instead of showing the three steps it
+                // had taken when it was opened.
+                .task(id: TranscriptLoadKey(expanded: expanded, activity: activity)) {
+                    events = await context.loadSubAgent(childSessionID)
+                    loaded = true
                 }
             }
         }
-        .task(id: expanded) {
-            guard expanded, !loaded else { return }
-            events = await context.loadSubAgent(childSessionID)
-            loaded = true
+    }
+}
+
+/// What an open sub-agent row is currently showing. Reloading is keyed on this
+/// rather than on the disclosure alone, so a running agent's steps keep
+/// arriving and a finished one is read exactly once.
+private struct TranscriptLoadKey: Equatable {
+    let expanded: Bool
+    let activity: String
+}
+
+/// A sub-agent's status as one glyph, shared by the transcript and the panel so
+/// the same agent cannot read as two different states in two places.
+struct SubagentStatusGlyph: View {
+    let status: SubagentStatus
+
+    var body: some View {
+        switch status {
+        case .queued, .preparing:
+            Image(systemName: "clock")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+        case .running:
+            ProgressView().controlSize(.small)
+        case .waitingForApproval:
+            Image(systemName: "hand.raised.fill")
+                .imageScale(.small)
+                .foregroundStyle(Color.junoCaution)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .imageScale(.small)
+                .foregroundStyle(Color.junoSuccess)
+        case .failed:
+            Image(systemName: "xmark.circle.fill")
+                .imageScale(.small)
+                .foregroundStyle(Color.junoDanger)
+        case .cancelled:
+            Image(systemName: "stop.circle.fill")
+                .imageScale(.small)
+                .foregroundStyle(.secondary)
+        case .interrupted:
+            Image(systemName: "bolt.horizontal.circle.fill")
+                .imageScale(.small)
+                .foregroundStyle(Color.junoCaution)
         }
+    }
+}
+
+/// How long a sub-agent has been working, or how long it took.
+///
+/// An active agent ticks: the row is the only place a reader can see that a
+/// delegated investigation is progressing rather than wedged, and a static
+/// "started 4 minutes ago" answers a different question. It ticks once a second
+/// from the agent's own recorded start — never from the delegating call's
+/// proposal, which would silently include however long the call waited for an
+/// approval.
+struct SubagentElapsed: View {
+    let run: SubagentRun
+
+    var body: some View {
+        if run.isActive, let startedAt = run.startedAt {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                text(timeline.date.timeIntervalSince(startedAt))
+            }
+        } else if let seconds = run.durationSeconds {
+            text(seconds)
+        }
+    }
+
+    private func text(_ seconds: Double) -> some View {
+        Text(SubagentFormatting.duration(max(0, seconds)))
+            .junoCodeSmall()
+            .foregroundStyle(.tertiary)
+            .monospacedDigit()
+            .accessibilityHidden(true)
     }
 }
 

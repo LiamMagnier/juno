@@ -151,11 +151,21 @@ struct JunoMobileConnectionsView: View {
     /// list rather than separate screens — the web page's shape.
     private var filters: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Picker("connections.filter", selection: $model.showsConnectedOnly) {
-                Text("connections.filter.all").tag(false)
-                Text("connections.filter.connected").tag(true)
-            }
-            .pickerStyle(.segmented)
+            // Juno's own switch rather than `.pickerStyle(.segmented)`, whose
+            // selected segment takes the app tint and painted this filter coral.
+            // The website's tabs are neutral — the accent belongs to actions.
+            JunoMobileSegmented(
+                options: [
+                    JunoMobileSegmented<Bool>.Option(
+                        false, String(localized: "connections.filter.all")
+                    ),
+                    JunoMobileSegmented<Bool>.Option(
+                        true, String(localized: "connections.filter.connected")
+                    ),
+                ],
+                selection: $model.showsConnectedOnly,
+                accessibilityLabel: String(localized: "connections.filter")
+            )
 
             if !model.categories.isEmpty {
                 ScrollView(.horizontal) {

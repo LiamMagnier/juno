@@ -311,6 +311,18 @@ public final class SessionController {
     /// and empty whenever nothing is streaming. Never persisted: the
     /// `assistantMessage` event is the record, and this is replaced by it.
     public private(set) var liveAssistantText = ""
+    /// What each running sub-agent is doing at this moment, keyed by its own
+    /// session.
+    ///
+    /// Read live off the shared store rather than persisted into this
+    /// transcript. The child records every one of its tool calls in its own
+    /// event file; copying each of them up would double the write volume of a
+    /// delegated run to restate something already on disk one directory over.
+    /// The lifecycle transitions *are* persisted — see `SubagentUpdateEvent` —
+    /// so reopening a session still shows what each agent was and how it ended;
+    /// only the step-by-step ticker is transient, which is the correct lifetime
+    /// for a sentence that is only true for four seconds.
+    public private(set) var subagentActivity: [CodeSessionID: String] = [:]
     public var composerText = ""
     /// Files explicitly selected through the composer's `@file` typeahead.
     ///
@@ -376,6 +388,10 @@ public final class SessionController {
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
     private var openToolCallID: String?
+    /// The sub-agent sessions this transcript delegated that have not finished.
+    /// The store observer sees every session's events, so this is what tells a
+    /// child's step apart from an unrelated session's.
+    private var runningSubagentSessionIDs: Set<CodeSessionID> = []
     private var reviewStates: [String: TrackedChange.ReviewState] = [:]
     private var lineStatsOverrides: [String: (added: Int, removed: Int)] = [:]
     private var hunkReviewCheckpointIDs: Set<String> = []
@@ -729,6 +745,7 @@ public final class SessionController {
         let restored = await live.store.events(for: sessionID)
         events = restored
         rebuildTerminal()
+        rebuildSubagentIndex()
         rebuildDerivedState()
         if let current = try? await live.store.session(id: sessionID) {
             session = current
@@ -2039,11 +2056,11 @@ public final class SessionController {
 
     /// One sub-agent's own transcript, read from the shared session store.
     ///
-    /// `DelegateTaskTool` creates its children as ordinary sessions and returns
-    /// the child's identifier on the first line of its result. `CodeSession` has
-    /// no parent link, so that line is the only correlation there is — which is
-    /// also why a child is loaded on demand here rather than nested in the
-    /// parent's own event list.
+    /// A child is a real session — hidden from every list, but a full record —
+    /// so its rows render through the same views as its parent's rather than
+    /// through a summary of them. Loaded on demand rather than mirrored into the
+    /// parent's event list, because a run can delegate several times and eagerly
+    /// reading every child's transcript would mean a disk read per row.
     public func subAgentTranscript(_ childID: CodeSessionID) async -> [SessionEvent] {
         guard let live else { return [] }
         return await live.store.events(for: childID)
@@ -2061,6 +2078,54 @@ public final class SessionController {
         case let .eventAppended(event) where event.sessionID == sessionID:
             events.append(event)
             integrate(event)
+        // A sub-agent's own step. It belongs to a different session's transcript
+        // and is never appended to this one — it only updates the line the panel
+        // and the delegating row show while that agent is working.
+        case let .eventAppended(event)
+        where runningSubagentSessionIDs.contains(event.sessionID):
+            integrateSubagentStep(event)
+        default:
+            break
+        }
+    }
+
+    /// Reads the delegated sub-agents out of the restored transcript.
+    ///
+    /// Only the unfinished ones are indexed: a finished agent's session is
+    /// closed, so anything still arriving on it is somebody re-opening it, not
+    /// this run continuing.
+    private func rebuildSubagentIndex() {
+        runningSubagentSessionIDs = []
+        subagentActivity = [:]
+        for event in events {
+            guard case let .subagentUpdated(update) = event.payload else { continue }
+            applySubagentLifecycle(update)
+        }
+    }
+
+    private func applySubagentLifecycle(_ update: SubagentUpdateEvent) {
+        guard let child = update.childSessionID else { return }
+        if update.status.isTerminal {
+            runningSubagentSessionIDs.remove(child)
+            subagentActivity.removeValue(forKey: child)
+        } else {
+            runningSubagentSessionIDs.insert(child)
+            subagentActivity[child] = update.currentActivity
+        }
+    }
+
+    private func integrateSubagentStep(_ event: SessionEvent) {
+        switch event.payload {
+        // The proposal's summary is the same sentence the transcript prints for
+        // that call — "Read Sources/App.swift", "Search for `parentSessionID`" —
+        // so the ticker says what the agent is doing in the app's own words
+        // rather than in a vocabulary invented for the panel.
+        case let .toolProposed(proposed):
+            subagentActivity[event.sessionID] = proposed.summary
+        case .assistantMessage:
+            subagentActivity[event.sessionID] = "Writing its result"
+        case let .errorOccurred(error):
+            subagentActivity[event.sessionID] = error.message
         default:
             break
         }
@@ -2108,6 +2173,8 @@ public final class SessionController {
             if let openToolCallID {
                 lastTestRunToolCallID = openToolCallID
             }
+        case let .subagentUpdated(update):
+            applySubagentLifecycle(update)
         case .assistantMessage:
             // The persisted message is the same text that was streaming into
             // `liveAssistantText`; keeping both would render the reply twice.
@@ -2288,6 +2355,7 @@ public final class SessionController {
         self.transientError = fixture.transientError
         self.composerText = fixture.composerText
         self.runStartedAt = fixture.runStartedAt
+        rebuildSubagentIndex()
         rebuildDerivedState()
     }
 

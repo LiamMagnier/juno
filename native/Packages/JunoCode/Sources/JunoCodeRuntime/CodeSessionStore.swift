@@ -60,17 +60,25 @@ public actor CodeSessionStore {
     ///     session is created, persisted and streamed exactly as any other; it
     ///     simply has no folder, which the runtime reads as "no file or shell
     ///     tools" rather than as a missing value to fill in later.
+    ///   - parentSessionID: the session that delegated this one. Non-nil marks a
+    ///     sub-agent, which every list surface hides so a delegation cannot
+    ///     surface as a second conversation. It is still persisted, still
+    ///     notified and still readable by id — a hidden session that could not
+    ///     be opened would be a session the reader could never inspect or
+    ///     delete.
     public func createSession(
         workspaceID: WorkspaceID?,
         workspaceName: String?,
         title: String,
         configuration: AgentConfiguration,
-        gitBranch: String?
+        gitBranch: String?,
+        parentSessionID: CodeSessionID? = nil
     ) throws -> CodeSession {
         try loadIfNeeded()
         let now = Date()
         let session = CodeSession(
             workspaceID: workspaceID,
+            parentSessionID: parentSessionID,
             title: title,
             configuration: configuration,
             gitBranch: gitBranch,
@@ -105,6 +113,27 @@ public actor CodeSessionStore {
     public func allSessions() -> [CodeSession] {
         try? loadIfNeeded()
         return sessions.values.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// The sub-agent sessions `id` delegated, oldest first.
+    ///
+    /// Children are hidden from every list the reader browses, which means
+    /// deleting a parent is the only occasion they can be reached for cleanup.
+    /// Without this they would accumulate on disk with no surface able to name
+    /// them.
+    public func childSessions(of id: CodeSessionID) -> [CodeSession] {
+        try? loadIfNeeded()
+        return sessions.values
+            .filter { $0.parentSessionID == id }
+            // Tie-broken on the identifier because concurrent sub-agents are
+            // created within the same millisecond, and a dictionary's iteration
+            // order is not stable — without this the same run would return the
+            // same children in a different order each time it was read.
+            .sorted {
+                $0.createdAt == $1.createdAt
+                    ? $0.id.value < $1.id.value
+                    : $0.createdAt < $1.createdAt
+            }
     }
 
     public func updateSession(

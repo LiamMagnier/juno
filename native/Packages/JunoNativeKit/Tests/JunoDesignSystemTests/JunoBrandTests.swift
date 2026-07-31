@@ -9,9 +9,12 @@ final class JunoBrandTests: XCTestCase {
         XCTAssertEqual(
             Set(JunoIcon.allCases.map(\.rawValue)),
             [
-                // AppIcons — the destinations.
+                // AppIcons — the destinations. `settings` is the one the web
+                // draws in the user menu rather than the rail; native gives it a
+                // sidebar row, so it has to be in the generated set too.
                 "home", "code", "library", "artifacts", "projects",
                 "tasks", "connections", "pulls", "conversation", "new", "search",
+                "settings",
                 // CodeIcons — the things Juno Code talks about.
                 "cloud", "device", "branch", "lock", "permission",
                 "pin", "error", "refresh", "external", "file",

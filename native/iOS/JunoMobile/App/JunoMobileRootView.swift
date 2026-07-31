@@ -751,7 +751,15 @@ struct JunoMobileRootView: View {
                     startConversation: startProjectlessCodeConversation,
                     pullsClient: pullsClient,
                     accountID: currentSession?.profile.id,
-                    openConnections: { selection = .connections }
+                    openConnections: { selection = .connections },
+                    // Code gets the account the same way the website's Code mode
+                    // does — the user menu stays in the sidebar there, so plan
+                    // and usage are never more than a glance away.
+                    session: currentSession,
+                    avatarData: avatarModel?.imageData,
+                    requestSender: requestSender,
+                    modelCatalog: conversationModel?.modelCatalog ?? [],
+                    openSettings: { openSidebarDestination(.settings) }
                 )
             } else { unavailable }
         case .tasks:
@@ -1191,9 +1199,14 @@ private struct JunoMobileConversationRow: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 if pinned {
-                    Image(systemName: "pin.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                    // Juno's own pin, in the accent. This is one of exactly two
+                    // places the website lets coral into the sidebar — the
+                    // pinned conversation and the starred project, both
+                    // `fill-primary` — and it was an SF Symbol in `.secondary`
+                    // here while the Mac drew the same concept with a third
+                    // glyph in a fourth colour.
+                    JunoIconView(.pin, size: 12)
+                        .foregroundStyle(Color.junoAccent)
                 }
                 Text(title)
                     .font(.system(size: 16))
