@@ -10,7 +10,7 @@
     "build": "prisma generate && NODE_OPTIONS=--max-old-space-size=2048 next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "tsx --test 'tests/**/*.test.ts' && tsx scripts/test-auth.ts && tsx scripts/test-message-crypto.ts && npm run test:moderation",
+    "test": "tsx --test tests/*.test.ts && tsx scripts/test-auth.ts && tsx scripts/test-message-crypto.ts && npm run test:moderation",
     "postinstall": "prisma generate",
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
     "db:generate": "prisma generate",
