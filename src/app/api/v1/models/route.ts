@@ -1,5 +1,5 @@
 import { apiV1Json } from "@/lib/api-v1";
-import { accountPinnedModelIds, loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
+import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 import { sortModelsForDisplay } from "@/lib/model-metrics";
 import { getCurrentUser } from "@/lib/session";
 import { getUserPlan } from "@/lib/usage";
@@ -14,10 +14,7 @@ export async function GET() {
   // silently swap out. Order is the web selector's order (lab, intelligence, …)
   // and clients render it verbatim, so every surface lists models identically.
   const [models, plan] = await Promise.all([
-    // The saved default is kept even when superseded — see loadSelectableModels.
-    // Bootstrap does the same, with the same ids, or the two manifests would
-    // disagree and a client would refetch the catalog forever.
-    accountPinnedModelIds(user.id).then(loadSelectableModels).then(sortModelsForDisplay),
+    loadSelectableModels().then(sortModelsForDisplay),
     getUserPlan(user.id),
   ]);
   const catalog = nativeModelCatalog(models, plan);

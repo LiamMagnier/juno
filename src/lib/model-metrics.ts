@@ -1,4 +1,4 @@
-import { isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
+import { hasRetired, isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
@@ -375,43 +375,62 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
 }
 
 /**
- * One model per product line: the newest live entry of each
- * (lab, modality, family), superseded entries dropped.
+ * The catalog a picker can render directly: everything still served, with the
+ * newest of each product line current and every older generation marked
+ * `legacy` so the UI files it under "Past models".
  *
- * The registry keeps every generation a provider still serves, because a
- * conversation pinned to Opus 4.8 has to keep resolving and `RETIRED_MODELS`
- * has to keep having somewhere to migrate to. But a *picker* showing Opus 5
- * next to 4.8, 4.7, 4.6 and 4.5 is five ways to say "Opus", and the four older
- * ones are never the right answer — so the catalog the pickers are handed is
- * filtered here instead of at the registry.
+ * **Mark, don't drop.** An earlier version of this deleted superseded models
+ * outright, which read as the models being gone — and gone is what a lab whose
+ * account ran out of credit had already looked like. A picker showing Opus 5
+ * beside 4.8, 4.7, 4.6 and 4.5 is five ways to say "Opus" and buries the one
+ * answer that is usually right, but that is a *grouping* problem, not a reason
+ * to withhold a model a provider still answers on. Both pickers already have
+ * the disclosure to put them behind (web "Past models", native "Older models");
+ * they were simply never given anything to show.
  *
- * Two passes, because neither alone is enough:
- *  - **Superseded entries go.** A curated `legacy`/`deprecated` status is the
- *    registry's own statement that something newer replaced it.
- *  - **Then one per family.** Discovery keeps finding models the registry has
+ * Two things decide the marking, and neither alone is enough:
+ *  - **The registry's own verdict.** A curated `legacy`/`deprecated` status is
+ *    a statement that something newer replaced it, and it survives untouched.
+ *  - **The family collapse.** Discovery keeps finding models the registry has
  *    not been curated for yet — a live `gemini-3.6-flash` arrives as `current`
- *    beside the curated `gemini-3.5-flash`, and both are current, so only the
- *    family collapse removes the duplicate. Discovered entries carry the family
- *    slug their `FAMILIES` rule assigns (model-discovery-core.ts), which is why
- *    they land in the same bucket as the curated one they supersede.
+ *    beside the curated `gemini-3.5-flash`, and both claim to be current, so
+ *    only comparing them within their line can demote the older one. Discovered
+ *    entries carry the family slug their `FAMILIES` rule assigns
+ *    (model-discovery-core.ts), which is what puts them in the same bucket.
  *
- * "Newest" is whatever `sortModelsForDisplay` ranks first inside a lab, so this
- * cannot disagree with the order the list is rendered in: generation, then
- * release date, then intelligence.
+ * What IS removed is a model whose `retiresOn` has passed: the provider stopped
+ * answering, so it is not an option, past or otherwise.
  *
- * A model with no family is its own family (keyed by id) — never merged away on
- * a guess. Returns display order, so callers do not need to sort again.
+ * A model with no family is its own family (keyed by id) — never demoted on a
+ * guess. Returns display order, so callers do not need to sort again.
  */
-export function latestPerFamily<T extends ModelInfo>(models: T[]): T[] {
+export function withSupersededMarked<T extends ModelInfo>(models: T[], today?: string): T[] {
+  const live = models.filter((model) => !hasRetired(model, today));
   const winners = new Map<string, T>();
-  for (const model of models) {
+  for (const model of live) {
     if (isSupersededModel(model)) continue;
-    const family = (model.family ?? model.id).toLowerCase();
-    const key = `${model.provider}|${model.modality ?? "chat"}|${family}`;
-    const held = winners.get(key);
-    if (!held || newerInFamily(model, held) < 0) winners.set(key, model);
+    const held = winners.get(familyKey(model));
+    if (!held || newerInFamily(model, held) < 0) winners.set(familyKey(model), model);
   }
-  return sortModelsForDisplay([...winners.values()]);
+  return sortModelsForDisplay(
+    live.map((model) => {
+      if (isSupersededModel(model) || winners.get(familyKey(model)) === model) return model;
+      // Superseded by a sibling the registry has not caught up with yet. Both
+      // fields move together: `legacy` is what the pickers read and `status` is
+      // what the native manifest turns into its `lifecycle`, and letting them
+      // disagree is how a model lands in "Past models" still labelled current.
+      return { ...model, legacy: true, status: "legacy" as const };
+    })
+  );
+}
+
+function familyKey(model: ModelInfo): string {
+  return `${model.provider}|${model.modality ?? "chat"}|${(model.family ?? model.id).toLowerCase()}`;
+}
+
+/** The newest model of each product line — the "current" half of the catalog. */
+export function latestPerFamily<T extends ModelInfo>(models: T[], today?: string): T[] {
+  return withSupersededMarked(models, today).filter((model) => !isSupersededModel(model));
 }
 
 /**

@@ -2,7 +2,7 @@ import { apiV1Error, apiV1Json, CONTRACT_VERSION } from "@/lib/api-v1";
 import { requireNativeRequest } from "@/lib/native-request";
 import { prisma } from "@/lib/prisma";
 import { getCompactionFloor } from "@/lib/sync-feed";
-import { accountPinnedModelIds, loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
+import { loadSelectableModels, nativeModelCatalog } from "@/lib/model-catalog-api";
 import { sortModelsForDisplay } from "@/lib/model-metrics";
 import { getUserPlan } from "@/lib/usage";
 
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       prisma.usage.findUnique({ where: { userId_period: { userId: current.user.id, period } } }),
       prisma.accountChange.findFirst({ where: { accountId: current.user.id }, orderBy: { cursor: "desc" }, select: { cursor: true } }),
       getCompactionFloor(),
-      accountPinnedModelIds(current.user.id).then(loadSelectableModels).then(sortModelsForDisplay),
+      loadSelectableModels().then(sortModelsForDisplay),
       getUserPlan(current.user.id),
     ]);
     // Must be built with the same plan and order as GET /models, or a client

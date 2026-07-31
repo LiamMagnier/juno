@@ -691,6 +691,16 @@ components:
               released:
                 type: [string, 'null']
                 description: '"YYYY-MM", or null when the lab published no date.'
+              retiresOn:
+                type: [string, 'null']
+                description: >-
+                  The last day the provider serves this model, "YYYY-MM-DD", or
+                  null when no retirement has been announced — which is most of
+                  the catalog. A client should surface it on the model ("Available
+                  until 23 Oct 2026") rather than only in `deprecationNote`,
+                  whose text is prose and not parseable. The server stops listing
+                  the model once the day has passed, so a client never has to
+                  decide what an elapsed date means.
               availability:
                 type: string
                 enum: [available, coming_soon, requires_plan]

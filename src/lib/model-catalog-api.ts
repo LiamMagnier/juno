@@ -1,7 +1,6 @@
 import { discoverModels } from "@/lib/model-discovery";
-import { prisma } from "@/lib/prisma";
-import { getModelMetrics, latestPerFamily, sortModelsForDisplay } from "@/lib/model-metrics";
-import { GEN_MODELS, resolveModel, type ModelInfo } from "@/lib/models";
+import { getModelMetrics, withSupersededMarked } from "@/lib/model-metrics";
+import { GEN_MODELS, type ModelInfo } from "@/lib/models";
 import { configuredProviders, PROVIDERS } from "@/lib/providers";
 import { ensureProviderHealthFresh, providerHealthy } from "@/lib/provider-health";
 import { isVideoGenSupported } from "@/lib/video-gen";
@@ -45,44 +44,23 @@ export async function loadAvailableModels(): Promise<ModelInfo[]> {
 }
 
 /**
- * The catalog the model pickers are handed: every configured lab, one entry per
- * product line, newest first.
+ * The catalog the model pickers are handed: every configured lab, every model
+ * still being served, with the newest of each product line current and the
+ * older generations marked so the UI files them under "Past models".
  *
- * Split from `loadAvailableModels` because the two audiences want opposite
- * things. A picker wants the shortest true list — Opus 5, not Opus 5 / 4.8 /
- * 4.7 / 4.6 / 4.5. The cloud runner wants the *whole* catalog, because a task
- * already running was pinned to whatever model it started with, and a model
- * that vanished from the picker still has to be callable.
+ * Split from `loadAvailableModels` because the two audiences differ. A picker
+ * wants a catalog it can group; the cloud runner wants it flat, because a task
+ * already running was pinned to whatever model it started with and the marking
+ * would tell it nothing it can act on.
  *
- * `keepIds` is the exception that makes the short list safe: a model the
- * account has actually SELECTED stays listed even once it is superseded. A
- * picker cannot render a selection that is not among its options — the settings
- * dropdown draws an empty box, and a native client re-points the conversation
- * onto something else — and every account whose default was never changed is in
- * exactly that position, because the stored default predates the models that
- * replaced it. Offering one extra model the user already chose is a much
- * smaller lie than showing them a blank control.
+ * This used to *prune* to one model per line, which needed a `keepIds` escape
+ * hatch so an account whose saved default had been superseded did not get a
+ * blank settings dropdown. Marking removes the need for both: nothing is
+ * withheld, so every stored selection is still in the list — under the
+ * disclosure, where it belongs.
  */
-export async function loadSelectableModels(keepIds: Iterable<string> = []): Promise<ModelInfo[]> {
-  const all = await loadAvailableModels();
-  const selectable = latestPerFamily(all);
-  const listed = new Set(selectable.map((model) => model.id));
-  const keep = new Set([...keepIds].map((id) => resolveModel(id)?.id).filter((id): id is string => Boolean(id)));
-  const pinned = all.filter((model) => keep.has(model.id) && !listed.has(model.id));
-  return pinned.length ? sortModelsForDisplay([...selectable, ...pinned]) : selectable;
-}
-
-/**
- * Model ids this account has actually selected, for `loadSelectableModels`'
- * `keepIds`. Just the saved default today — the one selection the server knows
- * about without walking every conversation.
- */
-export async function accountPinnedModelIds(userId: string): Promise<string[]> {
-  const settings = await prisma.settings.findUnique({
-    where: { userId },
-    select: { defaultModel: true },
-  });
-  return settings?.defaultModel ? [settings.defaultModel] : [];
+export async function loadSelectableModels(): Promise<ModelInfo[]> {
+  return withSupersededMarked(await loadAvailableModels());
 }
 
 /**

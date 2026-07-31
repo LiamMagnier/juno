@@ -4,9 +4,8 @@ import * as React from "react";
 import { useTheme } from "next-themes";
 import type { AppBootstrap, AppUser, ClientFolder, ClientSettings, ClientSpend } from "@/types/app";
 import type { ClientConversation, ClientQuota, ReasoningEffort as ComposerReasoningEffort } from "@/types/chat";
-import { MODEL_LIST, resolveModel, type ModelInfo } from "@/lib/models";
-import { latestPerFamily, sortModelsForDisplay } from "@/lib/model-metrics";
-import { isAutoModelId } from "@/lib/auto-model";
+import { MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { withSupersededMarked } from "@/lib/model-metrics";
 
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
   hex = hex.replace(/^#/, "");
@@ -65,16 +64,10 @@ export interface ComposerPrefs {
 // native web search, so leaving it on gives up-to-date answers by default.
 const DEFAULT_COMPOSER_PREFS: ComposerPrefs = { reasoningEffort: "high", webSearch: true, canvas: true, fastMode: false };
 
-/** The bundled catalog, pruned to what a picker offers, plus whatever this
- *  account has selected as its default — mirroring what /api/models will send a
- *  moment later. Without the default, an account still on a superseded model
- *  gets a settings dropdown with no visible selection until the fetch lands. */
-function initialModels(defaultModel: string): ModelInfo[] {
-  const pruned = latestPerFamily(MODEL_LIST);
-  const saved = resolveModel(defaultModel);
-  if (!saved || isAutoModelId(saved.id) || pruned.some((m) => m.id === saved.id)) return pruned;
-  return sortModelsForDisplay([...pruned, saved]);
-}
+/** The bundled catalog, marked the same way /api/models marks it a moment
+ *  later, so the picker's "Past models" section does not appear, disappear and
+ *  reappear across the first fetch. */
+const INITIAL_MODELS = withSupersededMarked(MODEL_LIST);
 const COMPOSER_PREFS_KEY = "juno:composer-prefs";
 
 function sanitizeComposerPrefs(v: unknown): Partial<ComposerPrefs> {
@@ -143,10 +136,8 @@ export function AppProvider({ bootstrap, children }: { bootstrap: AppBootstrap; 
   // values right after mount to avoid a hydration mismatch.
   const [composerPrefs, setComposerPrefsState] = React.useState<ComposerPrefs>(DEFAULT_COMPOSER_PREFS);
   // Live list of models from each configured provider's API (curated set until
-  // loaded). Pruned the same way /api/models prunes it, so the first paint of
-  // the picker is not a longer list — every superseded generation — that
-  // shortens a moment later.
-  const [models, setModels] = React.useState<ModelInfo[]>(() => initialModels(bootstrap.settings.defaultModel));
+  // loaded).
+  const [models, setModels] = React.useState<ModelInfo[]>(INITIAL_MODELS);
   const { resolvedTheme } = useTheme();
 
   React.useEffect(() => {

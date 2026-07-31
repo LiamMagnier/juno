@@ -1,20 +1,22 @@
 import { describe, it } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { latestPerFamily } from "../src/lib/model-metrics";
-import { MODEL_LIST, MODELS, type ModelInfo } from "../src/lib/models";
+import { latestPerFamily, withSupersededMarked } from "../src/lib/model-metrics";
+import { hasRetired, isSupersededModel, migrateModelId, MODEL_LIST, MODELS, resolveModel, type ModelInfo } from "../src/lib/models";
 import { curate, FAMILIES, toModelInfo, versionScore } from "../src/lib/model-discovery-core";
 import { type Provider } from "../src/lib/providers";
 
 /**
- * What a model picker is allowed to show: every configured lab, one entry per
- * product line, newest first.
+ * What a model picker shows: every configured lab, every model still being
+ * served, the newest of each product line first and the older generations
+ * marked so the UI can file them under "Past models".
  *
- * The regression these guard is a catalog that shrinks silently. Two ways it
- * happened: a provider whose account ran out of credit had ALL of its models
- * removed server-side (so Claude simply ceased to exist in every client at
- * once), and every generation a lab still serves was listed at full length, so
- * the fix for one made the other worse.
+ * The regression these guard is a catalog that shrinks silently, which happened
+ * twice for different reasons: a lab whose API account ran out of credit had
+ * ALL of its models deleted server-side, and then the fix for the resulting
+ * five-generations-of-Opus picker deleted the old generations instead of
+ * grouping them. Only one thing may actually remove a model now — the provider
+ * switching it off, on a date the registry states in advance.
  */
 
 function model(overrides: Partial<ModelInfo> & { id: string; name: string }): ModelInfo {
@@ -263,5 +265,109 @@ describe("provider health", () => {
     assert.ok(start > 0, "backendAgentCatalog must exist in model-catalog-api.ts");
     const body = source.slice(start);
     assert.match(body, /available:\s*providerHealthy\(model\.provider\)/);
+  });
+});
+
+describe("withSupersededMarked", () => {
+  const line = [
+    model({ id: "claude-opus-5", name: "Claude Opus 5", provider: "anthropic", family: "opus", released: "2026-07" }),
+    model({ id: "claude-opus-4-8", name: "Claude Opus 4.8", provider: "anthropic", family: "opus", status: "legacy", legacy: true, released: "2026-04" }),
+    model({ id: "claude-opus-4-5", name: "Claude Opus 4.5", provider: "anthropic", family: "opus", status: "deprecated", legacy: true, released: "2025-11" }),
+  ];
+
+  it("keeps every model a provider still serves", () => {
+    // The whole point of the rework: an older generation is filed away, never
+    // withheld. Withholding is what made a lab look like it had ceased to exist.
+    assert.deepEqual(
+      names(withSupersededMarked(line)).sort(),
+      ["Claude Opus 4.5", "Claude Opus 4.8", "Claude Opus 5"]
+    );
+  });
+
+  it("marks everything that is not the newest of its line", () => {
+    const marked = withSupersededMarked(line);
+    const past = marked.filter(isSupersededModel).map((m) => m.name);
+    assert.deepEqual(names(marked.filter((m) => !isSupersededModel(m))), ["Claude Opus 5"]);
+    assert.deepEqual(past.sort(), ["Claude Opus 4.5", "Claude Opus 4.8"]);
+  });
+
+  it("demotes a curated model a discovered one has overtaken", () => {
+    // Both say `current`; only the family comparison can tell that the live
+    // 3.6 Flash replaced the curated 3.5. The loser must come back marked, not
+    // missing — it is still callable.
+    const discovered = toModelInfo("google", "models/gemini-3.6-flash", {
+      label: "Gemini Flash", family: "flash", match: /flash/i, minPlan: "FREE", vision: true,
+    });
+    const marked = withSupersededMarked([
+      model({ id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", provider: "google", family: "flash", released: "2026-06" }),
+      discovered,
+    ]);
+    assert.equal(marked.length, 2);
+    assert.deepEqual(names(marked.filter((m) => !isSupersededModel(m))), ["Gemini 3.6 Flash"]);
+    const demoted = marked.find((m) => m.name === "Gemini 3.5 Flash");
+    assert.equal(demoted?.legacy, true);
+    // `status` moves with `legacy` — the native manifest reads status for its
+    // `lifecycle`, so leaving it "current" files a model under "Older models"
+    // while still calling it current.
+    assert.equal(demoted?.status, "legacy");
+  });
+
+  it("puts the current models first", () => {
+    assert.equal(withSupersededMarked(line)[0].name, "Claude Opus 5");
+  });
+
+  it("removes a model whose retirement date has passed", () => {
+    const past = [
+      model({ id: "gpt-4o", name: "GPT-4o", provider: "openai", family: "gpt-4o", status: "deprecated", legacy: true, retiresOn: "2026-10-23" }),
+      model({ id: "gpt-5.6-sol", name: "GPT-5.6 Sol", provider: "openai", family: "gpt" }),
+    ];
+    // The day before, and on the day itself, it is still selectable…
+    assert.equal(withSupersededMarked(past, "2026-10-22").length, 2);
+    assert.equal(withSupersededMarked(past, "2026-10-23").length, 2);
+    // …and the morning after, it is gone.
+    assert.deepEqual(names(withSupersededMarked(past, "2026-10-24")), ["GPT-5.6 Sol"]);
+  });
+
+  it("leaves a model with no retirement date alone forever", () => {
+    const undated = [model({ id: "glm-5.2", name: "GLM-5.2", provider: "zhipu", family: "glm" })];
+    assert.equal(withSupersededMarked(undated, "2099-01-01").length, 1);
+  });
+});
+
+describe("retirement dates in the registry", () => {
+  it("gives every retiring model a date and somewhere to go", () => {
+    for (const m of MODEL_LIST) {
+      if (!m.retiresOn) continue;
+      assert.match(m.retiresOn, /^\d{4}-\d{2}-\d{2}$/, `${m.id}: retiresOn must be YYYY-MM-DD`);
+      assert.ok(m.replacedBy, `${m.id}: retiring with no replacedBy`);
+      const heir = MODELS[m.replacedBy!];
+      assert.ok(heir, `${m.id}: replacedBy ${m.replacedBy} is not registered`);
+      assert.equal(heir.status, "current", `${m.id}: replacedBy ${m.replacedBy} is not current`);
+    }
+  });
+
+  it("agrees with the sentence it also states in prose", () => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    for (const m of MODEL_LIST) {
+      const spelled = m.deprecationNote?.match(/^Retires (\w{3}) (\d{1,2}), (\d{4})/);
+      if (!spelled) continue;
+      const iso = `${spelled[3]}-${String(months.indexOf(spelled[1]) + 1).padStart(2, "0")}-${spelled[2].padStart(2, "0")}`;
+      assert.equal(m.retiresOn, iso, `${m.id}: note and retiresOn disagree`);
+    }
+  });
+
+  it("never offers a model whose date has already passed", () => {
+    for (const m of MODEL_LIST) {
+      assert.equal(hasRetired(m), false, `${m.id} retired on ${m.retiresOn} and is still listed`);
+    }
+  });
+
+  it("migrates a stored id off a model that has retired", () => {
+    // A date passing has to behave like a RETIRED_MODELS entry, or the id keeps
+    // resolving to a model the provider no longer answers on.
+    const expired = Object.values(MODELS).find((m) => hasRetired(m) && m.replacedBy);
+    assert.ok(expired, "fixture requires at least one already-expired registry entry");
+    assert.equal(migrateModelId(expired.id), expired.replacedBy);
+    assert.equal(resolveModel(expired.id)?.id, expired.replacedBy);
   });
 });

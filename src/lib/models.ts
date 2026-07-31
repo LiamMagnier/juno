@@ -36,6 +36,27 @@ export interface ModelInfo {
   family?: string; // product family (sonnet, gpt, veo…) — one current per family per modality
   /** Human-readable warning for deprecated models ("Retires Aug 5, 2026 — use …"). */
   deprecationNote?: string;
+  /**
+   * The day the provider stops serving this model, "YYYY-MM-DD".
+   *
+   * The same date the `deprecationNote` says in prose, in a form the product
+   * can actually use: the pickers show it ("Available until 23 Oct 2026") and
+   * the catalog drops the model by itself once the day arrives, instead of
+   * waiting for somebody to notice the sentence.
+   *
+   * Compared as a plain string against a UTC `YYYY-MM-DD`, never parsed into a
+   * Date — `new Date("2026-07-08")` is midnight UTC while `new Date("Jul 8,
+   * 2026")` is midnight local, and a model that disappears an evening early in
+   * one timezone is exactly the kind of bug nobody reproduces.
+   */
+  retiresOn?: string;
+  /**
+   * What to use instead once this model is gone. Required alongside
+   * `retiresOn` (validate:models enforces it), because expiry without a
+   * replacement is how a stored model id turns into a fabricated "current"
+   * model pointing at a provider id that 404s — see `migrateModelId`.
+   */
+  replacedBy?: ModelId;
   /** Real-world release month, "YYYY-MM" (curated entries only). */
   released?: string;
   contextWindow?: number;
@@ -81,6 +102,28 @@ export function guessReasoning(providerModel: string): boolean {
   return REASONING_RE.test(providerModel);
 }
 
+/**
+ * Today, as the catalog reckons it: "YYYY-MM-DD" in **UTC**.
+ *
+ * UTC rather than local time because retirement dates are published in UTC/PT
+ * and CI runs in UTC — a local-time cutoff would drop a model an evening early
+ * for anyone east of Greenwich and produce a test that fails only between
+ * midnight and 02:00. Read once at module load, and overridable so tests and
+ * `validate:models` can freeze it instead of quietly changing behaviour every
+ * midnight.
+ */
+export const CATALOG_TODAY: string = process.env.JUNO_CATALOG_TODAY ?? new Date().toISOString().slice(0, 10);
+
+/**
+ * Has the provider stopped serving this model?
+ *
+ * `<` and not `<=`: `retiresOn` is the last day the model answers, so it is
+ * still callable all through that day.
+ */
+export function hasRetired(model: Pick<ModelInfo, "retiresOn">, today: string = CATALOG_TODAY): boolean {
+  return model.retiresOn != null && model.retiresOn < today;
+}
+
 // Providers whose chat models can search the web natively (their own tool /
 // grounding — no third-party search service).
 const WEB_SEARCH_PROVIDERS = new Set<Provider>(["anthropic", "google", "xai"]);
@@ -103,6 +146,8 @@ interface ModelDef {
   released?: string; // "YYYY-MM"
   contextWindow?: number;
   deprecationNote?: string;
+  retiresOn?: string; // "YYYY-MM-DD" — the day the provider stops serving it
+  replacedBy?: ModelId; // required with retiresOn; where stored ids migrate
   comingSoon?: boolean;
   api?: "chat" | "responses";
 }
@@ -139,6 +184,8 @@ function def(d: ModelDef): ModelInfo {
     status: d.status,
     family: d.family,
     deprecationNote: d.deprecationNote,
+    retiresOn: d.retiresOn,
+    replacedBy: d.replacedBy,
     released: d.released,
     contextWindow: d.contextWindow,
     legacy: d.status !== "current",
@@ -196,22 +243,22 @@ const CURATED: ModelInfo[] = [
   def({ provider: "openai", id: "gpt-5.1-codex", name: "GPT-5.1 Codex", family: "gpt-codex", status: "deprecated", released: "2025-11", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 400_000, api: "responses", description: "Older Codex model (Responses API).", deprecationNote: "Deprecated by OpenAI — use GPT-5.3 Codex" }),
   // api:"responses" — same verified 404 on chat/completions as the other Codex snapshots.
   def({ provider: "openai", id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini", family: "gpt-codex-mini", status: "deprecated", released: "2025-11", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 400_000, api: "responses", description: "Older small Codex model.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
-  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
-  def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini" }),
-  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5" }),
-  def({ provider: "openai", id: "o3-mini", name: "OpenAI o3-mini", family: "o-series-mini", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, description: "Fast o-series reasoning.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini" }),
+  def({ provider: "openai", id: "gpt-5", name: "GPT-5", family: "gpt", status: "deprecated", released: "2025-08", minPlan: "PRO", vision: true, cost: 2, description: "First GPT-5 release.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "gpt-5-mini", name: "GPT-5 Mini", family: "gpt-mini", status: "deprecated", released: "2025-08", minPlan: "FREE", vision: true, cost: 1, description: "Early GPT-5 mini.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.4 Mini", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.4-mini" }),
+  def({ provider: "openai", id: "o3", name: "OpenAI o3", family: "o-series", status: "deprecated", released: "2025-04", minPlan: "PRO", vision: true, reasoning: true, cost: 3, description: "o-series reasoning model.", deprecationNote: "Retires Dec 11, 2026 — use GPT-5.5", retiresOn: "2026-12-11", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "o3-mini", name: "OpenAI o3-mini", family: "o-series-mini", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, description: "Fast o-series reasoning.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
   def({ provider: "openai", id: "o1", name: "OpenAI o1", family: "o-series", status: "deprecated", released: "2024-12", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 200_000, description: "Early reasoning model, two generations behind.", deprecationNote: "Deprecated by OpenAI — use GPT-5.5" }),
-  def({ provider: "openai", id: "gpt-4o", name: "GPT-4o", family: "gpt-4o", status: "deprecated", released: "2024-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 128_000, description: "Classic multimodal GPT-4o.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5" }),
+  def({ provider: "openai", id: "gpt-4o", name: "GPT-4o", family: "gpt-4o", status: "deprecated", released: "2024-05", minPlan: "FREE", vision: true, cost: 2, contextWindow: 128_000, description: "Classic multimodal GPT-4o.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-sol" }),
   def({ provider: "openai", id: "gpt-4o-mini", name: "GPT-4o Mini", family: "gpt-4o-mini", status: "deprecated", released: "2024-07", minPlan: "FREE", vision: true, cost: 1, contextWindow: 128_000, description: "Small GPT-4o tier.", deprecationNote: "Deprecated by OpenAI — use GPT-5.4 Mini" }),
-  def({ provider: "openai", id: "gpt-4-turbo", name: "GPT-4 Turbo", family: "gpt-4", status: "deprecated", released: "2024-04", minPlan: "PRO", vision: true, cost: 2, description: "Legacy GPT-4 flagship.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5" }),
-  def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini" }),
+  def({ provider: "openai", id: "gpt-4-turbo", name: "GPT-4 Turbo", family: "gpt-4", status: "deprecated", released: "2024-04", minPlan: "PRO", vision: true, cost: 2, description: "Legacy GPT-4 flagship.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.5", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.6-sol" }),
+  def({ provider: "openai", id: "gpt-3.5-turbo", name: "GPT-3.5 Turbo", family: "gpt-3.5", status: "deprecated", released: "2023-03", minPlan: "FREE", cost: 1, description: "Legacy fast model.", deprecationNote: "Retires Oct 23, 2026 — use GPT-5.4 Mini", retiresOn: "2026-10-23", replacedBy: "openai:gpt-5.4-mini" }),
 
   // —— Google ——
   def({ provider: "google", id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", family: "flash", status: "current", released: "2026-06", minPlan: "FREE", vision: true, cost: 2, contextWindow: 1_048_576, description: "Google's GA flagship — frontier performance at Flash speed." }),
   def({ provider: "google", id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", family: "pro", status: "current", released: "2026-04", minPlan: "PRO", vision: true, cost: 3, contextWindow: 1_048_576, description: "Deep-reasoning Pro tier (preview) — 3.5 Flash now edges it on most benchmarks." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash-Lite", family: "flash-lite", status: "current", released: "2026-04", minPlan: "FREE", vision: true, cost: 1, description: "High-volume, low-latency, cost-sensitive tier." }),
   def({ provider: "google", id: "gemini-3-flash-preview", name: "Gemini 3 Flash", family: "flash", status: "legacy", released: "2025-12", minPlan: "FREE", vision: true, cost: 1, description: "Previous Flash generation (preview), superseded by 3.5 Flash." }),
-  def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro" }),
+  def({ provider: "google", id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", family: "pro", status: "deprecated", released: "2025-03", minPlan: "PRO", vision: true, cost: 3, description: "2.5-generation Pro.", deprecationNote: "Retires Oct 16, 2026 — use Gemini 3.1 Pro", retiresOn: "2026-10-16", replacedBy: "google:gemini-3.1-pro-preview" }),
   // gemini-2.5-flash removed — ListModels still lists it, but EVERY call returns
   // 404 "This model models/gemini-2.5-flash is no longer available to new
   // users." (reproduced natively and through the compat shim). It was also the
@@ -268,8 +315,8 @@ const CURATED: ModelInfo[] = [
   // —— DeepSeek ——
   def({ provider: "deepseek", id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", family: "v4-flash", status: "current", released: "2026-04", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Fast, very cheap default — near-Pro reasoning at a third of the cost." }),
   def({ provider: "deepseek", id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", family: "v4-pro", status: "current", released: "2026-04", minPlan: "PRO", cost: 2, contextWindow: 1_000_000, description: "DeepSeek flagship — hardest reasoning and complex agent tasks." }),
-  def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash" }),
-  def({ provider: "deepseek", id: "deepseek-reasoner", name: "DeepSeek Reasoner", family: "v4-flash", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash (thinking).", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash" }),
+  def({ provider: "deepseek", id: "deepseek-chat", name: "DeepSeek Chat", family: "v4-flash", status: "deprecated", released: "2024-12", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash.", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
+  def({ provider: "deepseek", id: "deepseek-reasoner", name: "DeepSeek Reasoner", family: "v4-flash", status: "deprecated", released: "2025-01", minPlan: "PRO", reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Legacy alias routing to V4 Flash (thinking).", deprecationNote: "Retires Jul 24, 2026 — use DeepSeek V4 Flash", retiresOn: "2026-07-24", replacedBy: "deepseek:deepseek-v4-flash" }),
 
   // —— Mistral ——
   def({ provider: "mistral", id: "mistral-medium-latest", name: "Mistral Medium 3.5", family: "medium", status: "current", released: "2026-04", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Mistral's frontier multimodal model — agentic work with reasoning effort." }),
@@ -279,7 +326,7 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mistral", id: "ministral-14b-latest", name: "Ministral 3 14B", family: "ministral", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, description: "Small dense model — strong cost/performance for high volume." }),
   def({ provider: "mistral", id: "ministral-8b-latest", name: "Ministral 3 8B", family: "ministral-8b", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, description: "Compact Ministral 3 tier for inexpensive high-volume tasks." }),
   def({ provider: "mistral", id: "ministral-3b-latest", name: "Ministral 3 3B", family: "ministral-3b", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, description: "Smallest Ministral 3 tier for lowest-latency simple tasks." }),
-  def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5" }),
+  def({ provider: "mistral", id: "magistral-medium-2509", name: "Magistral Medium", family: "magistral", status: "deprecated", released: "2025-09", minPlan: "PRO", reasoning: true, cost: 3, description: "Dedicated reasoning line, folded into Medium 3.5.", deprecationNote: "Retires Jul 31, 2026 — use Mistral Medium 3.5", retiresOn: "2026-07-31", replacedBy: "mistral:mistral-medium-latest" }),
   def({ provider: "mistral", id: "devstral-2512", name: "Devstral 2", family: "devstral", status: "deprecated", released: "2025-12", minPlan: "PRO", cost: 2, contextWindow: 262_144, description: "Code-agent model, superseded.", deprecationNote: "Deprecated May 2026 — use Mistral Medium 3.5" }),
 
   // —— xAI (SpaceXAI) / Grok ——
@@ -321,9 +368,9 @@ const CURATED: ModelInfo[] = [
   def({ provider: "qwen", id: "qwen-long", name: "Qwen Long", family: "qwen-long", status: "current", released: "2024-05", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 10_000_000, description: "Long-context Qwen model for retrieval-heavy document and code tasks." }),
   def({ provider: "qwen", id: "qwen3-vl-plus", name: "Qwen3-VL Plus", family: "qwen-vl", status: "legacy", released: "2025-09", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 262_144, description: "Previous vision-language flagship, superseded by Qwen3.7 Plus." }),
   def({ provider: "qwen", id: "qwen3-vl-flash", name: "Qwen3-VL Flash", family: "qwen-vl-flash", status: "legacy", released: "2025-09", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 262_144, description: "Previous fast vision-language model, superseded by Qwen3.6 Flash." }),
-  def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "deprecated", released: "2025-07", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Agentic coding model superseded by Qwen3.7 Plus.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus" }),
-  def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "deprecated", released: "2025-04", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 262_144, description: "Open-weight MoE flagship (235B total / 22B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus" }),
-  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "deprecated", released: "2025-04", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 262_144, description: "Efficient open-weight MoE (30B total / 3B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.6 Flash" }),
+  def({ provider: "qwen", id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", family: "qwen-coder", status: "deprecated", released: "2025-07", minPlan: "PRO", reasoning: false, cost: 2, contextWindow: 1_000_000, description: "Agentic coding model superseded by Qwen3.7 Plus.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus", retiresOn: "2026-07-08", replacedBy: "qwen:qwen3.7-plus" }),
+  def({ provider: "qwen", id: "qwen3-235b-a22b", name: "Qwen3 235B A22B", family: "qwen3-open", status: "deprecated", released: "2025-04", minPlan: "PRO", reasoning: true, cost: 2, contextWindow: 262_144, description: "Open-weight MoE flagship (235B total / 22B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.7 Plus", retiresOn: "2026-07-08", replacedBy: "qwen:qwen3.7-plus" }),
+  def({ provider: "qwen", id: "qwen3-30b-a3b", name: "Qwen3 30B A3B", family: "qwen3-open-flash", status: "deprecated", released: "2025-04", minPlan: "FREE", reasoning: true, cost: 1, contextWindow: 262_144, description: "Efficient open-weight MoE (30B total / 3B active), superseded in hosted Model Studio.", deprecationNote: "Retires Jul 8, 2026 — use Qwen3.6 Flash", retiresOn: "2026-07-08", replacedBy: "qwen:qwen3.6-flash" }),
   def({ provider: "qwen", id: "qwen-max", name: "Qwen Max", family: "qwen-max", status: "legacy", released: "2025-01", minPlan: "PRO", cost: 3, contextWindow: 32_768, description: "Previous-generation Qwen-Max (2.5 line)." }),
   def({ provider: "qwen", id: "qwen-turbo", name: "Qwen Turbo", family: "qwen-flash", status: "legacy", released: "2024-09", minPlan: "FREE", cost: 1, contextWindow: 1_000_000, description: "Older ultra-cheap tier, superseded by Qwen Flash." }),
   def({ provider: "qwen", id: "qwen-vl-max", name: "Qwen-VL Max", family: "qwen-vl", status: "legacy", released: "2024-01", minPlan: "PRO", vision: true, cost: 2, contextWindow: 32_768, description: "Previous-generation vision-language model." }),
@@ -339,12 +386,12 @@ const GENERATIVE: ModelInfo[] = [
   // —— Image ——
   def({ provider: "openai", id: "gpt-image-2", name: "GPT Image 2", family: "gpt-image", status: "current", released: "2026-05", modality: "image", minPlan: "PRO", cost: 3, description: "OpenAI's state-of-the-art image generation and editing." }),
   def({ provider: "openai", id: "gpt-image-1.5", name: "GPT Image 1.5", family: "gpt-image", status: "legacy", released: "2025-12", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image generation and editing model." }),
-  def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026 — use GPT Image 2" }),
+  def({ provider: "openai", id: "gpt-image-1", name: "GPT Image 1", family: "gpt-image", status: "deprecated", released: "2025-04", modality: "image", minPlan: "PRO", cost: 2, description: "Previous OpenAI image model.", deprecationNote: "Retires Oct 23, 2026 — use GPT Image 2", retiresOn: "2026-10-23", replacedBy: "openai:gpt-image-2" }),
   def({ provider: "google", id: "gemini-3-pro-image", name: "Nano Banana Pro", family: "gemini-image-pro", status: "current", released: "2025-11", modality: "image", minPlan: "PRO", cost: 3, description: "Premium image generation — complex composition, text rendering, 4K." }),
   def({ provider: "google", id: "gemini-3.1-flash-image", name: "Nano Banana 2", family: "gemini-image-flash", status: "current", released: "2026-04", modality: "image", minPlan: "PRO", cost: 2, description: "Workhorse image generation — 4K, references, Search grounding." }),
   def({ provider: "google", id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite", family: "gemini-image-lite", status: "current", released: "2026-04", modality: "image", minPlan: "FREE", cost: 1, description: "Fastest, cheapest image generation for rapid ideation." }),
-  def({ provider: "google", id: "gemini-2.5-flash-image", name: "Nano Banana", family: "gemini-image-flash", status: "deprecated", released: "2025-08", modality: "image", minPlan: "PRO", cost: 2, description: "Pioneer Gemini image model.", deprecationNote: "Retires Oct 2, 2026 — use Nano Banana 2" }),
-  def({ provider: "google", id: "imagen-4.0-generate-001", name: "Imagen 4", family: "imagen", status: "deprecated", released: "2025-05", modality: "image", minPlan: "PRO", cost: 2, description: "Last of the Imagen line.", deprecationNote: "Retires Aug 17, 2026 — use Nano Banana 2" }),
+  def({ provider: "google", id: "gemini-2.5-flash-image", name: "Nano Banana", family: "gemini-image-flash", status: "deprecated", released: "2025-08", modality: "image", minPlan: "PRO", cost: 2, description: "Pioneer Gemini image model.", deprecationNote: "Retires Oct 2, 2026 — use Nano Banana 2", retiresOn: "2026-10-02", replacedBy: "google:gemini-3.1-flash-image" }),
+  def({ provider: "google", id: "imagen-4.0-generate-001", name: "Imagen 4", family: "imagen", status: "deprecated", released: "2025-05", modality: "image", minPlan: "PRO", cost: 2, description: "Last of the Imagen line.", deprecationNote: "Retires Aug 17, 2026 — use Nano Banana 2", retiresOn: "2026-08-17", replacedBy: "google:gemini-3.1-flash-image" }),
   def({ provider: "xai", id: "grok-imagine-image-quality", name: "Grok Imagine (Quality)", family: "imagine-image", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 2, description: "xAI's recommended image model — generation and editing." }),
   def({ provider: "xai", id: "grok-imagine-image", name: "Grok Imagine (Fast)", family: "imagine-image-fast", status: "current", released: "2025-10", modality: "image", minPlan: "PRO", cost: 1, description: "Fast, low-cost image tier." }),
   def({ provider: "zhipu", id: "glm-image", name: "GLM Image", family: "glm-image", status: "current", released: "2026-01", modality: "image", minPlan: "PRO", cost: 2, description: "Z.AI's flagship image model — posters and in-image text." }),
@@ -403,7 +450,10 @@ const DISCOVERED_MODELS: ModelInfo[] = DISCOVERED.filter(
 export const CURATED_CHAT_MODELS: readonly ModelInfo[] = CURATED;
 export const CURATED_GEN_MODELS: readonly ModelInfo[] = GENERATIVE;
 
-export const GEN_MODELS: ModelInfo[] = GENERATIVE.filter((m) => !UNAVAILABLE_IDS.has(m.id));
+// Same retirement rule as MODEL_LIST: an image or video model the provider has
+// switched off is not an option either, and /api/generate has no reroute to
+// save it — the request just fails.
+export const GEN_MODELS: ModelInfo[] = GENERATIVE.filter((m) => !UNAVAILABLE_IDS.has(m.id) && !hasRetired(m));
 
 /**
  * How a provider's image models can edit an existing image (client-safe —
@@ -495,9 +545,24 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "qwen:qwen-flash": "qwen:qwen3.6-flash",
 };
 
-/** Map a stored/legacy model id to its living replacement (identity if fine). */
+/** Ids whose retirement date has passed, mapped to what replaces them. */
+const EXPIRED_MODELS: ReadonlyMap<ModelId, ModelId> = new Map(
+  [...CURATED, ...GENERATIVE]
+    .filter((m) => hasRetired(m) && m.replacedBy)
+    .map((m) => [m.id, m.replacedBy as ModelId])
+);
+
+/**
+ * Map a stored/legacy model id to its living replacement (identity if fine).
+ *
+ * Handles both kinds of death: `RETIRED_MODELS` is the hand-curated list of ids
+ * a provider has already switched off, and `EXPIRED_MODELS` is the same thing
+ * computed from `retiresOn` the day it passes — so a model whose date arrives
+ * migrates on its own, rather than sitting in the registry as a selectable
+ * option that 404s until somebody edits this file.
+ */
 export function migrateModelId(id: ModelId): ModelId {
-  return RETIRED_MODELS[id] ?? id;
+  return RETIRED_MODELS[id] ?? EXPIRED_MODELS.get(id) ?? id;
 }
 
 const ALL_CURATED_BY_ID = new Map([...CURATED, ...GENERATIVE].map((m) => [m.id, m]));
@@ -528,7 +593,15 @@ export const MODELS: Record<string, ModelInfo> = Object.fromEntries(
 );
 // Initial client list is chat-only; image/video models load via /api/models
 // (only for labs whose key is set), avoiding a flash of unconfigured providers.
-export const MODEL_LIST: ModelInfo[] = [...CURATED.filter((m) => !UNAVAILABLE_IDS.has(m.id)), ...DISCOVERED_MODELS];
+//
+// Retired-by-date models are absent: this is the list the pickers and the chat
+// fallback choose FROM, and a model the provider switched off yesterday is not
+// a choice. They stay in `MODELS` above so a stored id still resolves — and
+// `migrateModelId` sends it to the replacement.
+export const MODEL_LIST: ModelInfo[] = [
+  ...CURATED.filter((m) => !UNAVAILABLE_IDS.has(m.id) && !hasRetired(m)),
+  ...DISCOVERED_MODELS,
+];
 
 /** Every registered model grouped by provider, newest release first (undated
  *  discovered models sort last; ties break alphabetically). */
