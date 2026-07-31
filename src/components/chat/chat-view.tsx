@@ -1110,7 +1110,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
   const hasMessages = displayMessages.length > 0 || voiceOpen;
+  // NB: `quota.limit != null` is load-bearing and must not be "tidied" into a
+  // truthiness check — Free's limit is 0, and `0 != null` is what keeps the
+  // gate on for that plan at all.
   const quotaReached = quota.limit != null && quota.remaining != null && quota.remaining <= 0;
+  // A plan with no allowance at all is a different situation from one that has
+  // been used up, and telling someone they "reached their limit" on their first
+  // visit — before they have sent anything — is simply untrue.
+  const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
   // Model-parameters live beside the incognito ghost (top-right) so the composer
   // stays uncluttered. Only meaningful for chat models.
@@ -1395,6 +1402,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onCancelClarification={chat.cancelPendingClarification}
       onOpenVoiceMode={planAllowsVoice && !!process.env.NEXT_PUBLIC_VOICE_RELAY_URL && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
+      planIncludesNoMessages={planIncludesNoMessages}
       canvasEnabled={canvasEnabled}
       onToggleCanvas={setCanvasEnabled}
       webSearchEnabled={webSearchEnabled}

@@ -105,6 +105,8 @@ interface ComposerProps {
   onCancelClarification?: () => void;
   onOpenVoiceMode?: () => void;
   quotaReached?: boolean;
+  /** The plan grants no messages at all, rather than having exhausted them. */
+  planIncludesNoMessages?: boolean;
   canvasEnabled: boolean;
   onToggleCanvas: (v: boolean) => void;
   webSearchEnabled?: boolean;
@@ -290,6 +292,7 @@ export function Composer({
   onCancelClarification,
   onOpenVoiceMode,
   quotaReached,
+  planIncludesNoMessages,
   canvasEnabled,
   onToggleCanvas,
   webSearchEnabled = false,
@@ -1386,10 +1389,21 @@ export function Composer({
     >
       {quotaReached && (
         <div role="status" className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm text-foreground">
-          You&apos;ve reached your monthly limit.{" "}
-          <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
-            Upgrade to keep chatting
-          </a>
+          {planIncludesNoMessages ? (
+            <>
+              The Free plan doesn&apos;t include any messages.{" "}
+              <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
+                Upgrade to start chatting
+              </a>
+            </>
+          ) : (
+            <>
+              You&apos;ve reached your monthly limit.{" "}
+              <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
+                Upgrade to keep chatting
+              </a>
+            </>
+          )}
         </div>
       )}
 
