@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prismaUnguarded } from "@/lib/prisma";
 import { getOwnerUser } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -12,13 +12,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { id } = await params;
-  const flag = await prisma.moderationFlag.findUnique({ where: { id }, select: { id: true } });
+  // Unguarded by design: the owner reviews other users' flags, so the flag is
+  // addressed by its own id and never by the reviewer's (getOwnerUser gates it).
+  const flag = await prismaUnguarded.moderationFlag.findUnique({ where: { id }, select: { id: true } });
   if (!flag) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid request" }, { status: 400 });
 
-  const updated = await prisma.moderationFlag.update({
+  const updated = await prismaUnguarded.moderationFlag.update({
     where: { id },
     data: parsed.data.reviewed
       ? { reviewedAt: new Date(), reviewedBy: owner.email! }
