@@ -37,7 +37,17 @@ export function ConversationFind({
   const [index, setIndex] = React.useState(0);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const matches = React.useMemo(() => findInConversation(messages, query), [messages, query]);
+  // `messages` gets a new identity on every streamed token — use-chat rebuilds
+  // the array per delta — and re-scanning every body at that rate rebuilds
+  // lowercased copies and preview strings for up to 500 matches, tens of times a
+  // second. Deferring lets React drop the intermediate values and run the scan
+  // once the burst settles; the search is a read-only overlay, so a frame of lag
+  // behind the live transcript costs nothing.
+  const deferredMessages = React.useDeferredValue(messages);
+  const matches = React.useMemo(
+    () => findInConversation(deferredMessages, query),
+    [deferredMessages, query]
+  );
 
   React.useEffect(() => setIndex(0), [query]);
   React.useEffect(() => inputRef.current?.focus(), []);
@@ -45,13 +55,20 @@ export function ConversationFind({
   // Scroll the current match into view. The anchor is the per-message wrapper
   // MessageList renders; jumping to the message rather than the character keeps
   // this independent of how a message is laid out.
-  const current = matches[index];
+  //
+  // Keyed on the message id and the index, NOT on the match object: that object
+  // is freshly allocated every time `matches` recomputes, so an object dependency
+  // re-fired this effect on every token. A smooth scrollIntoView then ran
+  // continuously against MessageList's own layout effect pinning scrollTop to the
+  // bottom — two writers fighting over one scroll position, which read as the
+  // transcript yanking and made it impossible to scroll anywhere by hand.
+  const currentMessageId = matches[index]?.messageId;
   React.useEffect(() => {
-    if (!current) return;
+    if (!currentMessageId) return;
     document
-      .querySelector(`[data-message-id="${CSS.escape(current.messageId)}"]`)
+      .querySelector(`[data-message-id="${CSS.escape(currentMessageId)}"]`)
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [current]);
+  }, [currentMessageId, index]);
 
   const go = (direction: 1 | -1) => setIndex((i) => stepMatch(i, matches.length, direction));
 
