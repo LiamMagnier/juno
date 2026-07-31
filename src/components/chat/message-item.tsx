@@ -681,7 +681,15 @@ export function MessageItem({
 
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
-      <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
+      {/*
+        Silent while streaming, polite once the turn is settled.
+        Markdown re-renders the final block on every delta, so a polite region
+        during streaming re-announces the growing paragraph token by token —
+        which is noise, not access. MessageList's role="status" announcer says
+        "Response complete, N words" on the finishing edge instead. This was
+        already the behaviour for realtime voice; it is right for every turn.
+      */}
+      <div className="min-w-0 flex-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
         <ActivityTimeline
           messageId={message.id}
           events={view.activity}
