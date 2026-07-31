@@ -371,6 +371,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
   });
 
+  // A FAILED first generation still leaves a real conversation behind: the
+  // server creates it before streaming, onMeta puts it in the sidebar, and the
+  // messages are persisted. But the URL sync lives only in onDone, which an
+  // error never reaches — so the address bar stayed on /chat, and a refresh
+  // lost a thread the user could see listed beside them.
+  React.useEffect(() => {
+    if (privateMode || chat.status !== "error" || conversationId !== null) return;
+    const id = createdIdRef.current;
+    if (!id) return;
+    createdIdRef.current = null;
+    router.replace(`/chat/${id}`);
+  }, [chat.status, privateMode, conversationId, router]);
+
   const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last

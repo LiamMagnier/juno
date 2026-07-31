@@ -69,8 +69,17 @@ export function EmptyGreeting() {
         className="empty-greeting text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
-        {/* The greeting and the name rise as two beats rather than one block. */}
-        <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
+        {/* The greeting and the name rise as two beats rather than one block.
+            suppressHydrationWarning belongs HERE, not only on the <h1>: React
+            does not apply it to deeply nested children, and this is the node
+            whose text differs. The server picks its bucket from UTC and the
+            client from the visitor's own clock, so any timezone that crosses a
+            bucket boundary hydrates with different words — which is the whole
+            point of the effect below, not a bug to fix. */}
+        <span
+          suppressHydrationWarning
+          className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in"
+        >
           {phrase}
           {firstName ? "," : null}
         </span>
