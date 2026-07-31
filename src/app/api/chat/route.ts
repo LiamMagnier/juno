@@ -803,6 +803,9 @@ async function handleChat(req: Request) {
       canvas: false,
       voiceMode: input.voiceMode,
       projectContext: "",
+      // Private mode still reaches provider-side web search, whose results are
+      // outside content like any other.
+      untrustedContent: useWebSearch,
     });
     const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
     const generationId = input.generationId ?? crypto.randomUUID();
@@ -1718,6 +1721,11 @@ async function handleChat(req: Request) {
     canvas: canvasOn,
     voiceMode: input.voiceMode,
     projectContext,
+    // Any of these can put text Juno did not author into context: a connector
+    // tool result, provider-side web search, or a fetched research page.
+    // (Deep research also carries the rule in its own system append, since that
+    // corpus is assembled separately.)
+    untrustedContent: activeConnectors.length > 0 || useWebSearch || researchActive,
   });
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit

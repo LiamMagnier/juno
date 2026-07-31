@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { personalitySystemPrompt } from "@/lib/personalities";
 import { providerApiKey } from "@/lib/providers";
+import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -59,6 +60,13 @@ export interface SystemPromptOptions {
   voiceMode?: boolean;
   /** Project name + instructions + reference files, injected when chatting in a project. */
   projectContext?: string;
+  /**
+   * This turn can put content from outside the conversation into context — a
+   * connector tool result or a fetched web page. Adds the untrusted-content
+   * rule. Only set when it applies, so a plain chat keeps its original cached
+   * prefix rather than paying for a rule that cannot fire.
+   */
+  untrustedContent?: boolean;
 }
 
 export function buildSystemPrompt(opts: SystemPromptOptions): string {
@@ -68,6 +76,12 @@ export function buildSystemPrompt(opts: SystemPromptOptions): string {
   const parts: string[] = [
     `You are Juno, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful.`,
   ];
+
+  // Placed immediately after the identity line so it outranks everything that
+  // follows, and kept as constant text so the cached prefix stays stable (a
+  // per-request nonce would be stronger but would invalidate the cache on every
+  // provider, every turn).
+  if (opts.untrustedContent) parts.push(UNTRUSTED_CONTENT_RULE);
 
   if (!opts.voiceMode) {
     parts.push(

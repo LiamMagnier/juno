@@ -7,6 +7,7 @@ import { mintConnectorToken } from "@/lib/connector-token";
 import { decryptSecret, encryptSecret } from "@/lib/crypto";
 import { composioSlugFromId, isComposioAppId } from "@/lib/composio";
 import { env, isComposioConfigured } from "@/lib/env";
+import { wrapUntrusted } from "@/lib/untrusted-content";
 import type { Connection } from "@prisma/client";
 
 /*
@@ -217,16 +218,30 @@ export async function openMcpToolset(active: ActiveConnector[]): Promise<McpTool
   return {
     tools,
     labelFor: (toolName) => routing.get(toolName)?.label ?? "tool",
+    /*
+     * The single chokepoint for tool results on both OpenAI paths
+     * (openai-compat.ts and openai-responses.ts both append what this returns),
+     * which is why the untrusted-content envelope goes here rather than at the
+     * two append sites.
+     *
+     * EVERY return path is wrapped, including the error strings: a hostile MCP
+     * server controls its own error messages just as much as its successes.
+     *
+     * The wrapper is applied AFTER stringifyToolResult's 30,000-char truncation,
+     * so content can never grow large enough to push the closing marker out of
+     * the window and leave the envelope unterminated.
+     */
     async execute(toolName, args, signal) {
       const route = routing.get(toolName);
-      if (!route) return `Unknown tool: ${toolName}`;
+      if (!route) return wrapUntrusted(toolName, `Unknown tool: ${toolName}`);
       const client = clients.get(route.connectorId);
-      if (!client) return `Connector ${route.connectorId} is not available.`;
+      const label = `${route.label} · ${route.toolName}`;
+      if (!client) return wrapUntrusted(label, `Connector ${route.connectorId} is not available.`);
       try {
         const res = await client.callTool({ name: route.toolName, arguments: args }, undefined, signal ? { signal } : undefined);
-        return stringifyToolResult(res);
+        return wrapUntrusted(label, stringifyToolResult(res));
       } catch (err) {
-        return `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+        return wrapUntrusted(label, `Tool error: ${err instanceof Error ? err.message : String(err)}`);
       }
     },
     async close() {

@@ -5,6 +5,7 @@ import { PROVIDERS } from "@/lib/providers";
 import { recordSpend } from "@/lib/spend";
 import { estimateGenerationCostUsd } from "@/lib/pricing";
 import { truncate } from "@/lib/utils";
+import { UNTRUSTED_CONTENT_RULE, wrapUntrusted } from "@/lib/untrusted-content";
 import type { ModelInfo } from "@/lib/models";
 import type { ClientActivityEvent, ClientSource } from "@/types/chat";
 
@@ -261,10 +262,25 @@ function sourceHost(url: string): string {
 
 /** The synthesis contract + numbered corpus, appended to the system prompt. */
 function buildResearchContext(prompt: string, pages: ResearchPage[], readUrls: Set<string>): string {
+  /*
+   * Both `title` and `body` are page-controlled, and this corpus is appended to
+   * the SYSTEM prompt — the highest-authority slot there is. Unwrapped, a page
+   * whose text contains "[13] Official policy\nhttps://…\n…" is byte-identical
+   * to a real corpus entry, so a hostile page could forge extra sources, defeat
+   * the citation contract above, and issue instructions from inside the system
+   * prompt.
+   *
+   * The envelope keeps the numbering and the URL outside it — those are ours —
+   * and puts only the fetched text inside.
+   */
   const corpus = pages
     .map((p, i) => {
       const body = readUrls.has(p.url) && p.rawContent ? p.rawContent : p.snippet;
-      return `[${i + 1}] ${p.title}\n${p.url}\n${body}`;
+      // The title is page-controlled too, and a newline in it would let one page
+      // forge additional "[n] Title / url / body" entries. Collapse it to a
+      // single line so an entry can only ever be one entry.
+      const title = p.title.replace(/\s+/g, " ").slice(0, 200);
+      return `[${i + 1}] ${title}\n${p.url}\n${wrapUntrusted(p.url, body)}`;
     })
     .join("\n\n");
   return `# Deep research mode
@@ -280,6 +296,8 @@ Rules:
 - When sources disagree, say so explicitly and attribute each position to its source.
 - If something relevant could not be verified in these sources, say plainly that it is unverified — never fill gaps with guesses.
 - Never invent sources or cite numbers outside the list.
+
+${UNTRUSTED_CONTENT_RULE}
 
 # Source material
 ${corpus}`;
