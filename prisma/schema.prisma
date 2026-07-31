@@ -33,6 +33,8 @@ model User {
   name           String?
   email          String    @unique
   emailVerified  DateTime?
+  /// Avatars are stored as "/api/files/<key>"; that route looks a user up BY
+  /// this column to authorize the object, so it needs an index (see @@index).
   image          String?
   hashedPassword String? // null for OAuth-only users
   // Incremented after a password reset. JWTs carry the version they were
@@ -85,6 +87,8 @@ model User {
   mutationReceipts         MutationReceipt[]
   codeWorkspaces           CodeWorkspace[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
+
+  @@index([image])
 }
 
 // ----------------------------------------------------------------------------
@@ -511,6 +515,9 @@ model Attachment {
   @@index([conversationId])
   @@index([messageId])
   @@index([projectId])
+  // /api/files resolves authorization by object key, once per request — and
+  // media is served over HTTP Range, so one video is several requests.
+  @@index([storageKey])
 }
 
 // ----------------------------------------------------------------------------
@@ -684,6 +691,9 @@ model Announcement {
 
   @@index([published, startsAt])
   @@index([createdAt])
+  // Looked up by URL when /api/files authorizes announcement media.
+  @@index([imageUrl])
+  @@index([videoUrl])
 }
 
 model AnnouncementDismissal {
