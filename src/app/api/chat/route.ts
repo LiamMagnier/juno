@@ -49,6 +49,7 @@ import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { supportsFastMode } from "@/lib/pricing";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
+import { createStallWatchdog, PROVIDER_IDLE_TIMEOUT_MS, STALL_USER_MESSAGE } from "@/lib/chat-stall";
 import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
@@ -779,6 +780,18 @@ async function handleChat(req: Request) {
         // Declared out here because the catch below reads it to tell a
         // budget-triggered abort from a real failure.
         let budgetHalted = false;
+        // Same reason: the catch reads `stalled` to tell a wedged provider from
+        // a user Stop. Nothing else bounds a stream that goes quiet — the SDK
+        // timeout is cleared once headers arrive, and Juno's own 15s SSE
+        // heartbeat keeps nginx's read timer from ever expiring.
+        const stallWatchdog = createStallWatchdog(() => {
+          sendActivity({
+            kind: "warning",
+            title: "Model stopped responding",
+            detail: `Nothing received from ${PROVIDERS[modelInfo.provider].label} for ${Math.round(PROVIDER_IDLE_TIMEOUT_MS / 1000)}s.`,
+          });
+          generationController.abort();
+        });
         try {
           sendActivity({
             kind: "context",
@@ -855,6 +868,7 @@ async function handleChat(req: Request) {
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
           })) {
+            stallWatchdog.touch();
             if (ev.type === "text") {
               if (!writingStarted) {
                 writingStarted = true;
@@ -1004,11 +1018,17 @@ async function handleChat(req: Request) {
         } catch (err) {
           // A budget-triggered abort saves the partial answer + bills it, exactly
           // like a user-initiated stop; the "usage limit" warning was already sent.
-          const reason = budgetHalted
-            ? "user_stopped"
-            : wasGenerationStopped(generationId)
+          // A stall must be checked BEFORE the stop cases: aborting the
+          // controller makes the SDK throw its user-abort error, so without
+          // this a wedged provider would be recorded and shown as though the
+          // user had pressed Stop.
+          const reason = stallWatchdog.stalled
+            ? "error"
+            : budgetHalted
               ? "user_stopped"
-              : classifyErrorFinishReason(err);
+              : wasGenerationStopped(generationId)
+                ? "user_stopped"
+                : classifyErrorFinishReason(err);
           console.error("[chat] private generation error", {
             generationId,
             provider: modelInfo.provider,
@@ -1089,7 +1109,11 @@ async function handleChat(req: Request) {
             });
           } else {
             const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
-            const message = reason === "user_stopped" ? "Generation stopped before any output." : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+            const message = stallWatchdog.stalled
+              ? STALL_USER_MESSAGE
+              : reason === "user_stopped"
+                ? "Generation stopped before any output."
+                : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
             sendActivity({
               kind: "warning",
               title: finishReasonTitle(reason),
@@ -1098,6 +1122,7 @@ async function handleChat(req: Request) {
             send({ type: "error", message, quota, finishReason: reason });
           }
         } finally {
+          stallWatchdog.stop();
           clearInterval(heartbeat);
           unregisterGeneration();
           try {
@@ -2081,6 +2106,18 @@ async function handleChat(req: Request) {
         }
       };
 
+      // Declared outside the try because the catch reads `stalled` to tell a
+      // wedged provider from a user Stop — aborting makes the SDK throw its
+      // own user-abort error, which isAbortLike matches.
+      const stallWatchdog = createStallWatchdog(() => {
+        sendActivity({
+          kind: "warning",
+          title: "Model stopped responding",
+          detail: `Nothing received from ${PROVIDERS[modelInfo.provider].label} for ${Math.round(PROVIDER_IDLE_TIMEOUT_MS / 1000)}s.`,
+        });
+        generationController.abort();
+      });
+
       try {
         for await (const ev of streamChat({
           model: modelInfo,
@@ -2099,6 +2136,7 @@ async function handleChat(req: Request) {
           fastMode: useFastMode,
           audit: { userId: user.id, conversationId },
         })) {
+          stallWatchdog.touch();
           if (ev.type === "text") {
             if (!writingStarted) {
               writingStarted = true;
@@ -2320,11 +2358,14 @@ async function handleChat(req: Request) {
           webSearchRequests: webSearchRequests ?? null,
         });
       } catch (err) {
-        const reason = budgetHalted
-          ? "user_stopped"
-          : wasGenerationStopped(generationId)
+        // Checked before the stop cases — see the note on the private path.
+        const reason = stallWatchdog.stalled
+          ? "error"
+          : budgetHalted
             ? "user_stopped"
-            : classifyErrorFinishReason(err);
+            : wasGenerationStopped(generationId)
+              ? "user_stopped"
+              : classifyErrorFinishReason(err);
         const terminalFailureCode =
           durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError
             ? "GENERATION_LEASE_EXPIRED"
@@ -2469,7 +2510,9 @@ async function handleChat(req: Request) {
                 ? "This canvas changed while the edit was being prepared. Select the part again and retry."
                 : err instanceof ArtifactPatchError
                   ? `${err.message} Nothing in the canvas was changed.`
-                  : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+                  : stallWatchdog.stalled
+                    ? STALL_USER_MESSAGE
+                    : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
@@ -2494,6 +2537,7 @@ async function handleChat(req: Request) {
           });
         }
       } finally {
+        stallWatchdog.stop();
         if (generationHeartbeat) clearInterval(generationHeartbeat);
         generationHeartbeat = null;
         unregisterGeneration();
