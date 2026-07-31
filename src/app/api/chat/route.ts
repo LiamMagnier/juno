@@ -50,7 +50,7 @@ import { supportsFastMode } from "@/lib/pricing";
 import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
 import { logDebug } from "@/lib/logger";
-import { createStallWatchdog, PROVIDER_IDLE_TIMEOUT_MS, STALL_USER_MESSAGE } from "@/lib/chat-stall";
+import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
 import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
 import {
   AttachmentClaimError,
@@ -634,7 +634,7 @@ async function handleChat(req: Request) {
           sendActivity({
             kind: "warning",
             title: "Model stopped responding",
-            detail: `Nothing received from ${PROVIDERS[modelInfo.provider].label} for ${Math.round(PROVIDER_IDLE_TIMEOUT_MS / 1000)}s.`,
+            detail: stallDetail(PROVIDERS[modelInfo.provider].label, stallWatchdog),
           });
           generationController.abort();
         });
@@ -787,6 +787,9 @@ async function handleChat(req: Request) {
               finishReason = ev.reason;
             }
           }
+          // Provider done — stop measuring silence before Juno's own work. See
+          // the same call on the persisted path.
+          stallWatchdog.stop();
 
           const usage = buildUsage(modelInfo, {
             input: usageAcc.input,
@@ -965,7 +968,7 @@ async function handleChat(req: Request) {
           } else {
             const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
             const message = stallWatchdog.stalled
-              ? STALL_USER_MESSAGE
+              ? stallMessageFor(stallWatchdog)
               : reason === "user_stopped"
                 ? "Generation stopped before any output."
                 : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
@@ -1958,7 +1961,7 @@ async function handleChat(req: Request) {
         sendActivity({
           kind: "warning",
           title: "Model stopped responding",
-          detail: `Nothing received from ${PROVIDERS[modelInfo.provider].label} for ${Math.round(PROVIDER_IDLE_TIMEOUT_MS / 1000)}s.`,
+          detail: stallDetail(PROVIDERS[modelInfo.provider].label, stallWatchdog),
         });
         generationController.abort();
       });
@@ -2051,6 +2054,11 @@ async function handleChat(req: Request) {
             finishReason = ev.reason;
           }
         }
+        // The provider is done. Everything below is Juno's own persistence, and
+        // the watchdog only measures provider silence — leaving it armed made a
+        // slow database look like a stalled model on a generation that had
+        // already succeeded.
+        stallWatchdog.stop();
 
         if (artifactEditTarget) {
           const patch = parseArtifactPatch(full);
@@ -2356,7 +2364,7 @@ async function handleChat(req: Request) {
                 : err instanceof ArtifactPatchError
                   ? `${err.message} Nothing in the canvas was changed.`
                   : stallWatchdog.stalled
-                    ? STALL_USER_MESSAGE
+                    ? stallMessageFor(stallWatchdog)
                     : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
           sendActivity({
             kind: "warning",
