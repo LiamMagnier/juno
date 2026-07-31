@@ -49,6 +49,7 @@
 		BC163A0B07ABE65AB4E3C777 /* JunoDesktopLaunchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D463890A20F5FF7F5301DF69 /* JunoDesktopLaunchUITests.swift */; };
 		C09E8A9D069038F4C7082316 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 51D7DEFA18FA775DFB14FA34 /* Assets.xcassets */; };
 		C25BA058D09B5F3A32B805F0 /* DesktopArtifactStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = F148ADFEF1AAEE653E833F67 /* DesktopArtifactStatus.swift */; };
+		C69D96B4507F27AED10CD3E7 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5207DEC5805B173ADFB8E6E6 /* Localizable.xcstrings */; };
 		C7182D3BF762DDD9FB6E64AB /* JunoDesktopSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00EF62FB4286BF63383E60F3 /* JunoDesktopSmokeTests.swift */; };
 		D4BA69411D695B3CA7C42F81 /* JunoCodeUI in Frameworks */ = {isa = PBXBuildFile; productRef = 344C68219BB8A74BBFEB2F9A /* JunoCodeUI */; };
 		D8627BF871280CE0B9EA8617 /* JunoChatKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6696C1EC4C2EE4496A403864 /* JunoChatKit */; };
@@ -100,6 +101,7 @@
 		4C61EDFFB61392831EDE140B /* Newsreader24pt-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Newsreader24pt-Regular.ttf"; sourceTree = "<group>"; };
 		50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountScreens.swift; sourceTree = "<group>"; };
 		51D7DEFA18FA775DFB14FA34 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5207DEC5805B173ADFB8E6E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsageScreen.swift; sourceTree = "<group>"; };
 		5F1AD59AF5368F1B3A84D0F2 /* JunoDesktop-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Next.xcconfig"; sourceTree = "<group>"; };
 		62E8526B391F544C70A2BDD2 /* DesktopDictation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopDictation.swift; sourceTree = "<group>"; };
@@ -304,6 +306,7 @@
 		E0F40F52C9489F262AE0E93D /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				5207DEC5805B173ADFB8E6E6 /* Localizable.xcstrings */,
 				334F1043CC4B138EEAC56A12 /* Fonts */,
 			);
 			path = Resources;
@@ -434,6 +437,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C09E8A9D069038F4C7082316 /* Assets.xcassets in Resources */,
+				C69D96B4507F27AED10CD3E7 /* Localizable.xcstrings in Resources */,
 				D8CA917E990E2E2241873C87 /* Navigation.xcassets in Resources */,
 				FA5F0BCBFA358AB2CAE56273 /* Newsreader24pt-Medium.ttf in Resources */,
 				EC0331AAF291C463F51FD118 /* Newsreader24pt-MediumItalic.ttf in Resources */,
