@@ -37,6 +37,25 @@ function excluded(element: Element | null): boolean {
 }
 
 /**
+ * A textarea's *content* is whatever the user typed and must never be
+ * translated — but its `placeholder` is UI copy and should be. Sharing one
+ * exclusion list between the text walk and the attribute pass meant no textarea
+ * placeholder in the app was ever translated, including the composer's
+ * "Message Juno…", which sat in the catalog untranslated the whole time.
+ *
+ * Everything else on the list either has no meaningful translatable attribute
+ * (script, style, code, pre) or is opted out on purpose in both senses
+ * ([translate='no'], [data-no-auto-translate], contenteditable).
+ */
+const ATTRIBUTE_EXCLUDED_SELECTOR = EXCLUDED_SELECTOR.split(",")
+  .filter((sel) => sel !== "textarea")
+  .join(",");
+
+function excludedForAttributes(element: Element | null): boolean {
+  return Boolean(element?.closest(ATTRIBUTE_EXCLUDED_SELECTOR));
+}
+
+/**
  * Translates exact, build-time-known UI strings after hydration. The browser
  * sends only opaque catalog ids to the server, so conversations and all other
  * user content stay on the device.
@@ -142,7 +161,7 @@ export function AutoTranslate({ locale, autoDetect = true }: { locale: string; a
 
       const elements = [root, ...root.querySelectorAll("*")];
       for (const element of elements) {
-        if (excluded(element)) continue;
+        if (excludedForAttributes(element)) continue;
         for (const attribute of TRANSLATABLE_ATTRIBUTES) {
           const value = element.getAttribute(attribute);
           if (!value) continue;
