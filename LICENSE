@@ -1,0 +1,34 @@
+TODO — CHOOSE A LICENSE BEFORE THE FIRST PUBLIC RELEASE
+=======================================================
+
+This repository currently has NO license. Under the Berne Convention that means
+all rights are reserved by default: nobody may copy, modify or redistribute this
+code, and any contribution received has no clear grant attached to it.
+
+That is a defensible position for a commercial product, but it should be a
+decision rather than an omission.
+
+The three that fit this project:
+
+  1. PROPRIETARY / ALL RIGHTS RESERVED  — what is effectively in force today.
+     Correct if Juno is a commercial product and the repository is public only
+     for transparency. Replace this file with an explicit notice saying so, and
+     require a CLA from any outside contributor.
+
+  2. AGPL-3.0 — source-available, and anyone who runs a modified copy as a
+     network service must publish their changes. This is what Cherry Studio uses
+     and what Open WebUI approximates. It permits community contribution while
+     making a hosted competitor built on this code costly.
+
+  3. MIT / Apache-2.0 — fully permissive. Choose only if the intent is for
+     others to build on Juno freely, including commercially. LibreChat is MIT.
+
+Note that whichever is chosen, it does not cover:
+  - `runner/agent-core/`, a vendored copy of @juno/agent-core (see its
+    VENDORED.md);
+  - the Newsreader and JetBrains Mono fonts under
+    native/iOS/JunoMobile/Resources/Fonts/ (SIL Open Font License);
+  - provider logos under public/provider-logos/, which are third-party
+    trademarks used for identification and are NOT licensed by this file.
+
+Until this file is replaced, treat the code as all rights reserved.

@@ -1,0 +1,26 @@
+# Every path is owned by the maintainer. This file exists so GitHub requests a
+# review automatically, and so the ownership of the riskiest surfaces is written
+# down rather than implied.
+
+*                               @LiamMagnier
+
+# Money, auth and the streaming core — a change here can charge a customer,
+# expose an account, or drop a live generation.
+/src/app/api/stripe/            @LiamMagnier
+/src/app/api/chat/              @LiamMagnier
+/src/lib/spend.ts               @LiamMagnier
+/src/lib/usage.ts               @LiamMagnier
+/src/lib/plans.ts               @LiamMagnier
+/src/lib/auth.ts                @LiamMagnier
+/src/lib/session.ts             @LiamMagnier
+/src/lib/native-auth*.ts        @LiamMagnier
+/src/lib/db.ts                  @LiamMagnier
+/src/middleware.ts              @LiamMagnier
+/prisma/                        @LiamMagnier
+
+# Deploy and CI — a change here can take production down.
+/.github/workflows/             @LiamMagnier
+/deploy/                        @LiamMagnier
+
+# The published native contract. Drift here breaks shipped apps.
+/contracts/                     @LiamMagnier
