@@ -215,8 +215,12 @@ export function MessageList(props: MessageListProps) {
         className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6"
       >
           {messages.map((m, i) => (
+            // Scroll anchor for find-in-conversation. A wrapper rather than a
+            // prop on MessageItem: the id has to sit on a real element for
+            // scrollIntoView, and MessageItem's own root differs between the
+            // user and assistant branches.
+            <div key={m.id} data-message-id={m.id}>
             <MessageItem
-              key={m.id}
               message={m}
               isLast={i === messages.length - 1}
               busy={props.busy}
@@ -236,6 +240,7 @@ export function MessageList(props: MessageListProps) {
               onImageEdit={props.onImageEdit}
               currentModelId={props.currentModelId}
             />
+            </div>
           ))}
           <div ref={bottomRef} />
         </div>

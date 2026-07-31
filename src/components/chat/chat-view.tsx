@@ -11,6 +11,7 @@ import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
+import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
@@ -1192,6 +1193,22 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
+
+  // Find-in-conversation. Opens on Cmd/Ctrl+F, which is a deliberate override
+  // of the browser's own find: the native one searches only what is painted,
+  // and the transcript is a scroll container, so it silently misses most of the
+  // conversation. Escape closes and returns focus to the page.
+  const [findOpen, setFindOpen] = React.useState(false);
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const handleSpeak = (id: string, text: string) => {
     if (speakingId === id) {
       tts.stop();
@@ -1638,6 +1655,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           {hasMessages ? (
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
+              {findOpen && (
+                <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
+              )}
               <MessageList
                 messages={displayMessages}
                 busy={chat.isBusy}
