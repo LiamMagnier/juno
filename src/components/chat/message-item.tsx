@@ -566,6 +566,10 @@ export function MessageItem({
   if (isUser) {
     return (
       <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-rise-in")}>
+        {/* Turn marker. On screen the alignment and bubble say who is speaking;
+            in a screen reader nothing did, and a transcript with no headings is
+            a wall of text with no way to move through it. */}
+        <h2 className="sr-only">You said</h2>
         <AttachmentList attachments={message.attachments} />
         {editing ? (
           <div className="w-full max-w-2xl space-y-2">
@@ -681,6 +685,8 @@ export function MessageItem({
 
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
+      {/* Turn marker — see the note on the user branch. */}
+      <h2 className="sr-only">Juno replied</h2>
       {/*
         Silent while streaming, polite once the turn is settled.
         Markdown re-renders the final block on every delta, so a polite region

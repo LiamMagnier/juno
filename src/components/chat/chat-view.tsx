@@ -1645,6 +1645,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 privateMode={privateMode}
                 onImageEdit={chat.sendImageEdit}
                 currentModelId={model}
+                conversationTitle={
+                  privateMode
+                    ? "Private chat"
+                    : conversations.find((c) => c.id === currentConversationId)?.title || undefined
+                }
               />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and horizontal padding as the composer

@@ -28,6 +28,10 @@ interface MessageListProps {
   privateMode?: boolean;
   onImageEdit?: (input: ImageEditInput) => SendResult;
   currentModelId?: string;
+  /** Names the transcript for assistive tech. Rendered as a visually-hidden
+   *  <h1>: /chat/[id] had no heading at all once a conversation had messages,
+   *  so there was nothing for a screen reader to navigate to. */
+  conversationTitle?: string;
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -199,6 +203,11 @@ export function MessageList(props: MessageListProps) {
         StreamStatus ("Thinking" / "Writing"), the per-turn region once the turn
         is complete, and the completion announcer below.
       */}
+      {/* The page's only <h1> once the empty state is gone. Visually hidden
+          because the transcript is its own title on screen — the design does
+          not repeat it — but heading navigation is how screen-reader users
+          orient, and there was nothing here to land on. */}
+      <h1 className="sr-only">{props.conversationTitle || "Conversation"}</h1>
       <div
         role="log"
         aria-label="Conversation transcript"
