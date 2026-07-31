@@ -336,7 +336,13 @@ final class DesktopUpdateModel {
         # both installs it AND strips com.apple.quarantine, which is exactly the
         # pair of steps that would launder an attacker's bundle past Gatekeeper.
         # Checking once at stage time left that window open.
-        if ! /usr/bin/codesign --verify --deep --strict -R "$5" "$2" >/dev/null 2>&1; then
+        #
+        # -R= , not -R. A bare -R argument is a PATH to a requirement file;
+        # only a leading "=" makes codesign read it as requirement source. With
+        # the space form this check failed for every bundle, signed or not
+        # ("no such file or directory"), and the rm -rf below then deleted the
+        # staged update — auto-update could never install anything.
+        if ! /usr/bin/codesign --verify --deep --strict -R="$5" "$2" >/dev/null 2>&1; then
           rm -rf "$2"
           exit 1
         fi
@@ -514,8 +520,16 @@ private enum CodeSignature {
         // Every architecture in a universal binary, and every nested bundle — a
         // helper or framework swapped inside an otherwise-valid app is precisely
         // the substitution a top-level-only check would wave through.
+        //
+        // kSecCSStrictValidate is what `codesign --strict` sets, and the install
+        // script runs exactly that immediately before the swap. The two gates
+        // have to agree: if the stricter one came second, a bundle accepted here
+        // would be rejected there — and rejection there deletes the staged
+        // update after the app has already quit to install it.
         var error: Unmanaged<CFError>?
-        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode)
+        let flags = SecCSFlags(
+            rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate
+        )
         let status = SecStaticCodeCheckValidityWithErrors(code, flags, parsed, &error)
         guard status == errSecSuccess else {
             let detail = error?.takeRetainedValue().localizedDescription
