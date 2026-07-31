@@ -49,12 +49,21 @@ runner/agent-core/node_modules
 runner/agent-core/dist
 
 # Release artifacts: the build products themselves are large binaries and are
-# reproducible from a tagged commit. The delivery documentation and checksums
-# in dist/ are tracked; the .app/.dmg/.ipa/.zip are not.
+# reproducible from a tagged commit. The delivery documentation and the current
+# SHA256SUMS.txt in dist/ are tracked; the binaries and the per-commit checksum
+# snapshots are not.
 dist/*.app/
 dist/*.dmg
 dist/*.ipa
 dist/*.zip
+dist/SHA256SUMS-*.txt
+
+# Desktop/mobile release binaries are served from GitHub Releases (see
+# /api/downloads), never from the repo. A 22 MB .dmg in public/ ships to every
+# clone and every deploy rsync for no reason.
+/public/downloads/*.dmg
+/public/downloads/*.zip
+/public/downloads/*.pkg
 native/Config/Generated-Build.xcconfig
 
 # native build artifacts

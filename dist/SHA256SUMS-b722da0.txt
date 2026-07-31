@@ -1,2 +1,0 @@
-ee8356ddf5c50d781dfeea88094e49611df11c6a1bb86cd0fd58f7da58b052d4  Juno-0.1.0-macOS.dmg
-c47b8ece83fb033f83d4e2959ec497ae9d24afa6b79f549d0db9a85c93413a1e  Juno-0.1.0-iOS.ipa
