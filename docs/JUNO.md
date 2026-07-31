@@ -1391,6 +1391,28 @@ live in the `prisma/migrations/` SQL and are applied the same way. For local
 development, `npx prisma migrate dev` against a dev database is all you need; Neon's
 free tier is enough.
 
+### 20.2b Schema changes must be expand/contract
+
+`prisma migrate deploy` runs against the live database **while the old code is
+still serving** — the deploy applies migrations, then reloads PM2. And Prisma has
+no down-migrations: there is no `migrate rollback`. A migration that the running
+code cannot tolerate is therefore an outage, not an inconvenience.
+
+All 45 migrations to date are additive — verified: zero `DROP COLUMN`, `DROP
+TABLE`, `DROP CONSTRAINT` or `SET NOT NULL` anywhere in `prisma/migrations/`. That
+is why this has never bitten. The first destructive change will, unless it is
+split:
+
+| Want | Do it as |
+|---|---|
+| Add a required column | add it **nullable** → deploy → backfill → make required in a **later** release |
+| Rename a column | add the new one → write both → backfill → switch reads → drop the old one a release later |
+| Drop a column | stop reading it → deploy → drop it in a **later** release |
+| Narrow a type / add a constraint | add a check that tolerates existing rows → clean the data → tighten later |
+
+The rule in one line: **every migration must leave the previous release still
+working.** Two releases, never one.
+
 ### 20.3 Continuous deployment (GitHub Actions)
 
 Pushing to `main` deploys automatically — the low-RAM VM never has to build. Four
@@ -1428,9 +1450,17 @@ Required **GitHub Actions secrets**: `PROD_ENV` (the full production env file),
 `sync:models:write` (provider discovery → `models.generated.ts`), `sync:benchmarks`
 (Artificial Analysis grades → `benchmarks.generated.ts`, needs `AA_API_KEY`), and
 `radar:models` (OpenRouter industry diff), then `validate:models`. When anything
-changed it commits the regenerated files (which auto-deploys via `deploy.yml`) and
-opens a GitHub issue labeled `model-watch` for hand-curation. Provider keys are repo
-secrets; a provider with no key is skipped, and a failed fetch never prunes.
+changed it commits the regenerated files and opens a GitHub issue labeled
+`model-watch` for hand-curation. Provider keys are repo secrets; a provider with no
+key is skipped, and a failed fetch never prunes.
+
+> This used to say the nightly commit "auto-deploys via `deploy.yml`". It does
+> not. The job pushes with `actions/checkout`'s default `GITHUB_TOKEN`, and GitHub
+> deliberately does not raise workflow events for pushes made with that token —
+> otherwise a workflow could trigger itself indefinitely. So registry changes sit
+> on `main` until the next real push deploys them. That is the safer behaviour
+> (no unattended 04:17 deploy that drops in-flight SSE streams), but it was
+> documented backwards in both this file and the workflow's own header.
 
 **`code-runner.yml` — Cloud Code runner** (dispatched per cloud Code task) is
 documented in §9.3.

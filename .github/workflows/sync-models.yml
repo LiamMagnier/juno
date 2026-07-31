@@ -9,8 +9,8 @@
 #     committed seen-set, catching launches our own keys can't list
 #     (gen-only labs, regional gating, providers we don't resell yet).
 #
-# When anything changed, the run commits the regenerated files (which
-# auto-deploys via deploy.yml) AND opens a GitHub issue labeled `model-watch`
+# When anything changed, the run commits the regenerated files AND opens a
+# GitHub issue labeled `model-watch`
 # summarizing the changes — GitHub notifies by email, and the "Juno model
 # curator" scheduled Claude agent picks the issue up to hand-curate entries
 # (verified descriptions, status, docs/models.md) as a PR.
