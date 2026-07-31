@@ -31,6 +31,12 @@ public extension JunoColorToken {
     static let sidebarSelectionLight = JunoColorToken(unchecked: 0.9352, 0.9251, 0.8848)
     static let sidebarSelectionDark = JunoColorToken(unchecked: 0.1512, 0.14, 0.1288)
 
+    // The navigation column's resting ink, from the web's `--sidebar-foreground`:
+    // `40 4% 30%` / `37 7% 70%`. Barely off neutral — the same warm cast the rest
+    // of the palette carries, so a grey column does not read as a cold one.
+    static let sidebarForegroundLight = JunoColorToken(unchecked: 0.312, 0.304, 0.288)
+    static let sidebarForegroundDark = JunoColorToken(unchecked: 0.721, 0.705, 0.679)
+
     // The ambient throw under a raised card, from the web's `--shadow-soft`
     // (`hsl(30 10% 20% / 0.05…0.08)`). Warm rather than neutral black: a grey
     // shadow on a warm canvas reads as dirt.
@@ -77,6 +83,17 @@ public extension Color {
     /// `junoSidebarSelectionTint()`.
     static let junoSidebarSelection = Color.junoAdaptive(
         light: .sidebarSelectionLight, dark: .sidebarSelectionDark
+    )
+    /// The navigation column's resting ink — the web's `--sidebar-foreground`.
+    ///
+    /// Both the label and its mark rest on this and lift to ``Color/primary``
+    /// when the row is selected, which is the whole of the web's row treatment:
+    /// one fill, one ink, no accent. It has to be stated on the mark itself,
+    /// because a `Label` inside a `.sidebar` list resolves its icon slot against
+    /// the *system accent* and an inherited `foregroundStyle` never reaches it —
+    /// which is why the column was drawing coral glyphs it was never asked for.
+    static let junoSidebarForeground = Color.junoAdaptive(
+        light: .sidebarForegroundLight, dark: .sidebarForegroundDark
     )
     /// The throw under a raised card. Only ever used through ``View/junoCard(cornerRadius:)``.
     static let junoCardShadow = Color.junoAdaptive(

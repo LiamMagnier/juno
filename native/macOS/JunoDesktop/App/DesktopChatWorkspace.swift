@@ -471,21 +471,33 @@ private struct DesktopChatSidebar: View {
             Color.clear.frame(height: 28)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            accountFooter
+            accountFooter.junoSidebarFooter()
         }
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {
-        Label {
+        // The ink is stated on the mark as well as on the label. A `Label` in a
+        // `.sidebar` list resolves its icon slot against the system accent, and
+        // an inherited `foregroundStyle` does not reach it — so every destination
+        // glyph in this column drew coral no matter what the row said. The web
+        // spends no accent here at all: one fill, one ink, resting on
+        // `--sidebar-foreground` and lifting to `--foreground` when selected.
+        let selected = selection == .destination(item)
+        let ink = selected ? Color.primary : Color.junoSidebarForeground
+
+        return Label {
             Text(item.label)
         } icon: {
             if let icon = item.junoIcon {
                 JunoIconView(icon, size: 16)
+                    .foregroundStyle(ink)
             } else {
                 Image(systemName: item.symbol)
+                    .foregroundStyle(ink)
             }
         }
-        .junoSidebarRowInk()
+        .foregroundStyle(ink)
+        .animation(.easeOut(duration: 0.22), value: selected)
         .tag(DesktopSidebarItem.destination(item))
     }
 

@@ -596,6 +596,7 @@ struct DesktopCodeSidebar: View {
                 Text("New conversation").junoRowLabel()
             } icon: {
                 JunoIconView(.new, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .draft)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.draft)
@@ -609,6 +610,7 @@ struct DesktopCodeSidebar: View {
                 Text("Pull requests").junoRowLabel()
             } icon: {
                 JunoIconView(.pulls, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .pulls)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.pulls)
@@ -624,6 +626,7 @@ struct DesktopCodeSidebar: View {
                     Text("Connections").junoRowLabel()
                 } icon: {
                     JunoIconView(.connections, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .connections)
                 }
                 .junoSidebarRowInk()
                 .tag(DesktopCodeSidebarItem.connections)
@@ -677,6 +680,7 @@ struct DesktopCodeSidebar: View {
                         Text("All Projects").junoRowLabel()
                     } icon: {
                         JunoIconView(.projects, size: 15)
+                            .junoSidebarMarkInk(selected: selection == .allProjects)
                     }
                     .junoSidebarRowInk()
                     .badge(groups.count)
@@ -764,7 +768,7 @@ struct DesktopCodeSidebar: View {
             Color.clear.frame(height: Self.titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            footer
+            footer.junoSidebarFooter()
         }
         .alert(item: $projectPendingDeletion) { project in
             Alert(
@@ -858,6 +862,7 @@ struct DesktopCodeSidebar: View {
                     .truncationMode(.middle)
             } icon: {
                 JunoIconView(.projects, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
             }
 
             Spacer(minLength: JunoSpace.hairline)
