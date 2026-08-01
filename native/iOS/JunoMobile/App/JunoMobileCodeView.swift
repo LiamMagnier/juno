@@ -754,7 +754,7 @@ private struct JunoMobileCodeSessionView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .defaultScrollAnchor(.bottom)
             .onChange(of: model.events.count) { _, _ in
                 guard isNearBottom else { return }

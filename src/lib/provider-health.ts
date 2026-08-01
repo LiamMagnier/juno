@@ -122,11 +122,24 @@ function record(provider: Provider, next: ProviderHealth): void {
   if (transition === null) return;
 
   if (transition === "down") {
+    // An account with no credit left is not mailed about, only logged.
+    //
+    // It is a real condition and the catalog does hide the provider, but it is
+    // not an incident: nobody can act on it except by topping the account up,
+    // which the person receiving the mail already knows. It also persists — a
+    // dry account fails every probe for as long as it stays dry — and the mail
+    // dedupe is per-process and in memory, so every deploy resets the window and
+    // sends the same message again. The result was a mailbox full of "this API
+    // has no credit" for a fact the owner learned the first time.
+    const isFunding = next.failure === "billing";
     alertOperator({
       kind: "provider_unhealthy",
       key: provider,
-      severity: "critical",
-      title: `${PROVIDERS[provider].label} cannot serve requests`,
+      severity: isFunding ? "warn" : "critical",
+      mail: !isFunding,
+      title: isFunding
+        ? `${PROVIDERS[provider].label} has no credit left`
+        : `${PROVIDERS[provider].label} cannot serve requests`,
       detail: {
         provider,
         failure: next.failure,
@@ -136,10 +149,16 @@ function record(provider: Provider, next: ProviderHealth): void {
       },
     });
   } else {
+    // Recovery is only news if the outage was. Pairing a "recovered" mail with a
+    // "down" that was deliberately silent would reintroduce the noise from the
+    // other side — and topping an account up is not something to be congratulated
+    // on by email.
+    const wasFunding = previous?.failure === "billing";
     alertOperator({
       kind: "provider_recovered",
       key: provider,
       severity: "warn",
+      mail: !wasFunding,
       title: `${PROVIDERS[provider].label} is serving requests again`,
       detail: { provider },
     });

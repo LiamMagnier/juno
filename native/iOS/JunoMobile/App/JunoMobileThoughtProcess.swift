@@ -301,7 +301,7 @@ private struct JunoMobileThoughtProcessPanel: View {
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .navigationTitle("Thought process")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

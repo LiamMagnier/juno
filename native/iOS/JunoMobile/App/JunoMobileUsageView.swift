@@ -57,7 +57,7 @@ struct JunoMobileUsageView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 28)
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
         .navigationTitle("Usage")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: range) { await load(force: false) }

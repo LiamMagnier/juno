@@ -844,7 +844,7 @@ private struct JunoMobileProjectDetail: View {
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
         .navigationTitle(project.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -906,6 +906,7 @@ private struct JunoMobileProjectDetail: View {
                     .font(.system(size: 14, design: .monospaced))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                    .junoScreenCanvas()
                     .navigationTitle("Instructions")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -1296,7 +1297,7 @@ struct JunoMobileArtifactDetail: View {
                 )
             }
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
     }
 
     /// The navigation chrome, applied **only** in page mode.
@@ -1401,6 +1402,7 @@ struct JunoMobileArtifactDetail: View {
                 TextEditor(text: $editValue)
                     .font(.system(.body, design: .monospaced))
                     .padding(8)
+                    .junoScreenCanvas()
                     .navigationTitle("Edit artifact")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {

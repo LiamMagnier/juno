@@ -489,7 +489,7 @@ struct JunoMobileSettingsView: View {
             }
             .padding(JunoSpace.regular)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .navigationTitle("Delete account")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1055,7 +1055,7 @@ private struct JunoMobileFavoriteModelsView: View {
             .frame(maxWidth: 768)
             .frame(maxWidth: .infinity)
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("juno.mobile.favorite-models")

@@ -242,7 +242,7 @@ struct JunoMobileModelSelectorView: View {
             // The list is reading material, so it sits on an opaque canvas.
             // Glass stays on the chrome — the chips, the composer, the search
             // bar — rather than washing out the content behind everything.
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .navigationTitle("Model")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

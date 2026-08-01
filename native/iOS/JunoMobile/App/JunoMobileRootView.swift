@@ -99,6 +99,15 @@ struct JunoMobileRootView: View {
             phaseContent
             #endif
         }
+        // The window's own backdrop. It catches what no screen paints — chiefly
+        // the signed-out shell, which declares no background at all and was
+        // therefore the one screen in the app whose colour was `systemBackground`
+        // rather than the canvas.
+        //
+        // Safe to read here, unlike the accent below: `junoCanvas` is a `static
+        // let`, so it registers no observable dependency and cannot re-evaluate
+        // this body.
+        .junoScreenCanvas()
         .preferredColorScheme(preferredColorScheme)
         // NOTE: `.tint(Color.junoAccent)` must NOT go here. Reading the accent in
         // this body makes the body re-evaluate whenever it changes, and this body is
@@ -446,6 +455,7 @@ struct JunoMobileRootView: View {
                     .accessibilityIdentifier("juno.mobile.settings-close")
                 }
             }
+            .junoScreenCanvas()
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -476,7 +486,14 @@ struct JunoMobileRootView: View {
             .background(Color.junoCanvas.ignoresSafeArea())
 
             ZStack {
-                Color(uiColor: .systemBackground)
+                // The plate's own fill, opaque because the drawer's rows sit
+                // directly behind it while it is closed. It was
+                // `systemBackground`, which is the one colour it must not be:
+                // every screen paints `junoCanvas` over it, so the only way that
+                // fill can ever be seen is as a seam where a screen stops — and a
+                // seam in pure white or pure black is exactly the failure this
+                // pass is about.
+                Color.junoCanvas
                 detail(for: selection)
                     .allowsHitTesting(!sidebarOpen)
             }
@@ -622,6 +639,7 @@ struct JunoMobileRootView: View {
                         }
                     }
                 }
+                .junoScreenCanvas()
         }
         .tint(Color.junoAccent)
     }
