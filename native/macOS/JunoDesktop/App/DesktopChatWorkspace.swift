@@ -455,10 +455,7 @@ private struct DesktopChatSidebar: View {
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
         .safeAreaInset(edge: .top, spacing: 0) {
-            ZStack(alignment: .leading) {
-                Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
-                DesktopProductBrand(product: .chat)
-            }
+            Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             accountFooter.junoSidebarFooter()

@@ -12,6 +12,19 @@ import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The Code inspector shares the trailing toolbar with the session search
+/// field. Keep its narrowest state wide enough for that field, with the same
+/// 12-point shoulder on both sides, so resizing never clips or crowds Search
+/// sessions.
+private enum DesktopCodeInspectorMetrics {
+    private static let searchFieldWidth: CGFloat = 308
+    private static let horizontalPadding: CGFloat = JunoSpace.cozy
+
+    static let minimum = searchFieldWidth + (horizontalPadding * 2)
+    static let ideal = minimum
+    static let maximum = JunoInspectorMetrics.maximum
+}
+
 /// The Code window: one layout owner, two columns, one optional trailing
 /// inspector.
 ///
@@ -558,6 +571,7 @@ struct DesktopCodeWorkspace: View {
             beginVoice: { modelID in
                 startVoice(modelID: modelID, projectID: record?.id.value)
             },
+            connectorModel: configuration?.connectorModel,
             voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
     }
@@ -752,9 +766,9 @@ struct DesktopCodeWorkspace: View {
             }
         }
         .inspectorColumnWidth(
-            min: JunoInspectorMetrics.minimum,
-            ideal: JunoInspectorMetrics.ideal,
-            max: JunoInspectorMetrics.maximum
+            min: DesktopCodeInspectorMetrics.minimum,
+            ideal: DesktopCodeInspectorMetrics.ideal,
+            max: DesktopCodeInspectorMetrics.maximum
         )
     }
 
@@ -917,10 +931,6 @@ struct DesktopCodeWorkspace: View {
             .accessibilityIdentifier("juno.code.inspector.toggle")
         }
 
-        ToolbarItem(placement: .status) {
-            statusIndicator
-        }
-
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button(action: openPreview) {
@@ -1009,45 +1019,6 @@ struct DesktopCodeWorkspace: View {
             .disabled(!isRunning)
             .help("Stop this run immediately (⌘.)")
             .accessibilityIdentifier("juno.code.stop")
-        }
-    }
-
-    /// Real elapsed time while a run is live, the run's own status otherwise.
-    /// The ticking clock only exists while something is actually running.
-    @ViewBuilder
-    private var statusIndicator: some View {
-        if let status = currentStatus {
-            if status.isActive, let startedAt = controller?.runStartedAt {
-                TimelineView(.periodic(from: startedAt, by: 1)) { context in
-                    Label(
-                        "\(status.label) · \(elapsed(from: startedAt, to: context.date))",
-                        systemImage: status.symbol
-                    )
-                    .foregroundStyle(status.tint)
-                    .monospacedDigit()
-                }
-                .accessibilityLabel("\(status.label), running")
-            } else {
-                Label(status.label, systemImage: status.symbol)
-                    .foregroundStyle(status.tint)
-            }
-        } else {
-            // A dashed circle looked like a disabled or loading toolbar button,
-            // especially in a new Code window where it was the only status. Make
-            // the state read as a quiet status chip instead: pencil means "ready
-            // to write" and the word remains visible when the toolbar is wide
-            // enough to show it.
-            HStack(spacing: JunoSpace.hairline) {
-                Image(systemName: "pencil.line")
-                    .font(.caption2.weight(.semibold))
-                Text("Draft")
-                    .font(.caption.weight(.medium))
-            }
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 24)
-            .background(JunoGlassBackground(cornerRadius: 12))
-            .accessibilityLabel("New session draft")
         }
     }
 
@@ -1169,6 +1140,12 @@ struct DesktopCodeWorkspace: View {
             selection.wrappedValue = .session(session.id)
             guard let created = await workbenchModel.controller(for: session.id) else {
                 return
+            }
+            for path in draft.fileReferences {
+                created.registerComposerFileReference(path)
+            }
+            for attachment in draft.attachments {
+                created.attach(attachment)
             }
             created.composerText = draft.prompt
             await created.send()
