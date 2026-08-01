@@ -115,8 +115,17 @@ jobs:
           set -euo pipefail
           newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$newest/Contents/Developer"
-          xcodebuild -version
-          major=$(xcodebuild -version | head -1 | sed -E 's/Xcode ([0-9]+).*/\1/')
+          # Captured once, then parsed from the variable — never piped into
+          # `head`. `head` closes the pipe after the first line, `xcodebuild`
+          # writes into it anyway and dies with an uncaught
+          # NSFileHandleOperationException ("Broken pipe"), and under `pipefail`
+          # that non-zero status fails the whole pipeline. So this step reported
+          # a version gate FAILURE on a runner that satisfied it — Xcode 26.6
+          # against a floor of 26. `native/Scripts/release-macos.sh` carries the
+          # same warning about `codesign | grep -q` for the same reason.
+          version=$(xcodebuild -version)
+          printf '%s\n' "$version"
+          major=$(printf '%s\n' "$version" | sed -n -E '1s/Xcode ([0-9]+).*/\1/p')
           if [ "$major" -lt "$REQUIRED_XCODE_MAJOR" ]; then
             echo "::error::JunoDesktop targets macOS $REQUIRED_XCODE_MAJOR and needs Xcode $REQUIRED_XCODE_MAJOR or newer; this runner has Xcode $major."
             echo "::error::Pin a runner image that ships it, or lower MACOSX_DEPLOYMENT_TARGET (which would remove Liquid Glass)."
