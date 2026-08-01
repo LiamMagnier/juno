@@ -64,9 +64,75 @@ public protocol SecurityKeychainClient: Sendable {
     func delete(_ item: SecurityKeychainItem) throws -> Bool
 }
 
+#if os(macOS)
+/// Whether this process may use the macOS data-protection keychain at all.
+///
+/// It is not always allowed to. The data-protection keychain requires the caller
+/// to carry an `application-identifier` entitlement, and on macOS that entitlement
+/// arrives only in an embedded provisioning profile. A build signed for
+/// development and exported without one — which is exactly what
+/// `native/Scripts/release-macos.sh` produces when no Developer ID certificate is
+/// installed — has no such profile, so every query returns
+/// `errSecMissingEntitlement` and the app cannot read its own tokens or its
+/// database key. Juno 0.4.0 shipped that way and could not get past sign-in.
+///
+/// So the attribute is treated as an optimisation rather than a requirement:
+/// asked for, and abandoned for the life of the process the first time macOS
+/// says no. Properly provisioned builds keep the stronger store and the
+/// protection class that goes with it; the rest fall back to the file-based
+/// keychain, which is where every Juno release before 0.4.0 kept these items
+/// anyway. The alternative — failing closed — locks the user out of an app whose
+/// secrets are sitting readable on the same disk either way.
+///
+/// One latch per process, not per call: the answer depends on the code signature,
+/// which cannot change while the app is running, and re-asking would spend a
+/// failed Security round trip on every read.
+private final class DataProtectionKeychainGate: @unchecked Sendable {
+    static let shared = DataProtectionKeychainGate()
+
+    private let lock = NSLock()
+    private var available = true
+
+    var isAvailable: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return available
+    }
+
+    /// - Returns: true the first time, so exactly one caller retries.
+    func markUnavailable() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard available else { return false }
+        available = false
+        return true
+    }
+}
+#endif
+
 /// Stores generic-password items locally on this Apple device. Keychain syncing is disabled.
 public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public init() {}
+
+    /// Runs a Security call, and runs it once more against the file-based
+    /// keychain if macOS answers that this build is not entitled to the
+    /// data-protection one.
+    ///
+    /// The query is rebuilt inside the closure rather than passed in, because the
+    /// retry has to pick up the flipped gate — a dictionary built before the
+    /// first attempt still carries `kSecUseDataProtectionKeychain: true` and
+    /// would fail identically.
+    private func withKeychainFallback(_ operation: () -> OSStatus) -> OSStatus {
+        let status = operation()
+        #if os(macOS)
+        guard status == errSecMissingEntitlement,
+              DataProtectionKeychainGate.shared.markUnavailable()
+        else { return status }
+        return operation()
+        #else
+        return status
+        #endif
+    }
 
     public func read(_ item: SecurityKeychainItem) throws -> Data? {
         if let data = try copyValue(for: item, dataProtection: true) {
@@ -79,9 +145,9 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // Clear any legacy copy first, so the value this call writes is the only
         // one left on disk rather than shadowing a stale readable token.
         _ = try migrateLegacyItem(item)
-        let attributes = newItemAttributes(data, for: item)
-
-        let addStatus = SecItemAdd(attributes as CFDictionary, nil)
+        let addStatus = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+        }
         guard addStatus == errSecDuplicateItem else {
             guard addStatus == errSecSuccess else {
                 throw SecurityKeychainClientError.unexpectedStatus(Int32(addStatus))
@@ -94,10 +160,12 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
             kSecAttrAccessible as String:
                 kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
         ]
-        let updateStatus = SecItemUpdate(
-            baseQuery(for: item) as CFDictionary,
-            updates as CFDictionary
-        )
+        let updateStatus = withKeychainFallback {
+            SecItemUpdate(
+                baseQuery(for: item) as CFDictionary,
+                updates as CFDictionary
+            )
+        }
         guard updateStatus == errSecSuccess else {
             throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
         }
@@ -112,10 +180,9 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // generated database key would come to replace the one the existing
         // store was encrypted with.
         if try migrateLegacyItem(item) != nil { return false }
-        let status = SecItemAdd(
-            newItemAttributes(data, for: item) as CFDictionary,
-            nil
-        )
+        let status = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+        }
         switch status {
         case errSecSuccess:
             return true
@@ -138,8 +205,9 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         _ item: SecurityKeychainItem,
         dataProtection: Bool
     ) throws -> Bool {
-        let query = baseQuery(for: item, dataProtection: dataProtection)
-        let status = SecItemDelete(query as CFDictionary)
+        let status = withKeychainFallback {
+            SecItemDelete(baseQuery(for: item, dataProtection: dataProtection) as CFDictionary)
+        }
         switch status {
         case errSecSuccess:
             return true
@@ -154,12 +222,13 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         for item: SecurityKeychainItem,
         dataProtection: Bool
     ) throws -> Data? {
-        var query = baseQuery(for: item, dataProtection: dataProtection)
-        query[kSecReturnData as String] = true
-        query[kSecMatchLimit as String] = kSecMatchLimitOne
-
         var result: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let status = withKeychainFallback {
+            var query = baseQuery(for: item, dataProtection: dataProtection)
+            query[kSecReturnData as String] = true
+            query[kSecMatchLimit as String] = kSecMatchLimitOne
+            return SecItemCopyMatching(query as CFDictionary, &result)
+        }
         switch status {
         case errSecSuccess:
             guard let data = result as? Data else {
@@ -196,10 +265,9 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // Write the new copy BEFORE dropping the old one. If this is interrupted
         // in between, the secret is duplicated — recoverable. The other order
         // destroys it.
-        let status = SecItemAdd(
-            newItemAttributes(data, for: item) as CFDictionary,
-            nil
-        )
+        let status = withKeychainFallback {
+            SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+        }
         guard status == errSecSuccess || status == errSecDuplicateItem else {
             throw SecurityKeychainClientError.unexpectedStatus(Int32(status))
         }
@@ -232,7 +300,11 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         // `migrateLegacyItem` reaches what previous versions wrote, and is only
         // ever passed on macOS.
         #if os(macOS)
-        query[kSecUseDataProtectionKeychain as String] = dataProtection
+        // Resolved through the gate, so once macOS has said this build is not
+        // entitled to the data-protection keychain every later query — read,
+        // write and delete alike — addresses the same store the fallback wrote to.
+        query[kSecUseDataProtectionKeychain as String] =
+            dataProtection && DataProtectionKeychainGate.shared.isAvailable
         #else
         query[kSecUseDataProtectionKeychain as String] = true
         #endif
