@@ -546,10 +546,23 @@ private struct DesktopChatSidebar: View {
         }
     }
 
-    /// The account row, pinned to the bottom of the column by
-    /// `safeAreaInset` rather than by being the last child of a `VStack`, so the
-    /// list scrolls underneath it and the row stays reachable.
+    /// A staged update and then the account row, pinned to the bottom of the
+    /// column by `safeAreaInset` rather than by being the last child of a
+    /// `VStack`, so the list scrolls underneath them and they stay reachable.
+    ///
+    /// The update sits above the account for the same reason it does in Code's
+    /// footer: it is news, and the row with the reader's own name on it is
+    /// furniture. ``DesktopUpdateReadyRow`` is shared with that footer so the two
+    /// columns cannot describe the same waiting update differently.
     private var accountFooter: some View {
+        VStack(spacing: 0) {
+            DesktopUpdateReadyRow()
+            accountRow
+        }
+        .padding(JunoSpace.snug)
+    }
+
+    private var accountRow: some View {
         Button {
             destination = .settings
         } label: {
@@ -582,7 +595,6 @@ private struct DesktopChatSidebar: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .padding(JunoSpace.snug)
         .help("Account and settings")
         .accessibilityIdentifier("Account and settings")
     }
@@ -2015,11 +2027,20 @@ struct DesktopComposer: View {
     @State private var showingThinking = false
     @State private var dictating = false
     @State private var importError: String?
+    /// Set while a spoken turn is on the wire, so a second Return cannot send
+    /// the same images twice.
+    @State private var isSendingVoiceTurn = false
+    /// Why the last spoken turn was refused, shown in the same notice row as the
+    /// attachment errors because it is the same kind of news.
+    @State private var voiceTurnError: String?
     /// Whether a very large draft has been opened back up for editing. The text
     /// is in `prompt` and sent in full either way — this only decides whether it
     /// is live in the text field. See ``NativePromptLimits``.
     @State private var draftExpanded = false
     @FocusState private var focused: Bool
+    /// The call this composer is inside, published by ``junoVoiceDock(_:)``.
+    /// Non-nil is what routes a send over the socket instead of to `/api/chat`.
+    @Environment(\.junoVoiceCall) private var voiceCall
 
     private var selectedModel: NativeChatModelOption? {
         model.model(withID: selectedModelID)
@@ -2041,7 +2062,45 @@ struct DesktopComposer: View {
             || !(attachmentModel?.attachments.isEmpty ?? true))
             && !selectedModelID.isEmpty
             && !model.isGenerating
+            && !isSendingVoiceTurn
             && (attachmentModel?.canSend ?? true)
+    }
+
+    // MARK: Voice mode
+
+    /// Whether a call is running over this composer. While it is, the draft goes
+    /// to the model that is speaking rather than to the chat route.
+    private var voiceActive: Bool { voiceCall != nil }
+
+    /// Past four images a turn, providers start answering about the first one
+    /// and ignoring the rest. The relay enforces the same ceiling; this is here
+    /// so the reader is stopped before they compose a fifth.
+    private static let maximumVoiceImages = 4
+
+    /// Whether the model on the other end of the call can see at all.
+    ///
+    /// Read from what the relay said in `session.ready` rather than from a list
+    /// of providers kept here, which would be a second copy to drift. Nil while
+    /// connecting reads as "no", so the attach row is not offered a beat before
+    /// it can work.
+    private var voiceCanSeeImages: Bool {
+        voiceCall?.controller.capabilities?.videoInput == true
+    }
+
+    /// Whether another image can be staged for the call in progress.
+    private var canAttachInVoice: Bool {
+        voiceCanSeeImages
+            && (attachmentModel?.attachments.count ?? 0) < Self.maximumVoiceImages
+    }
+
+    /// What the file importer will accept.
+    ///
+    /// Narrowed to images during a call, which is the Mac's version of the phone
+    /// disabling its Files row: no realtime provider accepts a document, and this
+    /// column has no separate Photos row to fall back on, so the one attach row
+    /// has to become the image row rather than the refused one.
+    private var importedContentTypes: [UTType] {
+        voiceActive ? [.image] : [.item]
     }
 
     // MARK: Long drafts
@@ -2117,7 +2176,9 @@ struct DesktopComposer: View {
                 .scrollIndicators(.hidden)
             }
 
-            if let message = importError ?? attachmentModel?.lastErrorDescription {
+            if let message = voiceTurnError ?? importError
+                ?? attachmentModel?.lastErrorDescription
+            {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.red)
@@ -2230,7 +2291,7 @@ struct DesktopComposer: View {
         .padding(.bottom, JunoSpace.tight)
         .fileImporter(
             isPresented: $showingFileImporter,
-            allowedContentTypes: [.item],
+            allowedContentTypes: importedContentTypes,
             allowsMultipleSelection: true,
             onCompletion: importFiles
         )
@@ -2290,6 +2351,10 @@ struct DesktopComposer: View {
         // the text field, which is the state this card exists to avoid.
         .onChange(of: prompt) { _, text in
             if !NativePromptLimits.isHugeDraft(text) { draftExpanded = false }
+        }
+        // A refusal that named the call is meaningless once the call is over.
+        .onChange(of: voiceActive) { _, active in
+            if !active { voiceTurnError = nil }
         }
         .onChange(of: model.modelCatalog) { _, _ in configureSelection() }
         .onChange(of: model.selectedConversationID) { _, selected in
@@ -2444,23 +2509,74 @@ struct DesktopComposer: View {
         .accessibilityIdentifier("juno.desktop.chat.collapsed-draft")
     }
 
+    /// What the "+" adds to a message, and the tools it arms.
+    ///
+    /// The marks are the website's own, not the nearest SF Symbol: `composer.tsx`
+    /// draws Files with `FileUp`, Deep research with `Telescope`, Connectors with
+    /// `Plug` — where this menu had reached for `paperclip`, `binoculars` and, for
+    /// connectors, a chain `link` that neither of the other two clients uses. The
+    /// checkmark on a chosen row stays an SF Symbol: a selection tick is the OS's
+    /// mark, not Juno's.
+    ///
+    /// **None of them are currently drawn, and that is AppKit's decision, not a
+    /// missing asset.** A SwiftUI `Menu` on this OS renders its rows title-only:
+    /// measured here with a Juno mark, with an SF Symbol, and with
+    /// `.labelStyle(.titleAndIcon)` forced on — all three produce a plain text
+    /// menu, and the inline `Picker` in Juno Code's composer behaves the same way.
+    /// So the SF Symbols this menu used to name were never visible either. They
+    /// are stated correctly anyway: this is the row's identity, it is what the
+    /// phone and the browser draw, and the day these menus carry images again is
+    /// not the day to rediscover which glyph each row meant.
     private var addMenu: some View {
         Menu {
             Button {
                 showingFileImporter = true
             } label: {
-                Label("Attach files", systemImage: "paperclip")
+                // Named for what it can take. During a call the only thing this
+                // socket carries is JPEG, so offering "files" would be offering
+                // something the turn would then refuse.
+                JunoIconLabel(
+                    verbatim: voiceActive ? "Attach images" : "Attach files",
+                    icon: .files,
+                    size: 14
+                )
             }
-            .disabled(!(attachmentModel?.hasCapacity ?? false))
+            .disabled(
+                voiceActive
+                    ? !canAttachInVoice
+                    : !(attachmentModel?.hasCapacity ?? false)
+            )
 
             Button {
                 showingLibrary = true
             } label: {
-                Label("Choose from Library", systemImage: "books.vertical")
+                // Visible and disabled rather than removed, because "where did the
+                // Library go" is a question worth answering in place. A library
+                // pick is a clone whose bytes only ever existed on the server, and
+                // there is no way to show one to a model over this socket.
+                JunoIconLabel(
+                    verbatim: voiceActive
+                        ? "Choose from Library — chat only"
+                        : "Choose from Library",
+                    icon: .library,
+                    size: 14
+                )
             }
             .disabled(
-                libraryModel == nil || !(attachmentModel?.hasCapacity ?? false)
+                voiceActive
+                    || libraryModel == nil
+                    || !(attachmentModel?.hasCapacity ?? false)
             )
+
+            // Said once, plainly, rather than left for the reader to infer from a
+            // row that will not enable. `videoInput` is the relay's own answer, so
+            // this names the providers that do have it.
+            if voiceActive, !voiceCanSeeImages {
+                Button {} label: {
+                    Label(Self.noVisionMessage, systemImage: "eye.slash")
+                }
+                .disabled(true)
+            }
 
             if fixedProjectID == nil, let projectModel {
                 Menu {
@@ -2480,9 +2596,10 @@ struct DesktopComposer: View {
                         }
                     }
                 } label: {
-                    Label(
-                        selectedProjectName ?? "Add to project",
-                        systemImage: "folder"
+                    JunoIconLabel(
+                        verbatim: selectedProjectName ?? "Add to project",
+                        icon: .projects,
+                        size: 14
                     )
                 }
                 .disabled(model.selectedConversationID != nil)
@@ -2491,16 +2608,20 @@ struct DesktopComposer: View {
             Divider()
 
             Toggle(isOn: $deepResearch) {
-                Label("Deep research", systemImage: "binoculars")
+                JunoIconLabel(verbatim: "Deep research", icon: .research, size: 14)
             }
 
             Toggle(isOn: $webSearch) {
-                Label("Web search", systemImage: "globe")
+                JunoIconLabel(verbatim: "Web search", icon: .web, size: 14)
             }
             .disabled(selectedModel?.supportsWebSearch != true)
 
             Toggle(isOn: $canvasEnabled) {
-                Label("Canvas & artifacts", systemImage: "rectangle.on.rectangle")
+                JunoIconLabel(
+                    verbatim: "Canvas & artifacts",
+                    icon: .artifactsTool,
+                    size: 14
+                )
             }
 
             if connectorModel != nil {
@@ -2522,11 +2643,12 @@ struct DesktopComposer: View {
                         }
                     }
                 } label: {
-                    Label(
-                        selectedConnectors.isEmpty
+                    JunoIconLabel(
+                        verbatim: selectedConnectors.isEmpty
                             ? "Connectors"
                             : "Connectors · \(selectedConnectors.count)",
-                        systemImage: "link"
+                        icon: .connections,
+                        size: 14
                     )
                 }
             }
@@ -2801,6 +2923,14 @@ struct DesktopComposer: View {
 
     private func send() {
         guard canSend else { return }
+        // A live call takes the turn before the chat route ever sees it. Without
+        // this the draft went to `/api/chat` and came back as a written exchange
+        // the spoken conversation knew nothing about — two threads, from one
+        // composer, with the reader watching the wrong one.
+        if let voiceCall {
+            sendVoiceTurn(voiceCall)
+            return
+        }
         // Past the guard that can still refuse the turn, and before the work —
         // the swell answers the keystroke, not the round trip. The web sets its
         // flag in exactly the same place inside `sendFromComposer`.
@@ -2852,6 +2982,94 @@ struct DesktopComposer: View {
         }
     }
 
+    /// Sends the draft — text and up to four images — through the live session
+    /// rather than through the chat route.
+    ///
+    /// This is what makes keeping the composer on screen during a call worth
+    /// anything. The turn goes over the socket the conversation is already on, so
+    /// the model answers it out loud in context; the same draft through
+    /// `/api/chat` produced a second, silent conversation instead.
+    ///
+    /// The encoding, the four-image ceiling, the relay's byte bound and the
+    /// re-check that the socket has not been replaced underneath a slow encode
+    /// all live in ``JunoRealtimeVoiceController/sendTurn(text:images:)``, which
+    /// the phone calls too. Nothing here duplicates them — this only decides
+    /// whether there is a turn worth handing over, and says why when there is not.
+    private func sendVoiceTurn(_ call: DesktopVoiceColumn) {
+        guard !isSendingVoiceTurn else { return }
+        voiceTurnError = nil
+        let controller = call.controller
+        guard controller.phase == .live else {
+            // A finished call and a slow one need different sentences: the way out
+            // of the first is the dock's restart button, and the way out of the
+            // second is waiting.
+            voiceTurnError = switch controller.phase {
+            case .ended, .error:
+                "This voice session has ended. Restart it, or hang up to keep typing."
+            default:
+                "Voice is still connecting. Try again in a moment."
+            }
+            return
+        }
+
+        let staged = attachmentModel?.attachments ?? []
+        guard staged.count <= Self.maximumVoiceImages else {
+            voiceTurnError = "Voice mode accepts up to 4 images in one turn."
+            return
+        }
+        // `previewData` is the payload the upload model already holds for an
+        // image, which is why this needs no second read and no network. An
+        // attachment without one is either a document or a library clone whose
+        // bytes only ever existed on the server — neither can be shown to a model
+        // over this socket, so the turn is refused rather than quietly sent
+        // without them.
+        //
+        // The uploaded id rides along so the saved transcript can claim the same
+        // attachment the model was shown; it is nil until the upload lands, and a
+        // turn sent then still reaches the model — it is only the saved copy that
+        // loses the picture.
+        let images = staged.compactMap { attachment in
+            attachment.previewData.map {
+                JunoVoiceTurnImage(jpeg: $0, attachmentID: attachment.uploadedID)
+            }
+        }
+        guard images.count == staged.count else {
+            voiceTurnError =
+                "Voice mode can send images only — remove the other attachments first."
+            return
+        }
+        guard images.isEmpty || voiceCanSeeImages else {
+            voiceTurnError = Self.noVisionMessage
+            return
+        }
+
+        aura?.fireSendSwell()
+        let text = prompt
+        isSendingVoiceTurn = true
+        Task {
+            let accepted = await controller.sendTurn(text: text, images: images)
+            isSendingVoiceTurn = false
+            guard accepted else {
+                // The controller re-reads the provider's capabilities after the
+                // encode, so a turn with images can be refused there even though
+                // it passed the check above — a provider switch mid-encode is
+                // exactly that case.
+                voiceTurnError = images.isEmpty
+                    ? "Voice could not send that turn."
+                    : Self.noVisionMessage
+                return
+            }
+            prompt = ""
+            draftExpanded = false
+            attachmentModel?.clear()
+        }
+    }
+
+    /// The web's own wording for a provider with no eyes, so both clients name
+    /// the same three alternatives.
+    private static let noVisionMessage =
+        "This voice model can’t see images. Switch to OpenAI, Gemini or Qwen."
+
     private var connectedConnectors: [NativeConnector] {
         (connectorModel?.linked ?? []).filter(\.connected)
     }
@@ -2882,7 +3100,11 @@ struct DesktopComposer: View {
             importError = error.localizedDescription
         case .success(let urls):
             importError = nil
-            for url in urls.prefix(NativeComposerAttachmentModel.maximumAttachments) {
+            // A call's ceiling is the relay's four, not the message route's ten.
+            let ceiling = voiceActive
+                ? Self.maximumVoiceImages
+                : NativeComposerAttachmentModel.maximumAttachments
+            for url in urls.prefix(ceiling) {
                 let granted = url.startAccessingSecurityScopedResource()
                 defer {
                     if granted { url.stopAccessingSecurityScopedResource() }

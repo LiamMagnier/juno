@@ -667,12 +667,12 @@ struct JunoMobileComposer: View {
                 Button {
                     open(.photos)
                 } label: {
-                    Label("attachments.photos", systemImage: "photo")
+                    JunoIconLabel("attachments.photos", icon: .photos)
                 }
                 .disabled(!canAttachInVoice)
 
                 Button {} label: {
-                    Label("composer.voice.files-chat-only", systemImage: "paperclip")
+                    JunoIconLabel("composer.voice.files-chat-only", icon: .files)
                 }
                 .disabled(true)
             }
@@ -1030,7 +1030,16 @@ struct JunoMobileComposer: View {
         // bytes only ever existed on the server — neither can be shown to a
         // model over this socket, so the turn is refused rather than silently
         // sent without them.
-        let images = staged.compactMap(\.previewData)
+        //
+        // The uploaded id rides along where there is one, and nil where the
+        // upload has not landed yet — see ``JunoVoiceTurnImage``. Waiting for it
+        // would hold a spoken turn on a network round trip the model does not
+        // need.
+        let images = staged.compactMap { attachment in
+            attachment.previewData.map {
+                JunoVoiceTurnImage(jpeg: $0, attachmentID: attachment.uploadedID)
+            }
+        }
         guard images.count == staged.count else {
             voiceTurnError = String(localized: "composer.voice.images-only")
             return

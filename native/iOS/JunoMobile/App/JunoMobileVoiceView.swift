@@ -133,6 +133,7 @@ struct JunoMobileVoiceDock: View {
 
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var camera = JunoMobileVoiceCamera()
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -152,18 +153,33 @@ struct JunoMobileVoiceDock: View {
                     .padding(.vertical, 7)
                     .modifier(JunoGlassCapsule())
             }
+            if let message = camera.unavailability?.message {
+                cameraNotice(message)
+            }
+            JunoMobileVoiceSelfView(camera: camera) { camera.stop() }
             pill
         }
         .animation(
             JunoMotion.reduced(JunoMotion.fast, when: reduceMotion),
             value: controller.assistantSpeaking
         )
+        .animation(JunoMotion.reduced(JunoMotion.standard, when: reduceMotion), value: camera.phase)
+        // A camera outlives nothing. The moment the audio stops being live —
+        // hang-up, session limit, a dropped socket — the frames have nowhere to
+        // go, and a preview still running past the end of the call would be the
+        // app filming for no one.
+        .onChange(of: session.isLive) { _, live in
+            if !live { camera.stop() }
+        }
         // Ends the call when the chat goes — another section, or a sign-out —
         // because the alternative is an open microphone with nothing on screen
         // saying so. It deliberately does **not** start one: `start()` is legal
         // from `ended`, so a dock that dialled on appearance would silently
         // redial every time the reader came back to Chat.
-        .onDisappear { controller.end() }
+        .onDisappear {
+            camera.stop()
+            controller.end()
+        }
         .accessibilityIdentifier("juno.mobile.voice")
     }
 
@@ -173,12 +189,37 @@ struct JunoMobileVoiceDock: View {
             controls
             #if os(iOS)
             speakerButton
+            cameraButton
             #endif
             optionsMenu
             hangUpButton
         }
         .padding(4)
         .modifier(JunoGlassCapsule())
+    }
+
+    /// A camera that could not start says so where the call's other notices
+    /// appear, and offers the only fix that works for a refusal.
+    private func cameraNotice(_ message: String) -> some View {
+        VStack(spacing: 8) {
+            Label(message, systemImage: "video.slash")
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .multilineTextAlignment(.center)
+            if camera.unavailability?.isRecoverableInSettings == true {
+                Button("attachments.camera.open-settings") {
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.junoAccent)
+                .font(.system(size: 14, weight: .medium))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .modifier(JunoGlassCapsule())
+        .accessibilityIdentifier("juno.mobile.voice-camera-unavailable")
     }
 
     // MARK: - Words
@@ -371,7 +412,45 @@ struct JunoMobileVoiceDock: View {
             controller.toggleSpeaker()
         }
     }
+
+    /// **Show Juno what you are looking at.**
+    ///
+    /// Present only where the provider can actually see. The gate is
+    /// `videoInput`, not `screenInput` — a camera frame and a screen are two
+    /// different permissions on the relay, and OpenAI takes the first and
+    /// refuses the second, so this control is offered on providers where the
+    /// Mac's screen share is not. When the gate is closed the button is not
+    /// drawn dim, it is not drawn at all, and ``optionsMenu`` says why in the
+    /// one place someone would go looking.
+    @ViewBuilder
+    private var cameraButton: some View {
+        if canSee {
+            circleButton(
+                // Camera is the OS's affordance and keeps the OS's glyph — the
+                // rule on ``JunoIcon`` names it explicitly.
+                systemImage: camera.isLive ? "video.slash.fill" : "video.fill",
+                label: camera.isLive ? "voice.camera.stop" : "voice.camera.start",
+                identifier: "juno.mobile.voice-camera",
+                tone: camera.isLive ? .prominent : .quiet
+            ) {
+                toggleCamera()
+            }
+            .disabled(!session.isLive || camera.isBusy)
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
     #endif
+
+    /// Whether this call's provider accepts pictures at all.
+    private var canSee: Bool { controller.capabilities?.videoInput == true }
+
+    private func toggleCamera() {
+        if camera.isLive {
+            camera.stop()
+        } else {
+            Task { await camera.start(sending: controller) }
+        }
+    }
 
     /// Providers are not interchangeable — some do true speech-to-speech, some
     /// need this client's own transcript, and only some can see — so the choice
@@ -380,6 +459,12 @@ struct JunoMobileVoiceDock: View {
     /// the conversation, so the audio path never comes down.
     private var optionsMenu: some View {
         Menu {
+            // Not a disabled button: a switch that cannot move still reads as a
+            // setting, and the reason it cannot move is the useful part — and
+            // the fix, switching provider, is the very next section.
+            if !canSee {
+                Label("voice.camera.unsupported", systemImage: "video.slash")
+            }
             Section("voice.provider") {
                 ForEach(JunoVoiceProvider.allCases) { provider in
                     Button {
@@ -478,6 +563,7 @@ struct JunoMobileVoiceDock: View {
     /// already holds, and the dock stays up with a spinner while it does,
     /// because closing first would leave a failed save with nowhere to report.
     private func hangUp() {
+        camera.stop()
         controller.end()
         guard let saveTranscript = session.saveTranscript, !savableTurns.isEmpty else {
             session.close()

@@ -159,6 +159,51 @@ final class JunoVoiceTranscriptRecordTests: XCTestCase {
         }
     }
 
+    // MARK: Shared images
+
+    /// The images arrive once, on the relay's echo of a composed turn, and the
+    /// line they land on is what gets posted to `/api/voice/transcript` on
+    /// hang-up. A late question still files above its answer, so the pictures
+    /// have to travel with it.
+    func testALateComposedTurnKeepsItsImagesAboveTheAnswer() {
+        var record = JunoVoiceTranscriptRecord()
+        record.beginAnswer()
+        record.upsert(role: .assistant, text: "That is a receipt.", final: true)
+        record.upsert(
+            role: .user, text: "Shared an image", final: true, attachmentIDs: ["att_1"]
+        )
+
+        XCTAssertEqual(record.lines.map(\.role), [.user, .assistant])
+        XCTAssertEqual(record.lines[0].attachmentIDs, ["att_1"])
+        XCTAssertTrue(record.lines[1].attachmentIDs.isEmpty)
+    }
+
+    /// The regression this parameter's default exists to prevent. Only the echo
+    /// carries ids; the partials that keep rewriting the same row carry none, so
+    /// assigning unconditionally would wipe the pictures off a line that had
+    /// them a moment ago — and the loss would only show up after the call, in
+    /// the saved conversation.
+    func testLaterFramesForTheSameLineDoNotClearItsImages() {
+        var record = JunoVoiceTranscriptRecord()
+        record.upsert(role: .user, text: "look at", final: false, attachmentIDs: ["att_1"])
+        record.upsert(role: .user, text: "look at this", final: true)
+
+        XCTAssertEqual(record.lines.count, 1)
+        XCTAssertEqual(record.lines[0].text, "look at this")
+        XCTAssertEqual(record.lines[0].attachmentIDs, ["att_1"])
+    }
+
+    /// A spoken line has no images, and must not inherit the previous turn's.
+    func testAnOrdinarySpokenLineCarriesNoImages() {
+        var record = JunoVoiceTranscriptRecord()
+        record.upsert(role: .user, text: "Shared an image", final: true, attachmentIDs: ["att_1"])
+        record.beginAnswer()
+        record.upsert(role: .assistant, text: "A receipt.", final: true)
+        record.upsert(role: .user, text: "And this one?", final: true)
+
+        XCTAssertEqual(record.lines.map(\.attachmentIDs), [["att_1"], [], []])
+    }
+
     func testResetClearsTheBoundaryAsWellAsTheLines() {
         var record = JunoVoiceTranscriptRecord()
         record.beginAnswer()

@@ -120,6 +120,18 @@ struct DesktopVoiceColumn {
     let close: () -> Void
 }
 
+extension EnvironmentValues {
+    /// The call the composer under this view is inside, if there is one.
+    ///
+    /// Published rather than passed as a parameter because the two surfaces that
+    /// host a composer reach a call differently — Chat owns the session, the
+    /// project overview builds its own — and both already wrap the composer in
+    /// ``junoVoiceDock(_:)``. Putting it in the environment there is what lets
+    /// the composer send into the call without either host being rewired, and
+    /// mirrors `junoVoiceSession` on the phone.
+    @Entry var junoVoiceCall: DesktopVoiceColumn?
+}
+
 extension View {
     /// The dock, directly above this composer.
     func junoVoiceDock(_ column: DesktopVoiceColumn?) -> some View {
@@ -168,6 +180,10 @@ private struct DesktopVoiceDockLayer: ViewModifier {
             }
             content
         }
+        // Announced from the same modifier that draws the dock, so a surface can
+        // never end up with the controls of a call the composer beneath them
+        // knows nothing about.
+        .environment(\.junoVoiceCall, column)
     }
 }
 

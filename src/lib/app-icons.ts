@@ -13,15 +13,21 @@ import {
   Cloud,
   Code2,
   FileText,
+  FileUp,
   Folder,
   GitBranch,
   GitPullRequest,
+  Globe,
   Home,
+  ImagePlus,
   Laptop,
   Layers3,
+  LayoutTemplate,
   Library,
   Lock,
   MessageCircle,
+  NotebookPen,
+  Paperclip,
   Pin,
   Plug,
   Plus,
@@ -29,6 +35,8 @@ import {
   Search,
   Settings,
   ShieldAlert,
+  SquarePen,
+  Telescope,
   type LucideIcon,
 } from "lucide-react";
 
@@ -94,3 +102,42 @@ export const CodeIcons = {
 } as const satisfies Record<string, LucideIcon>;
 
 export type CodeIconName = keyof typeof CodeIcons;
+
+/**
+ * The marks the composer's "+" menu uses for the things you can add to a
+ * message and the tools you can arm on it.
+ *
+ * A third group rather than more entries in `AppIcons`, because these answer a
+ * third question. That one is "which destination is this" and `CodeIcons` is
+ * "what kind of thing is this"; this is "what will this do to the message I am
+ * about to send". Filing `Telescope` under destinations would make the name
+ * lie.
+ *
+ * Every one of these is already drawn by `src/components/chat/composer.tsx` —
+ * they are here so the same drawing reaches the apps, which had been
+ * approximating each with the nearest SF Symbol (`binoculars` for Deep
+ * research, `powerplug` for Connectors, `brain.head.profile` for Memory). The
+ * apps' own menus are the only place a reader sees these marks, so a near-miss
+ * there reads as a different product rather than as a different platform.
+ */
+export const ComposerIcons = {
+  /** The parent "Attach" row, over Photos and Files. */
+  attach: Paperclip,
+  /** Add an image. Distinct from `file` — the web draws a picture with a plus. */
+  photos: ImagePlus,
+  /** Add a document. A page with an up arrow, not a paperclip: the paperclip
+   *  belongs to the parent row and reusing it made the two indistinguishable. */
+  files: FileUp,
+  /** Start a canvas from the composer. */
+  canvas: SquarePen,
+  /** Deep research. A telescope, never binoculars. */
+  research: Telescope,
+  /** Web search — Lucide's globe, which is a different drawing from SF's. */
+  web: Globe,
+  /** The canvas-and-artifacts tool. */
+  artifactsTool: LayoutTemplate,
+  /** Memory: what Juno keeps about you between conversations. */
+  memory: NotebookPen,
+} as const satisfies Record<string, LucideIcon>;
+
+export type ComposerIconName = keyof typeof ComposerIcons;

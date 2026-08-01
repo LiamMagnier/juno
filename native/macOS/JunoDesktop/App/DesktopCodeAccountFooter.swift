@@ -5,8 +5,9 @@ import JunoStorage
 import JunoSync
 import SwiftUI
 
-/// Who is signed in, how much of the week's allowance is gone, and the way to
-/// both — pinned to the bottom of Juno Code's navigation column.
+/// A staged update, who is signed in, how much of the week's allowance is gone,
+/// and the way to all three — pinned to the bottom of Juno Code's navigation
+/// column.
 ///
 /// Juno Code was the one window in the app with no account chrome at all:
 /// switching product hid the reader's name, their plan, whether their work was
@@ -34,6 +35,7 @@ struct DesktopCodeAccountFooter: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            DesktopUpdateReadyRow()
             if let plan {
                 DesktopCodeQuotaMeter(plan: plan, open: openUsage)
                     .transition(.opacity)
@@ -76,6 +78,61 @@ struct DesktopCodeAccountFooter: View {
         .buttonStyle(.plain)
         .help("Account and settings")
         .accessibilityIdentifier("juno.code.account")
+    }
+}
+
+// MARK: - Update
+
+/// The one row that says a new Juno is already downloaded and one relaunch away.
+///
+/// ``DesktopUpdateModel`` has always done the work — poll, download, verify the
+/// signature, stage the bundle — and then offered the swap only from the
+/// application menu, under About. Nobody opens that menu to find out an update
+/// is waiting, so a build that had been ready for a week looked identical to one
+/// that was current. This is the same action where the reader already is.
+///
+/// **Only `.ready` draws anything.** Not `.checking`, not `.downloading`: a row
+/// that is permanently present is chrome the eye learns to skip, and a progress
+/// spinner for a download nobody asked to watch turns a deliberately quiet
+/// updater into an interruption. The rest of the ladder stays in the menu, where
+/// someone who went looking for it will find it.
+///
+/// Coral, and one of the few places that is right. `--primary` is what the web
+/// spends on the affirmative next move, and a waiting update is good news — so
+/// this is a row in the accent, not a banner in a warning colour.
+struct DesktopUpdateReadyRow: View {
+    /// `@State` rather than a bare reference to the singleton, so the row
+    /// re-evaluates when the phase changes. `JunoDesktopCommands` holds the same
+    /// object the same way for the same reason.
+    @State private var updater = DesktopUpdateModel.shared
+
+    @ViewBuilder
+    var body: some View {
+        if case .ready(let version) = updater.phase {
+            Button {
+                updater.installAndRelaunch()
+            } label: {
+                HStack(spacing: JunoSpace.cozy) {
+                    JunoIconView(.refresh, size: 13)
+                    // The version, because "an update is available" is a fact the
+                    // reader can do nothing with — which version, and that
+                    // pressing this restarts Juno, is the whole decision.
+                    Text("Restart to update to \(version)")
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                    Spacer(minLength: JunoSpace.hairline)
+                }
+                .foregroundStyle(Color.junoAccent)
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.tight)
+                .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .help("Juno \(version) is downloaded and verified. This quits Juno and opens it again on the new version.")
+            .transition(.opacity)
+            .accessibilityIdentifier("juno.desktop.update-ready")
+        }
     }
 }
 

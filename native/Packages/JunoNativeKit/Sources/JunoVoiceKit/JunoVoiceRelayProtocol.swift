@@ -136,6 +136,78 @@ public enum JunoVoiceTurnPhase: String, Codable, Sendable {
     case end
 }
 
+/// One finalized turn of the chat that was already on screen, handed to the
+/// relay when a call opens.
+///
+/// Without this a call started from an existing conversation begins with the
+/// model knowing nothing about it — the reader says "so about that second
+/// option" and is answered by something that has never heard of the first. The
+/// relay seeds it into the provider's item history exactly once, on
+/// `session.start`; a provider switch mid-call reuses the relay's own running
+/// transcript instead, which is why ``JunoVoiceClientMessage/sessionSwitch(provider:)``
+/// carries nothing.
+public struct JunoVoiceHistoryEntry: Codable, Equatable, Sendable {
+    public var role: JunoVoiceTranscriptRole
+    public var text: String
+
+    public init(role: JunoVoiceTranscriptRole, text: String) {
+        self.role = role
+        self.text = text
+    }
+
+    /// The relay's `sanitizeHistory` bounds, restated. Three numbers rather than
+    /// one, because a chat can be long in either direction: many short turns, or
+    /// one enormous pasted document.
+    public static let maximumTurns = 20
+    public static let maximumTurnCharacters = 2_000
+    public static let maximumTotalCharacters = 12_000
+
+    /// Trims a chat to what may travel on `session.start`.
+    ///
+    /// The relay repeats every one of these checks at its trust boundary and
+    /// truncates silently, so this is not a validation — it is what stops a long
+    /// conversation from becoming a WebSocket frame large enough to be rejected
+    /// by the transport before any of it is read.
+    ///
+    /// **Newest first, oldest dropped.** The budget is spent walking backwards
+    /// from the most recent turn, because the turn the reader is about to talk
+    /// about is the last one, not the first.
+    public static func bounded(_ entries: [JunoVoiceHistoryEntry]) -> [JunoVoiceHistoryEntry] {
+        var result: [JunoVoiceHistoryEntry] = []
+        var remaining = maximumTotalCharacters
+
+        for entry in entries.suffix(maximumTurns).reversed() {
+            guard remaining > 0 else { break }
+            let text = truncated(
+                entry.text.trimmingCharacters(in: .whitespacesAndNewlines),
+                to: min(maximumTurnCharacters, remaining)
+            )
+            guard !text.isEmpty else { continue }
+            result.insert(JunoVoiceHistoryEntry(role: entry.role, text: text), at: 0)
+            remaining -= text.utf16.count
+        }
+
+        return result
+    }
+
+    /// Counted in UTF-16 units because that is what the relay's `String.slice`
+    /// counts, but cut on a `Character` boundary — a limit landing in the middle
+    /// of an emoji or a family sequence must shorten the text, never split it
+    /// into replacement characters the model then has to read.
+    private static func truncated(_ text: String, to limit: Int) -> String {
+        guard text.utf16.count > limit else { return text }
+        var result = ""
+        var used = 0
+        for character in text {
+            let width = String(character).utf16.count
+            guard used + width <= limit else { break }
+            result.append(character)
+            used += width
+        }
+        return result
+    }
+}
+
 /// Why a session ended, straight from the relay.
 ///
 /// Kept distinct from an error: hitting ``JunoVoiceCapabilities/maxSessionSec``
@@ -210,7 +282,15 @@ public struct JunoVoiceRelayTokenResponse: Decodable, Sendable {
 // MARK: - Client → relay
 
 public enum JunoVoiceClientMessage: Encodable, Sendable {
-    case sessionStart(provider: JunoVoiceProvider)
+    /// Opens the session, optionally seeded with the chat already on screen.
+    ///
+    /// `history` defaults to empty so a call started from nowhere stays a bare
+    /// `.sessionStart(provider:)`. Bound it with
+    /// ``JunoVoiceHistoryEntry/bounded(_:)`` before it gets here: the relay
+    /// truncates whatever it is given without saying so, and a frame built from
+    /// an unbounded chat can be large enough for the transport to refuse before
+    /// the relay ever parses it.
+    case sessionStart(provider: JunoVoiceProvider, history: [JunoVoiceHistoryEntry] = [])
     case sessionSwitch(provider: JunoVoiceProvider)
     /// The user's words as text — from the on-device recognizer for providers
     /// that cannot hear the audio themselves, or from a composed turn.
@@ -234,15 +314,19 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
     case ping
 
     private enum CodingKeys: String, CodingKey {
-        case type, provider, text, turnId, displayText, jpegBase64
+        case type, provider, history, text, turnId, displayText, jpegBase64
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .sessionStart(let provider):
+        case .sessionStart(let provider, let history):
             try container.encode("session.start", forKey: .type)
             try container.encode(provider, forKey: .provider)
+            // Optional on the wire, so a call with no chat behind it sends the
+            // same two-key frame it always has — which is also the frame every
+            // existing relay smoke test was written against.
+            try container.encodeIfPresent(history.isEmpty ? nil : history, forKey: .history)
         case .sessionSwitch(let provider):
             try container.encode("session.switch", forKey: .type)
             try container.encode(provider, forKey: .provider)
@@ -277,7 +361,15 @@ public enum JunoVoiceClientMessage: Encodable, Sendable {
 
 public enum JunoVoiceRelayMessage: Decodable, Sendable {
     case sessionReady(provider: JunoVoiceProvider, capabilities: JunoVoiceCapabilities)
-    case transcript(role: JunoVoiceTranscriptRole, text: String, final: Bool)
+    /// One line of the conversation.
+    ///
+    /// `turnId` comes back only on the echo of a composed turn — the relay
+    /// repeats whatever ``JunoVoiceClientMessage/inputText(_:turnId:displayText:)``
+    /// sent it. It is the only thing tying the images a reader attached to the
+    /// line they end up on, because the images travelled as anonymous
+    /// `video.frame`s and the text arrived separately; without it a saved voice
+    /// conversation cannot say which turn the pictures belonged to.
+    case transcript(role: JunoVoiceTranscriptRole, text: String, final: Bool, turnId: String?)
     case turn(phase: JunoVoiceTurnPhase)
     case interrupted
     case usage(JunoVoiceUsage)
@@ -289,7 +381,7 @@ public enum JunoVoiceRelayMessage: Decodable, Sendable {
     case unknown(type: String)
 
     private enum CodingKeys: String, CodingKey {
-        case type, provider, capabilities, role, text, final, speaker, phase
+        case type, provider, capabilities, role, text, final, turnId, speaker, phase
         case audioInSec, audioOutSec, estCostUsd, estCostInUsd, estCostOutUsd
         case reason, message
     }
@@ -309,7 +401,9 @@ public enum JunoVoiceRelayMessage: Decodable, Sendable {
             self = .transcript(
                 role: try container.decode(JunoVoiceTranscriptRole.self, forKey: .role),
                 text: try container.decode(String.self, forKey: .text),
-                final: try container.decode(Bool.self, forKey: .final)
+                final: try container.decode(Bool.self, forKey: .final),
+                // Absent on every spoken line, which is most of them.
+                turnId: try container.decodeIfPresent(String.self, forKey: .turnId)
             )
         case "turn":
             self = .turn(phase: try container.decode(JunoVoiceTurnPhase.self, forKey: .phase))

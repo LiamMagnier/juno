@@ -57,6 +57,16 @@ const ICONS = {
   refresh: "refresh-cw",
   external: "arrow-up-right",
   file: "file-text",
+
+  // ComposerIcons — what the "+" menu adds to a message, and the tools it arms.
+  attach: "paperclip",
+  photos: "image-plus",
+  files: "file-up",
+  canvas: "square-pen",
+  research: "telescope",
+  web: "globe",
+  artifactsTool: "layout-template",
+  memory: "notebook-pen",
 };
 
 const TARGETS = [

@@ -37,17 +37,28 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
         public let role: JunoVoiceTranscriptRole
         public var text: String
         public var final: Bool
+        /// Uploaded `Attachment` ids for the images the reader showed the model
+        /// on this turn.
+        ///
+        /// The line is where they have to live, because the line is the only
+        /// thing that survives the call: the record is what gets posted to
+        /// `/api/voice/transcript` on hang-up, and an id that is not on a line
+        /// is an image absent from the saved conversation while the words that
+        /// answered it are still there.
+        public var attachmentIDs: [String]
 
         public init(
             id: UUID = UUID(),
             role: JunoVoiceTranscriptRole,
             text: String,
-            final: Bool
+            final: Bool,
+            attachmentIDs: [String] = []
         ) {
             self.id = id
             self.role = role
             self.text = text
             self.final = final
+            self.attachmentIDs = attachmentIDs
         }
     }
 
@@ -74,16 +85,30 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
     }
 
     /// Rewrites the open line for this speaker, or opens one in the right place.
-    public mutating func upsert(role: JunoVoiceTranscriptRole, text: String, final: Bool) {
+    ///
+    /// `attachmentIDs` is applied only when it is non-empty. Every frame after
+    /// the first carries none — the images arrive once, on the relay's echo of a
+    /// composed turn, while the partials that rewrite the same row keep coming —
+    /// so assigning unconditionally would clear the pictures off a line that had
+    /// them a moment ago.
+    public mutating func upsert(
+        role: JunoVoiceTranscriptRole,
+        text: String,
+        final: Bool,
+        attachmentIDs: [String] = []
+    ) {
         if let index = lines.lastIndex(where: { $0.role == role && !$0.final }) {
             lines[index].text = text
             lines[index].final = final
+            if !attachmentIDs.isEmpty { lines[index].attachmentIDs = attachmentIDs }
             trim()
             return
         }
 
         if role == .user, let at = answerStart, at <= lines.endIndex {
-            lines.insert(Line(role: role, text: text, final: final), at: at)
+            lines.insert(
+                Line(role: role, text: text, final: final, attachmentIDs: attachmentIDs), at: at
+            )
             // Consumed. The next answer records its own start, and a second
             // question in the same turn belongs after this one, not on top of it.
             answerStart = nil
@@ -97,7 +122,7 @@ public struct JunoVoiceTranscriptRecord: Equatable, Sendable {
                 // late question still lands above it.
                 answerStart = lines.endIndex
             }
-            lines.append(Line(role: role, text: text, final: final))
+            lines.append(Line(role: role, text: text, final: final, attachmentIDs: attachmentIDs))
         }
         trim()
     }

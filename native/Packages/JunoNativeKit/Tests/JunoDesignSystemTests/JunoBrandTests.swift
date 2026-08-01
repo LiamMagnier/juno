@@ -18,6 +18,9 @@ final class JunoBrandTests: XCTestCase {
                 // CodeIcons — the things Juno Code talks about.
                 "cloud", "device", "branch", "lock", "permission",
                 "pin", "error", "refresh", "external", "file",
+                // ComposerIcons — what the "+" menu adds, and the tools it arms.
+                "attach", "photos", "files", "canvas",
+                "research", "web", "artifactsTool", "memory",
             ]
         )
     }
