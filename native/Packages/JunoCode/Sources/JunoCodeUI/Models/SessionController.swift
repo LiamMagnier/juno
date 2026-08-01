@@ -944,7 +944,7 @@ public final class SessionController {
             guard let result = try? await live.context?.files.read(
                 path,
                 limit: OutputLimit(
-                    maximumBytes: 64 * 1_024,
+                    maximumBytes: 16 * 1_024,
                     truncationNotice: "\n… [explicit file context truncated]"
                 )
             ) else {
@@ -962,7 +962,7 @@ public final class SessionController {
 
         let context = OutputLimiter.apply(
             OutputLimit(
-                maximumBytes: 256 * 1_024,
+                maximumBytes: 64 * 1_024,
                 truncationNotice: "\n… [explicit file context limit reached]"
             ),
             to: sections.joined(separator: "\n\n")

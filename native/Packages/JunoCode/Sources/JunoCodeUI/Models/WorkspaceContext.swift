@@ -141,7 +141,7 @@ public final class WorkspaceContext: Sendable {
             maximumBytes: 256 * 1_024,
             truncationNotice: "\n… [repository context truncated]"
         )
-        let perFileLimit = 64 * 1_024
+        let perFileLimit = 24 * 1_024
         var sections: [String] = []
 
         for entry in await instructionFiles() {
