@@ -241,14 +241,28 @@ private struct JunoMobileThinkingWord: View {
 /// The composer's small controls all share one Liquid Glass capsule, so the
 /// model chip and the Thinking chip read as parts of the same control row
 /// rather than as two unrelated buttons.
+///
+/// **The capsule is also the hit area, and it has to say so.** Liquid Glass is
+/// drawn by a layer of the system's own, not by content of ours, so a chip whose
+/// only real content is a word and a chevron is touchable *only over the word
+/// and the chevron* — the 10pt padding and the glass between them are dead. That
+/// left the Thinking chip with a live band roughly 13pt wide inside a 56pt
+/// capsule, and its centre — dragged rightwards by the chevron — landed in the
+/// gap, so a tap dead in the middle of the control did nothing at all. The model
+/// chip escaped only because its label is wide enough that its centre still
+/// falls on a glyph. `contentShape` makes the whole capsule the target for both,
+/// which is what it looks like and what a thumb aims at.
 struct JunoMobileComposerChipBackground: ViewModifier {
     func body(content: Content) -> some View {
         if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.interactive(), in: Capsule())
+            content
+                .glassEffect(.regular.interactive(), in: Capsule())
+                .contentShape(Capsule())
         } else {
             content
                 .background(.regularMaterial, in: Capsule())
                 .overlay(Capsule().strokeBorder(Color.junoHairline, lineWidth: 1))
+                .contentShape(Capsule())
         }
     }
 }
