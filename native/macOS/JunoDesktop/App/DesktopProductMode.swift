@@ -101,6 +101,19 @@ struct DesktopProductSwitcher: View {
     }
 }
 
+/// Shared measurements for the small pieces of window chrome that sit above the
+/// two native source lists. Keeping these here prevents Chat and Code from
+/// drifting by a few points when one of their sidebars is refreshed.
+enum DesktopSidebarChromeMetrics {
+    /// The native source-list icons begin on this 4-point-grid column.
+    static let productBrandLeadingInset = JunoSpace.regular
+    static let productBrandTrailingInset = JunoSpace.tight
+    /// The mark and its product name are one compact identity, not two controls.
+    static let productBrandSpacing = JunoSpace.hairline
+    /// Clears the titlebar row before the first source-list row begins.
+    static let titlebarClearance: CGFloat = 76
+}
+
 /// The window-level identity shown beside the traffic lights.
 ///
 /// A repository or conversation is content, not the product name. Keeping that
@@ -114,7 +127,7 @@ struct DesktopProductBrand: View {
     }
 
     var body: some View {
-        HStack(spacing: JunoSpace.tight) {
+        HStack(spacing: DesktopSidebarChromeMetrics.productBrandSpacing) {
             JunoMark(size: 18)
                 .foregroundStyle(Color.primary)
             Text(title)
@@ -122,7 +135,8 @@ struct DesktopProductBrand: View {
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
         }
-        .padding(.horizontal, JunoSpace.tight)
+        .padding(.leading, DesktopSidebarChromeMetrics.productBrandLeadingInset)
+        .padding(.trailing, DesktopSidebarChromeMetrics.productBrandTrailingInset)
         .frame(minHeight: 28)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(title)

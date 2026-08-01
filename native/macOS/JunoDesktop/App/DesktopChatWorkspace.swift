@@ -456,9 +456,8 @@ private struct DesktopChatSidebar: View {
         .junoSidebarSelectionTint()
         .safeAreaInset(edge: .top, spacing: 0) {
             ZStack(alignment: .leading) {
-                Color.clear.frame(height: 76)
+                Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
                 DesktopProductBrand(product: .chat)
-                    .padding(.leading, JunoSpace.tight)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {

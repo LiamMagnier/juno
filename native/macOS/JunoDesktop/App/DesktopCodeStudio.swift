@@ -516,10 +516,6 @@ struct DesktopCodeSidebar: View {
     /// up under the parent's name: the chevron's 12pt frame plus the row spacing.
     private static let childIndent: CGFloat = 12 + JunoSpace.tight + JunoSpace.snug
 
-    /// How far the source list starts below the top of the window. See the
-    /// `safeAreaInset` in `body` for why this clears more than the traffic lights.
-    private static let titlebarClearance: CGFloat = 76
-
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
             sessions: workbench.filteredSessions,
@@ -785,9 +781,8 @@ struct DesktopCodeSidebar: View {
         // clearly below the whole bar.
         .safeAreaInset(edge: .top, spacing: 0) {
             ZStack(alignment: .leading) {
-                Color.clear.frame(height: Self.titlebarClearance)
+                Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
                 DesktopProductBrand(product: .code)
-                    .padding(.leading, JunoSpace.tight)
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1450,63 +1445,6 @@ struct DesktopCodeDraftDetail: View {
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private struct Suggestion: Identifiable {
-        let title: String
-        let symbol: String
-        let prompt: String
-        var id: String { title }
-    }
-
-    /// Openers for a conversation with no project. Every one of these is
-    /// answerable from the conversation alone — none asks Juno to look at
-    /// something it cannot see, which is what the project suggestions below all
-    /// do.
-    private static let projectlessSuggestions: [Suggestion] = [
-        Suggestion(
-            title: "Explain a concept",
-            symbol: "text.book.closed",
-            prompt: "Explain how "
-        ),
-        Suggestion(
-            title: "Review pasted code",
-            symbol: "checklist",
-            prompt: "Review this code for correctness, edge cases and security risk:\n\n"
-        ),
-        Suggestion(
-            title: "Design an approach",
-            symbol: "list.bullet.clipboard",
-            prompt: "I need to build "
-        ),
-        Suggestion(
-            title: "Debug an error",
-            symbol: "ant",
-            prompt: "I'm getting this error and I don't understand why:\n\n"
-        ),
-    ]
-
-    private static let suggestions: [Suggestion] = [
-        Suggestion(
-            title: "Review uncommitted changes",
-            symbol: "checklist",
-            prompt: "Review my uncommitted changes for correctness, regressions, and security risk."
-        ),
-        Suggestion(
-            title: "Fix failing tests",
-            symbol: "wrench.and.screwdriver",
-            prompt: "Run the relevant tests, diagnose every failure, and fix the root causes."
-        ),
-        Suggestion(
-            title: "Plan a feature",
-            symbol: "list.bullet.clipboard",
-            prompt: "Explore this codebase and propose an implementation plan before editing anything."
-        ),
-        Suggestion(
-            title: "Explain this repository",
-            symbol: "text.magnifyingglass",
-            prompt: "Map this repository and explain its architecture, data flow, and important conventions."
-        ),
-    ]
-
     /// Cloud and device runs both need somewhere to run — a repository, or a
     /// folder on a computer — so a conversation with no project is pinned to
     /// this Mac. Leaving the stored target in place would restore a reader
@@ -1807,7 +1745,6 @@ struct DesktopCodeDraftDetail: View {
 
                         Spacer(minLength: JunoSpace.tight)
 
-                        suggestionsMenu
                         if JunoSpeechService.isSupported {
                             dictateButton
                         }
@@ -2124,27 +2061,6 @@ struct DesktopCodeDraftDetail: View {
                 .accessibilityIdentifier("juno.code.launch-device-workspace")
             }
         }
-    }
-
-    private var suggestionsMenu: some View {
-        Menu {
-            ForEach(record == nil ? Self.projectlessSuggestions : Self.suggestions) { suggestion in
-                Button {
-                    prompt = suggestion.prompt
-                    focused = true
-                } label: {
-                    Label(suggestion.title, systemImage: suggestion.symbol)
-                }
-            }
-        } label: {
-            Image(systemName: "sparkles")
-                .frame(width: 28, height: 28)
-                .contentShape(.rect)
-        }
-        .menuStyle(.borderlessButton)
-        .help("Prompt suggestions")
-        .accessibilityLabel("Prompt suggestions")
-        .accessibilityIdentifier("juno.code.launch-suggestions")
     }
 
     private var dictateButton: some View {
