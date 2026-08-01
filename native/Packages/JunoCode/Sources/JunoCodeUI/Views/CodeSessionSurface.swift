@@ -38,19 +38,28 @@ public struct CodeSessionCanvas: View {
 
     /// Starts dictation, or nil where the host offers none. See ``Composer``.
     private let beginDictation: (() -> Void)?
+    /// Starts realtime voice mode, or nil where the host offers none.
+    private let beginVoice: (() -> Void)?
+    /// Host-owned voice dock rendered directly above the Code composer.
+    /// `AnyView` keeps JunoCodeUI independent of the app's voice implementation.
+    private let voiceDock: AnyView?
 
     public init(
         controller: SessionController,
         model: WorkbenchModel,
         showsReview: Binding<Bool>,
         showsConsole: Binding<Bool>,
-        beginDictation: (() -> Void)? = nil
+        beginDictation: (() -> Void)? = nil,
+        beginVoice: (() -> Void)? = nil,
+        voiceDock: AnyView? = nil
     ) {
         self.controller = controller
         self.model = model
         self._showsReview = showsReview
         self._showsConsole = showsConsole
         self.beginDictation = beginDictation
+        self.beginVoice = beginVoice
+        self.voiceDock = voiceDock
     }
 
     public var body: some View {
@@ -182,13 +191,17 @@ public struct CodeSessionCanvas: View {
 
     private var composer: some View {
         VStack(spacing: JunoSpace.snug) {
+            if let voiceDock {
+                voiceDock
+            }
             transientError
             Composer(
                 controller: controller,
                 availableModels: model.availableModels,
                 focus: $composerFocused,
                 slashCommands: slashCommands,
-                beginDictation: beginDictation
+                beginDictation: beginDictation,
+                beginVoice: beginVoice
             )
         }
     }
@@ -251,12 +264,14 @@ public struct CodeSessionCanvas: View {
 /// happens to implement a segment today.
 public struct CodeSessionInspector: View {
     private let controller: SessionController
+    private let openPreview: (() -> Void)?
 
-    public init(controller: SessionController) {
+    public init(controller: SessionController, openPreview: (() -> Void)? = nil) {
         self.controller = controller
+        self.openPreview = openPreview
     }
 
     public var body: some View {
-        InspectorView(controller: controller)
+        InspectorView(controller: controller, openPreview: openPreview)
     }
 }

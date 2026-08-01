@@ -1,7 +1,11 @@
+import CoreImage
+import CoreMedia
 import AVFoundation
 import JunoDesignSystem
 import JunoVoiceKit
+@preconcurrency import ReplayKit
 import SwiftUI
+import UIKit
 
 /// **The camera during a spoken call** — "show Juno what you are looking at".
 ///
@@ -109,6 +113,126 @@ final class JunoMobileVoiceCamera {
     func flip() async {
         guard phase == .live, capabilities.canFlip, let service else { return }
         capabilities = await service.flip()
+    }
+}
+
+/// App-screen sharing for an iPhone voice call.
+///
+/// ReplayKit gives the user an explicit system capture prompt and streams the
+/// app's visible screen. Frames are reduced to the same one-per-second JPEG
+/// budget used by the Mac's screen capture, then use the existing voice relay's
+/// `video.frame` path. It is intentionally separate from the camera service:
+/// the two capture APIs have different lifetimes and must never fight over the
+/// camera session.
+@MainActor
+@Observable
+final class JunoMobileVoiceScreenShare {
+    enum Phase: Equatable {
+        case off
+        case starting
+        case live
+        case unavailable(String)
+    }
+
+    private(set) var phase: Phase = .off
+    private var recorder: RPScreenRecorder?
+    private var controller: JunoRealtimeVoiceController?
+
+    var isLive: Bool { phase == .live }
+    var isBusy: Bool { phase == .starting }
+    var message: String? {
+        if case .unavailable(let message) = phase { return message }
+        return nil
+    }
+
+    func start(sending to: JunoRealtimeVoiceController) async {
+        guard phase != .starting, phase != .live else { return }
+        guard to.phase == .live, to.capabilities?.videoInput == true else {
+            phase = .unavailable("Screen sharing is not available for this voice provider.")
+            return
+        }
+        guard RPScreenRecorder.shared().isAvailable else {
+            phase = .unavailable("Screen sharing is unavailable on this device.")
+            return
+        }
+
+        let recorder = RPScreenRecorder.shared()
+        self.recorder = recorder
+        controller = to
+        phase = .starting
+        let gate = FrameGate()
+        let error = await beginCapture(recorder, gate: gate, sending: to)
+
+        guard self.recorder === recorder, phase == .starting else { return }
+        if let error {
+            self.recorder = nil
+            controller = nil
+            phase = .unavailable(
+                "Screen sharing could not start: \(error.localizedDescription)"
+            )
+        } else {
+            phase = .live
+        }
+    }
+
+    func stop() {
+        guard phase != .off else { return }
+        phase = .off
+        let recorder = self.recorder
+        self.recorder = nil
+        controller = nil
+        recorder?.stopCapture()
+    }
+
+    private func beginCapture(
+        _ recorder: RPScreenRecorder,
+        gate: FrameGate,
+        sending controller: JunoRealtimeVoiceController
+    ) async -> Error? {
+        await withCheckedContinuation { continuation in
+            recorder.startCapture(
+                handler: { [weak self, weak controller] sampleBuffer, type, error in
+                    guard error == nil, type == .video, gate.allowsNextFrame(),
+                          let jpeg = Self.jpeg(from: sampleBuffer)
+                    else { return }
+                    Task { @MainActor in
+                        guard let self, self.phase == .live || self.phase == .starting else {
+                            return
+                        }
+                        controller?.sendVideoFrame(jpeg)
+                    }
+                },
+                completionHandler: { error in
+                    continuation.resume(returning: error)
+                }
+            )
+        }
+    }
+
+    private static func jpeg(from sampleBuffer: CMSampleBuffer) -> Data? {
+        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return nil }
+        let image = CIImage(cvPixelBuffer: pixelBuffer)
+        let longestEdge = max(image.extent.width, image.extent.height)
+        let scale = min(1, 1_024 / max(longestEdge, 1))
+        let resized = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        let extent = resized.extent.integral
+        guard let cgImage = CIContext().createCGImage(resized, from: extent) else { return nil }
+        return UIImage(cgImage: cgImage).jpegData(compressionQuality: 0.6)
+    }
+
+    /// ReplayKit supplies many frames per second; the relay and model need one.
+    private final class FrameGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var lastFrame = Date.distantPast
+
+        func allowsNextFrame() -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            let now = Date()
+            guard now.timeIntervalSince(lastFrame) >= 1 else { return false }
+            lastFrame = now
+            return true
+        }
     }
 }
 

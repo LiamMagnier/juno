@@ -27,6 +27,10 @@ struct JunoDesktopWorkspaceView: View {
     /// Screenshot-harness override; nil in production. See
     /// ``DesktopChatWorkspace/initialDestination``.
     var initialDestination: DesktopDestination?
+    /// Called once when a production launch route has been consumed. Preview
+    /// callers leave this nil, so their explicit destination remains isolated
+    /// from the live app's launch policy.
+    var consumeInitialDestination: (() -> Void)? = nil
 
     @State private var veilOpacity: Double = 0
     /// A Code-sidebar "New chat" is deliberately not a Code session with no
@@ -77,6 +81,7 @@ struct JunoDesktopWorkspaceView: View {
                     session: session,
                     product: $product,
                     initialDestination: initialDestination,
+                    consumeInitialDestination: consumeInitialDestination,
                     unscopedChatRequestID: unscopedChatRequestID,
                     consumeUnscopedChatRequest: {
                         unscopedChatRequestID = nil

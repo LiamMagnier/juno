@@ -20,7 +20,7 @@ public actor AgentOrchestrator {
 
         public init(
             maximumIterations: Int = 40,
-            maximumToolResultBytes: Int = 64 * 1_024,
+            maximumToolResultBytes: Int = 512 * 1_024,
             maximumToolImageBytes: Int = 8 * 1_024 * 1_024,
             maximumToolImages: Int = 4,
             systemPrompt: String

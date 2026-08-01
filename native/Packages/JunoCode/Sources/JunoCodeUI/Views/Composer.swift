@@ -110,6 +110,10 @@ public struct Composer: View {
     /// that boundary while still letting the Code composer offer the same control
     /// the Chat composer has.
     let beginDictation: (() -> Void)?
+    /// Starts realtime voice mode, or nil when the host has no voice service.
+    /// Like dictation, this remains a host closure so JunoCodeUI does not own
+    /// audio permissions, relay credentials, or transcript persistence.
+    let beginVoice: (() -> Void)?
 
     /// Which row the arrow keys are on. Reset every time the query changes, so
     /// the highlight cannot point past the end of a narrowed list.
@@ -125,13 +129,15 @@ public struct Composer: View {
         availableModels: [ModelOption],
         focus: FocusState<Bool>.Binding? = nil,
         slashCommands: CodeSlashCommandLibrary = .builtIn,
-        beginDictation: (() -> Void)? = nil
+        beginDictation: (() -> Void)? = nil,
+        beginVoice: (() -> Void)? = nil
     ) {
         self.controller = controller
         self.availableModels = availableModels
         self.focus = focus
         self.slashCommands = slashCommands
         self.beginDictation = beginDictation
+        self.beginVoice = beginVoice
     }
 
     /// The `/token` being typed, if the composer is on one.
@@ -324,6 +330,20 @@ public struct Composer: View {
             Spacer(minLength: JunoSpace.snug)
 
             contextMeter
+
+            if let beginVoice, !isRunning {
+                Button(action: beginVoice) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 12, weight: .semibold))
+                        .frame(width: 26, height: 26)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help("Start voice mode")
+                .accessibilityLabel("Start voice mode")
+                .accessibilityIdentifier("juno.code.composer.voice")
+            }
 
             if let beginDictation, !isRunning {
                 Button(action: beginDictation) {

@@ -91,7 +91,7 @@ struct DesktopCodeAccountFooter: View {
 /// is waiting, so a build that had been ready for a week looked identical to one
 /// that was current. This is the same action where the reader already is.
 ///
-/// **Only `.ready` draws anything.** Not `.checking`, not `.downloading`: a row
+/// **Only `.ready` draws anything.** Not `.checking`, not `.downloading`: a card
 /// that is permanently present is chrome the eye learns to skip, and a progress
 /// spinner for a download nobody asked to watch turns a deliberately quiet
 /// updater into an interruption. The rest of the ladder stays in the menu, where
@@ -99,7 +99,8 @@ struct DesktopCodeAccountFooter: View {
 ///
 /// Coral, and one of the few places that is right. `--primary` is what the web
 /// spends on the affirmative next move, and a waiting update is good news — so
-/// this is a row in the accent, not a banner in a warning colour.
+/// this is a calm accent card with one explicit action, not a warning banner or
+/// a tiny link hidden in the account furniture.
 struct DesktopUpdateReadyRow: View {
     /// `@State` rather than a bare reference to the singleton, so the row
     /// re-evaluates when the phase changes. `JunoDesktopCommands` holds the same
@@ -112,25 +113,62 @@ struct DesktopUpdateReadyRow: View {
             Button {
                 updater.installAndRelaunch()
             } label: {
-                HStack(spacing: JunoSpace.cozy) {
-                    JunoIconView(.refresh, size: 13)
-                    // The version, because "an update is available" is a fact the
-                    // reader can do nothing with — which version, and that
-                    // pressing this restarts Juno, is the whole decision.
-                    Text("Restart to update to \(version)")
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                    Spacer(minLength: JunoSpace.hairline)
+                VStack(alignment: .leading, spacing: JunoSpace.snug) {
+                    HStack(alignment: .top, spacing: JunoSpace.snug) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color.junoAccent)
+                            .frame(width: 30, height: 30)
+                            .background(
+                                Circle()
+                                    .fill(Color.junoAccent.opacity(0.14))
+                            )
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
+                                Text("Update ready")
+                                    .font(.caption.weight(.semibold))
+                                Spacer(minLength: JunoSpace.hairline)
+                                Text(version)
+                                    .font(.caption2.monospaced().weight(.medium))
+                                    .foregroundStyle(Color.junoAccent)
+                                    .lineLimit(1)
+                            }
+
+                            Text("A new version is downloaded and ready to install.")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+
+                    Text("Restart to update")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.junoOnAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, JunoSpace.tight)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(Color.junoAccent)
+                        )
                 }
-                .foregroundStyle(Color.junoAccent)
-                .padding(.horizontal, JunoSpace.snug)
-                .padding(.vertical, JunoSpace.tight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(JunoSpace.cozy)
+                .background(
+                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                        .fill(Color.junoAccent.opacity(0.075))
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
+                        .strokeBorder(Color.junoAccent.opacity(0.24), lineWidth: 1)
+                }
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
             .help("Juno \(version) is downloaded and verified. This quits Juno and opens it again on the new version.")
             .transition(.opacity)
+            .accessibilityLabel("Restart to update Juno to \(version)")
+            .accessibilityHint("Juno will quit and reopen with the downloaded update.")
             .accessibilityIdentifier("juno.desktop.update-ready")
         }
     }

@@ -262,6 +262,12 @@ private struct JunoMobileDraftChat: View {
         column
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.junoCanvas)
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    composerFocused = false
+                }
+            )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatColumnHeight = $0 }
             .accessibilityIdentifier("juno.mobile.chat-draft")
             .navigationTitle("navigation.chat")
@@ -853,6 +859,12 @@ private struct JunoMobileConversationDetail: View {
         // instead of their own.
         .accessibilityIdentifier("juno.mobile.conversation-detail")
         .background(Color.junoCanvas)
+        .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                composerFocused = false
+            }
+        )
         // The chat column, measured where it is: this scroll view spans the
         // whole column — the composer is a safe-area inset *inside* it, not a
         // sibling below it — so its height is the column's height, and the voice

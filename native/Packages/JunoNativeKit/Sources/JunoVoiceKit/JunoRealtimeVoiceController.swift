@@ -383,10 +383,10 @@ public final class JunoRealtimeVoiceController {
     /// `error` frames mid-session for things a conversation survives; promoting
     /// those to ``Phase/error(_:)`` would hang up on a recoverable hiccup.
     public private(set) var notice: String?
-    /// True while this Mac's screen is being streamed to the model. It stays
-    /// false on iPhone by construction: the phone shares a *camera*, and that
-    /// capture session belongs to the app's camera surface, which hands frames
-    /// here through ``sendVideoFrame(_:)``.
+    /// True while this controller's native desktop screen capture is being
+    /// streamed to the model. iPhone ReplayKit capture is owned by the mobile
+    /// voice dock and uses ``sendVideoFrame(_:)`` directly, because ReplayKit's
+    /// lifecycle is distinct from the controller's macOS ScreenCaptureKit task.
     public private(set) var screenSharing = false
     #if os(iOS)
     public private(set) var speakerOutput = true

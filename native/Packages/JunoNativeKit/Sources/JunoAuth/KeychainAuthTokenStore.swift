@@ -114,6 +114,22 @@ private final class DataProtectionKeychainGate: @unchecked Sendable {
 public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     public init() {}
 
+    /// Legacy Keychain migration is safe only for a provisioned macOS build.
+    /// An ad-hoc build can see the old item but cannot decrypt it, and the
+    /// synchronous Security call may wait forever for an entitlement-owned
+    /// credential prompt. The data-protection query still runs and reports the
+    /// normal Keychain failure; we simply do not make a second blocking legacy
+    /// query in that build.
+    private var canMigrateLegacyKeychain: Bool {
+        #if os(macOS)
+        let profile = Bundle.main.bundleURL
+            .appendingPathComponent("Contents/embedded.provisionprofile")
+        return FileManager.default.fileExists(atPath: profile.path)
+        #else
+        return false
+        #endif
+    }
+
     /// Runs a Security call, and runs it once more against the file-based
     /// keychain if macOS answers that this build is not entitled to the
     /// data-protection one.
@@ -197,7 +213,11 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
         var removed = try remove(item, dataProtection: true)
         // Sign-out has to clear the legacy copy too, or the token it was asked
         // to destroy stays readable on disk.
-        if try remove(item, dataProtection: false) { removed = true }
+        if canMigrateLegacyKeychain,
+            try remove(item, dataProtection: false)
+        {
+            removed = true
+        }
         return removed
     }
 
@@ -259,6 +279,7 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
     @discardableResult
     private func migrateLegacyItem(_ item: SecurityKeychainItem) throws -> Data? {
         #if os(macOS)
+        guard canMigrateLegacyKeychain else { return nil }
         guard let data = try copyValue(for: item, dataProtection: false) else {
             return nil
         }

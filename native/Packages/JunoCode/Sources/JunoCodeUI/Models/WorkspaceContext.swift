@@ -138,10 +138,10 @@ public final class WorkspaceContext: Sendable {
     /// consume an unbounded model context.
     private func repositoryInstructionContext() async -> String {
         let totalLimit = OutputLimit(
-            maximumBytes: 64 * 1_024,
+            maximumBytes: 256 * 1_024,
             truncationNotice: "\n… [repository context truncated]"
         )
-        let perFileLimit = 24 * 1_024
+        let perFileLimit = 64 * 1_024
         var sections: [String] = []
 
         for entry in await instructionFiles() {

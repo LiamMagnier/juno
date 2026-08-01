@@ -12,10 +12,19 @@ struct JunoDesktopRootView: View {
     let configuration: JunoDesktopConfiguration
     @SceneStorage("juno.desktop.product") private var storedProduct = DesktopProductMode.chat.rawValue
     @State private var workbenchModel: WorkbenchModel?
+    /// The main window is a launch surface, not a resume surface. Keep this
+    /// pending until the Chat workspace has consumed the one-shot route so a
+    /// stored Code product or Chat destination cannot win the first frame.
+    @State private var startupRoutePending = true
 
     private var productBinding: Binding<DesktopProductMode> {
         Binding(
-            get: { DesktopProductMode(rawValue: storedProduct) ?? .chat },
+            get: {
+                // Do not let a restored Code selection paint even one launch
+                // frame. The route is released only after Chat has appeared.
+                guard !startupRoutePending else { return .chat }
+                return DesktopProductMode(rawValue: storedProduct) ?? .chat
+            },
             set: { storedProduct = $0.rawValue }
         )
     }
@@ -32,6 +41,7 @@ struct JunoDesktopRootView: View {
         phaseContent
             .preferredColorScheme(preferredColorScheme)
             .task {
+                applyStartupRouteIfNeeded()
                 await configuration.authModel.restore()
             }
             .onChange(of: configuration.authModel.phase) { _, phase in
@@ -97,7 +107,11 @@ struct JunoDesktopRootView: View {
                     configuration: configuration,
                     session: session,
                     product: productBinding,
-                    workbenchModel: workbenchModel
+                    workbenchModel: workbenchModel,
+                    initialDestination: startupRoutePending ? .chat : nil,
+                    consumeInitialDestination: {
+                        startupRoutePending = false
+                    }
                 )
             }
         case .restoring:
@@ -108,6 +122,17 @@ struct JunoDesktopRootView: View {
                 localStoreRecovery: configuration.localStoreRecovery
             )
         }
+    }
+
+    /// Reset only the launch route. Once the Chat workspace has appeared, its
+    /// one-shot destination is retired and ordinary Chat/Code navigation is
+    /// allowed to persist again for the rest of the session.
+    @MainActor
+    private func applyStartupRouteIfNeeded() {
+        guard startupRoutePending else { return }
+        storedProduct = DesktopProductMode.chat.rawValue
+        configuration.conversationModel?.isDraftingNewConversation = true
+        configuration.conversationModel?.selectedConversationID = nil
     }
 
     @MainActor

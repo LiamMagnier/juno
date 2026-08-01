@@ -55,6 +55,9 @@ struct DesktopChatWorkspace: View {
     /// window, and a reviewer looking at sixteen files was looking at two.
     /// Production passes nil and the restored destination wins as before.
     var initialDestination: DesktopDestination?
+    /// Lets the root retire a one-shot production launch route after this view
+    /// has actually applied it. The screenshot harness does not provide one.
+    var consumeInitialDestination: (() -> Void)?
     /// A one-shot request made from the Code sidebar to start an ordinary Chat
     /// conversation that is not scoped to any local repository.
     var unscopedChatRequestID: UUID?
@@ -216,6 +219,7 @@ struct DesktopChatWorkspace: View {
                 hasSeededOverride = true
                 overrideDestination = initialDestination
                 model.selectedConversationID = nil
+                consumeInitialDestination?()
             }
             consumePendingUnscopedChatRequest()
         }

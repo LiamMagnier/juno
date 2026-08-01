@@ -77,9 +77,22 @@ struct JunoDesktopConfiguration {
                 platform: "macOS",
                 appVersion: version
             )
-            let localStore = try NativeLocalAccountStoreFactory(
+            let storeFactory = NativeLocalAccountStoreFactory(
                 databaseURL: storeURL
-            ).openRepository()
+            )
+            let localStore: SQLiteAccountRepository
+            do {
+                localStore = try storeFactory.openRepository()
+            } catch NativeLocalAccountStoreFactoryError.missingEncryptionKey {
+                // The desktop cache is recoverable without deleting it. This
+                // can happen when a locally built app cannot read the
+                // provisioned build's Keychain item. Archive the old bytes and
+                // continue with a fresh cache so startup is not trapped on the
+                // sign-in card; the server remains the source of truth after
+                // the next successful sign-in.
+                localStore = try storeFactory.recoverAndOpenRepository()
+                    .repository
+            }
             let runtime = try NativeAuthRuntime.live(
                 origin: APIOrigin(backendURL),
                 device: device,
@@ -124,7 +137,11 @@ struct JunoDesktopConfiguration {
                     drainer: drainer,
                     syncModel: syncModel,
                     chatClient: NativeChatAPIClient(transport: runtime),
-                    titleClient: NativeConversationTitleClient(sender: runtime)
+                    titleClient: NativeConversationTitleClient(sender: runtime),
+                    // The desktop now opens on the same empty Chat home as the
+                    // website and phone. The sidebar still preserves every old
+                    // conversation; it is simply not selected on launch.
+                    opensMostRecentConversationOnLoad: false
                 ),
                 privateChatModel: NativePrivateChatModel(
                     client: NativeChatAPIClient(transport: runtime)

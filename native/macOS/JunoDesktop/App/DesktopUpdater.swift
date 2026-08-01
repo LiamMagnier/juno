@@ -301,6 +301,16 @@ final class DesktopUpdateModel {
         _ = launchInstaller(relaunch: false)
     }
 
+#if DEBUG
+    /// Seeds the ready phase for the desktop visual-preview harness without
+    /// creating a real staged bundle or starting the installer.
+    func setPreviewReady(version: String) {
+        stagedBundle = nil
+        stagedVersion = version
+        phase = .ready(version: version)
+    }
+#endif
+
     /// Spawns the swap as a detached `/bin/sh`, because the process doing the
     /// replacing cannot be the process being replaced.
     ///

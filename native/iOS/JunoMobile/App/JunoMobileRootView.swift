@@ -497,32 +497,20 @@ struct JunoMobileRootView: View {
                 detail(for: selection)
                     .allowsHitTesting(!sidebarOpen)
             }
-            // Closed: the drawer's open-swipe lives on a narrow strip along the
-            // leading edge, exactly where iOS puts its own edge gestures.
-            //
-            // It used to be a `simultaneousGesture` on the whole plate, and that
-            // is the "+ does nothing" report twice over. As an exclusive gesture
-            // it took the button's touch outright; recognising simultaneously
-            // fixed the *button* — but the "+" is a `Menu` now, and a menu's own
-            // recognizer loses that race often enough to be caught by a test
-            // that taps it three times. A gesture that only exists where it is
-            // meant to be used cannot compete with a control at all.
-            .overlay(alignment: .leading) {
-                if !sidebarOpen {
-                    Color.clear
-                        .frame(width: 20)
-                        .contentShape(Rectangle())
-                        .gesture(
-                            DragGesture(minimumDistance: 18)
-                                .onEnded { value in
-                                    guard value.translation.width > 60 else { return }
-                                    setSidebar(true)
-                                }
-                        )
-                        .ignoresSafeArea()
-                        .accessibilityHidden(true)
-                }
-            }
+            // The drawer can be revealed from anywhere on the chat plate. A
+            // simultaneous, horizontal-only recognizer preserves buttons and
+            // menus while making the gesture discoverable on the whole screen,
+            // not just the first 20 points at the leading edge.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 18)
+                    .onEnded { value in
+                        guard !sidebarOpen,
+                              value.translation.width > 60,
+                              abs(value.translation.width) > abs(value.translation.height)
+                        else { return }
+                        setSidebar(true)
+                    }
+            )
             .overlay {
                 if sidebarOpen {
                     // Open: the plate is inert anyway, so the close tap *and*

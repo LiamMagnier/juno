@@ -8,6 +8,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -57,7 +58,9 @@ struct DesktopCodeWorkspace: View {
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    @SceneStorage("juno.desktop.code.inspector") private var inspectorVisible = false
+    // Versioned so an older launch that persisted the inspector closed does not
+    // hide the new Code workspace's primary review surface forever.
+    @SceneStorage("juno.desktop.code.inspector.v2") private var inspectorVisible = true
     @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
     @SceneStorage("juno.desktop.code.review") private var reviewVisible = false
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
@@ -72,6 +75,10 @@ struct DesktopCodeWorkspace: View {
     @State private var isOpeningQuickly = false
     /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
+    /// The Code composer can host the same realtime voice dock as Chat. The
+    /// transcript is saved as a normal conversation when the call ends.
+    @State private var voiceSession: DesktopVoiceSession?
+    @State private var voiceUnavailable: String?
     /// The account's plan meters, for the column's footer.
     ///
     /// Held by the window rather than by the sidebar so the read survives the
@@ -292,6 +299,17 @@ struct DesktopCodeWorkspace: View {
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
+        .alert(
+            "Voice unavailable",
+            isPresented: Binding(
+                get: { voiceUnavailable != nil },
+                set: { if !$0 { voiceUnavailable = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { voiceUnavailable = nil }
+        } message: {
+            Text(voiceUnavailable ?? "Juno could not start voice mode.")
+        }
         .onChange(of: codeModel.devices) { _, devices in
             selectDefaultRemoteDevice(from: devices)
         }
@@ -579,7 +597,11 @@ struct DesktopCodeWorkspace: View {
             showsConsole: $consoleVisible,
             beginDictation: {
                 withAnimation(JunoMotion.fast) { isDictating = true }
-            }
+            },
+            beginVoice: {
+                startVoice(for: controller)
+            },
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
         // The same capsule the Chat composer uses, over the Code canvas.
         //
@@ -632,11 +654,68 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
+    /// The Code call uses the same account-authenticated relay and transcript
+    /// route as Chat. Code has no chat thread to append to, so the server creates
+    /// a normal conversation when the call is saved.
+    private var voiceColumn: DesktopVoiceColumn? {
+        guard let voiceSession,
+            let configuration,
+            let session
+        else { return nil }
+        return DesktopVoiceColumn(
+            sessionID: voiceSession.id,
+            controller: voiceSession.controller,
+            saveTranscript: { sessionID, turns in
+                guard let client = configuration.voiceTranscriptClient else {
+                    throw DesktopVoiceError.unavailable
+                }
+                let saved = try await client.save(
+                    sessionID: sessionID,
+                    conversationID: nil,
+                    modelID: voiceSession.modelID,
+                    projectID: voiceSession.projectID,
+                    connectors: [],
+                    turns: turns,
+                    for: session.profile.id
+                )
+                await configuration.syncModel?.refresh()
+                return saved.conversationID
+            },
+            close: { self.voiceSession = nil }
+        )
+    }
+
+    private func startVoice(for controller: SessionController) {
+        guard voiceSession == nil else { return }
+        guard let configuration, let session, let sender = configuration.requestSender else {
+            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            return
+        }
+        guard configuration.voiceTranscriptClient != nil else {
+            voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+
+        let started = DesktopVoiceSession(
+            controller: JunoRealtimeVoiceController(
+                authorization: JunoDesktopVoiceAuthorization(
+                    sender: sender,
+                    accountID: session.profile.id
+                )
+            ),
+            modelID: controller.session.configuration.modelID,
+            conversationID: nil,
+            projectID: controller.session.workspaceID?.value
+        )
+        voiceSession = started
+        Task { await started.controller.start() }
+    }
+
     @ViewBuilder
     private var inspector: some View {
         Group {
             if let controller {
-                CodeSessionInspector(controller: controller)
+                CodeSessionInspector(controller: controller, openPreview: openPreview)
             } else {
                 // Compact rather than a full-height placeholder: with no local
                 // session there is genuinely nothing to inspect, and cloud and

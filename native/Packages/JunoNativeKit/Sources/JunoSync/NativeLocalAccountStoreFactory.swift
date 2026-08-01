@@ -62,6 +62,16 @@ public struct NativeLocalAccountStoreFactory: Sendable {
     private let securityClient: any SecurityKeychainClient
     private let randomGenerator: any SecureRandomDataGenerating
 
+    /// The provisioned app keeps this key in the Keychain. A locally built Mac
+    /// app can be launched without the application-identifier entitlement,
+    /// though, and macOS may then accept a Keychain write without making the
+    /// item readable on the next launch. Keep a desktop-only, owner-readable
+    /// sidecar as a last-resort continuity key for that case. It is deliberately
+    /// scoped to this factory; auth tokens never use this fallback.
+    private var fallbackKeyURL: URL {
+        URL(fileURLWithPath: databaseURL.path + ".key")
+    }
+
     public init(
         databaseURL: URL,
         securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
@@ -74,7 +84,28 @@ public struct NativeLocalAccountStoreFactory: Sendable {
     }
 
     public func openRepository() throws -> SQLiteAccountRepository {
-        try openRepository(cipherFor: loadOrCreateKey())
+        #if os(macOS)
+        // A locally built app can block inside the legacy Keychain migration
+        // while macOS waits for an entitlement-owned item. If this database
+        // already has a validated continuity sidecar, try it first so the
+        // application can finish composing its UI. A bad sidecar is not
+        // trusted: fall through to the provisioned Keychain path below.
+        if FileManager.default.fileExists(atPath: databaseURL.path) {
+            do {
+                if let fallback = try readFallbackKey() {
+                    do {
+                        return try openRepository(cipherFor: fallback)
+                    } catch {
+                        // The sidecar may belong to a different database copy;
+                        // preserve the normal Keychain diagnosis in that case.
+                    }
+                }
+            } catch {
+                // An absent or malformed sidecar is handled by loadOrCreateKey.
+            }
+        }
+        #endif
+        return try openRepository(cipherFor: loadOrCreateKey())
     }
 
     /// Opens the store, first moving an existing database out of the way if this
@@ -112,6 +143,7 @@ public struct NativeLocalAccountStoreFactory: Sendable {
         // database that was just archived, and leaving it in place would make
         // `loadOrCreateKey` fail the freshly created store on the same value.
         _ = try? securityClient.delete(Self.encryptionKeyItem)
+        try? deleteFallbackKey()
         return NativeLocalAccountStoreRecovery(
             repository: try openRepository(),
             archivedDatabaseURL: archivedDatabaseURL
@@ -171,24 +203,101 @@ public struct NativeLocalAccountStoreFactory: Sendable {
     }
 
     private func loadOrCreateKey() throws -> Data {
-        if let stored = try securityClient.read(Self.encryptionKeyItem) {
-            return try validate(stored)
+        do {
+            if let stored = try securityClient.read(Self.encryptionKeyItem) {
+                let key = try validate(stored)
+                // Preserve continuity if the Keychain is reachable for this
+                // launch but is not durable for the next one.
+                try? writeFallbackKey(key)
+                return key
+            }
+        } catch let factoryError as NativeLocalAccountStoreFactoryError {
+            // A reachable but malformed key is a data-integrity error, not an
+            // entitlement problem. Preserve the original fail-closed behavior
+            // instead of silently creating a different key for a new store.
+            throw factoryError
+        } catch {
+            // A fresh database can safely use the sidecar when a development
+            // build cannot access its Keychain. An existing database must still
+            // fail closed below: guessing a key would orphan it.
+            if let fallback = try? readFallbackKey() {
+                return fallback
+            }
+            if FileManager.default.fileExists(atPath: databaseURL.path) {
+                throw NativeLocalAccountStoreFactoryError.missingEncryptionKey
+            }
+        }
+
+        if let fallback = try readFallbackKey() {
+            return fallback
         }
         if FileManager.default.fileExists(atPath: databaseURL.path) {
             throw NativeLocalAccountStoreFactoryError.missingEncryptionKey
         }
 
         let candidate = try validate(randomGenerator.generate(count: 32))
-        if try securityClient.insertIfAbsent(
-            candidate,
-            for: Self.encryptionKeyItem
-        ) {
-            return candidate
+        do {
+            if try securityClient.insertIfAbsent(
+                candidate,
+                for: Self.encryptionKeyItem
+            ) {
+                try? writeFallbackKey(candidate)
+                return candidate
+            }
+            guard let winner = try securityClient.read(Self.encryptionKeyItem)
+            else {
+                throw NativeLocalAccountStoreFactoryError.encryptionKeyRace
+            }
+            let key = try validate(winner)
+            try? writeFallbackKey(key)
+            return key
+        } catch {
+            // There is no database yet, so no ciphertext can be stranded by
+            // choosing this candidate. This is the path that makes an ad-hoc
+            // local build restartable while retaining the Keychain path for
+            // provisioned releases.
+            if !FileManager.default.fileExists(atPath: databaseURL.path) {
+                try writeFallbackKey(candidate)
+                return candidate
+            }
+            throw error
         }
-        guard let winner = try securityClient.read(Self.encryptionKeyItem) else {
-            throw NativeLocalAccountStoreFactoryError.encryptionKeyRace
+    }
+
+    private func readFallbackKey() throws -> Data? {
+        #if os(macOS)
+        guard FileManager.default.fileExists(atPath: fallbackKeyURL.path) else {
+            return nil
         }
-        return try validate(winner)
+        return try validate(Data(contentsOf: fallbackKeyURL))
+        #else
+        return nil
+        #endif
+    }
+
+    private func writeFallbackKey(_ key: Data) throws {
+        #if os(macOS)
+        let manager = FileManager.default
+        try manager.createDirectory(
+            at: fallbackKeyURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try key.write(to: fallbackKeyURL, options: [.atomic])
+        try manager.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fallbackKeyURL.path
+        )
+        #else
+        _ = key
+        #endif
+    }
+
+    private func deleteFallbackKey() throws {
+        #if os(macOS)
+        let manager = FileManager.default
+        guard manager.fileExists(atPath: fallbackKeyURL.path) else { return }
+        try manager.removeItem(at: fallbackKeyURL)
+        #endif
     }
 
     private func validate(_ data: Data) throws -> Data {

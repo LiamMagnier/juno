@@ -2,7 +2,7 @@ import SwiftUI
 import JunoCodeCore
 import JunoDesignSystem
 
-/// The four things the inspector is *for*.
+/// The five things the inspector is *for*.
 ///
 /// The pane's width decides what can honestly live in it: lists can, editors and
 /// viewports cannot. So the inspector keeps exactly the list-shaped concerns and
@@ -21,6 +21,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
     case changes
     case activity
     case subagents
+    case preview
     case repository
 
     public var id: String { rawValue }
@@ -30,6 +31,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         case .changes: "Changes"
         case .activity: "Activity"
         case .subagents: "Sub-agents"
+        case .preview: "Preview"
         case .repository: "Repository"
         }
     }
@@ -46,6 +48,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         case .changes: "Changes"
         case .activity: "Activity"
         case .subagents: "Agents"
+        case .preview: "Preview"
         case .repository: "Repo"
         }
     }
@@ -57,6 +60,7 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
         // the kill switch should not have to open three panes to find it.
         case .activity: "What the run is doing, and its screen control"
         case .subagents: "Every sub-agent this session delegated, running and finished"
+        case .preview: "Open the live workspace preview"
         case .repository: "Branch, working tree, commits and pull request"
         }
     }
@@ -69,11 +73,13 @@ public enum CodeInspectorPane: String, CaseIterable, Identifiable, Sendable {
 /// and filling it turns a native pane into a grey slab.
 public struct InspectorView: View {
     @Bindable private var controller: SessionController
+    private let openPreview: (() -> Void)?
     @SceneStorage("juno.code.inspector.pane") private var storedPane =
         CodeInspectorPane.changes.rawValue
 
-    public init(controller: SessionController) {
+    public init(controller: SessionController, openPreview: (() -> Void)? = nil) {
         self.controller = controller
+        self.openPreview = openPreview
     }
 
     /// The session's own review — the same object the canvas renders.
@@ -129,6 +135,8 @@ public struct InspectorView: View {
                     ActivityTab(controller: controller)
                 case .subagents:
                     SubagentPane(controller: controller)
+                case .preview:
+                    PreviewTab(controller: controller, openPreview: openPreview)
                 case .repository:
                     RepositoryTab(controller: controller)
                 }
@@ -420,5 +428,56 @@ struct ChangesTab: View {
             return change.kind.rawValue
         }
         return "\(change.kind.rawValue) · \(directory)"
+    }
+}
+
+// MARK: - Preview
+
+/// The compact entry point for the same preview window available from the
+/// session-tools menu. The inspector is where the reader looks while reviewing
+/// a run, so preview should not require remembering a keyboard shortcut first.
+struct PreviewTab: View {
+    @Bindable var controller: SessionController
+    let openPreview: (() -> Void)?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.regular) {
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Label("Live preview", systemImage: "rectangle.on.rectangle")
+                    .font(.headline)
+                Text("Open the workspace preview beside the Code session. It uses the current project files and refreshes as the agent changes them.")
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let root = controller.context?.access.rootURL {
+                HStack(spacing: JunoSpace.snug) {
+                    Image(systemName: "folder")
+                        .foregroundStyle(.secondary)
+                    Text(root.lastPathComponent.isEmpty ? root.path : root.lastPathComponent)
+                        .junoCode()
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Preview workspace \(root.path)")
+
+                Button("Open Preview", action: { openPreview?() })
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.junoAccent)
+                    .disabled(openPreview == nil)
+                    .accessibilityIdentifier("juno.code.preview.open")
+            } else {
+                JunoEmptyState(
+                    title: "No workspace",
+                    message: "Open a local Code session to preview its project.",
+                    symbol: "folder.badge.questionmark"
+                )
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(JunoSpace.regular)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }

@@ -134,6 +134,7 @@ struct JunoMobileVoiceDock: View {
     @State private var isSaving = false
     @State private var saveError: String?
     @State private var camera = JunoMobileVoiceCamera()
+    @State private var screenShare = JunoMobileVoiceScreenShare()
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -156,6 +157,9 @@ struct JunoMobileVoiceDock: View {
             if let message = camera.unavailability?.message {
                 cameraNotice(message)
             }
+            if let message = screenShare.message {
+                screenShareNotice(message)
+            }
             JunoMobileVoiceSelfView(camera: camera) { camera.stop() }
             pill
         }
@@ -169,7 +173,10 @@ struct JunoMobileVoiceDock: View {
         // go, and a preview still running past the end of the call would be the
         // app filming for no one.
         .onChange(of: session.isLive) { _, live in
-            if !live { camera.stop() }
+            if !live {
+                camera.stop()
+                screenShare.stop()
+            }
         }
         // Ends the call when the chat goes — another section, or a sign-out —
         // because the alternative is an open microphone with nothing on screen
@@ -178,6 +185,7 @@ struct JunoMobileVoiceDock: View {
         // redial every time the reader came back to Chat.
         .onDisappear {
             camera.stop()
+            screenShare.stop()
             controller.end()
         }
         .accessibilityIdentifier("juno.mobile.voice")
@@ -190,6 +198,7 @@ struct JunoMobileVoiceDock: View {
             #if os(iOS)
             speakerButton
             cameraButton
+            screenShareButton
             #endif
             optionsMenu
             hangUpButton
@@ -220,6 +229,17 @@ struct JunoMobileVoiceDock: View {
         .padding(.vertical, 9)
         .modifier(JunoGlassCapsule())
         .accessibilityIdentifier("juno.mobile.voice-camera-unavailable")
+    }
+
+    private func screenShareNotice(_ message: String) -> some View {
+        Label(message, systemImage: "rectangle.dashed.badge.record")
+            .font(.caption)
+            .foregroundStyle(.orange)
+            .multilineTextAlignment(.center)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .modifier(JunoGlassCapsule())
+            .accessibilityIdentifier("juno.mobile.voice-screen-share-unavailable")
     }
 
     // MARK: - Words
@@ -439,6 +459,27 @@ struct JunoMobileVoiceDock: View {
             .transition(.scale.combined(with: .opacity))
         }
     }
+
+    /// Shares the visible iPhone app surface through the same provider video
+    /// input used by the camera. Camera and screen share are mutually exclusive
+    /// in the dock so there is one clear privacy indicator at a time.
+    @ViewBuilder
+    private var screenShareButton: some View {
+        if canSee {
+            circleButton(
+                systemImage: screenShare.isLive
+                    ? "rectangle.inset.filled" : "rectangle.dashed.badge.record",
+                label: screenShare.isLive
+                    ? "Stop screen sharing" : "Start screen sharing",
+                identifier: "juno.mobile.voice-screen-share",
+                tone: screenShare.isLive ? .prominent : .quiet
+            ) {
+                toggleScreenShare()
+            }
+            .disabled(!session.isLive || screenShare.isBusy)
+            .transition(.scale.combined(with: .opacity))
+        }
+    }
     #endif
 
     /// Whether this call's provider accepts pictures at all.
@@ -449,6 +490,15 @@ struct JunoMobileVoiceDock: View {
             camera.stop()
         } else {
             Task { await camera.start(sending: controller) }
+        }
+    }
+
+    private func toggleScreenShare() {
+        if screenShare.isLive {
+            screenShare.stop()
+        } else {
+            camera.stop()
+            Task { await screenShare.start(sending: controller) }
         }
     }
 
