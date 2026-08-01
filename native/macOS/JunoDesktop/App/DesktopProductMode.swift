@@ -100,3 +100,32 @@ struct DesktopProductSwitcher: View {
         .accessibilityIdentifier("Juno product")
     }
 }
+
+/// The window-level identity shown beside the traffic lights.
+///
+/// A repository or conversation is content, not the product name. Keeping that
+/// content out of the titlebar leaves one stable orientation point while moving
+/// between Chat and Code, and makes the two products read as one Juno app.
+struct DesktopProductBrand: View {
+    let product: DesktopProductMode
+
+    private var title: String {
+        product == .code ? "Juno Code" : "Juno"
+    }
+
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            JunoMark(size: 18)
+                .foregroundStyle(Color.primary)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.primary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, JunoSpace.tight)
+        .frame(minHeight: 28)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier("juno.product-brand.\(product.rawValue)")
+    }
+}

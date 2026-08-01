@@ -457,6 +457,27 @@ struct CodeStatusIndicator: View {
 /// the row metrics. The column paints **no background** — a sidebar is a vibrant
 /// region on macOS, and the opaque fill the previous rail applied is exactly the
 /// failure ``JunoSurfaces`` documents.
+private struct DesktopCodeAddProjectLabel: View {
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            ZStack(alignment: .bottomTrailing) {
+                JunoIconView(.projects, size: 15)
+                Image(systemName: "plus")
+                    .font(.system(size: 7, weight: .bold))
+                    .padding(1)
+                    .background(Color.junoSidebar)
+                    .clipShape(Circle())
+            }
+            .foregroundStyle(Color.junoSidebarForeground)
+
+            Text("Add project…")
+                .junoRowLabel()
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
@@ -660,8 +681,7 @@ struct DesktopCodeSidebar: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Button(action: openRepository) {
-                            Label("Add project…", systemImage: "folder.badge.plus")
-                                .junoRowLabel()
+                            DesktopCodeAddProjectLabel()
                         }
                         .buttonStyle(.plain)
                         .help("Add a project… (⌘O)")
@@ -711,9 +731,7 @@ struct DesktopCodeSidebar: View {
                     // row scrolls with the content like everything else, and says
                     // what it does rather than being a bare glyph.
                     Button(action: openRepository) {
-                        Label("Add project…", systemImage: "folder.badge.plus")
-                            .junoRowLabel()
-                            .foregroundStyle(.secondary)
+                        DesktopCodeAddProjectLabel()
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(.rect)
                     }
@@ -765,7 +783,11 @@ struct DesktopCodeSidebar: View {
         // row sat beside the traffic lights, and this is the value that puts it
         // clearly below the whole bar.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: Self.titlebarClearance)
+            ZStack(alignment: .leading) {
+                Color.clear.frame(height: Self.titlebarClearance)
+                DesktopProductBrand(product: .code)
+                    .padding(.leading, JunoSpace.tight)
+            }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             footer.junoSidebarFooter()

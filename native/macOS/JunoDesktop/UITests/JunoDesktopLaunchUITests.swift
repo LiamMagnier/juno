@@ -34,6 +34,10 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(labelBeginsWith("New chat")).firstMatch
             .waitForExistence(timeout: 12))
         XCTAssertTrue(app.textFields["Message Juno"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.product-brand.chat"]
+                .waitForExistence(timeout: 5)
+        )
     }
 
     func testPreviewCanLaunchDirectlyIntoCode() {
@@ -56,6 +60,13 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.menuButtons["juno.code.launch-contract"].exists)
         XCTAssertTrue(app.buttons["juno.code.launch-model"].exists)
         XCTAssertTrue(app.buttons["juno.code.launch-send"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.product-brand.code"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
+        XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
+        XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
     }
 
     func testCodeSidebarUsesTheNativeSourceListBelowTheToolbar() {
@@ -71,6 +82,9 @@ final class JunoDesktopLaunchUITests: XCTestCase {
 
         let productSwitch = app.descendants(matching: .any)["Juno product"]
         XCTAssertTrue(productSwitch.waitForExistence(timeout: 12))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["juno.product-brand.code"].exists
+        )
         let addProject = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label == %@", "Add project…"))
             .firstMatch
@@ -117,6 +131,9 @@ final class JunoDesktopLaunchUITests: XCTestCase {
 
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
         XCTAssertTrue(app.menuButtons["juno.code.session-tools"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
+        XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
+        XCTAssertTrue(app.buttons["juno.code.review.toggle"].exists)
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.code.inspector.pane"]
                 .waitForExistence(timeout: 5)

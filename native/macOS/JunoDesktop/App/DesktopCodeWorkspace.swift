@@ -212,7 +212,7 @@ struct DesktopCodeWorkspace: View {
         } detail: {
             detail
                 .junoReadingCanvas()
-                .navigationTitle(windowTitle)
+                .navigationTitle("")
                 // No `.navigationSubtitle`.
                 //
                 // It restated what the detail column already shows in its own header
@@ -820,45 +820,6 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    // MARK: - Title
-
-    private var windowTitle: String {
-        switch selection.wrappedValue {
-        case .session(let id):
-            return workbenchModel.sessions.first { $0.id == id }?.title ?? "Session"
-        case .task(let id):
-            return codeModel.tasks.first { $0.id == id }?.title ?? "Run"
-        case .remote:
-            return selectedRemoteSummary?.title ?? "Remote session"
-        case .allProjects:
-            return "All Projects"
-        case .draft:
-            return "New conversation"
-        case .pulls:
-            return "Pull requests"
-        case .connections:
-            return "Connections"
-        case .usage:
-            return "Usage"
-        case .settings:
-            return "Settings"
-        case .repository(let id):
-            return workbenchModel.workspaces.first { $0.id == id }?
-                .descriptor.displayName ?? "New conversation"
-        case nil:
-            return workbenchModel.workspaces.first?.descriptor.displayName ?? "New conversation"
-        }
-    }
-
-    // There is no `windowSubtitle`, and there is no computation for one.
-    //
-    // It survived the removal of `.navigationSubtitle` as an unreferenced 50-line
-    // string builder that named a repository, a branch and an engine nothing read.
-    // Every one of those facts is already on screen a line below — the draft's
-    // repository bar states the path and whether it is a Git checkout, and a live
-    // session's own header states its branch — which is the reason the subtitle
-    // went in the first place.
-
     // MARK: - Toolbar
 
     /// A fixed set. Every item is present in every state and disables rather than
@@ -904,6 +865,37 @@ struct DesktopCodeWorkspace: View {
             .accessibilityIdentifier("juno.code.new-session")
         }
 
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { consoleVisible.toggle() } label: {
+                Image(systemName: "terminal")
+            }
+            .tint(consoleVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("c", modifiers: [.command, .option])
+            .help(consoleVisible ? "Hide console" : "Show console")
+            .accessibilityLabel(consoleVisible ? "Hide console" : "Show console")
+            .accessibilityIdentifier("juno.code.console.toggle")
+            .disabled(controller == nil)
+
+            Button { reviewVisible.toggle() } label: {
+                Image(systemName: "plusminus.circle")
+            }
+            .tint(reviewVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("r", modifiers: [.command, .option])
+            .help(reviewVisible ? "Close review" : "Open review")
+            .accessibilityLabel(reviewVisible ? "Close review" : "Open review")
+            .accessibilityIdentifier("juno.code.review.toggle")
+            .disabled(controller == nil)
+
+            Button { inspectorVisible.toggle() } label: {
+                Image(systemName: "sidebar.trailing")
+            }
+            .tint(inspectorVisible ? Color.junoAccent : nil)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+            .help(inspectorVisible ? "Hide Code panels" : "Show Code panels")
+            .accessibilityLabel(inspectorVisible ? "Hide Code panels" : "Show Code panels")
+            .accessibilityIdentifier("juno.code.inspector.toggle")
+        }
+
         ToolbarItem(placement: .status) {
             statusIndicator
         }
@@ -916,27 +908,6 @@ struct DesktopCodeWorkspace: View {
                 .keyboardShortcut("p", modifiers: [.command, .option])
                 .disabled(controller?.context == nil)
                 .accessibilityIdentifier("juno.code.preview")
-
-                Button { consoleVisible.toggle() } label: {
-                    Label("Console", systemImage: "terminal")
-                }
-                .keyboardShortcut("c", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.console")
-
-                Button { reviewVisible.toggle() } label: {
-                    Label(reviewTitle, systemImage: "plusminus.circle")
-                }
-                .keyboardShortcut("r", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.review")
-
-                Button { inspectorVisible.toggle() } label: {
-                    Label("Inspector", systemImage: "sidebar.trailing")
-                }
-                .keyboardShortcut("i", modifiers: [.command, .option])
-                .disabled(controller == nil)
-                .accessibilityIdentifier("juno.code.inspector")
 
                 // `OpenQuicklySheet` is a complete 163-line file browser that had
                 // zero call sites: nothing in the app or the package ever presented
@@ -1059,11 +1030,6 @@ struct DesktopCodeWorkspace: View {
         if let selectedTask { return CodeRunStatus(selectedTask.status) }
         if let selectedRemoteSummary { return CodeRunStatus(selectedRemoteSummary) }
         return nil
-    }
-
-    private var reviewTitle: String {
-        let pending = controller?.changes.filter { $0.reviewState == .pending }.count ?? 0
-        return pending == 0 ? "Review" : "Review (\(pending))"
     }
 
     private var isRunning: Bool {

@@ -10,6 +10,7 @@ import SwiftUI
 
 struct JunoDesktopRootView: View {
     let configuration: JunoDesktopConfiguration
+    @Environment(\.scenePhase) private var scenePhase
     @SceneStorage("juno.desktop.product") private var storedProduct = DesktopProductMode.chat.rawValue
     @State private var workbenchModel: WorkbenchModel?
     /// The main window is a launch surface, not a resume surface. Keep this
@@ -48,6 +49,10 @@ struct JunoDesktopRootView: View {
                 Task {
                     await updateLifecycle(for: phase)
                 }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task { await configuration.authModel.retryRestore() }
             }
             .onChange(of: configuration.syncModel?.synchronizationGeneration) {
                 _, generation in

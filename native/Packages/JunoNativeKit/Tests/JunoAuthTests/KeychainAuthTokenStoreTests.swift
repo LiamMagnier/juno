@@ -63,6 +63,38 @@ final class KeychainAuthTokenStoreTests: XCTestCase {
         XCTAssertNil(activeAfterRemoval)
     }
 
+    func testActiveAccountHintRestoresAfterKeychainPointerIsLost() async throws {
+        let client = RecordingSecurityClient()
+        let hint = TestAuthActiveAccountHint()
+        let store = KeychainAuthTokenStore(
+            securityClient: client,
+            activeAccountHint: hint
+        )
+        let tokens = try makeTokens()
+
+        try await store.storeInitial(tokens)
+        _ = try client.delete(
+            SecurityKeychainItem(
+                service: "com.liammagnier.juno.auth.active-account",
+                account: "current"
+            )
+        )
+
+        let restored = try await store.loadActive()
+
+        XCTAssertEqual(restored, tokens)
+        XCTAssertEqual(hint.load(), tokens.accountID)
+        XCTAssertEqual(
+            try client.read(
+                SecurityKeychainItem(
+                    service: "com.liammagnier.juno.auth.active-account",
+                    account: "current"
+                )
+            ),
+            Data(tokens.accountID.rawValue.utf8)
+        )
+    }
+
     func testAccountSwitchPurgesPreviousCredential() async throws {
         let client = RecordingSecurityClient()
         let store = KeychainAuthTokenStore(securityClient: client)
@@ -124,6 +156,9 @@ final class KeychainAuthTokenStoreTests: XCTestCase {
         let client = RecordingSecurityClient()
         let store = KeychainAuthTokenStore(securityClient: client)
         let tokens = try makeTokens()
+        let activeTokens = try makeTokens(account: "acct_active")
+
+        try await store.storeInitial(activeTokens)
 
         let loaded = try await store.load(for: tokens.accountID)
         let removed = try await store.remove(
@@ -138,6 +173,8 @@ final class KeychainAuthTokenStoreTests: XCTestCase {
         XCTAssertNil(loaded)
         XCTAssertFalse(removed)
         XCTAssertFalse(replaced)
+        let activeAfterMissingRemoval = try await store.loadActive()
+        XCTAssertEqual(activeAfterMissingRemoval, activeTokens)
     }
 
     func testConditionalDeletionDoesNotRemoveNewerCredential() async throws {
@@ -334,4 +371,23 @@ private final class RecordingSecurityClient: SecurityKeychainClient,
 
 private enum TestSecurityError: Error, Equatable, Sendable {
     case accessDenied
+}
+
+private final class TestAuthActiveAccountHint: AuthActiveAccountHint,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var accountID: AccountID?
+
+    func load() -> AccountID? {
+        lock.withLock { accountID }
+    }
+
+    func store(_ accountID: AccountID) {
+        lock.withLock { self.accountID = accountID }
+    }
+
+    func remove() {
+        lock.withLock { accountID = nil }
+    }
 }

@@ -395,20 +395,26 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
     private let securityClient: any SecurityKeychainClient
     private let service: String
     private let accessGroup: String?
+    private let activeAccountHint: any AuthActiveAccountHint
 
     public init(
         accessGroup: String? = nil,
-        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient()
+        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
+        activeAccountHint: any AuthActiveAccountHint =
+            UserDefaultsAuthActiveAccountHint()
     ) {
         service = Self.defaultService
         self.accessGroup = accessGroup
         self.securityClient = securityClient
+        self.activeAccountHint = activeAccountHint
     }
 
     public init(
         service: String,
         accessGroup: String? = nil,
-        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient()
+        securityClient: any SecurityKeychainClient = SystemSecurityKeychainClient(),
+        activeAccountHint: any AuthActiveAccountHint =
+            UserDefaultsAuthActiveAccountHint()
     ) throws {
         guard !service.isEmpty,
             !service.unicodeScalars.contains(where: {
@@ -421,6 +427,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         self.service = service
         self.accessGroup = accessGroup
         self.securityClient = securityClient
+        self.activeAccountHint = activeAccountHint
     }
 
     public func load(for accountID: AccountID) async throws -> AuthTokenSet? {
@@ -436,15 +443,44 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
 
     /// Restores the account selected by the last successful token installation.
     public func loadActive() async throws -> AuthTokenSet? {
-        let activeItem = activeAccountItem()
-        guard let accountID = try activeAccountID() else {
+        let hintedAccountID = activeAccountHint.load()
+        let keychainAccountID: AccountID?
+        do {
+            keychainAccountID = try readActiveAccountID()
+        } catch {
+            // A bundle replacement can make one Keychain query temporarily
+            // unavailable. The preference contains no secret, so it is safe to
+            // use it as the locator while the token item itself remains the
+            // source of truth.
+            guard hintedAccountID != nil else { throw error }
+            keychainAccountID = nil
+        }
+
+        let accountIDs = [keychainAccountID, hintedAccountID]
+            .compactMap { $0 }
+            .reduce(into: [AccountID]()) { result, accountID in
+                if !result.contains(accountID) { result.append(accountID) }
+            }
+        guard !accountIDs.isEmpty else {
             return nil
         }
-        guard let tokens = try loadStored(for: accountID) else {
-            _ = try securityClient.delete(activeItem)
-            return nil
+
+        for accountID in accountIDs {
+            guard let tokens = try loadStored(for: accountID) else { continue }
+            activeAccountHint.store(accountID)
+            if keychainAccountID != accountID {
+                // Repair the pointer opportunistically. A failed repair must
+                // not turn a successful credential read into a sign-out.
+                try? securityClient.upsert(
+                    Data(accountID.rawValue.utf8),
+                    for: activeAccountItem()
+                )
+            }
+            return tokens
         }
-        return tokens
+
+        clearActiveAccountLocators()
+        return nil
     }
 
     public func storeInitial(_ tokenSet: AuthTokenSet) async throws {
@@ -464,11 +500,13 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
                 Data(tokenSet.accountID.rawValue.utf8),
                 for: activeAccountItem()
             )
+            activeAccountHint.store(tokenSet.accountID)
         } catch {
             _ = try? securityClient.delete(tokenItem)
             if isAccountSwitch {
                 _ = try? securityClient.delete(activeAccountItem())
             }
+            if isAccountSwitch { activeAccountHint.remove() }
             throw error
         }
     }
@@ -509,12 +547,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         guard try securityClient.delete(item(for: accountID)) else {
             return false
         }
-        let activeItem = activeAccountItem()
-        if let activeData = try securityClient.read(activeItem),
-            String(data: activeData, encoding: .utf8) == accountID.rawValue
-        {
-            _ = try securityClient.delete(activeItem)
-        }
+        clearActiveAccountLocators(for: accountID)
         return true
     }
 
@@ -535,15 +568,60 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
     }
 
     private func activeAccountID() throws -> AccountID? {
-        guard let data = try securityClient.read(activeAccountItem()) else {
-            return nil
+        try readActiveAccountID() ?? activeAccountHint.load()
+    }
+
+    /// Reads the current pointer and the service-specific pointer used by
+    /// early native builds. The latter is harmless to keep around and lets an
+    /// update recover a session written by a custom-store build.
+    private func readActiveAccountID() throws -> AccountID? {
+        for item in activeAccountItems() {
+            guard let data = try securityClient.read(item) else { continue }
+            guard let rawValue = String(data: data, encoding: .utf8),
+                let accountID = try? AccountID(rawValue)
+            else {
+                throw KeychainAuthTokenStoreError.malformedData
+            }
+            return accountID
         }
-        guard let rawValue = String(data: data, encoding: .utf8),
-            let accountID = try? AccountID(rawValue)
-        else {
-            throw KeychainAuthTokenStoreError.malformedData
+        return nil
+    }
+
+    private func activeAccountItems() -> [SecurityKeychainItem] {
+        var items = [activeAccountItem()]
+        let historicalService = "\(service).active-account"
+        if historicalService != Self.activeAccountService {
+            items.append(
+                SecurityKeychainItem(
+                    service: historicalService,
+                    account: Self.activeAccountName,
+                    accessGroup: accessGroup
+                )
+            )
         }
-        return accountID
+        return items
+    }
+
+    private func clearActiveAccountLocators(for accountID: AccountID? = nil) {
+        if let accountID {
+            if activeAccountHint.load() == accountID {
+                activeAccountHint.remove()
+            }
+            for item in activeAccountItems() {
+                guard let data = try? securityClient.read(item),
+                    let rawValue = String(data: data, encoding: .utf8),
+                    rawValue == accountID.rawValue
+                else {
+                    continue
+                }
+                _ = try? securityClient.delete(item)
+            }
+            return
+        }
+        for item in activeAccountItems() {
+            _ = try? securityClient.delete(item)
+        }
+        activeAccountHint.remove()
     }
 
     private func encode(_ tokenSet: AuthTokenSet) throws -> Data {
