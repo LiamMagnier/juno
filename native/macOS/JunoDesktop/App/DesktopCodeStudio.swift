@@ -7,6 +7,7 @@ import JunoCodeUI
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoVoiceKit
 import SwiftUI
 
 /// The Code window's navigation column, its selection rules, its status
@@ -1431,6 +1432,12 @@ struct DesktopCodeDraftDetail: View {
     /// selection does — so this hands the choice back up rather than keeping a
     /// second copy of it that could disagree with the sidebar.
     let selectProject: (WorkspaceID?) -> Void
+    /// Starts realtime voice mode from the first-turn composer. The draft has
+    /// no `SessionController` yet, so it passes the selected model explicitly.
+    let beginVoice: ((String) -> Void)?
+    /// The host-owned voice dock, shown directly above this composer while a
+    /// call is active. Keeping it outside the glass composer matches Chat.
+    let voiceDock: AnyView?
 
     @SceneStorage("juno.desktop.code.launch-target")
     private var storedTarget = DesktopCodeLaunchTarget.local.rawValue
@@ -1439,6 +1446,7 @@ struct DesktopCodeDraftDetail: View {
     @State private var permissionMode = PermissionMode.askBeforeChanges
     @State private var modelID = ""
     @State private var reasoningEffort = ReasoningEffort.medium
+    @State private var dictating = false
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1592,6 +1600,10 @@ struct DesktopCodeDraftDetail: View {
                     .frame(maxWidth: 760, alignment: .leading)
                     .padding(.horizontal, JunoSpace.roomy)
 
+                    if let voiceDock {
+                        voiceDock
+                    }
+
                     composer
 
                     Text(footerNote)
@@ -1723,58 +1735,84 @@ struct DesktopCodeDraftDetail: View {
             VStack(spacing: JunoSpace.cozy) {
                 destinationRow
 
-                TextField(
-                    record == nil
-                        ? "Ask Juno anything about code…"
-                        : target == .local
-                            ? "Ask Juno to build, fix, review, or explain…"
-                            : "Describe the task to run…",
-                    text: $prompt,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .lineLimit(3...9)
-                .font(.body)
-                .focused($focused)
-                .padding(.horizontal, JunoSpace.tight)
-                .padding(.vertical, JunoSpace.tight)
-                .accessibilityIdentifier("juno.code.launch-prompt")
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { return .ignored }
-                    if canSend { send() }
-                    return .handled
-                }
-
-                if let issue = launchIssue {
-                    Label(issue, systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, JunoSpace.tight)
-                        .transition(.opacity)
-                        .accessibilityIdentifier("juno.code.launch-issue")
-                }
-
-                HStack(spacing: JunoSpace.snug) {
-                    // A projectless conversation has exactly one place it can
-                    // run, so the picker would be a control with one working
-                    // choice and two that refuse.
-                    if record != nil {
-                        targetMenu
-
-                        Rectangle()
-                            .fill(Color.junoHairline)
-                            .frame(width: 1, height: 19)
-                            .padding(.horizontal, 2)
-                            .accessibilityHidden(true)
+                if dictating {
+                    DesktopDictation(
+                        onCancel: {
+                            withAnimation(JunoMotion.fast) { dictating = false }
+                            focused = true
+                        },
+                        onStop: { transcript in
+                            appendDictated(transcript)
+                            withAnimation(JunoMotion.fast) { dictating = false }
+                            focused = true
+                        },
+                        onSend: { transcript in
+                            appendDictated(transcript)
+                            withAnimation(JunoMotion.fast) { dictating = false }
+                            Task {
+                                await Task.yield()
+                                send()
+                            }
+                        }
+                    )
+                    .transition(.opacity)
+                } else {
+                    TextField(
+                        record == nil
+                            ? "Ask Juno anything about code…"
+                            : target == .local
+                                ? "Ask Juno to build, fix, review, or explain…"
+                                : "Describe the task to run…",
+                        text: $prompt,
+                        axis: .vertical
+                    )
+                    .textFieldStyle(.plain)
+                    .lineLimit(3...9)
+                    .font(.body)
+                    .focused($focused)
+                    .padding(.horizontal, JunoSpace.tight)
+                    .padding(.vertical, JunoSpace.tight)
+                    .accessibilityIdentifier("juno.code.launch-prompt")
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) { return .ignored }
+                        if canSend { send() }
+                        return .handled
                     }
 
-                    launchControls
+                    if let issue = launchIssue {
+                        Label(issue, systemImage: "info.circle")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, JunoSpace.tight)
+                            .transition(.opacity)
+                            .accessibilityIdentifier("juno.code.launch-issue")
+                    }
 
-                    Spacer(minLength: JunoSpace.tight)
+                    HStack(spacing: JunoSpace.snug) {
+                        // A projectless conversation has exactly one place it
+                        // can run, so the picker would be a control with one
+                        // working choice and two that refuse.
+                        if record != nil {
+                            targetMenu
 
-                    suggestionsMenu
-                    sendButton
+                            Rectangle()
+                                .fill(Color.junoHairline)
+                                .frame(width: 1, height: 19)
+                                .padding(.horizontal, 2)
+                                .accessibilityHidden(true)
+                        }
+
+                        launchControls
+
+                        Spacer(minLength: JunoSpace.tight)
+
+                        suggestionsMenu
+                        if JunoSpeechService.isSupported {
+                            dictateButton
+                        }
+                        sendButton
+                    }
                 }
             }
             .padding(JunoSpace.cozy)
@@ -2109,31 +2147,71 @@ struct DesktopCodeDraftDetail: View {
         .accessibilityIdentifier("juno.code.launch-suggestions")
     }
 
-    /// The composer's one primary action, and therefore the one thing in this
-    /// row that keeps the accent — the website's send button is `bg-primary` and
-    /// everything else on its composer bar is `text-muted-foreground`.
-    private var sendButton: some View {
-        Button(action: send) {
-            Group {
-                if isStartingLocal || code.isMutating {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
-                }
-            }
-            .frame(width: 30, height: 30)
-            .contentShape(.circle)
+    private var dictateButton: some View {
+        Button {
+            focused = false
+            withAnimation(JunoMotion.fast) { dictating = true }
+        } label: {
+            Image(systemName: "mic")
+                .font(.body)
+                .foregroundStyle(Color.primary.opacity(0.76))
+                .frame(width: 30, height: 30)
+                .contentShape(.rect)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.circle)
-        .tint(Color.junoAccent)
-        .foregroundStyle(Color.junoOnAccent)
-        .disabled(!canSend)
-        .help("Start this task (Return)")
-        .accessibilityLabel("Start task")
-        .accessibilityIdentifier("juno.code.launch-send")
+        .buttonStyle(.plain)
+        .help("Dictate a message")
+        .accessibilityLabel("Dictate a message")
+        .accessibilityIdentifier("juno.code.composer.dictate")
+    }
+
+    /// The same morphing primary action Chat uses: voice mode when the prompt
+    /// is empty, Send once the reader has written something, and a spinner while
+    /// a task is being created. Voice lives in this slot so it is discoverable
+    /// without adding a second row of controls to the Code composer.
+    @ViewBuilder
+    private var sendButton: some View {
+        if trimmedPrompt.isEmpty, let beginVoice {
+            Button {
+                beginVoice(modelID)
+            } label: {
+                JunoCodeVoiceGlyph()
+                    .frame(width: 30, height: 30)
+                    .foregroundStyle(Color.junoOnAccent)
+                    .contentShape(.circle)
+            }
+            .accentGlassAction(active: !modelID.isEmpty)
+            .disabled(modelID.isEmpty)
+            .help("Start a voice conversation")
+            .accessibilityLabel("Start voice mode")
+            .accessibilityIdentifier("juno.code.composer.voice")
+        } else {
+            Button(action: send) {
+                Group {
+                    if isStartingLocal || code.isMutating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                }
+                .frame(width: 30, height: 30)
+                .foregroundStyle(canSend ? Color.junoOnAccent : Color.secondary)
+                .contentShape(.circle)
+            }
+            .accentGlassAction(active: canSend)
+            .disabled(!canSend)
+            .help("Start this task (Return)")
+            .accessibilityLabel("Start task")
+            .accessibilityIdentifier("juno.code.launch-send")
+        }
+    }
+
+    private func appendDictated(_ transcript: String) {
+        let dictated = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dictated.isEmpty else { return }
+        let existing = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        prompt = existing.isEmpty ? dictated : "\(existing) \(dictated)"
     }
 
     private var destinationTitle: String {

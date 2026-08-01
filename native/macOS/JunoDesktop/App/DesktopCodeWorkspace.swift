@@ -554,7 +554,11 @@ struct DesktopCodeWorkspace: View {
                 reviewVisible = false
                 consoleVisible = false
                 selection.wrappedValue = id.map { .repository($0) } ?? .draft
-            }
+            },
+            beginVoice: { modelID in
+                startVoice(modelID: modelID, projectID: record?.id.value)
+            },
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
     }
 
@@ -595,9 +599,11 @@ struct DesktopCodeWorkspace: View {
             model: workbenchModel,
             showsReview: $reviewVisible,
             showsConsole: $consoleVisible,
-            beginDictation: {
-                withAnimation(JunoMotion.fast) { isDictating = true }
-            },
+            beginDictation: JunoSpeechService.isSupported
+                ? {
+                    withAnimation(JunoMotion.fast) { isDictating = true }
+                }
+                : nil,
             beginVoice: {
                 startVoice(for: controller)
             },
@@ -686,6 +692,17 @@ struct DesktopCodeWorkspace: View {
     }
 
     private func startVoice(for controller: SessionController) {
+        startVoice(
+            modelID: controller.session.configuration.modelID,
+            projectID: controller.session.workspaceID?.value
+        )
+    }
+
+    /// Starts the same realtime call from either a running Code session or the
+    /// first-turn composer. A draft has no `SessionController` yet, but voice
+    /// still has the same account-authenticated relay and can be saved against
+    /// the selected project when the call ends.
+    private func startVoice(modelID: String, projectID: String?) {
         guard voiceSession == nil else { return }
         guard let configuration, let session, let sender = configuration.requestSender else {
             voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
@@ -693,6 +710,10 @@ struct DesktopCodeWorkspace: View {
         }
         guard configuration.voiceTranscriptClient != nil else {
             voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+        guard !modelID.isEmpty else {
+            voiceUnavailable = "Choose a model before starting voice mode."
             return
         }
 
@@ -703,9 +724,9 @@ struct DesktopCodeWorkspace: View {
                     accountID: session.profile.id
                 )
             ),
-            modelID: controller.session.configuration.modelID,
+            modelID: modelID,
             conversationID: nil,
-            projectID: controller.session.workspaceID?.value
+            projectID: projectID
         )
         voiceSession = started
         Task { await started.controller.start() }
@@ -1011,12 +1032,22 @@ struct DesktopCodeWorkspace: View {
                     .foregroundStyle(status.tint)
             }
         } else {
-            // Not `square.and.pencil`: that is the New-session button's glyph, and
-            // a toolbar drawing the same icon twice a few points apart reads as two
-            // of the same control rather than as an action and a status.
-            Label("Draft", systemImage: "circle.dashed")
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("New session draft")
+            // A dashed circle looked like a disabled or loading toolbar button,
+            // especially in a new Code window where it was the only status. Make
+            // the state read as a quiet status chip instead: pencil means "ready
+            // to write" and the word remains visible when the toolbar is wide
+            // enough to show it.
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: "pencil.line")
+                    .font(.caption2.weight(.semibold))
+                Text("Draft")
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, JunoSpace.snug)
+            .frame(height: 24)
+            .background(JunoGlassBackground(cornerRadius: 12))
+            .accessibilityLabel("New session draft")
         }
     }
 

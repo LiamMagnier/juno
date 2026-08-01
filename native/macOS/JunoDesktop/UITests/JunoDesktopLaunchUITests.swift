@@ -59,7 +59,8 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         XCTAssertTrue(app.menuButtons["juno.code.launch-target"].exists)
         XCTAssertTrue(app.menuButtons["juno.code.launch-contract"].exists)
         XCTAssertTrue(app.buttons["juno.code.launch-model"].exists)
-        XCTAssertTrue(app.buttons["juno.code.launch-send"].exists)
+        XCTAssertTrue(app.buttons["juno.code.composer.voice"].exists)
+        XCTAssertTrue(app.buttons["juno.code.composer.dictate"].exists)
         XCTAssertTrue(
             app.descendants(matching: .any)["juno.product-brand.code"]
                 .waitForExistence(timeout: 5)
@@ -130,6 +131,8 @@ final class JunoDesktopLaunchUITests: XCTestCase {
         openMainWindowIfNeeded(in: app)
 
         XCTAssertTrue(app.textFields["juno.code.composer.field"].waitForExistence(timeout: 12))
+        XCTAssertTrue(app.buttons["juno.code.composer.voice"].exists)
+        XCTAssertTrue(app.buttons["juno.code.composer.dictate"].exists)
         XCTAssertTrue(app.menuButtons["juno.code.session-tools"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["juno.code.inspector.toggle"].exists)
         XCTAssertTrue(app.buttons["juno.code.console.toggle"].exists)
