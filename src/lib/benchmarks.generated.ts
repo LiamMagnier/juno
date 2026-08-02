@@ -19,7 +19,7 @@ export interface ModelBenchmark {
 }
 
 /** ISO timestamp of the last successful fetch (null = never fetched). */
-export const BENCHMARK_STAMP: string | null = "2026-08-01T06:42:34.188Z";
+export const BENCHMARK_STAMP: string | null = "2026-08-02T06:47:35.886Z";
 
 /** Canonical Juno model id → live leaderboard data. */
 export const BENCHMARKS: Record<string, ModelBenchmark> = {
@@ -98,6 +98,6 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "zhipu:glm-5": { priceInPerMTok: 0.95, priceOutPerMTok: 2.5500000000000003, source: "openrouter", slug: "z-ai/glm-5" },
   "zhipu:glm-5-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5-turbo" },
   "zhipu:glm-5.1": { priceInPerMTok: 0.966, priceOutPerMTok: 3.036, source: "openrouter", slug: "z-ai/glm-5.1" },
-  "zhipu:glm-5.2": { priceInPerMTok: 0.76006, priceOutPerMTok: 2.38876, source: "openrouter", slug: "z-ai/glm-5.2" },
+  "zhipu:glm-5.2": { priceInPerMTok: 0.34299999999999997, priceOutPerMTok: 1.078, source: "openrouter", slug: "z-ai/glm-5.2" },
   "zhipu:glm-5v-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5v-turbo" },
 };
