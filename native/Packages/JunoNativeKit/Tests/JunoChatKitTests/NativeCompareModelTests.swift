@@ -172,9 +172,13 @@ final class NativeCompareModelTests: XCTestCase {
         await client.waitForRequests(2)
 
         model.stopAll()
+        // Checked before the await: `stopping` means "a stop is in flight" and
+        // clears itself once nothing is streaming, so asserting it *after*
+        // waiting for the cancels asserts whichever of the two got there first.
+        XCTAssertTrue(model.stopping, "the composer shows stopping without waiting for the server")
+
         await client.waitForCancels(2)
         XCTAssertEqual(Set(client.cancelled), Set(client.requests.map(\.generationID)))
-        XCTAssertTrue(model.stopping)
     }
 
     // MARK: - Failure

@@ -39,9 +39,15 @@ final class JunoProviderGlowTests: XCTestCase {
             (h: 217.415730, s: 0.890000, l: 0.607843)
         )
         // Green-dominant and dark, so the other branch.
+        //
+        // Saturation is exactly 147/179: delta is (163−16)/255 and, below the
+        // l > .5 branch, the divisor is (163+16)/255. The literal here read
+        // 0.821256, which is not that ratio — a transcription slip that had
+        // never been caught because this file did not compile, so the suite
+        // had never run.
         assertHSL(
             JunoProviderGlow.hsl(hex: 0x10_a3_7f),
-            (h: 165.306122, s: 0.821256, l: 0.350980)
+            (h: 165.306122, s: 0.821229, l: 0.350980)
         )
     }
 
@@ -92,8 +98,32 @@ final class JunoProviderGlowTests: XCTestCase {
 
     // MARK: - Provider lookup
 
-    func testAKnownProviderIsItsBrandTurnedIntoLight() throws {
+    /// Components compared with the same tolerance the HSL helper above uses,
+    /// not with `==`. The two sides reach the same colour by different routes —
+    /// one hex → HSL → ambient light → token, the other straight from HSL
+    /// literals — and they land about 2e-7 apart. Exact `Double` equality
+    /// across those paths asserts the arithmetic's rounding, not the colour.
+    private func assertToken(
+        _ actual: JunoColorToken?,
+        _ expected: JunoColorToken,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
+        let actual = try XCTUnwrap(actual, file: file, line: line)
+        XCTAssertEqual(actual.red, expected.red, accuracy: accuracy, "red", file: file, line: line)
         XCTAssertEqual(
+            actual.green, expected.green, accuracy: accuracy, "green", file: file, line: line
+        )
+        XCTAssertEqual(
+            actual.blue, expected.blue, accuracy: accuracy, "blue", file: file, line: line
+        )
+        XCTAssertEqual(
+            actual.opacity, expected.opacity, accuracy: accuracy, "opacity", file: file, line: line
+        )
+    }
+
+    func testAKnownProviderIsItsBrandTurnedIntoLight() throws {
+        try assertToken(
             JunoProviderGlow.brandGlow(providerID: "anthropic"),
             JunoColorToken(hsl: (h: 14.531250, s: 0.351373, l: 0.545600))
         )
