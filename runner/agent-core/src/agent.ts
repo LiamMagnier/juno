@@ -11,6 +11,7 @@ import type {
 } from './types.js';
 import type { ProviderAdapter } from './providers/types.js';
 import type { ToolContext, ToolDefinition } from './tools/types.js';
+import type { ContainerSandboxConfig } from './tools/container-sandbox.js';
 import { PermissionEngine, classifyRisk } from './permissions.js';
 import { CheckpointStore } from './checkpoints.js';
 import { SessionStore } from './session.js';
@@ -46,6 +47,12 @@ export interface AgentOptions {
   /** Child-process environment for tools (scrubbed env for untrusted runs).
    *  Omitted = children inherit process.env, as before. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Confines agent-authored commands to a container holding only the task
+   * worktree. Absent means they run on the host, which is right for a local
+   * session and wrong for the cloud runner.
+   */
+  containerSandbox?: ContainerSandboxConfig;
   /** Subagent delegation config; `false` disables it (no tools exposed). */
   subagents?: SubagentConfig | false;
 }
@@ -88,6 +95,8 @@ export class AgentSession {
   private callbacks: AgentCallbacks;
   private usageReporter?: UsageReporter;
   private env?: NodeJS.ProcessEnv;
+  /** Container confinement for agent-authored commands; absent locally. */
+  private readonly containerSandbox?: ContainerSandboxConfig;
   private aborter: AbortController | null = null;
   /** Root-only child-task orchestration. Children run through the manager's
    *  own executor (which hard-rejects orchestration tools), so nesting is
@@ -109,6 +118,7 @@ export class AgentSession {
     this.callbacks = opts.callbacks;
     this.usageReporter = opts.usageReporter;
     this.env = opts.env;
+    this.containerSandbox = opts.containerSandbox;
     if (opts.subagents !== false) {
       const session = this;
       this.subagents = new SubagentManager(
@@ -349,7 +359,11 @@ export class AgentSession {
       }
     }
 
-    const ctx: ToolContext = { cwd: this.cwd, env: this.env };
+    const ctx: ToolContext = {
+      cwd: this.cwd,
+      env: this.env,
+      containerSandbox: this.containerSandbox,
+    };
     for (const abs of tool.mutatedPaths?.(call.input, ctx) ?? []) {
       this.checkpoints.snapshot(turnIndex, abs);
     }

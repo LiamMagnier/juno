@@ -45,6 +45,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { AgentSession, createProxyProvider } from "../runner/agent-core/dist/index.js";
+import { containerSandboxFromEnv } from "../runner/agent-core/dist/tools/container-sandbox.js";
 import {
   DurableOutbox,
   backoffDelayMs,
@@ -545,6 +546,13 @@ async function main() {
     // shell receives none of {exchange code, task token, clone token, JUNO_*,
     // GIT_ASKPASS, ACTIONS_*}. See runner/agent-core/VENDORED.md (divergence #3).
     env: agentEnv,
+    // When JUNO_RUNNER_SANDBOX_IMAGE is set, agent bash runs in a container
+    // holding ONLY the worktree: no tokens, no host environment, no network.
+    // The driver stays outside it and keeps doing the clone, commit, push and
+    // PR with its scoped credentials — which is what stops "the agent can run
+    // arbitrary bash" from meaning "the agent can push anywhere the runner
+    // can". Unset (local runs) the commands execute here, as before.
+    containerSandbox: containerSandboxFromEnv(process.env, workdir) ?? undefined,
     callbacks: {
       onEvent: (event) => onAgentEvent(sink, event),
       // No human is attached; auto-approve, but log an audit trail. The agent

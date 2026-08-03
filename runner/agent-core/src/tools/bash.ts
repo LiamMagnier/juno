@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import type { ToolDefinition, ToolResult } from './types.js';
+import { buildContainerArgs } from './container-sandbox.js';
 
 const MAX_OUTPUT_CHARS = 30_000;
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -41,7 +42,15 @@ export const bashTool: ToolDefinition = {
     const command = String(input.command);
     const timeout = Math.min(Number(input.timeout_ms ?? DEFAULT_TIMEOUT_MS), MAX_TIMEOUT_MS);
     return new Promise((resolveResult) => {
-      const child = spawn('/bin/bash', ['-c', command], {
+      // In the cloud runner the command goes to a container holding only the
+      // worktree; locally it runs here. Either way the environment passed is
+      // the scrubbed one — `docker run` receives no `--env`, so the container
+      // starts from the image's environment and nothing of the host's.
+      const invocation = ctx.containerSandbox
+        ? { file: 'docker', args: buildContainerArgs(command, ctx.containerSandbox) }
+        : { file: '/bin/bash', args: ['-c', command] };
+
+      const child = spawn(invocation.file, invocation.args, {
         cwd: ctx.cwd,
         env: ctx.env ?? MINIMAL_ENV,
         stdio: ['ignore', 'pipe', 'pipe'],

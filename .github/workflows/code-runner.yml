@@ -76,6 +76,31 @@ jobs:
           npm i
           npm run build
 
+      # Agent-authored bash runs in here, not on the runner VM.
+      #
+      # The driver stays outside it and keeps the task token, the clone token
+      # and every git operation; the container gets the worktree bind-mounted
+      # and nothing else — no credentials, no host environment, no network. So
+      # "the agent can run arbitrary bash" stops meaning "the agent can push
+      # anywhere this runner can".
+      #
+      # Pulled by digest, not by tag: a tag is mutable, so `node:20` today and
+      # `node:20` next month are different images and a moved tag is a supply
+      # chain change nobody would notice.
+      - name: Pull the agent sandbox image
+        id: sandbox
+        run: |
+          set -euo pipefail
+          IMAGE="${JUNO_SANDBOX_IMAGE:-node:20-bookworm-slim}"
+          docker pull "$IMAGE"
+          # Re-resolve to the digest actually pulled, so the run records what it
+          # ran rather than what it asked for.
+          PINNED=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE" 2>/dev/null || echo "$IMAGE")
+          echo "image=$PINNED" >> "$GITHUB_OUTPUT"
+          echo "Agent sandbox image: $PINNED"
+        env:
+          JUNO_SANDBOX_IMAGE: ${{ vars.JUNO_RUNNER_SANDBOX_IMAGE }}
+
       - name: Run the Cloud Code task
         # The driver fetches its OWN GitHub Actions OIDC JWT at runtime using the
         # auto-provisioned ACTIONS_ID_TOKEN_REQUEST_URL / ACTIONS_ID_TOKEN_REQUEST_TOKEN
@@ -88,4 +113,11 @@ jobs:
           JUNO_REPO_NAME: ${{ inputs.repoName }}
           JUNO_BASE_REF: ${{ inputs.baseRef }}
           JUNO_CALLBACK_BASE: ${{ inputs.callbackBase }}
+          # Setting this is what switches agent bash into the container. Unset,
+          # the driver executes commands directly, which is the local-development
+          # behaviour and is NOT what should run here.
+          JUNO_RUNNER_SANDBOX_IMAGE: ${{ steps.sandbox.outputs.image }}
+          # Off by default. A build that needs dependencies should have had them
+          # fetched by the driver, outside the sandbox, before the agent ran.
+          JUNO_RUNNER_SANDBOX_NETWORK: none
         run: node scripts/cloud-code-runner.mjs

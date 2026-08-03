@@ -4,6 +4,13 @@ export interface ToolContext {
   cwd: string;
   /** Child-process environment override (scrubbed env for untrusted runs). */
   env?: NodeJS.ProcessEnv;
+  /**
+   * When set, commands run inside a container with only the task worktree
+   * mounted — no credentials, no host environment, no network. Absent means
+   * the command runs directly on the host, which is correct for a local
+   * developer session and not for the cloud runner.
+   */
+  containerSandbox?: import("./container-sandbox.js").ContainerSandboxConfig;
 }
 
 export interface ToolResult {
