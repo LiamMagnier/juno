@@ -7,9 +7,17 @@ public struct RunCommandTool: CodeTool {
 
     private let executor: any CommandExecuting
     private let classifier = CommandClassifier()
+    /// Optional, because a registry can be built without a scannable workspace
+    /// root (inspection mode, tests with a stub executor). When it is absent
+    /// the tool reports nothing about files rather than guessing.
+    private let changes: (any WorkspaceChangeDetecting)?
 
-    public init(executor: any CommandExecuting) {
+    public init(
+        executor: any CommandExecuting,
+        changes: (any WorkspaceChangeDetecting)? = nil
+    ) {
         self.executor = executor
+        self.changes = changes
     }
 
     public let name = "run_command"
@@ -68,6 +76,7 @@ public struct RunCommandTool: CodeTool {
             max(input["timeout_seconds"]?.numberValue ?? Self.defaultTimeoutSeconds, 1),
             Self.maximumTimeoutSeconds
         )
+        let before = await changes?.snapshot()
         var collected = ""
         var result: CommandResult?
         for try await event in executor.stream(
@@ -93,11 +102,57 @@ public struct RunCommandTool: CodeTool {
         if result.wasTimeout { footer += ", timed out" }
         if result.wasTruncated { footer += ", output truncated" }
         footer += String(format: ", %.1fs]", result.durationSeconds)
+
+        // What the command did to the workspace, as far as a before/after scan
+        // can tell. These carry no checkpoint id, which is the literal truth:
+        // they are visible in the transcript and they are not undoable from it.
+        var report: WorkspaceChangeReport?
+        if let before, let detector = changes {
+            report = WorkspaceChangeReport.comparing(before: before, after: await detector.snapshot())
+        }
+        if let report, !report.isEmpty {
+            footer += "\n" + Self.changeSummary(report)
+        }
+
         let limited = OutputLimiter.apply(.commandOutput, to: collected)
         return ToolResult(
             content: limited.text + footer,
-            isError: !result.succeeded
+            isError: !result.succeeded,
+            sideEffects: Self.changeEvents(report)
         )
+    }
+
+    static func changeSummary(_ report: WorkspaceChangeReport) -> String {
+        var parts: [String] = []
+        if !report.created.isEmpty { parts.append("\(report.created.count) added") }
+        if !report.modified.isEmpty { parts.append("\(report.modified.count) changed") }
+        if !report.deleted.isEmpty { parts.append("\(report.deleted.count) deleted") }
+        let counts = parts.joined(separator: ", ")
+        let qualifier = report.isPartial ? "at least " : ""
+        return
+            "[files: \(qualifier)\(counts). These were changed by the command, not by a file tool, "
+            + "so they are not checkpointed and cannot be undone from the transcript.]"
+    }
+
+    private static func changeEvents(_ report: WorkspaceChangeReport?) -> [SessionEventPayload] {
+        guard let report else { return [] }
+        let entries: [(WorkspacePath, FileChangeKind)] =
+            report.created.map { ($0, .created) }
+            + report.modified.map { ($0, .modified) }
+            + report.deleted.map { ($0, .deleted) }
+        return entries.map { path, kind in
+            .fileChanged(
+                FileChangedEvent(
+                    path: path,
+                    kind: kind,
+                    linesAdded: 0,
+                    linesRemoved: 0,
+                    // Nil is the whole point: no checkpoint exists, so the undo
+                    // affordance must not appear for these rows.
+                    checkpointID: nil
+                )
+            )
+        }
     }
 }
 

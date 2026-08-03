@@ -79,6 +79,11 @@ public actor CheckpointStore: Checkpointing {
         }
         let entries = checkpoint.resolvedEntries
         let urls = try entries.map { try access.resolveForMutation($0.path) }
+        // Written before the first byte moves and removed after the last one.
+        // Its presence on the next launch is the only evidence that a restore
+        // was interrupted part-way — at that moment the workspace holds neither
+        // the before state nor the after state, and nothing else can tell.
+        try writeRestoreJournal(for: checkpoint.id)
 
         // Validate every path before touching any of them. Checking and
         // applying one entry at a time would half-undo a move whose second path
@@ -130,11 +135,82 @@ public actor CheckpointStore: Checkpointing {
                     try? FileManager.default.removeItem(at: change.url)
                 }
             }
+            removeRestoreJournal(for: checkpoint.id)
             throw CheckpointError.restoreFailed(
                 path: checkpoint.path.value,
                 message: String(describing: error)
             )
         }
+        removeRestoreJournal(for: checkpoint.id)
+    }
+
+    /// Finishes restores that were interrupted by a crash or a kill.
+    ///
+    /// Finishing forward rather than rolling back, because the user had already
+    /// asked for the undo — and because re-applying a checkpoint's pre-state is
+    /// idempotent, while "rolling back" to a half-restored workspace is not a
+    /// state anyone asked for.
+    ///
+    /// No divergence check runs here, deliberately. Divergence asks "has this
+    /// changed since the operation landed", and mid-restore the answer is yes
+    /// by construction: that is exactly what was interrupted.
+    ///
+    /// - Returns: the ids of the checkpoints that were completed.
+    @discardableResult
+    public func recoverInterruptedRestores() throws -> [String] {
+        try loadIfNeeded()
+        var recovered: [String] = []
+        for id in journalledRestoreIDs().sorted() {
+            guard let checkpoint = cache[id] else {
+                // The checkpoint is gone, so there is nothing left to finish
+                // and the journal would otherwise be retried on every launch.
+                removeRestoreJournal(for: id)
+                continue
+            }
+            for entry in checkpoint.resolvedEntries {
+                guard let url = try? access.resolveForMutation(entry.path) else { continue }
+                if let preContent = entry.preContent {
+                    try? FileManager.default.createDirectory(
+                        at: url.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try? AtomicFileWriter.write(preContent, to: url)
+                } else if FileManager.default.fileExists(atPath: url.path) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+            removeRestoreJournal(for: id)
+            recovered.append(id)
+        }
+        return recovered
+    }
+
+    // MARK: - Restore journal
+
+    private func restoreJournalURL(for id: String) -> URL {
+        directoryURL.appendingPathComponent("\(id).restoring")
+    }
+
+    private func writeRestoreJournal(for id: String) throws {
+        try FileManager.default.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true
+        )
+        try Data(id.utf8).write(to: restoreJournalURL(for: id), options: .atomic)
+    }
+
+    private func removeRestoreJournal(for id: String) {
+        try? FileManager.default.removeItem(at: restoreJournalURL(for: id))
+    }
+
+    private func journalledRestoreIDs() -> [String] {
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: directoryURL,
+            includingPropertiesForKeys: nil
+        )) ?? []
+        return files
+            .filter { $0.pathExtension == "restoring" }
+            .map { $0.deletingPathExtension().lastPathComponent }
     }
 
     public func removeCheckpoints(for sessionID: CodeSessionID) async throws {

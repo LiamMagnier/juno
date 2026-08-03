@@ -29,6 +29,7 @@ public struct ToolRegistry: Sendable {
         git: any GitServicing,
         tests: any TestRunning,
         goalStore: CodeSessionStore? = nil,
+        changes: (any WorkspaceChangeDetecting)? = nil,
         additionalTools: [any CodeTool] = []
     ) -> ToolRegistry {
         var tools: [any CodeTool] = [
@@ -42,7 +43,7 @@ public struct ToolRegistry: Sendable {
             ApplyPatchTool(files: files),
             DeleteFileTool(files: files),
             MoveFileTool(files: files),
-            RunCommandTool(executor: executor),
+            RunCommandTool(executor: executor, changes: changes),
             GitStatusTool(git: git),
             GitDiffTool(git: git),
             GitLogTool(git: git),

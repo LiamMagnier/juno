@@ -227,6 +227,94 @@ final class MoveCheckpointTests: XCTestCase {
         XCTAssertEqual(try contents("legacy.txt"), "v1\n")
     }
 
+    // MARK: - Crash recovery
+
+    /// A kill part-way through an undo leaves the workspace in neither the
+    /// before state nor the after state. The journal is the only evidence that
+    /// happened, and recovery finishes the undo the user already asked for.
+    func testAnInterruptedRestoreIsCompletedOnTheNextLaunch() async throws {
+        let directory = workspaceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("crashy")
+        let store = CheckpointStore(directoryURL: directory, access: access)
+        let service = FileOperationService(access: access, checkpoints: store)
+
+        _ = try await service.create(path("a.txt"), content: "body\n", sessionID: sessionID)
+        let move = try await service.move(
+            from: path("a.txt"),
+            to: path("b.txt"),
+            sessionID: sessionID
+        )
+        let id = try XCTUnwrap(move.checkpointID)
+
+        // The half-restored state a crash between the two entries leaves: the
+        // source is back, the destination is still there — the duplicate — and
+        // the journal is still on disk because nothing removed it.
+        try "body\n".write(
+            to: workspaceURL.appendingPathComponent("a.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
+        try Data(id.utf8).write(to: directory.appendingPathComponent("\(id).restoring"))
+        XCTAssertTrue(exists("a.txt"))
+        XCTAssertTrue(exists("b.txt"))
+
+        let relaunched = CheckpointStore(directoryURL: directory, access: access)
+        let recovered = try await relaunched.recoverInterruptedRestores()
+
+        XCTAssertEqual(recovered, [id])
+        XCTAssertTrue(exists("a.txt"), "the undo is finished, not abandoned")
+        XCTAssertFalse(exists("b.txt"), "and the duplicate is gone")
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("\(id).restoring").path
+            ),
+            "the journal must be cleared or recovery repeats on every launch"
+        )
+    }
+
+    /// A completed restore must leave no journal behind, or every later launch
+    /// would silently re-apply an undo the user already saw finish.
+    func testACompletedRestoreLeavesNoJournal() async throws {
+        let directory = workspaceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("clean")
+        let store = CheckpointStore(directoryURL: directory, access: access)
+        let service = FileOperationService(access: access, checkpoints: store)
+
+        _ = try await service.create(path("a.txt"), content: "body\n", sessionID: sessionID)
+        let move = try await service.move(
+            from: path("a.txt"),
+            to: path("b.txt"),
+            sessionID: sessionID
+        )
+        try await store.restore(id: try XCTUnwrap(move.checkpointID), force: false)
+
+        let relaunched = CheckpointStore(directoryURL: directory, access: access)
+        let recovered = try await relaunched.recoverInterruptedRestores()
+        XCTAssertTrue(recovered.isEmpty)
+    }
+
+    /// A journal whose checkpoint has been purged must be dropped rather than
+    /// retried forever.
+    func testAnOrphanedJournalIsDiscarded() async throws {
+        let directory = workspaceURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("orphan")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("missing".utf8).write(to: directory.appendingPathComponent("missing.restoring"))
+
+        let store = CheckpointStore(directoryURL: directory, access: access)
+        let recovered = try await store.recoverInterruptedRestores()
+
+        XCTAssertTrue(recovered.isEmpty)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("missing.restoring").path
+            )
+        )
+    }
+
     /// The move checkpoint has to survive a store reload, or undo works only
     /// until the app is restarted.
     func testAMoveCheckpointSurvivesAStoreReload() async throws {

@@ -45,6 +45,10 @@ public final class WorkspaceContext: Sendable {
             executor: executor,
             git: git,
             tests: tests,
+            // Lets `run_command` report which files it touched. Those changes
+            // are not checkpointed and cannot be undone, so listing them is the
+            // only account the transcript can honestly give of them.
+            changes: WorkspaceChangeDetector(rootURL: access.rootURL),
             additionalTools: [
                 ComputerScreenshotTool(computer: computerUse),
                 ComputerClickTool(computer: computerUse),
