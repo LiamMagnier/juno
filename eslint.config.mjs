@@ -21,6 +21,13 @@ const config = [
       ".claude/**",
       ".worktrees/**",
       "runner/**",
+      // Local scratch: `.probe/` holds one-off diagnostic scripts and
+      // `head-wt/` is a detached checkout used to diff against HEAD. Neither
+      // ships, and neither is tracked, so linting them only ever reports on
+      // throwaway code.
+      ".probe/**",
+      "head-wt/**",
+      "tmp-verify/**",
       "next-env.d.ts",
       "src/lib/i18n-catalog.generated.ts",
     ],
