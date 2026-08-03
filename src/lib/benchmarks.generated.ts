@@ -19,7 +19,7 @@ export interface ModelBenchmark {
 }
 
 /** ISO timestamp of the last successful fetch (null = never fetched). */
-export const BENCHMARK_STAMP: string | null = "2026-08-02T06:47:35.886Z";
+export const BENCHMARK_STAMP: string | null = "2026-08-03T07:50:42.312Z";
 
 /** Canonical Juno model id → live leaderboard data. */
 export const BENCHMARKS: Record<string, ModelBenchmark> = {
@@ -71,9 +71,9 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "openai:gpt-5.4-pro": { priceInPerMTok: 30, priceOutPerMTok: 180, source: "openrouter", slug: "openai/gpt-5.4-pro" },
   "openai:gpt-5.5": { priceInPerMTok: 5, priceOutPerMTok: 30, source: "openrouter", slug: "openai/gpt-5.5" },
   "openai:gpt-5.5-pro": { priceInPerMTok: 30, priceOutPerMTok: 180, source: "openrouter", slug: "openai/gpt-5.5-pro" },
-  "openai:gpt-5.6-luna": { priceInPerMTok: 0.09999999999999999, priceOutPerMTok: 0.6000000000000001, source: "openrouter", slug: "openai/gpt-5.6-luna" },
+  "openai:gpt-5.6-luna": { priceInPerMTok: 0.09999999999999999, priceOutPerMTok: 0.6, source: "openrouter", slug: "openai/gpt-5.6-luna" },
   "openai:gpt-5.6-sol": { priceInPerMTok: 5, priceOutPerMTok: 30, source: "openrouter", slug: "openai/gpt-5.6-sol" },
-  "openai:gpt-5.6-terra": { priceInPerMTok: 1.0000000000000002, priceOutPerMTok: 6, source: "openrouter", slug: "openai/gpt-5.6-terra" },
+  "openai:gpt-5.6-terra": { priceInPerMTok: 1, priceOutPerMTok: 6, source: "openrouter", slug: "openai/gpt-5.6-terra" },
   "openai:o1": { priceInPerMTok: 15, priceOutPerMTok: 60, source: "openrouter", slug: "openai/o1" },
   "openai:o3": { priceInPerMTok: 2, priceOutPerMTok: 8, source: "openrouter", slug: "openai/o3" },
   "openai:o3-mini": { priceInPerMTok: 1.1, priceOutPerMTok: 4.4, source: "openrouter", slug: "openai/o3-mini" },
@@ -98,6 +98,6 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "zhipu:glm-5": { priceInPerMTok: 0.95, priceOutPerMTok: 2.5500000000000003, source: "openrouter", slug: "z-ai/glm-5" },
   "zhipu:glm-5-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5-turbo" },
   "zhipu:glm-5.1": { priceInPerMTok: 0.966, priceOutPerMTok: 3.036, source: "openrouter", slug: "z-ai/glm-5.1" },
-  "zhipu:glm-5.2": { priceInPerMTok: 0.34299999999999997, priceOutPerMTok: 1.078, source: "openrouter", slug: "z-ai/glm-5.2" },
+  "zhipu:glm-5.2": { priceInPerMTok: 1.19, priceOutPerMTok: 3.74, source: "openrouter", slug: "z-ai/glm-5.2" },
   "zhipu:glm-5v-turbo": { priceInPerMTok: 1.2, priceOutPerMTok: 4, source: "openrouter", slug: "z-ai/glm-5v-turbo" },
 };
