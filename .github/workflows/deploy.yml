@@ -41,6 +41,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Both halves of the capability manifest are generated from one JSON
+      # file, so they cannot disagree — but only if the checked-in Swift is
+      # actually regenerated. A stale enum is silent on the surface it matters
+      # on: a client that does not recognise a degradation kind shows the user
+      # nothing rather than something wrong.
+      - name: Capability contract is not stale
+        run: npm run capabilities:check
+
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.
   # Replaying the migrations into a throwaway Postgres and diffing the result

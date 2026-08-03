@@ -82,6 +82,10 @@ public struct NativeAccountSettings: Equatable, Sendable {
     public var favoriteModels: [String]
     public var emailBudgetAlerts: Bool
     public var emailWeeklyDigest: Bool
+    /// Where background work derived from this account may be sent.
+    public var backgroundProviderMode: BackgroundProviderMode
+    /// The provider chosen under `.selectedProvider`; ignored by other modes.
+    public var backgroundProviderSelected: String?
     public var updatedAt: Date
     public let revision: UInt64
     public var isPending: Bool
@@ -100,6 +104,8 @@ public struct NativeAccountSettings: Equatable, Sendable {
         favoriteModels: [String],
         emailBudgetAlerts: Bool,
         emailWeeklyDigest: Bool,
+        backgroundProviderMode: BackgroundProviderMode = .default,
+        backgroundProviderSelected: String? = nil,
         updatedAt: Date,
         revision: UInt64,
         isPending: Bool = false
@@ -117,6 +123,8 @@ public struct NativeAccountSettings: Equatable, Sendable {
         self.favoriteModels = favoriteModels
         self.emailBudgetAlerts = emailBudgetAlerts
         self.emailWeeklyDigest = emailWeeklyDigest
+        self.backgroundProviderMode = backgroundProviderMode
+        self.backgroundProviderSelected = backgroundProviderSelected
         self.updatedAt = updatedAt
         self.revision = revision
         self.isPending = isPending
@@ -135,6 +143,8 @@ public struct NativeSettingsPatch: Equatable, Sendable {
     public var favoriteModels: [String]?
     public var emailBudgetAlerts: Bool?
     public var emailWeeklyDigest: Bool?
+    /// Where background work may be sent. See `BackgroundProviderMode`.
+    public var backgroundProviderMode: BackgroundProviderMode?
 
     public init(
         theme: NativeThemePreference? = nil,
@@ -147,7 +157,8 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         memoryEnabled: Bool? = nil,
         favoriteModels: [String]? = nil,
         emailBudgetAlerts: Bool? = nil,
-        emailWeeklyDigest: Bool? = nil
+        emailWeeklyDigest: Bool? = nil,
+        backgroundProviderMode: BackgroundProviderMode? = nil
     ) {
         self.theme = theme
         self.accent = accent
@@ -160,6 +171,7 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         self.favoriteModels = favoriteModels
         self.emailBudgetAlerts = emailBudgetAlerts
         self.emailWeeklyDigest = emailWeeklyDigest
+        self.backgroundProviderMode = backgroundProviderMode
     }
 
     fileprivate var object: [String: Any] {
@@ -172,6 +184,9 @@ public struct NativeSettingsPatch: Equatable, Sendable {
         if let interfaceLocale { result["uiLocale"] = interfaceLocale }
         if let personality { result["personality"] = personality }
         if let memoryEnabled { result["memoryEnabled"] = memoryEnabled }
+        if let backgroundProviderMode {
+            result["backgroundProviderMode"] = backgroundProviderMode.rawValue
+        }
         if let favoriteModels { result["favoriteModels"] = favoriteModels }
         if let emailBudgetAlerts { result["emailBudgetAlerts"] = emailBudgetAlerts }
         if let emailWeeklyDigest { result["emailWeeklyDigest"] = emailWeeklyDigest }
@@ -400,6 +415,13 @@ public actor NativeMemorySettingsStore<Repository: AccountScopedRepository> {
             favoriteModels: wire.favoriteModels,
             emailBudgetAlerts: wire.emailBudgetAlerts,
             emailWeeklyDigest: wire.emailWeeklyDigest,
+            // An absent or unrecognised mode resolves to the privacy-preserving
+            // default rather than failing the decode — a settings screen that
+            // will not load is a worse outcome than one showing the safe value.
+            backgroundProviderMode: BackgroundProviderMode(
+                storedValue: wire.backgroundProviderMode
+            ),
+            backgroundProviderSelected: wire.backgroundProviderSelected,
             updatedAt: updatedAt,
             revision: record.revision
         )
@@ -1136,6 +1158,11 @@ private struct SettingsWire: Decodable {
     let favoriteModels: [String]
     let emailBudgetAlerts: Bool
     let emailWeeklyDigest: Bool
+    // Optional: a server that predates the policy sends neither, and a missing
+    // value must resolve to the privacy-preserving default rather than fail
+    // the whole settings decode.
+    let backgroundProviderMode: String?
+    let backgroundProviderSelected: String?
     let updatedAt: String
 }
 

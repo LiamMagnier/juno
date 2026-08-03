@@ -407,6 +407,44 @@ struct DesktopSettingsScreen: View {
                 Text("Open memory manager").junoWideButtonLabel()
             }
             .accessibilityIdentifier("juno.desktop.settings.memory-manager")
+
+            Divider()
+
+            // Where the work the switch above enables is allowed to send what
+            // it reads. In the same tile deliberately: the switch decides
+            // *whether* Juno extracts from your chats, and this decides *who
+            // sees them* when it does. Showing the first without the second is
+            // how extraction could go to whichever provider answered fastest
+            // with nothing in the product saying so.
+            Picker(
+                "Background processing",
+                selection: Binding(
+                    get: { model.settings?.backgroundProviderMode ?? .default },
+                    set: { update(NativeSettingsPatch(backgroundProviderMode: $0)) }
+                )
+            ) {
+                ForEach(BackgroundProviderMode.allCases, id: \.self) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .disabled(model.isMutating || model.settings == nil)
+            .accessibilityIdentifier("juno.desktop.settings.background-provider")
+
+            Text((model.settings?.backgroundProviderMode ?? .default).explanation)
+                .junoCaption()
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Only the mode that can actually cross is flagged. A caution on
+            // every option would train the reader to ignore the one that means
+            // something.
+            if (model.settings?.backgroundProviderMode ?? .default).permitsCrossProvider {
+                Label(
+                    "Content may reach a provider you did not pick.",
+                    systemImage: "exclamationmark.triangle"
+                )
+                .junoCaption()
+                .foregroundStyle(Color.junoCaution)
+            }
         }
     }
 
@@ -675,6 +713,12 @@ private extension View {
 /// Used where a tile's job is to lead somewhere rather than to hold a control,
 /// so those tiles read as one kind of thing instead of each inventing its own
 /// button.
+///
+/// The glyph is neutral. The website's settings page spends `--primary` on
+/// exactly two things — a plan's feature ticks and the tick beside a chosen
+/// option — and never on the icon of a row that merely leads somewhere. A coral
+/// glyph on every navigation row made the accent mean "this is a row" rather
+/// than "this is the one thing to do here", which is the whole job it has.
 private struct DesktopSettingsAction: View {
     let title: LocalizedStringKey
     let detail: LocalizedStringKey
@@ -688,7 +732,7 @@ private struct DesktopSettingsAction: View {
             HStack(alignment: .center, spacing: JunoSpace.cozy) {
                 Image(systemName: symbol)
                     .font(.system(size: 15))
-                    .foregroundStyle(Color.junoAccent)
+                    .foregroundStyle(Color.junoMutedForeground)
                     .frame(width: 22)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: JunoSpace.hairline) {

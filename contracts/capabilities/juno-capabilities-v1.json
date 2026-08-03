@@ -1,0 +1,25 @@
+{
+  "$comment": "Canonical capability manifest. The TypeScript module (src/lib/effective-capabilities.ts) and the generated Swift contract (native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift) BOTH derive from this file, so the two cannot drift apart by construction — there is nothing to keep in sync, only one thing to change. Regenerate Swift with: node scripts/generate-capability-contract.mjs --output=native/Packages/JunoNativeKit/Sources/JunoCore/Generated/JunoCapabilityContract.swift",
+  "version": 1,
+  "reasoningLevels": ["minimal", "low", "medium", "high", "xhigh", "max"],
+  "capabilities": [
+    { "key": "reasoning", "kind": "level", "summary": "A thinking effort the model applies before answering." },
+    { "key": "webSearch", "kind": "flag", "summary": "Search the web and cite sources." },
+    { "key": "fastMode", "kind": "flag", "summary": "A provider's priority/fast serving tier." },
+    { "key": "vision", "kind": "flag", "summary": "Read images supplied with the message." },
+    { "key": "connectors", "kind": "flag", "summary": "Call connector tools during the turn." }
+  ],
+  "degradationKinds": [
+    {
+      "key": "model_substituted",
+      "summary": "A different model answered than the one requested.",
+      "note": "Recorded first: it is the degradation a user notices in the bill, and it causes the others."
+    },
+    { "key": "reasoning_clamped", "summary": "The reasoning effort was lowered to what the model accepts." },
+    { "key": "reasoning_unsupported", "summary": "The model has no reasoning effort at all." },
+    { "key": "web_search_unavailable", "summary": "Web search was requested but did not run." },
+    { "key": "fast_mode_unavailable", "summary": "Fast mode was requested but the model has no faster tier." },
+    { "key": "vision_unavailable", "summary": "Images were supplied but the model cannot read them." },
+    { "key": "connectors_unavailable", "summary": "Connectors were requested but did not run." }
+  ]
+}

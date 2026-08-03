@@ -22,8 +22,20 @@
  * rules stay unit-testable and can be mirrored into the Swift contract.
  */
 
-/** Bumped whenever a capability is added or its meaning changes. */
-export const CAPABILITY_MANIFEST_VERSION = 1;
+import manifest from "../../contracts/capabilities/juno-capabilities-v1.json";
+
+/**
+ * The single source of truth for both platforms.
+ *
+ * This module and the generated Swift contract both derive from
+ * `contracts/capabilities/juno-capabilities-v1.json`, so there is nothing to
+ * keep in sync — only one file to change. Restating the levels here as a
+ * literal union would reintroduce exactly the drift the manifest exists to
+ * prevent, and it would be a drift a type-checker could not see.
+ */
+export const CAPABILITY_MANIFEST_VERSION: number = manifest.version;
+
+export const REASONING_LEVELS = manifest.reasoningLevels as readonly ReasoningLevel[];
 
 export type ReasoningLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
@@ -81,17 +93,8 @@ export interface EffectiveCapabilities {
   degradations: Degradation[];
 }
 
-const REASONING_ORDER: readonly ReasoningLevel[] = [
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-];
-
 export function reasoningRank(level: ReasoningLevel): number {
-  const index = REASONING_ORDER.indexOf(level);
+  const index = REASONING_LEVELS.indexOf(level);
   // An unknown level ranks lowest rather than highest: a value this build does
   // not recognise must not be treated as permission to run at maximum effort.
   return index === -1 ? 0 : index;

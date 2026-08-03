@@ -4976,6 +4976,182 @@
         }
       }
     },
+    "settings.background-provider.any.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work may go to any configured provider, including one you did not pick for the chat."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le traitement peut aller à n'importe quel fournisseur configuré, y compris un que vous n'avez pas choisi."
+          }
+        }
+      }
+    },
+    "settings.background-provider.any.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any available provider"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "N'importe quel fournisseur"
+          }
+        }
+      }
+    },
+    "settings.background-provider.crosses": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Content may reach a provider you did not pick."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le contenu peut atteindre un fournisseur que vous n'avez pas choisi."
+          }
+        }
+      }
+    },
+    "settings.background-provider.footer": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Memory extraction, titles and research planning run without you asking. This decides which provider may see the content they are derived from."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L'extraction de mémoire, les titres et la planification de recherche s'exécutent sans que vous les demandiez. Ceci détermine quel fournisseur peut voir le contenu dont ils sont issus."
+          }
+        }
+      }
+    },
+    "settings.background-provider.local.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work runs only on a local model. It is skipped when none is available."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le traitement s'exécute uniquement sur un modèle local. Il est ignoré si aucun n'est disponible."
+          }
+        }
+      }
+    },
+    "settings.background-provider.local.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local only"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local uniquement"
+          }
+        }
+      }
+    },
+    "settings.background-provider.same.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background work stays with the provider of the model you picked. Nothing crosses to another."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le traitement en arrière-plan reste chez le fournisseur du modèle choisi. Rien ne passe à un autre."
+          }
+        }
+      }
+    },
+    "settings.background-provider.same.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same provider as the chat"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Même fournisseur que la conversation"
+          }
+        }
+      }
+    },
+    "settings.background-provider.selected.detail": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All background work goes to the provider you choose, whichever model answered the chat."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tout le traitement en arrière-plan va au fournisseur que vous choisissez, quel que soit le modèle."
+          }
+        }
+      }
+    },
+    "settings.background-provider.selected.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "One chosen provider"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un fournisseur choisi"
+          }
+        }
+      }
+    },
+    "settings.background-provider.title": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background processing"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Traitement en arrière-plan"
+          }
+        }
+      }
+    },
     "settings.version": {
       "localizations": {
         "en": {
