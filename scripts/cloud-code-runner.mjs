@@ -45,6 +45,12 @@ import os from "node:os";
 import path from "node:path";
 
 import { AgentSession, createProxyProvider } from "../runner/agent-core/dist/index.js";
+import {
+  DurableOutbox,
+  backoffDelayMs,
+  isRetryableStatus,
+  parseRetryAfter,
+} from "./lib/runner-outbox.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -52,6 +58,21 @@ const execFileAsync = promisify(execFile);
 
 const TASK_ID = requireEnv("JUNO_TASK_ID");
 const CALLBACK_BASE = requireEnv("JUNO_CALLBACK_BASE").replace(/\/+$/, ""); // origin, no /api
+
+/**
+ * Identifies THIS attempt at the task, so event idempotency keys are unique
+ * per run rather than per task.
+ *
+ * A retried workflow re-runs the same task id from sequence 1. Keying on the
+ * task alone would make the second attempt's events collide with the first's
+ * and be discarded as duplicates — the retry would appear to produce nothing.
+ * GitHub's run id and attempt number identify the attempt exactly; the random
+ * fallback covers a local invocation.
+ */
+const RUN_NONCE =
+  process.env.GITHUB_RUN_ID && process.env.GITHUB_RUN_ATTEMPT
+    ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
+    : Math.random().toString(36).slice(2, 10);
 
 /** Audience the runner requests in its OIDC token; the backend requires an exact
  *  match (see src/lib/github-oidc.ts). */
@@ -173,8 +194,12 @@ const FLUSH_AT_COUNT = 20;
 class EventSink {
   constructor(token) {
     this.token = token;
-    /** @type {{kind:string, payload:Record<string,unknown>}[]} */
-    this.queue = [];
+    /**
+     * Durable buffer. Events leave it only when the backend acknowledges them,
+     * so a failed POST is retried instead of dropped — which is what the old
+     * `this.queue = []`-before-post did on every network blip.
+     */
+    this.outbox = new DurableOutbox({ runId: `${TASK_ID}:${RUN_NONCE}` });
     this.afterControlSeq = 0;
     this.cancelled = false;
     this.flushing = Promise.resolve();
@@ -187,8 +212,8 @@ class EventSink {
   push(kind, payload) {
     // Any non-text event flushes buffered prose first to preserve ordering.
     if (kind !== "text") this.flushText();
-    this.queue.push({ kind, payload: redactPayload(payload) });
-    if (this.queue.length >= FLUSH_AT_COUNT) this.kick();
+    this.outbox.add(kind, redactPayload(payload));
+    if (this.outbox.size >= FLUSH_AT_COUNT) this.kick();
     else this.scheduleFlush();
   }
 
@@ -218,37 +243,92 @@ class EventSink {
     this.flushing = this.flushing.then(() => this.flush()).catch((err) => log("flush error:", err));
   }
 
-  /** Drain the queue. `finalStatus` is only sent on the last, terminal flush. */
+  /**
+   * Drain the outbox. `finalStatus` is only sent on the last, terminal flush.
+   *
+   * Events are removed only once the backend has acknowledged them, so an
+   * outage leaves them buffered for the next attempt instead of discarding
+   * them. The terminal flush retries hardest: the status is the one fact that
+   * decides whether the task shows as finished or as stuck forever.
+   */
   async flush(finalStatus) {
-    const batch = this.queue;
-    this.queue = [];
-    // Split into body-size-bounded chunks; attach status only to the last one.
-    const chunks = chunkBySize(batch, MAX_BODY_BYTES);
-    if (chunks.length === 0 && finalStatus) chunks.push([]);
-    for (let i = 0; i < chunks.length; i++) {
-      const isLast = i === chunks.length - 1;
-      await this.post(chunks[i], isLast ? finalStatus : undefined);
+    const notice = this.outbox.dropNotice();
+    if (notice) {
+      this.outbox.dropped = 0;
+      this.outbox.add(notice.kind, notice.payload);
+    }
+
+    for (;;) {
+      const batch = chunkBySize(this.outbox.peek(), MAX_BODY_BYTES)[0] ?? [];
+      if (batch.length === 0 && !finalStatus) return;
+
+      const isFinalChunk = finalStatus !== undefined && batch.length === this.outbox.size;
+      const ok = await this.postWithRetry(batch, isFinalChunk ? finalStatus : undefined, {
+        maxAttempts: finalStatus === undefined ? 3 : 8,
+      });
+      if (!ok) return; // Kept in the outbox; the next flush tries again.
+
+      this.outbox.acknowledge(batch);
+      if (this.outbox.size === 0) return;
     }
   }
 
+  /**
+   * One batch, retried with jittered exponential backoff.
+   *
+   * @returns {Promise<boolean>} whether the batch was acknowledged.
+   */
+  async postWithRetry(events, status, { maxAttempts = 3 } = {}) {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const outcome = await this.post(events, status);
+      if (outcome.ok) return true;
+      if (!isRetryableStatus(outcome.status)) {
+        // A malformed body, a revoked token or a deleted task will never
+        // succeed. Retrying keeps a dead runner hammering the backend until
+        // the job times out, so drop these and say so.
+        log(`events POST permanently rejected (HTTP ${outcome.status}); dropping ${events.length} event(s)`);
+        this.outbox.acknowledge(events);
+        return true;
+      }
+      if (attempt === maxAttempts) {
+        log(`events POST failed after ${attempt} attempt(s); ${this.outbox.size} event(s) still buffered`);
+        return false;
+      }
+      const delay = backoffDelayMs(attempt, { retryAfterSeconds: outcome.retryAfterSeconds });
+      log(`events POST retry ${attempt}/${maxAttempts} in ${delay}ms`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    return false;
+  }
+
+  /** @returns {Promise<{ok:boolean, status:number|null, retryAfterSeconds:number|null}>} */
   async post(events, status) {
-    const body = JSON.stringify({ events, afterControlSeq: this.afterControlSeq, ...(status ? { status } : {}) });
+    const body = JSON.stringify({
+      events,
+      afterControlSeq: this.afterControlSeq,
+      ...(status ? { status } : {}),
+    });
     let res;
     try {
       res = await junoFetch(`/api/code/tasks/${TASK_ID}/events`, this.token, { method: "POST", body });
     } catch (err) {
       log("events POST network error:", err);
-      return;
+      return { ok: false, status: null, retryAfterSeconds: null };
     }
     if (!res.ok) {
       log(`events POST HTTP ${res.status}`, await res.text().catch(() => ""));
-      return;
+      return {
+        ok: false,
+        status: res.status,
+        retryAfterSeconds: parseRetryAfter(res.headers?.get?.("retry-after")),
+      };
     }
     const data = /** @type {any} */ (await res.json().catch(() => ({})));
     for (const ctl of data?.control ?? []) {
       if (typeof ctl?.seq === "number") this.afterControlSeq = Math.max(this.afterControlSeq, ctl.seq);
       if (ctl?.kind === "cancel_request") this.cancelled = true;
     }
+    return { ok: true, status: res.status, retryAfterSeconds: null };
   }
 
   /** Final flush + terminal status in one drain. */

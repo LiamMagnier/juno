@@ -27,6 +27,7 @@
     "crypto:rotate": "NODE_OPTIONS=--conditions=react-server tsx scripts/rotate-encryption-keys.ts",
     "crypto:rotate:messages": "NODE_OPTIONS=--conditions=react-server tsx scripts/rotate-message-keys.ts",
     "tasks:runner": "NODE_OPTIONS=--conditions=react-server tsx scripts/scheduled-task-runner.ts",
+    "tasks:sweep": "NODE_OPTIONS=--conditions=react-server tsx scripts/sweep-stuck-code-tasks.ts",
     "validate:models": "tsx scripts/validate-models.ts",
     "sync:models": "tsx scripts/sync-models.ts",
     "sync:prune": "tsx scripts/prune-sync.ts",

@@ -1119,11 +1119,19 @@ model CodeTaskEvent {
   seq       Int
   kind      String
   payload   Json
+  // Stable per-event key from the producer, `<taskId>:<runNonce>:<n>`. The
+  // runner retries a batch whose POST succeeded but whose response was lost;
+  // without this the retry appended the same events a second time and the
+  // transcript showed everything twice. Nullable because events written before
+  // the outbox existed, and those from hosts that do not send one, have none —
+  // a null cannot collide under a unique index.
+  eventKey  String?
   createdAt DateTime @default(now())
 
   task CodeTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@unique([taskId, seq])
+  @@unique([taskId, eventKey])
 }
 
 // ----------------------------------------------------------------------------

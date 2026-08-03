@@ -18,6 +18,9 @@ const schema = z.object({
       z.object({
         kind: z.enum(EVENT_KINDS),
         payload: z.record(z.string(), z.unknown()),
+        // Producer idempotency key. Optional: hosts that predate the outbox
+        // send none, and a null never collides under the unique index.
+        key: z.string().min(1).max(200).optional(),
       }),
     )
     .max(500),
@@ -62,6 +65,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     parsed.data.events.map((event) => ({
       kind: event.kind,
       payload: event.payload as Prisma.InputJsonValue,
+      key: event.key ?? null,
     })),
     { status: parsed.data.status, afterControlSeq: parsed.data.afterControlSeq ?? 0 },
   );

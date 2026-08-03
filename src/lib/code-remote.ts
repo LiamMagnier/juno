@@ -236,7 +236,12 @@ export function serializeTaskEvent(event: CodeTaskEvent) {
   };
 }
 
-export type TaskEventInput = { kind: string; payload: Prisma.InputJsonValue };
+export type TaskEventInput = {
+  kind: string;
+  payload: Prisma.InputJsonValue;
+  /** Producer-supplied idempotency key; see `CodeTaskEvent.eventKey`. */
+  key?: string | null;
+};
 
 /** Deterministic Message id for the assistant turn a linked task produced —
  *  one task, one message, so repeated terminal posts upsert instead of piling
@@ -393,6 +398,27 @@ export async function appendTaskEvents(
   control: { seq: number; kind: string; payload: Prisma.JsonValue }[];
 }> {
   return prismaUnguarded.$transaction(async (tx) => {
+    // Drop events this task has already stored.
+    //
+    // The runner retries a batch whose POST committed but whose response was
+    // lost. Filtering here rather than relying on the unique index alone means
+    // the sequence numbers stay contiguous: `createMany({skipDuplicates})`
+    // would have already incremented `lastSeq` for rows it then skipped,
+    // leaving gaps that the SSE cursor reads as missing events forever.
+    const keyed = events.filter((event) => typeof event.key === "string" && event.key.length > 0);
+    let deliverable = events;
+    if (keyed.length > 0) {
+      const seen = await tx.codeTaskEvent.findMany({
+        where: { taskId, eventKey: { in: keyed.map((event) => event.key as string) } },
+        select: { eventKey: true },
+      });
+      if (seen.length > 0) {
+        const already = new Set(seen.map((row) => row.eventKey));
+        deliverable = events.filter((event) => !event.key || !already.has(event.key));
+      }
+    }
+    events = deliverable;
+
     // Conditional status transition: only apply opts.status when the task is
     // still in opts.fromStatus, so a concurrently-finished task cannot be
     // flipped back (e.g. a late approval reviving a completed run).
@@ -419,6 +445,7 @@ export async function appendTaskEvents(
           seq: firstSeq + i,
           kind: event.kind,
           payload: event.payload,
+          eventKey: event.key ?? null,
         })),
       });
     }
