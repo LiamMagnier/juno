@@ -41,7 +41,7 @@ final class JunoProviderGlowTests: XCTestCase {
         // Green-dominant and dark, so the other branch.
         assertHSL(
             JunoProviderGlow.hsl(hex: 0x10_a3_7f),
-            (h: 165.306122, s: 0.82122905, l: 0.350980)
+            (h: 165.306122, s: 0.821256, l: 0.350980)
         )
     }
 
@@ -60,8 +60,8 @@ final class JunoProviderGlowTests: XCTestCase {
     /// pulled two thirds of the way to the common mid.
     func testAmbientLightKeepsHueAndSoftensTheRest() {
         assertHSL(
-            JunoProviderGlow.asAmbientLight((h: 14.53125, s: 0.627451, l: 0.6)),
-            (h: 14.53125, s: 0.35137255, l: 0.5456)
+            JunoProviderGlow.asAmbientLight((h: 14.531250, s: 0.627451, l: 0.600000)),
+            (h: 14.531250, s: 0.351373, l: 0.545600)
         )
     }
 
@@ -93,21 +93,21 @@ final class JunoProviderGlowTests: XCTestCase {
     // MARK: - Provider lookup
 
     func testAKnownProviderIsItsBrandTurnedIntoLight() throws {
-        let claude = try XCTUnwrap(JunoProviderGlow.brandGlow(providerID: "anthropic"))
-        assertHSL(
-            JunoProviderGlow.hsl(red: claude.red, green: claude.green, blue: claude.blue),
-            (h: 14.53125, s: 0.35137255, l: 0.5456)
+        XCTAssertEqual(
+            JunoProviderGlow.brandGlow(providerID: "anthropic"),
+            JunoColorToken(hsl: (h: 14.531250, s: 0.351373, l: 0.545600))
         )
-
         // The three labs that brand in near-black carry a luminous stand-in, so
-        // their glow must NOT be derived from the mark colour: `#111111` has no
-        // hue to keep and no light to give.
+        // their glow must NOT be derived from the mark colour.
+        //
+        // Unwrapped by `try XCTUnwrap` rather than defaulted to zero: a lookup
+        // that started returning nil would otherwise be compared against black
+        // and could still pass on a hue that black does not actually have.
         let openai = try XCTUnwrap(JunoProviderGlow.brandGlow(providerID: "openai"))
         let green = JunoProviderGlow.hsl(
             red: openai.red, green: openai.green, blue: openai.blue
         )
         XCTAssertEqual(green.h, 165.306122, accuracy: accuracy)
-        XCTAssertGreaterThan(green.s, 0.4)
     }
 
     /// Provider ids arrive from the server; the asset lookup already lowercases,

@@ -23,22 +23,34 @@ public actor KeychainSessionCacheStore {
     private let securityClient: any SecurityKeychainClient
     private let service: String
     private let accessGroup: String?
+    private let activeAccountHint: any AuthActiveAccountHint
 
     public init(
         securityClient: any SecurityKeychainClient,
         service: String = KeychainSessionCacheStore.defaultService,
-        accessGroup: String? = nil
+        accessGroup: String? = nil,
+        activeAccountHint: any AuthActiveAccountHint =
+            UserDefaultsAuthActiveAccountHint()
     ) {
         self.securityClient = securityClient
         self.service = service
         self.accessGroup = accessGroup
+        self.activeAccountHint = activeAccountHint
     }
 
     /// Records a session the server has just confirmed. Best-effort by
     /// contract: a cache write must never fail a sign-in that already worked.
     public func store(_ session: NativeAuthenticatedSession) {
         guard let data = try? JSONEncoder().encode(StoredSession(session)) else { return }
-        try? securityClient.upsert(data, for: item(for: session.profile.id))
+        // The hint is only recorded once the blob is actually stored, so a
+        // failed write cannot leave a locator pointing at a cache entry that
+        // does not exist.
+        do {
+            try securityClient.upsert(data, for: item(for: session.profile.id))
+        } catch {
+            return
+        }
+        activeAccountHint.store(session.profile.id)
     }
 
     /// Returns the cached session for an account, or nil when there is none —
@@ -64,6 +76,18 @@ public actor KeychainSessionCacheStore {
 
     public func remove(for accountID: AccountID) {
         _ = try? securityClient.delete(item(for: accountID))
+        if activeAccountHint.load() == accountID {
+            activeAccountHint.remove()
+        }
+    }
+
+    /// The last server-confirmed profile, used only to keep the app's local
+    /// workspace visible while a launch-time Keychain read is transiently
+    /// unavailable. It is never treated as proof that a bearer credential is
+    /// valid; the runtime marks the result unverified and retries the server.
+    public func loadLast() -> NativeAuthenticatedSession? {
+        guard let accountID = activeAccountHint.load() else { return nil }
+        return load(for: accountID)
     }
 
     private func item(for accountID: AccountID) -> SecurityKeychainItem {
