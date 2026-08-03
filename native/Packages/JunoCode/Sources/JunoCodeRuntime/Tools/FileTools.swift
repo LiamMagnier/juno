@@ -12,6 +12,28 @@ private func workspacePath(from input: JSONValue, field: String = "path") throws
     }
 }
 
+/// Reads the optional `base_sha256` argument, rejecting anything that is not a
+/// SHA-256 digest.
+///
+/// Rejecting the shape matters more than it looks. An unparseable fingerprint
+/// used to be passed through and then simply failed to compare equal, so the
+/// model was told the file had changed underneath it — and went off to re-read
+/// and re-reason about a file nobody had touched, sometimes in a loop. The two
+/// failures need different sentences because they have different fixes.
+private func parsedFingerprint(from input: JSONValue, field: String = "base_sha256") throws
+    -> FileFingerprint?
+{
+    guard let raw = input[field]?.stringValue else { return nil }
+    do {
+        return try FileFingerprint(validating: raw)
+    } catch {
+        throw ToolError.invalidInput(
+            message:
+                "'\(field)' must be the 64-character SHA-256 that read_file returned for this file."
+        )
+    }
+}
+
 public struct ReadFileTool: CodeTool {
     private let files: any FileOperating
 
@@ -20,8 +42,20 @@ public struct ReadFileTool: CodeTool {
     }
 
     public let name = "read_file"
-    public let description =
-        "Read a UTF-8 text file inside the workspace. Returns the content with line count and a fingerprint for later safe edits."
+    public let description = """
+        Read a UTF-8 text file inside the workspace.
+
+        The first line of the result is a JSON header describing the read; the \
+        file's content follows it. When the whole file was returned the header \
+        carries "base_sha256" — pass that value straight back to write_file or \
+        apply_patch so the edit fails safely if the file changed meanwhile.
+
+        When the file was too large to return whole the header says \
+        "truncated": true and carries NO "base_sha256", because a digest of \
+        bytes you were not shown is not a base you can safely overwrite from. \
+        Edit a truncated file with apply_patch, which matches an exact block \
+        rather than replacing the file.
+        """
     public var inputSchema: JSONValue {
         [
             "type": "object",
@@ -39,10 +73,62 @@ public struct ReadFileTool: CodeTool {
     public func execute(input: JSONValue, context: ToolContext) async throws -> ToolResult {
         let path = try workspacePath(from: input)
         let result = try await files.read(path, limit: .fileRead)
-        var header = "\(path.value) (\(result.lineCount) lines, \(result.byteCount) bytes"
-        if result.wasTruncated { header += ", truncated" }
-        header += ")\n"
-        return ToolResult(content: header + result.content)
+        return ToolResult(content: ReadFileTool.render(result))
+    }
+
+    /// The machine-readable read contract: one line of JSON, a newline, then
+    /// the content exactly as read.
+    ///
+    /// A header line rather than a JSON envelope around everything, because
+    /// wrapping the content would re-encode every source file the agent looks
+    /// at — escaping quotes and newlines through the model's context for no
+    /// benefit. The header is a single line and the content starts after the
+    /// first newline, so the split is unambiguous even when the file itself
+    /// begins with `{`.
+    static func render(_ result: FileReadResult) -> String {
+        var header: [String] = [
+            "\"path\":\(quoted(result.path.value))",
+            "\"bytes\":\(result.byteCount)",
+            "\"lines\":\(result.lineCount)",
+            "\"truncated\":\(result.wasTruncated)",
+        ]
+        // Withheld on a truncated read — this is the whole truncation guard.
+        // The digest covers the complete file, so handing it over would let a
+        // model that saw the first megabyte of a file pass a *matching* base
+        // for a full overwrite and silently discard the rest. Without the
+        // value it cannot: it has no way to compute a digest of bytes it was
+        // never shown.
+        if !result.wasTruncated {
+            header.append("\"base_sha256\":\(quoted(result.fingerprint.sha256))")
+        } else {
+            header.append(
+                "\"note\":\"content truncated; no base_sha256 is issued for a partial read — use apply_patch, or read a smaller file\""
+            )
+        }
+        return "{\(header.joined(separator: ","))}\n" + result.content
+    }
+
+    private static func quoted(_ value: String) -> String {
+        // Small, dependency-free JSON string escaping: the header only ever
+        // carries a workspace-relative path and a hex digest, but a path may
+        // legitimately contain a quote or a backslash.
+        var out = "\""
+        for character in value.unicodeScalars {
+            switch character {
+            case "\"": out += "\\\""
+            case "\\": out += "\\\\"
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default:
+                if character.value < 0x20 {
+                    out += String(format: "\\u%04x", character.value)
+                } else {
+                    out.unicodeScalars.append(character)
+                }
+            }
+        }
+        return out + "\""
     }
 }
 
@@ -93,8 +179,17 @@ public struct WriteFileTool: CodeTool {
     }
 
     public let name = "write_file"
-    public let description =
-        "Overwrite a file (or create it). Pass the fingerprint from read_file as base_sha256 to fail safely if the file changed meanwhile."
+    public let description = """
+        Overwrite a file, or create one that does not exist yet.
+
+        Overwriting an existing file REQUIRES base_sha256 — the fingerprint \
+        read_file returned for it. The write is refused if the file changed \
+        since that read, so the edit cannot silently discard someone else's \
+        work. Creating a new file takes no fingerprint.
+
+        A file that read_file returned truncated has no fingerprint you can \
+        pass, and that is deliberate: use apply_patch to edit it.
+        """
     public var inputSchema: JSONValue {
         [
             "type": "object",
@@ -118,7 +213,7 @@ public struct WriteFileTool: CodeTool {
         guard let content = input["content"]?.stringValue else {
             throw ToolError.invalidInput(message: "Missing 'content'.")
         }
-        let base = input["base_sha256"]?.stringValue.map { FileFingerprint(sha256: $0) }
+        let base = try parsedFingerprint(from: input)
         let result = try await files.write(
             path,
             content: content,
@@ -171,7 +266,7 @@ public struct ApplyPatchTool: CodeTool {
         else {
             throw ToolError.invalidInput(message: "Missing 'target' or 'replacement'.")
         }
-        let base = input["base_sha256"]?.stringValue.map { FileFingerprint(sha256: $0) }
+        let base = try parsedFingerprint(from: input)
         let patch = TextPatch(
             target: target,
             replacement: replacement,

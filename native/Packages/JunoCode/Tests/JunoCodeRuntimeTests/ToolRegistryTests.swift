@@ -358,7 +358,11 @@ final class ToolRegistryTests: XCTestCase {
     func testMutationEmitsFileChangedSideEffect() async throws {
         let result = try await registry.invoke(
             toolName: "write_file",
-            input: ["path": "src/main.swift", "content": "let answer = 43\n"],
+            input: [
+                "path": "src/main.swift",
+                "content": "let answer = 43\n",
+                "base_sha256": .string(FileFingerprint(of: "let answer = 42\n").sha256),
+            ],
             context: context(),
             permissions: permissions
         )
@@ -368,5 +372,87 @@ final class ToolRegistryTests: XCTestCase {
         XCTAssertEqual(event.path.value, "src/main.swift")
         XCTAssertEqual(event.kind, .modified)
         XCTAssertNotNil(event.checkpointID)
+    }
+
+    /// The guard that makes the fingerprint mean something: without a base, an
+    /// overwrite of an existing file is refused rather than silently discarding
+    /// whatever the agent had not read.
+    func testWriteFileRefusesToOverwriteWithoutABase() async throws {
+        do {
+            _ = try await registry.invoke(
+                toolName: "write_file",
+                input: ["path": "src/main.swift", "content": "clobbered\n"],
+                context: context(),
+                permissions: permissions
+            )
+            XCTFail("an unguarded overwrite must be refused")
+        } catch let error as FileOperationError {
+            XCTAssertEqual(error, .baseFingerprintRequired(path: "src/main.swift"))
+        }
+
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            ),
+            "let answer = 42\n"
+        )
+    }
+
+    /// A malformed fingerprint is a different failure from a stale one, and
+    /// saying "the file changed" for it sends the model to re-read a file
+    /// nobody has touched.
+    func testWriteFileRejectsAMalformedFingerprintAsInvalidInput() async throws {
+        do {
+            _ = try await registry.invoke(
+                toolName: "write_file",
+                input: [
+                    "path": "src/main.swift",
+                    "content": "nope\n",
+                    "base_sha256": "not-a-digest",
+                ],
+                context: context(),
+                permissions: permissions
+            )
+            XCTFail("a malformed fingerprint must be rejected")
+        } catch let error as ToolError {
+            guard case .invalidInput = error else {
+                return XCTFail("expected invalidInput, got \(error)")
+            }
+        }
+    }
+
+    /// The read contract the write tools depend on, exercised through the
+    /// registry rather than against the renderer in isolation.
+    func testReadFileReturnsAFingerprintTheWriteToolAccepts() async throws {
+        let read = try await registry.invoke(
+            toolName: "read_file",
+            input: ["path": "src/main.swift"],
+            context: context(),
+            permissions: permissions
+        )
+        let header = String(read.content.prefix(while: { $0 != "\n" }))
+        let fields = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: Data(header.utf8)) as? [String: Any]
+        )
+        let digest = try XCTUnwrap(fields["base_sha256"] as? String)
+
+        _ = try await registry.invoke(
+            toolName: "write_file",
+            input: [
+                "path": "src/main.swift",
+                "content": "let answer = 44\n",
+                "base_sha256": .string(digest),
+            ],
+            context: context(),
+            permissions: permissions
+        )
+        XCTAssertEqual(
+            try String(
+                contentsOf: workspaceURL.appendingPathComponent("src/main.swift"),
+                encoding: .utf8
+            ),
+            "let answer = 44\n"
+        )
     }
 }

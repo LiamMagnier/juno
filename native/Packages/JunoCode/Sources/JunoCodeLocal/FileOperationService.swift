@@ -84,6 +84,12 @@ public final class FileOperationService: FileOperating, Sendable {
             guard let previous, FileFingerprint(of: previous) == expectedBase else {
                 throw FileOperationError.concurrentModification(path: path.value)
             }
+        } else if previous != nil {
+            // Enforced here rather than in the tool: this is the only place
+            // that knows whether the path already held content, and every
+            // caller — tools, subagents, the remote host — reaches the
+            // filesystem through it.
+            throw FileOperationError.baseFingerprintRequired(path: path.value)
         }
         let checkpoint = Checkpoint(
             sessionID: sessionID,

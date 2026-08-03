@@ -540,7 +540,7 @@ final class WorkbenchModelTests: XCTestCase {
         let write1 = try await context.files.write(
             try WorkspacePath("src/main.swift"),
             content: "let x = 2\n",
-            expectedBase: nil,
+            expectedBase: FileFingerprint(of: "let x = 1\n"),
             sessionID: session.id
         )
         try await model.sessionStore.appendEvent(
@@ -558,7 +558,7 @@ final class WorkbenchModelTests: XCTestCase {
         let write2 = try await context.files.write(
             try WorkspacePath("src/main.swift"),
             content: "let x = 3\n",
-            expectedBase: nil,
+            expectedBase: FileFingerprint(of: "let x = 2\n"),
             sessionID: session.id
         )
         try await model.sessionStore.appendEvent(
@@ -694,7 +694,7 @@ final class WorkbenchModelTests: XCTestCase {
         let mutation = try await context.files.write(
             path,
             content: "let x = 2\n",
-            expectedBase: nil,
+            expectedBase: FileFingerprint(of: "let x = 1\n"),
             sessionID: session.id
         )
         try await model.sessionStore.appendEvent(
@@ -758,7 +758,7 @@ final class WorkbenchModelTests: XCTestCase {
         let validMutation = try await context.files.write(
             validPath,
             content: "let x = 2\n",
-            expectedBase: nil,
+            expectedBase: FileFingerprint(of: "let x = 1\n"),
             sessionID: session.id
         )
         try await model.sessionStore.appendEvent(

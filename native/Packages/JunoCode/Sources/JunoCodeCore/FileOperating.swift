@@ -7,6 +7,13 @@ public enum FileOperationError: Error, Equatable, Sendable {
     case notUTF8Text(path: String)
     case tooLarge(path: String, byteCount: Int, maximumBytes: Int)
     case concurrentModification(path: String)
+    /// An overwrite of an existing file arrived with no base fingerprint.
+    ///
+    /// Distinct from `concurrentModification`, which means a base was supplied
+    /// and did not match. The two have different remedies — re-read and retry
+    /// versus supply the fingerprint you already have — and collapsing them
+    /// sent callers to the wrong one.
+    case baseFingerprintRequired(path: String)
     case patchFailed(path: String, underlying: TextPatchError)
     case ioFailure(path: String, message: String)
 }
@@ -73,8 +80,14 @@ public protocol FileOperating: Sendable {
         sessionID: CodeSessionID
     ) async throws -> FileMutationResult
 
-    /// Overwrites or creates a file. When `expectedBase` is provided and the
-    /// on-disk content no longer matches, the write fails.
+    /// Overwrites or creates a file.
+    ///
+    /// Overwriting an **existing** file requires `expectedBase`, and fails with
+    /// `concurrentModification` when the on-disk content no longer matches it.
+    /// Passing nil is only valid for a path that does not exist yet; an
+    /// unguarded overwrite is otherwise refused with `baseFingerprintRequired`,
+    /// because a blind whole-file write is how an agent silently discards work
+    /// it never read.
     func write(
         _ path: WorkspacePath,
         content: String,

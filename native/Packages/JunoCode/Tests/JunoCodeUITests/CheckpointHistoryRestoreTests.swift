@@ -72,7 +72,7 @@ final class CheckpointHistoryRestoreTests: XCTestCase {
         let mutation = try await context.files.write(
             path,
             content: "changed by Juno\n",
-            expectedBase: nil,
+            expectedBase: FileFingerprint(of: "original\n"),
             sessionID: controller.sessionID
         )
         let checkpointID = try XCTUnwrap(mutation.checkpointID)
