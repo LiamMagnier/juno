@@ -13,8 +13,16 @@ public struct RunCommandTool: CodeTool {
     }
 
     public let name = "run_command"
-    public let description =
-        "Run a shell command in the workspace root. Output is streamed and bounded; long commands are cut at the timeout."
+    public let description = """
+        Run a shell command in the workspace root. Output is streamed and \
+        bounded; long commands are cut at the timeout.
+
+        Files this command changes are NOT checkpointed: only the structured \
+        file tools (create_file, write_file, apply_patch, delete_file, \
+        move_file) can be undone from the transcript. Prefer those for edits \
+        you intend to be reviewable, and use a command when running one is the \
+        point.
+        """
     public var inputSchema: JSONValue {
         [
             "type": "object",

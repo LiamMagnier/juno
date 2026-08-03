@@ -173,6 +173,10 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
     public let toolName: String
     public let summary: String
     public let risk: ActionRisk
+    /// Why this is being asked. The UI needs it to describe the prompt
+    /// truthfully: a pinned action is asked about even in Full Access, so copy
+    /// derived from the risk tier alone would tell the reader the opposite.
+    public let approvalPolicy: ApprovalPolicy
     public let requestedAt: Date
     public let expiresAt: Date
 
@@ -183,6 +187,7 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         toolName: String,
         summary: String,
         risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy = .byRisk,
         requestedAt: Date,
         expiresAt: Date
     ) {
@@ -192,6 +197,7 @@ public struct ApprovalRequest: Hashable, Codable, Sendable {
         self.toolName = toolName
         self.summary = summary
         self.risk = risk
+        self.approvalPolicy = approvalPolicy
         self.requestedAt = requestedAt
         self.expiresAt = expiresAt
     }

@@ -45,15 +45,44 @@ public struct ApprovalCard: View {
             && controller.session.configuration.permissionMode == .askBeforeChanges
     }
 
+    /// What this action does, and — separately — why the reader is being asked.
+    ///
+    /// The two were one sentence, which is how "Full access does not ask for
+    /// this" ended up on a prompt that Full Access had just produced: `.critical`
+    /// stopped being the whole story once a tool could pin itself to always
+    /// asking. They are now derived from the two things that actually decide it.
     private var riskExplanation: String {
+        [effectExplanation, whyAskedExplanation]
+            .compactMap { $0 }
+            .joined(separator: " ")
+    }
+
+    private var effectExplanation: String {
         switch request.risk {
         case .read: "Reads inside this folder."
         case .write: "Changes a file in this folder. The previous version is checkpointed."
-        case .execute: "Runs a command in this folder."
+        // Deliberately does not promise undo. Only the structured file tools
+        // write checkpoints; a command's edits — a formatter, a codegen step, a
+        // build that writes into the tree — are outside that record entirely,
+        // and saying "this folder" without saying so implied a safety net that
+        // does not exist for them.
+        case .execute:
+            "Runs a command in this folder. Changes a command makes are not checkpointed and cannot be undone from the transcript."
         case .critical:
-            "Uses the network or runs code from this folder. Full access does not ask for this."
+            "Uses the network, or runs code from this folder. Changes it makes are not checkpointed and cannot be undone from the transcript."
         case .destructive:
-            "Reaches outside this folder, or cannot be undone. This always asks, in every mode."
+            "Reaches outside this folder, or cannot be undone."
+        }
+    }
+
+    private var whyAskedExplanation: String? {
+        if request.approvalPolicy == .alwaysRequiresApproval {
+            return "This always asks, in every mode, including full access."
+        }
+        switch request.risk {
+        case .destructive: return "This always asks, in every mode."
+        case .critical: return "Full access does not ask for this."
+        case .read, .write, .execute: return nil
         }
     }
 

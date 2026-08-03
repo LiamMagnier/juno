@@ -6,11 +6,39 @@ public enum CheckpointError: Error, Equatable, Sendable {
     case restoreFailed(path: String, message: String)
 }
 
-/// A per-file snapshot captured immediately before a mutation.
+/// One path touched by an operation, with the state it was in before and the
+/// state the operation was expected to leave it in.
 ///
-/// `preContent == nil` means the file did not exist before the change (undo
-/// deletes it). `postFingerprint` records what the mutation produced; undo is
-/// refused when the file has diverged from it since.
+/// `preContent == nil` means the path did not exist beforehand, so undoing
+/// removes it. `postFingerprint == nil` means the operation left nothing there,
+/// so undoing recreates it.
+public struct CheckpointEntry: Hashable, Codable, Sendable {
+    public let path: WorkspacePath
+    public let preContent: String?
+    public let postFingerprint: FileFingerprint?
+
+    public init(
+        path: WorkspacePath,
+        preContent: String?,
+        postFingerprint: FileFingerprint?
+    ) {
+        self.path = path
+        self.preContent = preContent
+        self.postFingerprint = postFingerprint
+    }
+}
+
+/// A snapshot captured immediately before a mutation, covering **every** path
+/// the mutation touches.
+///
+/// It began as one path per checkpoint, which is right for a create, a write
+/// and a delete but wrong for a move: recording only the source meant undo
+/// wrote the source back and left the destination sitting there, so undoing a
+/// rename produced two files where there had been one.
+///
+/// `entries` is the real record. The original single-path fields are still
+/// stored and still decoded, so checkpoints written before this change remain
+/// readable — `resolvedEntries` presents those as a one-entry operation.
 public struct Checkpoint: Hashable, Codable, Sendable, Identifiable {
     public let id: String
     public let sessionID: CodeSessionID
@@ -18,6 +46,10 @@ public struct Checkpoint: Hashable, Codable, Sendable, Identifiable {
     public let createdAt: Date
     public let preContent: String?
     public let postFingerprint: FileFingerprint?
+    /// Every path the operation touched. Absent on records written before
+    /// operation-level checkpoints existed, which is why it is optional rather
+    /// than defaulted — a missing key must decode, not fail.
+    public let entries: [CheckpointEntry]?
 
     public init(
         id: String = UUID().uuidString.lowercased(),
@@ -25,7 +57,8 @@ public struct Checkpoint: Hashable, Codable, Sendable, Identifiable {
         path: WorkspacePath,
         createdAt: Date,
         preContent: String?,
-        postFingerprint: FileFingerprint?
+        postFingerprint: FileFingerprint?,
+        entries: [CheckpointEntry]? = nil
     ) {
         self.id = id
         self.sessionID = sessionID
@@ -33,6 +66,41 @@ public struct Checkpoint: Hashable, Codable, Sendable, Identifiable {
         self.createdAt = createdAt
         self.preContent = preContent
         self.postFingerprint = postFingerprint
+        self.entries = entries
+    }
+
+    /// An operation spanning several paths.
+    ///
+    /// `path`, `preContent` and `postFingerprint` are still populated from the
+    /// first entry so that anything reading the old shape — persisted JSON, the
+    /// history list, a checkpoint written by this build and read by an older
+    /// one — keeps seeing a coherent single-path record.
+    public init(
+        id: String = UUID().uuidString.lowercased(),
+        sessionID: CodeSessionID,
+        createdAt: Date,
+        entries: [CheckpointEntry]
+    ) {
+        precondition(!entries.isEmpty, "a checkpoint must cover at least one path")
+        self.id = id
+        self.sessionID = sessionID
+        self.createdAt = createdAt
+        self.path = entries[0].path
+        self.preContent = entries[0].preContent
+        self.postFingerprint = entries[0].postFingerprint
+        self.entries = entries
+    }
+
+    /// The operation's paths, whichever shape it was persisted in.
+    public var resolvedEntries: [CheckpointEntry] {
+        if let entries, !entries.isEmpty { return entries }
+        return [
+            CheckpointEntry(
+                path: path,
+                preContent: preContent,
+                postFingerprint: postFingerprint
+            )
+        ]
     }
 }
 

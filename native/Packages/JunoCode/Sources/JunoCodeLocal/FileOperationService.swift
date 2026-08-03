@@ -203,12 +203,24 @@ public final class FileOperationService: FileOperating, Sendable {
             throw FileOperationError.alreadyExists(path: destination.value)
         }
         let content = try readText(at: sourceURL, path: source)
+        // Both ends of the move, so undo can put the file back *and* take the
+        // copy away. Recording only the source is what used to turn an undone
+        // rename into two files.
         let checkpoint = Checkpoint(
             sessionID: sessionID,
-            path: source,
             createdAt: Date(),
-            preContent: content,
-            postFingerprint: nil
+            entries: [
+                CheckpointEntry(
+                    path: source,
+                    preContent: content,
+                    postFingerprint: nil
+                ),
+                CheckpointEntry(
+                    path: destination,
+                    preContent: nil,
+                    postFingerprint: FileFingerprint(of: content)
+                ),
+            ]
         )
         try await checkpoints.record(checkpoint)
         do {

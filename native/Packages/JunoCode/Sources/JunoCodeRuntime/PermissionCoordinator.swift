@@ -95,6 +95,7 @@ public actor PermissionCoordinator {
                 toolName: toolName,
                 summary: summary,
                 risk: risk,
+                approvalPolicy: approvalPolicy,
                 requestedAt: now,
                 expiresAt: now.addingTimeInterval(Self.approvalTimeToLiveSeconds)
             )

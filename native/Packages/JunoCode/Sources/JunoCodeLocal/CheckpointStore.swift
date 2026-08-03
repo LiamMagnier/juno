@@ -28,14 +28,34 @@ public actor CheckpointStore: Checkpointing {
         guard let existing = cache[id] else {
             throw CheckpointError.notFound(id: id)
         }
-        let sealed = Checkpoint(
-            id: existing.id,
-            sessionID: existing.sessionID,
-            path: existing.path,
-            createdAt: existing.createdAt,
-            preContent: existing.preContent,
-            postFingerprint: postFingerprint
-        )
+        // Sealing settles what the mutation produced at its *primary* path.
+        // Rebuilding through the single-path initialiser would drop `entries`
+        // and silently turn an undone move back into the duplicate-file bug,
+        // so a multi-path operation keeps its other entries verbatim.
+        let sealed: Checkpoint
+        if let entries = existing.entries, !entries.isEmpty {
+            var updated = entries
+            updated[0] = CheckpointEntry(
+                path: entries[0].path,
+                preContent: entries[0].preContent,
+                postFingerprint: postFingerprint
+            )
+            sealed = Checkpoint(
+                id: existing.id,
+                sessionID: existing.sessionID,
+                createdAt: existing.createdAt,
+                entries: updated
+            )
+        } else {
+            sealed = Checkpoint(
+                id: existing.id,
+                sessionID: existing.sessionID,
+                path: existing.path,
+                createdAt: existing.createdAt,
+                preContent: existing.preContent,
+                postFingerprint: postFingerprint
+            )
+        }
         cache[id] = sealed
         try persist(sealed)
     }
@@ -57,33 +77,59 @@ public actor CheckpointStore: Checkpointing {
         guard let checkpoint = cache[id] else {
             throw CheckpointError.notFound(id: id)
         }
-        let url = try access.resolveForMutation(checkpoint.path)
-        let currentContent = try? String(contentsOf: url, encoding: .utf8)
+        let entries = checkpoint.resolvedEntries
+        let urls = try entries.map { try access.resolveForMutation($0.path) }
 
+        // Validate every path before touching any of them. Checking and
+        // applying one entry at a time would half-undo a move whose second path
+        // turns out to have diverged, leaving neither the before state nor the
+        // after state on disk.
         if !force {
-            switch (currentContent, checkpoint.postFingerprint) {
-            case let (current?, post?):
-                guard FileFingerprint(of: current) == post else {
-                    throw CheckpointError.currentContentDiverged(path: checkpoint.path.value)
+            for (entry, url) in zip(entries, urls) {
+                let current = try? String(contentsOf: url, encoding: .utf8)
+                switch (current, entry.postFingerprint) {
+                case let (current?, post?):
+                    guard FileFingerprint(of: current) == post else {
+                        throw CheckpointError.currentContentDiverged(path: entry.path.value)
+                    }
+                case (nil, nil):
+                    break
+                case (nil, .some), (.some, nil):
+                    throw CheckpointError.currentContentDiverged(path: entry.path.value)
                 }
-            case (nil, nil):
-                break
-            case (nil, .some), (.some, nil):
-                throw CheckpointError.currentContentDiverged(path: checkpoint.path.value)
             }
         }
 
+        // Apply with rollback. Each path's current bytes are held in memory
+        // first, so a failure part-way through can put back what this call
+        // already changed rather than leaving the operation half-undone.
+        var applied: [(url: URL, previous: String?)] = []
         do {
-            if let preContent = checkpoint.preContent {
-                try FileManager.default.createDirectory(
-                    at: url.deletingLastPathComponent(),
-                    withIntermediateDirectories: true
-                )
-                try AtomicFileWriter.write(preContent, to: url)
-            } else if FileManager.default.fileExists(atPath: url.path) {
-                try FileManager.default.removeItem(at: url)
+            for (entry, url) in zip(entries, urls) {
+                let previous = try? String(contentsOf: url, encoding: .utf8)
+                if let preContent = entry.preContent {
+                    try FileManager.default.createDirectory(
+                        at: url.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try AtomicFileWriter.write(preContent, to: url)
+                } else if FileManager.default.fileExists(atPath: url.path) {
+                    try FileManager.default.removeItem(at: url)
+                }
+                applied.append((url, previous))
             }
         } catch {
+            for change in applied.reversed() {
+                if let previous = change.previous {
+                    try? FileManager.default.createDirectory(
+                        at: change.url.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    try? AtomicFileWriter.write(previous, to: change.url)
+                } else if FileManager.default.fileExists(atPath: change.url.path) {
+                    try? FileManager.default.removeItem(at: change.url)
+                }
+            }
             throw CheckpointError.restoreFailed(
                 path: checkpoint.path.value,
                 message: String(describing: error)
