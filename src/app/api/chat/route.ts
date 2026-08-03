@@ -1,5 +1,11 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
+import {
+  checkBodyBytes,
+  checkMessageSize,
+  checkPrivateHistory,
+  limitErrorBody,
+} from "@/lib/request-limits";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -9,9 +15,11 @@ import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
 import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
+import { providerHealthy } from "@/lib/provider-health";
+import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
 import { buildSystemPrompt, buildDynamicContext } from "@/lib/anthropic";
-import { finishReasonDetail, finishReasonTitle } from "@/lib/finish-reason";
+import { finishReasonTitle } from "@/lib/finish-reason";
 import { registerGeneration, wasGenerationStopped } from "@/lib/generation-cancel";
 import { streamChat, providerErrorMessage } from "@/lib/llm";
 import { getMemoryProfile, saveAutoMemories, extractConversationMemory, maybeConsolidate, utilityModelCandidates } from "@/lib/memory";
@@ -40,13 +48,31 @@ import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
 import { isWebSearchConfigured } from "@/lib/web-search";
-import { encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
-import { truncate, formatUsd, currentPeriod } from "@/lib/utils";
+import { createSseSender, encodeChunk, SSE_HEADERS } from "@/lib/chat-stream";
+import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
-import { estimateGenerationCostUsd, supportsFastMode } from "@/lib/pricing";
-import { mergeUsage, totalInputTokens, type UsageAccumulator } from "@/lib/usage-merge";
-import { clampReasoningEffort, REASONING_TIERS } from "@/lib/model-metrics";
+import { supportsFastMode } from "@/lib/pricing";
+import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
+import { buildUsage } from "@/lib/chat-usage";
+import { logDebug } from "@/lib/logger";
+import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
+import { createStreamBudgetGuard } from "@/lib/chat-budget-guard";
+import {
+  AttachmentClaimError,
+  DurableFirstSubmissionStartError,
+  DurableReceiptLeaseLostError,
+  appendFinishWarning,
+  classifyErrorFinishReason,
+  effectiveReasoningEffort,
+  firstSubmissionRecoveryResponse,
+  generationFailureCode,
+  idempotencyKeyConflictResponse,
+  plural,
+  searchToolLabel,
+  sourceHost,
+} from "@/lib/chat-responses";
+import { REASONING_TIERS } from "@/lib/model-metrics";
 import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessages } from "@/lib/moderation-ai";
@@ -59,7 +85,6 @@ import {
   firstSubmissionLeaseHeartbeatOwnsReceipt,
   firstSubmissionLeaseExpiresAt,
   hashFirstSubmission,
-  type FirstSubmissionRecovery,
 } from "@/lib/chat-first-submission";
 import { findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
 import {
@@ -68,7 +93,7 @@ import {
   clientSubmissionMetadataIssue,
   legacyChatClientForOrigin,
 } from "@/lib/chat-origin";
-import type { StreamChunk, ClientSource, ClientActivityEvent, ChatFinishReason, ReasoningEffort } from "@/types/chat";
+import type { ClientSource, ChatFinishReason } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -214,286 +239,46 @@ const bodySchema = z
     }
   });
 
-function plural(count: number, singular: string, pluralForm = `${singular}s`) {
-  return `${count} ${count === 1 ? singular : pluralForm}`;
-}
-
-/**
- * Normalize a generation's token usage and build the "Token usage recorded"
- * detail line + cost (tokens + cache + server-tool fees). Floors on streamed
- * answer + reasoning characters so thinking-heavy turns without full usage
- * still bill fairly.
- */
-function buildUsage(
-  model: ModelInfo,
-  raw: {
-    input?: number;
-    output?: number;
-    reasoning?: number;
-    total?: number;
-    cacheRead?: number;
-    cacheWrite?: number;
-    cacheWrite5m?: number;
-    cacheWrite1h?: number;
-    webSearchRequests?: number;
-    xSearchRequests?: number;
-    promptChars?: number;
-    completionChars?: number;
-    reasoningChars?: number;
-  },
-  fastMode = false
-): {
-  detail: string;
-  cost: number;
-  costMicroUsd: number;
-  totalInput: number;
-  output: number;
-  reasoning: number;
-  toolFeesUsd: number;
-  webSearchRequests: number;
-  xSearchRequests: number;
-  cacheWrite5m: number;
-  cacheWrite1h: number;
-  cacheRead: number;
-  cacheWrite: number;
-} {
-  const billed = estimateGenerationCostUsd(model, {
-    // For Anthropic, raw.input is FRESH only; cache is separate. The estimator
-    // bills each bucket at the right rate.
-    promptTokens: raw.input,
-    completionTokens: raw.output,
-    reasoningTokens: raw.reasoning,
-    totalTokens: raw.total,
-    cacheRead: raw.cacheRead,
-    cacheWrite: raw.cacheWrite,
-    cacheWrite5m: raw.cacheWrite5m,
-    cacheWrite1h: raw.cacheWrite1h,
-    webSearchRequests: raw.webSearchRequests,
-    xSearchRequests: raw.xSearchRequests,
-    fastMode,
-    promptChars: raw.promptChars,
-    completionChars: raw.completionChars,
-    reasoningChars: raw.reasoningChars,
-  });
-  const cacheRead = Math.max(0, raw.cacheRead ?? 0);
-  const cacheWrite5m = Math.max(0, raw.cacheWrite5m ?? 0);
-  const cacheWrite1h = Math.max(0, raw.cacheWrite1h ?? 0);
-  const cacheWrite =
-    cacheWrite5m + cacheWrite1h > 0
-      ? cacheWrite5m + cacheWrite1h
-      : Math.max(0, raw.cacheWrite ?? 0);
-  const cachedDisplay = cacheRead + cacheWrite;
-  // Display/persist total input = fresh + all cache (matches Anthropic billing sum).
-  const totalInput = Math.max(
-    billed.promptTokens + cacheRead + cacheWrite,
-    totalInputTokens({
-      input: raw.input,
-      cacheRead: raw.cacheRead,
-      cacheWrite: raw.cacheWrite,
-      cacheWrite5m: raw.cacheWrite5m,
-      cacheWrite1h: raw.cacheWrite1h,
-    })
-  );
-  const searches =
-    Math.max(0, raw.webSearchRequests ?? 0) + Math.max(0, raw.xSearchRequests ?? 0);
-  const detail = [
-    totalInput
-      ? `${totalInput.toLocaleString()} input${cachedDisplay ? ` (${cachedDisplay.toLocaleString()} cached)` : ""}`
-      : null,
-    billed.completionTokens ? `${billed.completionTokens.toLocaleString()} output` : null,
-    searches > 0 ? `${searches.toLocaleString()} ${searches === 1 ? "search" : "searches"}` : null,
-    billed.costUsd > 0 ? formatUsd(billed.costUsd) : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  return {
-    detail,
-    cost: billed.costUsd,
-    costMicroUsd: Math.max(0, Math.round(billed.costUsd * 1_000_000)),
-    totalInput,
-    output: billed.completionTokens,
-    reasoning: Math.max(0, raw.reasoning ?? 0),
-    toolFeesUsd: billed.toolFeesUsd,
-    webSearchRequests: Math.max(0, raw.webSearchRequests ?? 0),
-    xSearchRequests: Math.max(0, raw.xSearchRequests ?? 0),
-    cacheWrite5m,
-    cacheWrite1h,
-    cacheRead,
-    cacheWrite,
-  };
-}
-
-function searchToolLabel(provider: ModelInfo["provider"]) {
-  if (provider === "anthropic") return "Claude web search";
-  if (provider === "google") return "Google Search grounding";
-  if (provider === "xai") return "Grok Live Search";
-  return "native web search";
-}
-
-function sourceHost(url: string) {
-  try {
-    return new URL(url).hostname.replace(/^www\./, "");
-  } catch {
-    return url;
-  }
-}
-
-function effectiveReasoningEffort(model: ModelInfo, requested?: ReasoningEffort): ReasoningEffort | undefined {
-  // Coerce to a tier the model actually supports (e.g. "max" -> "high" on Gemini),
-  // so we never send an unsupported effort to the provider.
-  return clampReasoningEffort(model, requested ?? null) ?? undefined;
-}
-
-function isAbortLike(err: unknown): boolean {
-  const e = err as { name?: string; code?: string; message?: string };
-  return e?.name === "AbortError" || e?.code === "ABORT_ERR" || /aborted|aborterror|cancelled|canceled/i.test(e?.message ?? "");
-}
-
-function classifyErrorFinishReason(err: unknown): ChatFinishReason {
-  if (isAbortLike(err)) return "user_stopped";
-  const message = String((err as { message?: string })?.message ?? err ?? "").toLowerCase();
-  if (/network|socket|econn|etimedout|timeout|terminated|fetch failed|connection/i.test(message)) return "network_error";
-  if (/context.*(length|window)|maximum context|context_length_exceeded/i.test(message)) return "model_context_window_exceeded";
-  if (/sensitive|safety|content.?filter/i.test(message)) return "sensitive";
-  return "error";
-}
-
-function generationFailureCode(reason: ChatFinishReason): string {
-  switch (reason) {
-    case "user_stopped":
-      return "GENERATION_STOPPED_BEFORE_OUTPUT";
-    case "network_error":
-      return "GENERATION_NETWORK_ERROR";
-    case "model_context_window_exceeded":
-      return "GENERATION_CONTEXT_LIMIT";
-    case "sensitive":
-      return "GENERATION_SENSITIVE_CONTENT";
-    default:
-      return "GENERATION_FAILED";
-  }
-}
-
-function appendFinishWarning(
-  reason: ChatFinishReason,
-  sendActivity: (event: Omit<ClientActivityEvent, "id" | "createdAt">) => ClientActivityEvent
-) {
-  if (reason === "stop") return;
-  sendActivity({
-    kind: "warning",
-    title: finishReasonTitle(reason),
-    detail: finishReasonDetail(reason),
-  });
-}
-
-function alreadySubmittedResponse(input: {
-  conversationId: string;
-  userMessageId: string;
-  generationId: string;
-  receiptState: "accepted" | "running" | "completed" | "failed";
-  finishReason: string | null;
-  failureCode: string | null;
-}) {
-  return NextResponse.json(
-    {
-      error: "request_already_submitted",
-      code: "REQUEST_ALREADY_SUBMITTED",
-      message: "This message was already accepted. Open the existing conversation instead of submitting it again.",
-      conversationId: input.conversationId,
-      userMessageId: input.userMessageId,
-      generationId: input.generationId,
-      receiptState: input.receiptState,
-      finishReason: input.finishReason,
-      failureCode: input.failureCode,
-      retryable: false,
-    },
-    { status: 409 }
-  );
-}
-
-function firstSubmissionInProgressResponse(input: { generationId: string }) {
-  return NextResponse.json(
-    {
-      error: "request_in_progress",
-      code: "REQUEST_IN_PROGRESS",
-      message: "This first submission is still being accepted. Retry with the same identifiers.",
-      generationId: input.generationId,
-      receiptState: "claimed",
-      retryable: true,
-    },
-    { status: 409 }
-  );
-}
-
-function firstSubmissionRecoveryResponse(recovery: FirstSubmissionRecovery) {
-  if (recovery.kind === "conflict") return idempotencyKeyConflictResponse(recovery.conversationId);
-  if (recovery.kind === "in_progress") {
-    return firstSubmissionInProgressResponse({ generationId: recovery.generationId });
-  }
-  return alreadySubmittedResponse({
-    conversationId: recovery.conversationId,
-    userMessageId: recovery.userMessageId,
-    generationId: recovery.generationId,
-    receiptState: recovery.state,
-    finishReason: recovery.finishReason,
-    failureCode: recovery.failureCode,
-  });
-}
-
-function idempotencyKeyConflictResponse(conversationId: string, legacyReceiptMissing = false) {
-  return NextResponse.json(
-    {
-      error: "idempotency_key_reused",
-      code: "IDEMPOTENCY_KEY_REUSED",
-      message: legacyReceiptMissing
-        ? "This request predates durable body receipts, so the server cannot prove that the retry body is identical. Use a new submission identifier."
-        : "This idempotency key is already bound to a different first submission.",
-      conversationId,
-      retryable: false,
-    },
-    { status: 409 }
-  );
-}
-
-class AttachmentClaimError extends Error {
-  constructor() {
-    super("One or more attachments are unavailable or already belong to another message.");
-    this.name = "AttachmentClaimError";
-  }
-}
-
-class DurableFirstSubmissionStartError extends Error {
-  readonly generationId: string;
-  readonly conversationId: string;
-  readonly userMessageId: string;
-  readonly failureCode = "GENERATION_START_FAILED";
-
-  constructor(
-    cause: unknown,
-    ids: { generationId: string; conversationId: string; userMessageId: string }
-  ) {
-    super(cause instanceof Error ? cause.message : String(cause));
-    this.name = "DurableFirstSubmissionStartError";
-    this.generationId = ids.generationId;
-    this.conversationId = ids.conversationId;
-    this.userMessageId = ids.userMessageId;
-    this.cause = cause;
-  }
-}
-
-class DurableReceiptLeaseLostError extends Error {
-  constructor() {
-    super("The durable generation lease is no longer owned by this process.");
-    this.name = "DurableReceiptLeaseLostError";
-  }
-}
 
 async function handleChat(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Size first, before JSON.parse. A multi-megabyte paste that is parsed,
+  // validated, moderated and embedded before anything notices its size has
+  // already cost the work the limit exists to avoid.
+  const rawBody = await req.text().catch(() => null);
+  if (rawBody === null) {
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+  }
+  const bodyViolation = checkBodyBytes(Buffer.byteLength(rawBody, "utf8"));
+  if (bodyViolation) {
+    return NextResponse.json(limitErrorBody(bodyViolation), { status: bodyViolation.status });
+  }
+
   // Parse the body once. Valid durable retries are recovered below before rate
   // limiting; invalid/legacy requests preserve the historical rate-limit order.
-  const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+  const parsed = bodySchema.safeParse(
+    (() => {
+      try {
+        return JSON.parse(rawBody);
+      } catch {
+        return null;
+      }
+    })()
+  );
+
+  // Per-field limits, once the shape is known. These run before the idempotency
+  // recovery below on purpose: a request too large to serve must be refused the
+  // same way every time it is retried, not recovered into a stored receipt.
+  if (parsed.success) {
+    const sizeViolation =
+      (parsed.data.message !== undefined ? checkMessageSize(parsed.data.message) : null) ??
+      (parsed.data.privateHistory ? checkPrivateHistory(parsed.data.privateHistory) : null);
+    if (sizeViolation) {
+      return NextResponse.json(limitErrorBody(sizeViolation), { status: sizeViolation.status });
+    }
+  }
   let firstSubmissionHash: string | null = null;
   let legacyOrphanConversationId: string | null = null;
   if (parsed.success && parsed.data.clientRequestId && parsed.data.clientMessageId) {
@@ -644,6 +429,17 @@ async function handleChat(req: Request) {
   let modelInfo: ModelInfo | undefined;
   /** When Auto routes, override the client's thinking slider with the pick. */
   let autoReasoningEffort: import("@/types/chat").ReasoningEffort | null | undefined;
+  /**
+   * Why this model, in one line, streamed to the user as an activity event.
+   *
+   * "Auto" previously logged its reasoning server-side and told the user
+   * nothing — so a router that picked badly, or a reroute off a dead provider,
+   * was indistinguishable from the product being slow or dumb. Routing you can
+   * see is the point of routing you can trust.
+   */
+  let routingNote: string | null = null;
+  /** Set when the model actually used is NOT the one that was asked for. */
+  let routingWarning: string | null = null;
   if (isAutoModelId(requestedId)) {
     const routingMessage =
       input.preflightClarification
@@ -671,7 +467,10 @@ async function handleChat(req: Request) {
       });
       modelInfo = pick.model;
       autoReasoningEffort = pick.reasoningEffort;
-      console.info("[chat:auto]", {
+      routingNote = `Auto picked ${pick.model.name} — ${pick.complexity.level} prompt${
+        pick.complexity.reasons.length ? ` (${pick.complexity.reasons.slice(0, 2).join(", ")})` : ""
+      }`;
+      logDebug("chat.auto", {
         level: pick.complexity.level,
         minIntelligence: pick.complexity.minIntelligence,
         reasons: pick.complexity.reasons,
@@ -687,6 +486,28 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
+  // Fallback must stay plan-aware: only pick a configured model the plan allows.
+  const eligible = (m: ModelInfo) =>
+    m.modality === "chat" &&
+    !m.comingSoon &&
+    !isAutoModelId(m.id) &&
+    isProviderConfigured(m.provider) &&
+    canUseModel(plan, m.id);
+
+  /**
+   * Cheapest eligible model, NOT the first in registry order.
+   *
+   * Registry order is a display order — its first chat entry is a frontier
+   * model. Falling back to it costs roughly 40x the cheapest capable model per
+   * request, silently, on the path taken precisely when something has already
+   * gone wrong. Nobody chose that model, so nobody should be billed as if they
+   * had.
+   */
+  const cheapestEligible = (requireHealthy: boolean): ModelInfo | undefined =>
+    MODEL_LIST.filter((m) => eligible(m) && (!requireHealthy || providerHealthy(m.provider))).sort(
+      (a, b) => a.cost - b.cost
+    )[0];
+
   if (
     !modelInfo ||
     isAutoModelId(modelInfo.id) ||
@@ -694,16 +515,45 @@ async function handleChat(req: Request) {
     !isProviderConfigured(modelInfo.provider) ||
     !canUseModel(plan, modelInfo.id)
   ) {
-    // Fallback must stay plan-aware: only pick a configured model the plan allows.
-    modelInfo = MODEL_LIST.find(
-      (m) =>
-        m.modality === "chat" &&
-        !m.comingSoon &&
-        !isAutoModelId(m.id) &&
-        isProviderConfigured(m.provider) &&
-        canUseModel(plan, m.id)
-    );
+    // Prefer a provider that is actually answering; a configured-but-dead one
+    // is better than nothing, so it stays as the second choice.
+    modelInfo = cheapestEligible(true) ?? cheapestEligible(false);
+  } else if (!providerHealthy(modelInfo.provider)) {
+    // The requested model's provider is failing auth or billing, so this
+    // generation cannot succeed. DEFAULT_MODEL is Anthropic, so an Anthropic
+    // outage would otherwise route every new chat straight into an error.
+    // Reroute rather than stream a guaranteed failure — but only if there is
+    // somewhere healthy to go.
+    //
+    // pickAutoModel does not consult provider health, so Auto lands here too:
+    // it picks the cheapest model overall, which may sit on a dead provider.
+    const alternative = cheapestEligible(true);
+    if (alternative) {
+      console.warn("[chat] rerouting off an unhealthy provider", {
+        from: modelInfo.id,
+        to: alternative.id,
+        provider: modelInfo.provider,
+      });
+      routingWarning = `${modelInfo.name} is unavailable right now — answered with ${alternative.name} instead.`;
+      modelInfo = alternative;
+    }
   }
+  // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
+  // set). Degrade to the cheapest capable model rather than refusing: a slower
+  // answer beats a 500, and it keeps the product usable while an operator
+  // decides what to do. Per-user budgets are enforced separately by checkBudget.
+  if (modelInfo && (await isPlatformBudgetExceeded())) {
+    const cheapest = cheapestEligible(true);
+    if (cheapest && cheapest.cost < modelInfo.cost) {
+      console.warn("[chat] platform budget exceeded — degrading model", {
+        from: modelInfo.id,
+        to: cheapest.id,
+      });
+      routingWarning = `Answered with ${cheapest.name} to stay within today's capacity.`;
+      modelInfo = cheapest;
+    }
+  }
+
   if (!modelInfo) {
     const msg =
       configuredProviders().length === 0
@@ -752,6 +602,9 @@ async function handleChat(req: Request) {
       canvas: false,
       voiceMode: input.voiceMode,
       projectContext: "",
+      // Private mode still reaches provider-side web search, whose results are
+      // outside content like any other.
+      untrustedContent: useWebSearch,
     });
     const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
     const generationId = input.generationId ?? crypto.randomUUID();
@@ -765,16 +618,8 @@ async function handleChat(req: Request) {
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
-        const send = (chunk: StreamChunk) => {
-          try {
-            controller.enqueue(encodeChunk(chunk));
-          } catch {
-            /* client disconnected */
-          }
-        };
-        const activityLog: ClientActivityEvent[] = [];
+        const { send, sendActivity, activityLog } = createSseSender(controller);
         const sourceUrls = new Set<string>();
-        let activityCounter = 0;
         let full = "";
         let reasoning = "";
         // Parallel to `reasoning`, not a replacement for it: the flat text is
@@ -803,83 +648,104 @@ async function handleChat(req: Request) {
         let spendRecorded = false;
         const webSources: ClientSource[] = [];
 
-        const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
-          const entry: ClientActivityEvent = {
-            ...event,
-            id: `activity-${Date.now()}-${activityCounter++}`,
-            createdAt: new Date().toISOString(),
-          };
-          activityLog.push(entry);
-          send({ type: "activity", event: entry });
-          return entry;
-        };
-
         send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
         // Heartbeat: models with hidden reasoning can stream nothing for
         // minutes; periodic pings keep proxies from dropping the idle SSE.
         const heartbeat = setInterval(() => send({ type: "ping" }), 15_000);
-        sendActivity({
-          kind: "context",
-          title: "Reading private context",
-          detail: `${plural(privateHistory.length, "message")} · not stored`,
-        });
-        sendActivity({
-          kind: "model",
-          title: "Selected model",
-          detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
-        });
-        if (activeConnectors.length) {
-          sendActivity({
-            kind: "tool",
-            title: "Connected tools ready",
-            detail: activeConnectors.map((c) => c.label).join(" · "),
-          });
-        }
-        const reasoningEffort = effectiveReasoningEffort(
-          modelInfo,
-          autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
-        );
-        if (reasoningEffort) {
-          sendActivity({
-            kind: "reasoning",
-            title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
-            detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
-          });
-        } else if (isAutoModelId(requestedId)) {
-          sendActivity({
-            kind: "reasoning",
-            title: "Auto thinking",
-            detail: "Instant — no extra reasoning for this prompt",
-          });
-        }
-        if (useWebSearch) {
-          sendActivity({
-            kind: "search",
-            title: "Preparing web search",
-            detail: searchToolLabel(modelInfo.provider),
-          });
-        }
-
-        // Hard mid-stream budget ceiling: the instant the running cost of THIS
-        // generation would push the user past their remaining plan budget, abort
-        // the provider stream so they cannot be billed a cent beyond it.
-        const budgetRates = modelRatesMicroUsdPerToken(modelId);
-        const budgetCeilingMicro = budget.remainingMicroUsd;
-        const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
+        // The try starts HERE, immediately after the interval exists, not 60
+        // lines further down at the streaming loop. Everything between — model
+        // resolution, the budget guard's setup, the activity preamble — used to
+        // run unprotected, and the `finally` that clears this interval and calls
+        // unregisterGeneration lives inside the try. A throw in that window
+        // leaked a 15s timer for the life of the process and left the
+        // generation registered forever. The normal path has an equivalent
+        // top-level handler on its stream; this branch had none.
+        //
+        // Declared out here because the catch below reads it to tell a
+        // budget-triggered abort from a real failure.
         let budgetHalted = false;
-        const enforceStreamBudget = () => {
-          if (budgetCeilingMicro == null || budgetHalted) return;
-          const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
-          const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
-          const projected = inTok * budgetRates.input + outTok * budgetRates.output;
-          if (projected >= budgetCeilingMicro) {
-            budgetHalted = true;
-            sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
-            generationController.abort();
-          }
-        };
-
+        // Same reason: the catch reads `stalled` to tell a wedged provider from
+        // a user Stop. Nothing else bounds a stream that goes quiet — the SDK
+        // timeout is cleared once headers arrive, and Juno's own 15s SSE
+        // heartbeat keeps nginx's read timer from ever expiring.
+        const stallWatchdog = createStallWatchdog(() => {
+          sendActivity({
+            kind: "warning",
+            title: "Model stopped responding",
+            detail: stallDetail(PROVIDERS[modelInfo.provider].label, stallWatchdog),
+          });
+          generationController.abort();
+        });
         try {
+          sendActivity({
+            kind: "context",
+            title: "Reading private context",
+            detail: `${plural(privateHistory.length, "message")} · not stored`,
+          });
+          sendActivity({
+            kind: "model",
+            title: "Selected model",
+            detail: routingNote ?? `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
+          });
+          if (routingWarning) {
+            sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
+          }
+          if (activeConnectors.length) {
+            sendActivity({
+              kind: "tool",
+              title: "Connected tools ready",
+              detail: activeConnectors.map((c) => c.label).join(" · "),
+            });
+          }
+          const reasoningEffort = effectiveReasoningEffort(
+            modelInfo,
+            autoReasoningEffort !== undefined ? autoReasoningEffort ?? undefined : input.reasoningEffort
+          );
+          if (reasoningEffort) {
+            sendActivity({
+              kind: "reasoning",
+              title: isAutoModelId(requestedId) ? "Auto thinking" : "Reasoning mode enabled",
+              detail: `${reasoningEffort[0].toUpperCase()}${reasoningEffort.slice(1)} effort`,
+            });
+          } else if (isAutoModelId(requestedId)) {
+            sendActivity({
+              kind: "reasoning",
+              title: "Auto thinking",
+              detail: "Instant — no extra reasoning for this prompt",
+            });
+          }
+          if (useWebSearch) {
+            sendActivity({
+              kind: "search",
+              title: "Preparing web search",
+              detail: searchToolLabel(modelInfo.provider),
+            });
+          }
+
+          // Hard mid-stream budget ceiling: the instant the running cost of THIS
+          // generation would push the user past their remaining plan budget, abort
+          // the provider stream so they cannot be billed a cent beyond it.
+          const budgetRates = modelRatesMicroUsdPerToken(modelId);
+          const budgetCeilingMicro = budget.remainingMicroUsd;
+          const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
+          const budgetGuard = createStreamBudgetGuard({
+            ceilingMicroUsd: budgetCeilingMicro,
+            rates: budgetRates,
+            inputChars: inputCharsForBudget,
+            usage: () => ({
+              promptTokens,
+              completionTokens,
+              outputChars: full.length,
+              reasoningChars: reasoning.length,
+            }),
+            onHalt: () => {
+              budgetHalted = true;
+              sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
+              generationController.abort();
+            },
+          });
+          const enforceStreamBudget = () => budgetGuard.enforce();
+
           for await (const ev of streamChat({
             model: modelInfo,
             system,
@@ -895,6 +761,7 @@ async function handleChat(req: Request) {
             cacheKey: `private-${user.id}`,
             fastMode: useFastMode,
           })) {
+            stallWatchdog.touch();
             if (ev.type === "text") {
               if (!writingStarted) {
                 writingStarted = true;
@@ -958,6 +825,9 @@ async function handleChat(req: Request) {
               finishReason = ev.reason;
             }
           }
+          // Provider done — stop measuring silence before Juno's own work. See
+          // the same call on the persisted path.
+          stallWatchdog.stop();
 
           const usage = buildUsage(modelInfo, {
             input: usageAcc.input,
@@ -1044,11 +914,17 @@ async function handleChat(req: Request) {
         } catch (err) {
           // A budget-triggered abort saves the partial answer + bills it, exactly
           // like a user-initiated stop; the "usage limit" warning was already sent.
-          const reason = budgetHalted
-            ? "user_stopped"
-            : wasGenerationStopped(generationId)
+          // A stall must be checked BEFORE the stop cases: aborting the
+          // controller makes the SDK throw its user-abort error, so without
+          // this a wedged provider would be recorded and shown as though the
+          // user had pressed Stop.
+          const reason = stallWatchdog.stalled
+            ? "error"
+            : budgetHalted
               ? "user_stopped"
-              : classifyErrorFinishReason(err);
+              : wasGenerationStopped(generationId)
+                ? "user_stopped"
+                : classifyErrorFinishReason(err);
           console.error("[chat] private generation error", {
             generationId,
             provider: modelInfo.provider,
@@ -1129,7 +1005,11 @@ async function handleChat(req: Request) {
             });
           } else {
             const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
-            const message = reason === "user_stopped" ? "Generation stopped before any output." : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+            const message = stallWatchdog.stalled
+              ? stallMessageFor(stallWatchdog)
+              : reason === "user_stopped"
+                ? "Generation stopped before any output."
+                : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
             sendActivity({
               kind: "warning",
               title: finishReasonTitle(reason),
@@ -1138,6 +1018,7 @@ async function handleChat(req: Request) {
             send({ type: "error", message, quota, finishReason: reason });
           }
         } finally {
+          stallWatchdog.stop();
           clearInterval(heartbeat);
           unregisterGeneration();
           try {
@@ -1152,7 +1033,13 @@ async function handleChat(req: Request) {
     // Fire-and-forget moderation of the private message (never stored, but the
     // policy still applies). Runs after the response settles so it adds no latency.
     if (moderate) {
-      after(() => moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }));
+      // redactPreview stays — private content must never reach a flag preview
+      // (tests/chat-moderation.test.ts pins this). The .catch does not: without
+      // it a moderation failure here is an unhandled rejection, where the saved
+      // path has always swallowed its own.
+      after(() =>
+        moderateUserMessages({ userId: user.id, texts: moderationTexts, redactPreview: true }).catch(() => {})
+      );
     }
 
     return new Response(stream, { headers: SSE_HEADERS });
@@ -1667,6 +1554,11 @@ async function handleChat(req: Request) {
     canvas: canvasOn,
     voiceMode: input.voiceMode,
     projectContext,
+    // Any of these can put text Juno did not author into context: a connector
+    // tool result, provider-side web search, or a fetched research page.
+    // (Deep research also carries the rule in its own system append, since that
+    // corpus is assembled separately.)
+    untrustedContent: activeConnectors.length > 0 || useWebSearch || researchActive,
   });
   const targetedArtifactEditPrompt =
     artifactEditTarget && input.artifactEdit
@@ -1805,16 +1697,8 @@ async function handleChat(req: Request) {
   const generate = async (controller: ReadableStreamDefaultController<Uint8Array>) => {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
-      const send = (chunk: StreamChunk) => {
-        try {
-          controller.enqueue(encodeChunk(chunk));
-        } catch {
-          /* client disconnected — keep going so the answer is still saved */
-        }
-      };
-      const activityLog: ClientActivityEvent[] = [];
+      const { send, sendActivity, activityLog } = createSseSender(controller);
       const sourceUrls = new Set<string>();
-      let activityCounter = 0;
       let full = "";
       let providerOutputChars = 0;
       let targetedArtifactContent: string | null = null;
@@ -1840,17 +1724,6 @@ async function handleChat(req: Request) {
       let writingStarted = false;
       let finishReason: ChatFinishReason = "stop";
       let spendRecorded = false;
-
-      const sendActivity = (event: Omit<ClientActivityEvent, "id" | "createdAt">) => {
-        const entry: ClientActivityEvent = {
-          ...event,
-          id: `activity-${Date.now()}-${activityCounter++}`,
-          createdAt: new Date().toISOString(),
-        };
-        activityLog.push(entry);
-        send({ type: "activity", event: entry });
-        return entry;
-      };
 
       /**
        * Persist the assistant's answer. A normal turn appends a new Message row.
@@ -2011,8 +1884,11 @@ async function handleChat(req: Request) {
       sendActivity({
         kind: "model",
         title: "Selected model",
-        detail: `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
+        detail: routingNote ?? `${PROVIDERS[modelInfo.provider].label} · ${modelInfo.name}`,
       });
+      if (routingWarning) {
+        sendActivity({ kind: "warning", title: "Model changed", detail: routingWarning });
+      }
       if (activeConnectors.length) {
         sendActivity({
           kind: "tool",
@@ -2098,17 +1974,35 @@ async function handleChat(req: Request) {
       const budgetCeilingMicro = budget.remainingMicroUsd;
       const inputCharsForBudget = synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
       let budgetHalted = false;
-      const enforceStreamBudget = () => {
-        if (budgetCeilingMicro == null || budgetHalted) return;
-        const inTok = promptTokens ?? Math.ceil(inputCharsForBudget / 4);
-        const outTok = completionTokens ?? Math.ceil((full.length + reasoning.length) / 4);
-        const projected = inTok * budgetRates.input + outTok * budgetRates.output;
-        if (projected >= budgetCeilingMicro) {
+      const budgetGuard = createStreamBudgetGuard({
+        ceilingMicroUsd: budgetCeilingMicro,
+        rates: budgetRates,
+        inputChars: inputCharsForBudget,
+        usage: () => ({
+          promptTokens,
+          completionTokens,
+          outputChars: full.length,
+          reasoningChars: reasoning.length,
+        }),
+        onHalt: () => {
           budgetHalted = true;
           sendActivity({ kind: "warning", title: "Usage limit reached", detail: "Stopped to stay within your plan’s budget." });
           generationController.abort();
-        }
-      };
+        },
+      });
+      const enforceStreamBudget = () => budgetGuard.enforce();
+
+      // Declared outside the try because the catch reads `stalled` to tell a
+      // wedged provider from a user Stop — aborting makes the SDK throw its
+      // own user-abort error, which isAbortLike matches.
+      const stallWatchdog = createStallWatchdog(() => {
+        sendActivity({
+          kind: "warning",
+          title: "Model stopped responding",
+          detail: stallDetail(PROVIDERS[modelInfo.provider].label, stallWatchdog),
+        });
+        generationController.abort();
+      });
 
       try {
         for await (const ev of streamChat({
@@ -2126,7 +2020,9 @@ async function handleChat(req: Request) {
           // One conversation = one stable prompt prefix (system + history).
           cacheKey: conversationId,
           fastMode: useFastMode,
+          audit: { userId: user.id, conversationId },
         })) {
+          stallWatchdog.touch();
           if (ev.type === "text") {
             if (!writingStarted) {
               writingStarted = true;
@@ -2196,6 +2092,11 @@ async function handleChat(req: Request) {
             finishReason = ev.reason;
           }
         }
+        // The provider is done. Everything below is Juno's own persistence, and
+        // the watchdog only measures provider silence — leaving it armed made a
+        // slow database look like a stalled model on a generation that had
+        // already succeeded.
+        stallWatchdog.stop();
 
         if (artifactEditTarget) {
           const patch = parseArtifactPatch(full);
@@ -2217,7 +2118,15 @@ async function handleChat(req: Request) {
             xSearchRequests: usageAcc.xSearchRequests,
             // Floor on real prompt size when the provider under-reports input.
             promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
+            // providerOutputChars, NOT full.length: on a canvas edit `full` is
+            // replaced above by buildArtifactEditMessage — the whole rebuilt
+            // artifact — while the model only emitted the patch. pricing.ts
+            // floors the completion estimate on this (charOut > completion), so
+            // full.length inflated the receipt the user sees. recordSpend below
+            // already used the right value; these two disagreed.
+            // Identical to full.length on every non-canvas turn, since both
+            // accumulate exactly ev.text.
+            completionChars: providerOutputChars,
             reasoningChars: reasoning.length,
           }, servedFast);
 
@@ -2272,7 +2181,12 @@ async function handleChat(req: Request) {
         appendFinishWarning(finishReason, sendActivity);
         sendActivity({
           kind: "done",
-          title: "Finished response",
+          // Was hardcoded "Finished response" for every finish reason, so a turn
+          // cut short by the token limit reported the same title as one that
+          // completed. The private path already had this right; a saved chat and
+          // the identical private chat should not describe themselves
+          // differently.
+          title: finishReason === "stop" ? "Finished response" : finishReasonTitle(finishReason),
           detail: webSources.length ? plural(webSources.length, "source") : undefined,
         });
         const assistantWithActivity = await prisma.message.update({
@@ -2335,11 +2249,14 @@ async function handleChat(req: Request) {
           webSearchRequests: webSearchRequests ?? null,
         });
       } catch (err) {
-        const reason = budgetHalted
-          ? "user_stopped"
-          : wasGenerationStopped(generationId)
+        // Checked before the stop cases — see the note on the private path.
+        const reason = stallWatchdog.stalled
+          ? "error"
+          : budgetHalted
             ? "user_stopped"
-            : classifyErrorFinishReason(err);
+            : wasGenerationStopped(generationId)
+              ? "user_stopped"
+              : classifyErrorFinishReason(err);
         const terminalFailureCode =
           durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError
             ? "GENERATION_LEASE_EXPIRED"
@@ -2368,7 +2285,9 @@ async function handleChat(req: Request) {
             webSearchRequests: usageAcc.webSearchRequests,
             xSearchRequests: usageAcc.xSearchRequests,
             promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
+            // See the note on the success path: providerOutputChars is what the
+            // model actually emitted, and is what recordSpend below already uses.
+            completionChars: providerOutputChars,
             reasoningChars: reasoning.length,
           }, servedFast);
             // Same version-preserving persistence as the success path — a
@@ -2482,7 +2401,9 @@ async function handleChat(req: Request) {
                 ? "This canvas changed while the edit was being prepared. Select the part again and retry."
                 : err instanceof ArtifactPatchError
                   ? `${err.message} Nothing in the canvas was changed.`
-                  : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
+                  : stallWatchdog.stalled
+                    ? stallMessageFor(stallWatchdog)
+                    : providerErrorMessage(err, PROVIDERS[modelInfo.provider].label);
           sendActivity({
             kind: "warning",
             title: finishReasonTitle(reason),
@@ -2507,6 +2428,7 @@ async function handleChat(req: Request) {
           });
         }
       } finally {
+        stallWatchdog.stop();
         if (generationHeartbeat) clearInterval(generationHeartbeat);
         generationHeartbeat = null;
         unregisterGeneration();
