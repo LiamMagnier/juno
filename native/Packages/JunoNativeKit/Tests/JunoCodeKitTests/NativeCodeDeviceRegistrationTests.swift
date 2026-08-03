@@ -36,8 +36,9 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests[0].path, "/api/code/devices")
         XCTAssertEqual(requests[0].method, .post)
-        XCTAssertFalse(
-            try Self.object(requests[0]).keys.contains("deviceId"),
+        let first = try Self.object(requests[0])
+        XCTAssertNil(
+            first.index(forKey: "deviceId"),
             "an explicit null is not the same as absent, and the route refuses it"
         )
         XCTAssertEqual(try Self.object(requests[1])["deviceId"] as? String, "dev-1")
@@ -61,8 +62,7 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
             for: account
         )
 
-        let requests = await transport.requests
-        let body = try Self.object(requests[0])
+        let body = try Self.object(await transport.requests[0])
         XCTAssertEqual(body["name"] as? String, "Liam's MacBook Pro")
         XCTAssertEqual(body["platform"] as? String, "macos")
         XCTAssertEqual(body["appVersion"] as? String, "1.4.2")
@@ -87,11 +87,13 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
             workspaces: [.init(name: "juno", path: "/Users/liam/juno", key: nil)]
         )
 
-        let requests = await transport.requests
+        // Hoisted: `XCTUnwrap` takes an autoclosure, which cannot await the
+        // actor-isolated `requests`.
+        let request = await transport.requests[0]
         let workspaces = try XCTUnwrap(
-            try Self.object(requests[0])["workspaces"] as? [[String: Any]]
+            try Self.object(request)["workspaces"] as? [[String: Any]]
         )
-        XCTAssertFalse(workspaces[0].keys.contains("key"))
+        XCTAssertNil(workspaces[0].index(forKey: "key"))
     }
 
     /// One folder with a 1200-character path would 400 the whole post, and the
@@ -119,8 +121,7 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
             for: account
         )
 
-        let requests = await transport.requests
-        let body = try Self.object(requests[0])
+        let body = try Self.object(await transport.requests[0])
         XCTAssertEqual((body["name"] as? String)?.count, 200)
         XCTAssertEqual((body["appVersion"] as? String)?.count, 100)
         XCTAssertEqual(body["sessionCount"] as? Int, 0, "the route's minimum is zero")
@@ -148,9 +149,11 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
             ]
         )
 
-        let requests = await transport.requests
+        // Hoisted: `XCTUnwrap` takes an autoclosure, which cannot await the
+        // actor-isolated `requests`.
+        let request = await transport.requests[0]
         let workspaces = try XCTUnwrap(
-            try Self.object(requests[0])["workspaces"] as? [[String: Any]]
+            try Self.object(request)["workspaces"] as? [[String: Any]]
         )
         XCTAssertEqual(workspaces.count, 1)
         XCTAssertEqual(workspaces[0]["name"] as? String, "juno", "trimmed, as the route trims")
@@ -165,8 +168,8 @@ final class NativeCodeDeviceRegistrationTests: XCTestCase {
 
         _ = try await register(client, name: "")
 
-        let requests = await transport.requests
-        XCTAssertEqual(try Self.object(requests[0])["name"] as? String, "Mac")
+        let request = await transport.requests[0]
+        XCTAssertEqual(try Self.object(request)["name"] as? String, "Mac")
     }
 
     /// The heartbeat has to be able to say why it stopped working. A refusal

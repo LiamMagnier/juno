@@ -346,7 +346,15 @@ struct NativeComparePane: View {
         case .error where run.content.isEmpty:
             failure
 
-        case .submitting, .thinking, .writing where run.content.isEmpty:
+        // Split rather than `case .submitting, .thinking, .writing where …`:
+        // there the guard binds only to `.writing`, which is the behaviour
+        // wanted but not what the one-line form appears to say. A pane that is
+        // writing and already has text falls through to `default` and renders
+        // it; one that has not emitted a token yet keeps the placeholder.
+        case .submitting, .thinking:
+            thinking
+
+        case .writing where run.content.isEmpty:
             thinking
 
         default:

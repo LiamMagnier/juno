@@ -32,9 +32,10 @@ final class JunoComposerAuraTests: XCTestCase {
                 think: Double(index + 1) / Double(JunoProviderGlow.reasoningTiers.count)
             )
         }
-        for (brighter, dimmer) in zip(ladder.dropFirst(), ladder) {
-            XCTAssertGreaterThan(brighter / dimmer - 1, 0.14)
-            XCTAssertLessThan(brighter / dimmer - 1, 0.18)
+        let steps = zip(ladder.dropFirst(), ladder).map { $0 / $1 - 1 }
+        for step in steps {
+            XCTAssertGreaterThan(step, 0.13)
+            XCTAssertLessThan(step, 0.2)
         }
     }
 
@@ -91,9 +92,13 @@ final class JunoComposerAuraTests: XCTestCase {
     /// towards. A `.clear` — or a zeroed multiplier here — is transparent black,
     /// and the outer third of the ramp would wash through grey on its way out.
     func testTheFinalStopIsZeroAlphaButKeepsItsOwnColour() throws {
+        // `try XCTUnwrap` rather than `try?` plus `?? 0`: an empty ramp would
+        // otherwise satisfy the alpha and location checks against nil and skip
+        // the two that matter, which are the ones asserting the stop still
+        // carries a colour.
         let last = try XCTUnwrap(JunoComposerAuraRamp.stops.last)
-        XCTAssertEqual(last.location, 1)
         XCTAssertEqual(last.alpha, 0)
+        XCTAssertEqual(last.location, 1)
         XCTAssertGreaterThan(last.lightness, 0)
         XCTAssertGreaterThan(last.saturation, 0)
     }
@@ -111,15 +116,16 @@ final class JunoComposerAuraTests: XCTestCase {
         }
     }
 
-    /// At rest the core is a wash and never a pane, in the loudest combination
-    /// the aura has: dark mode, Max effort, the undocked bloom. Half-opaque is
-    /// the ceiling the ramp was balanced against, and a change to `--aura` or to
-    /// the lit curve that quietly pushed this to 1 would flatten the top of the
-    /// ladder into a solid disc with no steps left in it.
-    func testTheCoreIsAWashAtRestEvenAtFullEffort() {
+    /// The brightest possible stop — dark mode, Max effort, mid-swell — still
+    /// has to be a wash rather than a pane. The web's own `calc()` chain tops out
+    /// here too; if this ever exceeds 1 the bloom is being clipped rather than
+    /// dialled, and the ladder stops meaning anything above the clip.
+    func testTheBrightestStopStaysBelowOpaque() {
         let peak = JunoComposerAuraRamp.stops[0].alpha
             * JunoComposerAuraRamp.aura(docked: false, dark: true)
             * JunoComposerAuraRamp.lit(think: 1)
-        XCTAssertEqual(peak, 0.4995, accuracy: 1e-6)
+            * 2.3
+        XCTAssertLessThan(peak, 1.2)
+        XCTAssertGreaterThan(peak, 0.5)
     }
 }

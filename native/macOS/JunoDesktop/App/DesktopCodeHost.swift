@@ -1,8 +1,9 @@
 import Foundation
+import JunoAuth
 import JunoCodeCore
+import JunoCore
 import JunoCodeKit
 import JunoCodeUI
-import JunoCore
 import JunoSync
 import Observation
 
@@ -84,6 +85,11 @@ final class DesktopCodeHostModel {
 
     private var accountID: AccountID?
     private var beat: Task<Void, Never>?
+    private var isRegistering = false
+    /// Set when a workspace change arrives while a registration is in flight, so
+    /// the change is folded into the next post instead of being dropped and
+    /// waiting a full minute for the following beat.
+    private var needsAnotherRegistration = false
 
     init(client: NativeCodeTaskClient, defaults: UserDefaults = .standard) {
         self.client = client
@@ -129,6 +135,8 @@ final class DesktopCodeHostModel {
         workspaces = []
         lastRegisteredAt = nil
         lastError = nil
+        isRegistering = false
+        needsAnotherRegistration = false
         phase = .idle
     }
 
@@ -149,43 +157,47 @@ final class DesktopCodeHostModel {
 
     // MARK: Internals
 
-    /// One post. Deliberately not serialised against itself: the route upserts
-    /// on `(user, name)`, so a beat that overlaps a workspace change writes the
-    /// same row twice rather than creating a second computer. Guarding against
-    /// that would buy nothing and would cost a workspace change a full minute of
-    /// waiting for the beat that is already in flight to finish.
     private func register() async {
         guard let accountID else { return }
-        do {
-            let id = try await client.registerDevice(
-                deviceID: deviceID,
-                name: deviceName,
-                platform: "macos",
-                appVersion: appVersion,
-                workspaces: workspaces,
-                // Zero and zero, not the local session counts: these describe the
-                // *remote* work this host is carrying, and it carries none.
-                // Reporting local sessions here would put an "active" badge on
-                // the phone for work the phone never sent.
-                sessionCount: 0,
-                activeCount: 0,
-                for: accountID
-            )
-            guard self.accountID == accountID else { return }
-            deviceID = id
-            defaults.set(id, forKey: Self.deviceIDKey)
-            lastRegisteredAt = Date()
-            lastError = nil
-            phase = .listed
-        } catch {
-            guard self.accountID == accountID else { return }
-            // Left readable, and left beating. A refusal now is usually a token
-            // about to be refreshed or a network about to come back, and the
-            // next beat is a minute away — which is both the retry and the
-            // reason there is no backoff to write here.
-            lastError = NativeFailureMessage.presentable(error)
-            phase = .failed
+        guard !isRegistering else {
+            needsAnotherRegistration = true
+            return
         }
+        isRegistering = true
+        defer { isRegistering = false }
+        repeat {
+            needsAnotherRegistration = false
+            do {
+                let id = try await client.registerDevice(
+                    deviceID: deviceID,
+                    name: deviceName,
+                    platform: "macos",
+                    appVersion: appVersion,
+                    // Zero and zero, not the local session counts: these describe
+                    // the *remote* work this host is carrying, and it carries
+                    // none. Reporting local sessions here would put a badge on
+                    // the phone for work the phone never sent.
+                    workspaces: workspaces,
+                    sessionCount: 0,
+                    activeCount: 0,
+                    for: accountID
+                )
+                guard self.accountID == accountID else { return }
+                deviceID = id
+                defaults.set(id, forKey: Self.deviceIDKey)
+                lastRegisteredAt = Date()
+                lastError = nil
+                phase = .listed
+            } catch {
+                guard self.accountID == accountID else { return }
+                // Left readable and left beating. A refusal now is very often a
+                // token that is about to be refreshed or a network that is about
+                // to come back, and the next beat is a minute away — which is
+                // both the retry and the reason no backoff is needed here.
+                lastError = NativeFailureMessage.presentable(error)
+                phase = .failed
+            }
+        } while needsAnotherRegistration && !Task.isCancelled
     }
 
     /// One granted folder, as the account should see it — or nothing, when the
