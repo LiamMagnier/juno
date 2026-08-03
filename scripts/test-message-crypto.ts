@@ -59,8 +59,10 @@ function throws(fn: () => unknown): string | null {
 
 /** Flip one bit inside a base64 segment of the enc:v1: payload. */
 function tamper(payload: string, segment: 1 | 2 | 3): string {
-  const parts = payload.split(":"); // ["enc", "v1", iv, tag, data]
-  const idx = segment + 1;
+  // ["enc", "v2", keyId, iv, tag, data] — one more field than v1, which named
+  // no key, so the segment offset is three rather than two.
+  const parts = payload.split(":");
+  const idx = segment + 2;
   const bytes = Buffer.from(parts[idx], "base64");
   bytes[0] ^= 0x01;
   parts[idx] = bytes.toString("base64");
@@ -85,7 +87,7 @@ async function main() {
       `round-trips ${JSON.stringify(plain.slice(0, 32))}${plain.length > 32 ? `… (${plain.length} chars)` : ""}`,
       decryptMessageText(stored) === plain
     );
-    check("  …and is stored with the enc:v1: prefix", isEncryptedMessageText(stored));
+    check("  …and is stored with a recognised enc: prefix", isEncryptedMessageText(stored));
   }
   const a = encryptMessageText("same input");
   const b = encryptMessageText("same input");
@@ -93,7 +95,8 @@ async function main() {
   check("null passes through the nullable overload", decryptMessageText(null) === null);
 
   console.log("\n2. Legacy plaintext passthrough");
-  for (const legacy of ["plain old message", "", "multi\nline body", "enc:v2:not-our-version"]) {
+  // `enc:v2:` is a real format now, so the "unknown version" fixture moves on.
+  for (const legacy of ["plain old message", "", "multi\nline body", "enc:v9:not-our-version"]) {
     check(`returns ${JSON.stringify(legacy.slice(0, 24))} unchanged`, decryptMessageText(legacy) === legacy);
   }
 
