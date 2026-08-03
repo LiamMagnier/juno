@@ -1,11 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
-import {
-  checkBodyBytes,
-  checkMessageSize,
-  checkPrivateHistory,
-  limitErrorBody,
-} from "@/lib/request-limits";
+import { admitChatRequest } from "@/lib/chat-admission";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -244,41 +239,19 @@ async function handleChat(req: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Size first, before JSON.parse. A multi-megabyte paste that is parsed,
-  // validated, moderated and embedded before anything notices its size has
-  // already cost the work the limit exists to avoid.
+  // Admission: body size, JSON validity, schema, per-field limits — in that
+  // order, and before anything touches the database or a provider. Extracted
+  // whole into `chat-admission.ts` so the rules can be characterised without a
+  // request, a session or a network.
   const rawBody = await req.text().catch(() => null);
-  if (rawBody === null) {
-    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-  }
-  const bodyViolation = checkBodyBytes(Buffer.byteLength(rawBody, "utf8"));
-  if (bodyViolation) {
-    return NextResponse.json(limitErrorBody(bodyViolation), { status: bodyViolation.status });
+  const admission = admitChatRequest(rawBody, (value) => bodySchema.safeParse(value));
+  if (!admission.ok) {
+    return NextResponse.json(admission.body, { status: admission.status });
   }
 
-  // Parse the body once. Valid durable retries are recovered below before rate
-  // limiting; invalid/legacy requests preserve the historical rate-limit order.
-  const parsed = bodySchema.safeParse(
-    (() => {
-      try {
-        return JSON.parse(rawBody);
-      } catch {
-        return null;
-      }
-    })()
-  );
-
-  // Per-field limits, once the shape is known. These run before the idempotency
-  // recovery below on purpose: a request too large to serve must be refused the
-  // same way every time it is retried, not recovered into a stored receipt.
-  if (parsed.success) {
-    const sizeViolation =
-      (parsed.data.message !== undefined ? checkMessageSize(parsed.data.message) : null) ??
-      (parsed.data.privateHistory ? checkPrivateHistory(parsed.data.privateHistory) : null);
-    if (sizeViolation) {
-      return NextResponse.json(limitErrorBody(sizeViolation), { status: sizeViolation.status });
-    }
-  }
+  // Valid durable retries are recovered below before rate limiting;
+  // invalid/legacy requests preserve the historical rate-limit order.
+  const parsed = { success: true as const, data: admission.input };
   let firstSubmissionHash: string | null = null;
   let legacyOrphanConversationId: string | null = null;
   if (parsed.success && parsed.data.clientRequestId && parsed.data.clientMessageId) {
