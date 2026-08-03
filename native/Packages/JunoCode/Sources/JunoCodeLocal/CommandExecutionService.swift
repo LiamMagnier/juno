@@ -7,10 +7,46 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
     private let workspaceRootURL: URL
     private let classifier = CommandClassifier()
     private let redactor = SecretRedactor()
+    /// Kernel-enforced containment, or nil in developer mode.
+    ///
+    /// Nil means commands run with the app's own file access and network
+    /// reachability. That is a real and clearly-labelled choice, not a default:
+    /// the classifier above works on the *text* of a command and can be spelled
+    /// around, so without a profile there is no boundary at all.
+    private let sandbox: CommandSandboxProfile?
 
-    public init(workspaceRootURL: URL) {
+    public init(
+        workspaceRootURL: URL,
+        sandbox: CommandSandboxProfile? = nil
+    ) {
         self.workspaceRootURL = workspaceRootURL
+        self.sandbox = sandbox
     }
+
+    /// The contained executor: writes confined to the workspace, network off.
+    ///
+    /// Falls back to unconfined execution when `sandbox-exec` is unavailable,
+    /// and says so through `isContained` rather than pretending — a caller
+    /// showing a "sandboxed" badge must be able to tell the difference.
+    public static func contained(
+        workspaceRootURL: URL,
+        allowsNetwork: Bool = false
+    ) -> CommandExecutionService {
+        guard CommandSandboxProfile.isAvailable else {
+            return CommandExecutionService(workspaceRootURL: workspaceRootURL)
+        }
+        return CommandExecutionService(
+            workspaceRootURL: workspaceRootURL,
+            sandbox: CommandSandboxProfile(
+                workspaceRoot: workspaceRootURL,
+                filesystem: .readWrite,
+                allowsNetwork: allowsNetwork
+            )
+        )
+    }
+
+    /// Whether commands from this executor are kernel-confined.
+    public var isContained: Bool { sandbox != nil }
 
     public func stream(
         _ commandLine: String,
@@ -28,8 +64,13 @@ public final class CommandExecutionService: CommandExecuting, Sendable {
             }
 
             let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-            process.arguments = ["-c", commandLine]
+            // Under a profile the kernel enforces the workspace boundary; the
+            // shell is still zsh, wrapped rather than replaced, so a command
+            // behaves identically right up to the point it tries to leave.
+            let invocation = sandbox?.wrap(command: commandLine)
+                ?? (executable: "/bin/zsh", arguments: ["-c", commandLine])
+            process.executableURL = URL(fileURLWithPath: invocation.executable)
+            process.arguments = invocation.arguments
             process.currentDirectoryURL = workspaceRootURL
             process.environment = Self.minimalEnvironment(
                 workspaceRoot: workspaceRootURL.path

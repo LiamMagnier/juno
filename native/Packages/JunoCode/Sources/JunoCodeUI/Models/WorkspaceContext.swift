@@ -31,7 +31,13 @@ public final class WorkspaceContext: Sendable {
         self.files = files
         let index = WorkspaceIndexService(access: access)
         self.index = index
-        let executor = CommandExecutionService(workspaceRootURL: access.rootURL)
+        // Contained by default: writes confined to the granted folder and no
+        // network, enforced by the kernel rather than by inspecting the text of
+        // the command. `CommandExecutionService(workspaceRootURL:)` remains the
+        // unconfined developer-mode constructor, and `isContained` reports
+        // which one is in force so a surface cannot claim containment it does
+        // not have.
+        let executor = CommandExecutionService.contained(workspaceRootURL: access.rootURL)
         self.executor = executor
         let git = GitService(executor: executor)
         self.git = git
