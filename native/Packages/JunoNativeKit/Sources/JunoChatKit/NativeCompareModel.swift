@@ -94,6 +94,18 @@ public final class NativeCompareModel {
     private var accountID: AccountID?
     private var tasks: [String: Task<Void, Never>] = [:]
     private var generations: [String: String] = [:]
+
+    /// The server-side generation a pane is currently streaming, or nil when it
+    /// is not streaming.
+    ///
+    /// Exposed because a test that wants to drive *one* pane's stream otherwise
+    /// has to guess which recorded request belongs to it — and the panes are
+    /// dispatched concurrently, so request order does not match pane order.
+    /// Guessing produced a test that emitted a frame at the wrong pane and
+    /// failed intermittently on the right one.
+    public func generationID(forPane paneID: String) -> String? {
+        generations[paneID]
+    }
     private var tokens: [String: Int] = [:]
     private var sequence = 0
     private var paneSequence = 0

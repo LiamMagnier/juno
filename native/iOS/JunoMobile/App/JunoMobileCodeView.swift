@@ -1,6 +1,9 @@
+import JunoAuth
+import JunoChatKit
 import JunoCodeKit
 import JunoCore
 import JunoDesignSystem
+import JunoSync
 import SwiftUI
 
 /// **Juno Code** on the phone: start a coding task and watch it run.
@@ -30,9 +33,27 @@ struct JunoMobileCodeView: View {
     var accountID: AccountID?
     /// Opens the app's connected accounts, for the "connect GitHub" empty state.
     var openConnections: (() -> Void)?
+    /// The signed-in account. Code shows who is signed in and what their plan
+    /// has left, exactly as the website's Code mode keeps the user menu in its
+    /// sidebar — see ``accountBar``. Nil on an unconfigured shell.
+    var session: NativeAuthenticatedSession?
+    /// The account photo's bytes, already fetched through the authenticated file
+    /// route. Nil falls back to initials.
+    var avatarData: Data?
+    /// The authenticated transport, for the plan meters and the usage page.
+    var requestSender: (any NativeAuthenticatedRequestSending)?
+    /// Used only to render a model's product name on the usage page.
+    var modelCatalog: [NativeChatModelOption] = []
+    /// Opens the account's settings, which is where everything else about the
+    /// profile lives. Nil where the shell has no settings model.
+    var openSettings: (() -> Void)?
 
     @State private var prompt = ""
     @State private var showingPulls = false
+    @State private var showingUsage = false
+    /// The cheap half of the usage read: what plan this is and how much of each
+    /// window is spent.
+    @State private var plan: NativeUsagePlan?
     @FocusState private var composerFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -85,6 +106,33 @@ struct JunoMobileCodeView: View {
                     .accessibilityIdentifier("juno.mobile.code.pulls")
                 }
             }
+            // The account, reachable from Code itself. Before this the only way
+            // to a profile or a usage figure from here was the drawer, then
+            // Settings, then a row — three taps and two contexts away from the
+            // screen that is spending the quota.
+            if let session {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { showingUsage = true } label: {
+                            Label("Your usage", systemImage: "chart.line.uptrend.xyaxis")
+                        }
+                        if let openSettings {
+                            Button(action: openSettings) {
+                                JunoIconLabel("navigation.settings", icon: .settings)
+                            }
+                        }
+                    } label: {
+                        JunoAvatar(
+                            imageData: avatarData,
+                            imageURL: session.profile.imageURL,
+                            name: session.profile.name ?? session.profile.email,
+                            size: 26
+                        )
+                    }
+                    .accessibilityLabel("Account")
+                    .accessibilityIdentifier("juno.mobile.code.account")
+                }
+            }
         }
         .navigationDestination(isPresented: $showingPulls) {
             NativePullsView(
@@ -92,6 +140,25 @@ struct JunoMobileCodeView: View {
                 accountID: accountID,
                 openConnections: openConnections
             )
+        }
+        .navigationDestination(isPresented: $showingUsage) {
+            if let session {
+                JunoMobileUsageView(
+                    session: session,
+                    requestSender: requestSender,
+                    modelCatalog: modelCatalog
+                )
+            }
+        }
+        // Read once per visit, and only the plan half is kept. The breakdown the
+        // same call returns is the expensive one, so the shortest range is asked
+        // for — the meters are what this screen shows, and the full ledger is one
+        // tap away on the page that is actually about it.
+        .task {
+            guard plan == nil, let requestSender, let accountID else { return }
+            plan = await NativeUsageClient(sender: requestSender)
+                .load(range: .month, for: accountID)
+                .plan
         }
         .navigationDestination(
             isPresented: Binding(
@@ -119,6 +186,8 @@ struct JunoMobileCodeView: View {
                     JunoInlineError(message: error) { Task { await model.refresh() } }
                 }
 
+                accountBar
+
                 if model.tasks.isEmpty {
                     JunoMobileCodeGreeting(targetless: model.isTargetless)
                         .containerRelativeFrame(.vertical) { height, _ in height * 0.68 }
@@ -136,6 +205,90 @@ struct JunoMobileCodeView: View {
             .padding(.bottom, 24)
         }
         .safeAreaInset(edge: .bottom) { composer }
+    }
+
+    /// Who is signed in, what they are on, and how much of it is left.
+    ///
+    /// The website keeps its user menu in the sidebar in Code mode — avatar,
+    /// name, plan badge, quota meter — so none of that is ever a navigation away
+    /// while a run is costing money. This is that row, phone-shaped: identity on
+    /// the left, plan on the right, and the session and weekly meters underneath
+    /// once they have been read. Tapping it opens the full usage page; the
+    /// avatar in the navigation bar does the same, for a reader who has scrolled
+    /// past this.
+    ///
+    /// Nothing here is synthesised. Before the meters arrive the row shows the
+    /// account and nothing else, rather than an empty gauge that implies a
+    /// budget it has not read.
+    @ViewBuilder
+    private var accountBar: some View {
+        if let session {
+            Button { showingUsage = true } label: {
+                JunoCard(padding: 12) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            JunoAvatar(
+                                imageData: avatarData,
+                                imageURL: session.profile.imageURL,
+                                name: session.profile.name ?? session.profile.email,
+                                size: 30
+                            )
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(session.profile.name ?? session.profile.email)
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                Text(session.profile.email)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                            Spacer(minLength: 6)
+                            if let plan {
+                                JunoStatusPill(text: plan.planName, tint: .junoAccent)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        if let plan, !plan.isUnlimited, !plan.isBrowseOnly {
+                            HStack(spacing: 12) {
+                                meter("Session", plan.session)
+                                meter("Weekly", plan.weekly)
+                            }
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("juno.mobile.code.account-card")
+        }
+    }
+
+    /// One window's share of the plan, as a label and a bar.
+    private func meter(_ title: String, _ window: NativeUsagePlan.Window) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 4)
+                Text(window.fraction.formatted(.percent.precision(.fractionLength(0))))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            // Coral until it is nearly spent, then amber — the same rule the
+            // usage page follows, so a meter means the same thing on both.
+            JunoMobileUsageBar(
+                fraction: window.fraction,
+                tint: window.fraction >= 0.9 ? .orange : .junoAccent
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(title) window: \(window.fraction.formatted(.percent.precision(.fractionLength(0)))) used"
+        )
     }
 
     /// The start composer: prompt, target toggle, target picker, go.
@@ -291,13 +444,25 @@ private struct JunoMobileCodeTargetPicker: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Picker("code.target", selection: choice) {
-                Text("code.target.none").tag(Choice.none)
-                Text("code.target.cloud").tag(Choice.cloud)
-                Text("code.target.remote").tag(Choice.device)
-            }
-            .pickerStyle(.segmented)
-            .frame(width: 210)
+            // Juno's own switch, not `.pickerStyle(.segmented)`: the system
+            // control fills its selected segment with the app tint, so "where
+            // does this run" sat in the composer as a coral slab — louder than
+            // the Send button beside it. The website's tabs are neutral.
+            JunoMobileSegmented(
+                options: [
+                    JunoMobileSegmented<Choice>.Option(
+                        Choice.none, String(localized: "code.target.none")
+                    ),
+                    JunoMobileSegmented<Choice>.Option(
+                        Choice.cloud, String(localized: "code.target.cloud")
+                    ),
+                    JunoMobileSegmented<Choice>.Option(
+                        Choice.device, String(localized: "code.target.remote")
+                    ),
+                ],
+                selection: choice,
+                accessibilityLabel: String(localized: "code.target")
+            )
             .accessibilityIdentifier("juno.mobile.code-target")
 
             // Nothing to pick when there is no target: the chip would open a
@@ -477,7 +642,17 @@ private struct JunoMobileCodeTargetSheet: View {
                                 }
                             }
                             .buttonStyle(.plain)
-                            .disabled(!device.online)
+                            // `canAcceptWork`, not `online`. A Mac can be
+                            // signed in and heartbeating while claiming no
+                            // queued work at all — tapping its workspace then
+                            // queued a task that never started, with a spinner
+                            // and no error anywhere.
+                            .disabled(!device.canAcceptWork)
+                        }
+                        if device.online, !device.servesQueuedTasks {
+                            Text("code.device.not-hosting.detail")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     } header: {
                         HStack(spacing: 6) {
@@ -485,17 +660,23 @@ private struct JunoMobileCodeTargetSheet: View {
                             Text(device.name)
                             Spacer(minLength: 4)
                             JunoStatusPill(
-                                text: device.online
-                                    ? String(localized: "code.device.online")
-                                    : String(localized: "code.device.offline"),
-                                tint: device.online ? .green : .secondary,
-                                filled: device.online
+                                text: deviceStatusText(device),
+                                tint: device.canAcceptWork ? .green : .secondary,
+                                filled: device.canAcceptWork
                             )
                         }
                     }
                 }
             }
         }
+    }
+
+    /// Three states, not two. "Online" used to be the only positive one, which
+    /// made a signed-in Mac that serves nothing look ready.
+    private func deviceStatusText(_ device: NativeCodeDevice) -> String {
+        if !device.online { return String(localized: "code.device.offline") }
+        if !device.servesQueuedTasks { return String(localized: "code.device.not-hosting") }
+        return String(localized: "code.device.online")
     }
 }
 
@@ -548,10 +729,17 @@ private struct JunoMobileCodeTaskRow: View {
         }
     }
 
+    /// Running is deliberately **not** the accent.
+    ///
+    /// The website marks an in-flight session with a neutral dot and lets the
+    /// motion carry the meaning; painting every live row coral is what made the
+    /// Code list read as a column of alerts, and it spent the accent on the most
+    /// common state there is. The states that are genuinely exceptional — waiting
+    /// on you, failed — keep their colour.
     private var statusTint: Color {
         switch task.status {
         case .queued: .secondary
-        case .running: Color.junoAccent
+        case .running: .secondary
         case .awaitingApproval: .orange
         case .done: .green
         case .failed: .red
@@ -582,7 +770,7 @@ private struct JunoMobileCodeSessionView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            .background(Color.junoCanvas)
+            .junoScreenCanvas()
             .defaultScrollAnchor(.bottom)
             .onChange(of: model.events.count) { _, _ in
                 guard isNearBottom else { return }

@@ -16,6 +16,7 @@ final class NativeCompareModelTests: XCTestCase {
     private func makeModel(_ client: CompareClient) -> NativeCompareModel {
         let model = NativeCompareModel(client: client)
         model.start(for: try! account(), models: ["a:one", "b:two"])
+        settleTarget = model
         return model
     }
 
@@ -45,13 +46,13 @@ final class NativeCompareModelTests: XCTestCase {
         await client.waitForRequests(2)
 
         let first = model.panes[0].id
-        client.emit(.textDelta("half"), to: client.requests[0].generationID)
+        client.emit(.textDelta("half"), to: generation(forPane: 0, in: model))
         await settle()
         XCTAssertEqual(model.runs[first]?.content, "half")
         XCTAssertTrue(model.anyStreaming)
 
-        client.finish(client.requests[0].generationID, content: "half an answer")
-        client.finish(client.requests[1].generationID, content: "another")
+        client.finish(generation(forPane: 0, in: model), content: "half an answer")
+        client.finish(generation(forPane: 1, in: model), content: "another")
         await settle()
 
         XCTAssertEqual(model.runs[first]?.status, .done)
@@ -68,8 +69,8 @@ final class NativeCompareModelTests: XCTestCase {
         await client.waitForRequests(2)
 
         let pane = model.panes[0].id
-        client.emit(.textDelta("dupe dupe "), to: client.requests[0].generationID)
-        client.finish(client.requests[0].generationID, content: "the real answer")
+        client.emit(.textDelta("dupe dupe "), to: generation(forPane: 0, in: model))
+        client.finish(generation(forPane: 0, in: model), content: "the real answer")
         await settle()
         XCTAssertEqual(model.runs[pane]?.content, "the real answer")
     }
@@ -85,15 +86,17 @@ final class NativeCompareModelTests: XCTestCase {
         model.submit("go")
         await client.waitForRequests(2)
         let pane = model.panes[0].id
-        let firstGeneration = client.requests[0].generationID
+        let firstGeneration = generation(forPane: 0, in: model)
 
         model.setModel("c:three", for: pane)
         await client.waitForRequests(3)
         XCTAssertEqual(model.panes[0].modelID, "c:three")
 
-        // The old run, still alive, tries to write.
+        // The old run, still alive, tries to write. The third request is pane
+        // 0 being re-dispatched under its new model — not a third pane — so the
+        // new generation is still pane 0's.
         client.emit(.textDelta("from the OLD model"), to: firstGeneration)
-        client.emit(.textDelta("from the new model"), to: client.requests[2].generationID)
+        client.emit(.textDelta("from the new model"), to: generation(forPane: 0, in: model))
         await settle()
 
         XCTAssertEqual(model.runs[pane]?.content, "from the new model")
@@ -118,8 +121,8 @@ final class NativeCompareModelTests: XCTestCase {
         let model = makeModel(client)
         model.submit("the question")
         await client.waitForRequests(2)
-        client.finish(client.requests[0].generationID, content: "one")
-        client.finish(client.requests[1].generationID, content: "two")
+        client.finish(generation(forPane: 0, in: model), content: "one")
+        client.finish(generation(forPane: 1, in: model), content: "two")
         await settle()
 
         model.addPane(modelID: "c:three")
@@ -189,13 +192,21 @@ final class NativeCompareModelTests: XCTestCase {
         model.submit("go")
         await client.waitForRequests(2)
 
+        // Addressed by pane, not by `requests[0]`. The panes are dispatched
+        // concurrently, so the first recorded request is not reliably the first
+        // pane's — emitting at it failed this assertion on whichever pane
+        // happened to lose the race.
+        let paneID = model.panes[0].id
+        let generationID = try XCTUnwrap(model.generationID(forPane: paneID))
         client.emit(
             .failed(message: "The model is overloaded.", finishReason: .error, generationID: nil, userMessageID: nil),
-            to: client.requests[0].generationID
+            to: generationID
         )
-        await settle()
+        await waitUntil("the failed frame to reach the pane") {
+            model.runs[paneID]?.status == .error
+        }
 
-        let run = model.runs[model.panes[0].id]
+        let run = model.runs[paneID]
         XCTAssertEqual(run?.status, .error)
         XCTAssertEqual(run?.errorMessage, "The model is overloaded.")
         XCTAssertEqual(run?.errorAction, .retry)
@@ -210,8 +221,8 @@ final class NativeCompareModelTests: XCTestCase {
         model.submit("go")
         await client.waitForRequests(2)
 
-        client.emit(.textDelta("partial"), to: client.requests[0].generationID)
-        client.close(client.requests[0].generationID)
+        client.emit(.textDelta("partial"), to: generation(forPane: 0, in: model))
+        client.close(generation(forPane: 0, in: model))
         await settle()
 
         let run = model.runs[model.panes[0].id]
@@ -228,13 +239,13 @@ final class NativeCompareModelTests: XCTestCase {
         await client.waitForRequests(2)
 
         client.finish(
-            client.requests[0].generationID,
+            generation(forPane: 0, in: model),
             content: "answered",
             promptTokens: 120,
             completionTokens: 340,
             costUsd: 0.0042
         )
-        client.finish(client.requests[1].generationID, content: "answered too")
+        client.finish(generation(forPane: 1, in: model), content: "answered too")
         await settle()
 
         let priced = model.runs[model.panes[0].id]
@@ -263,7 +274,7 @@ final class NativeCompareModelTests: XCTestCase {
         await client.waitForRequests(2)
 
         client.finish(
-            client.requests[0].generationID,
+            generation(forPane: 0, in: model),
             content: "answered",
             promptTokens: 1_000_000,
             completionTokens: 1_000_000,
@@ -277,11 +288,82 @@ final class NativeCompareModelTests: XCTestCase {
 
     /// Lets the model's per-pane tasks drain. They are owned by the model and not
     /// exposed, so this yields rather than awaiting a handle.
-    private func settle() async {
-        for _ in 0..<80 {
+    /// The generation id belonging to a pane, by index.
+    ///
+    /// Tests used to address streams as `client.requests[n].generationID`, but
+    /// the panes are dispatched concurrently — that is the feature — so the
+    /// order requests happen to be recorded in is not the order of the panes.
+    /// Emitting at the wrong pane failed the assertion on the right one,
+    /// intermittently, and looked like a bug in the model.
+    private func generation(forPane index: Int, in model: NativeCompareModel) -> String {
+        guard index < model.panes.count,
+            let id = model.generationID(forPane: model.panes[index].id)
+        else {
+            XCTFail("pane \(index) has no in-flight generation")
+            return ""
+        }
+        return id
+    }
+
+    /// Waits for the model to stop changing, rather than for a fixed delay.
+    ///
+    /// This was a flat ~160ms spin, which is a guess about how long a frame
+    /// takes to cross an `AsyncStream`. On a loaded machine the guess is
+    /// sometimes wrong, and the failure lands in whichever test ran while the
+    /// CPU was busy rather than in the one that is broken. Quiescence — two
+    /// consecutive observations with no change — is the condition those
+    /// assertions actually depend on.
+    private func settle(timeout: Duration = .seconds(5)) async {
+        func signature(_ model: NativeCompareModel?) -> String {
+            guard let model else { return "" }
+            return model.panes
+                .map { pane in
+                    let run = model.runs[pane.id]
+                    return "\(pane.id):\(run?.status as Any):\(run?.content.count ?? -1)"
+                }
+                .joined(separator: "|")
+        }
+
+        let deadline = ContinuousClock.now + timeout
+        var previous: String?
+        var stableRounds = 0
+        while ContinuousClock.now < deadline {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(2))
+            let current = signature(settleTarget)
+            if let previous, previous == current {
+                stableRounds += 1
+                if stableRounds >= 3 { return }
+            } else {
+                stableRounds = 0
+            }
+            previous = current
+        }
+    }
+
+    /// Set by `makeModel` so `settle()` can observe the model without every
+    /// call site having to pass it.
+    private weak var settleTarget: NativeCompareModel?
+
+    /// Waits for a state to actually arrive, rather than for a fixed number of
+    /// milliseconds to pass.
+    ///
+    /// `settle()` spins for ~160ms and then asserts. That is a guess about how
+    /// long a frame takes to cross an `AsyncStream`, and on a loaded machine it
+    /// is sometimes wrong — which shows up as a failure in whichever test ran
+    /// while the CPU was busy, not in the one that is actually broken.
+    private func waitUntil(
+        _ description: String,
+        timeout: Duration = .seconds(5),
+        _ condition: () -> Bool
+    ) async {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if condition() { return }
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(2))
         }
+        XCTFail("timed out waiting for \(description)")
     }
 }
 
@@ -305,10 +387,21 @@ private final class CompareClient: NativeCompareSending, @unchecked Sendable {
         _ request: NativeChatPrivateGenerationRequest,
         for accountID: AccountID
     ) async throws -> AsyncThrowingStream<NativeChatServerEvent, any Error> {
-        record(request)
-        return AsyncThrowingStream { continuation in
+        // The continuation is stored BEFORE the request is recorded, so that a
+        // test observing `requests.count` can rely on `emit` having somewhere
+        // to deliver to.
+        //
+        // The other order left a window: `record` and `store` take the lock
+        // separately, and a test polling from another thread could see the
+        // request between them. It then emitted into a generation with no
+        // continuation yet, the frame was dropped, and the pane never left
+        // `submitting` — a failure that looked like a bug in the model and was
+        // really a race in this double.
+        let stream = AsyncThrowingStream<NativeChatServerEvent, any Error> { continuation in
             store(continuation, for: request.generationID)
         }
+        record(request)
+        return stream
     }
 
     func cancelGeneration(id: String, for accountID: AccountID) async throws -> Bool {

@@ -180,6 +180,9 @@ final class DesktopCodeHostModel {
                     workspaces: workspaces,
                     sessionCount: 0,
                     activeCount: 0,
+                    // The value the rest of the product now reads instead of
+                    // inferring capability from presence.
+                    servesQueuedTasks: servesQueuedTasks,
                     for: accountID
                 )
                 guard self.accountID == accountID else { return }

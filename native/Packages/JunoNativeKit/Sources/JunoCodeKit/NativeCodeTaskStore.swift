@@ -67,6 +67,17 @@ public struct NativeCodeDevice: Identifiable, Equatable, Sendable {
     /// recomputed here — a device the server considers offline will not pick a
     /// task up, whatever the phone's clock thinks.
     public let online: Bool
+    /// Whether this host claims and runs queued work.
+    ///
+    /// Separate from `online`, and the distinction is the whole point: a Mac
+    /// can be signed in, heartbeating, and listing its workspaces while
+    /// claiming nothing at all. Reading `online` as "can run my work" is what
+    /// made the phone offer Remote as a target for work that then sat queued
+    /// forever.
+    public let servesQueuedTasks: Bool
+
+    /// Whether dispatching work at this device can actually succeed.
+    public var canAcceptWork: Bool { online && servesQueuedTasks }
 
     public var platformSymbol: String {
         platform == "windows" ? "pc" : "laptopcomputer"
@@ -199,7 +210,14 @@ public struct NativeCodeTaskClient: Sendable {
     public func devices(for accountID: AccountID) async throws -> [NativeCodeDevice] {
         let response = try await get("/api/code/devices", for: accountID)
         try requireSuccess(response)
-        guard let wire = try? JSONDecoder().decode(DeviceListWire.self, from: response.body)
+        return try Self.decodeDevices(response.body)
+    }
+
+    /// Split out from the request so the wire contract can be tested without a
+    /// transport — in particular that an absent `servesQueuedTasks` reads as
+    /// false rather than being defaulted optimistically.
+    static func decodeDevices(_ body: Data) throws -> [NativeCodeDevice] {
+        guard let wire = try? JSONDecoder().decode(DeviceListWire.self, from: body)
         else { throw NativeCodeError.malformedResponse }
         return wire.devices.compactMap { device in
             guard let lastSeenAt = NativeCodeISO8601.date(from: device.lastSeenAt) else {
@@ -215,7 +233,11 @@ public struct NativeCodeTaskClient: Sendable {
                 },
                 activeCount: device.activeCount ?? 0,
                 lastSeenAt: lastSeenAt,
-                online: device.online ?? false
+                online: device.online ?? false,
+                // Absent is false. A server that predates the capability knew
+                // no host that served work, so reading absence as "yes" would
+                // recreate exactly the bug this field exists to close.
+                servesQueuedTasks: device.servesQueuedTasks ?? false
             )
         }
     }
@@ -245,6 +267,10 @@ public struct NativeCodeTaskClient: Sendable {
         workspaces: [NativeCodeDevice.Workspace],
         sessionCount: Int,
         activeCount: Int,
+        /// Defaults to false so a caller that has not been taught about the
+        /// capability registers as presence-only — the truthful answer for
+        /// every host that does not run the claim loop.
+        servesQueuedTasks: Bool = false,
         for accountID: AccountID
     ) async throws -> String {
         let response = try await sender.send(
@@ -266,6 +292,7 @@ public struct NativeCodeTaskClient: Sendable {
                         protocolVersion: Self.protocolVersion,
                         sessionCount: max(0, sessionCount),
                         activeCount: max(0, activeCount),
+                        servesQueuedTasks: servesQueuedTasks,
                         // Clamped to the route's own limits rather than sent raw:
                         // one over-long path 400s the whole registration, and the
                         // failure would read as "this Mac is offline".
@@ -724,6 +751,9 @@ private struct DeviceListWire: Decodable {
         let activeCount: Int?
         let lastSeenAt: String
         let online: Bool?
+        /// Absent from a server that predates the capability, which is the
+        /// same thing as false: those servers had no host that served work.
+        let servesQueuedTasks: Bool?
     }
 
     let devices: [Device]
@@ -749,6 +779,14 @@ private struct RegisterDeviceWire: Encodable {
     let protocolVersion: Int
     let sessionCount: Int
     let activeCount: Int
+    /// Whether this host will actually claim and execute queued work.
+    ///
+    /// Registration used to say only "I exist". The phone read presence as
+    /// capability and offered Remote as a target, so work dispatched at a Mac
+    /// was written to the queue and stayed `queued` forever — nothing claimed
+    /// it. Sending the capability is what lets the backend refuse the dispatch
+    /// and the phone grey out the option, instead of both assuming.
+    let servesQueuedTasks: Bool
     let workspaces: [Workspace]
 }
 

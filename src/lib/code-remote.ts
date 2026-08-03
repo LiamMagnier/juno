@@ -191,6 +191,10 @@ export function serializeDevice(device: CodeDevice, online?: boolean) {
     workspaces: device.workspaces,
     sessionCount: device.sessionCount,
     activeCount: device.activeCount,
+    // Presence and capability are different facts. A client that reads
+    // `online` as "can run my work" is the bug this field exists to end: the
+    // Mac is online and signed in, and it still claims nothing.
+    servesQueuedTasks: device.servesQueuedTasks,
     lastSeenAt: device.lastSeenAt.toISOString(),
   };
   return online === undefined ? base : { ...base, online };

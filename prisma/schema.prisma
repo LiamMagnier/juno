@@ -933,6 +933,13 @@ model CodeDevice {
   protocolVersion Int      @default(1)
   sessionListVersion Int   @default(1)
   workspaces      Json     @default("[]")
+  // Whether this host claims and executes queued work, as opposed to merely
+  // announcing that it is signed in. Registration used to say only "I exist",
+  // and the phone read presence as capability — so work dispatched at a Mac
+  // was written to the queue and stayed `queued` forever, because nothing on
+  // that Mac claims it. Defaults to false: a host that has not said it serves
+  // work does not serve work.
+  servesQueuedTasks Boolean @default(false)
   sessionCount    Int      @default(0)
   activeCount     Int      @default(0)
   lastSeenAt      DateTime @default(now())

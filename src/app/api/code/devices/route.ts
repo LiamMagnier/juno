@@ -15,6 +15,10 @@ const postSchema = z.object({
   protocolVersion: z.number().int().min(1).max(100).optional(),
   sessionCount: z.number().int().min(0).optional(),
   activeCount: z.number().int().min(0).optional(),
+  // Whether this host claims and runs queued work. Absent means false: a host
+  // that has not said it serves work does not serve work, which is the correct
+  // reading for every client built before this field existed.
+  servesQueuedTasks: z.boolean().optional(),
   workspaces: z
     .array(
       z.object({
@@ -50,7 +54,17 @@ export async function POST(req: Request) {
   const parsed = postSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
 
-  const { deviceId, name, platform, workspaces, appVersion, protocolVersion, sessionCount, activeCount } = parsed.data;
+  const {
+    deviceId,
+    name,
+    platform,
+    workspaces,
+    appVersion,
+    protocolVersion,
+    sessionCount,
+    activeCount,
+    servesQueuedTasks,
+  } = parsed.data;
   const now = new Date();
   const capabilities = {
     platform,
@@ -59,6 +73,7 @@ export async function POST(req: Request) {
     protocolVersion: protocolVersion ?? 1,
     sessionCount: sessionCount ?? 0,
     activeCount: activeCount ?? 0,
+    servesQueuedTasks: servesQueuedTasks ?? false,
     lastSeenAt: now,
   };
 

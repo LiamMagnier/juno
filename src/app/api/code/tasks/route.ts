@@ -307,9 +307,26 @@ export async function POST(req: Request) {
     if (!deviceId || !workspacePath) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     const device = await prisma.codeDevice.findFirst({
       where: { id: deviceId, userId: user.id },
-      select: { id: true },
+      select: { id: true, name: true, servesQueuedTasks: true },
     });
     if (!device) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Refuse rather than queue. A host that does not claim work will leave this
+    // task `queued` forever with no error anywhere — the client shows a
+    // spinner, the task never starts, and nothing in the system ever says why.
+    // Failing here is the only place that can say it.
+    if (!device.servesQueuedTasks) {
+      return NextResponse.json(
+        {
+          error: "device_does_not_serve_queued_tasks",
+          message:
+            `${device.name} is signed in but is not set up to run remote Juno Code work, so this ` +
+            "task would never start. Enable remote hosting on that computer and try again.",
+          deviceId: device.id,
+        },
+        { status: 409 },
+      );
+    }
 
     try {
       task = await prisma.codeTask.create({
