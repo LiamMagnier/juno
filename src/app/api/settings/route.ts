@@ -7,6 +7,7 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { isModelId } from "@/lib/models";
 import { PERSONALITY_IDS } from "@/lib/personalities";
 import { AUTO_LOCALE, normalizeWebLocale } from "@/lib/i18n";
+import { BACKGROUND_PROVIDER_MODES } from "@/lib/background-provider-policy";
 
 const schema = z.object({
   theme: z.enum(["light", "dark", "system"]).optional(),
@@ -19,6 +20,12 @@ const schema = z.object({
   responseLanguage: z.string().max(40).optional(),
   uiLocale: z.string().max(35).optional(),
   memoryEnabled: z.boolean().optional(),
+  // Where background work (memory extraction, titles, planning, moderation)
+  // may be sent. Validated against the union rather than accepted as free text,
+  // so an unknown value cannot be stored and later read as permission to cross
+  // providers.
+  backgroundProviderMode: z.enum(BACKGROUND_PROVIDER_MODES).optional(),
+  backgroundProviderSelected: z.string().max(60).nullable().optional(),
   voiceId: z.string().max(100).nullable().optional(),
   favoriteModels: z.array(z.string().max(120)).max(200).optional(),
   emailBudgetAlerts: z.boolean().optional(),
@@ -43,6 +50,10 @@ export async function GET() {
       customInstructions: true,
       responseLanguage: true,
       memoryEnabled: true,
+      // Exposed so macOS and iOS show the same policy the web does, rather
+      // than each client assuming a default.
+      backgroundProviderMode: true,
+      backgroundProviderSelected: true,
       defaultModel: true,
       favoriteModels: true,
     },
@@ -84,6 +95,12 @@ export async function PATCH(req: Request) {
       ...(d.responseLanguage !== undefined ? { responseLanguage: d.responseLanguage } : {}),
       ...(uiLocale !== undefined ? { uiLocale } : {}),
       ...(d.memoryEnabled !== undefined ? { memoryEnabled: d.memoryEnabled } : {}),
+      ...(d.backgroundProviderMode !== undefined
+        ? { backgroundProviderMode: d.backgroundProviderMode }
+        : {}),
+      ...(d.backgroundProviderSelected !== undefined
+        ? { backgroundProviderSelected: d.backgroundProviderSelected }
+        : {}),
       ...(d.voiceId !== undefined ? { voiceId: d.voiceId } : {}),
       ...(d.favoriteModels !== undefined ? { favoriteModels: d.favoriteModels } : {}),
       ...(d.emailBudgetAlerts !== undefined ? { emailBudgetAlerts: d.emailBudgetAlerts } : {}),

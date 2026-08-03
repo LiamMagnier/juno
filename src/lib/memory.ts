@@ -1,9 +1,17 @@
 import { prisma } from "@/lib/prisma";
 import { decryptMessageText } from "@/lib/message-crypto";
 import { streamChat } from "@/lib/llm";
-import { MODEL_LIST, type ModelInfo } from "@/lib/models";
+import { MODEL_LIST, getModel, type ModelInfo } from "@/lib/models";
 import { isProviderConfigured } from "@/lib/providers";
 import { getModelMetrics } from "@/lib/model-metrics";
+import {
+  DEFAULT_BACKGROUND_PROVIDER_MODE,
+  normalizeBackgroundProviderPolicy,
+  resolveBackgroundCandidates,
+  type BackgroundProcessingRecord,
+  type BackgroundProviderPolicy,
+  type BackgroundPurpose,
+} from "@/lib/background-provider-policy";
 
 /*
  * Incremental memory architecture
@@ -51,6 +59,45 @@ export function utilityModelCandidates(): ModelInfo[] {
   return [...tiers.map((a) => a[0]), ...tiers.flatMap((a) => a.slice(1))].slice(0, 10);
 }
 
+/**
+ * The account's background-processing policy.
+ *
+ * Fails closed: an account with no Settings row, or a row this build cannot
+ * read, gets the privacy-preserving default rather than the old
+ * walk-every-provider behaviour.
+ */
+export async function loadBackgroundProviderPolicy(
+  userId: string
+): Promise<BackgroundProviderPolicy> {
+  try {
+    const settings = await prisma.settings.findUnique({
+      where: { userId },
+      select: { backgroundProviderMode: true, backgroundProviderSelected: true },
+    });
+    return normalizeBackgroundProviderPolicy({
+      mode: settings?.backgroundProviderMode as BackgroundProviderPolicy["mode"],
+      selectedProvider: settings?.backgroundProviderSelected,
+      allowedProviders: deploymentProviderAllowlist(),
+    });
+  } catch {
+    return normalizeBackgroundProviderPolicy({
+      allowedProviders: deploymentProviderAllowlist(),
+    });
+  }
+}
+
+/**
+ * Deployment-wide allowlist, for enterprise and regional policy. Bounds every
+ * account's own mode; absent by default so single-tenant deployments are
+ * unaffected.
+ */
+function deploymentProviderAllowlist(): string[] | null {
+  const raw = process.env.BACKGROUND_PROVIDER_ALLOWLIST?.trim();
+  if (!raw) return null;
+  const list = raw.split(/[,\s]+/).filter(Boolean);
+  return list.length > 0 ? list : null;
+}
+
 /** Billing/credit failures won't fix themselves; rate limits usually do. */
 function isTransientProviderError(message: string): boolean {
   if (/credit|balance|billing|suspended|insufficient|402/i.test(message)) return false;
@@ -79,10 +126,45 @@ export async function runUtilityPrompt<T>(opts: {
   parse: (text: string) => T | null;
   /** Override the provider walk (tests / callers with their own model). */
   llm?: UtilityLlm;
-}): Promise<{ result: T | null; transient: boolean }> {
+  /**
+   * Where this job is allowed to send the user's content. Omitting it applies
+   * the privacy-preserving default rather than the old walk-everything
+   * behaviour, so a caller that has not been taught about the policy fails
+   * closed instead of silently crossing providers.
+   */
+  policy?: BackgroundProviderPolicy;
+  /** Provider of the model the user actually chose for this conversation. */
+  conversationProvider?: string | null;
+  purpose?: BackgroundPurpose;
+  /** Receives what was decided, for the audit trail. Never given content. */
+  onDecision?: (record: BackgroundProcessingRecord) => void;
+}): Promise<{ result: T | null; transient: boolean; deniedByPolicy?: boolean }> {
   if (opts.llm) {
     const text = await opts.llm(opts);
     return { result: text === null ? null : opts.parse(text), transient: false };
+  }
+
+  const decision = resolveBackgroundCandidates({
+    policy: opts.policy ?? { mode: DEFAULT_BACKGROUND_PROVIDER_MODE },
+    conversationProvider: opts.conversationProvider,
+    candidates: utilityModelCandidates(),
+  });
+
+  if (decision.candidates.length === 0) {
+    // Skipped, not fallen back. Falling back to some other provider is the
+    // exact behaviour the policy exists to forbid, so there is nothing else
+    // this can honestly do.
+    opts.onDecision?.({
+      purpose: opts.purpose ?? "memory_extraction",
+      mode: decision.mode,
+      effectiveProvider: null,
+      effectiveModel: null,
+      deniedReason: decision.deniedReason,
+    });
+    console.info(
+      `[${opts.label}] skipped: background provider policy '${decision.mode}' left no eligible model (${decision.deniedReason}).`
+    );
+    return { result: null, transient: false, deniedByPolicy: true };
   }
 
   const started = Date.now();
@@ -114,12 +196,23 @@ export async function runUtilityPrompt<T>(opts: {
     return { result: parsed, transient: false };
   };
 
+  const record = (model: ModelInfo) =>
+    opts.onDecision?.({
+      purpose: opts.purpose ?? "memory_extraction",
+      mode: decision.mode,
+      effectiveProvider: model.provider,
+      effectiveModel: model.id,
+    });
+
   const retryable: ModelInfo[] = [];
   let sawTransient = false;
-  for (const model of utilityModelCandidates()) {
+  for (const model of decision.candidates) {
     if (Date.now() - started > TOTAL_DEADLINE_MS) return { result: null, transient: true };
     const { result, transient } = await attempt(model);
-    if (result !== null) return { result, transient: false };
+    if (result !== null) {
+      record(model);
+      return { result, transient: false };
+    }
     if (transient) {
       retryable.push(model);
       sawTransient = true;
@@ -130,7 +223,10 @@ export async function runUtilityPrompt<T>(opts: {
     for (const model of retryable) {
       if (Date.now() - started > TOTAL_DEADLINE_MS) return { result: null, transient: true };
       const { result } = await attempt(model);
-      if (result !== null) return { result, transient: false };
+      if (result !== null) {
+        record(model);
+        return { result, transient: false };
+      }
     }
   }
   return { result: null, transient: sawTransient };
@@ -230,6 +326,9 @@ export async function extractConversationMemory(opts: {
   conversationId: string;
   /** Bound LLM cost per invocation; remaining chunks are picked up next run. */
   maxChunks?: number;
+  /** Loaded from the account when omitted. */
+  policy?: BackgroundProviderPolicy;
+  onDecision?: (record: BackgroundProcessingRecord) => void;
   llm?: UtilityLlm;
 }): Promise<{ created: number; chunksProcessed: number; done: boolean }> {
   const maxChunks = opts.maxChunks ?? 3;
@@ -238,6 +337,9 @@ export async function extractConversationMemory(opts: {
     select: {
       id: true,
       title: true,
+      // The provider the user actually chose is what `same_provider` matches
+      // background work against.
+      model: true,
       lastMessageAt: true,
       memory: { select: { processedAt: true, factCount: true, digest: true } },
     },
@@ -322,6 +424,12 @@ ${recentFacts.length ? recentFacts.map((f) => `- ${f.content}`).join("\n") : "(n
 
 Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one line: what this chat is about>"} — facts may be empty.`;
 
+  // Loaded once per invocation, not per chunk: the policy cannot change
+  // half-way through an extraction, and re-reading it would be a query per
+  // chunk for an answer that does not move.
+  const policy = opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId));
+  const conversationProvider = getModel(convo.model)?.provider ?? null;
+
   let created = 0;
   let processed = 0;
   const toProcess = chunks.slice(0, maxChunks);
@@ -336,6 +444,10 @@ Return ONLY JSON: {"facts":["<short third-person fact>", ...],"digest":"<one lin
       maxTokens: 500,
       label: "memory/extract",
       parse: parseExtraction,
+      policy,
+      conversationProvider,
+      purpose: "memory_extraction",
+      onDecision: opts.onDecision,
       llm: opts.llm,
     });
     if (!result) break; // model unavailable — keep the mark, retry later
@@ -522,6 +634,9 @@ export async function gatherMemorySources(userId: string): Promise<MemorySources
 export async function consolidateMemories(opts: {
   userId: string;
   model?: ModelInfo;
+  policy?: BackgroundProviderPolicy;
+  conversationProvider?: string | null;
+  onDecision?: (record: BackgroundProcessingRecord) => void;
   llm?: UtilityLlm;
 }): Promise<string | null> {
   const sources = await gatherMemorySources(opts.userId);
@@ -562,12 +677,20 @@ Rules:
 
   let content: string | null = null;
   if (opts.llm || !opts.model) {
+    // Consolidation has no single conversation behind it — it distils facts
+    // already extracted from many. `same_provider` therefore has nothing to
+    // match against unless the caller names the provider whose model is
+    // driving this turn, which the chat route does.
     const { result } = await runUtilityPrompt({
       system,
       userMsg,
       maxTokens: 1400,
       label: "memory/consolidate",
       parse: (text) => (text.trim() ? text.trim() : null),
+      policy: opts.policy ?? (await loadBackgroundProviderPolicy(opts.userId)),
+      conversationProvider: opts.conversationProvider ?? opts.model?.provider ?? null,
+      purpose: "memory_consolidation",
+      onDecision: opts.onDecision,
       llm: opts.llm,
     });
     content = result;

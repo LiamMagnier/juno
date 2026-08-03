@@ -33,6 +33,8 @@ model User {
   name           String?
   email          String    @unique
   emailVerified  DateTime?
+  /// Avatars are stored as "/api/files/<key>"; that route looks a user up BY
+  /// this column to authorize the object, so it needs an index (see @@index).
   image          String?
   hashedPassword String? // null for OAuth-only users
   // Incremented after a password reset. JWTs carry the version they were
@@ -85,6 +87,9 @@ model User {
   mutationReceipts         MutationReceipt[]
   codeWorkspaces           CodeWorkspace[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
+  toolInvocations          ToolInvocation[]
+
+  @@index([image])
 }
 
 // ----------------------------------------------------------------------------
@@ -298,6 +303,17 @@ model Settings {
   // instructions always win.
   personality        String   @default("default")
   memoryEnabled      Boolean  @default(true)
+  // Where background work — memory extraction, titles, research planning,
+  // moderation, consolidation — may be sent. One of the modes in
+  // lib/background-provider-policy.ts. Defaults to (and migrates existing rows
+  // to) "same_provider": the provider the user picked for the conversation is
+  // the only one that sees work derived from it. Before this existed, the
+  // utility walk took whichever free model across ALL configured providers
+  // answered first.
+  backgroundProviderMode     String  @default("same_provider")
+  // The one provider chosen under the "selected_provider" mode. Ignored by
+  // every other mode.
+  backgroundProviderSelected String?
   voiceId            String? // preferred TTS voice id
   favoriteModels     String[] @default([]) // model ids the user starred
   // Lifecycle email opt-ins — no-ops until RESEND_API_KEY is configured.
@@ -511,6 +527,9 @@ model Attachment {
   @@index([conversationId])
   @@index([messageId])
   @@index([projectId])
+  // /api/files resolves authorization by object key, once per request — and
+  // media is served over HTTP Range, so one video is several requests.
+  @@index([storageKey])
 }
 
 // ----------------------------------------------------------------------------
@@ -684,6 +703,9 @@ model Announcement {
 
   @@index([published, startsAt])
   @@index([createdAt])
+  // Looked up by URL when /api/files authorizes announcement media.
+  @@index([imageUrl])
+  @@index([videoUrl])
 }
 
 model AnnouncementDismissal {
@@ -758,6 +780,12 @@ model ApiSpend {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
+  // The platform-wide daily total (platform-budget.ts) filters on createdAt with
+  // no userId, and Postgres cannot range-scan a composite index whose leading
+  // column is absent from the predicate — so that query would seq-scan the
+  // fastest-growing table in the schema, once a minute per process, before a
+  // chat can start streaming.
+  @@index([createdAt])
 }
 
 // ----------------------------------------------------------------------------
@@ -1227,4 +1255,60 @@ model CodeWorkspace {
 
   @@unique([userId, path])
   @@index([userId, lastOpenedAt])
+}
+
+// ----------------------------------------------------------------------------
+// Connector tool calls — the audit trail.
+//
+// Every call a model makes through a linked connector lands here BEFORE it is
+// dispatched, with its arguments, and is updated with the outcome. Written
+// first rather than last so a call that never returns (crash, timeout, torn
+// stream) still leaves a record: an audit log that only remembers what finished
+// cleanly is the wrong shape for the question it exists to answer.
+//
+// These rows hold whatever the model passed as arguments — message bodies,
+// event titles, search terms. Treat as user content, not metadata: it is
+// cascade-deleted with the user, and `args` is capped and marked truncated
+// rather than stored unbounded. Private-mode chats never appear here at all,
+// because the chat route does not resolve connectors for them.
+//
+// NOTE (not built here): nothing prunes this table. It grows with tool use and
+// will want a retention window before it gets large.
+// ----------------------------------------------------------------------------
+
+model ToolInvocation {
+  id             String  @id @default(cuid())
+  userId         String
+  // Null for turns with no persisted conversation (private mode never reaches
+  // here, but scheduled tasks and memory jobs call tools without one).
+  conversationId String?
+  connectorId    String
+  // The name the server declares, and the namespaced one the model called —
+  // both, because the second is what appears in a provider transcript and the
+  // first is what a connector's own logs will show.
+  toolName       String
+  functionName   String
+  // classifyToolAccess verdict at call time: read | write | unknown.
+  access         String
+  args           Json
+  argsTruncated  Boolean @default(false)
+  // Whether the arguments overlapped untrusted content fetched in the same
+  // turn — the signal the confirmation gate acts on. Recorded even when the
+  // call is allowed, so the heuristic's false-positive rate is measurable
+  // against real traffic rather than guessed at.
+  derivedFromUntrusted Boolean @default(false)
+  // pending | executed | failed | denied. A row still `pending` long after
+  // createdAt is a call that was blocked and never answered.
+  status         String  @default("pending")
+  error          String? @db.Text
+  durationMs     Int?
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([userId, status, createdAt])
+  @@index([conversationId, createdAt])
 }
