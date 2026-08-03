@@ -315,6 +315,109 @@ final class ToolRegistryTests: XCTestCase {
             PermissionPolicy.ruling(mode: .fullAccess, risk: .destructive),
             .requireApproval
         )
+        // …but `run_tests` is pinned, so the risk tier is not the last word on
+        // it. `git_commit`, which is not pinned, is what full access does let
+        // through — the two must not be conflated.
+        XCTAssertEqual(runTests.approvalPolicy, .alwaysRequiresApproval)
+        XCTAssertEqual(gitCommit.approvalPolicy, .byRisk)
+    }
+
+    /// The defect end to end: a Full Access session used to run an arbitrary
+    /// repository-authored test command without ever showing it to the user,
+    /// while the tool's own description said the opposite.
+    func testFullAccessStillAsksBeforeRunningTests() async throws {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let requested = expectation(description: "approval requested")
+        nonisolated(unsafe) var requestID: String?
+        nonisolated(unsafe) var requestSummary: String?
+        await coordinator.addObserver { update in
+            if case let .requested(request) = update {
+                requestID = request.id
+                requestSummary = request.summary
+                requested.fulfill()
+            }
+        }
+
+        // Hoisted out of the closure, as the other suspending tests here do:
+        // capturing `self.registry` would carry the whole test case across
+        // isolation domains and Swift 6 rejects it.
+        let registry = self.registry!
+        let invocation = Task {
+            try await registry.authorizeInvocation(
+                toolName: "run_tests",
+                input: ["command": "swift test"],
+                permissions: coordinator
+            )
+        }
+
+        // The call must be suspended on an approval rather than already done.
+        await fulfillment(of: [requested], timeout: 5)
+        XCTAssertEqual(requestSummary, "Run tests: swift test")
+        let pending = await coordinator.pendingApprovals.count
+        XCTAssertEqual(pending, 1)
+
+        await coordinator.resolve(approvalID: try XCTUnwrap(requestID), decision: .approved)
+        try await invocation.value
+    }
+
+    /// And denying it refuses the action rather than running it anyway.
+    func testDenyingTheTestApprovalRefusesTheRun() async throws {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .fullAccess)
+        let requested = expectation(description: "approval requested")
+        nonisolated(unsafe) var requestID: String?
+        await coordinator.addObserver { update in
+            if case let .requested(request) = update {
+                requestID = request.id
+                requested.fulfill()
+            }
+        }
+
+        // Hoisted out of the closure, as the other suspending tests here do:
+        // capturing `self.registry` would carry the whole test case across
+        // isolation domains and Swift 6 rejects it.
+        let registry = self.registry!
+        let invocation = Task {
+            try await registry.authorizeInvocation(
+                toolName: "run_tests",
+                input: ["command": "swift test"],
+                permissions: coordinator
+            )
+        }
+        await fulfillment(of: [requested], timeout: 5)
+        await coordinator.resolve(approvalID: try XCTUnwrap(requestID), decision: .denied)
+
+        do {
+            try await invocation.value
+            XCTFail("a denied approval must refuse the run")
+        } catch let error as ToolError {
+            guard case .denied = error else {
+                return XCTFail("expected denied, got \(error)")
+            }
+        }
+    }
+
+    /// Read-only refuses outright: no prompt is offered, because approving one
+    /// would carry out the very thing the mode promises never happens.
+    func testReadOnlyRefusesTestsWithoutOfferingAPrompt() async throws {
+        let coordinator = PermissionCoordinator(sessionID: sessionID, mode: .readOnly)
+        nonisolated(unsafe) var sawPrompt = false
+        await coordinator.addObserver { update in
+            if case .requested = update { sawPrompt = true }
+        }
+
+        do {
+            try await registry.authorizeInvocation(
+                toolName: "run_tests",
+                input: ["command": "swift test"],
+                permissions: coordinator
+            )
+            XCTFail("read-only must refuse a test run")
+        } catch let error as ToolError {
+            guard case .denied = error else {
+                return XCTFail("expected denied, got \(error)")
+            }
+        }
+        XCTAssertFalse(sawPrompt, "read-only must not offer a bypass prompt")
     }
 
     func testRunCommandStreamsOutput() async throws {

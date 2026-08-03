@@ -101,7 +101,8 @@ public struct ToolRegistry: Sendable {
             toolName: toolName,
             actionDigest: digest,
             risk: risk,
-            summary: tool.summary(input: input)
+            summary: tool.summary(input: input),
+            approvalPolicy: tool.approvalPolicy
         )
         switch outcome {
         case .allowed:

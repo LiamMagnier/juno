@@ -104,8 +104,12 @@ public struct RunTestsTool: CodeTool {
     }
 
     public let name = "run_tests"
-    public let description =
-        "Run an explicit project test or verification command. The exact command always requires approval."
+    public let description = """
+        Run an explicit project test or verification command. The user is asked \
+        to approve the exact command every time it runs, in every permission \
+        mode that allows commands at all — a read-only session refuses it \
+        outright rather than offering the prompt.
+        """
     public var inputSchema: JSONValue {
         [
             "type": "object",
@@ -115,11 +119,20 @@ public struct RunTestsTool: CodeTool {
     }
 
     public func assessRisk(input: JSONValue) -> ActionRisk {
-        // Test commands execute repository-controlled code: package scripts,
-        // compiler plugins, build phases and test binaries. Keep every exact
-        // invocation approval-bound even in Full Access.
+        // Test commands execute repository-controlled code — package scripts,
+        // compiler plugins, build phases, test binaries — but inside the
+        // granted workspace. That is what `.critical` means.
         .critical
     }
+
+    /// The bit `.critical` could not carry.
+    ///
+    /// Full Access exists to let `.critical` through, so the description's
+    /// promise that "the exact command always requires approval" was false in
+    /// exactly the mode where running an arbitrary repository-authored script
+    /// unseen matters most. The pin states the requirement directly instead of
+    /// trying to encode it as blast radius.
+    public var approvalPolicy: ApprovalPolicy { .alwaysRequiresApproval }
 
     public func summary(input: JSONValue) -> String {
         "Run tests: \(input["command"]?.stringValue ?? "?")"

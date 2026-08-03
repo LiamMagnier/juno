@@ -64,6 +64,32 @@ public enum ActionRisk: String, Codable, CaseIterable, Sendable, Comparable {
     }
 }
 
+/// Whether a tool's authorization is decided by the risk ladder alone, or is
+/// pinned to always asking regardless of mode.
+///
+/// Separate from `ActionRisk` on purpose. Risk answers "how far can the effect
+/// reach", and the mode ladder is the user's standing answer to it. Some tools
+/// need a different question answered — "should the user see this exact
+/// invocation before it runs" — and that is not a statement about blast radius.
+///
+/// `run_tests` is the case that forced the distinction. Its description said
+/// every exact command always requires approval, and it returned `.critical`
+/// to try to achieve that; but `.critical` is precisely the tier Full Access
+/// exists to let through, so the promise was false in the one mode where it
+/// mattered most. Raising it to `.destructive` would have been a lie of a
+/// different kind — a test command does not escape the workspace — and would
+/// have dragged unrelated policy along with it.
+public enum ApprovalPolicy: String, Codable, CaseIterable, Sendable {
+    /// The mode-and-risk ladder decides. The default for every tool.
+    case byRisk
+    /// Always requires an explicit approval, in every mode that permits the
+    /// action at all — including Full Access.
+    ///
+    /// It does not *raise* authority: a mode that refuses the action outright
+    /// still refuses it, rather than offering a prompt that would carry it out.
+    case alwaysRequiresApproval
+}
+
 public enum PermissionRuling: Equatable, Sendable {
     /// The action may proceed without asking.
     case allow
@@ -80,7 +106,25 @@ public enum PermissionRuling: Equatable, Sendable {
 /// granted workspace. Everything else is the ladder the four modes describe, and
 /// full access genuinely means full access within that boundary.
 public enum PermissionPolicy {
-    public static func ruling(mode: PermissionMode, risk: ActionRisk) -> PermissionRuling {
+    public static func ruling(
+        mode: PermissionMode,
+        risk: ActionRisk,
+        approvalPolicy: ApprovalPolicy = .byRisk
+    ) -> PermissionRuling {
+        let ladder = ladderRuling(mode: mode, risk: risk)
+        guard approvalPolicy == .alwaysRequiresApproval else { return ladder }
+        switch ladder {
+        // A refusal outranks the pin. Read-only promises that nothing executes;
+        // turning its denial into a prompt would offer the user a button that
+        // breaks that promise, which is the opposite of what pinning is for.
+        case .deny:
+            return ladder
+        case .allow, .requireApproval:
+            return .requireApproval
+        }
+    }
+
+    private static func ladderRuling(mode: PermissionMode, risk: ActionRisk) -> PermissionRuling {
         switch (mode, risk) {
         // Read-only comes first so that it *refuses* rather than asks.
         //

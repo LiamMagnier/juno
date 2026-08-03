@@ -60,6 +60,10 @@ public protocol CodeTool: Sendable {
     var inputSchema: JSONValue { get }
 
     func assessRisk(input: JSONValue) -> ActionRisk
+    /// Whether this tool's authorization is decided by the risk ladder alone.
+    /// Defaults to `.byRisk`; a tool that must be seen before every run pins it
+    /// to `.alwaysRequiresApproval` instead of inflating its risk tier.
+    var approvalPolicy: ApprovalPolicy { get }
     func summary(input: JSONValue) -> String
     /// Semantic refusal before any authorization: return an error for input
     /// that must never run (forbidden commands), so it cannot even be
@@ -70,6 +74,7 @@ public protocol CodeTool: Sendable {
 
 public extension CodeTool {
     func precheck(input: JSONValue) -> ToolError? { nil }
+    var approvalPolicy: ApprovalPolicy { .byRisk }
 }
 
 public extension CodeTool {

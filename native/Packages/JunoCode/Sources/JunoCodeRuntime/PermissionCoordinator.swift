@@ -79,9 +79,10 @@ public actor PermissionCoordinator {
         toolName: String,
         actionDigest: String,
         risk: ActionRisk,
-        summary: String
+        summary: String,
+        approvalPolicy: ApprovalPolicy = .byRisk
     ) async -> AuthorizationOutcome {
-        switch PermissionPolicy.ruling(mode: mode, risk: risk) {
+        switch PermissionPolicy.ruling(mode: mode, risk: risk, approvalPolicy: approvalPolicy) {
         case .allow:
             return .allowed
         case let .deny(reason):
@@ -116,7 +117,11 @@ public actor PermissionCoordinator {
             guard requestAuthorityRevision == authorityRevision else {
                 return .denied(reason: "The permission mode changed before the action ran.")
             }
-            if case let .deny(reason) = PermissionPolicy.ruling(mode: mode, risk: risk) {
+            if case let .deny(reason) = PermissionPolicy.ruling(
+                mode: mode,
+                risk: risk,
+                approvalPolicy: approvalPolicy
+            ) {
                 return .denied(reason: reason)
             }
             guard request.authorizes(digest: actionDigest, at: Date()) else {
