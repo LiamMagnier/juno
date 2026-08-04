@@ -113,6 +113,11 @@ export const env = {
     pricePro: process.env.STRIPE_PRICE_PRO,
     priceMax: process.env.STRIPE_PRICE_MAX,
     priceMax20: process.env.STRIPE_PRICE_MAX20,
+    // Annual equivalents. Same entitlement, different Stripe billing interval —
+    // the Plan enum is unchanged, so there is no migration and no fourth tier.
+    priceProYearly: process.env.STRIPE_PRICE_PRO_YEARLY,
+    priceMaxYearly: process.env.STRIPE_PRICE_MAX_YEARLY,
+    priceMax20Yearly: process.env.STRIPE_PRICE_MAX20_YEARLY,
   },
 
   // Voice (optional — falls back to the browser's Web Speech API, i.e. the OS

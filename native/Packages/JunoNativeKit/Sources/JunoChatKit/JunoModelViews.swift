@@ -86,6 +86,7 @@ public extension NativeChatModelOption {
             thinking: NativeThinkingScale(model: self).junoLadder,
             unavailabilityReason: NativeModelPresentation.unavailabilityReason(self),
             deprecationNote: deprecationNote,
+            retiresOn: retiresOn,
             choosesThinkingAutomatically: choosesReasoningAutomatically
         )
     }

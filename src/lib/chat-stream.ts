@@ -1,4 +1,4 @@
-import type { StreamChunk } from "@/types/chat";
+import type { ClientActivityEvent, StreamChunk } from "@/types/chat";
 
 const encoder = new TextEncoder();
 
@@ -13,6 +13,53 @@ export const SSE_HEADERS = {
   Connection: "keep-alive",
   "X-Accel-Buffering": "no",
 } as const;
+
+export interface SseSender {
+  /** Enqueue a chunk. Never throws — a disconnected client must not abort the
+   *  generation, which continues server-side so the answer is still saved. */
+  send(chunk: StreamChunk): void;
+  /** Stamp an activity event, append it to the log, and stream it. */
+  sendActivity(event: Omit<ClientActivityEvent, "id" | "createdAt">): ClientActivityEvent;
+  /** The events emitted so far, in order — persisted onto the message. */
+  readonly activityLog: ClientActivityEvent[];
+}
+
+/**
+ * The server side of the SSE protocol, shared by both of the chat route's
+ * streaming paths (they each had their own verbatim copy).
+ *
+ * `send` swallowing enqueue errors is deliberate and load-bearing: generation
+ * is bound to a generation-scoped AbortController, not the request signal, so a
+ * client that navigates away still gets its answer persisted. Letting a failed
+ * enqueue throw would undo that.
+ */
+export function createSseSender(controller: ReadableStreamDefaultController<Uint8Array>): SseSender {
+  const activityLog: ClientActivityEvent[] = [];
+  let activityCounter = 0;
+
+  const send = (chunk: StreamChunk) => {
+    try {
+      controller.enqueue(encodeChunk(chunk));
+    } catch {
+      /* client disconnected — keep going so the answer is still saved */
+    }
+  };
+
+  return {
+    send,
+    sendActivity(event) {
+      const entry: ClientActivityEvent = {
+        ...event,
+        id: `activity-${Date.now()}-${activityCounter++}`,
+        createdAt: new Date().toISOString(),
+      };
+      activityLog.push(entry);
+      send({ type: "activity", event: entry });
+      return entry;
+    },
+    activityLog,
+  };
+}
 
 /**
  * Client-side helper: read an SSE stream from fetch and invoke onChunk for each

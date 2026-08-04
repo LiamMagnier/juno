@@ -100,3 +100,11 @@ struct DesktopProductSwitcher: View {
         .accessibilityIdentifier("Juno product")
     }
 }
+
+/// Shared measurements for the titlebar clearance above the two native source
+/// lists. Keeping this here prevents Chat and Code from drifting when one of
+/// their sidebars is refreshed.
+enum DesktopSidebarChromeMetrics {
+    /// Clears the titlebar row before the first source-list row begins.
+    static let titlebarClearance: CGFloat = 76
+}

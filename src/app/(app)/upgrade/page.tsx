@@ -11,6 +11,22 @@ import { cn } from "@/lib/utils";
 import type { Plan } from "@prisma/client";
 
 type MaxTier = "MAX" | "MAX20";
+type BillingInterval = "month" | "year";
+
+/*
+ * Annual is twelve months, priced as twelve months.
+ *
+ * Most of the market discounts 17-23% for paying up front. Juno does not, and
+ * the page says so rather than staying quiet and letting people hunt for a
+ * saving that is not there. What annual buys is one invoice a year instead of
+ * twelve — which is worth something to some people and nothing to others, and
+ * that is the honest pitch.
+ *
+ * The entitlement is identical, and so is the budget: it stays MONTHLY on both
+ * intervals, because a year of budget released at once would be a different
+ * product.
+ */
+const MONTHS_PER_YEAR = 12;
 
 const MAX_TIERS: { id: MaxTier; label: string; multiplier: string }[] = [
   { id: "MAX", label: "Max ×5", multiplier: "×5" },
@@ -26,7 +42,28 @@ export default function UpgradePage() {
   const { quota, features } = useApp();
   const currentPlan = quota.plan;
   const [loading, setLoading] = React.useState<Plan | null>(null);
+  const [interval, setInterval] = React.useState<BillingInterval>("month");
+  const annualAvailable = features.purchasableAnnualPlans.length > 0;
+
+  // Only offer a tier whose Stripe price id is configured — checkout returns
+  // 503 "Plan price is not configured." otherwise, so rendering the button at
+  // all is a broken promise. A subscriber already on an unconfigured tier still
+  // sees it, because it is their current plan and hiding it would be a lie.
+  const offerable = React.useCallback(
+    (plan: Plan) => {
+      const sellable =
+        interval === "year" ? features.purchasableAnnualPlans : features.purchasablePlans;
+      return sellable.includes(plan) || plan === currentPlan;
+    },
+    [features.purchasablePlans, features.purchasableAnnualPlans, interval, currentPlan]
+  );
+
+  const maxTiers = MAX_TIERS.filter((t) => offerable(t.id));
   const [maxTier, setMaxTier] = React.useState<MaxTier>(currentPlan === "MAX20" ? "MAX20" : "MAX");
+  // The stored tier can fall out of the offerable set (env change, or the
+  // initial "MAX" default on a deployment that only sells ×20).
+  const activeMaxTier: MaxTier | null =
+    maxTiers.find((t) => t.id === maxTier)?.id ?? maxTiers[0]?.id ?? null;
 
   const checkout = async (plan: Plan) => {
     setLoading(plan);
@@ -34,7 +71,7 @@ export default function UpgradePage() {
       const res = await fetch("/api/stripe/checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan }),
+        body: JSON.stringify({ plan, interval }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.url) window.location.href = data.url;
@@ -87,7 +124,14 @@ export default function UpgradePage() {
     );
   };
 
-  const maxPlan = PLANS[maxTier];
+  /** Twelve months at the monthly rate — no discount, by design. */
+  const priceFor = (monthly: number) =>
+    interval === "year" ? `${monthly * MONTHS_PER_YEAR} €` : `${monthly} €`;
+  const suffixFor = () => (interval === "year" ? "HT/yr" : "HT/mo");
+
+  const maxPlan = activeMaxTier ? PLANS[activeMaxTier] : null;
+  const showPro = offerable("PRO");
+  const cardCount = 1 + (showPro ? 1 : 0) + (maxPlan ? 1 : 0);
 
   return (
     <div className="h-full overflow-y-auto">
@@ -115,7 +159,54 @@ export default function UpgradePage() {
           </div>
         )}
 
-        <div className="mt-8 grid items-stretch gap-4 md:grid-cols-3">
+        {annualAvailable && (
+          <div className="mt-6 flex items-center gap-3">
+            <div
+              role="tablist"
+              aria-label="Billing interval"
+              className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+            >
+              {([
+                { id: "month" as const, label: "Monthly" },
+                { id: "year" as const, label: "Yearly" },
+              ]).map((option) => {
+                const active = interval === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setInterval(option.id)}
+                    className={cn(
+                      "rounded-full px-3.5 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
+                      active ? "bg-card text-foreground shadow-pop" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+            {/*
+              Said plainly rather than left for someone to work out. Every
+              competitor discounts annual by 17-23%; implying a saving that is
+              not there would be the one dishonest line on a page whose whole
+              argument is honest metering.
+            */}
+            <span className="text-caption text-muted-foreground">
+              {interval === "year"
+                ? "Twelve months up front — same price, one invoice."
+                : "Billed monthly."}
+            </span>
+          </div>
+        )}
+
+        <div
+          className={cn(
+            "mt-8 grid items-stretch gap-4",
+            cardCount === 3 ? "md:grid-cols-3" : cardCount === 2 ? "md:grid-cols-2" : "md:max-w-sm"
+          )}
+        >
           {/* Free */}
           <PlanCard
             name={PLANS.FREE.name}
@@ -129,62 +220,91 @@ export default function UpgradePage() {
           </PlanCard>
 
           {/* Pro — most popular */}
-          <PlanCard
-            name={PLANS.PRO.name}
-            tagline={PLANS.PRO.tagline}
-            price={`${PLANS.PRO.price} €`}
-            priceSuffix="HT/mo"
-            features={PLANS.PRO.features}
-            popular
-            delay={70}
-          >
-            {cta("PRO", "default")}
-          </PlanCard>
+          {showPro && (
+            <PlanCard
+              name={PLANS.PRO.name}
+              tagline={PLANS.PRO.tagline}
+              price={priceFor(PLANS.PRO.price)}
+              priceSuffix={suffixFor()}
+              features={PLANS.PRO.features}
+              popular
+              delay={70}
+            >
+              {cta("PRO", "default")}
+            </PlanCard>
+          )}
 
           {/* Max — one card, switch between ×5 and ×20 */}
-          <PlanCard
-            name="Max"
-            tagline={maxPlan.tagline}
-            price={`${maxPlan.price} €`}
-            priceSuffix="HT/mo"
-            features={maxPlan.features}
-            accent
-            delay={140}
-            header={
-              <div
-                role="tablist"
-                aria-label="Max tier"
-                className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
-              >
-                {MAX_TIERS.map((t) => {
-                  const active = maxTier === t.id;
-                  return (
-                    <button
-                      key={t.id}
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => setMaxTier(t.id)}
-                      className={cn(
-                        "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
-                        active
-                          ? "bg-card text-foreground shadow-pop"
-                          : "text-muted-foreground hover:text-foreground"
-                      )}
-                    >
-                      {t.multiplier}
-                    </button>
-                  );
-                })}
-              </div>
-            }
-          >
-            {cta(maxTier, "outline")}
-          </PlanCard>
+          {maxPlan && activeMaxTier && (
+            <PlanCard
+              name="Max"
+              tagline={maxPlan.tagline}
+              price={priceFor(maxPlan.price)}
+              priceSuffix={suffixFor()}
+              features={maxPlan.features}
+              accent
+              delay={140}
+              header={
+                maxTiers.length > 1 ? (
+                  <div
+                    role="tablist"
+                    aria-label="Max tier"
+                    className="inline-flex items-center gap-0.5 rounded-full border border-border/60 bg-muted/50 p-0.5"
+                  >
+                    {maxTiers.map((t) => {
+                      const active = activeMaxTier === t.id;
+                      return (
+                        <button
+                          key={t.id}
+                          role="tab"
+                          aria-selected={active}
+                          onClick={() => setMaxTier(t.id)}
+                          className={cn(
+                            "rounded-full px-3 py-1 font-mono text-caption transition-colors duration-fast ease-out-soft",
+                            active
+                              ? "bg-card text-foreground shadow-pop"
+                              : "text-muted-foreground hover:text-foreground"
+                          )}
+                        >
+                          {t.multiplier}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : undefined
+              }
+            >
+              {cta(activeMaxTier, "outline")}
+            </PlanCard>
+          )}
         </div>
 
         <p className="mt-6 flex items-center gap-1.5 text-caption text-muted-foreground">
           <Info className="h-3.5 w-3.5" />
           Fair-use applies to keep Juno fast for everyone; we’ll always reach out before anything changes.
+        </p>
+        {/*
+          The terms were reachable from the landing footer and the sign-in page,
+          but not from the one screen where money changes hands. A consumer
+          agreeing to a subscription should be one click from what they are
+          agreeing to, at the moment they agree to it.
+        */}
+        <p className="mt-2 text-caption text-muted-foreground">
+          By subscribing you accept the{" "}
+          <a
+            href="/legal/cgu"
+            className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary"
+          >
+            terms of service
+          </a>{" "}
+          and the{" "}
+          <a
+            href="/legal/confidentialite"
+            className="underline underline-offset-4 transition-colors duration-fast ease-out-soft hover:text-primary"
+          >
+            privacy policy
+          </a>
+          .
         </p>
       </div>
     </div>

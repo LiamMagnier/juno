@@ -67,6 +67,15 @@ struct JunoMobileChatDetailScreen: View {
     /// sending. Held one level up, it survives the swap.
     @State private var tools = JunoMobileComposerTools()
 
+    /// The send swell, owned here for the same reason ``tools`` is.
+    ///
+    /// A send from a draft creates the conversation, and creating it swaps
+    /// `JunoMobileDraftChat` for `JunoMobileConversationDetail` mid-swell. One
+    /// instance per child meant the new screen's bloom was handed a swell that
+    /// had never fired — so the first message of every new chat was the one send
+    /// with no light behind it.
+    @State private var sendSwell = JunoMobileSendSwell()
+
     private var selected: NativeConversation? {
         guard let id = model.selectedConversationID else { return nil }
         return model.conversations.first { $0.id == id }
@@ -91,6 +100,7 @@ struct JunoMobileChatDetailScreen: View {
                     memoryEnabled: memoryEnabled,
                     setMemoryEnabled: setMemoryEnabled,
                     tools: tools,
+                    sendSwell: sendSwell,
                     readAloud: readAloud,
                     voiceID: voiceID,
                     messageActions: messageActions,
@@ -112,7 +122,8 @@ struct JunoMobileChatDetailScreen: View {
                     connectors: connectors,
                     memoryEnabled: memoryEnabled,
                     setMemoryEnabled: setMemoryEnabled,
-                    tools: tools
+                    tools: tools,
+                    sendSwell: sendSwell
                 )
             }
         }
@@ -150,6 +161,11 @@ private struct JunoMobileDraftChat: View {
     var memoryEnabled: Bool = true
     var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
+    /// Shared with the composer, because on this screen the light it drives is
+    /// behind the greeting rather than behind the capsule — and owned one level
+    /// up, so it outlives this screen when the first message turns the draft
+    /// into a conversation.
+    let sendSwell: JunoMobileSendSwell
 
     @State private var prompt = ""
     @State private var selectedModelID = ""
@@ -165,6 +181,7 @@ private struct JunoMobileDraftChat: View {
     /// most calls are started: nothing is selected, so the spoken turns have no
     /// conversation to appear in until the save route makes one on hang-up.
     @Environment(\.junoVoiceSession) private var voiceSession
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var composerFocused: Bool
 
     /// Whether the reader has actually chosen a model on this screen.
@@ -199,7 +216,14 @@ private struct JunoMobileDraftChat: View {
     @ViewBuilder
     private var column: some View {
         if voiceMessages.isEmpty {
-            JunoMobileGreeting(name: profileName)
+            // The bloom rides with the greeting on this screen, not with the
+            // composer: it is the sentence the reader is looking at, and the web
+            // lights it with the same one element. `nil` during a call, where the
+            // voice field below has the light instead.
+            JunoMobileGreeting(
+                name: profileName,
+                aura: voiceSession == nil ? auraLight : nil
+            )
         } else {
             ScrollView {
                 // The transcript's own metrics, so a spoken turn is the same
@@ -221,10 +245,29 @@ private struct JunoMobileDraftChat: View {
         voiceSession?.liveMessages() ?? []
     }
 
+    /// What the greeting's bloom is made of. Gathered here because this screen is
+    /// the one that owns both the model selection and the send swell.
+    private var auraLight: JunoMobileAuraLight {
+        JunoMobileAuraLight(
+            model: model.modelCatalog.first { $0.id == selectedModelID },
+            effort: reasoningEffort,
+            focused: composerFocused,
+            sending: sendSwell.active,
+            viewport: chatColumnHeight,
+            dark: colorScheme == .dark
+        )
+    }
+
     var body: some View {
         column
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.junoCanvas)
+            .scrollDismissesKeyboard(.interactively)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    composerFocused = false
+                }
+            )
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { chatColumnHeight = $0 }
             .accessibilityIdentifier("juno.mobile.chat-draft")
             .navigationTitle("navigation.chat")
@@ -264,7 +307,11 @@ private struct JunoMobileDraftChat: View {
                         )
                     },
                     chatColumnHeight: chatColumnHeight,
-                    composerFocused: $composerFocused
+                    composerFocused: $composerFocused,
+                    sendSwell: sendSwell,
+                    // The greeting holds the bloom whenever it is on screen, so
+                    // the composer must not draw a second one.
+                    greetingVisible: voiceMessages.isEmpty
                 )
             }
             // After the inset, never before it: the camera panel is a sibling
@@ -302,71 +349,6 @@ private struct JunoMobileDraftChat: View {
     }
 }
 
-/// The website's home greeting, ported: the mark, then a time-of-day phrase, then
-/// the reader's first name in medium italic coral. Both halves rise in as two
-/// beats rather than one block, as they do in the browser.
-struct JunoMobileGreeting: View {
-    var name: String?
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var phrase = ""
-    @State private var appeared = false
-
-    private var firstName: String? {
-        guard let name, let first = name.split(separator: " ").first else { return nil }
-        return String(first)
-    }
-
-    private var compact: Bool { sizeClass == .compact }
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 10) {
-            JunoMark(size: compact ? 21 : 29)
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 8)
-            Text(greetingText)
-                .font(JunoSerif.greeting(compact: compact))
-                .opacity(appeared ? 1 : 0)
-                .offset(y: appeared ? 0 : 10)
-                .multilineTextAlignment(.center)
-                .minimumScaleFactor(0.7)
-                .lineLimit(2)
-        }
-        .padding(.horizontal, 28)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(plainGreeting)
-        .onAppear {
-            if phrase.isEmpty {
-                phrase = JunoGreeting.phrase(
-                    forHour: Calendar.current.component(.hour, from: Date())
-                )
-            }
-            guard !appeared else { return }
-            withAnimation(
-                JunoMotion.reduced(.snappy(duration: 0.42), when: reduceMotion)
-            ) { appeared = true }
-        }
-    }
-
-    /// Built as one `AttributedString` so the phrase and the name wrap as a
-    /// single sentence. Two `Text`s in an `HStack` broke onto separate lines the
-    /// moment either grew, which the web layout never does.
-    private var greetingText: AttributedString {
-        var result = AttributedString(firstName == nil ? phrase : "\(phrase), ")
-        guard let firstName else { return result }
-        var name = AttributedString(firstName)
-        name.font = JunoSerif.greetingName(compact: compact)
-        name.foregroundColor = Color.junoAccent
-        result.append(name)
-        return result
-    }
-
-    private var plainGreeting: String {
-        firstName.map { "\(phrase), \($0)" } ?? phrase
-    }
-}
-
 // MARK: - Conversation
 
 private struct JunoMobileConversationDetail: View {
@@ -385,6 +367,11 @@ private struct JunoMobileConversationDetail: View {
     var memoryEnabled: Bool = true
     var setMemoryEnabled: (@MainActor @Sendable (Bool) -> Void)?
     let tools: JunoMobileComposerTools
+    /// Shared with the composer so the swell reaches whichever aura is mounted —
+    /// the greeting's on an empty conversation, the composer's once it has turns.
+    /// Owned one level up so a send made in a draft survives the swap onto this
+    /// screen still swelling.
+    let sendSwell: JunoMobileSendSwell
     /// The screen's one speaker, so two answers cannot read over each other.
     var readAloud: JunoMobileReadAloud?
     var voiceID: String?
@@ -454,6 +441,10 @@ private struct JunoMobileConversationDetail: View {
     /// See ``JunoMobileComposer/auraLayer``.
     @State private var chatColumnHeight: CGFloat = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    /// Regular width docks the artifact canvas beside the thread instead of
+    /// covering it, which is what the browser does.
+    @Environment(\.horizontalSizeClass) private var sizeClass
     /// The call in progress, published by the shell. Read here as well as in the
     /// composer because the spoken turns belong in this transcript.
     @Environment(\.junoVoiceSession) private var voiceSession
@@ -532,7 +523,18 @@ private struct JunoMobileConversationDetail: View {
     ///    which is what the reader asked to see.
     private func openArtifact(_ reference: NativeMessageContent.ArtifactReference) {
         if let match = storedArtifact(for: reference) {
-            openArtifact = match
+            // Animated because on a regular-width screen this is a *layout*
+            // change — the canvas slides in beside the thread and the thread
+            // gives up its width. A sheet ignores the transaction and animates
+            // itself, so one call is correct for both.
+            withAnimation(
+                JunoMotion.reduced(
+                    JunoMobileMotion.easeSpring(JunoMobileMotion.durSlow),
+                    when: reduceMotion
+                )
+            ) {
+                openArtifact = match
+            }
             return
         }
         guard !reference.content.isEmpty else { return }
@@ -633,18 +635,40 @@ private struct JunoMobileConversationDetail: View {
         model.modelCatalog.first { $0.id == selectedModelID }
     }
 
+    /// Whether the greeting is standing in for the transcript. It owns the bloom
+    /// whenever it is, and the composer stands its own down.
+    private var greetingVisible: Bool {
+        messages.isEmpty && voiceMessages.isEmpty
+    }
+
+    /// What the greeting's bloom is made of, gathered here because this screen
+    /// owns both the model selection and the send swell.
+    private var auraLight: JunoMobileAuraLight {
+        JunoMobileAuraLight(
+            model: selectedModel,
+            effort: reasoningEffort,
+            focused: composerFocused,
+            sending: sendSwell.active,
+            viewport: chatColumnHeight,
+            dark: colorScheme == .dark
+        )
+    }
+
     /// The transcript itself. Extracted from `body` because the merged view
     /// stacks a long modifier chain on an inline `ScrollView`, and the type
     /// checker times out on the combined expression.
     @ViewBuilder
     private var transcript: some View {
-        if messages.isEmpty && voiceMessages.isEmpty {
+        if greetingVisible {
             // A conversation with no turns is the same moment as a draft, so it
             // gets the same greeting rather than a "No messages yet" placard.
             // `containerRelativeFrame` gives it the scroll view's own height so
             // it centres in the visible area — a fixed `minHeight` inside a
             // bottom-anchored scroll view pins it to the composer instead.
-            JunoMobileGreeting(name: profileName)
+            JunoMobileGreeting(
+                name: profileName,
+                aura: voiceSession == nil ? auraLight : nil
+            )
                 .frame(maxWidth: .infinity)
                 .containerRelativeFrame(.vertical)
         } else {
@@ -675,6 +699,13 @@ private struct JunoMobileConversationDetail: View {
                         branch: branchAction,
                         setFeedback: feedbackAction
                     )
+                    // `rise-in`, as the web gives every new turn. Scoped to the
+                    // stack's `.animation(_:value: messages.count)` below, which
+                    // is also what limits it to genuinely new messages: SwiftUI
+                    // does not run an insertion transition for rows that were
+                    // already there on the first layout, so a loaded history
+                    // arrives settled rather than cascading up the screen.
+                    .transition(JunoMobileMotion.riseInTransition)
                 }
 
                 // The call, still being spoken, after the messages that are
@@ -700,6 +731,14 @@ private struct JunoMobileConversationDetail: View {
                     onPick: { prompt = $0 }
                 )
             }
+            // Keyed on the count, never on the messages themselves: an unkeyed
+            // `.animation` here would also animate every streamed token as the
+            // last answer grows, which is a transcript that visibly reflows
+            // while it is being read.
+            .animation(
+                JunoMotion.reduced(JunoMobileMotion.riseIn, when: reduceMotion),
+                value: messages.count
+            )
             .padding(.horizontal, 16)
             .padding(.vertical, 24)
             .frame(maxWidth: 768)
@@ -820,6 +859,12 @@ private struct JunoMobileConversationDetail: View {
         // instead of their own.
         .accessibilityIdentifier("juno.mobile.conversation-detail")
         .background(Color.junoCanvas)
+        .scrollDismissesKeyboard(.interactively)
+        .simultaneousGesture(
+            TapGesture().onEnded {
+                composerFocused = false
+            }
+        )
         // The chat column, measured where it is: this scroll view spans the
         // whole column — the composer is a safe-area inset *inside* it, not a
         // sibling below it — so its height is the column's height, and the voice
@@ -891,7 +936,72 @@ private struct JunoMobileConversationDetail: View {
         }
     }
 
+    /// The thread and, on a screen wide enough to hold both, the artifact canvas
+    /// docked beside it.
+    ///
+    /// This is the browser's arrangement — the canvas takes the right of the
+    /// window and the conversation stays exactly where it was, still scrollable,
+    /// still typeable — and it is docked **in layout**, as a plain `HStack` pane,
+    /// rather than presented. An `.inspector` here would be the same shape but a
+    /// different mechanism, and on this OS it re-enters the constraint pass and
+    /// traps. The composer's `safeAreaInset` stays on the thread column, so the
+    /// keyboard still lifts the capsule and not the canvas.
+    ///
+    /// The `HStack` is unconditional, and that is load-bearing rather than
+    /// tidiness: branching between "just the thread" and "the thread plus a
+    /// pane" would put the thread in two different places in the view tree, and
+    /// SwiftUI would read that as a different view — resetting the transcript's
+    /// scroll position and remounting the composer every time an artifact was
+    /// opened or closed. Keeping the stack means only the pane comes and goes.
     var body: some View {
+        HStack(spacing: 0) {
+            thread
+            if let artifact = dockedArtifact {
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(width: 1)
+                    .accessibilityHidden(true)
+                JunoMobileArtifactDetail(
+                    model: artifactModel!,
+                    artifact: artifact,
+                    // Already in the conversation this came from; the only
+                    // sensible "go there" is to close.
+                    openConversation: { _ in closeArtifact() },
+                    close: closeArtifact
+                )
+                .frame(width: 420)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// The artifact the reader opened, when this screen is wide enough to dock it.
+    private var dockedArtifact: NativeArtifact? {
+        guard sizeClass == .regular, artifactModel != nil else { return nil }
+        return openArtifact
+    }
+
+    /// The same artifact as a *sheet* — nil whenever it is docked instead, so the
+    /// two presentations can never both be up.
+    private var sheetedArtifact: Binding<NativeArtifact?> {
+        Binding(
+            get: { dockedArtifact == nil ? openArtifact : nil },
+            set: { openArtifact = $0 }
+        )
+    }
+
+    private func closeArtifact() {
+        withAnimation(
+            JunoMotion.reduced(
+                JunoMobileMotion.easeSpring(JunoMobileMotion.durSlow),
+                when: reduceMotion
+            )
+        ) {
+            openArtifact = nil
+        }
+    }
+
+    private var thread: some View {
         scrollArea
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { conversationToolbar }
@@ -933,7 +1043,9 @@ private struct JunoMobileConversationDetail: View {
                 openPlugins: openPlugins,
                 openVoiceMode: openVoiceMode,
                 chatColumnHeight: chatColumnHeight,
-                composerFocused: $composerFocused
+                composerFocused: $composerFocused,
+                sendSwell: sendSwell,
+                greetingVisible: greetingVisible
             )
         }
         // After the inset, never before it — see the note in the draft screen.
@@ -962,30 +1074,22 @@ private struct JunoMobileConversationDetail: View {
         .onChange(of: selectedModelID) { _, _ in configureSelections() }
         .onChange(of: model.modelCatalog) { _, _ in configureSelections() }
         .onChange(of: accountDefaultModelID) { _, _ in configureSelections() }
-        // A sheet, not a push: the web docks the canvas beside the thread so the
-        // conversation stays put, and on a phone the equivalent of "stays put" is
-        // a sheet the reader dismisses straight back onto it.
-        .sheet(item: $openArtifact) { artifact in
-            NavigationStack {
-                JunoMobileArtifactDetail(
-                    model: artifactModel!,
-                    artifact: artifact,
-                    // Already in the conversation this came from; the only sensible
-                    // "go there" is to close.
-                    openConversation: { _ in openArtifact = nil }
-                )
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button { openArtifact = nil } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .semibold))
-                                .foregroundStyle(Color.primary)
-                        }
-                        .accessibilityLabel("Close artifact")
-                        .accessibilityIdentifier("juno.mobile.artifact-close")
-                    }
-                }
-            }
+        // A sheet, not a push, on a phone: the web docks the canvas beside the
+        // thread so the conversation stays put, and where there is no room to
+        // dock, the equivalent of "stays put" is a sheet the reader dismisses
+        // straight back onto it. Regular width gets the real dock — see `body`.
+        //
+        // No `NavigationStack` and no navigation bar: the canvas draws the
+        // website's own header instead — title, mono meta line, the view switch,
+        // share, close — so the sheet and the iPad's docked panel are the same
+        // surface rather than two designs for one thing.
+        .sheet(item: sheetedArtifact) { artifact in
+            JunoMobileArtifactDetail(
+                model: artifactModel!,
+                artifact: artifact,
+                openConversation: { _ in openArtifact = nil },
+                close: { openArtifact = nil }
+            )
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }

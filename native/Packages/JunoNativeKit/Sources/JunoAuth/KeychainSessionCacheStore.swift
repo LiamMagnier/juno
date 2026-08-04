@@ -42,9 +42,6 @@ public actor KeychainSessionCacheStore {
     /// contract: a cache write must never fail a sign-in that already worked.
     public func store(_ session: NativeAuthenticatedSession) {
         guard let data = try? JSONEncoder().encode(StoredSession(session)) else { return }
-        // The hint is only recorded once the blob is actually stored, so a
-        // failed write cannot leave a locator pointing at a cache entry that
-        // does not exist.
         do {
             try securityClient.upsert(data, for: item(for: session.profile.id))
         } catch {

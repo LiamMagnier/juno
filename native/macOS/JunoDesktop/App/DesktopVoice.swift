@@ -120,47 +120,50 @@ struct DesktopVoiceColumn {
     let close: () -> Void
 }
 
-/// The live call the composer below a dock is inside, or nil when there is none.
-///
-/// Passed through the environment rather than as a parameter because the
-/// composer is several containers below whichever surface owns the call, and
-/// every one of them would otherwise have to carry a `DesktopVoiceColumn?` it
-/// has no other use for. Non-nil is what routes a send over the voice socket
-/// instead of to `/api/chat`.
 extension EnvironmentValues {
+    /// The call the composer under this view is inside, if there is one.
+    ///
+    /// Published rather than passed as a parameter because the two surfaces that
+    /// host a composer reach a call differently — Chat owns the session, the
+    /// project overview builds its own — and both already wrap the composer in
+    /// ``junoVoiceDock(_:)``. Putting it in the environment there is what lets
+    /// the composer send into the call without either host being rewired, and
+    /// mirrors `junoVoiceSession` on the phone.
     @Entry var junoVoiceCall: DesktopVoiceColumn?
 }
 
 extension View {
-    /// Mounts a live call around this composer: the field behind it, the dock
-    /// directly above it.
-    ///
-    /// Applied to the composer rather than to the screen, because the field has
-    /// to be scoped to the chat column. A background on the window would wash
-    /// the sidebar, which is the one thing the web is explicit about — the aura
-    /// is a sibling of the composer there for exactly this reason.
-    func junoVoiceColumn(_ column: DesktopVoiceColumn?) -> some View {
-        modifier(DesktopVoiceColumnLayer(column: column))
-    }
-
-    /// The dock alone: a pill directly above whatever this is applied to.
-    ///
-    /// Chat mounts the dock and the field on *different* boxes — the dock sits
-    /// above the composer, the field lights the whole conversation column — so
-    /// it cannot use ``junoVoiceColumn(_:)``, which arranges both around one.
-    /// Projects, whose composer is the entire voice surface, can and does.
+    /// The dock, directly above this composer.
     func junoVoiceDock(_ column: DesktopVoiceColumn?) -> some View {
         modifier(DesktopVoiceDockLayer(column: column))
     }
 
-    /// The field alone, sized from the box it is behind.
+    /// Mounts the field behind **this whole surface**, anchored to its bottom.
     ///
-    /// Applied to a conversation column, never to the window: the light stops
-    /// where the conversation does, because the sidebar is a different surface.
-    /// A `.background` is what enforces that — it can only ever be the size of
-    /// what it is behind.
+    /// Applied to the chat column, never to the window: the light stops where
+    /// the conversation does, because the sidebar is a different surface with
+    /// its own state. That is the one thing the web is explicit about
+    /// (`globals.css`, `.voice-aura`), and a `.background` is what enforces it —
+    /// it can only ever be the size of what it is behind.
+    ///
+    /// The field frames the *reading area*, which is why it belongs here rather
+    /// than on the composer. Behind the composer alone it is a strip the width
+    /// of a text field, and `JunoVoiceAura` derives both its arms and its band
+    /// from the box it is given — so a small box does not produce a small
+    /// version of the effect, it produces a different one: two flames in the
+    /// bottom corners with no band between them.
     func junoVoiceField(_ column: DesktopVoiceColumn?) -> some View {
         modifier(DesktopVoiceFieldLayer(column: column))
+    }
+
+    /// Both, around a composer that is the entire voice surface.
+    ///
+    /// For a host with no conversation column to light — a project overview,
+    /// where the composer sits in the middle of a page of other things. The
+    /// chat column applies ``junoVoiceDock(_:)`` and ``junoVoiceField(_:)``
+    /// separately, because there the two belong to different boxes.
+    func junoVoiceColumn(_ column: DesktopVoiceColumn?) -> some View {
+        modifier(DesktopVoiceComposerLayer(column: column))
     }
 }
 
@@ -177,6 +180,9 @@ private struct DesktopVoiceDockLayer: ViewModifier {
             }
             content
         }
+        // Announced from the same modifier that draws the dock, so a surface can
+        // never end up with the controls of a call the composer beneath them
+        // knows nothing about.
         .environment(\.junoVoiceCall, column)
     }
 }
@@ -208,36 +214,46 @@ private struct DesktopVoiceFieldLayer: ViewModifier {
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
-                // The field reaches both edges of the column, and its 9pt blur
-                // reaches a little past them. Clipped, so the softening cannot
-                // put a glow on the sidebar's side of the divider — which is
-                // the whole reason the aura is scoped here at all.
+                // The field now reaches both edges of the column, and its 9pt
+                // blur reaches a little past them. Clipped, so the softening
+                // cannot put a glow on the sidebar's side of the divider —
+                // which is the whole reason the aura is scoped here at all.
                 .clipped()
             }
         }
     }
 }
 
-private struct DesktopVoiceColumnLayer: ViewModifier {
+/// The composer-scoped arrangement: the dock above, the field behind the pair.
+///
+/// The field's height is fixed here rather than taken from the host, because the
+/// host is a composer — a couple of hundred points tall at most, and 46% of that
+/// is not a field, it is a hairline. A surface that *is* a column takes
+/// ``DesktopVoiceFieldLayer`` instead.
+private struct DesktopVoiceComposerLayer: ViewModifier {
     let column: DesktopVoiceColumn?
 
+    private static let fieldHeight: CGFloat = 460
+
     func body(content: Content) -> some View {
-        VStack(spacing: 0) {
-            if let column {
-                DesktopVoiceDock(column: column)
-                    .padding(.horizontal, JunoSpace.roomy)
-                    .padding(.bottom, JunoSpace.snug)
-                    .transition(.opacity)
+        content
+            .junoVoiceDock(column)
+            // Behind the dock *and* the composer, which is the whole
+            // arrangement: the web mounts the aura as a sibling at
+            // `z-index: -1` inside the host that carries both, so the light
+            // passes under the pill as well as under the composer. Anything
+            // drawn inside the dock would land in front of the thing it is
+            // lighting.
+            .background(alignment: .bottom) {
+                if let column {
+                    DesktopVoiceField(controller: column.controller)
+                        .frame(height: Self.fieldHeight)
+                        // `bottom: -1.25rem`. The band's brightest edge belongs
+                        // just past the composer so the light looks like it is
+                        // coming from under it rather than stopping at a seam.
+                        .offset(y: JunoSpace.roomy)
+                }
             }
-            content
-        }
-        .background(alignment: .bottom) {
-            if let column {
-                DesktopVoiceField(controller: column.controller)
-                    .frame(height: 260)
-            }
-        }
-        .environment(\.junoVoiceCall, column)
     }
 }
 
@@ -250,12 +266,26 @@ private struct DesktopVoiceColumnLayer: ViewModifier {
 private struct DesktopVoiceField: View {
     let controller: JunoRealtimeVoiceController
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Arriving mid-sentence is worse than arriving late, so the field fades up
+    /// rather than appearing at full strength the frame the socket opens —
+    /// `voice-aura-in` over `--dur-slow`. Held here rather than driven by a
+    /// transition from the layer above, because the layer's animation would
+    /// have to be one the composer shares, and the composer must not move.
+    @State private var lit = false
+
     var body: some View {
         JunoVoiceAura(
             level: controller.level,
             speaking: controller.assistantSpeaking,
             active: controller.phase == .live || controller.phase == .reconnecting
         )
+        .opacity(lit ? 1 : 0)
+        .onAppear {
+            withAnimation(JunoMotion.reduced(.easeOut(duration: 0.36), when: reduceMotion)) {
+                lit = true
+            }
+        }
     }
 }
 
@@ -290,8 +320,31 @@ struct DesktopVoiceDock: View {
     /// keeps nothing — so this stays on screen until it succeeds or the reader
     /// hangs up again.
     @State private var saveError: String?
+    /// `motion-safe:animate-rise-in`. Self-driven rather than a `.transition`,
+    /// because a transition only plays if whichever screen mounted the dock
+    /// wrapped the change in `withAnimation` — and two screens mount it.
+    @State private var risen = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var controller: JunoRealtimeVoiceController { column.controller }
+
+    /// `realtime-voice.tsx`'s metrics, in points. Named rather than inlined
+    /// because the same numbers have to agree in four places — a status column
+    /// that is not exactly the control row's height is what lets the cost line
+    /// grow the pill.
+    private enum Metric {
+        /// `size-9`. Also the smallest circle a pointer finds without aiming;
+        /// the 30pt this replaces was under the platform's own minimum.
+        static let control: CGFloat = 36
+        /// `gap-0.5`.
+        static let controlGap: CGFloat = 2
+        /// `sm:w-[7.5rem]`. The narrow `w-[5.75rem]` case is a phone breakpoint
+        /// with no equivalent here.
+        static let statusWidth: CGFloat = 120
+        /// `max-w-md`, the cap on anything that carries a sentence.
+        static let messageWidth: CGFloat = 448
+    }
 
     var body: some View {
         VStack(spacing: JunoSpace.tight) {
@@ -301,16 +354,23 @@ struct DesktopVoiceDock: View {
                 failureBanner(message)
             }
             if let notice = controller.notice {
-                Label(notice, systemImage: "exclamationmark.circle")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, JunoSpace.cozy)
-                    .padding(.vertical, JunoSpace.tight)
-                    .junoFloatingChrome(cornerRadius: JunoCornerRadius.control)
+                noticeBanner(notice)
             }
             pill
         }
         .frame(maxWidth: 720)
+        .opacity(risen ? 1 : 0)
+        .offset(y: risen ? 0 : 8)
+        .onAppear {
+            withAnimation(
+                JunoMotion.reduced(
+                    .timingCurve(0.32, 0.72, 0, 1, duration: 0.32),
+                    when: reduceMotion
+                )
+            ) {
+                risen = true
+            }
+        }
         // Ends the call when the chat column goes — switching to Projects, or
         // signing out — because the alternative is a microphone that is open
         // with nothing on screen saying so. It deliberately does **not** start
@@ -321,15 +381,24 @@ struct DesktopVoiceDock: View {
         .accessibilityIdentifier("juno.desktop.voice")
     }
 
+    /// `rounded-full`, not a large radius. A 24pt corner on a 44pt-tall pill is
+    /// nearly a capsule and reads as *nearly* — the flat run along the top and
+    /// bottom is exactly what makes a pill look hand-drawn next to the
+    /// composer's own geometry.
     private var pill: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Metric.controlGap) {
             status
             controls
             optionsMenu
             hangUpButton
         }
         .padding(JunoSpace.hairline)
-        .junoFloatingChrome(cornerRadius: 24)
+        .junoGlass(in: Capsule(style: .continuous))
+        // The web lifts this pill further off the page than the composer below
+        // it, and it has to: the dock is the transient thing, and depth is what
+        // says so when the two surfaces are the same material.
+        .shadow(color: .black.opacity(0.1), radius: 1, y: 1)
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
     }
 
     // MARK: - Words
@@ -340,19 +409,21 @@ struct DesktopVoiceDock: View {
     /// and to a fixed width so a status that changes length — "Listening" to
     /// "Juno is speaking" — does not slide every control sideways mid-sentence.
     private var status: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(statusTitle)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .lineLimit(1)
+                .truncationMode(.tail)
+                .help(failureMessage ?? statusTitle)
             if let costLabel {
                 Text(costLabel)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(Color.junoMutedForeground.opacity(0.6))
                     .lineLimit(1)
                     .help(costDetail)
             }
         }
-        .frame(width: 118, height: 30, alignment: .leading)
+        .frame(width: Metric.statusWidth, height: Metric.control, alignment: .leading)
         .padding(.leading, JunoSpace.cozy)
         .padding(.trailing, JunoSpace.tight)
         .accessibilityElement(children: .combine)
@@ -419,10 +490,21 @@ struct DesktopVoiceDock: View {
         }
     }
 
+    /// A destructive-tinted strip, not a plate.
+    ///
+    /// The shipped build put this message on floating chrome at the dock's full
+    /// width, so an audio-engine failure arrived as a wide unstyled rectangle
+    /// above the pill — louder than the conversation it interrupted and, on a
+    /// light window, near-white. The web's own treatment is the opposite of
+    /// that and is what this is: `max-w-md`, small centred text, a hairline of
+    /// `--destructive` and a wash of it behind, lifted by nothing more than
+    /// `shadow-soft`. It is a remark, and it is coloured like a problem.
     private func failureBanner(_ message: String) -> some View {
-        HStack(spacing: JunoSpace.snug) {
+        messageStrip(tint: Color.junoDanger) {
             Text(message)
-                .font(.caption)
+                .font(.system(size: 12))
+                .lineSpacing(2)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             // A denied microphone is fixed in Settings and never by trying
             // again — the system will not re-prompt — so this is the one
@@ -438,13 +520,53 @@ struct DesktopVoiceDock: View {
                     }
                 }
                 .buttonStyle(.link)
-                .font(.caption)
+                .font(.system(size: 12, weight: .medium))
             }
         }
-        .padding(.horizontal, JunoSpace.cozy)
-        .padding(.vertical, JunoSpace.tight)
-        .junoFloatingChrome(cornerRadius: JunoCornerRadius.control)
         .accessibilityIdentifier("juno.desktop.voice-failure")
+    }
+
+    /// The relay's own asides — a provider degraded, a feature declined. Same
+    /// strip, cautionary rather than destructive, so the column reads as one
+    /// thing with two severities instead of two unrelated boxes.
+    private func noticeBanner(_ notice: String) -> some View {
+        messageStrip(tint: Color.junoCaution) {
+            Label(notice, systemImage: "exclamationmark.circle")
+                .font(.system(size: 12))
+                .lineSpacing(2)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The shared shape of both strips.
+    ///
+    /// The one surface in this dock that is **not** Liquid Glass, and the
+    /// exception is the point: glass has no way to say "destructive" quietly —
+    /// a tint strong enough to read through it is a red pane, and anything
+    /// weaker says nothing at all. A material with a semantic wash and a
+    /// coloured rim says it at 7% and 30%, which is what the web does. The
+    /// material stays because, unlike the browser's, this strip is over a
+    /// scrolling transcript rather than over the page.
+    ///
+    /// `maxWidth` sits *outside* the tinted background on purpose: applied
+    /// inside it, the frame would take the cap as its width and a four-word
+    /// notice would arrive as a 448pt plate with a word in the middle of it.
+    /// Out here the strip hugs its sentence and the frame only centres it and
+    /// decides where the text wraps.
+    private func messageStrip(
+        tint: Color,
+        @ViewBuilder content: () -> some View
+    ) -> some View {
+        let shape = RoundedRectangle(cornerRadius: JunoCornerRadius.row, style: .continuous)
+        return VStack(spacing: JunoSpace.hairline, content: content)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.vertical, JunoSpace.tight)
+            .background(tint.opacity(0.07), in: shape)
+            .background(.regularMaterial, in: shape)
+            .overlay(shape.strokeBorder(tint.opacity(0.3), lineWidth: 1))
+            .shadow(color: .black.opacity(0.08), radius: 5, y: 3)
+            .frame(maxWidth: Metric.messageWidth)
     }
 
     // MARK: - Controls
@@ -489,6 +611,13 @@ struct DesktopVoiceDock: View {
         }
     }
 
+    /// The chevron, with a circle under it.
+    ///
+    /// The circle is not decoration. Without it the menu's label was the glyph
+    /// alone, so the only clickable pixels in a 36pt slot were the arrow's own
+    /// strokes — the control looked like its neighbours and behaved like a
+    /// link. The label now fills the slot and carries the hit shape, which is
+    /// also what `bg-muted/45` does on the web.
     private var optionsMenu: some View {
         Menu {
             Section("Voice model") {
@@ -530,10 +659,14 @@ struct DesktopVoiceDock: View {
             }
         } label: {
             Image(systemName: "chevron.down")
+                .font(.system(size: 13, weight: .medium))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.junoMuted.opacity(0.45), in: Circle())
+                .contentShape(Circle())
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
-        .frame(width: 30, height: 30)
+        .frame(width: Metric.control, height: Metric.control)
         .accessibilityLabel("Voice options")
         .accessibilityIdentifier("juno.desktop.voice-options")
     }
@@ -553,8 +686,8 @@ struct DesktopVoiceDock: View {
                         .foregroundStyle(.white)
                 }
             }
-            .frame(width: 30, height: 30)
-            .background(Color.red, in: Circle())
+            .frame(width: Metric.control, height: Metric.control)
+            .background(Color.junoDanger, in: Circle())
             .contentShape(Circle())
         }
         .buttonStyle(.plain)
@@ -565,8 +698,11 @@ struct DesktopVoiceDock: View {
     }
 
     private enum ControlTone {
-        case quiet
+        /// `bg-foreground text-background` — the one control that is the
+        /// obvious next move.
         case prominent
+        /// `bg-muted/65` — present, and not asking for anything.
+        case quiet
     }
 
     private func control(
@@ -577,11 +713,17 @@ struct DesktopVoiceDock: View {
     ) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(tone == .prominent ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
-                .frame(width: 30, height: 30)
+                .font(.system(size: 14, weight: .medium))
+                // `Color.junoCanvas`, never the `.background` shape style: that
+                // one resolves against whatever surface the control is sitting
+                // on, and on glass it comes back translucent — a filled black
+                // circle with a grey-looking glyph, which is precisely how the
+                // one enabled control in an errored session ended up reading as
+                // disabled.
+                .foregroundStyle(tone == .prominent ? Color.junoCanvas : Color.primary)
+                .frame(width: Metric.control, height: Metric.control)
                 .background(
-                    tone == .prominent ? Color.primary : Color.primary.opacity(0.08),
+                    tone == .prominent ? Color.primary : Color.junoMuted.opacity(0.65),
                     in: Circle()
                 )
                 .contentShape(Circle())

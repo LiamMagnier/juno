@@ -249,6 +249,9 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
     /// stays visible and explains itself; it is never silently dropped.
     public let unavailabilityReason: String?
     public let deprecationNote: String?
+    /// Last day the provider serves this model, "YYYY-MM-DD". The spec sheet
+    /// shows it as "Available until 23 Oct 2026"; see JunoModelFormatting.
+    public let retiresOn: String?
     /// True only for a router that picks its own thinking depth. Earns the
     /// "SMART" badge in the catalog row.
     public let choosesThinkingAutomatically: Bool
@@ -272,6 +275,7 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
         thinking: JunoThinkingLadder = .unavailable,
         unavailabilityReason: String? = nil,
         deprecationNote: String? = nil,
+        retiresOn: String? = nil,
         choosesThinkingAutomatically: Bool = false
     ) {
         self.id = id
@@ -292,6 +296,7 @@ public struct JunoModelDescriptor: Identifiable, Equatable, Sendable {
         self.thinking = thinking
         self.unavailabilityReason = unavailabilityReason
         self.deprecationNote = deprecationNote
+        self.retiresOn = retiresOn
         self.choosesThinkingAutomatically = choosesThinkingAutomatically
     }
 
@@ -329,5 +334,21 @@ public enum JunoModelFormatting {
                 : String(format: "%.1fM", value)
         }
         return "\(Int((Double(tokens) / 1000).rounded()))K"
+    }
+
+    /// "2026-10-23" -> "23 Oct 2026", matching `formatRetirementDate` on the
+    /// web. Assembled from the parts rather than run through `DateFormatter`:
+    /// the value is a calendar day, and turning it into a `Date` would place it
+    /// at midnight UTC and then render it a day earlier west of Greenwich.
+    /// Returns nil for anything that is not a well-formed YYYY-MM-DD.
+    public static func retirementDate(_ iso: String) -> String? {
+        let parts = iso.split(separator: "-")
+        guard parts.count == 3,
+              let month = Int(parts[1]), (1...12).contains(month),
+              let day = Int(parts[2]), (1...31).contains(day),
+              parts[0].count == 4
+        else { return nil }
+        let names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        return "\(day) \(names[month - 1]) \(parts[0])"
     }
 }

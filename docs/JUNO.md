@@ -308,12 +308,19 @@ Focus ring `2px solid hsl(var(--ring))` at 2px offset for buttons and links.
 
 **Text fields are the exception: no accent, no ring — the border just darkens.**
 `Input`, `Textarea` and `SelectTrigger` opt out of the global outline and focus
-with `border-foreground/30` and nothing else. They used to carry `ring-[3px]
+with `border-foreground/70` and nothing else. They used to carry `ring-[3px]
 ring-ring/25` over `border-primary/60`; because browsers grant `:focus-visible`
 to text inputs on *pointer* focus and not only keyboard, merely clicking a field
 bloomed a wide coral wash that read as an overlay stuck on the box. The same
 rule covers the composer's model search and onboarding's memory textarea, and
 the Compare composer shell focuses to `border-border` instead of coral.
+
+> That opt-out was first written as `border-foreground/30`, which computes to
+> **1.89:1** against `--background` in light and 2.52:1 in dark — below the 3:1
+> WCAG 1.4.11 needs for a focus indicator, and *worse* than the 4.08:1 ring it
+> replaced. The diagnosis was right and the value overshot. `/70` is 5.95:1
+> light and 8.11:1 dark, keeps the no-ring/no-accent decision intact, and cannot
+> bloom on pointer focus because it is only a border colour.
 
 **Coral is for state, not for furniture.** The sidebar's resize handle painted a
 full-height `bg-primary/60` bar while dragging — the loudest thing on screen for
@@ -1349,7 +1356,7 @@ runbooks). **nginx** (443, TLS via Certbot) reverse-proxies:
 (`npm start`, `:3000`, ~1.4 GB restart ceiling, raised HTTP header size),
 `juno-voice-relay` (`relay/`, `:8787`), and `juno-scheduler` (`tasks:runner`).
 
-### 20.2 Database (Neon / Postgres)
+### 20.2 Database (Supabase / Postgres)
 
 Juno runs on hosted **PostgreSQL** — the reference deployment uses **Supabase**
 (`eu-west-1`); Neon works identically. Juno uses **two** connection strings:
@@ -1384,6 +1391,28 @@ live in the `prisma/migrations/` SQL and are applied the same way. For local
 development, `npx prisma migrate dev` against a dev database is all you need; Neon's
 free tier is enough.
 
+### 20.2b Schema changes must be expand/contract
+
+`prisma migrate deploy` runs against the live database **while the old code is
+still serving** — the deploy applies migrations, then reloads PM2. And Prisma has
+no down-migrations: there is no `migrate rollback`. A migration that the running
+code cannot tolerate is therefore an outage, not an inconvenience.
+
+All 45 migrations to date are additive — verified: zero `DROP COLUMN`, `DROP
+TABLE`, `DROP CONSTRAINT` or `SET NOT NULL` anywhere in `prisma/migrations/`. That
+is why this has never bitten. The first destructive change will, unless it is
+split:
+
+| Want | Do it as |
+|---|---|
+| Add a required column | add it **nullable** → deploy → backfill → make required in a **later** release |
+| Rename a column | add the new one → write both → backfill → switch reads → drop the old one a release later |
+| Drop a column | stop reading it → deploy → drop it in a **later** release |
+| Narrow a type / add a constraint | add a check that tolerates existing rows → clean the data → tighten later |
+
+The rule in one line: **every migration must leave the previous release still
+working.** Two releases, never one.
+
 ### 20.3 Continuous deployment (GitHub Actions)
 
 Pushing to `main` deploys automatically — the low-RAM VM never has to build. Four
@@ -1408,7 +1437,7 @@ run the `test` job only — `build-and-deploy` is guarded on `github.event_name 
    paths are never wiped: `.env*` (VM secrets), `.uploads` (locally-stored
    avatars/attachments), `logs`, `node_modules`, `.next/cache`. Changed/rotated
    `PROD_ENV` keys are upserted into the VM's runtime `.env` (with an `.env.bak`
-   rollback), preserving any VM-only keys. On the VM it then runs the Neon-direct-host
+   rollback), preserving any VM-only keys. On the VM it then runs the `DIRECT_URL`
    migrations (§20.2), a conditional `npm ci` (only when the lockfile hash changed),
    `prisma generate`, an nginx header-buffer patch if needed, and
    `pm2 startOrReload deploy/ecosystem.config.js --update-env` + `pm2 save`.
@@ -1421,12 +1450,52 @@ Required **GitHub Actions secrets**: `PROD_ENV` (the full production env file),
 `sync:models:write` (provider discovery → `models.generated.ts`), `sync:benchmarks`
 (Artificial Analysis grades → `benchmarks.generated.ts`, needs `AA_API_KEY`), and
 `radar:models` (OpenRouter industry diff), then `validate:models`. When anything
-changed it commits the regenerated files (which auto-deploys via `deploy.yml`) and
-opens a GitHub issue labeled `model-watch` for hand-curation. Provider keys are repo
-secrets; a provider with no key is skipped, and a failed fetch never prunes.
+changed it commits the regenerated files and opens a GitHub issue labeled
+`model-watch` for hand-curation. Provider keys are repo secrets; a provider with no
+key is skipped, and a failed fetch never prunes.
+
+> This used to say the nightly commit "auto-deploys via `deploy.yml`". It does
+> not. The job pushes with `actions/checkout`'s default `GITHUB_TOKEN`, and GitHub
+> deliberately does not raise workflow events for pushes made with that token —
+> otherwise a workflow could trigger itself indefinitely. So registry changes sit
+> on `main` until the next real push deploys them. That is the safer behaviour
+> (no unattended 04:17 deploy that drops in-flight SSE streams), but it was
+> documented backwards in both this file and the workflow's own header.
 
 **`code-runner.yml` — Cloud Code runner** (dispatched per cloud Code task) is
 documented in §9.3.
+
+### 20.3b Rolling back a bad deploy
+
+The deploy rsyncs `--delete` straight over the live directory, so before this
+existed the previous version stopped existing the moment a deploy began — a bad
+release meant revert → rebuild → redeploy → migrate, with the bad build serving
+for the twenty minutes that took.
+
+`deploy.yml` now snapshots the running build to `~/juno-previous` first
+(hardlinked, so it costs seconds and almost no space). To roll back:
+
+```bash
+ssh <vm> 'cd ~ && rsync -a --delete \
+  --exclude ".env" --exclude ".env.*" --exclude ".uploads" \
+  --exclude "logs" --exclude "node_modules" --exclude ".next/cache" \
+  juno-previous/ juno/ && pm2 reload deploy/ecosystem.config.js --update-env'
+```
+
+Three things this does **not** do, and you must think about each:
+
+- **It does not roll back the database.** Migrations are applied before the
+  reload and Prisma has no down-migrations. Rolling code back under a migrated
+  schema is only safe because every migration is additive — which is exactly the
+  expand/contract rule in §20.2b, and the reason that rule is not optional.
+- **It keeps only one generation.** The snapshot is overwritten on the next
+  deploy, so roll back *before* deploying again.
+- **It does not restore `.env`.** The runtime env is excluded on purpose; the
+  merge step keeps its own `.env.bak`.
+
+The fuller scheme — `~/juno-releases/<sha>` with a `current` symlink, so rollback
+is re-pointing a link and several generations are kept — is still worth doing.
+This is the version that needed no restructuring of the deploy path.
 
 ### 20.4 Manual deploy (`deploy/deploy.sh`)
 
@@ -1454,8 +1523,81 @@ The voice relay can alternatively run on Render (`render.yaml`, free tier, sleep
 - **Model registry**: the nightly workflow syncs it from live provider APIs; promote
   worthwhile `DISCOVERED` entries into `CURATED` and run `npm run validate:models`.
 - **Encryption key rotation**: `npm run crypto:rotate`.
-- **Backups**: rely on Neon's branching/point-in-time restore; user data export is
-  available per-account via `GET /api/account/export`.
+- **Log rotation**: PM2 writes `logs/*.log` unbounded. Run `pm2 install
+  pm2-logrotate` once on the VM (idempotent) or the disk fills eventually.
+- **Health**: `GET /api/health` returns `{ ok, db, version, uptime }` and answers
+  **503** when Postgres is unreachable, so an external uptime monitor needs no
+  special configuration — point it at that URL and alert on non-200. Signed in as
+  an owner (`OWNER_EMAILS`) the same endpoint also returns a per-provider health
+  map; that part is owner-only because it enumerates which model vendors this
+  deployment holds keys for.
+- **Provider health**: `src/lib/provider-health.ts` probes each configured
+  provider with a 1-token completion (10 min TTL, 30 min while a provider is
+  known down) and hides unhealthy providers' models from the catalog. Only
+  auth/billing failures count — 429s and 5xx are ordinary provider weather.
+  A healthy→unhealthy transition raises an operator alert.
+- **Operator alerts**: `alertOperator()` (`src/lib/alerts.ts`) writes a structured
+  `[alert]` line to stderr always, and additionally mails `OWNER_EMAILS` when
+  `RESEND_API_KEY` is set, deduplicated to one message per hour per alert.
+  `grep '\[alert\]' logs/err.log` is the audit trail.
+- **Backups**: see §20.7. There is no backup tooling in this repo — recovery depends
+  entirely on the managed provider's configuration. User data export is available
+  per-account via `GET /api/account/export` (metadata only for attachments).
+
+### 20.7 Backup & disaster recovery — **unverified**
+
+> **Status: not confirmed.** Nothing in this repository backs the database up.
+> There is no `pg_dump`, no `wal-g`, no backup workflow, no backup cron. Recovery
+> depends entirely on how the managed Supabase project is configured, and that is
+> not knowable from the code. Until an operator confirms the two answers below,
+> assume Juno has **no recoverable backup**.
+
+This section previously claimed backups relied on "Neon's branching/point-in-time
+restore". That was wrong twice over: the reference deployment is **Supabase**, not
+Neon (§20.2), and no restore capability was ever verified.
+
+**What an operator must confirm in the Supabase dashboard** (neither is visible
+from the repo, and the local `.env` is not authoritative — production env lives in
+the `PROD_ENV` GitHub Actions secret):
+
+1. **The project's plan tier.** Supabase's Free tier has no point-in-time recovery
+   and no scheduled backups; daily backups begin on Pro. On Free, a bad migration
+   or an accidental delete is unrecoverable.
+2. **The actual backup/retention configuration** — whether PITR is enabled, and the
+   retention window in days.
+
+**Why the retention answer is load-bearing, not academic.** Two jobs delete data on
+a schedule or on demand: the weekly `npm run sync:prune` (`deploy/VM_SETUP_GUIDE.md`,
+30-day default window) and the cascading account delete. If retention is shorter than
+the time it takes to *notice* a bad prune, backups do not help.
+
+**Uploads are a separate failure domain, and currently a worse one.** In the `.env`
+this repo was reviewed against, `S3_ENDPOINT`, `S3_BUCKET` and `S3_PUBLIC_URL` are
+all set — but `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` are **empty**.
+`isStorageConfigured()` requires the bucket *and both credentials*, so it is false,
+`usesLocalDisk()` is true, and every attachment, avatar and generated image is
+written to the VM's local `.uploads` directory (§13) despite the bucket being
+configured. This is easy to misread: the presence of `S3_PUBLIC_URL` suggests
+uploads are on a CDN, and they are not. That means:
+
+- user uploads have **no** redundancy of any kind — they exist on one always-free VM's
+  disk and nowhere else;
+- they survive deploys only because `deploy.yml`'s rsync `--delete` explicitly
+  excludes `.uploads`. That exclusion is the entire backup strategy for user files;
+- a database restore would come back referencing attachment rows whose bytes are gone.
+
+`GET /api/account/export` writes attachment *metadata*, not bytes, so it is not a
+substitute. Configuring S3 (any S3-compatible bucket) is the fix; until then, a
+restore drill that only proves the database comes back gives false confidence.
+
+**Restore drill.** Once the plan tier is known, restore into a scratch project and
+record the date, the method, the measured RTO and what was verified (rows, and
+separately Storage objects) here. On the Free tier there is nothing to drill —
+the finding is then "no backups exist", which is itself the result to record.
+
+Any dump must go through the Supavisor **session** pooler (5432) for the reasons in
+§20.2 — never the transaction pooler (6543), never `db.<ref>.supabase.co` (IPv6-only).
+Do not commit a backup script carrying a connection string.
 
 ---
 

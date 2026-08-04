@@ -10,12 +10,22 @@ import SwiftUI
 
 struct JunoDesktopRootView: View {
     let configuration: JunoDesktopConfiguration
+    @Environment(\.scenePhase) private var scenePhase
     @SceneStorage("juno.desktop.product") private var storedProduct = DesktopProductMode.chat.rawValue
     @State private var workbenchModel: WorkbenchModel?
+    /// The main window is a launch surface, not a resume surface. Keep this
+    /// pending until the Chat workspace has consumed the one-shot route so a
+    /// stored Code product or Chat destination cannot win the first frame.
+    @State private var startupRoutePending = true
 
     private var productBinding: Binding<DesktopProductMode> {
         Binding(
-            get: { DesktopProductMode(rawValue: storedProduct) ?? .chat },
+            get: {
+                // Do not let a restored Code selection paint even one launch
+                // frame. The route is released only after Chat has appeared.
+                guard !startupRoutePending else { return .chat }
+                return DesktopProductMode(rawValue: storedProduct) ?? .chat
+            },
             set: { storedProduct = $0.rawValue }
         )
     }
@@ -32,12 +42,17 @@ struct JunoDesktopRootView: View {
         phaseContent
             .preferredColorScheme(preferredColorScheme)
             .task {
+                applyStartupRouteIfNeeded()
                 await configuration.authModel.restore()
             }
             .onChange(of: configuration.authModel.phase) { _, phase in
                 Task {
                     await updateLifecycle(for: phase)
                 }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                Task { await configuration.authModel.retryRestore() }
             }
             .onChange(of: configuration.syncModel?.synchronizationGeneration) {
                 _, generation in
@@ -97,14 +112,32 @@ struct JunoDesktopRootView: View {
                     configuration: configuration,
                     session: session,
                     product: productBinding,
-                    workbenchModel: workbenchModel
+                    workbenchModel: workbenchModel,
+                    initialDestination: startupRoutePending ? .chat : nil,
+                    consumeInitialDestination: {
+                        startupRoutePending = false
+                    }
                 )
             }
         case .restoring:
             JunoDesktopLoadingView()
         case .signedOut, .signingIn, .unavailable:
-            JunoDesktopSignInView(authModel: configuration.authModel)
+            JunoDesktopSignInView(
+                authModel: configuration.authModel,
+                localStoreRecovery: configuration.localStoreRecovery
+            )
         }
+    }
+
+    /// Reset only the launch route. Once the Chat workspace has appeared, its
+    /// one-shot destination is retired and ordinary Chat/Code navigation is
+    /// allowed to persist again for the rest of the session.
+    @MainActor
+    private func applyStartupRouteIfNeeded() {
+        guard startupRoutePending else { return }
+        storedProduct = DesktopProductMode.chat.rawValue
+        configuration.conversationModel?.isDraftingNewConversation = true
+        configuration.conversationModel?.selectedConversationID = nil
     }
 
     @MainActor
@@ -307,6 +340,9 @@ private struct JunoDesktopSignInView: View {
     private static let markSize: CGFloat = 48
 
     let authModel: NativeAuthModel
+    /// Present only for the one launch failure that has a way out; see
+    /// ``JunoDesktopLocalStoreRecovery``.
+    let localStoreRecovery: JunoDesktopLocalStoreRecovery?
 
     @State private var email = ""
     @State private var password = ""
@@ -425,6 +461,10 @@ private struct JunoDesktopSignInView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
+
+            if let localStoreRecovery {
+                JunoDesktopLocalStoreRecoveryNotice(recovery: localStoreRecovery)
+            }
         }
         .padding(JunoSpace.section)
         .junoCard(cornerRadius: JunoCornerRadius.card)
@@ -463,6 +503,81 @@ private struct JunoDesktopSignInView: View {
                 .junoCaption()
             Rectangle().fill(Color.junoHairline).frame(height: 1)
         }
+    }
+}
+
+/// The way out of a local database this build cannot unlock, offered inside the
+/// sign-in card because that is the only screen the user can reach.
+///
+/// Shown for that failure alone. Every other startup error prints its sentence
+/// and stops, which is correct — there is nothing the user could do — and an
+/// offer to move their database aside attached to all of them would be a
+/// destructive button waiting for an unrelated bug to surface it.
+///
+/// The copy names what does not come back. Records, projects, artifacts, memories
+/// and settings are a cache of the account and are re-downloaded from the
+/// bootstrap baseline on the next sign-in; the outbox of edits this Mac has not
+/// managed to send yet lives in the same file and exists nowhere else. Saying
+/// "nothing is lost" would have been shorter and untrue.
+private struct JunoDesktopLocalStoreRecoveryNotice: View {
+    let recovery: JunoDesktopLocalStoreRecovery
+
+    private var isRunning: Bool { recovery.phase == .running }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: JunoSpace.cozy) {
+            Rectangle().fill(Color.junoHairline).frame(height: 1)
+
+            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.snug) {
+                Image(systemName: "lock.slash")
+                    .foregroundStyle(Color.junoCaution)
+                // The error line above already says the store cannot be
+                // unlocked; this says why, rather than saying it twice.
+                Text("Its key is in a Keychain this build can't reach")
+                    .font(.callout)
+                    .fontWeight(.medium)
+            }
+
+            VStack(alignment: .leading, spacing: JunoSpace.tight) {
+                Text(
+                    "Starting a fresh local copy gets you past this screen. Your conversations, projects, artifacts and settings download again once you sign in. Changes made on this Mac that hadn't reached Juno yet — anything edited while offline — won't come back."
+                )
+                Text(
+                    "The old copy is moved aside in Application Support ▸ Juno ▸ Desktop, not deleted."
+                )
+            }
+            .junoCaption()
+            .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                Task { await recovery.recoverAndRestart() }
+            } label: {
+                Group {
+                    if isRunning {
+                        HStack(spacing: JunoSpace.snug) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Starting a fresh copy…")
+                        }
+                    } else {
+                        Text("Start a fresh copy and restart Juno")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .junoGlassButton()
+            .disabled(isRunning)
+            .accessibilityIdentifier("juno.desktop.recover-local-store")
+
+            if case .failed(let message) = recovery.phase {
+                Text(message)
+                    .junoCaption()
+                    .foregroundStyle(Color.junoDanger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

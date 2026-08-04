@@ -14,7 +14,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await unbanUser(id, owner.email!);
-  console.log(`[admin] unban by ${owner.email}: ${user.email}`);
+  // Ids, not emails: PM2 log files are plaintext, unrotated and rsynced around.
+  // The durable audit record written by unbanUser() keeps the actor.
+  console.log(`[admin] unban by ${owner.id}: ${user.id}`);
 
   return NextResponse.json({ ok: true });
 }

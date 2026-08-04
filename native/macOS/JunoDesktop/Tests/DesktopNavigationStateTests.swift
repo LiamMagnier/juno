@@ -1,3 +1,4 @@
+import JunoCodeCore
 import Testing
 @testable import JunoDesktop
 
@@ -201,6 +202,93 @@ struct DesktopNavigationStateTests {
     func everySidebarDestinationHasANonEmptyLabel() {
         for destination in DesktopDestination.allCases {
             #expect(destination.label.isEmpty == false)
+        }
+    }
+
+    // MARK: - Round-tripping the whole vocabulary
+
+    /// Every Code selection survives scene storage, checked as a set rather than
+    /// one case at a time.
+    ///
+    /// The two existing round-trip tests above were written for `allProjects` and
+    /// `draft` because those encode as a *single* field and a decoder built
+    /// around "kind + value" pairs returns nil for them. That hazard is not a
+    /// property of those two cases — it belongs to the shape, and `connections`,
+    /// `usage` and `settings` were added later with exactly the same shape. A
+    /// list that has to be extended by hand every time a destination is added is
+    /// the kind of test that passes forever while the coverage rots, so this
+    /// enumerates the vocabulary in one place and fails the moment a new case is
+    /// added without a decoder arm to match.
+    @Test
+    func everySelectionSurvivesSceneStorage() {
+        let everySelection: [DesktopCodeSidebarItem] = [
+            .allProjects,
+            .draft,
+            .pulls,
+            .connections,
+            .usage,
+            .settings,
+            .repository(WorkspaceID(value: "ws-1")),
+            .session(CodeSessionID(value: "sess-1")),
+            .task("task-1"),
+            .remote(deviceID: "device-1", sessionID: "sess-2"),
+        ]
+
+        for selection in everySelection {
+            let encoded = DesktopCodeNavigationState.encode(selection)
+            #expect(
+                encoded.isEmpty == false,
+                "\(selection) encoded to nothing, which decodes as no selection at all"
+            )
+            #expect(
+                DesktopCodeNavigationState.decode(encoded) == selection,
+                "\(selection) did not survive encode → decode (got \(encoded))"
+            )
+        }
+    }
+
+    /// The account-level pages are never invalidated by what happens locally.
+    ///
+    /// Usage, Settings, Connections and the pull request list name pages on the
+    /// account, not local records — so validating them against empty sessions,
+    /// tasks and repositories has to leave them alone. Dropping one would send a
+    /// reader who reopened the window on Usage back to a blank Code canvas with
+    /// no explanation.
+    @Test
+    func accountLevelPagesSurviveValidationAgainstAnEmptyWorkspace() {
+        for page in [
+            DesktopCodeSidebarItem.pulls, .connections, .usage, .settings, .draft, .allProjects,
+        ] {
+            #expect(
+                DesktopCodeNavigationState.validate(
+                    page,
+                    sessions: [],
+                    tasks: [],
+                    repositories: []
+                ) == page,
+                "\(page) was invalidated by an empty workspace"
+            )
+        }
+    }
+
+    /// A selection naming a record that is gone is dropped rather than restored.
+    @Test
+    func selectionsNamingMissingRecordsAreDropped() {
+        let gone: [DesktopCodeSidebarItem] = [
+            .session(CodeSessionID(value: "deleted")),
+            .task("deleted"),
+            .repository(WorkspaceID(value: "deleted")),
+        ]
+        for selection in gone {
+            #expect(
+                DesktopCodeNavigationState.validate(
+                    selection,
+                    sessions: [],
+                    tasks: [],
+                    repositories: []
+                ) == nil,
+                "\(selection) should not survive when the record it names is gone"
+            )
         }
     }
 }

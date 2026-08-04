@@ -24,12 +24,49 @@ function mapStatus(s: Stripe.Subscription.Status): SubStatus {
   }
 }
 
-async function syncSubscription(sub: Stripe.Subscription) {
+async function syncSubscription(sub: Stripe.Subscription, fallbackUserId?: string | null) {
   const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
   // Signature-verified Stripe event; the lookup is keyed by customer id, not
   // by a signed-in user, so it legitimately uses the unguarded client.
-  const record = await prismaUnguarded.subscription.findFirst({ where: { stripeCustomerId: customerId } });
-  if (!record) return;
+  let record = await prismaUnguarded.subscription.findFirst({ where: { stripeCustomerId: customerId } });
+
+  if (!record) {
+    // The customer id link can be missing: checkout creates the Stripe customer
+    // and writes stripeCustomerId in two non-transactional steps, so a failure
+    // between them leaves a paying customer Juno cannot recognise — and every
+    // subsequent webhook for them was a silent no-op.
+    //
+    // Stripe carries the userId for us in two places we set at checkout
+    // (subscription_data.metadata and the session's client_reference_id), and
+    // neither was being used. Recover through them and heal the link.
+    const userId = sub.metadata?.userId || fallbackUserId || null;
+    if (userId) {
+      record = await prismaUnguarded.subscription.findUnique({ where: { userId } });
+      if (record) {
+        await prismaUnguarded.subscription.update({
+          where: { id: record.id },
+          data: { stripeCustomerId: customerId },
+        });
+        console.warn("[stripe] relinked a subscription by metadata userId", { customerId, userId });
+      }
+    }
+  }
+
+  if (!record) {
+    alertOperator({
+      kind: "stripe_unknown_customer",
+      key: customerId,
+      title: "Stripe webhook for a customer Juno cannot identify",
+      detail: {
+        customerId,
+        subscriptionId: sub.id,
+        subscriptionStatus: sub.status,
+        hadMetadataUserId: Boolean(sub.metadata?.userId),
+        effect: "The event was dropped; this customer's plan will not update.",
+      },
+    });
+    return;
+  }
 
   const item = sub.items.data[0];
   const priceId = item?.price.id;
@@ -100,14 +137,34 @@ export async function POST(req: Request) {
         if (session.subscription) {
           const subId = typeof session.subscription === "string" ? session.subscription : session.subscription.id;
           const sub = await getStripe().subscriptions.retrieve(subId);
-          await syncSubscription(sub);
+          await syncSubscription(sub, session.client_reference_id);
         }
         break;
       }
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted": {
-        await syncSubscription(event.data.object as Stripe.Subscription);
+        // Re-fetch rather than trusting the event payload.
+        //
+        // Stripe guarantees neither ordering nor at-most-once delivery, and it
+        // retries on any non-2xx. Writing the payload verbatim means an
+        // `updated` emitted before a cancellation but delivered after it
+        // resurrects a cancelled plan, and a redelivered old event silently
+        // rewinds state. Whatever the event says, the subscription's current
+        // state is what Juno should store, so ask for it.
+        const payload = event.data.object as Stripe.Subscription;
+        let current = payload;
+        try {
+          current = await getStripe().subscriptions.retrieve(payload.id);
+        } catch (err) {
+          // A subscription can genuinely be gone. Fall back to the payload —
+          // stale is better than dropping the event entirely.
+          console.warn("[stripe] could not re-fetch subscription; using event payload", {
+            subscriptionId: payload.id,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
+        await syncSubscription(current);
         break;
       }
     }

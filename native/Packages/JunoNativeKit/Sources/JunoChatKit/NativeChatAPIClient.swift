@@ -117,6 +117,11 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
     /// model, and for an image model on a server too old to publish the field.
     public let imageEditSupport: NativeImageEditSupport
     public let deprecationNote: String?
+    /// The last day the provider serves this model, "YYYY-MM-DD", or nil when
+    /// no retirement has been announced. Kept as the string the server sent
+    /// rather than a `Date`: it is a calendar day, and parsing it into an
+    /// instant would shift it across a timezone and show the wrong one.
+    public let retiresOn: String?
 
     /// A streaming chat model — the only kind this composer can send to. Image
     /// and video generation entries share the manifest but are not selectable
@@ -164,7 +169,8 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         supportsTools: Bool = false,
         supportsAttachments: Bool = false,
         imageEditSupport: NativeImageEditSupport = .none,
-        deprecationNote: String? = nil
+        deprecationNote: String? = nil,
+        retiresOn: String? = nil
     ) {
         self.id = id
         self.providerID = providerID
@@ -194,6 +200,7 @@ public struct NativeChatModelOption: Identifiable, Equatable, Sendable {
         self.supportsAttachments = supportsAttachments
         self.imageEditSupport = imageEditSupport
         self.deprecationNote = deprecationNote
+        self.retiresOn = retiresOn
     }
 }
 
@@ -696,7 +703,8 @@ public struct NativeChatAPIClient: Sendable, NativePrivateChatSending {
                 // send a request whose shape the client cannot get right.
                 imageEditSupport: model.capabilities.imageEdit
                     .flatMap(NativeImageEditSupport.init(rawValue:)) ?? .none,
-                deprecationNote: nonEmpty(model.deprecationNote, maximum: 400)
+                deprecationNote: nonEmpty(model.deprecationNote, maximum: 400),
+                retiresOn: nonEmpty(model.retiresOn, maximum: 10)
             )
         }
         return NativeChatModelCatalog(
@@ -1181,6 +1189,7 @@ private struct ModelCatalogWire: Decodable {
         let reasoning: Reasoning
         let capabilities: Capabilities
         let deprecationNote: String?
+        let retiresOn: String?
     }
     let manifestVersion: String
     let contractDigest: String

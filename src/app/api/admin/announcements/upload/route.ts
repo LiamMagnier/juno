@@ -12,7 +12,8 @@ export const maxDuration = 60;
 // <img>/<video> can render the returned URL directly.
 export async function POST(req: Request) {
   const owner = await getOwnerUser();
-  if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // 404, not 403: the rest of the admin surface refuses to confirm it exists.
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   if (!isStorageAvailable()) {
     return NextResponse.json({ error: "Uploads are not available — configure a storage bucket." }, { status: 503 });

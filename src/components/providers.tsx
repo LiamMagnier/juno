@@ -31,7 +31,23 @@ export function Providers({
         <TooltipProvider delayDuration={200}>
           {children}
           <AutoTranslate locale={locale} autoDetect={autoDetect} />
-          <Toaster position="top-center" richColors closeButton />
+          {/*
+            Bottom, not top: the transcript's newest content sits at the top of
+            the scroll area, so a top-center toast landed directly on the
+            message that caused it — and on mobile it covered the entire top bar
+            (menu, title, search, new chat).
+
+            The offsets clear the composer. Sonner ignores the x-position below
+            600px and goes full-bleed, so the mobile offset has to be set
+            explicitly or the toast sits on the input.
+          */}
+          <Toaster
+            position="bottom-center"
+            offset={{ bottom: "8rem" }}
+            mobileOffset={{ bottom: "7rem", left: "0.75rem", right: "0.75rem" }}
+            richColors
+            closeButton
+          />
         </TooltipProvider>
       </ThemeProvider>
     </SessionProvider>

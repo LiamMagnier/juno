@@ -126,7 +126,10 @@ public struct CodeModelProviderResolver: Sendable {
 /// `ModelStreamEvent`. No provider key ever reaches the app, and no new auth or
 /// backend route is introduced.
 public struct BackendCodeModelClient: AgentModelClient {
-    public static let defaultMaxTokens = 8_192
+    /// Keep the client ceiling aligned with the largest supported backend
+    /// output window. Providers still apply their own model-specific caps in
+    /// `CodeThinkingWire`; this removes the old, app-imposed 8k truncation.
+    public static let defaultMaxTokens = 128_000
 
     private let streamer: any NativeAuthenticatedByteStreaming
     private let accountID: AccountID

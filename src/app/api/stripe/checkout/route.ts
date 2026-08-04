@@ -6,7 +6,11 @@ import { ensureUserDefaults } from "@/lib/auth";
 import { env, isStripeConfigured } from "@/lib/env";
 import { getStripe, priceIdForPlan } from "@/lib/stripe";
 
-const schema = z.object({ plan: z.enum(["PRO", "MAX", "MAX20"]) });
+const schema = z.object({
+  plan: z.enum(["PRO", "MAX", "MAX20"]),
+  /** Defaults to monthly so an older client that omits it keeps working. */
+  interval: z.enum(["month", "year"]).optional(),
+});
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -16,7 +20,8 @@ export async function POST(req: Request) {
   const parsed = schema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid plan." }, { status: 400 });
 
-  const priceId = priceIdForPlan(parsed.data.plan);
+  const interval = parsed.data.interval ?? "month";
+  const priceId = priceIdForPlan(parsed.data.plan, interval);
   if (!priceId) return NextResponse.json({ error: "Plan price is not configured." }, { status: 503 });
 
   await ensureUserDefaults(user.id);
@@ -43,7 +48,7 @@ export async function POST(req: Request) {
     allow_promotion_codes: true,
     success_url: `${env.appUrl}/chat?upgraded=1`,
     cancel_url: `${env.appUrl}/upgrade`,
-    metadata: { userId: user.id, plan: parsed.data.plan },
+    metadata: { userId: user.id, plan: parsed.data.plan, interval },
     subscription_data: { metadata: { userId: user.id } },
   });
 

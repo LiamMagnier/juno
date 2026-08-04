@@ -4,6 +4,8 @@ import { buildAnthropicThinkingBits } from "@/lib/anthropic-thinking";
 import { env } from "@/lib/env";
 import { normalizeFinishReason } from "@/lib/finish-reason";
 import { personalitySystemPrompt } from "@/lib/personalities";
+import { providerApiKey } from "@/lib/providers";
+import { UNTRUSTED_CONTENT_RULE } from "@/lib/untrusted-content";
 import { getObjectBytes } from "@/lib/storage";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
@@ -19,7 +21,20 @@ let anthropic: Anthropic | null = null;
 
 export function getAnthropic(): Anthropic {
   // maxRetries handles transient 429/5xx/overloaded errors on the initial request.
-  if (!anthropic) anthropic = new Anthropic({ apiKey: env.anthropicApiKey, maxRetries: 2 });
+  //
+  // The key goes through providerApiKey() rather than env.anthropicApiKey so it
+  // gets the same normalization every other provider's key gets (trim, strip one
+  // layer of surrounding quotes, drop stray CR/LF — see providers.ts readEnv).
+  // env.anthropicApiKey is a raw process.env read, so a key pasted with quotes
+  // or a trailing newline used to 401 here while reading as configured
+  // everywhere else — and would make the health probe disagree with live
+  // traffic, which is the one thing a probe must never do.
+  if (!anthropic) {
+    anthropic = new Anthropic({
+      apiKey: providerApiKey("anthropic") ?? env.anthropicApiKey,
+      maxRetries: 2,
+    });
+  }
   return anthropic;
 }
 
@@ -45,6 +60,13 @@ export interface SystemPromptOptions {
   voiceMode?: boolean;
   /** Project name + instructions + reference files, injected when chatting in a project. */
   projectContext?: string;
+  /**
+   * This turn can put content from outside the conversation into context — a
+   * connector tool result or a fetched web page. Adds the untrusted-content
+   * rule. Only set when it applies, so a plain chat keeps its original cached
+   * prefix rather than paying for a rule that cannot fire.
+   */
+  untrustedContent?: boolean;
 }
 
 export function buildSystemPrompt(opts: SystemPromptOptions): string {
@@ -54,6 +76,12 @@ export function buildSystemPrompt(opts: SystemPromptOptions): string {
   const parts: string[] = [
     `You are Juno, a thoughtful, warm and capable AI assistant. You help with writing, analysis, coding, math, and creative work. Be clear, accurate and genuinely useful.`,
   ];
+
+  // Placed immediately after the identity line so it outranks everything that
+  // follows, and kept as constant text so the cached prefix stays stable (a
+  // per-request nonce would be stronger but would invalidate the cache on every
+  // provider, every turn).
+  if (opts.untrustedContent) parts.push(UNTRUSTED_CONTENT_RULE);
 
   if (!opts.voiceMode) {
     parts.push(

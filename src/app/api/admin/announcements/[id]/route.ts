@@ -8,7 +8,8 @@ export const runtime = "nodejs";
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const owner = await getOwnerUser();
-  if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // 404, not 403: the rest of the admin surface refuses to confirm it exists.
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { id } = await params;
   const existing = await prisma.announcement.findUnique({ where: { id }, select: { id: true } });
@@ -32,7 +33,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const owner = await getOwnerUser();
-  if (!owner) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // 404, not 403: the rest of the admin surface refuses to confirm it exists.
+  if (!owner) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const { id } = await params;
   const existing = await prisma.announcement.findUnique({ where: { id }, select: { id: true } });

@@ -396,7 +396,49 @@ enum CodePreviewData {
                 risk: .read, status: .succeeded,
                 result: "612 lines read.", duration: 0.3
             )
-            builder.assistant("The backoff is computed inline in `reconnectLoop()`. I'll extract it into a `BackoffSchedule` value so it can be tested without waiting on the clock. Starting with the extraction —")
+            // A delegation in flight: one agent still working and one already
+            // finished, under a single `delegate_task` call. This is what makes
+            // the Active/Done split, the ticking elapsed time and the delegating
+            // row's "1 running · 1 done" subtitle inspectable in the sweep. The
+            // preview has no session store, so the agents' own steps read as
+            // unavailable — which is the honest state for a fixture and the same
+            // one a deleted child session produces.
+            builder.toolProposed(
+                id: "call-delegate-backoff", name: "delegate_task",
+                summary: "Delegate 2 tasks: Map the reconnect callers, Review the backoff maths",
+                risk: .read
+            )
+            builder.toolStarted("call-delegate-backoff")
+            builder.subagent(
+                "call-delegate-backoff#0",
+                call: "call-delegate-backoff",
+                title: "Map the reconnect callers",
+                task: "Find every caller of reconnectLoop() and report which of them depend on the current backoff timing.",
+                role: .engineer,
+                status: .running,
+                child: CodeSessionID(value: "preview-subagent-callers"),
+                activity: "Search for “reconnectLoop(”",
+                startedAt: minutes(1.4)
+            )
+            builder.subagent(
+                "call-delegate-backoff#1",
+                call: "call-delegate-backoff",
+                title: "Review the backoff maths",
+                task: "Check the exponential backoff for overflow and for a jitter distribution that can return zero.",
+                role: .reviewer,
+                status: .completed,
+                child: CodeSessionID(value: "preview-subagent-maths"),
+                startedAt: minutes(2.1),
+                completedAt: minutes(0.9),
+                inputTokens: 18_420,
+                outputTokens: 1_106,
+                summary: """
+                The doubling is unbounded: after 31 attempts `1 << attempt` overflows \
+                `Int32` on the wire type. Clamp the exponent at 6 (64s ceiling). The \
+                jitter is `Double.random(in: 0...delay)`, which can return 0 and \
+                produce a reconnect storm — use `0.5...1.0` of the delay instead.
+                """
+            )
             // A proposed-but-uncompleted call: the row must show its spinner.
             builder.toolProposed(
                 id: "call-write-backoff", name: "write_file",
@@ -707,6 +749,46 @@ enum CodePreviewData {
                 append(.toolOutput(ToolOutputEvent(toolCallID: id, channel: channel, text: text)))
             }
             toolCompleted(id, status: status, result: result, duration: duration)
+        }
+
+        /// One sub-agent lifecycle transition.
+        ///
+        /// Recorded as its own event exactly as the runtime records it, rather
+        /// than as a pre-built `SubagentRun`, so the sweep exercises the same
+        /// fold the live pane uses — including the collapse of several updates
+        /// for one agent into one row.
+        mutating func subagent(
+            _ agentID: String,
+            call: String,
+            title: String,
+            task: String,
+            role: AgentRole,
+            status: SubagentStatus,
+            child: CodeSessionID? = nil,
+            activity: String = "",
+            startedAt: Date? = nil,
+            completedAt: Date? = nil,
+            inputTokens: Int? = nil,
+            outputTokens: Int? = nil,
+            summary: String? = nil,
+            error: String? = nil
+        ) {
+            append(.subagentUpdated(SubagentUpdateEvent(
+                agentID: agentID,
+                toolCallID: call,
+                childSessionID: child,
+                title: title,
+                task: task,
+                role: role,
+                status: status,
+                currentActivity: activity,
+                startedAt: startedAt,
+                completedAt: completedAt,
+                inputTokens: inputTokens,
+                outputTokens: outputTokens,
+                summary: summary,
+                error: error
+            )))
         }
 
         mutating func approvalRequested(_ request: ApprovalRequest) {

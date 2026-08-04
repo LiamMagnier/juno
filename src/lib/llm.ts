@@ -5,6 +5,7 @@ import { streamOpenAIResponses } from "@/lib/openai-responses";
 import { streamGeminiSearch } from "@/lib/gemini-search";
 import { anthropicMcpServers, openMcpToolset, type ActiveConnector, type McpToolset } from "@/lib/mcp";
 import { reasoningCaps } from "@/lib/model-metrics";
+import { normalizeProviderError } from "@/lib/provider-error";
 import type { ModelInfo } from "@/lib/models";
 import type { ReasoningEffort } from "@/types/chat";
 import type { LlmEvent, MessageForModel } from "@/types/llm";
@@ -61,6 +62,13 @@ export async function* streamChat(opts: {
   /** Premium "fast mode": Anthropic speed:"fast" / OpenAI service_tier:"priority".
    *  The route only sets this on models that support it. */
   fastMode?: boolean;
+  /**
+   * Who connector tool calls are attributed to in the audit trail, and which
+   * conversation they belong to. Required whenever `connectors` is non-empty:
+   * a tool call acting with a user's own credentials that cannot be traced back
+   * to that user is precisely the call worth refusing.
+   */
+  audit?: { userId: string; conversationId?: string | null };
 }): AsyncGenerator<LlmEvent> {
   const { model, system, history, signal, reasoningEffort, webSearch, dynamicContext, cacheKey, fastMode } = opts;
   // On OpenAI-compatible providers, reasoning/thinking tokens count toward the
@@ -95,10 +103,20 @@ export async function* streamChat(opts: {
   // Everyone else: we open the MCP tools here and run the tool loop ourselves.
   let toolset: McpToolset | undefined;
   if (active.length) {
-    try {
-      toolset = await openMcpToolset(active);
-    } catch {
-      toolset = undefined;
+    if (!opts.audit) {
+      // A caller that hands over connectors without an audit identity is a bug,
+      // and the safe way to fail is with no tools rather than with untraceable
+      // ones — the answer still streams, it just cannot reach the user's
+      // accounts. Loud, because it is silent from the user's side.
+      console.error("[llm] connectors supplied without an audit context — tools disabled", {
+        connectors: active.map((c) => c.id),
+      });
+    } else {
+      try {
+        toolset = await openMcpToolset(active, opts.audit);
+      } catch {
+        toolset = undefined;
+      }
     }
   }
   try {
@@ -113,28 +131,24 @@ export async function* streamChat(opts: {
   }
 }
 
-/** Turn a provider/SDK error into a clear, user-facing message. */
+/**
+ * Turn a provider/SDK error into a clear, user-facing message.
+ *
+ * The judgement lives in src/lib/provider-error.ts so the health probe can
+ * reuse it and so it is unit testable (this module is `server-only`). This
+ * wrapper stays because five call sites want just the string — and because two
+ * of them (route.ts:2458, route.ts:2535) feed it Prisma and internal errors,
+ * not provider errors at all, which is exactly why the raw message must never
+ * be echoed back to a user.
+ *
+ * The operator-facing detail is logged here rather than discarded: collapsing
+ * auth and billing to one neutral sentence would otherwise erase the only
+ * signal that a provider account has run dry.
+ */
 export function providerErrorMessage(err: unknown, providerLabel?: string): string {
-  const e = err as { status?: number; message?: string; error?: { message?: string } | string };
-  const errObj = typeof e?.error === "object" ? e.error : undefined;
-  const raw = (errObj?.message || (typeof e?.error === "string" ? e.error : "") || e?.message || "").toString();
-  const lower = raw.toLowerCase();
-  const status = e?.status;
-  const who = providerLabel ? `${providerLabel}` : "This model's provider";
-
-  if (status === 401 || /invalid.*api.?key|invalid x-api-key|authentication|unauthorized/i.test(raw))
-    return `${who} rejected its API key — double-check that key in your environment.`;
-  if (status === 402 || /balance|insufficient|recharge|no\s*(remaining)?\s*(credit|quota|resource)|余额|充值/i.test(lower))
-    return `${who} reports no remaining balance or quota. Top up that account, or pick another model.`;
-  if (status === 403 || /denied|permission|not\s*allow|forbidden/i.test(lower))
-    return `${who} denied access — make sure the model/API is enabled for that account.`;
-  if (status === 429 || /rate.?limit|overloaded|too many/i.test(lower))
-    return `${who} is busy or rate-limiting right now. Try again in a moment.`;
-  if (status === 404 || /not found|does not exist|unknown model|no such model/i.test(lower))
-    return `That model isn't available from ${providerLabel ?? "the provider"} right now. Pick another model.`;
-  // 5xx (incl. Google's frequent 503 "no body") — a transient fault on the
-  // provider's side, not the user's request. Suggest a retry instead of a raw code.
-  if ((typeof status === "number" && status >= 500) || /50[0-4]|server error|unavailable|bad gateway|gateway timeout|no body|internal error/i.test(lower))
-    return `${who} is temporarily unavailable (a server error on their end). Please try again in a moment.`;
-  return raw ? `${who} returned an error: ${raw.slice(0, 220)}` : "Juno ran into a problem generating a response. Please try again.";
+  const normalized = normalizeProviderError(err, providerLabel);
+  if (normalized.accountFault) {
+    console.error("[provider] account fault", { detail: normalized.operatorMessage });
+  }
+  return normalized.userMessage;
 }

@@ -184,6 +184,9 @@ export function useCodeSession(opts: UseCodeSessionOptions) {
     setAgents([]);
     lastSeqRef.current = 0;
     liveRef.current = null;
+    // Session-identity reset, keyed only on conversationId — opts.initialMessages
+    // is the snapshot for that session, and depending on it would clear live
+    // state whenever the parent re-rendered with a fresh array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.conversationId]);
 
