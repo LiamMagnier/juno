@@ -160,7 +160,7 @@ final class CodeRemoteHostTests: XCTestCase {
         CodeRemoteHost(
             deviceID: "device-1",
             accountID: account,
-            client: NativeCodeRemoteClient(sender: transport),
+            relay: NativeCodeRemoteClient(sender: transport),
             executor: executor,
             // Real sleeps would make these tests slow and flaky; the backoff
             // arithmetic is asserted directly instead.
