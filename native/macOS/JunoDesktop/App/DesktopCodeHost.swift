@@ -22,15 +22,17 @@ import Observation
 /// (`juno-windows/src/lib/code/remoteHost.ts`) is the working reference and uses
 /// the same interval and the same persisted-id key.
 ///
-/// **This registers presence, not capability, and the difference is
-/// load-bearing.** A task the phone dispatches at this Mac is written to the
-/// queue and stays `queued`: nothing here claims it, and nothing here runs it.
-/// ``CodeRemoteHost`` is the loop that would, and it is deliberately not wired
-/// up — a Mac that silently began executing instructions sent from elsewhere the
-/// moment someone signed in would be a genuinely dangerous default, so serving
-/// remote work is a separate change that needs its own explicit switch.
-/// ``servesQueuedTasks`` exists so a settings row can say that out loud, rather
-/// than leaving the reader to infer it from a task that never starts.
+/// **Presence and capability are separate, and the difference is
+/// load-bearing.** Registering says this Mac is signed in; ``servesQueuedTasks``
+/// says whether it will actually claim and run work sent to it. They were once
+/// the same thing by omission — the phone read presence as capability, so a
+/// dispatched task sat `queued` forever because nothing here claimed it.
+///
+/// ``CodeRemoteHost`` is the loop that claims, and it runs only while the
+/// switch is on. It is off by default and changed only at this machine: a Mac
+/// that began executing instructions from elsewhere the moment someone signed
+/// in would be a genuinely dangerous default, because signing in is not consent
+/// to hand a phone the shell.
 @MainActor
 @Observable
 final class DesktopCodeHostModel {
@@ -66,6 +68,12 @@ final class DesktopCodeHostModel {
     /// would not — see the note at the top of this file. Stated as a value so
     /// the surface that eventually shows hosting can read the truth from the
     /// model instead of hard-coding a sentence that will rot when this changes.
+    /// The claim/execute loop, alive only while hosting is switched on.
+    private var remoteHost: CodeRemoteHost?
+    /// Supplies the executor once the app has a workbench to run against.
+    /// Nil until then, which is why hosting cannot start before it is set.
+    var remoteExecutorProvider: (@MainActor () -> (any CodeRemoteCommandExecuting)?)?
+
     /// Whether this Mac will claim and execute queued remote work.
     ///
     /// Off by default and only ever changed by the person at the machine. A Mac
@@ -79,6 +87,7 @@ final class DesktopCodeHostModel {
         get { defaults.bool(forKey: Self.servesQueuedTasksKey) }
         set {
             defaults.set(newValue, forKey: Self.servesQueuedTasksKey)
+            syncRemoteHost()
             // Re-register immediately rather than waiting for the next
             // heartbeat: until the relay knows, the phone still shows this Mac
             // as unavailable (or, worse, as available after it was switched
@@ -95,12 +104,44 @@ final class DesktopCodeHostModel {
         servesQueuedTasks = false
     }
 
+    /// Starts or stops the claim loop to match the switch.
+    ///
+    /// Called from the switch, from sign-in and from sign-out, so there is one
+    /// place that decides whether this Mac is listening — rather than three
+    /// that can disagree, which is how a Mac ends up still serving after the
+    /// account it was serving for signed out.
+    private func syncRemoteHost() {
+        let shouldServe = servesQueuedTasks && accountID != nil && deviceID != nil
+        if shouldServe, remoteHost == nil {
+            guard let accountID, let deviceID, let relay,
+                let executor = remoteExecutorProvider?()
+            else { return }
+            let host = CodeRemoteHost(
+                deviceID: deviceID,
+                accountID: accountID,
+                relay: relay,
+                executor: executor
+            )
+            remoteHost = host
+            Task { await host.activate() }
+        } else if !shouldServe, let host = remoteHost {
+            remoteHost = nil
+            // Cancels an in-flight command rather than letting it acknowledge
+            // against an account that may no longer be signed in.
+            Task { await host.deactivate(reason: "Remote hosting was switched off") }
+        }
+    }
+
     /// Matches the Windows client's `DEVICE_ID_KEY` so the two hosts describe
     /// the same idea with the same name.
     private static let deviceIDKey = "juno.code.deviceId"
     private static let heartbeatInterval = Duration.seconds(60)
 
     private let client: NativeCodeTaskClient
+    /// The relay transport for the claim loop. Separate from `client`, which
+    /// only registers — keeping them apart means presence still works on a
+    /// build where hosting is unavailable.
+    private let relay: (any CodeRemoteRelaying)?
     private let defaults: UserDefaults
     /// Resolved once rather than per beat: `Host.current()` consults the system
     /// configuration store, and the beat runs on the main actor. A Mac renamed
@@ -118,8 +159,13 @@ final class DesktopCodeHostModel {
     /// waiting a full minute for the following beat.
     private var needsAnotherRegistration = false
 
-    init(client: NativeCodeTaskClient, defaults: UserDefaults = .standard) {
+    init(
+        client: NativeCodeTaskClient,
+        relay: (any CodeRemoteRelaying)? = nil,
+        defaults: UserDefaults = .standard
+    ) {
         self.client = client
+        self.relay = relay
         self.defaults = defaults
         // Read exactly as `JunoDesktopConfiguration` reads them, so the computer
         // named in the phone's picker is the computer named everywhere else.
@@ -157,6 +203,12 @@ final class DesktopCodeHostModel {
     func stop() {
         beat?.cancel()
         beat = nil
+        // Before the account is cleared: the loop must be told to stop while
+        // it still knows which account it was serving.
+        if let host = remoteHost {
+            remoteHost = nil
+            Task { await host.deactivate(reason: "Signed out") }
+        }
         accountID = nil
         deviceID = nil
         workspaces = []
@@ -213,6 +265,9 @@ final class DesktopCodeHostModel {
                     for: accountID
                 )
                 guard self.accountID == accountID else { return }
+                // The device id only exists after the first registration, so
+                // this is the earliest the loop can be started.
+                self.syncRemoteHost()
                 deviceID = id
                 defaults.set(id, forKey: Self.deviceIDKey)
                 lastRegisteredAt = Date()
