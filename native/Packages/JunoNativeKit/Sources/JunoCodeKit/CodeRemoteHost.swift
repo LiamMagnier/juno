@@ -9,6 +9,32 @@ import JunoCore
 /// runtime, with its own tool permissions and approval flow. Keeping that
 /// boundary means remote commands cannot acquire capabilities that a local
 /// prompt does not already have, which is the whole security story of Remote.
+/// The two relay operations the host loop needs.
+///
+/// A seam, not an abstraction for its own sake: `CodeRemoteHost` used to name
+/// `NativeCodeRemoteClient` directly, which meant the loop — claim, execute,
+/// acknowledge, back off, stop on revocation — could only be exercised against
+/// a live server. Everything that actually goes wrong in Remote lives in that
+/// loop's seams: a claim landing after sign-out, a revocation mid-poll, a
+/// duplicate delivery, a failure that must still be acknowledged.
+public protocol CodeRemoteRelaying: Sendable {
+    /// Long-polls for work. Returning nil is the normal idle outcome.
+    func claimNextCommand(
+        deviceID: String, for accountID: AccountID
+    ) async throws -> CodeRemoteCommand?
+
+    func acknowledgeCommand(
+        deviceID: String,
+        commandID: String,
+        status: String,
+        result: [String: JunoJSONValue]?,
+        error: String?,
+        for accountID: AccountID
+    ) async throws
+}
+
+extension NativeCodeRemoteClient: CodeRemoteRelaying {}
+
 public protocol CodeRemoteCommandExecuting: Sendable {
     /// Returns a result payload on success. Throwing marks the command failed
     /// and reports the message back to the relay.
@@ -40,7 +66,7 @@ public actor CodeRemoteHost {
 
     private let deviceID: String
     private let accountID: AccountID
-    private let client: NativeCodeRemoteClient
+    private let relay: any CodeRemoteRelaying
     private let executor: any CodeRemoteCommandExecuting
     private let sleep: @Sendable (Duration) async throws -> Void
     private let jitter: @Sendable () -> Double
@@ -57,7 +83,7 @@ public actor CodeRemoteHost {
     public init(
         deviceID: String,
         accountID: AccountID,
-        client: NativeCodeRemoteClient,
+        relay: any CodeRemoteRelaying,
         executor: any CodeRemoteCommandExecuting,
         sleep: @escaping @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
@@ -66,7 +92,7 @@ public actor CodeRemoteHost {
     ) {
         self.deviceID = deviceID
         self.accountID = accountID
-        self.client = client
+        self.relay = relay
         self.executor = executor
         self.sleep = sleep
         self.jitter = jitter
@@ -105,7 +131,7 @@ public actor CodeRemoteHost {
 
                 // A nil command is the normal idle outcome of the relay's long
                 // poll, not a failure — looping straight back is correct.
-                let claimed = try await client.claimNextCommand(
+                let claimed = try await relay.claimNextCommand(
                     deviceID: deviceID, for: accountID
                 )
 
@@ -147,7 +173,7 @@ public actor CodeRemoteHost {
         do {
             let result = try await executor.execute(command)
             executedCommandCount += 1
-            try await client.acknowledgeCommand(
+            try await relay.acknowledgeCommand(
                 deviceID: deviceID, commandID: command.id,
                 status: "completed", result: result, error: nil, for: accountID
             )
@@ -158,7 +184,7 @@ public actor CodeRemoteHost {
             // would strand it: the relay's CAS means no other process can pick
             // it up, so silence here is a command that never completes and
             // never fails.
-            try? await client.acknowledgeCommand(
+            try? await relay.acknowledgeCommand(
                 deviceID: deviceID, commandID: command.id,
                 status: "failed", result: nil,
                 error: error.localizedDescription, for: accountID
