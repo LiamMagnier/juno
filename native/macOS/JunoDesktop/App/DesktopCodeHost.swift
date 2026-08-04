@@ -66,7 +66,34 @@ final class DesktopCodeHostModel {
     /// would not — see the note at the top of this file. Stated as a value so
     /// the surface that eventually shows hosting can read the truth from the
     /// model instead of hard-coding a sentence that will rot when this changes.
-    let servesQueuedTasks = false
+    /// Whether this Mac will claim and execute queued remote work.
+    ///
+    /// Off by default and only ever changed by the person at the machine. A Mac
+    /// that began accepting instructions from elsewhere the moment someone
+    /// signed in would be a genuinely dangerous default — signing in is not
+    /// consent to hand a phone the shell.
+    ///
+    /// Persisted, because the switch is a standing decision about this machine
+    /// rather than a per-launch one, and it is read back on the next launch.
+    var servesQueuedTasks: Bool {
+        get { defaults.bool(forKey: Self.servesQueuedTasksKey) }
+        set {
+            defaults.set(newValue, forKey: Self.servesQueuedTasksKey)
+            // Re-register immediately rather than waiting for the next
+            // heartbeat: until the relay knows, the phone still shows this Mac
+            // as unavailable (or, worse, as available after it was switched
+            // off) for up to a minute.
+            Task { await self.register() }
+        }
+    }
+
+    static let servesQueuedTasksKey = "juno.code.remote.servesQueuedTasks"
+
+    /// The immediate kill switch. Stops serving and tells the relay in one step,
+    /// so "off" means off now rather than off at the next heartbeat.
+    func stopServingRemoteWork() {
+        servesQueuedTasks = false
+    }
 
     /// Matches the Windows client's `DEVICE_ID_KEY` so the two hosts describe
     /// the same idea with the same name.

@@ -1,9 +1,14 @@
 import Foundation
+import JunoAuth
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeUI
 import JunoCore
 import JunoDesignSystem
+import JunoStorage
+import JunoSync
+import JunoVoiceKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -38,13 +43,24 @@ struct DesktopCodeWorkspace: View {
     /// derived from anything in the workbench.
     let pullsClient: NativeGitHubPullsClient?
     let accountID: AccountID?
+    /// The account chrome's inputs: who is signed in, and the models the two
+    /// account pages this window now hosts are built from.
+    ///
+    /// Optional so that a composition without a signed-in session simply has no
+    /// account chrome rather than a half-drawn one — the same shape every other
+    /// model on ``JunoDesktopConfiguration`` already has. They are declared
+    /// together because they are useless apart.
+    var configuration: JunoDesktopConfiguration?
+    var session: NativeAuthenticatedSession?
     @Binding var product: DesktopProductMode
     /// Starts a normal Juno conversation, independent of a repository.
     let newChat: () -> Void
 
     @SceneStorage("juno.desktop.code.selection") private var storedSelection = ""
     @SceneStorage("juno.desktop.code.columns") private var storedColumnVisibility = ""
-    @SceneStorage("juno.desktop.code.inspector") private var inspectorVisible = false
+    // Versioned so an older launch that persisted the inspector closed does not
+    // hide the new Code workspace's primary review surface forever.
+    @SceneStorage("juno.desktop.code.inspector.v2") private var inspectorVisible = true
     @SceneStorage("juno.desktop.code.console") private var consoleVisible = false
     @SceneStorage("juno.desktop.code.review") private var reviewVisible = false
     @SceneStorage("juno.desktop.code.remote-device") private var remoteDeviceID = ""
@@ -59,8 +75,23 @@ struct DesktopCodeWorkspace: View {
     @State private var isOpeningQuickly = false
     /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
+    /// The Code composer can host the same realtime voice dock as Chat. The
+    /// transcript is saved as a normal conversation when the call ends.
+    @State private var voiceSession: DesktopVoiceSession?
+    @State private var voiceUnavailable: String?
+    /// The account's plan meters, for the column's footer.
+    ///
+    /// Held by the window rather than by the sidebar so the read survives the
+    /// column being collapsed, and so there is one copy of the number rather than
+    /// one per surface that wants to show it.
+    @State private var plan: DesktopUsagePlan?
+    @State private var planReadAt: Date?
     @FocusState private var sidebarSearchFocused: Bool
     @Environment(\.openWindow) private var openWindow
+
+    /// How long a plan read stays fresh. Several runs finishing within a few
+    /// seconds of each other would otherwise be several identical requests.
+    private static let planReadFloor: TimeInterval = 60
 
     /// `workbenchModel` arrives as a `let`, so there is no `$` projection to hand
     /// to `.searchable`. It is `@Observable`, so reading and writing the property
@@ -169,6 +200,10 @@ struct DesktopCodeWorkspace: View {
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
                 isBootstrapping: isBootstrapping,
+                session: session,
+                avatarModel: configuration?.avatarModel,
+                syncModel: configuration?.syncModel,
+                plan: plan,
                 openRepository: { isChoosingRepository = true },
                 newSession: { selection.wrappedValue = .repository($0) },
                 rename: beginRename
@@ -259,10 +294,22 @@ struct DesktopCodeWorkspace: View {
             Button("Cancel", role: .cancel) { renamingSession = nil }
         }
         .task { await bootstrap() }
+        .task(id: liveRunCount) { await readPlan() }
         .task(id: selectedSessionID) { await resolveController() }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
+        .alert(
+            "Voice unavailable",
+            isPresented: Binding(
+                get: { voiceUnavailable != nil },
+                set: { if !$0 { voiceUnavailable = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { voiceUnavailable = nil }
+        } message: {
+            Text(voiceUnavailable ?? "Juno could not start voice mode.")
+        }
         .onChange(of: codeModel.devices) { _, devices in
             selectDefaultRemoteDevice(from: devices)
         }
@@ -362,12 +409,37 @@ struct DesktopCodeWorkspace: View {
             draft(nil)
 
         case .pulls:
-            // No `openConnections`: Connections is a Chat destination, and there
-            // is no honest channel from this window to a specific Chat page —
-            // only the product switch, which would land the reader on whatever
-            // Chat was last showing. `NativePullsView` drops the button when it
-            // has nowhere to send them, so the empty state still explains itself.
-            NativePullsView(client: pullsClient, accountID: accountID)
+            // The button is back. This used to pass no `openConnections`, because
+            // Connections was a Chat destination and switching product would have
+            // landed the reader on whatever Chat happened to be showing. Code now
+            // owns the page, so the one empty state a first-time Cloud user hits —
+            // "GitHub isn't connected" — can finally do something about it.
+            NativePullsView(
+                client: pullsClient,
+                accountID: accountID,
+                openConnections: openConnections
+            )
+
+        // The three account pages are one branch each, built below rather than
+        // written inline: each needs an availability ladder, and three more of
+        // those inside this `@ViewBuilder` switch is how a detail column becomes
+        // an expression the type checker gives up on.
+        //
+        // They bring toolbars of their own, and that is safe here for the same
+        // reason it is safe in Chat: `DesktopChatWorkspace` also carries
+        // `.inspector` on its split view and also swaps between destination
+        // screens that declare toolbar items (Usage, Connections, Tasks). What
+        // the crash note above forbids is *this file's* toolbar gaining and
+        // losing items while the window stays put — a page swapping wholesale
+        // for another page is a different thing, and it already ships.
+        case .connections:
+            connectionsPage
+
+        case .usage:
+            usagePage
+
+        case .settings:
+            settingsPage
 
         case .repository(let id):
             // A repository that is no longer granted is exactly the state a
@@ -384,6 +456,84 @@ struct DesktopCodeWorkspace: View {
                 draft(workbenchModel.workspaces.first)
             }
         }
+    }
+
+    // MARK: - The account pages
+    //
+    // Usage and Settings are the same two screens Chat shows, rendered here
+    // rather than navigated to. That is not a shortcut around the product
+    // switch — `JunoDesktopWorkspaceView` instantiates one product at a time
+    // precisely so two `NavigationSplitView`s never negotiate against one
+    // window, so "go to Chat's Usage page" is not a thing this window can do.
+    // Rendering the screens themselves is what keeps there being one ledger
+    // reader and one settings page instead of a Code-flavoured second copy of
+    // each.
+
+    /// The route to the connected-accounts page, or nothing when this window has
+    /// no connector service to offer. `NativePullsView` drops its button rather
+    /// than showing one that cannot act.
+    private var openConnections: (() -> Void)? {
+        guard configuration?.connectorModel != nil else { return nil }
+        return { selection.wrappedValue = .connections }
+    }
+
+    @ViewBuilder
+    private var connectionsPage: some View {
+        if let model = configuration?.connectorModel {
+            DesktopConnectionsScreen(model: model)
+        } else {
+            accountPageUnavailable("Connections", "The connector service is unavailable.")
+        }
+    }
+
+    @ViewBuilder
+    private var usagePage: some View {
+        if let session {
+            DesktopUsageScreen(
+                session: session,
+                requestSender: configuration?.requestSender,
+                modelCatalog: configuration?.conversationModel?.selectableModels ?? []
+            )
+        } else {
+            accountPageUnavailable("Usage", "Juno is not signed in on this window.")
+        }
+    }
+
+    @ViewBuilder
+    private var settingsPage: some View {
+        if let session, let configuration, let model = configuration.memorySettingsModel {
+            DesktopSettingsScreen(
+                model: model,
+                authModel: configuration.authModel,
+                session: session,
+                accountDataClient: configuration.accountDataClient,
+                shareClient: configuration.shareClient,
+                modelCatalog: configuration.conversationModel?.selectableModels ?? [],
+                avatarData: configuration.avatarModel?.imageData,
+                syncModel: configuration.syncModel,
+                outbox: configuration.outbox,
+                // Unlike the ⌘, window, this one has a column to navigate, so the
+                // settings page's Usage tile finally has somewhere to go.
+                openUsage: { selection.wrappedValue = .usage },
+                codeHostModel: configuration.codeHostModel
+            )
+        } else {
+            accountPageUnavailable("Settings", "Account settings could not be loaded.")
+        }
+    }
+
+    /// A destination this window can name but this composition cannot serve.
+    ///
+    /// Answered the same way Chat answers a missing model — by saying which
+    /// screen is unavailable and why — rather than by dropping the row, which
+    /// would leave a reader whose scene storage still points at it looking at a
+    /// blank column.
+    private func accountPageUnavailable(_ title: String, _ description: String) -> some View {
+        ContentUnavailableView(
+            title,
+            systemImage: "exclamationmark.triangle",
+            description: Text(description)
+        )
     }
 
     private func draft(_ record: WorkspaceRecord?) -> some View {
@@ -448,7 +598,11 @@ struct DesktopCodeWorkspace: View {
             showsConsole: $consoleVisible,
             beginDictation: {
                 withAnimation(JunoMotion.fast) { isDictating = true }
-            }
+            },
+            beginVoice: {
+                startVoice(for: controller)
+            },
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
         // The same capsule the Chat composer uses, over the Code canvas.
         //
@@ -501,11 +655,68 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
+    /// The Code call uses the same account-authenticated relay and transcript
+    /// route as Chat. Code has no chat thread to append to, so the server creates
+    /// a normal conversation when the call is saved.
+    private var voiceColumn: DesktopVoiceColumn? {
+        guard let voiceSession,
+            let configuration,
+            let session
+        else { return nil }
+        return DesktopVoiceColumn(
+            sessionID: voiceSession.id,
+            controller: voiceSession.controller,
+            saveTranscript: { sessionID, turns in
+                guard let client = configuration.voiceTranscriptClient else {
+                    throw DesktopVoiceError.unavailable
+                }
+                let saved = try await client.save(
+                    sessionID: sessionID,
+                    conversationID: nil,
+                    modelID: voiceSession.modelID,
+                    projectID: voiceSession.projectID,
+                    connectors: [],
+                    turns: turns,
+                    for: session.profile.id
+                )
+                await configuration.syncModel?.refresh()
+                return saved.conversationID
+            },
+            close: { self.voiceSession = nil }
+        )
+    }
+
+    private func startVoice(for controller: SessionController) {
+        guard voiceSession == nil else { return }
+        guard let configuration, let session, let sender = configuration.requestSender else {
+            voiceUnavailable = "Juno is not signed in, so it cannot start a voice conversation."
+            return
+        }
+        guard configuration.voiceTranscriptClient != nil else {
+            voiceUnavailable = "Voice is unavailable for this account."
+            return
+        }
+
+        let started = DesktopVoiceSession(
+            controller: JunoRealtimeVoiceController(
+                authorization: JunoDesktopVoiceAuthorization(
+                    sender: sender,
+                    accountID: session.profile.id
+                )
+            ),
+            modelID: controller.session.configuration.modelID,
+            conversationID: nil,
+            projectID: controller.session.workspaceID?.value
+        )
+        voiceSession = started
+        Task { await started.controller.start() }
+    }
+
     @ViewBuilder
     private var inspector: some View {
         Group {
             if let controller {
-                CodeSessionInspector(controller: controller)
+                CodeSessionInspector(controller: controller, openPreview: openPreview)
             } else {
                 // Compact rather than a full-height placeholder: with no local
                 // session there is genuinely nothing to inspect, and cloud and
@@ -557,10 +768,27 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
+    /// Every run blocked on the reader, named by the session they can actually
+    /// act in.
+    ///
+    /// A sub-agent has no sidebar row, so pointing "Show" at one would select a
+    /// session the reader cannot otherwise reach — the "it just opened another
+    /// chat" this pass removes, arrived at from the other direction. Filtering
+    /// children out instead would be worse: an approval nobody can reach is a run
+    /// that hangs forever. So a waiting child is reported as its parent, which is
+    /// where its approval is surfaced and where answering it unblocks the work.
+    /// Deduplicated, because two children of one parent are one place to go.
     private func sessionsWaitingForApproval(
         excluding current: CodeSessionID?
     ) -> [CodeSession] {
-        workbenchModel.sessions.filter { $0.hasPendingApproval && $0.id != current }
+        var seen: Set<CodeSessionID> = []
+        return workbenchModel.sessions
+            .filter(\.hasPendingApproval)
+            .compactMap { waiting in
+                guard let parentID = waiting.parentSessionID else { return waiting }
+                return workbenchModel.sessions.first { $0.id == parentID } ?? waiting
+            }
+            .filter { $0.id != current && seen.insert($0.id).inserted }
     }
 
     /// A run blocked on the reader that is not the one on screen.
@@ -576,6 +804,11 @@ struct DesktopCodeWorkspace: View {
                         : "\(waiting.count) runs are waiting for approval"
                 )
                 .junoRowLabel()
+                // Explicitly tinted, and tinted the accent. A borderless button
+                // with no tint resolves to the *system* accent asset — a hotter
+                // orange than the brand's, and the one thing this pass is
+                // removing — and the web draws exactly this shape, a text-only
+                // action inside a notice, as `text-primary`.
                 Button("Show") { selection.wrappedValue = .session(first.id) }
                     .buttonStyle(.borderless)
                     .tint(Color.junoAccent)
@@ -604,6 +837,12 @@ struct DesktopCodeWorkspace: View {
             return "New conversation"
         case .pulls:
             return "Pull requests"
+        case .connections:
+            return "Connections"
+        case .usage:
+            return "Usage"
+        case .settings:
+            return "Settings"
         case .repository(let id):
             return workbenchModel.workspaces.first { $0.id == id }?
                 .descriptor.displayName ?? "New conversation"
@@ -612,65 +851,14 @@ struct DesktopCodeWorkspace: View {
         }
     }
 
-    /// Session identity, as text.
-    ///
-    /// Repository, branch and execution environment are all fixed for the life of
-    /// a session — `CodeSession.workspaceID` is already `let`, and Local, Cloud,
-    /// Device and Remote each select a different engine — so they are stated here
-    /// and are deliberately not controls anywhere in the window.
-    private var windowSubtitle: String {
-        var parts: [String] = []
-        switch selection.wrappedValue {
-        case .session(let id):
-            guard let session = workbenchModel.sessions.first(where: { $0.id == id }) else {
-                return ""
-            }
-            parts = [workbenchModel.workspaceName(for: session.workspaceID)]
-            if let branch = session.gitBranch { parts.append(branch) }
-            parts.append(CodeRunEnvironment.local.rawValue)
-        case .task(let id):
-            guard let task = codeModel.tasks.first(where: { $0.id == id }) else { return "" }
-            parts = [task.whereItRuns]
-            if let base = task.baseRef { parts.append(base) }
-            parts.append(
-                (task.target == .cloud ? CodeRunEnvironment.cloud : .device).rawValue
-            )
-        case .remote:
-            guard let summary = selectedRemoteSummary else { return "" }
-            parts = [summary.workspaceName ?? "Remote workspace"]
-            if let branch = summary.activeBranch { parts.append(branch) }
-            parts.append(CodeRunEnvironment.remote.rawValue)
-        case .allProjects:
-            let count = workbenchModel.workspaces.count
-            return count == 1 ? "1 project" : "\(count) projects"
-        case .draft:
-            return "No project"
-        case .pulls:
-            // Deliberately empty: the count is the list's own business, and a
-            // subtitle here would be stale for as long as it took to load.
-            return ""
-        case .repository(let id):
-            guard let record = workbenchModel.workspaces.first(where: { $0.id == id }) else {
-                // The grant is gone, so this is a projectless composer now.
-                return "No project"
-            }
-            parts = repositoryFacts(record)
-        case nil:
-            // A window with no selection shows the most recent repository as a
-            // draft, so the subtitle describes that repository rather than the
-            // absence of a selection.
-            guard let record = workbenchModel.workspaces.first else { return "" }
-            parts = repositoryFacts(record)
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private func repositoryFacts(_ record: WorkspaceRecord) -> [String] {
-        [
-            (record.descriptor.localPathHint as NSString).abbreviatingWithTildeInPath,
-            record.descriptor.isGitRepository ? "Git repository" : "Folder",
-        ]
-    }
+    // There is no `windowSubtitle`, and there is no computation for one.
+    //
+    // It survived the removal of `.navigationSubtitle` as an unreferenced 50-line
+    // string builder that named a repository, a branch and an engine nothing read.
+    // Every one of those facts is already on screen a line below — the draft's
+    // repository bar states the path and whether it is a Git checkout, and a live
+    // session's own header states its branch — which is the reason the subtitle
+    // went in the first place.
 
     // MARK: - Toolbar
 
@@ -785,6 +973,23 @@ struct DesktopCodeWorkspace: View {
                 // so a dimmed item gave no reason for being dimmed.
                 .help(computerUseHelp)
                 .accessibilityIdentifier("juno.code.computer-use")
+
+                // The reason, in the menu, not only under the pointer.
+                //
+                // A tooltip is a poor place for the answer to "why can't I do
+                // this", because it is only found by someone who already suspects
+                // there is one — and the commonest reason here is "this model
+                // can't see a screenshot", which is fixed by the model selector
+                // two controls away. A plain `Text` in a menu is macOS's own
+                // disabled explanatory row, so this borrows the platform's
+                // vocabulary rather than inventing a caption.
+                //
+                // Conditional on purpose, and safe: this is menu *content*, built
+                // when the menu opens. The item that must never come and go is the
+                // `ToolbarItem` holding it, and that one is unconditional.
+                if let reason = controller?.computerUseUnavailableReason {
+                    Text(reason)
+                }
             } label: {
                 Label("Session tools", systemImage: "ellipsis.circle")
             }
@@ -1071,7 +1276,10 @@ struct DesktopCodeWorkspace: View {
         // failure rather than as "that run is gone".
         let validated = DesktopCodeNavigationState.validate(
             selection.wrappedValue,
-            sessions: workbenchModel.sessions.map(\.id),
+            // Visible ones only: a stored selection naming a sub-agent would
+            // otherwise validate and reopen the window onto a session that has no
+            // row to return to.
+            sessions: workbenchModel.visibleSessions.map(\.id),
             tasks: codeModel.tasks.map(\.id),
             repositories: workbenchModel.workspaces.map(\.id)
         )
@@ -1120,6 +1328,41 @@ struct DesktopCodeWorkspace: View {
             )
             try? await Task.sleep(for: .seconds(2))
         }
+    }
+
+    // MARK: - Plan meters
+
+    /// How many runs are live, across every transport this window lists.
+    ///
+    /// It is the read trigger rather than a timer: a run starting or finishing is
+    /// the only thing this window does that can move the meter, and polling the
+    /// ledger once a minute would spend a request to redraw a bar that had not
+    /// changed. The explicit Refresh lives on the Usage page the meter opens.
+    private var liveRunCount: Int {
+        workbenchModel.sessions.filter(\.status.isActive).count
+            + codeModel.tasks.filter(\.status.isActive).count
+    }
+
+    /// One read of the account's plan meters.
+    ///
+    /// `NativeUsageClient.load` fetches the meters and the ledger breakdown
+    /// together — the two routes fail independently and every screen that shows
+    /// usage shows both — so this asks for the client's shortest window and keeps
+    /// only the half the footer draws. A failed read leaves the last known plan
+    /// standing rather than blanking the meter, because a bar that disappears
+    /// reads as a quota that vanished.
+    private func readPlan() async {
+        guard let sender = configuration?.requestSender, let session else { return }
+        if plan != nil, let planReadAt,
+            Date().timeIntervalSince(planReadAt) < Self.planReadFloor
+        {
+            return
+        }
+        let snapshot = await NativeUsageClient(sender: sender)
+            .load(range: .month, for: session.profile.id)
+        guard let loaded = snapshot.plan else { return }
+        planReadAt = Date()
+        withAnimation(JunoMotion.standard) { plan = loaded }
     }
 
     private func selectDefaultRemoteDevice(from devices: [NativeCodeDevice]) {
@@ -1218,7 +1461,15 @@ private struct DesktopCodeTaskCanvas: View {
                     Image(systemName: symbol(event.kind)).font(.caption)
                 }
             }
-            .foregroundStyle(event.kind == .error ? Color.junoDanger : Color.junoAccent)
+            // Three colours, and only two of them are colours.
+            //
+            // Every glyph in this transcript used to be the account accent, so a
+            // cloud run read as a column of orange marks with the two that
+            // actually matter — a failure and a permission request — indis-
+            // tinguishable from the twenty status lines around them. The web
+            // renders the same stream as typed blocks and tints only `destructive`
+            // and `warning`; everything else is body text with a quiet mark.
+            .foregroundStyle(eventTint(event.kind))
             .frame(width: 18)
             VStack(alignment: .leading, spacing: JunoSpace.hairline) {
                 Text(event.title).junoRowLabel()
@@ -1238,6 +1489,14 @@ private struct DesktopCodeTaskCanvas: View {
             Text(event.createdAt, style: .time)
                 .junoCaption()
                 .monospacedDigit()
+        }
+    }
+
+    private func eventTint(_ kind: NativeCodeEvent.Kind) -> Color {
+        switch kind {
+        case .error: Color.junoDanger
+        case .approvalRequest, .approvalResponse: Color.junoCaution
+        default: Color.secondary
         }
     }
 
@@ -1501,6 +1760,10 @@ private struct DesktopCodeRelayApproval: View {
                 Spacer(minLength: 0)
                 Button("Deny", role: .destructive) { respond(false) }
                     .keyboardShortcut(.escape, modifiers: .shift)
+                // The one primary action on the card, so it keeps the accent —
+                // `code-session-view.tsx` gives its own Allow button the default
+                // `bg-primary` variant for the same reason. The accent stays
+                // where the web puts it; it left the places the web does not.
                 Button("Approve") { respond(true) }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)

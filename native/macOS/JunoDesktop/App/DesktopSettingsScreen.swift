@@ -71,6 +71,9 @@ struct DesktopSettingsScreen: View {
     /// sidebar to navigate — the tile is absent there rather than offering a link
     /// that cannot go anywhere.
     var openUsage: (() -> Void)?
+    /// Hosting for Juno Code Remote. Nil where the window has no host — the
+    /// tile is absent rather than showing a switch that controls nothing.
+    var codeHostModel: DesktopCodeHostModel?
 
     /// Whether the grid has room for two columns. Read from the page's own width
     /// rather than assumed, because the same view is 520pt wide in the ⌘, window
@@ -193,6 +196,9 @@ struct DesktopSettingsScreen: View {
                     memoryTile
                     accountTile
                 }
+                if codeHostModel != nil {
+                    GridRow { remoteHostTile.gridCellColumns(2) }
+                }
                 if let settings = model.settings {
                     GridRow { notificationsTile(settings).gridCellColumns(2) }
                 }
@@ -215,6 +221,7 @@ struct DesktopSettingsScreen: View {
                 }
                 memoryTile
                 accountTile
+                remoteHostTile
                 if let settings = model.settings { notificationsTile(settings) }
                 aboutTile
                 dangerTile
@@ -444,6 +451,61 @@ struct DesktopSettingsScreen: View {
                 )
                 .junoCaption()
                 .foregroundStyle(Color.junoCaution)
+            }
+        }
+    }
+
+    /// Hosting for Juno Code Remote — off until someone at this Mac says
+    /// otherwise.
+    ///
+    /// The switch is the whole feature's consent. Signing in is not consent to
+    /// let a phone run commands here, so the default is off and the only way to
+    /// change it is at the machine that would be doing the work. Turning it off
+    /// takes effect immediately rather than at the next heartbeat, because "I
+    /// have stopped sharing this Mac" is not a thing to be eventually true.
+    @ViewBuilder
+    private var remoteHostTile: some View {
+        if let host = codeHostModel {
+            JunoSettingsTile("Juno Code Remote") {
+                Toggle(
+                    isOn: Binding(
+                        get: { host.servesQueuedTasks },
+                        set: { host.servesQueuedTasks = $0 }
+                    )
+                ) {
+                    VStack(alignment: .leading, spacing: JunoSpace.hairline) {
+                        Text("Allow remote Juno Code on this Mac")
+                            .junoRowLabel()
+                        Text(
+                            "Lets your phone and the web start Juno Code sessions that run here, "
+                                + "in the workspaces you have shared. Off, this Mac stays visible "
+                                + "but runs nothing sent to it."
+                        )
+                        .junoCaption()
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .toggleStyle(.switch)
+                .tint(Color.junoAccent)
+                .accessibilityIdentifier("juno.desktop.settings.remote-host-enabled")
+
+                if host.servesQueuedTasks {
+                    Divider()
+                    Text(
+                        "Remote sessions start in ask-before-changes and cannot be raised from "
+                            + "another device. Approvals still come to this Mac."
+                    )
+                    .junoCaption()
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    Button(role: .destructive) {
+                        host.stopServingRemoteWork()
+                    } label: {
+                        Text("Stop serving remote work now").junoWideButtonLabel()
+                    }
+                    .accessibilityIdentifier("juno.desktop.settings.remote-host-kill")
+                }
             }
         }
     }

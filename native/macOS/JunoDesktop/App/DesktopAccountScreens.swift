@@ -107,7 +107,8 @@ struct DesktopDestinationView: View {
                     outbox: configuration.outbox,
                     // Settings links to the real Usage screen instead of drawing
                     // its own meters off a second route. This is the link.
-                    openUsage: { destination = .usage }
+                    openUsage: { destination = .usage },
+                    codeHostModel: configuration.codeHostModel
                 )
             } else {
                 unavailable("Settings", "Account settings could not be loaded.")
@@ -348,6 +349,10 @@ struct DesktopMemoryScreen: View {
             // fact read as content that failed to load.
             .scrollContentBackground(.hidden)
             .alternatingRowBackgrounds(.disabled)
+            // Selecting a fact should not light a row of prose up in the app
+            // accent — macOS resolves a focused table selection to it unless the
+            // view says otherwise, and the web's selected row is a warm grey.
+            .junoSidebarSelectionTint()
             .overlay(
                 RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
                     .strokeBorder(Color.junoBorder, lineWidth: 1)
@@ -597,38 +602,4 @@ private enum DesktopMemoryMetrics {
     /// The facts table. Taller than the 210pt it had as an embedded form row —
     /// it is the reason this screen exists, so it gets the room.
     static let tableHeight: CGFloat = 320
-}
-
-struct DesktopScreenHeader<Trailing: View>: View {
-    let title: String
-    let subtitle: String
-    let trailing: Trailing
-
-    init(
-        _ title: String,
-        subtitle: String,
-        @ViewBuilder trailing: () -> Trailing
-    ) {
-        self.title = title
-        self.subtitle = subtitle
-        self.trailing = trailing()
-    }
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.title2.weight(.semibold))
-                Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-            trailing
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 18)
-        .background(Color.junoRaised)
-        .overlay(alignment: .bottom) { Divider() }
-    }
 }
