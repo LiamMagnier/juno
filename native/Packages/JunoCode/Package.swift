@@ -25,9 +25,13 @@ let package = Package(
             name: "JunoCodeUI",
             dependencies: [
                 "JunoCodeCore", "JunoCodeLocal", "JunoCodeRuntime",
+                // The remote-command protocols. UI depends on the bridge, never
+                // the reverse — the bridge must stay usable without a window.
+                "JunoCodeBridge",
                 // Shared design tokens, so Code and Chat cannot drift apart on
                 // spacing, radii, surfaces or type.
                 .product(name: "JunoDesignSystem", package: "JunoNativeKit"),
+                .product(name: "JunoCodeKit", package: "JunoNativeKit"),
             ]
         ),
         .target(
