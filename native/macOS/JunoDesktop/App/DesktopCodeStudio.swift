@@ -776,9 +776,14 @@ struct DesktopCodeSidebar: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            footer.junoSidebarFooter()
+        // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
+        // system's bottom scroll-edge effect is measured against, and that
+        // effect is what lets the footer sit on a translucent column without an
+        // opaque bar painted behind it.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            footer
         }
+        .junoSidebarScrollEdge()
         .alert(item: $projectPendingDeletion) { project in
             Alert(
                 title: Text("Delete “\(project.name)” from Juno?"),
@@ -1129,7 +1134,7 @@ struct DesktopCodeSidebar: View {
         VStack(spacing: 0) {
             workspaceStatus
             if let session {
-                DesktopCodeAccountFooter(
+                DesktopSidebarFooter(
                     session: session,
                     avatarModel: avatarModel,
                     syncModel: syncModel,

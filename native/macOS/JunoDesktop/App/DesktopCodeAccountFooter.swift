@@ -6,29 +6,33 @@ import JunoSync
 import SwiftUI
 
 /// A staged update, who is signed in, how much of the week's allowance is gone,
-/// and the way to all three — pinned to the bottom of Juno Code's navigation
-/// column.
+/// and the way to all three — pinned to the bottom of the navigation column.
 ///
-/// Juno Code was the one window in the app with no account chrome at all:
-/// switching product hid the reader's name, their plan, whether their work was
-/// reaching the account, and every route to Usage and Settings. The website has
-/// never had that gap because it has no separate Code *shell* — `app-sidebar.tsx`
-/// renders the same `UserMenu` in both modes, so plan and profile stay in the
-/// column whichever mode you are in. This does that job in the shape a source
-/// list already has a place for.
+/// **One footer, both columns.** Chat and Code each carried their own copy of
+/// this, and the copies had already drifted: two accessibility identifiers for
+/// the same button, two sync-dot palettes for the same five states (one on the
+/// status tokens, one on `.green`/`.orange`/`.red`), and a quota meter that
+/// existed in one column and not the other. The website has never had that gap
+/// because it has no separate Code *shell* — `app-sidebar.tsx` renders the same
+/// `UserMenu` in both modes. This is that: one component, one set of metrics,
+/// nothing left to drift.
 ///
-/// It restates Chat's footer rather than sharing one, and that is a debt rather
-/// than a decision: the shared component belongs in neither window and lifting
-/// Chat's copy out is a change to `DesktopChatWorkspace.swift`. The two are the
-/// same layout, the same metrics and the same avatar; only the palette differs,
-/// and only because Chat's copy predates the status tokens.
-struct DesktopCodeAccountFooter: View {
+/// The rows are ordered news-first: an update, then the meter, then the account.
+/// The row with the reader's own name on it is furniture, and an update
+/// announced *below* it would be reporting the one piece of news in the quietest
+/// place on screen.
+///
+/// Nothing here paints a background. The column is a vibrant region and stays
+/// one all the way to its bottom edge — see ``SwiftUI/View/junoSidebarScrollEdge()``
+/// for what replaced the opaque bar that used to sit under these rows.
+struct DesktopSidebarFooter: View {
     let session: NativeAuthenticatedSession
     let avatarModel: NativeAvatarModel?
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
-    /// The account's plan meters. Nil until the first read lands, and the meter
-    /// is then absent rather than drawn empty — a bar at zero is a claim about
-    /// spend, and "not read yet" is not that claim.
+    /// The account's plan meters. Nil until the first read lands — or, in the
+    /// chat column, because that column has no plan model to read. The meter is
+    /// then absent rather than drawn empty: a bar at zero is a claim about spend,
+    /// and "not read yet" is not that claim.
     let plan: DesktopUsagePlan?
     let openUsage: () -> Void
     let openSettings: () -> Void
@@ -37,16 +41,34 @@ struct DesktopCodeAccountFooter: View {
         VStack(spacing: 0) {
             DesktopUpdateReadyRow()
             if let plan {
-                DesktopCodeQuotaMeter(plan: plan, open: openUsage)
+                DesktopSidebarQuotaMeter(plan: plan, open: openUsage)
                     .transition(.opacity)
             }
-            accountRow
+            DesktopSidebarAccountRow(
+                session: session,
+                avatarModel: avatarModel,
+                syncModel: syncModel,
+                open: openSettings
+            )
         }
         .padding(JunoSpace.snug)
     }
+}
 
-    private var accountRow: some View {
-        Button(action: openSettings) {
+// MARK: - Account
+
+/// Who is signed in, whether this Mac's work has reached them, and the way to
+/// Settings.
+struct DesktopSidebarAccountRow: View {
+    let session: NativeAuthenticatedSession
+    let avatarModel: NativeAvatarModel?
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let open: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: open) {
             HStack(spacing: JunoSpace.cozy) {
                 ZStack(alignment: .bottomTrailing) {
                     JunoAvatar(
@@ -55,7 +77,7 @@ struct DesktopCodeAccountFooter: View {
                         name: session.profile.name ?? session.profile.email,
                         size: 26
                     )
-                    DesktopCodeSyncDot(syncModel: syncModel)
+                    DesktopSidebarSyncDot(syncModel: syncModel)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(session.profile.name ?? "Juno account")
@@ -67,17 +89,30 @@ struct DesktopCodeAccountFooter: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: JunoSpace.hairline)
+                // A chevron, because this row *navigates*. The update row above
+                // it deliberately has none: it performs an action, and marking
+                // the two the same way would say they behave the same way.
                 Image(systemName: "chevron.right")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
-            .contentShape(.rect)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(isHovering ? Color.junoSidebarSelection : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(JunoMotion.standard, value: isHovering)
         .help("Account and settings")
-        .accessibilityIdentifier("juno.code.account")
+        // The launch UI suite finds the window by this button. It is the chat
+        // column's original identifier, kept when the two footers merged so the
+        // test did not have to be taught a new name for the same control.
+        .accessibilityIdentifier("Account and settings")
     }
 }
 
@@ -91,21 +126,31 @@ struct DesktopCodeAccountFooter: View {
 /// is waiting, so a build that had been ready for a week looked identical to one
 /// that was current. This is the same action where the reader already is.
 ///
-/// **Only `.ready` draws anything.** Not `.checking`, not `.downloading`: a card
+/// **Only `.ready` draws anything.** Not `.checking`, not `.downloading`: a row
 /// that is permanently present is chrome the eye learns to skip, and a progress
 /// spinner for a download nobody asked to watch turns a deliberately quiet
 /// updater into an interruption. The rest of the ladder stays in the menu, where
 /// someone who went looking for it will find it.
 ///
-/// Coral, and one of the few places that is right. `--primary` is what the web
-/// spends on the affirmative next move, and a waiting update is good news — so
-/// this is a calm accent card with one explicit action, not a warning banner or
-/// a tiny link hidden in the account furniture.
+/// **It is a sidebar row, not a poster.** Two earlier passes at this drew a
+/// callout: a tinted panel, a glyph in its own tinted chip, a bordered edge, and
+/// a coral capsule button — a stack of containers, each one added to make the
+/// last one look deliberate. In a 264pt column it was the loudest thing on
+/// screen and it was announcing a routine event; worse, an opaque tinted block
+/// is the one shape a vibrant column cannot absorb.
+///
+/// So the containers are gone. What is left is the account row's own anatomy —
+/// a 26pt mark, a title, a quieter second line, the same insets, the same hover
+/// fill the list uses for selection — which makes the two rows read as one
+/// footer rather than as a notice sitting on top of one. The single piece of
+/// colour is the mark, and it is Juno's own: what is waiting is a new Juno, and
+/// the mark is what the reader will see in the Dock a second after they click.
 struct DesktopUpdateReadyRow: View {
     /// `@State` rather than a bare reference to the singleton, so the row
     /// re-evaluates when the phase changes. `JunoDesktopCommands` holds the same
     /// object the same way for the same reason.
     @State private var updater = DesktopUpdateModel.shared
+    @State private var isHovering = false
 
     @ViewBuilder
     var body: some View {
@@ -113,61 +158,39 @@ struct DesktopUpdateReadyRow: View {
             Button {
                 updater.installAndRelaunch()
             } label: {
-                VStack(alignment: .leading, spacing: JunoSpace.snug) {
-                    HStack(alignment: .top, spacing: JunoSpace.snug) {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 20, weight: .semibold))
-                            .foregroundStyle(Color.junoAccent)
-                            .frame(width: 30, height: 30)
-                            .background(
-                                Circle()
-                                    .fill(Color.junoAccent.opacity(0.14))
-                            )
+                HStack(spacing: JunoSpace.cozy) {
+                    JunoMark(size: 17)
+                        .foregroundStyle(Color.junoAccent)
+                        // The avatar's slot, to the point, so the two rows share
+                        // one left edge for their text.
+                        .frame(width: 26, height: 26)
 
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(alignment: .firstTextBaseline, spacing: JunoSpace.tight) {
-                                Text("Update ready")
-                                    .font(.caption.weight(.semibold))
-                                Spacer(minLength: JunoSpace.hairline)
-                                Text(version)
-                                    .font(.caption2.monospaced().weight(.medium))
-                                    .foregroundStyle(Color.junoAccent)
-                                    .lineLimit(1)
-                            }
-
-                            Text("A new version is downloaded and ready to install.")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Relaunch to update")
+                            .font(.callout)
+                            .lineLimit(1)
+                        Text("Version \(version)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
-
-                    Text("Restart to update")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.junoOnAccent)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, JunoSpace.tight)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(Color.junoAccent)
-                        )
+                    Spacer(minLength: JunoSpace.hairline)
                 }
+                .padding(.horizontal, JunoSpace.snug)
+                .padding(.vertical, JunoSpace.tight)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(JunoSpace.cozy)
                 .background(
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                        .fill(Color.junoAccent.opacity(0.075))
+                    RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                        .fill(isHovering ? Color.junoSidebarSelection : .clear)
                 )
-                .overlay {
-                    RoundedRectangle(cornerRadius: JunoRadius.panel, style: .continuous)
-                        .strokeBorder(Color.junoAccent.opacity(0.24), lineWidth: 1)
-                }
-                .contentShape(.rect)
+                .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
             }
             .buttonStyle(.plain)
+            .onHover { isHovering = $0 }
+            .animation(JunoMotion.standard, value: isHovering)
             .help("Juno \(version) is downloaded and verified. This quits Juno and opens it again on the new version.")
             .transition(.opacity)
-            .accessibilityLabel("Restart to update Juno to \(version)")
+            .accessibilityLabel("Relaunch to update Juno to \(version)")
             .accessibilityHint("Juno will quit and reopen with the downloaded update.")
             .accessibilityIdentifier("juno.desktop.update-ready")
         }
@@ -188,9 +211,11 @@ struct DesktopUpdateReadyRow: View {
 ///
 /// Clicking it opens Usage, which is where the number can be interrogated. A
 /// meter that cannot be drilled into is a decoration.
-struct DesktopCodeQuotaMeter: View {
+struct DesktopSidebarQuotaMeter: View {
     let plan: DesktopUsagePlan
     let open: () -> Void
+
+    @State private var isHovering = false
 
     var body: some View {
         Button(action: open) {
@@ -206,7 +231,7 @@ struct DesktopCodeQuotaMeter: View {
                         .contentTransition(.numericText())
                 }
                 if !plan.isBrowseOnly {
-                    DesktopCodeDotFillBar(
+                    DesktopSidebarDotFillBar(
                         fraction: fraction,
                         tint: tint,
                         dimmed: plan.isUnlimited
@@ -215,9 +240,16 @@ struct DesktopCodeQuotaMeter: View {
             }
             .padding(.horizontal, JunoSpace.snug)
             .padding(.vertical, JunoSpace.tight)
-            .contentShape(.rect)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(isHovering ? Color.junoSidebarSelection : .clear)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .animation(JunoMotion.standard, value: isHovering)
         .help(help)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(plan.planName) plan, \(readout). Opens Usage.")
@@ -276,7 +308,7 @@ struct DesktopCodeQuotaMeter: View {
 /// bar because the matrix is the product's own mark, and because at a sidebar's
 /// width a bar two percent full and a bar four percent full are the same three
 /// pixels.
-struct DesktopCodeDotFillBar: View {
+struct DesktopSidebarDotFillBar: View {
     let fraction: Double
     var tint: Color = .junoAccent
     /// An unlimited plan's full bar, held back so it reads as "not a limit"
@@ -309,11 +341,12 @@ struct DesktopCodeDotFillBar: View {
 
 /// Whether this Mac's work has reached the account.
 ///
-/// The palette is the one place this deliberately diverges from Chat's footer:
-/// that copy reaches for `.green`, `.orange` and `.red`, and Juno has a token for
-/// each of those three meanings. When the two footers are finally lifted into one
-/// component it is this palette that should survive.
-struct DesktopCodeSyncDot: View {
+/// On the status tokens rather than on `.green`/`.orange`/`.red`. The chat
+/// column's copy of this reached for the raw system colours, and Juno has a
+/// token for each of those three meanings — so the same five sync states were
+/// drawn in two palettes depending on which product the reader was in. This is
+/// the palette that survived the merge.
+struct DesktopSidebarSyncDot: View {
     let syncModel: NativeSyncModel<SQLiteAccountRepository>?
 
     var body: some View {

@@ -161,24 +161,31 @@ public extension View {
         foregroundStyle(selected ? Color.primary : Color.junoSidebarForeground)
     }
 
-    /// Seals a source list's pinned footer against the rows scrolling behind it.
+    /// The bottom of a source list, where a pinned footer meets the rows that
+    /// scroll behind it.
     ///
-    /// `safeAreaInset` reserves the space but paints nothing, so a footer with no
-    /// surface of its own lets the list run underneath it: the account row and
-    /// the last session row draw over each other, which reads as corruption
-    /// rather than as layering. It went unnoticed in the chat column only because
-    /// that column's fixture is three conversations long and never scrolls.
+    /// **What this replaced, and why it was wrong.** The footer used to paint
+    /// `Color.junoSidebar` and a `Divider` behind itself, to stop the list
+    /// drawing through it. That solved the overlap and broke something larger:
+    /// the sidebar is a vibrant region, and an opaque fill laid over the bottom
+    /// of it is a grey slab sitting on translucency — visible as a hard-edged
+    /// bar under the last row, in a column that is otherwise sampling the
+    /// desktop behind the window. The divider made the seam louder rather than
+    /// hiding it. Rule 1 at the top of this file forbids exactly that, and the
+    /// footer was the one place in the app breaking it.
     ///
-    /// Opaque rather than a material: the sidebar is already vibrant, and a
-    /// second translucent layer over it samples the desktop twice and comes out
-    /// lighter than the column it is meant to be part of.
-    func junoSidebarFooter() -> some View {
-        background(alignment: .top) {
-            ZStack(alignment: .top) {
-                Color.junoSidebar
-                Divider()
-            }
-        }
+    /// The platform's own answer is the scroll edge effect: rows approaching the
+    /// bottom are progressively blurred and faded *into* the material instead of
+    /// disappearing under a painted lid. The column stays translucent from top to
+    /// bottom, and nothing draws over anything. `.soft` rather than `.hard`
+    /// because a hard edge reintroduces the line this is removing.
+    ///
+    /// Pair it with `safeAreaBar(edge: .bottom)` — not `safeAreaInset` — on the
+    /// list. The bar variant is what tells the system a pinned bar lives there,
+    /// which is what the effect is measured against.
+    @available(macOS 26.0, *)
+    func junoSidebarScrollEdge() -> some View {
+        scrollEdgeEffectStyle(.soft, for: .bottom)
     }
 }
 

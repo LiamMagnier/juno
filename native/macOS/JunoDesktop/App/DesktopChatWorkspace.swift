@@ -457,9 +457,14 @@ private struct DesktopChatSidebar: View {
         .safeAreaInset(edge: .top, spacing: 0) {
             Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            accountFooter.junoSidebarFooter()
+        // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
+        // system's bottom scroll-edge effect is measured against, and that
+        // effect is what lets the footer sit on a translucent column without an
+        // opaque bar painted behind it.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            accountFooter
         }
+        .junoSidebarScrollEdge()
     }
 
     private func destinationRow(_ item: DesktopDestination) -> some View {
@@ -534,56 +539,23 @@ private struct DesktopChatSidebar: View {
     }
 
     /// A staged update and then the account row, pinned to the bottom of the
-    /// column by `safeAreaInset` rather than by being the last child of a
+    /// column by `safeAreaBar` rather than by being the last child of a
     /// `VStack`, so the list scrolls underneath them and they stay reachable.
     ///
-    /// The update sits above the account for the same reason it does in Code's
-    /// footer: it is news, and the row with the reader's own name on it is
-    /// furniture. ``DesktopUpdateReadyRow`` is shared with that footer so the two
-    /// columns cannot describe the same waiting update differently.
+    /// ``DesktopSidebarFooter`` is the same component Code's column pins, which
+    /// is what stops the two from describing the same account — or the same
+    /// waiting update — differently. No plan is passed: the quota meter needs a
+    /// plan model this column does not read, and a meter drawn from nothing is a
+    /// claim about spend that nobody made.
     private var accountFooter: some View {
-        VStack(spacing: 0) {
-            DesktopUpdateReadyRow()
-            accountRow
-        }
-        .padding(JunoSpace.snug)
-    }
-
-    private var accountRow: some View {
-        Button {
-            destination = .settings
-        } label: {
-            HStack(spacing: JunoSpace.cozy) {
-                ZStack(alignment: .bottomTrailing) {
-                    JunoAvatar(
-                        imageData: avatarModel?.imageData,
-                        imageURL: session.profile.imageURL,
-                        name: session.profile.name ?? session.profile.email,
-                        size: 26
-                    )
-                    DesktopSyncIndicator(syncModel: syncModel)
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.profile.name ?? "Juno account")
-                        .font(.callout)
-                        .lineLimit(1)
-                    Text(session.profile.email)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: JunoSpace.hairline)
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, JunoSpace.snug)
-            .padding(.vertical, JunoSpace.tight)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .help("Account and settings")
-        .accessibilityIdentifier("Account and settings")
+        DesktopSidebarFooter(
+            session: session,
+            avatarModel: avatarModel,
+            syncModel: syncModel,
+            plan: nil,
+            openUsage: { destination = .usage },
+            openSettings: { destination = .settings }
+        )
     }
 }
 
@@ -652,37 +624,10 @@ enum DesktopDestination: String, CaseIterable, Identifiable {
     }
 }
 
-private struct DesktopSyncIndicator: View {
-    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
-
-    var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 8, height: 8)
-            .help(label)
-            .accessibilityLabel(label)
-    }
-
-    private var label: String {
-        switch syncModel?.phase {
-        case .live: "Synced"
-        case .synchronizing: "Synchronizing"
-        case .offline: "Offline — local changes are queued"
-        case .failed: "Synchronization failed"
-        case .idle, .none: "Sync idle"
-        }
-    }
-
-    private var color: Color {
-        switch syncModel?.phase {
-        case .live: .green
-        case .synchronizing: .orange
-        case .offline: .secondary
-        case .failed: .red
-        case .idle, .none: .secondary
-        }
-    }
-}
+// The chat column's own sync dot lived here, drawn in `.green`/`.orange`/`.red`
+// while Code's copy drew the same five states on Juno's status tokens. Both
+// footers now pin `DesktopSidebarFooter`, and `DesktopSidebarSyncDot` is the
+// palette that survived — see DesktopCodeAccountFooter.swift.
 
 struct DesktopConversationView: View {
     @Bindable var model: NativeConversationModel<SQLiteAccountRepository>
