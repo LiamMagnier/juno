@@ -240,12 +240,21 @@ public actor WorkApprovalCoordinator {
 
     /// Sets what happens when something needs a person and nobody is there.
     ///
-    /// Nil means somebody is watching. Turning it on narrows what can happen
-    /// without an answer, so pending questions go with it.
+    /// Nil means somebody is watching. The narrowing to watch for is not "was it
+    /// set" but "can a pending question still be answered at all": under
+    /// `pauseForApproval` it can, and under the other two it cannot. Moving from
+    /// either of the answerable states to either of the others turns a question
+    /// somebody could have said yes to into one that is already refused, which
+    /// is a change of authority and invalidates decisions made under the old one.
     public func setUnattendedPolicy(_ newPolicy: WorkRisk.UnattendedPolicy?) {
         let previous = unattended
         unattended = newPolicy
-        guard previous == nil, newPolicy != nil else { return }
+        let leavesQuestionsAnswerable: (WorkRisk.UnattendedPolicy?) -> Bool = { policy in
+            policy == nil || policy == .pauseForApproval
+        }
+        guard leavesQuestionsAnswerable(previous), !leavesQuestionsAnswerable(newPolicy) else {
+            return
+        }
         authorityRevision &+= 1
         denyAll(reason: "Nobody is at this Mac any more, so Juno stopped rather than assume an answer.")
     }

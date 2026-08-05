@@ -154,6 +154,27 @@ final class WorkApprovalCoordinatorTests: XCTestCase {
         }
     }
 
+    /// The person walks away. A question they could have answered a moment ago
+    /// is now one nobody can answer, so it must not stay open waiting for a yes
+    /// that can no longer be given — while `pauseForApproval`, which still lets
+    /// them answer, changes nothing.
+    func testAQuestionNobodyCanAnswerAnyMoreIsClosedRatherThanLeftOpen() async throws {
+        let coordinator = makeCoordinator(policy: .conservative, clock: TestClock())
+        let pending = Task { await requestAuthorization(from: coordinator, risk: .sensitive) }
+        let request = try await awaitPendingApproval(coordinator)
+
+        await coordinator.setUnattendedPolicy(.pauseForApproval)
+        let stillPending = await coordinator.pendingApprovals
+        XCTAssertEqual(stillPending.map(\.id), [request.id])
+
+        await coordinator.setUnattendedPolicy(.disallowIrreversible)
+
+        guard case .denied(let reason) = await pending.value else {
+            return XCTFail("a question nobody can answer any more must not stay open")
+        }
+        XCTAssertTrue(reason.contains("Nobody is at this Mac"), reason)
+    }
+
     // MARK: - Answers are about actions, not about sentences
 
     /// A stale sheet on a phone that reconnected, or a replayed relay message.

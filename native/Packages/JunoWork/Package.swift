@@ -21,6 +21,7 @@ let package = Package(
         .library(name: "JunoWorkCore", targets: ["JunoWorkCore"]),
         .library(name: "JunoWorkLocal", targets: ["JunoWorkLocal"]),
         .library(name: "JunoWorkRuntime", targets: ["JunoWorkRuntime"]),
+        .library(name: "JunoWorkAutomation", targets: ["JunoWorkAutomation"]),
     ],
     targets: [
         // No dependencies, deliberately. Everything here is pure value logic so
@@ -38,6 +39,14 @@ let package = Package(
         // exactly the same gate as a local one, because there is only one gate
         // and it cannot see where the instruction came from.
         .target(name: "JunoWorkRuntime", dependencies: ["JunoWorkCore", "JunoWorkLocal"]),
+        // Browser, accessibility and screen control, and the permission gate,
+        // emergency stop, screenshot policy and audit they are not allowed to
+        // exist without. Depends on Runtime because an automated action is
+        // gated by the *same* approval coordinator and the same tool protocol a
+        // file operation is: a second approval path would be a second thing to
+        // keep correct, and the one that got less attention would be the one
+        // driving somebody's screen.
+        .target(name: "JunoWorkAutomation", dependencies: ["JunoWorkCore", "JunoWorkRuntime"]),
         .testTarget(name: "JunoWorkCoreTests", dependencies: ["JunoWorkCore"]),
         .testTarget(
             name: "JunoWorkLocalTests",
@@ -46,6 +55,10 @@ let package = Package(
         .testTarget(
             name: "JunoWorkRuntimeTests",
             dependencies: ["JunoWorkCore", "JunoWorkLocal", "JunoWorkRuntime"]
+        ),
+        .testTarget(
+            name: "JunoWorkAutomationTests",
+            dependencies: ["JunoWorkCore", "JunoWorkRuntime", "JunoWorkAutomation"]
         ),
     ],
     swiftLanguageModes: [.v6]
