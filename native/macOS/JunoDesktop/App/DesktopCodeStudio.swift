@@ -1,9 +1,15 @@
 import AppKit
+import JunoAuth
+import JunoChatKit
 import JunoCodeCore
 import JunoCodeKit
 import JunoCodeUI
 import JunoDesignSystem
+import JunoStorage
+import JunoSync
+import JunoVoiceKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Code window's navigation column, its selection rules, its status
 /// vocabulary, and the two states the detail column shows before a session
@@ -54,6 +60,25 @@ enum DesktopCodeSidebarItem: Hashable {
     /// a coding session, and the website has always filed it under Code. A
     /// reader checking on one is in the same product they started it in.
     case pulls
+    /// The account's connected services.
+    ///
+    /// The website keeps this in Code's own navigation — `app-sidebar.tsx` lists
+    /// Plugins beside Pull requests whenever the shell is in code mode — and it
+    /// is not filler: GitHub is granted here and nowhere else, and both Cloud
+    /// runs and the pull request list above are inert without it. This window
+    /// used to drop the "Open Connections" button out of its own "GitHub isn't
+    /// connected" empty state because it had no route to that page.
+    case connections
+    /// The account's own two pages, rendered by this window rather than reached
+    /// through it.
+    ///
+    /// ``JunoDesktopWorkspaceView`` instantiates one product at a time precisely
+    /// so two `NavigationSplitView`s never negotiate against the same window, so
+    /// there is no such thing as "navigate to Chat's Usage page". Code owns the
+    /// same two screens in its own detail column instead — the screens, not
+    /// copies of them.
+    case usage
+    case settings
     case repository(WorkspaceID)
     case session(CodeSessionID)
     case task(String)
@@ -96,6 +121,23 @@ struct DesktopCodeRun: Identifiable {
         parts.append(environment.rawValue)
         return parts.joined(separator: " · ")
     }
+
+    /// The caption for a row already nested under its project.
+    ///
+    /// Printing the project's name on every child is what made the outline hard
+    /// to scan — the parent row two pixels above already says it, so the column
+    /// read as the same string repeated down the page. `Local` goes for the same
+    /// reason: a session nested under a local project has nowhere else to run.
+    /// What is left is the branch and how long ago the run last moved, which are
+    /// the two facts that actually distinguish one session in a repository from
+    /// another. The full caption is still what VoiceOver reads.
+    var nestedCaption: String {
+        var parts: [String] = []
+        if let branch, !branch.isEmpty { parts.append(branch) }
+        if environment != .local { parts.append(environment.rawValue) }
+        parts.append(updatedAt.formatted(.relative(presentation: .named)))
+        return parts.joined(separator: " · ")
+    }
 }
 
 /// The pure navigation rules behind the Code window's column.
@@ -113,6 +155,9 @@ enum DesktopCodeNavigationState {
         case .allProjects: "allProjects"
         case .draft: "draft"
         case .pulls: "pulls"
+        case .connections: "connections"
+        case .usage: "usage"
+        case .settings: "settings"
         case .repository(let id): "repository\(unitSeparator)\(id.value)"
         case .session(let id): "session\(unitSeparator)\(id.value)"
         case .task(let id): "task\(unitSeparator)\(id)"
@@ -127,6 +172,9 @@ enum DesktopCodeNavigationState {
         case ("allProjects", 1): return .allProjects
         case ("draft", 1): return .draft
         case ("pulls", 1): return .pulls
+        case ("connections", 1): return .connections
+        case ("usage", 1): return .usage
+        case ("settings", 1): return .settings
         case ("repository", 2): return .repository(WorkspaceID(value: fields[1]))
         case ("session", 2): return .session(CodeSessionID(value: fields[1]))
         case ("task", 2): return .task(fields[1])
@@ -155,8 +203,9 @@ enum DesktopCodeNavigationState {
         // Always valid: it names the collection, not a member of it.
         case .allProjects: return item
         // Always valid: a draft names nothing that can go missing, and the pull
-        // request list is an account-level page rather than a local record.
-        case .draft, .pulls: return item
+        // request list, the connected services, the usage ledger and the settings
+        // page are account-level pages rather than local records.
+        case .draft, .pulls, .connections, .usage, .settings: return item
         case .remote, .none: return item
         }
     }
@@ -222,6 +271,17 @@ struct CodeRunStatus {
     /// shield and a failure is a circle — and those two must not be a raised
     /// hand and a cross here.
     let junoIcon: JunoIcon?
+    /// Colour is spent only where the state asks something of the reader.
+    ///
+    /// The website's sidebar draws a run's state as one small dot and reserves
+    /// hue for the three states worth interrupting for — `bg-warning` for an
+    /// approval, `bg-destructive` for a failure, `bg-success` for a finish — and
+    /// leaves everything else on `bg-muted-foreground/50`. Running used to be the
+    /// account accent here, which put a coral spinner on every live row in the
+    /// Code column and made the busiest sidebar the loudest one. Nothing about a
+    /// run in flight needs to be *found*: it is already the only thing on screen
+    /// that moves, so the motion is the signal and the indicator itself stays the
+    /// column's own ink.
     let tint: Color
     let isActive: Bool
     let needsApproval: Bool
@@ -252,7 +312,7 @@ struct CodeRunStatus {
         case .idle:
             self.init(label: "Ready", symbol: "circle.dotted", tint: .secondary, isActive: false)
         case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         case .waitingForApproval:
             self.init(
                 label: "Needs approval",
@@ -294,7 +354,7 @@ struct CodeRunStatus {
         case .queued:
             self.init(label: "Queued", symbol: "clock", tint: .secondary, isActive: true)
         case .running:
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         case .awaitingApproval:
             self.init(
                 label: "Needs approval",
@@ -350,7 +410,7 @@ struct CodeRunStatus {
                 isActive: false
             )
         } else if summary.isRunning {
-            self.init(label: "Running", symbol: "bolt.fill", tint: .junoAccent, isActive: true)
+            self.init(label: "Running", symbol: "bolt.fill", tint: .secondary, isActive: true)
         } else if summary.lastError != nil {
             self.init(
                 label: "Failed",
@@ -399,6 +459,27 @@ struct CodeStatusIndicator: View {
 /// the row metrics. The column paints **no background** — a sidebar is a vibrant
 /// region on macOS, and the opaque fill the previous rail applied is exactly the
 /// failure ``JunoSurfaces`` documents.
+private struct DesktopCodeAddProjectLabel: View {
+    var body: some View {
+        HStack(spacing: JunoSpace.tight) {
+            ZStack(alignment: .bottomTrailing) {
+                JunoIconView(.projects, size: 15)
+                Image(systemName: "plus")
+                    .font(.system(size: 7, weight: .bold))
+                    .padding(1)
+                    .background(Color.junoSidebar)
+                    .clipShape(Circle())
+            }
+            .foregroundStyle(Color.junoSidebarForeground)
+
+            Text("Add project…")
+                .junoRowLabel()
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 struct DesktopCodeSidebar: View {
     @Bindable var workbench: WorkbenchModel
     let code: NativeCodeModel
@@ -406,6 +487,19 @@ struct DesktopCodeSidebar: View {
     @Binding var selection: DesktopCodeSidebarItem?
     @Binding var remoteDeviceID: String
     let isBootstrapping: Bool
+    /// The signed-in account, its photo, its synchronisation state and its plan
+    /// meters — the four facts Chat's own column has always shown and this one
+    /// never did.
+    ///
+    /// Optional as a group rather than individually: they all come from the one
+    /// configuration, so a column that had some of them and not others would have
+    /// nothing coherent to draw. When there is no session the column is exactly
+    /// what it was — no half-built account row, no destination that leads to an
+    /// apology.
+    let session: NativeAuthenticatedSession?
+    let avatarModel: NativeAvatarModel?
+    let syncModel: NativeSyncModel<SQLiteAccountRepository>?
+    let plan: DesktopUsagePlan?
     let openRepository: () -> Void
     let newSession: (WorkspaceID) -> Void
     let rename: (CodeSession) -> Void
@@ -422,10 +516,6 @@ struct DesktopCodeSidebar: View {
     /// placeholder used to hang on different left edges. It lines the child's icon
     /// up under the parent's name: the chevron's 12pt frame plus the row spacing.
     private static let childIndent: CGFloat = 12 + JunoSpace.tight + JunoSpace.snug
-
-    /// How far the source list starts below the top of the window. See the
-    /// `safeAreaInset` in `body` for why this clears more than the traffic lights.
-    private static let titlebarClearance: CGFloat = 76
 
     private var runs: [DesktopCodeRun] {
         DesktopCodeRunBuilder.runs(
@@ -525,6 +615,7 @@ struct DesktopCodeSidebar: View {
                 Text("New conversation").junoRowLabel()
             } icon: {
                 JunoIconView(.new, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .draft)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.draft)
@@ -538,10 +629,28 @@ struct DesktopCodeSidebar: View {
                 Text("Pull requests").junoRowLabel()
             } icon: {
                 JunoIconView(.pulls, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .pulls)
             }
             .junoSidebarRowInk()
             .tag(DesktopCodeSidebarItem.pulls)
             .accessibilityIdentifier("juno.code.pulls")
+
+            // Plugins, filed where the website files them.
+            //
+            // `app-sidebar.tsx` keeps Connections in the Code nav, and the reason
+            // is right above this row: GitHub is granted on that page, and both
+            // the pull request list and every Cloud run depend on the grant.
+            if session != nil {
+                Label {
+                    Text("Connections").junoRowLabel()
+                } icon: {
+                    JunoIconView(.connections, size: 15)
+                        .junoSidebarMarkInk(selected: selection == .connections)
+                }
+                .junoSidebarRowInk()
+                .tag(DesktopCodeSidebarItem.connections)
+                .accessibilityIdentifier("juno.code.connections")
+            }
 
             // Anything running comes first and is never nested. A run needing
             // attention must not be one disclosure triangle away.
@@ -570,8 +679,7 @@ struct DesktopCodeSidebar: View {
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                         Button(action: openRepository) {
-                            Label("Add project…", systemImage: "folder.badge.plus")
-                                .junoRowLabel()
+                            DesktopCodeAddProjectLabel()
                         }
                         .buttonStyle(.plain)
                         .help("Add a project… (⌘O)")
@@ -590,6 +698,7 @@ struct DesktopCodeSidebar: View {
                         Text("All Projects").junoRowLabel()
                     } icon: {
                         JunoIconView(.projects, size: 15)
+                            .junoSidebarMarkInk(selected: selection == .allProjects)
                     }
                     .junoSidebarRowInk()
                     .badge(groups.count)
@@ -606,7 +715,7 @@ struct DesktopCodeSidebar: View {
                                     .selectionDisabled()
                             } else {
                                 ForEach(group.runs) { run in
-                                    row(run)
+                                    row(run, nested: true)
                                         .padding(.leading, Self.childIndent)
                                 }
                             }
@@ -620,9 +729,7 @@ struct DesktopCodeSidebar: View {
                     // row scrolls with the content like everything else, and says
                     // what it does rather than being a bare glyph.
                     Button(action: openRepository) {
-                        Label("Add project…", systemImage: "folder.badge.plus")
-                            .junoRowLabel()
-                            .foregroundStyle(.secondary)
+                        DesktopCodeAddProjectLabel()
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(.rect)
                     }
@@ -662,22 +769,15 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        // Clears the whole titlebar, not just the traffic lights.
-        //
-        // A `.sidebar` List in a `NavigationSplitView` is laid out from the very top
-        // of the window, and the titlebar that overlaps it is not just the window
-        // controls: the navigation title is drawn across the sidebar's width too. So
-        // the inset has to clear the *toolbar row*, which is why 28pt — enough for
-        // the traffic lights alone — still left the first row level with them.
-        //
-        // Measured against the rendered window rather than guessed: at 28 the first
-        // row sat beside the traffic lights, and this is the value that puts it
-        // clearly below the whole bar.
+        // Keep the source list below the full titlebar, including the traffic
+        // lights and the toolbar controls. The inset is intentionally empty:
+        // product identity belongs in the window chrome, not as a duplicate
+        // row inside the navigation column.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: Self.titlebarClearance)
+            Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            footer
+            footer.junoSidebarFooter()
         }
         .alert(item: $projectPendingDeletion) { project in
             Alert(
@@ -771,6 +871,7 @@ struct DesktopCodeSidebar: View {
                     .truncationMode(.middle)
             } icon: {
                 JunoIconView(.projects, size: 15)
+                    .junoSidebarMarkInk(selected: selection == .repository(group.workspaceID))
             }
 
             Spacer(minLength: JunoSpace.hairline)
@@ -866,14 +967,11 @@ struct DesktopCodeSidebar: View {
             """
     }
 
+    /// Counted from the visible set, because this feeds the delete confirmation
+    /// and a reader can only weigh a number against the runs they can see. The
+    /// sub-agents underneath go with their parents either way.
     private func sessions(in project: ProjectGroup) -> [CodeSession] {
-        workbench.sessions.filter { $0.workspaceID == project.workspaceID }
-    }
-
-    /// Whether the selected item is the projectless composer.
-    private var isDraftSelected: Bool {
-        if case .draft = selection { return true }
-        return false
+        workbench.visibleSessions.filter { $0.workspaceID == project.workspaceID }
     }
 
     private func selectionBelongs(to workspaceID: WorkspaceID) -> Bool {
@@ -884,14 +982,16 @@ struct DesktopCodeSidebar: View {
             return workbench.sessions.first { $0.id == id }?.workspaceID == workspaceID
         // The index belongs to no single project, so deleting one never leaves the
         // reader stranded on it.
-        case .allProjects, .draft, .pulls, .task, .remote, nil:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .task, .remote, nil:
             return false
         }
     }
 
     // MARK: Rows
 
-    private func row(_ run: DesktopCodeRun) -> some View {
+    /// - Parameter nested: whether this row already sits under its project's own
+    ///   row, in which case it drops the facts that row has just stated.
+    private func row(_ run: DesktopCodeRun, nested: Bool = false) -> some View {
         HStack(spacing: JunoSpace.tight) {
             CodeStatusIndicator(status: run.status)
             VStack(alignment: .leading, spacing: 1) {
@@ -899,15 +999,21 @@ struct DesktopCodeSidebar: View {
                     .junoRowLabel()
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Text(run.caption)
+                Text(nested ? run.nestedCaption : run.caption)
                     .junoCaption()
                     .lineLimit(1)
                     .truncationMode(.head)
             }
             Spacer(minLength: JunoSpace.hairline)
             if isFavorite(run) {
+                // The accent, because a pin is one of exactly two places the
+                // website spends `--primary` inside the whole column
+                // (`app-sidebar.tsx` draws both the pinned conversation and the
+                // starred project `fill-primary`). It was `junoCaution` here —
+                // an amber that matched neither the web's pin nor the Chat
+                // column's, so one mark had three colours across two windows.
                 JunoIconView(.pin, size: 11)
-                    .foregroundStyle(Color.junoCaution)
+                    .foregroundStyle(Color.junoAccent)
                     .accessibilityLabel("Favorite")
             }
         }
@@ -960,7 +1066,7 @@ struct DesktopCodeSidebar: View {
                 Task { await remote.stopGeneration(deviceID: deviceID, sessionID: sessionID) }
             }
             .disabled(!run.status.isActive || remote.isSendingCommand)
-        case .allProjects, .draft, .pulls, .repository:
+        case .allProjects, .draft, .pulls, .connections, .usage, .settings, .repository:
             // None reaches this row builder: repositories carry their own menu,
             // and neither the index, the composer nor the pull request list is a
             // run.
@@ -1012,12 +1118,38 @@ struct DesktopCodeSidebar: View {
 
     // MARK: Footer
 
+    /// What the column pins under the list: a transient workspace notice, and
+    /// then the account.
+    ///
+    /// In that order because the notice is news and the account row is furniture
+    /// — a "choose the folder again" prompt that appeared *below* the reader's
+    /// own name would be reporting an emergency in the quietest place on screen.
+    @ViewBuilder
+    private var footer: some View {
+        VStack(spacing: 0) {
+            workspaceStatus
+            if let session {
+                DesktopCodeAccountFooter(
+                    session: session,
+                    avatarModel: avatarModel,
+                    syncModel: syncModel,
+                    plan: plan,
+                    // Selection, not a closure out of the window: Usage and
+                    // Settings are this column's own destinations, so they are
+                    // reached the way every other row here is reached.
+                    openUsage: { selection = .usage },
+                    openSettings: { selection = .settings }
+                )
+            }
+        }
+    }
+
     /// The column's own progress, never skeleton rows.
     ///
     /// Placeholder rows behind a real state are the specific dishonesty the brief
     /// rules out: they claim there is content and then contradict themselves.
     @ViewBuilder
-    private var footer: some View {
+    private var workspaceStatus: some View {
         if isBootstrapping {
             HStack(spacing: JunoSpace.snug) {
                 ProgressView().controlSize(.small)
@@ -1193,21 +1325,6 @@ enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The website's mark for this destination, where it has one.
-    ///
-    /// The web offers two targets, Device and Cloud, and draws them as a laptop
-    /// and a cloud. The Mac has a third — *another* of your computers — which
-    /// the web cannot express and therefore has no mark for, so that one keeps
-    /// a system symbol. Giving all three the laptop would say the wrong thing
-    /// twice over.
-    var junoIcon: JunoIcon? {
-        switch self {
-        case .local: .device
-        case .cloud: .cloud
-        case .device: nil
-        }
-    }
-
     var nativeTarget: NativeCodeTarget? {
         switch self {
         case .local: nil
@@ -1232,6 +1349,28 @@ struct DesktopLocalCodeDraft: Equatable {
     let permissionMode: PermissionMode
     let modelID: String
     let reasoningEffort: ReasoningEffort
+    let attachments: [CodeAttachment]
+    let fileReferences: [WorkspacePath]
+
+    init(
+        workspaceID: WorkspaceID?,
+        prompt: String,
+        behavior: AgentBehavior,
+        permissionMode: PermissionMode,
+        modelID: String,
+        reasoningEffort: ReasoningEffort,
+        attachments: [CodeAttachment] = [],
+        fileReferences: [WorkspacePath] = []
+    ) {
+        self.workspaceID = workspaceID
+        self.prompt = prompt
+        self.behavior = behavior
+        self.permissionMode = permissionMode
+        self.modelID = modelID
+        self.reasoningEffort = reasoningEffort
+        self.attachments = attachments
+        self.fileReferences = fileReferences
+    }
 
     var configuration: AgentConfiguration {
         AgentConfiguration(
@@ -1286,6 +1425,17 @@ struct DesktopCodeDraftDetail: View {
     /// selection does — so this hands the choice back up rather than keeping a
     /// second copy of it that could disagree with the sidebar.
     let selectProject: (WorkspaceID?) -> Void
+    /// Starts realtime voice mode from the first-turn composer. The draft has
+    /// no `SessionController` yet, so it passes the selected model explicitly.
+    let beginVoice: ((String) -> Void)?
+    /// The account's linked apps, used by the composer menu to mirror Chat's
+    /// connector selection affordance. Code's current task contract does not
+    /// carry connector IDs yet, so this remains a local selection state until
+    /// that contract is extended.
+    let connectorModel: NativeConnectorModel?
+    /// The host-owned voice dock, shown directly above this composer while a
+    /// call is active. Keeping it outside the glass composer matches Chat.
+    let voiceDock: AnyView?
 
     @SceneStorage("juno.desktop.code.launch-target")
     private var storedTarget = DesktopCodeLaunchTarget.local.rawValue
@@ -1294,65 +1444,14 @@ struct DesktopCodeDraftDetail: View {
     @State private var permissionMode = PermissionMode.askBeforeChanges
     @State private var modelID = ""
     @State private var reasoningEffort = ReasoningEffort.medium
+    @State private var dictating = false
+    @State private var pendingAttachments: [CodeAttachment] = []
+    @State private var fileReferences: [WorkspacePath] = []
+    @State private var selectedConnectors: Set<String> = []
+    @State private var isDropTargeted = false
+    @State private var importError: String?
     @FocusState private var focused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private struct Suggestion: Identifiable {
-        let title: String
-        let symbol: String
-        let prompt: String
-        var id: String { title }
-    }
-
-    /// Openers for a conversation with no project. Every one of these is
-    /// answerable from the conversation alone — none asks Juno to look at
-    /// something it cannot see, which is what the project suggestions below all
-    /// do.
-    private static let projectlessSuggestions: [Suggestion] = [
-        Suggestion(
-            title: "Explain a concept",
-            symbol: "text.book.closed",
-            prompt: "Explain how "
-        ),
-        Suggestion(
-            title: "Review pasted code",
-            symbol: "checklist",
-            prompt: "Review this code for correctness, edge cases and security risk:\n\n"
-        ),
-        Suggestion(
-            title: "Design an approach",
-            symbol: "list.bullet.clipboard",
-            prompt: "I need to build "
-        ),
-        Suggestion(
-            title: "Debug an error",
-            symbol: "ant",
-            prompt: "I'm getting this error and I don't understand why:\n\n"
-        ),
-    ]
-
-    private static let suggestions: [Suggestion] = [
-        Suggestion(
-            title: "Review uncommitted changes",
-            symbol: "checklist",
-            prompt: "Review my uncommitted changes for correctness, regressions, and security risk."
-        ),
-        Suggestion(
-            title: "Fix failing tests",
-            symbol: "wrench.and.screwdriver",
-            prompt: "Run the relevant tests, diagnose every failure, and fix the root causes."
-        ),
-        Suggestion(
-            title: "Plan a feature",
-            symbol: "list.bullet.clipboard",
-            prompt: "Explore this codebase and propose an implementation plan before editing anything."
-        ),
-        Suggestion(
-            title: "Explain this repository",
-            symbol: "text.magnifyingglass",
-            prompt: "Map this repository and explain its architecture, data flow, and important conventions."
-        ),
-    ]
 
     /// Cloud and device runs both need somewhere to run — a repository, or a
     /// folder on a computer — so a conversation with no project is pinned to
@@ -1414,7 +1513,10 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private var canSend: Bool {
-        guard !trimmedPrompt.isEmpty else { return false }
+        let hasDraftContent = !trimmedPrompt.isEmpty
+            || !pendingAttachments.isEmpty
+            || !fileReferences.isEmpty
+        guard hasDraftContent else { return false }
         // A projectless conversation only needs a model — there is no
         // repository, device or workspace for anything else to be blocked on.
         if record == nil { return !modelID.isEmpty && !isStartingLocal }
@@ -1422,8 +1524,23 @@ struct DesktopCodeDraftDetail: View {
         case .local:
             return !modelID.isEmpty && !isStartingLocal
         case .cloud, .device:
-            return code.startBlockedReason == nil && !code.isMutating
+            // Cloud and device dispatch currently accept a prompt only. Keep
+            // the draft visible when the target changes instead of silently
+            // dropping its file/image context, but refuse a send until it is
+            // aimed back at This Mac.
+            guard pendingAttachments.isEmpty, fileReferences.isEmpty else {
+                return false
+            }
+            return !trimmedPrompt.isEmpty
+                && code.startBlockedReason == nil
+                && !code.isMutating
         }
+    }
+
+    private var canAttachImages: Bool {
+        target == .local
+            && selectedModel?.catalog?.capabilities.contains(.vision) != false
+            && pendingAttachments.count < 4
     }
 
     var body: some View {
@@ -1446,6 +1563,10 @@ struct DesktopCodeDraftDetail: View {
                     }
                     .frame(maxWidth: 760, alignment: .leading)
                     .padding(.horizontal, JunoSpace.roomy)
+
+                    if let voiceDock {
+                        voiceDock
+                    }
 
                     composer
 
@@ -1574,81 +1695,121 @@ struct DesktopCodeDraftDetail: View {
     }
 
     private var composer: some View {
+        // Keep the context and task surfaces visually connected, but give them
+        // separate jobs. The slim upper layer answers "where?"; the lower
+        // layer is the place to write and launch. This keeps the composer
+        // compact without turning every control into a floating pill.
         JunoDesktopGlass(spacing: JunoSpace.snug) {
-            VStack(spacing: JunoSpace.cozy) {
+            VStack(spacing: -JunoSpace.hairline) {
                 destinationRow
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.vertical, JunoSpace.snug)
+                    .frame(maxWidth: 560)
+                    .junoFloatingChrome(cornerRadius: JunoRadius.panel)
+                    .zIndex(1)
 
-                TextField(
-                    record == nil
-                        ? "Ask Juno anything about code…"
-                        : target == .local
-                            ? "Ask Juno to build, fix, review, or explain…"
-                            : "Describe the task to run…",
-                    text: $prompt,
-                    axis: .vertical
-                )
-                .textFieldStyle(.plain)
-                .lineLimit(3...9)
-                .font(.body)
-                .focused($focused)
-                .padding(.horizontal, JunoSpace.tight)
-                .padding(.vertical, JunoSpace.tight)
-                .accessibilityIdentifier("juno.code.launch-prompt")
-                .onKeyPress(.return, phases: .down) { press in
-                    if press.modifiers.contains(.shift) { return .ignored }
-                    if canSend { send() }
-                    return .handled
-                }
+                VStack(spacing: 0) {
+                    draftAttachmentStrip
 
-                if let issue = launchIssue {
-                    Label(issue, systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, JunoSpace.tight)
+                    if dictating {
+                        DesktopDictation(
+                            onCancel: {
+                                withAnimation(JunoMotion.fast) { dictating = false }
+                                focused = true
+                            },
+                            onStop: { transcript in
+                                appendDictated(transcript)
+                                withAnimation(JunoMotion.fast) { dictating = false }
+                                focused = true
+                            },
+                            onSend: { transcript in
+                                appendDictated(transcript)
+                                withAnimation(JunoMotion.fast) { dictating = false }
+                                Task {
+                                    await Task.yield()
+                                    send()
+                                }
+                            }
+                        )
                         .transition(.opacity)
-                        .accessibilityIdentifier("juno.code.launch-issue")
-                }
+                    } else {
+                        TextField(
+                            record == nil
+                                ? "Ask about a codebase, an idea, or a fix…"
+                                : target == .local
+                                    ? "Describe what you want Juno to build, fix, review, or explain…"
+                                    : "Describe the task to run…",
+                            text: $prompt,
+                            axis: .vertical
+                        )
+                        .textFieldStyle(.plain)
+                        .lineLimit(1...5)
+                        .font(.body)
+                        .focused($focused)
+                        .frame(maxWidth: .infinity, minHeight: 48, alignment: .topLeading)
+                        .padding(.horizontal, JunoSpace.cozy)
+                        .padding(.top, JunoSpace.regular)
+                        .padding(.bottom, JunoSpace.snug)
+                        .accessibilityIdentifier("juno.code.launch-prompt")
+                        .onKeyPress(.return, phases: .down) { press in
+                            if press.modifiers.contains(.shift) { return .ignored }
+                            if canSend { send() }
+                            return .handled
+                        }
 
-                HStack(spacing: JunoSpace.snug) {
-                    // A projectless conversation has exactly one place it can
-                    // run, so the picker would be a control with one working
-                    // choice and two that refuse.
-                    if record != nil {
-                        targetMenu
-
-                        Rectangle()
-                            .fill(Color.junoHairline)
-                            .frame(width: 1, height: 19)
-                            .padding(.horizontal, 2)
-                            .accessibilityHidden(true)
+                        if let issue = importError ?? launchIssue {
+                            Label(issue, systemImage: "info.circle")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, JunoSpace.cozy)
+                                .padding(.bottom, JunoSpace.snug)
+                                .transition(.opacity)
+                                .accessibilityIdentifier("juno.code.launch-issue")
+                        }
                     }
 
-                    launchControls
+                    HStack(spacing: JunoSpace.snug) {
+                        composerAddMenu
+                        localControls
 
-                    Spacer(minLength: JunoSpace.tight)
+                        Spacer(minLength: JunoSpace.cozy)
 
-                    suggestionsMenu
-                    sendButton
+                        if JunoSpeechService.isSupported {
+                            dictateButton
+                        }
+                        sendButton
+                    }
+                    .padding(.horizontal, JunoSpace.cozy)
+                    .padding(.bottom, JunoSpace.snug)
                 }
+                .frame(maxWidth: 680)
+                .junoGlass(
+                    in: RoundedRectangle(
+                        cornerRadius: JunoCornerRadius.composer,
+                        style: .continuous
+                    ),
+                    tint: isDropTargeted ? Color.junoAccent.opacity(0.24) : nil
+                )
             }
-            .padding(JunoSpace.cozy)
-            .frame(maxWidth: 760)
-            .junoFloatingChrome(cornerRadius: JunoCornerRadius.composer)
             .padding(.horizontal, JunoSpace.roomy)
         }
         .animation(
             JunoMotion.reduced(JunoMotion.standard, when: reduceMotion),
             value: target
         )
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+            receiveDroppedItems(providers)
+            return true
+        }
     }
 
     private var destinationRow: some View {
         HStack(spacing: JunoSpace.snug) {
             // Only the local destination is a *project*, and only a project is
             // choosable from here. Cloud picks a repository and Device picks a
-            // computer, and both already have their own control in the row
-            // below — a second one here would be two ways to say one thing.
+            // computer; the run target sits beside this context instead of
+            // being repeated in the lower action rail.
             if target == .local {
                 projectMenu
             } else {
@@ -1659,9 +1820,27 @@ struct DesktopCodeDraftDetail: View {
                 .junoCaption()
                 .lineLimit(1)
                 .truncationMode(.head)
+
+            if record != nil {
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(width: 1, height: 18)
+                    .accessibilityHidden(true)
+                targetMenu
+            }
+
+            if target != .local {
+                Rectangle()
+                    .fill(Color.junoHairline)
+                    .frame(width: 1, height: 18)
+                    .accessibilityHidden(true)
+                launchControls
+            }
         }
-        .padding(.horizontal, JunoSpace.tight)
-        .accessibilityElement(children: .combine)
+        // Project and run target are two independent menus. Keep them as
+        // separate controls for keyboard and VoiceOver navigation even though
+        // they share one compact context row visually.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(target.label), \(destinationTitle), \(destinationDetail)")
     }
 
@@ -1672,16 +1851,16 @@ struct DesktopCodeDraftDetail: View {
             // `.symbolEffect` is an SF Symbol capability; a Juno mark is an
             // image asset and cannot morph, so the two branches differ in more
             // than which glyph they draw.
-            if let junoIcon = target.junoIcon {
-                JunoIconView(junoIcon, size: 15)
-                    .foregroundStyle(Color.junoAccent)
-                    .transition(.opacity)
-                    .id(target)
-            } else {
-                Image(systemName: target.symbol)
-                    .foregroundStyle(Color.junoAccent)
-                    .contentTransition(.symbolEffect(.replace))
-            }
+            //
+            // Neutral, as the website's own target chip is: `code-target-picker.tsx`
+            // draws its folder, branch and chevron marks `text-muted-foreground`
+            // and keeps `--primary` for the send button at the other end of the
+            // same row. A composer with a coral glyph on each side has two
+            // primary actions and therefore none.
+            Image(systemName: target.symbol)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.secondary)
+                .contentTransition(.symbolEffect(.replace))
             Text(destinationTitle)
                 .junoRowLabel()
                 .lineLimit(1)
@@ -1726,8 +1905,9 @@ struct DesktopCodeDraftDetail: View {
             .keyboardShortcut("o", modifiers: [.command])
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                JunoIconView(record == nil ? .conversation : .projects, size: 14)
-                    .foregroundStyle(Color.junoAccent)
+                Image(systemName: record == nil ? "bubble.left" : "folder")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
                 Text(destinationTitle)
                     .junoRowLabel()
                     .lineLimit(1)
@@ -1736,12 +1916,8 @@ struct DesktopCodeDraftDetail: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, JunoSpace.snug)
-            .frame(height: 28)
-            // Liquid Glass, through the shared helper that falls back to a
-            // system material below macOS 26 rather than drawing a flat plate.
-            .background(JunoGlassBackground(cornerRadius: 14))
-            .contentShape(.rect(cornerRadius: 14))
+            .padding(.vertical, JunoSpace.hairline)
+            .contentShape(.rect)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -1764,23 +1940,17 @@ struct DesktopCodeDraftDetail: View {
         Menu {
             Picker("Run on", selection: targetBinding) {
                 ForEach(DesktopCodeLaunchTarget.allCases) { choice in
-                    Group {
-                        if let junoIcon = choice.junoIcon {
-                            JunoIconLabel(verbatim: choice.label, icon: junoIcon, size: 14)
-                        } else {
-                            Label(choice.label, systemImage: choice.symbol)
-                        }
-                    }
+                    Label(choice.label, systemImage: choice.symbol)
                     .tag(choice)
                 }
             }
         } label: {
-            Group {
-                if let junoIcon = target.junoIcon {
-                    JunoIconLabel(verbatim: target.label, icon: junoIcon, size: 12)
-                } else {
-                    Label(target.label, systemImage: target.symbol)
-                }
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: target.symbol)
+                    .font(.system(size: 13, weight: .medium))
+                Text(target.label)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
             }
             .font(.caption)
             .foregroundStyle(.secondary)
@@ -1853,12 +2023,11 @@ struct DesktopCodeDraftDetail: View {
             // not use would be the composer claiming a power it does not have.
             .disabled(behavior != .code || record == nil)
         } label: {
-            Label(
-                behavior == .code && record != nil
-                    ? "\(AgentBehaviorLabel.text(for: behavior)) · \(PermissionModeLabel.shortText(for: permissionMode))"
-                    : AgentBehaviorLabel.text(for: behavior),
-                systemImage: AgentBehaviorLabel.glyph(for: behavior)
-            )
+            HStack(spacing: JunoSpace.hairline) {
+                Image(systemName: contractSymbol)
+                    .font(.system(size: 13, weight: .medium))
+                Text(contractTitle)
+            }
             .font(.caption)
             .foregroundStyle(
                 permissionMode == .fullAccess && record != nil ? Color.junoCaution : .secondary
@@ -1867,6 +2036,8 @@ struct DesktopCodeDraftDetail: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help("Choose whether Juno answers, plans, or edits—and when it asks")
+        .accessibilityLabel("Access")
+        .accessibilityValue(contractTitle)
         .accessibilityIdentifier("juno.code.launch-contract")
     }
 
@@ -1934,49 +2105,466 @@ struct DesktopCodeDraftDetail: View {
         }
     }
 
-    private var suggestionsMenu: some View {
+    private var composerAddMenu: some View {
         Menu {
-            ForEach(record == nil ? Self.projectlessSuggestions : Self.suggestions) { suggestion in
-                Button {
-                    prompt = suggestion.prompt
-                    focused = true
-                } label: {
-                    Label(suggestion.title, systemImage: suggestion.symbol)
+            Button(action: chooseFileReference) {
+                Label("Add file context", systemImage: "doc.text")
+            }
+            .disabled(record == nil || target != .local)
+
+            Button {
+                importError = nil
+                chooseImages()
+            } label: {
+                Label("Add picture", systemImage: "photo")
+            }
+            .disabled(!canAttachImages)
+
+            Menu {
+                if connectorModel != nil {
+                    if connectedConnectors.isEmpty {
+                        Text("No connected apps")
+                    } else {
+                        ForEach(connectedConnectors) { connector in
+                            Button {
+                                toggleConnector(connector.id)
+                            } label: {
+                                if selectedConnectors.contains(connector.id) {
+                                    Label(connector.label, systemImage: "checkmark")
+                                } else {
+                                    Text(connector.label)
+                                }
+                            }
+                            .disabled(
+                                !selectedConnectors.contains(connector.id)
+                                    && selectedConnectors.count >= 5
+                            )
+                        }
+                    }
+                } else {
+                    Text("Connectors unavailable")
                 }
+            } label: {
+                JunoIconLabel(
+                    verbatim: selectedConnectors.isEmpty
+                        ? "Connectors"
+                        : "Connectors · \(selectedConnectors.count)",
+                    icon: .connections,
+                    size: 14
+                )
+            }
+            .disabled(connectorModel == nil)
+
+            Divider()
+
+            Button(action: addProject) {
+                Label("Open another project…", systemImage: "folder")
             }
         } label: {
-            Image(systemName: "sparkles")
-                .frame(width: 28, height: 28)
-                .contentShape(.rect)
+            Image(systemName: "plus")
+                .font(.system(size: 16, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(.circle)
+                .overlay(alignment: .topTrailing) {
+                    if !selectedConnectors.isEmpty {
+                        Circle()
+                            .fill(Color.junoAccent)
+                            .stroke(Color.junoSurface, lineWidth: 1.5)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 1, y: -1)
+                    }
+                }
         }
         .menuStyle(.borderlessButton)
-        .help("Prompt suggestions")
-        .accessibilityLabel("Prompt suggestions")
-        .accessibilityIdentifier("juno.code.launch-suggestions")
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .foregroundStyle(.primary)
+        .help("Add files, pictures, connected apps, or projects")
+        .accessibilityLabel("Add")
+        .accessibilityValue(
+            selectedConnectors.isEmpty
+                ? "No connected apps selected"
+                : "\(selectedConnectors.count) connected apps selected"
+        )
+        .accessibilityIdentifier("juno.code.composer.add")
     }
 
+    @ViewBuilder
+    private var draftAttachmentStrip: some View {
+        if !pendingAttachments.isEmpty || !fileReferences.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: JunoSpace.snug) {
+                    ForEach(fileReferences, id: \.value) { path in
+                        fileReferenceChip(path)
+                    }
+
+                    ForEach(pendingAttachments) { attachment in
+                        ZStack(alignment: .topTrailing) {
+                            Group {
+                                if let image = NSImage(data: attachment.image.data) {
+                                    Image(nsImage: image)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } else {
+                                    Image(systemName: "photo")
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .frame(width: 44, height: 44)
+                            .clipShape(
+                                RoundedRectangle(
+                                    cornerRadius: JunoRadius.row,
+                                    style: .continuous
+                                )
+                            )
+
+                            Button {
+                                pendingAttachments.removeAll { $0.id == attachment.id }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.caption)
+                                    .symbolRenderingMode(.palette)
+                                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .offset(x: 5, y: -5)
+                            .accessibilityLabel("Remove \(attachment.name)")
+                        }
+                        .help("\(attachment.name) · \(attachment.sizeDescription)")
+                    }
+                }
+                .padding(.horizontal, JunoSpace.cozy)
+                .padding(.top, JunoSpace.snug)
+            }
+            .scrollIndicators(.hidden)
+            .frame(height: 60)
+        }
+    }
+
+    private func fileReferenceChip(_ path: WorkspacePath) -> some View {
+        HStack(spacing: JunoSpace.tight) {
+            Image(systemName: "doc.text")
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(path.lastComponent)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(path.value)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .frame(maxWidth: 150, alignment: .leading)
+
+            Button {
+                removeFileReference(path)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.junoOnAccent, Color.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove (path.lastComponent)")
+        }
+        .padding(.horizontal, JunoSpace.snug)
+        .frame(minHeight: 44)
+        .junoGlass(
+            in: RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous),
+            tint: Color.primary.opacity(0.05)
+        )
+        .help("Attached file (path.value)")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Attached file (path.value)")
+    }
+
+    private var dictateButton: some View {
+        Button {
+            focused = false
+            withAnimation(JunoMotion.fast) { dictating = true }
+        } label: {
+            Image(systemName: "mic")
+                .font(.body)
+                .foregroundStyle(Color.primary.opacity(0.76))
+                .frame(width: 34, height: 34)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .help("Dictate a message")
+        .accessibilityLabel("Dictate a message")
+        .accessibilityIdentifier("juno.code.composer.dictate")
+    }
+
+    /// The same morphing primary action Chat uses: voice mode when the prompt
+    /// is empty, Send once the reader has written something, and a spinner while
+    /// a task is being created. Voice lives in this slot so it is discoverable
+    /// without adding a second row of controls to the Code composer.
+    @ViewBuilder
     private var sendButton: some View {
-        Button(action: send) {
-            Group {
-                if isStartingLocal || code.isMutating {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 12, weight: .bold))
+        if trimmedPrompt.isEmpty,
+            pendingAttachments.isEmpty,
+            fileReferences.isEmpty,
+            let beginVoice
+        {
+            Button {
+                beginVoice(modelID)
+            } label: {
+                Image(systemName: "waveform")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 30, height: 30)
+                    .foregroundStyle(Color.primary)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .junoGlass(
+                in: Circle(),
+                tint: Color.primary.opacity(modelID.isEmpty ? 0.04 : 0.14),
+                interactive: true
+            )
+            .disabled(modelID.isEmpty)
+            .help("Start a voice conversation")
+            .accessibilityLabel("Start voice mode")
+            .accessibilityIdentifier("juno.code.composer.voice")
+        } else {
+            Button(action: send) {
+                Group {
+                    if isStartingLocal || code.isMutating {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                }
+                .frame(width: 30, height: 30)
+                .foregroundStyle(canSend ? Color.primary : Color.secondary)
+                .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .junoGlass(
+                in: Circle(),
+                tint: Color.primary.opacity(canSend ? 0.14 : 0.04),
+                interactive: true
+            )
+            .disabled(!canSend)
+            .help("Start this task (Return)")
+            .accessibilityLabel("Start task")
+            .accessibilityIdentifier("juno.code.launch-send")
+        }
+    }
+
+    private func appendDictated(_ transcript: String) {
+        let dictated = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !dictated.isEmpty else { return }
+        let existing = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        prompt = existing.isEmpty ? dictated : "\(existing) \(dictated)"
+    }
+
+    private func chooseFileReference() {
+        guard let record, target == .local else { return }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.prompt = "Add File"
+        panel.directoryURL = URL(fileURLWithPath: record.descriptor.localPathHint)
+
+        guard panel.runModal() == .OK else { return }
+
+        let root = URL(fileURLWithPath: record.descriptor.localPathHint)
+            .standardizedFileURL
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        let added = panel.urls.compactMap { url -> WorkspacePath? in
+            let path = url.standardizedFileURL.path
+            guard path.hasPrefix(rootPath),
+                let relative = try? WorkspacePath(String(path.dropFirst(rootPath.count)))
+            else { return nil }
+            return relative
+        }
+        addFileReferences(added)
+    }
+
+    private func chooseImages() {
+        guard canAttachImages else { return }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = CodeAttachment.acceptedTypes
+        panel.prompt = "Add Pictures"
+        panel.message = "Choose pictures to attach to this task."
+
+        guard panel.runModal() == .OK else { return }
+        importImages(.success(panel.urls))
+    }
+
+    private func importImages(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            let nsError = error as NSError
+            guard nsError.code != NSUserCancelledError else { return }
+            importError = error.localizedDescription
+        case .success(let urls):
+            importError = nil
+            let remaining = max(0, 4 - pendingAttachments.count)
+            if urls.count > remaining {
+                importError = "You can attach up to 4 pictures to one task."
+            }
+
+            for url in urls.prefix(remaining) {
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer {
+                    if scoped { url.stopAccessingSecurityScopedResource() }
+                }
+                guard let attachment = CodeAttachment.load(contentsOf: url) else {
+                    importError = "Could not read \(url.lastPathComponent) as a picture."
+                    continue
+                }
+                appendAttachment(attachment)
+            }
+        }
+    }
+
+    private var connectedConnectors: [NativeConnector] {
+        (connectorModel?.linked ?? []).filter(\.connected)
+    }
+
+    private func toggleConnector(_ id: String) {
+        if selectedConnectors.contains(id) {
+            selectedConnectors.remove(id)
+        } else if selectedConnectors.count < 5 {
+            selectedConnectors.insert(id)
+        }
+    }
+
+    private func addFileReferences(_ references: [WorkspacePath]) {
+        let added = references.filter { !fileReferences.contains($0) }
+        guard !added.isEmpty else { return }
+        fileReferences.append(contentsOf: added)
+
+        let existing = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tokens = added.map { "@\($0.value)" }.joined(separator: " ")
+        prompt = [existing, tokens]
+            .filter { !$0.isEmpty }
+            .joined(separator: " ") + " "
+        importError = nil
+        focused = true
+    }
+
+    private func removeFileReference(_ path: WorkspacePath) {
+        fileReferences.removeAll { $0 == path }
+        let token = "@\(path.value)"
+        prompt = prompt
+            .replacingOccurrences(of: token, with: "")
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+        if !prompt.isEmpty { prompt += " " }
+        focused = true
+    }
+
+    private func appendAttachment(_ attachment: CodeAttachment) {
+        guard pendingAttachments.count < 4 else {
+            importError = "You can attach up to 4 pictures to one task."
+            return
+        }
+        pendingAttachments.append(attachment)
+        importError = nil
+        focused = true
+    }
+
+    /// Receives both Finder file URLs and image bytes from apps that do not
+    /// expose a file URL. An image file becomes a thumbnail; any other file
+    /// inside the selected project becomes a removable file-context chip.
+    private func receiveDroppedItems(_ providers: [NSItemProvider]) {
+        importError = nil
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in
+                        importDroppedURL(url)
+                    }
+                }
+                continue
+            }
+
+            guard provider.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+            else { continue }
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) {
+                data, _ in
+                guard let data,
+                    let attachment = CodeAttachment.pasted(
+                        data: data,
+                        declaredMediaType: nil
+                    )
+                else { return }
+                Task { @MainActor in
+                    appendAttachment(attachment)
                 }
             }
-            .frame(width: 30, height: 30)
-            .contentShape(.circle)
         }
-        .buttonStyle(.borderedProminent)
-        .buttonBorderShape(.circle)
-        .tint(Color.junoAccent)
-        .foregroundStyle(Color.junoOnAccent)
-        .disabled(!canSend)
-        .help("Start this task (Return)")
-        .accessibilityLabel("Start task")
-        .accessibilityIdentifier("juno.code.launch-send")
+    }
+
+    @MainActor
+    private func importDroppedURL(_ url: URL) {
+        guard target == .local else {
+            importError = "Files and pictures can be added on This Mac only."
+            return
+        }
+
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped { url.stopAccessingSecurityScopedResource() }
+        }
+
+        let contentType = (try? url.resourceValues(forKeys: [.contentTypeKey])).flatMap {
+            $0.contentType
+        } ?? UTType(filenameExtension: url.pathExtension)
+
+        if contentType?.conforms(to: .image) == true {
+            guard let attachment = CodeAttachment.load(contentsOf: url) else {
+                importError = "Could not read \(url.lastPathComponent) as a picture."
+                return
+            }
+            appendAttachment(attachment)
+            return
+        }
+
+        guard let record else {
+            importError = "Open a project before dropping a file."
+            return
+        }
+
+        let root = URL(fileURLWithPath: record.descriptor.localPathHint)
+            .standardizedFileURL
+        let rootPath = root.path.hasSuffix("/") ? root.path : root.path + "/"
+        let path = url.standardizedFileURL.path
+        guard path.hasPrefix(rootPath),
+            let relative = try? WorkspacePath(String(path.dropFirst(rootPath.count)))
+        else {
+            importError = "Files must be inside the selected project."
+            return
+        }
+        addFileReferences([relative])
+    }
+
+    private var contractTitle: String {
+        guard behavior == .code, record != nil else {
+            return AgentBehaviorLabel.text(for: behavior)
+        }
+        return permissionMode == .fullAccess ? "Full access" : "Ask before edits"
+    }
+
+    private var contractSymbol: String {
+        guard behavior == .code, record != nil else {
+            return AgentBehaviorLabel.glyph(for: behavior)
+        }
+        return permissionMode == .fullAccess ? "shield.fill" : "shield"
     }
 
     private var destinationTitle: String {
@@ -2017,6 +2605,9 @@ struct DesktopCodeDraftDetail: View {
             }
             return nil
         case .cloud, .device:
+            if !pendingAttachments.isEmpty || !fileReferences.isEmpty {
+                return "Pictures and file context run on This Mac only."
+            }
             return code.lastErrorDescription ?? code.startBlockedReason
         }
     }
@@ -2102,7 +2693,9 @@ struct DesktopCodeDraftDetail: View {
                     behavior: behavior,
                     permissionMode: permissionMode,
                     modelID: modelID,
-                    reasoningEffort: reasoningEffort
+                    reasoningEffort: reasoningEffort,
+                    attachments: pendingAttachments,
+                    fileReferences: fileReferences
                 )
             )
         case .cloud, .device:
@@ -2147,7 +2740,7 @@ struct DesktopCodeAllProjects: View {
 
     private var rows: [Row] {
         workbench.workspaces.map { record in
-            let sessions = workbench.sessions.filter { $0.workspaceID == record.id }
+            let sessions = workbench.visibleSessions.filter { $0.workspaceID == record.id }
             return Row(
                 record: record,
                 sessions: sessions.count,
@@ -2192,10 +2785,20 @@ struct DesktopCodeAllProjects: View {
                 HStack(spacing: JunoSpace.snug) {
                     Text(row.record.descriptor.displayName)
                         .junoTitle()
+                    // A dot and a caption, not coral text.
+                    //
+                    // The website marks a running task with `bg-success` and a
+                    // pulse (`TASK_STATUS_META`) and never with `--primary`, which
+                    // it keeps for the actions on the right of this same card.
+                    // Colouring the *count* in the accent made the card look as
+                    // though something needed doing.
                     if row.active > 0 {
-                        Text(row.active == 1 ? "1 running" : "\(row.active) running")
-                            .junoCaption()
-                            .foregroundStyle(Color.junoAccent)
+                        HStack(spacing: JunoSpace.hairline) {
+                            DesktopCodeRunningDot()
+                            Text(row.active == 1 ? "1 running" : "\(row.active) running")
+                                .junoCaption()
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                 }
                 Text(
@@ -2214,6 +2817,10 @@ struct DesktopCodeAllProjects: View {
             Spacer(minLength: JunoSpace.cozy)
 
             VStack(alignment: .trailing, spacing: JunoSpace.snug) {
+                // One prominent action per card, in the accent, exactly as the
+                // web's default `Button` variant renders `bg-primary` — and the
+                // secondary one below it stays bordered rather than becoming a
+                // second coral fill.
                 Button("Open") { open(row.record.id) }
                     .buttonStyle(.borderedProminent)
                     .tint(Color.junoAccent)

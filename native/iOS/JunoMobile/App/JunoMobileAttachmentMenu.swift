@@ -59,7 +59,7 @@ struct JunoMobileComposerActions: View {
     /// Account-level, unlike everything else in Tools — this is the same switch
     /// as Settings › Memory, surfaced where the web surfaces it.
     var memoryEnabled: Bool = true
-    /// `@MainActor @Sendable` because it is handed straight to a `Binding`'s
+    /// `@MainActor @Sendable` because it is called from inside a `Binding`'s
     /// setter, whose accessors are `@Sendable` in the iOS 26 SDK — a plain
     /// closure there "may introduce data races" under Swift 6. The toggle is
     /// driven on the main actor, so stating that is accurate rather than a
@@ -90,20 +90,20 @@ struct JunoMobileComposerActions: View {
                 Button {
                     open(.photos)
                 } label: {
-                    Label("attachments.photos", systemImage: "photo")
+                    JunoIconLabel("attachments.photos", icon: .photos)
                 }
                 .disabled(!canAttach)
 
                 Button {
                     open(.files)
                 } label: {
-                    Label("attachments.files", systemImage: "paperclip")
+                    JunoIconLabel("attachments.files", icon: .files)
                 }
                 .disabled(!canAttach)
 
                 if let openLibrary {
                     Button(action: openLibrary) {
-                        Label("attachments.library", systemImage: "books.vertical")
+                        JunoIconLabel("attachments.library", icon: .library)
                     }
                     .disabled(!canAttach)
                 }
@@ -112,7 +112,7 @@ struct JunoMobileComposerActions: View {
             Section {
                 if let startCanvas {
                     Button(action: startCanvas) {
-                        Label("composer.create-canvas", systemImage: "square.and.pencil")
+                        JunoIconLabel("composer.create-canvas", icon: .canvas)
                     }
                 }
                 if canPickProject {
@@ -185,29 +185,44 @@ struct JunoMobileComposerActions: View {
     @ViewBuilder
     private var toolsRows: some View {
         Toggle(isOn: $tools.deepResearch) {
-            Label("composer.deep-research", systemImage: "binoculars")
+            JunoIconLabel("composer.deep-research", icon: .research)
         }
 
         if modelSupportsWebSearch {
             Toggle(isOn: $tools.webSearch) {
-                Label("composer.web-search", systemImage: "globe")
+                JunoIconLabel("composer.web-search", icon: .web)
             }
         } else {
             // Not a disabled toggle: a switch that cannot move still looks like
             // a setting, and the reason it cannot move is the useful part.
-            Label("composer.web-search.unsupported", systemImage: "globe")
+            JunoIconLabel("composer.web-search.unsupported", icon: .web)
                 .foregroundStyle(.secondary)
         }
 
         Toggle(isOn: $tools.canvas) {
-            Label("composer.canvas", systemImage: "rectangle.on.rectangle")
+            JunoIconLabel("composer.canvas", icon: .artifactsTool)
         }
 
         if let setMemoryEnabled {
             Toggle(
-                isOn: Binding(get: { memoryEnabled }, set: setMemoryEnabled)
+                // Called through a closure literal rather than passed as the
+                // setter itself, and this is the whole of the iOS CI crash.
+                //
+                // `Binding.init(set:)` takes an `@isolated(any) @Sendable
+                // (Value) -> Void`, and `Value` is generic, so it is lowered to
+                // `@in_guaranteed`. Handing it an already-`@MainActor` function
+                // *value* therefore needs a thunk that both erases the isolation
+                // and boxes the `Bool` — `$sSbScA_pSgIeAghyg_SbIeAghn_TR`, the
+                // symbol every one of these crash reports names. A closure
+                // literal is `@_inheritActorContext`, so it carries the main
+                // actor natively and no such thunk is emitted at all.
+                //
+                // Verified by symbol, not by hope: that thunk is present in the
+                // app's object files with `set: setMemoryEnabled` and absent
+                // with the literal.
+                isOn: Binding(get: { memoryEnabled }, set: { setMemoryEnabled($0) })
             ) {
-                Label("composer.memory", systemImage: "brain.head.profile")
+                JunoIconLabel("composer.memory", icon: .memory)
             }
         }
 
@@ -224,7 +239,7 @@ struct JunoMobileComposerActions: View {
     private var connectorMenu: some View {
         if connectors.isEmpty {
             Button(action: openPlugins) {
-                Label("composer.connect-an-app", systemImage: "powerplug")
+                JunoIconLabel("composer.connect-an-app", icon: .connections)
             }
             .disabled(!canOpenPlugins)
         } else {
@@ -237,17 +252,36 @@ struct JunoMobileComposerActions: View {
                             set: { _ in tools.toggleConnector(connector.id) }
                         )
                     ) {
-                        Text(connector.label)
+                        // The service's real mark, as the web's rows carry. A
+                        // list of bare names is the one place someone has to
+                        // *read* to find Gmail, when they already know what its
+                        // logo looks like — and ``JunoConnectorMark`` exists
+                        // precisely because generic glyphs standing in for
+                        // brands is a tell.
+                        Label {
+                            Text(connector.label)
+                        } icon: {
+                            JunoConnectorMark(
+                                connectorID: connector.id,
+                                connectorName: connector.label,
+                                logoURL: connector.logoURL,
+                                size: 16
+                            )
+                        }
                     }
                     .disabled(!on && !tools.canAddConnector)
                 }
                 Divider()
                 Button(action: openPlugins) {
-                    Label("composer.manage-connections", systemImage: "gearshape")
+                    // A plug, not a gear. Managing connections is a product
+                    // destination and the web draws it with the same mark as
+                    // the submenu it sits in; a third glyph for one concept was
+                    // the reader's problem, not a distinction.
+                    JunoIconLabel("composer.manage-connections", icon: .connections)
                 }
                 .disabled(!canOpenPlugins)
             } label: {
-                Label(connectorLabel, systemImage: "powerplug")
+                JunoIconLabel(verbatim: connectorLabel, icon: .connections)
             }
             .accessibilityIdentifier("juno.mobile.composer-connectors")
         }
@@ -311,11 +345,17 @@ struct JunoMobileComposerActions: View {
                 menuItem(id: project.id, name: project.name)
             }
         } label: {
-            Label(selectedProjectName, systemImage: "folder")
+            JunoIconLabel(verbatim: selectedProjectName, icon: .projects)
         }
         .accessibilityIdentifier("juno.mobile.composer-project")
     }
 
+    /// The selected row keeps the checkmark and the rest carry the project mark,
+    /// so the leading column is never empty. The web draws a folder on every row
+    /// and puts its tick on the trailing edge; a system menu owns that slot and
+    /// only draws one image per row, so the tick wins where there is a choice —
+    /// which is the right way round, since it is the only thing here that
+    /// changes.
     private func menuItem(id: String?, name: String) -> some View {
         Button {
             Task { await setProject(id) }
@@ -323,7 +363,7 @@ struct JunoMobileComposerActions: View {
             if selectedProjectID == id {
                 Label(name, systemImage: "checkmark")
             } else {
-                Text(name)
+                JunoIconLabel(verbatim: name, icon: .projects)
             }
         }
     }

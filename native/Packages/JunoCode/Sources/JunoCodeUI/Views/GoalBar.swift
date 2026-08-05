@@ -202,7 +202,11 @@ private func lifecycleGlyph(_ lifecycle: GoalLifecycle) -> String {
 
 private func lifecycleTint(_ lifecycle: GoalLifecycle) -> Color {
     switch lifecycle {
-    case .active: Color.accentColor
+    // `Color.junoAccent`, never `Color.accentColor`: the latter resolves to the
+    // asset catalogue's accent and so ignores the accent the reader picked,
+    // leaving this one glyph a different coral from every other accented mark in
+    // the window.
+    case .active: Color.junoAccent
     case .paused: Color.junoCaution
     case .blocked: Color.junoDanger
     case .completed: Color.junoSuccess

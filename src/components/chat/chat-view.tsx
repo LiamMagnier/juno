@@ -11,6 +11,7 @@ import { useRealtimeVoice } from "@/hooks/use-realtime-voice";
 import { useTts } from "@/hooks/use-tts";
 import { useApp } from "@/components/app/app-provider";
 import { MessageList } from "@/components/chat/message-list";
+import { ConversationFind } from "@/components/chat/conversation-find";
 import { Composer } from "@/components/chat/composer";
 import { EmptyGreeting, PrivateGreeting } from "@/components/chat/empty-state";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
@@ -52,6 +53,16 @@ type AutoTitlePhase = "first_user" | "thinking" | "writing" | "completed" | "sto
 const CANVAS_WIDTH_KEY = "juno:canvas-width";
 const CANVAS_MIN_WIDTH = 420;
 const CHAT_MIN_WIDTH = 320;
+
+/**
+ * Whether the system keyboard conventions are Apple's. Only used to decide
+ * whether Ctrl+F belongs to the OS (macOS binds it to "move caret forward" in
+ * any text field) rather than to us.
+ */
+function isApplePlatform() {
+  if (typeof navigator === "undefined") return false;
+  return /mac|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
 
 function canvasWidthBounds(containerWidth: number) {
   const minWidth = Math.min(CANVAS_MIN_WIDTH, Math.max(320, containerWidth - CHAT_MIN_WIDTH));
@@ -371,6 +382,19 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
     },
   });
 
+  // A FAILED first generation still leaves a real conversation behind: the
+  // server creates it before streaming, onMeta puts it in the sidebar, and the
+  // messages are persisted. But the URL sync lives only in onDone, which an
+  // error never reaches — so the address bar stayed on /chat, and a refresh
+  // lost a thread the user could see listed beside them.
+  React.useEffect(() => {
+    if (privateMode || chat.status !== "error" || conversationId !== null) return;
+    const id = createdIdRef.current;
+    if (!id) return;
+    createdIdRef.current = null;
+    router.replace(`/chat/${id}`);
+  }, [chat.status, privateMode, conversationId, router]);
+
   const currentConversationId = activeConversationId ?? createdIdRef.current ?? conversationId;
 
   // Follow-ups appear only on a settled turn: the stream is idle and the last
@@ -505,6 +529,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   React.useEffect(() => {
     if (!currentConversationId || privateMode) return;
     if (chat.messages.some((m) => m.role === "USER" && m.content.trim())) scheduleAutoTitle("first_user", 160);
+    // Keyed on messages.LENGTH, not the array: titling should fire when a turn
+    // is added, not on every streamed delta that replaces the array identity.
+    // chat.messages is read for its current contents at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
@@ -521,6 +548,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
         scheduleAutoTitle(latestAssistant.finishReason === "user_stopped" ? "stopped" : "completed", 420);
       }
     }
+    // Same reason as above: chat.messages is read fresh inside, but re-running
+    // on every delta would re-schedule the title on each streamed character.
+    // The status edge and the turn count are the real triggers.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chat.status, chat.messages.length, currentConversationId, privateMode, scheduleAutoTitle]);
 
@@ -732,6 +762,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       // Clear ?q= so a refresh doesn't resend.
       window.history.replaceState({}, "", "/chat");
     }
+    // Deliberately fires only on the prompt arriving. autoSentRef already makes
+    // this once-only, and depending on `chat` would re-run it every time the
+    // hook's identity changed — i.e. re-send the prompt mid-conversation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialPrompt]);
 
@@ -1110,7 +1143,14 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
   }, [realtimeVoice.speechInterim, realtimeVoice.transcript]);
   const displayMessages = React.useMemo(() => [...chat.messages, ...voiceMessages], [chat.messages, voiceMessages]);
   const hasMessages = displayMessages.length > 0 || voiceOpen;
+  // NB: `quota.limit != null` is load-bearing and must not be "tidied" into a
+  // truthiness check — Free's limit is 0, and `0 != null` is what keeps the
+  // gate on for that plan at all.
   const quotaReached = quota.limit != null && quota.remaining != null && quota.remaining <= 0;
+  // A plan with no allowance at all is a different situation from one that has
+  // been used up, and telling someone they "reached their limit" on their first
+  // visit — before they have sent anything — is simply untrue.
+  const planIncludesNoMessages = quota.limit === 0;
   const planAllowsVoice = PLANS[quota.plan].voice;
   // Model-parameters live beside the incognito ghost (top-right) so the composer
   // stays uncluttered. Only meaningful for chat models.
@@ -1163,6 +1203,46 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
 
   // Read-aloud: clicking the active message again stops playback.
   const [speakingId, setSpeakingId] = React.useState<string | null>(null);
+
+  // Find-in-conversation. Opens on Cmd/Ctrl+F, which is a deliberate override
+  // of the browser's own find: the native one searches only what is painted,
+  // and the transcript is a scroll container, so it silently misses most of the
+  // conversation. Escape closes and returns focus to the page.
+  const [findOpen, setFindOpen] = React.useState(false);
+  React.useEffect(() => {
+    // Every early return below shares one rule: never preventDefault unless the
+    // find bar is genuinely about to appear and search what the user is looking
+    // at. Suppressing the browser's own find and putting nothing usable in its
+    // place is worse than not binding the key at all.
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "f") return;
+      // Only take the shortcut when there is actually a transcript to search.
+      // The find bar renders inside the `hasMessages` branch, so on an empty
+      // chat preventDefault would suppress the BROWSER's find and show nothing
+      // in its place.
+      if (!hasMessages) return;
+      // On macOS, Ctrl+F inside a text field is the system emacs binding for
+      // "move the caret forward one character". Taking it there replaces a
+      // keystroke people use continuously with a search bar.
+      const target = e.target as HTMLElement | null;
+      const editing =
+        target?.isContentEditable ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLInputElement;
+      if (isApplePlatform() && e.ctrlKey && !e.metaKey && editing) return;
+      // The canvas code editor is a plain textarea with no find of its own, so
+      // the browser's is the only one that searches the code on screen. This bar
+      // would search the chat transcript instead — the wrong content entirely.
+      if (target?.closest("[data-code-surface]")) return;
+      // A modal is open: the bar renders behind the overlay, so the keystroke
+      // would look like it did nothing while still killing native find.
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return;
+      e.preventDefault();
+      setFindOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [hasMessages]);
   const handleSpeak = (id: string, text: string) => {
     if (speakingId === id) {
       tts.stop();
@@ -1395,6 +1475,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
       onCancelClarification={chat.cancelPendingClarification}
       onOpenVoiceMode={planAllowsVoice && !!process.env.NEXT_PUBLIC_VOICE_RELAY_URL && !privateMode && !voiceOpen && !voiceSaving && !voiceSaveError && !voiceTurnSending && !chat.pendingClarification ? openVoice : undefined}
       quotaReached={quotaReached}
+      planIncludesNoMessages={planIncludesNoMessages}
       canvasEnabled={canvasEnabled}
       onToggleCanvas={setCanvasEnabled}
       webSearchEnabled={webSearchEnabled}
@@ -1608,6 +1689,9 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
           {hasMessages ? (
             // Message view
             <div className="flex min-h-0 flex-1 flex-col relative h-full">
+              {findOpen && (
+                <ConversationFind messages={displayMessages} onClose={() => setFindOpen(false)} />
+              )}
               <MessageList
                 messages={displayMessages}
                 busy={chat.isBusy}
@@ -1624,6 +1708,11 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 privateMode={privateMode}
                 onImageEdit={chat.sendImageEdit}
                 currentModelId={model}
+                conversationTitle={
+                  privateMode
+                    ? "Private chat"
+                    : conversations.find((c) => c.id === currentConversationId)?.title || undefined
+                }
               />
               {currentConversationId && !privateMode && (
                 // Same width cap, centring and horizontal padding as the composer
@@ -1668,7 +1757,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
                 {voiceSaveNotice}
                 {composer}
               </div>
-              <p className="shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45">
+              <p className="shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground">
                 {forkedFrom
                   ? "This branch isn't saved — it continues from the fork point with full context."
                   : privateMode
@@ -1749,7 +1838,7 @@ export function ChatView({ conversationId, initialMessages, initialArtifacts, in
               {/* Disclaimer — pinned to the bottom of the page, not centered with the greeting. */}
               <p
                 className={cn(
-                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground/45 transition-opacity duration-slow ease-out-soft",
+                  "shrink-0 select-none pb-2 text-center text-[10px] leading-4 text-muted-foreground transition-opacity duration-slow ease-out-soft",
                   privateMode ? "pointer-events-none opacity-0" : "opacity-100"
                 )}
               >

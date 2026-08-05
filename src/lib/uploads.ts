@@ -42,6 +42,17 @@ export function isTextExtractable(mime: string): boolean {
   return mime.startsWith("text/") || DOC_MIME.includes(mime) ? mime !== "application/pdf" : false;
 }
 
+/**
+ * How many leading bytes the sniffers below need.
+ *
+ * The longest signature reads byte 11 (WebP's `WEBP` at offset 8, and mp4's
+ * brand in the `ftyp` box), so 12 would do; 16 is the next round number and
+ * leaves room for a signature that reaches a little further. It matters because
+ * every caller reads exactly this much rather than the object: a 1 GB video must
+ * not enter RSS just to have its content type decided.
+ */
+export const MIME_SNIFF_BYTES = 16;
+
 /** Verify real image type from magic bytes — never trust the client-declared MIME. */
 export function sniffImageMime(b: Uint8Array): string | null {
   if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return "image/png";

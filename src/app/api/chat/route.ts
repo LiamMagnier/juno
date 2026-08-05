@@ -1,5 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { admitChatRequest } from "@/lib/chat-admission";
+import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -8,7 +9,7 @@ import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
-import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
+import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
@@ -100,12 +101,6 @@ import {
   privateModeFeatureRefusal,
   type EntitlementRejection,
 } from "@/lib/chat/entitlements";
-import {
-  degradeForPlatformBudget,
-  resolveExecutionModel,
-  resolveRequestedModelId,
-  type ModelPolicy,
-} from "@/lib/chat/execution-plan";
 import { postGenerationPlan } from "@/lib/chat/post-processing";
 import { composeSystemPrompt } from "@/lib/chat/prompt-sections";
 import { chatBodySchema } from "@/lib/chat/request";
@@ -297,12 +292,12 @@ async function handleChat(req: Request) {
   // "juno:auto" is a routing sentinel: classify the prompt and pick the cheapest
   // chat model that can handle it (vision / web-search constraints applied).
   const settings = await prisma.settings.findUnique({ where: { userId: user.id } });
-  const requestedId = resolveRequestedModelId({
-    requested: input.model,
-    accountDefault: settings?.defaultModel,
-    appDefault: DEFAULT_MODEL,
-    isKnown: isModelId,
-  });
+  const requestedId =
+    input.model && isModelId(input.model)
+      ? input.model
+      : settings?.defaultModel && isModelId(settings.defaultModel)
+        ? settings.defaultModel
+        : DEFAULT_MODEL;
 
   let modelInfo: ModelInfo | undefined;
   /** When Auto routes, override the client's thinking slider with the pick. */
@@ -364,46 +359,51 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
-  // The cascade — fall back, reroute off a dead provider, degrade under the
-  // platform ceiling — lives in `chat/execution-plan.ts`, which is pure and
-  // therefore has a test for each rung. The environment is read here and
-  // handed over as a policy; DEFAULT_MODEL being Anthropic is exactly why the
-  // health rung matters, since an Anthropic outage would otherwise route every
-  // new chat straight into a guaranteed error.
-  const modelPolicy: ModelPolicy = {
-    isConfigured: isProviderConfigured,
-    isHealthy: providerHealthy,
-    allows: (id) => canUseModel(plan, id),
-    isAuto: isAutoModelId,
-  };
-  const routed = resolveExecutionModel({
-    requested: modelInfo,
-    candidates: MODEL_LIST,
-    policy: modelPolicy,
+  // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
+  // decide what a turn costs, and inline here they were reachable only by
+  // standing up a request with auth, quota and a database behind it.
+  //
+  // `pickAutoModel` does not consult provider health, so Auto lands in the same
+  // reroute branch as an explicit request on a dead provider.
+  const eligible = (m: ModelInfo) =>
+    m.modality === "chat" &&
+    !m.comingSoon &&
+    !isAutoModelId(m.id) &&
+    isProviderConfigured(m.provider) &&
+    canUseModel(plan, m.id);
+
+  const selection = selectModel<ModelInfo>({
+    requestedId,
+    requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
+    catalogue: MODEL_LIST,
+    isEligible: eligible,
+    isProviderHealthy: (provider) => providerHealthy(provider as Provider),
   });
-  // Off unless PLATFORM_DAILY_BUDGET_USD is set, and read only once a model has
-  // resolved — with nothing eligible this request is a 503 and the platform
-  // ledger is not worth an unguarded aggregate.
-  const resolution =
-    routed.model && (await isPlatformBudgetExceeded())
-      ? degradeForPlatformBudget(routed, MODEL_LIST, modelPolicy)
-      : routed;
-  for (const change of resolution.changes) {
-    if (change.kind === "unhealthy_provider") {
-      console.warn("[chat] rerouting off an unhealthy provider", {
-        from: change.from.id,
-        to: change.to.id,
-        provider: change.from.provider,
-      });
-    } else if (change.kind === "platform_budget") {
+  if (selection.reason === "rerouted_unhealthy_provider") {
+    console.warn("[chat] rerouting off an unhealthy provider", {
+      from: modelInfo?.id,
+      to: selection.model?.id,
+      provider: modelInfo?.provider,
+    });
+  }
+  modelInfo = selection.model ?? undefined;
+  routingWarning = selection.warning ?? routingWarning;
+  // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
+  // set). Degrade to the cheapest capable model rather than refusing: a slower
+  // answer beats a 500, and it keeps the product usable while an operator
+  // decides what to do. Per-user budgets are enforced separately by checkBudget.
+  if (modelInfo && (await isPlatformBudgetExceeded())) {
+    const cheapest =
+      cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
+    if (cheapest && cheapest.cost < modelInfo.cost) {
       console.warn("[chat] platform budget exceeded — degrading model", {
-        from: change.from.id,
-        to: change.to.id,
+        from: modelInfo.id,
+        to: cheapest.id,
       });
+      routingWarning = `Answered with ${cheapest.name} to stay within today's capacity.`;
+      modelInfo = cheapest;
     }
   }
-  modelInfo = resolution.model ?? undefined;
-  routingWarning = resolution.routingWarning;
 
   if (!modelInfo) {
     const msg =

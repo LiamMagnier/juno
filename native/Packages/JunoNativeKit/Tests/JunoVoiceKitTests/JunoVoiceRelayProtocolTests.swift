@@ -111,6 +111,131 @@ final class JunoVoiceRelayProtocolTests: XCTestCase {
         XCTAssertEqual(composed["displayText"] as? String, "Shared an image")
     }
 
+    /// The relay repeats `turnId` back on its echo of a composed turn, and that
+    /// echo is the only thing tying the images a reader attached to the line
+    /// they land on — the frames themselves are anonymous bytes. Dropping it in
+    /// the decoder loses the pictures from the saved conversation while the
+    /// words about them stay.
+    func testTranscriptCarriesTheTurnIdWhenTheRelayEchoesOne() throws {
+        let echoed = """
+            {"type":"transcript","role":"user","text":"Shared an image","final":true,\
+            "turnId":"turn-1"}
+            """
+        guard case .transcript(let role, _, _, let turnId)? =
+            JunoVoiceRelayMessage.decode(fromText: echoed)
+        else { return XCTFail("a composed turn's echo must decode") }
+        XCTAssertEqual(role, .user)
+        XCTAssertEqual(turnId, "turn-1")
+    }
+
+    /// Every spoken line arrives without one, which is most of them.
+    func testTranscriptDecodesWithoutATurnId() throws {
+        let spoken = """
+            {"type":"transcript","role":"assistant","text":"Paris.","final":true}
+            """
+        guard case .transcript(_, let text, let final, let turnId)? =
+            JunoVoiceRelayMessage.decode(fromText: spoken)
+        else { return XCTFail("a spoken line must decode without a turnId") }
+        XCTAssertEqual(text, "Paris.")
+        XCTAssertTrue(final)
+        XCTAssertNil(turnId)
+    }
+
+    // MARK: Seeded history
+
+    /// A call opened from an existing chat sends it; one opened from nowhere
+    /// sends the same two-key frame it always has.
+    func testSessionStartCarriesHistoryOnlyWhenThereIsSome() throws {
+        let bare = try object(.sessionStart(provider: .openai))
+        XCTAssertEqual(Set(bare.keys), ["type", "provider"])
+        XCTAssertEqual(bare["type"] as? String, "session.start")
+
+        let seeded = try object(
+            .sessionStart(
+                provider: .openai,
+                history: [
+                    JunoVoiceHistoryEntry(role: .user, text: "Which of the two?"),
+                    JunoVoiceHistoryEntry(role: .assistant, text: "The second."),
+                ]
+            )
+        )
+        XCTAssertEqual(Set(seeded.keys), ["type", "provider", "history"])
+        let history = try XCTUnwrap(seeded["history"] as? [[String: Any]])
+        XCTAssertEqual(history.map { $0["role"] as? String }, ["user", "assistant"])
+        XCTAssertEqual(history.first?["text"] as? String, "Which of the two?")
+        XCTAssertEqual(Set(try XCTUnwrap(history.first).keys), ["role", "text"])
+    }
+
+    /// The web sends the last twenty turns, and so does this. Oldest go first:
+    /// what the reader is about to talk about is the end of the chat, not the
+    /// start of it.
+    func testHistoryKeepsTheTwentyMostRecentTurns() {
+        let entries = (1...30).map {
+            JunoVoiceHistoryEntry(role: .user, text: "turn \($0)")
+        }
+        let bounded = JunoVoiceHistoryEntry.bounded(entries)
+        XCTAssertEqual(bounded.count, JunoVoiceHistoryEntry.maximumTurns)
+        XCTAssertEqual(bounded.first?.text, "turn 11")
+        XCTAssertEqual(bounded.last?.text, "turn 30")
+    }
+
+    /// One pasted document must not spend the whole frame.
+    func testASingleLongTurnIsTruncatedToItsOwnCeiling() {
+        let bounded = JunoVoiceHistoryEntry.bounded([
+            JunoVoiceHistoryEntry(
+                role: .user, text: String(repeating: "x", count: 5_000)
+            )
+        ])
+        XCTAssertEqual(
+            bounded.first?.text.count, JunoVoiceHistoryEntry.maximumTurnCharacters
+        )
+    }
+
+    /// The total is the bound that actually protects the frame, and it is spent
+    /// backwards — so a chat of long turns keeps the recent ones whole rather
+    /// than the old ones.
+    func testTheTotalBudgetIsSpentOnTheMostRecentTurns() {
+        let entries = (1...10).map { index in
+            JunoVoiceHistoryEntry(
+                role: .user, text: "[\(index)]" + String(repeating: "x", count: 2_000)
+            )
+        }
+        let bounded = JunoVoiceHistoryEntry.bounded(entries)
+        let total = bounded.reduce(0) { $0 + $1.text.utf16.count }
+        XCTAssertLessThanOrEqual(total, JunoVoiceHistoryEntry.maximumTotalCharacters)
+        // Six turns at the 2,000-character ceiling exhaust the 12,000 total.
+        XCTAssertEqual(bounded.count, 6)
+        XCTAssertTrue(bounded.last?.text.hasPrefix("[10]") ?? false, "turn 10 must survive")
+        XCTAssertTrue(bounded.first?.text.hasPrefix("[5]") ?? false, "turn 4 must not")
+    }
+
+    /// Blank turns are dropped rather than sent as empty items the provider has
+    /// to read past.
+    func testBlankTurnsAreDropped() {
+        let bounded = JunoVoiceHistoryEntry.bounded([
+            JunoVoiceHistoryEntry(role: .user, text: "   \n "),
+            JunoVoiceHistoryEntry(role: .assistant, text: " Paris. "),
+        ])
+        XCTAssertEqual(bounded.map(\.text), ["Paris."])
+    }
+
+    /// The ceiling is counted in UTF-16 units, the way the relay counts it — but
+    /// a cut has to fall on a character boundary. Splitting a flag or a family
+    /// emoji hands the model replacement characters to interpret.
+    func testTruncationNeverSplitsACharacter() throws {
+        let bounded = JunoVoiceHistoryEntry.bounded([
+            JunoVoiceHistoryEntry(role: .user, text: String(repeating: "🇫🇷", count: 2_000))
+        ])
+        let text = try XCTUnwrap(bounded.first?.text)
+        XCTAssertLessThanOrEqual(
+            text.utf16.count, JunoVoiceHistoryEntry.maximumTurnCharacters
+        )
+        XCTAssertFalse(text.unicodeScalars.contains("\u{FFFD}"))
+        // Each flag is one Character and four UTF-16 units, so a cut on a
+        // boundary leaves a whole number of flags and nothing half-written.
+        XCTAssertEqual(text.count, text.utf16.count / 4)
+    }
+
     // MARK: Frame ceiling
 
     /// The relay forwards a frame only while its base64 payload is under two

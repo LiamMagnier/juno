@@ -3,6 +3,22 @@ import { prisma } from "@/lib/prisma";
 import { serializeMessage, serializeArtifact, serializeConversation } from "@/lib/serializers";
 import type { ClientArtifact, ClientConversation, ClientMessage } from "@/types/chat";
 
+/**
+ * Attachment columns needed to build a ClientAttachment — deliberately without
+ * `extractedText`. Kept beside the query rather than in serializers so the
+ * `select` and the shape it feeds stay visibly in step.
+ */
+const ATTACHMENT_CLIENT_SELECT = {
+  id: true,
+  kind: true,
+  fileName: true,
+  mimeType: true,
+  size: true,
+  storageKey: true,
+  width: true,
+  height: true,
+} as const;
+
 export interface ListConversationsOptions {
   q?: string;
   folderId?: string;
@@ -55,7 +71,13 @@ export async function getConversationThread(
       where: { conversationId },
       orderBy: { createdAt: "asc" },
       include: {
-        attachments: true,
+        // Explicit select, not `true`: the full row carries `extractedText`,
+        // up to 200,000 characters of document text per attachment, which
+        // serializeAttachment does not use. It was being read out of Postgres
+        // and thrown away on every thread load — and use-chat polls
+        // GET /api/conversations/[id] every 12s for up to an hour to recover a
+        // dropped stream, so one bad connection could pay that cost ~300 times.
+        attachments: { select: ATTACHMENT_CLIENT_SELECT },
         // Version metadata only (the pager's "‹ 2/3 ›") — contents stay
         // server-side until GET /api/messages/[id]/versions pages them in.
         versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },

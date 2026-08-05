@@ -7,6 +7,7 @@ import { DottedDivider } from "@/components/signature/dotted-divider";
 import { FlagshipStrip, ModelLineup } from "@/components/landing/model-lineup";
 import { Metering } from "@/components/landing/metering";
 import { Features } from "@/components/landing/features";
+import { Switching } from "@/components/landing/switching";
 import { Pricing } from "@/components/landing/pricing";
 
 /**
@@ -91,6 +92,7 @@ export function LandingPage() {
         <Metering />
         <ModelLineup />
         <Features />
+        <Switching />
         <Pricing />
       </main>
 

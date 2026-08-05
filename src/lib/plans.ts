@@ -37,11 +37,16 @@ export const PLANS: Record<Plan, PlanConfig> = {
     voice: false,
     canvas: true,
     webSearch: false,
+    // Free grants no messages, so anything that needs a model reply is not a
+    // Free feature. This list previously promised "Canvas & artifacts" and
+    // "File & image uploads" — both reachable only by sending a message, which
+    // Free cannot do. Leading with the constraint, because settings renders
+    // only the first three entries.
     features: [
-      "Browse the app and your history",
-      "Upgrade to Pro to chat with any model",
-      "Canvas & artifacts",
-      "File & image uploads",
+      "No messages included — chatting needs a paid plan",
+      "Import your ChatGPT or Claude history",
+      "Browse the app and read your conversations",
+      "Export everything you own, any time",
     ],
   },
   PRO: {

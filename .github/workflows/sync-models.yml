@@ -9,8 +9,8 @@
 #     committed seen-set, catching launches our own keys can't list
 #     (gen-only labs, regional gating, providers we don't resell yet).
 #
-# When anything changed, the run commits the regenerated files (which
-# auto-deploys via deploy.yml) AND opens a GitHub issue labeled `model-watch`
+# When anything changed, the run commits the regenerated files AND opens a
+# GitHub issue labeled `model-watch`
 # summarizing the changes — GitHub notifies by email, and the "Juno model
 # curator" scheduled Claude agent picks the issue up to hand-curate entries
 # (verified descriptions, status, docs/models.md) as a PR.
@@ -61,9 +61,25 @@ jobs:
           DASHSCOPE_API_KEY: ${{ secrets.DASHSCOPE_API_KEY }}
           LONGCAT_API_KEY: ${{ secrets.LONGCAT_API_KEY }}
           HUNYUAN_API_KEY: ${{ secrets.HUNYUAN_API_KEY }}
-        # Capture output for the notification; the sync's own exit code only
-        # reflects fetch failures, which must not kill the rest of the watch.
-        run: npm run sync:models:write 2>&1 | tee /tmp/sync-report.txt || true
+        # Capture output for the notification. Exit 1 means SOME providers
+        # failed, which must not kill the rest of the watch. Exit 2 means ALL of
+        # them did — a blackout, where the registry was left untouched and there
+        # is nothing to commit or report, so the run must go red instead of
+        # quietly looking like a night with no changes.
+        #
+        # PIPESTATUS, not $?: `| tee` would otherwise report tee's exit code and
+        # swallow the script's entirely, which is why the previous `|| true` was
+        # doing nothing at all.
+        run: |
+          set +e
+          npm run sync:models:write 2>&1 | tee /tmp/sync-report.txt
+          code=${PIPESTATUS[0]}
+          set -e
+          if [ "$code" = "2" ]; then
+            echo "::error::Every provider failed to respond — registry not updated."
+            exit 1
+          fi
+          exit 0
 
       - name: Refresh benchmark grades
         env:

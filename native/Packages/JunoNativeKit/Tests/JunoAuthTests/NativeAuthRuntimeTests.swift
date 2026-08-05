@@ -220,6 +220,48 @@ final class NativeAuthRuntimeTests: XCTestCase {
         )
     }
 
+    func testRestoreKeepsCachedSessionWhenKeychainIsTemporarilyUnavailable() async throws {
+        let cacheSecurity = TestSecurityClient()
+        let hint = TestAuthActiveAccountHint()
+        let cachedSession = NativeAuthenticatedSession(
+            profile: NativeAccountProfile(
+                id: try AccountID("acct_one"),
+                name: "Juno Tester",
+                email: "test@juno.test",
+                image: nil
+            ),
+            deviceID: try DeviceID("device_one")
+        )
+        let sessionCache = KeychainSessionCacheStore(
+            securityClient: cacheSecurity,
+            activeAccountHint: hint
+        )
+        await sessionCache.store(cachedSession)
+
+        let tokenSecurity = TestSecurityClient()
+        tokenSecurity.setFailure(
+            .unexpectedStatus(Int32(-25293)) // errSecAuthFailed
+        )
+        let tokenStore = KeychainAuthTokenStore(
+            securityClient: tokenSecurity,
+            activeAccountHint: hint
+        )
+        let runtime = try makeRuntime(
+            transport: QueueTransport(responses: []),
+            security: tokenSecurity,
+            tokenStore: tokenStore,
+            sessionCache: sessionCache
+        )
+
+        let restored = try await runtime.restore()
+
+        guard case .unverified(let session, let cause) = restored else {
+            return XCTFail("A transient Keychain failure must keep the cached session visible")
+        }
+        XCTAssertEqual(session, cachedSession)
+        XCTAssertFalse(cause.isEmpty)
+    }
+
     func testRuntimeRejectsMismatchedDeviceWithoutPersistingTokens() async throws {
         let transport = QueueTransport(
             responses: [tokenResponse(), sessionResponse(deviceID: "device_other")]
@@ -518,7 +560,8 @@ final class NativeAuthRuntimeTests: XCTestCase {
         transport: QueueTransport,
         security: TestSecurityClient,
         tokenStore: KeychainAuthTokenStore,
-        accountDataPurger: (any NativeAccountDataPurging)? = nil
+        accountDataPurger: (any NativeAccountDataPurging)? = nil,
+        sessionCache: KeychainSessionCacheStore? = nil
     ) throws -> NativeAuthRuntime {
         let origin = try APIOrigin(URL(string: "https://juno.test")!)
         return try NativeAuthRuntime(
@@ -527,7 +570,8 @@ final class NativeAuthRuntimeTests: XCTestCase {
                 securityClient: security,
                 generator: PKCEGenerator(random: FixedRandomBytes())
             ),
-            sessionCache: KeychainSessionCacheStore(securityClient: security),
+            sessionCache: sessionCache
+                ?? KeychainSessionCacheStore(securityClient: security),
             planner: NativeAuthorizationPlanner(
                 origin: origin,
                 generator: PKCEGenerator(random: FixedRandomBytes())
@@ -705,23 +749,47 @@ private enum QueueTransportError: Error {
     case noResponse
 }
 
+private final class TestAuthActiveAccountHint: AuthActiveAccountHint,
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private var accountID: AccountID?
+
+    func load() -> AccountID? {
+        lock.withLock { accountID }
+    }
+
+    func store(_ accountID: AccountID) {
+        lock.withLock { self.accountID = accountID }
+    }
+
+    func remove() {
+        lock.withLock { accountID = nil }
+    }
+}
+
 private final class TestSecurityClient: SecurityKeychainClient,
     @unchecked Sendable
 {
     private let lock = NSLock()
     private var items: [SecurityKeychainItem: Data] = [:]
     private var storedUpsertCount = 0
+    private var failure: SecurityKeychainClientError?
 
     var upsertCount: Int {
         lock.withLock { storedUpsertCount }
     }
 
     func read(_ item: SecurityKeychainItem) throws -> Data? {
-        lock.withLock { items[item] }
+        try lock.withLock {
+            try throwIfNeeded()
+            return items[item]
+        }
     }
 
     func upsert(_ data: Data, for item: SecurityKeychainItem) throws {
-        lock.withLock {
+        try lock.withLock {
+            try throwIfNeeded()
             storedUpsertCount += 1
             items[item] = data
         }
@@ -731,7 +799,8 @@ private final class TestSecurityClient: SecurityKeychainClient,
         _ data: Data,
         for item: SecurityKeychainItem
     ) throws -> Bool {
-        lock.withLock {
+        try lock.withLock {
+            try throwIfNeeded()
             guard items[item] == nil else { return false }
             storedUpsertCount += 1
             items[item] = data
@@ -740,7 +809,18 @@ private final class TestSecurityClient: SecurityKeychainClient,
     }
 
     func delete(_ item: SecurityKeychainItem) throws -> Bool {
-        lock.withLock { items.removeValue(forKey: item) != nil }
+        try lock.withLock {
+            try throwIfNeeded()
+            return items.removeValue(forKey: item) != nil
+        }
+    }
+
+    func setFailure(_ failure: SecurityKeychainClientError?) {
+        lock.withLock { self.failure = failure }
+    }
+
+    private func throwIfNeeded() throws {
+        if let failure { throw failure }
     }
 
     func seedOnly(_ data: Data) {

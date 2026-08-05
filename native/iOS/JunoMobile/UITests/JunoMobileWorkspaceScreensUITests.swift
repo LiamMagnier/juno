@@ -78,14 +78,24 @@ final class JunoMobileWorkspaceScreensUITests: XCTestCase {
         // measurement being broken through two earlier attempts.
         require(toggle, app, timeout: 10)
 
-        let filesBefore = app.staticTexts["Files"].frame.minY
+        let files = app.staticTexts["Files"]
+        let filesBefore = files.frame.minY
         toggle.tap()
 
         // Expanding pushes the later sections DOWN — which is what proves the
         // clamp was really holding the text back rather than truncating it away.
+        //
+        // A block predicate, not `NSPredicate(format: "frame.origin.y > …")`.
+        // `frame` crosses into KVC as an opaque `NSValue`, which answers to no
+        // `origin` key, so the format-string version can never evaluate true —
+        // it timed out here for a run while the screen underneath was expanding
+        // by 259pt exactly as intended.
         let expanded = expectation(
-            for: NSPredicate(format: "frame.origin.y > %f", filesBefore),
-            evaluatedWith: app.staticTexts["Files"]
+            for: NSPredicate { element, _ in
+                guard let element = element as? XCUIElement else { return false }
+                return element.frame.minY > filesBefore
+            },
+            evaluatedWith: files
         )
         XCTAssertEqual(
             XCTWaiter().wait(for: [expanded], timeout: 5),

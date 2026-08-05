@@ -108,17 +108,17 @@ final class NativePromptLimitsTests: XCTestCase {
 final class NativeConversationSelectionTests: XCTestCase {
     private let account = "account-a"
 
-    /// The Mac's rule: with nothing selected, land on the most recent chat.
-    func testDesktopOpensTheMostRecentConversation() async throws {
+    /// An explicit resume policy still supports opening the most recent chat.
+    func testExplicitResumePolicyOpensTheMostRecentConversation() async throws {
         let model = try await makeModel(opensMostRecent: true)
         await model.start(for: try AccountID(account))
 
         XCTAssertEqual(model.selectedConversationID, "conversation-a")
     }
 
-    /// The phone's rule: nothing selected means the home screen — the greeting
-    /// and an empty composer, which is what chat.liams.dev opens on.
-    func testPhoneOpensOnTheHomeScreen() async throws {
+    /// Desktop and phone pass the home policy: nothing selected means the
+    /// greeting and an empty composer, which is what chat.liams.dev opens on.
+    func testHomePolicyOpensOnTheHomeScreen() async throws {
         let model = try await makeModel(opensMostRecent: false)
         await model.start(for: try AccountID(account))
 
@@ -128,7 +128,7 @@ final class NativeConversationSelectionTests: XCTestCase {
     /// And it stays home across the sync ticks that follow a launch, which is
     /// where the old fallback did its damage: the reader tapped New chat, a
     /// reload landed, and they were back in the conversation they had left.
-    func testPhoneStaysHomeAcrossReloads() async throws {
+    func testHomePolicyStaysHomeAcrossReloads() async throws {
         let model = try await makeModel(opensMostRecent: false)
         await model.start(for: try AccountID(account))
         await model.reload()

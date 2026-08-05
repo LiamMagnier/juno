@@ -1,5 +1,5 @@
 import { Prisma, type Plan, type ScheduledTask, type ScheduledTaskRun } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { getUserPlan } from "@/lib/usage";
 import { PLANS, canUseModel } from "@/lib/plans";
 import { getModel, isModelId, resolveModel, MODEL_LIST, type ModelInfo } from "@/lib/models";
@@ -209,14 +209,17 @@ function resolveTaskModel(taskModel: string, plan: Plan): ModelInfo | undefined 
  * task into a re-run loop. Callers (the worker) own claiming/serialization.
  */
 export async function executeTask(taskId: string): Promise<TaskRunOutcome> {
-  const task = await prisma.scheduledTask.findUnique({ where: { id: taskId } });
+  // Unguarded by design: the worker calls this with a task id it claimed from a
+  // cross-user scan, so this row IS what establishes the owner. Every query
+  // after it scopes to task.userId.
+  const task = await prismaUnguarded.scheduledTask.findUnique({ where: { id: taskId } });
   if (!task) throw new Error(`Scheduled task ${taskId} not found.`);
 
   const now = new Date();
   const nextRunAt = computeNextRunAt(task, now);
   const advance = (conversationId?: string) =>
     prisma.scheduledTask.update({
-      where: { id: task.id },
+      where: { id: task.id, userId: task.userId },
       data: { lastRunAt: now, nextRunAt, ...(conversationId ? { conversationId } : {}) },
     });
   const failRun = async (runId: string | null, error: string, status: "error" | "budget" = "error") => {

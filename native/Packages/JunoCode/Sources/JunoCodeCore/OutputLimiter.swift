@@ -12,11 +12,11 @@ public struct OutputLimit: Sendable, Equatable {
     }
 
     /// Default cap for file reads returned to the agent.
-    public static let fileRead = OutputLimit(maximumBytes: 256 * 1_024)
+    public static let fileRead = OutputLimit(maximumBytes: 1 * 1_024 * 1_024)
     /// Default cap for a whole command's captured output.
-    public static let commandOutput = OutputLimit(maximumBytes: 512 * 1_024)
+    public static let commandOutput = OutputLimit(maximumBytes: 2 * 1_024 * 1_024)
     /// Default cap for one streamed chunk event.
-    public static let streamChunk = OutputLimit(maximumBytes: 16 * 1_024)
+    public static let streamChunk = OutputLimit(maximumBytes: 64 * 1_024)
 }
 
 public struct LimitedOutput: Sendable, Equatable {

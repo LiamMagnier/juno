@@ -28,6 +28,10 @@ interface MessageListProps {
   privateMode?: boolean;
   onImageEdit?: (input: ImageEditInput) => SendResult;
   currentModelId?: string;
+  /** Names the transcript for assistive tech. Rendered as a visually-hidden
+   *  <h1>: /chat/[id] had no heading at all once a conversation had messages,
+   *  so there was nothing for a screen reader to navigate to. */
+  conversationTitle?: string;
 }
 
 const SCROLL_FADE_STYLE: React.CSSProperties = {
@@ -135,6 +139,27 @@ export function MessageList(props: MessageListProps) {
     remember(el);
   }, [messages.length, lastContent, remember]);
 
+  // Announce that a reply finished, once, instead of streaming every token to
+  // the screen reader as it arrives. `content` is deliberately NOT a dependency:
+  // the announcement fires on the streaming edge, not on each delta.
+  const [completionAnnouncement, setCompletionAnnouncement] = React.useState("");
+  const wasStreamingRef = React.useRef(false);
+  const lastStreaming = Boolean(last?.streaming);
+  React.useEffect(() => {
+    const finished = wasStreamingRef.current && !lastStreaming;
+    wasStreamingRef.current = lastStreaming;
+    if (!finished || !last || last.role !== "ASSISTANT") return;
+    if (last.error) {
+      setCompletionAnnouncement("Response failed.");
+      return;
+    }
+    const words = (last.content ?? "").trim().split(/\s+/).filter(Boolean).length;
+    setCompletionAnnouncement(`Response complete, ${words} ${words === 1 ? "word" : "words"}.`);
+    // `last` is read only on the edge; re-running per delta is exactly what this
+    // effect exists to avoid.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastStreaming]);
+
   const jumpToLatest = () => {
     const el = scrollRef.current;
     setAtBottom(true);
@@ -148,6 +173,15 @@ export function MessageList(props: MessageListProps) {
 
   return (
     <div className="relative min-h-0 flex-1">
+      {/*
+        The single speaking element for stream completion. Outside the transcript
+        so it is not also inside role="log", and data-no-auto-translate so the
+        AutoTranslate MutationObserver does not rewrite the text and trigger a
+        second announcement in the translated locale.
+      */}
+      <span className="sr-only" role="status" aria-live="polite" data-no-auto-translate>
+        {completionAnnouncement}
+      </span>
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -158,10 +192,35 @@ export function MessageList(props: MessageListProps) {
         className="h-full overflow-y-auto [overflow-anchor:none]"
         style={SCROLL_FADE_STYLE}
       >
-        <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6">
+        {/*
+        role="log" gives screen-reader users a named region to navigate to —
+        the transcript had no role, no label and no landmark of any kind.
+
+        aria-live="off" is deliberate and load-bearing. role="log" carries an
+        implicit aria-live="polite", and each assistant turn is ALREADY its own
+        polite region (message-item.tsx). Leaving both on makes every reply
+        announce twice. Speech comes from three narrower places instead:
+        StreamStatus ("Thinking" / "Writing"), the per-turn region once the turn
+        is complete, and the completion announcer below.
+      */}
+      {/* The page's only <h1> once the empty state is gone. Visually hidden
+          because the transcript is its own title on screen — the design does
+          not repeat it — but heading navigation is how screen-reader users
+          orient, and there was nothing here to land on. */}
+      <h1 className="sr-only">{props.conversationTitle || "Conversation"}</h1>
+      <div
+        role="log"
+        aria-label="Conversation transcript"
+        aria-live="off"
+        className="mx-auto w-full max-w-3xl space-y-6 px-4 py-6"
+      >
           {messages.map((m, i) => (
+            // Scroll anchor for find-in-conversation. A wrapper rather than a
+            // prop on MessageItem: the id has to sit on a real element for
+            // scrollIntoView, and MessageItem's own root differs between the
+            // user and assistant branches.
+            <div key={m.id} data-message-id={m.id}>
             <MessageItem
-              key={m.id}
               message={m}
               isLast={i === messages.length - 1}
               busy={props.busy}
@@ -181,6 +240,7 @@ export function MessageList(props: MessageListProps) {
               onImageEdit={props.onImageEdit}
               currentModelId={props.currentModelId}
             />
+            </div>
           ))}
           <div ref={bottomRef} />
         </div>

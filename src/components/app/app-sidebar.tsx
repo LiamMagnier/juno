@@ -1142,7 +1142,7 @@ function CodeWorkspaceGroup({
         <span className="flex h-[20px] w-[20px] shrink-0 items-center justify-center text-sidebar-foreground transition-colors duration-base group-hover:text-foreground">
           <SidebarMotionIcon kind="folder" className="h-[16px] w-[16px]" />
         </span>
-        <span className="min-w-0 flex-1 truncate">{name}</span>
+        <span dir="auto" className="min-w-0 flex-1 truncate">{name}</span>
         <ChevronRight
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-muted-foreground/50 transition-transform duration-fast ease-out-soft",
@@ -1197,7 +1197,7 @@ function CodeTaskStatusRow({ task, onNavigate }: { task: CodeTaskRow; onNavigate
   const inner = (
     <>
       <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", meta.dot)} aria-hidden="true" />
-      <span className="min-w-0 flex-1 truncate">{task.title}</span>
+      <span dir="auto" className="min-w-0 flex-1 truncate">{task.title}</span>
       <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
         {meta.label}
       </span>
@@ -1390,7 +1390,7 @@ function ConversationRow({
                   {projects.map((p) => (
                     <DropdownMenuItem key={p.id} onSelect={() => patch({ projectId: p.id })}>
                       {conversation.projectId === p.id ? <Check className="h-4 w-4" /> : <AppIcons.projects className="h-4 w-4" />}
-                      <span className="truncate">{p.name}</span>
+                      <span dir="auto" className="truncate">{p.name}</span>
                     </DropdownMenuItem>
                   ))}
                   <DropdownMenuSeparator />
@@ -1538,7 +1538,7 @@ function ProjectRow({
             )}
           >
             <SidebarMotionIcon kind="conversation" className="h-3.5 w-3.5 shrink-0 text-sidebar-foreground transition-colors duration-base group-hover/pc:text-foreground" />
-            <span className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
+            <span dir="auto" className="min-w-0 flex-1 truncate">{c.title || "New chat"}</span>
           </Link>
         ))}
         {chats.length > PREVIEW && (

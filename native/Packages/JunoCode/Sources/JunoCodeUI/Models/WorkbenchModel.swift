@@ -250,7 +250,7 @@ public final class WorkbenchModel {
         workspaces = await workspaceDirectory.allWorkspaces()
         sessions = await sessionStore.allSessions()
         if selectedSessionID == nil {
-            selectedSessionID = sessions.first?.id
+            selectedSessionID = visibleSessions.first?.id
         }
     }
 
@@ -267,7 +267,10 @@ public final class WorkbenchModel {
             sessions.removeAll { $0.id == id }
             controllers.removeValue(forKey: id)
             if selectedSessionID == id {
-                selectedSessionID = sessions.first?.id
+                // Never a sub-agent: falling back onto a delegated session would
+                // put the window on a transcript with no sidebar row to leave it
+                // by.
+                selectedSessionID = visibleSessions.first?.id
             }
         case .eventAppended:
             break
@@ -485,41 +488,74 @@ public final class WorkbenchModel {
         }
     }
 
+    /// Deletes a session and every sub-agent it delegated.
+    ///
+    /// The children have to go with it. They are hidden from every list, so
+    /// deleting their parent is the only occasion the reader can reach them —
+    /// leaving them behind would accumulate transcripts on disk that no surface
+    /// can name, let alone remove.
     public func deleteSession(id: CodeSessionID) async {
         guard let session = sessions.first(where: { $0.id == id }) else {
             return
         }
-        let controller = controllers[id]
-        if let controller {
-            await controller.stop()
-        }
+        let children = await sessionStore.childSessions(of: id)
         do {
-            // A projectless session never took a checkpoint — checkpoints are
-            // snapshots of a working tree — so there is nothing to remove.
-            if let workspaceID = session.workspaceID {
-                if let context = contexts[workspaceID] {
-                    try await context.checkpoints.removeCheckpoints(for: id)
-                } else {
-                    try CheckpointStore.removePersistedCheckpoints(
-                        for: id,
-                        directoryURL: dependencies.storageRootURL
-                            .appendingPathComponent("checkpoints")
-                            .appendingPathComponent(workspaceID.value)
-                    )
-                }
+            for child in children + [session] {
+                try await discard(child)
             }
-            try await sessionStore.deleteSession(id: id)
-            await controller?.detach()
-            controllers.removeValue(forKey: id)
             lastError = nil
         } catch {
             lastError = "Could not completely delete the session: \(error)"
         }
     }
 
+    /// Stops one session, removes its checkpoints and erases its record.
+    private func discard(_ session: CodeSession) async throws {
+        let controller = controllers[session.id]
+        if let controller {
+            await controller.stop()
+        }
+        // A projectless session never took a checkpoint — checkpoints are
+        // snapshots of a working tree — so there is nothing to remove.
+        if let workspaceID = session.workspaceID {
+            if let context = contexts[workspaceID] {
+                try await context.checkpoints.removeCheckpoints(for: session.id)
+            } else {
+                try CheckpointStore.removePersistedCheckpoints(
+                    for: session.id,
+                    directoryURL: dependencies.storageRootURL
+                        .appendingPathComponent("checkpoints")
+                        .appendingPathComponent(workspaceID.value)
+                )
+            }
+        }
+        try await sessionStore.deleteSession(id: session.id)
+        await controller?.detach()
+        controllers.removeValue(forKey: session.id)
+    }
+
     // MARK: - Derived lists
 
+    /// The sessions a reader browses: conversations they started, never the
+    /// sub-agents those conversations delegated.
+    ///
+    /// A sub-agent is a real session with a real transcript, and it stays in
+    /// `sessions` for exactly that reason — the panel opens it, deletion reaches
+    /// it, and hiding it at the source would strand it on disk. What it must not
+    /// be is a *row*: a delegated investigation appearing in the sidebar, pinned
+    /// to Active while it runs and dropped into its project group when it
+    /// finishes, is the "it just opened another chat" the whole delegation
+    /// surface exists to avoid.
+    ///
+    /// Filtered on `parentSessionID`, never on the title. A title is
+    /// presentation — the reader can rename a session, and a list whose contents
+    /// depend on a string prefix is one rename away from wrong.
+    public var visibleSessions: [CodeSession] {
+        sessions.filter { !$0.isSubagent }
+    }
+
     public var filteredSessions: [CodeSession] {
+        let sessions = visibleSessions
         let query = sessionSearchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return sessions }
         return sessions.filter { session in

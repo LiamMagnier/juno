@@ -105,6 +105,8 @@ interface ComposerProps {
   onCancelClarification?: () => void;
   onOpenVoiceMode?: () => void;
   quotaReached?: boolean;
+  /** The plan grants no messages at all, rather than having exhausted them. */
+  planIncludesNoMessages?: boolean;
   canvasEnabled: boolean;
   onToggleCanvas: (v: boolean) => void;
   webSearchEnabled?: boolean;
@@ -290,6 +292,7 @@ export function Composer({
   onCancelClarification,
   onOpenVoiceMode,
   quotaReached,
+  planIncludesNoMessages,
   canvasEnabled,
   onToggleCanvas,
   webSearchEnabled = false,
@@ -1386,10 +1389,21 @@ export function Composer({
     >
       {quotaReached && (
         <div role="status" className="mb-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm text-foreground">
-          You&apos;ve reached your monthly limit.{" "}
-          <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
-            Upgrade to keep chatting
-          </a>
+          {planIncludesNoMessages ? (
+            <>
+              The Free plan doesn&apos;t include any messages.{" "}
+              <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
+                Upgrade to start chatting
+              </a>
+            </>
+          ) : (
+            <>
+              You&apos;ve reached your monthly limit.{" "}
+              <a href="/upgrade" className="font-medium text-primary underline-offset-2 hover:underline">
+                Upgrade to keep chatting
+              </a>
+            </>
+          )}
         </div>
       )}
 
@@ -2070,7 +2084,7 @@ export function Composer({
                                     onKeyDown={(event) => event.stopPropagation()}
                                     placeholder="Search connected apps…"
                                     aria-label="Search connected apps"
-                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/30"
+                                    className="h-9 w-full rounded-[9px] border border-border/60 bg-background/70 pl-8 pr-2 text-sm outline-none placeholder:text-muted-foreground/70 focus:border-foreground/70"
                                   />
                                 </label>
                               </div>
@@ -2325,8 +2339,11 @@ export function Composer({
         </div>
       </div>
       </div>
+      {/* Full-opacity token: /45 computed to ~2:1, and this is the line that
+          tells people the model can be wrong — the one disclaimer that has to
+          be readable. */}
       {!hideDisclaimer && (
-        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground/45">
+        <p className="mt-2 text-center text-[10px] leading-4 text-muted-foreground">
           {privateMode ? "Incognito chats are not saved or added to memory." : "Juno can be wrong — worth a second look on anything that matters."}
         </p>
       )}

@@ -1,4 +1,4 @@
-import { isSupersededModel, type ModelInfo } from "@/lib/models";
+import { hasRetired, isSupersededModel, MODELS, type ModelInfo } from "@/lib/models";
 import { PROVIDER_LIST, type Provider } from "@/lib/providers";
 import { BENCHMARKS, type ModelBenchmark } from "@/lib/benchmarks.generated";
 
@@ -372,6 +372,95 @@ export function sortModelsForDisplay<T extends ModelInfo>(models: T[]): T[] {
     if (costDelta !== 0) return costDelta;
     return a.name.localeCompare(b.name);
   });
+}
+
+/**
+ * The catalog a picker can render directly: everything still served, with the
+ * newest of each product line current and every older generation marked
+ * `legacy` so the UI files it under "Past models".
+ *
+ * **Mark, don't drop.** An earlier version of this deleted superseded models
+ * outright, which read as the models being gone — and gone is what a lab whose
+ * account ran out of credit had already looked like. A picker showing Opus 5
+ * beside 4.8, 4.7, 4.6 and 4.5 is five ways to say "Opus" and buries the one
+ * answer that is usually right, but that is a *grouping* problem, not a reason
+ * to withhold a model a provider still answers on. Both pickers already have
+ * the disclosure to put them behind (web "Past models", native "Older models");
+ * they were simply never given anything to show.
+ *
+ * Two things decide the marking, and neither alone is enough:
+ *  - **The registry's own verdict.** A curated `legacy`/`deprecated` status is
+ *    a statement that something newer replaced it, and it survives untouched.
+ *  - **The family collapse.** Discovery keeps finding models the registry has
+ *    not been curated for yet — a live `gemini-3.6-flash` arrives as `current`
+ *    beside the curated `gemini-3.5-flash`, and both claim to be current, so
+ *    only comparing them within their line can demote the older one. Discovered
+ *    entries carry the family slug their `FAMILIES` rule assigns
+ *    (model-discovery-core.ts), which is what puts them in the same bucket.
+ *
+ * What IS removed is a model whose `retiresOn` has passed: the provider stopped
+ * answering, so it is not an option, past or otherwise.
+ *
+ * A model with no family is its own family (keyed by id) — never demoted on a
+ * guess. Returns display order, so callers do not need to sort again.
+ */
+export function withSupersededMarked<T extends ModelInfo>(models: T[], today?: string): T[] {
+  const live = models.filter((model) => !hasRetired(model, today));
+  const winners = new Map<string, T>();
+  for (const model of live) {
+    if (isSupersededModel(model)) continue;
+    const held = winners.get(familyKey(model));
+    if (!held || newerInFamily(model, held) < 0) winners.set(familyKey(model), model);
+  }
+  return sortModelsForDisplay(
+    live.map((model) => {
+      if (isSupersededModel(model) || winners.get(familyKey(model)) === model) return model;
+      // Superseded by a sibling the registry has not caught up with yet. Both
+      // fields move together: `legacy` is what the pickers read and `status` is
+      // what the native manifest turns into its `lifecycle`, and letting them
+      // disagree is how a model lands in "Past models" still labelled current.
+      return { ...model, legacy: true, status: "legacy" as const };
+    })
+  );
+}
+
+function familyKey(model: ModelInfo): string {
+  return `${model.provider}|${model.modality ?? "chat"}|${(model.family ?? model.id).toLowerCase()}`;
+}
+
+/** The newest model of each product line — the "current" half of the catalog. */
+export function latestPerFamily<T extends ModelInfo>(models: T[], today?: string): T[] {
+  return withSupersededMarked(models, today).filter((model) => !isSupersededModel(model));
+}
+
+/**
+ * Which of two models from the SAME product line to keep. Negative keeps `a`.
+ *
+ * Deliberately not `sortModelsForDisplay`'s comparator. That one mixes rules
+ * that are individually sensible but jointly non-transitive (generation, then
+ * release, then grades), which a sort is allowed to resolve in any consistent
+ * way — fine for laying out a list, useless for picking a winner, because the
+ * answer then depends on what else happened to be in the array. This runs
+ * pairwise over one family and always gives the same answer for the same pair.
+ */
+function newerInFamily(a: ModelInfo, b: ModelInfo): number {
+  // 1. Version, when both names carry one. This is what lets a freshly
+  //    discovered Gemini 3.6 Flash replace the curated 3.5 the day it ships.
+  const genA = modelGeneration(a.name);
+  const genB = modelGeneration(b.name);
+  if (genA !== null && genB !== null && genA !== genB) return genB - genA;
+  // 2. Otherwise the curated entry. Both describe the same model, but only the
+  //    curated one has a verified name, price, context window and release date —
+  //    discovery's is `prettifyModelName` over an id. Losing that swapped
+  //    "Mistral Medium 3.5" for a bare "Mistral Medium" pointing at a snapshot.
+  const curatedDelta = Number(!Object.hasOwn(MODELS, a.id)) - Number(!Object.hasOwn(MODELS, b.id));
+  if (curatedDelta !== 0) return curatedDelta;
+  // 3. Then the later release; an entry with no date at all sorts last.
+  const relDelta = (b.released ?? "").localeCompare(a.released ?? "");
+  if (relDelta !== 0) return relDelta;
+  const intelDelta = getModelMetrics(b).intelligence - getModelMetrics(a).intelligence;
+  if (intelDelta !== 0) return intelDelta;
+  return a.id.localeCompare(b.id);
 }
 
 export function reasoningMultiplier(effort: ReasoningEffort): number {

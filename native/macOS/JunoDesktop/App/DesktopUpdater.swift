@@ -301,6 +301,16 @@ final class DesktopUpdateModel {
         _ = launchInstaller(relaunch: false)
     }
 
+#if DEBUG
+    /// Seeds the ready phase for the desktop visual-preview harness without
+    /// creating a real staged bundle or starting the installer.
+    func setPreviewReady(version: String) {
+        stagedBundle = nil
+        stagedVersion = version
+        phase = .ready(version: version)
+    }
+#endif
+
     /// Spawns the swap as a detached `/bin/sh`, because the process doing the
     /// replacing cannot be the process being replaced.
     ///
@@ -314,9 +324,38 @@ final class DesktopUpdateModel {
         let backup = target.deletingLastPathComponent()
             .appending(path: target.deletingPathExtension().lastPathComponent + " (previous).app")
 
+        // The requirement is re-checked by the script itself, so it has to be
+        // computed here while the Security framework is still reachable.
+        let requirement: String
+        do {
+            requirement = try CodeSignature.requirementString(matching: bundleURL)
+        } catch {
+            // Without a requirement there is nothing to verify against, and an
+            // unverified swap is worse than no update.
+            return false
+        }
+
         let script = """
         #!/bin/sh
         while kill -0 \(ProcessInfo.processInfo.processIdentifier) 2>/dev/null; do sleep 0.2; done
+        # Re-verify immediately before the swap, not only at download time.
+        #
+        # The staged bundle sits in a user-writable directory between those two
+        # moments — across an app quit, so potentially for days. Anything running
+        # as this user could replace it after it was checked, and the swap below
+        # both installs it AND strips com.apple.quarantine, which is exactly the
+        # pair of steps that would launder an attacker's bundle past Gatekeeper.
+        # Checking once at stage time left that window open.
+        #
+        # -R= , not -R. A bare -R argument is a PATH to a requirement file;
+        # only a leading "=" makes codesign read it as requirement source. With
+        # the space form this check failed for every bundle, signed or not
+        # ("no such file or directory"), and the rm -rf below then deleted the
+        # staged update — auto-update could never install anything.
+        if ! /usr/bin/codesign --verify --deep --strict -R="$5" "$2" >/dev/null 2>&1; then
+          rm -rf "$2"
+          exit 1
+        fi
         rm -rf "$3"
         if ! /bin/mv "$1" "$3"; then exit 1; fi
         if /usr/bin/ditto "$2" "$1"; then
@@ -341,7 +380,7 @@ final class DesktopUpdateModel {
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = [
                 scriptURL.path, target.path, staged.path, backup.path,
-                relaunch ? "relaunch" : "quiet",
+                relaunch ? "relaunch" : "quiet", requirement,
             ]
             try process.run()
             // Latched, not cleared. Without the latch, "Install Update and
@@ -437,24 +476,19 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
 // MARK: - Code signing
 
 private enum CodeSignature {
-    /// The downloaded bundle must be signed the way *this* bundle is signed.
+    /// The requirement an update must satisfy, as a codesign requirement string.
     ///
-    /// The Team ID is read from the running process rather than written here as
-    /// a literal, for two reasons: a literal would have to be updated by hand if
-    /// the team ever changed, and — worse — a literal that fell out of date
-    /// would keep passing while meaning nothing.
-    static func verify(_ candidate: URL, matches running: URL) throws {
+    /// Exposed separately from ``verify(_:matches:)`` because the final swap
+    /// happens in a detached shell script after this process is gone, where the
+    /// Security framework is not available — the script re-checks with
+    /// `/usr/bin/codesign -R` against this exact string.
+    static func requirementString(matching running: URL) throws -> String {
         guard let team = teamIdentifier(of: running) else {
             throw SignatureError("Juno's own signature could not be read.")
         }
         guard let identifier = Bundle(url: running)?.bundleIdentifier else {
             throw SignatureError("Juno's own bundle identifier could not be read.")
         }
-
-        var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(candidate as CFURL, [], &code) == errSecSuccess,
-            let code
-        else { throw SignatureError("The download has no code signature.") }
 
         // Apple-anchored, this identifier, this team — always. Each clause
         // removes a different substitution: an ad-hoc re-sign, a different app,
@@ -465,35 +499,47 @@ private enum CodeSignature {
             "certificate leaf[subject.OU] = \"\(team)\"",
         ]
         // And, only when the running app is itself Developer ID signed, the two
-        // markers that prove the update is too.
-        //
-        // This used to demand Developer ID unconditionally, which was correct in
-        // principle and a dead end in practice: a development-signed build — what
-        // every install is until a notarized release exists — could never accept
-        // any update at all, including the one that would have fixed that.
-        //
-        // The rule is now RELATIVE and can only ever tighten: an update must be
-        // signed at least as strongly as the app it is replacing. A Developer ID
-        // install accepts nothing weaker than Developer ID; a development install
-        // accepts a development build from the same team, which is exactly as
-        // trustworthy as the thing already running. What is impossible in both
-        // cases is the substitution that matters — a bundle from someone else.
+        // markers that prove the update is too. The rule is RELATIVE and can
+        // only ever tighten: an update must be signed at least as strongly as
+        // the app it is replacing.
         if isDeveloperID(running) {
             clauses.append("certificate 1[field.1.2.840.113635.100.6.2.6] exists")
             clauses.append("certificate leaf[field.1.2.840.113635.100.6.1.13] exists")
         }
+        return clauses.joined(separator: " and ")
+    }
+
+    /// The downloaded bundle must be signed the way *this* bundle is signed.
+    ///
+    /// The Team ID is read from the running process rather than written here as
+    /// a literal, for two reasons: a literal would have to be updated by hand if
+    /// the team ever changed, and — worse — a literal that fell out of date
+    /// would keep passing while meaning nothing.
+    static func verify(_ candidate: URL, matches running: URL) throws {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(candidate as CFURL, [], &code) == errSecSuccess,
+            let code
+        else { throw SignatureError("The download has no code signature.") }
 
         var parsed: SecRequirement?
         guard SecRequirementCreateWithString(
-            clauses.joined(separator: " and ") as CFString, [], &parsed
+            try requirementString(matching: running) as CFString, [], &parsed
         ) == errSecSuccess, let parsed
         else { throw SignatureError("The signature requirement could not be built.") }
 
         // Every architecture in a universal binary, and every nested bundle — a
         // helper or framework swapped inside an otherwise-valid app is precisely
         // the substitution a top-level-only check would wave through.
+        //
+        // kSecCSStrictValidate is what `codesign --strict` sets, and the install
+        // script runs exactly that immediately before the swap. The two gates
+        // have to agree: if the stricter one came second, a bundle accepted here
+        // would be rejected there — and rejection there deletes the staged
+        // update after the app has already quit to install it.
         var error: Unmanaged<CFError>?
-        let flags = SecCSFlags(rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode)
+        let flags = SecCSFlags(
+            rawValue: kSecCSCheckAllArchitectures | kSecCSCheckNestedCode | kSecCSStrictValidate
+        )
         let status = SecStaticCodeCheckValidityWithErrors(code, flags, parsed, &error)
         guard status == errSecSuccess else {
             let detail = error?.takeRetainedValue().localizedDescription

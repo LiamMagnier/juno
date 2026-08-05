@@ -34,7 +34,21 @@ interface ToolSpec {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /**
+   * MCP tool annotations. Declared on EVERY tool here, reads included: a client
+   * cannot tell "this server says nothing about its tools" from "this server
+   * says this tool is a write" unless the reads are labelled too. src/lib/mcp.ts
+   * reads these back and src/lib/tool-access.ts classifies from them, so the
+   * connectors Juno itself operates never fall through to the name heuristic.
+   */
+  annotations: { readOnlyHint: boolean; destructiveHint?: boolean };
 }
+
+const READS = { readOnlyHint: true } as const;
+/** A write that only adds. */
+const WRITES = { readOnlyHint: false, destructiveHint: false } as const;
+/** A write that removes or overwrites something the user already had. */
+const DESTROYS = { readOnlyHint: false, destructiveHint: true } as const;
 
 const obj = (properties: Record<string, unknown>, required?: string[]): Record<string, unknown> => ({
   type: "object",
@@ -48,6 +62,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
       name: "list_calendars",
       description: "List the user's iCloud calendars by name.",
       inputSchema: obj({}),
+      annotations: READS,
     },
     {
       name: "list_events",
@@ -58,6 +73,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
         to: { type: "string", description: `Range end, ISO 8601. Defaults to ${DEFAULT_RANGE_DAYS} days from the start.` },
         limit: { type: "number", description: "Max events to return (default 25, max 50)." },
       }),
+      annotations: READS,
     },
     {
       name: "create_event",
@@ -73,6 +89,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
         },
         ["title", "start", "end"]
       ),
+      annotations: WRITES,
     },
     {
       name: "delete_event",
@@ -84,6 +101,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
         },
         ["calendar", "uid"]
       ),
+      annotations: DESTROYS,
     },
   ],
   "apple-mail": [
@@ -91,6 +109,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
       name: "list_mailboxes",
       description: "List the user's iCloud Mail mailboxes (folders).",
       inputSchema: obj({}),
+      annotations: READS,
     },
     {
       name: "search_messages",
@@ -102,6 +121,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
         since: { type: "string", description: "Only messages received on/after this date (ISO 8601)." },
         limit: { type: "number", description: "Max results (default 25, max 25)." },
       }),
+      annotations: READS,
     },
     {
       name: "read_message",
@@ -113,11 +133,13 @@ const TOOLS: Record<string, ToolSpec[]> = {
         },
         ["mailbox", "uid"]
       ),
+      annotations: READS,
     },
     {
       name: "unread_count",
       description: "Count unread messages in a mailbox (default INBOX).",
       inputSchema: obj({ mailbox: { type: "string", description: "Mailbox path; defaults to INBOX." } }),
+      annotations: READS,
     },
   ],
   "apple-music": [
@@ -135,16 +157,19 @@ const TOOLS: Record<string, ToolSpec[]> = {
         },
         ["query"]
       ),
+      annotations: READS,
     },
     {
       name: "list_playlists",
       description: "List the playlists in the user's Apple Music library.",
       inputSchema: obj({}),
+      annotations: READS,
     },
     {
       name: "recently_played",
       description: "List the user's recently played tracks.",
       inputSchema: obj({}),
+      annotations: READS,
     },
     {
       name: "add_to_playlist",
@@ -156,6 +181,7 @@ const TOOLS: Record<string, ToolSpec[]> = {
         },
         ["playlistId", "songIds"]
       ),
+      annotations: WRITES,
     },
   ],
 };

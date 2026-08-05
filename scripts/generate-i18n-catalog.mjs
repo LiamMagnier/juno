@@ -24,6 +24,11 @@ const COPY_PROPERTIES = new Set([
   "label",
   "lede",
   "message",
+  // The time-of-day greeting phrases in chat/empty-state.tsx. They are the
+  // first words a signed-in user reads and were the only UI copy on that screen
+  // the extractor could not see — an array of strings under an object property,
+  // which matches neither a COPY_PROPERTY nor the copy-variable naming rule.
+  "phrases",
   "placeholder",
   "subject",
   "term",
@@ -89,6 +94,15 @@ function visit(node) {
     if (name && COPY_PROPERTIES.has(name)) {
       const value = staticText(node.initializer);
       if (value) add(value);
+      // A copy property can hold a LIST of strings — e.g. the time-of-day
+      // greeting variants — not only one. Without this, a property whose value
+      // is an array is silently skipped and its copy never reaches the catalog.
+      else if (ts.isArrayLiteralExpression(node.initializer)) {
+        for (const element of node.initializer.elements) {
+          const item = staticText(element);
+          if (item) add(item);
+        }
+      }
     }
   }
 

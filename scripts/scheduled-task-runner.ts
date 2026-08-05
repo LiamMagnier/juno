@@ -45,7 +45,9 @@ const MAX_RUNS_PER_TICK = 20;
 
 async function main() {
   // Env must be in place before the lib chain loads — import inside main.
-  const { prisma } = await import("../src/lib/prisma");
+  // Unguarded by design: the worker's whole job is to sweep every user's due
+  // tasks, so neither the scan nor the claim below has a requesting user.
+  const { prismaUnguarded } = await import("../src/lib/prisma");
   const { computeNextRunAt, executeTask } = await import("../src/lib/scheduled-tasks");
 
   // Task ids with a run currently in flight in THIS process.
@@ -53,7 +55,7 @@ async function main() {
 
   const tick = async () => {
     const now = new Date();
-    const due = await prisma.scheduledTask.findMany({
+    const due = await prismaUnguarded.scheduledTask.findMany({
       where: { enabled: true, nextRunAt: { lte: now } },
       orderBy: { nextRunAt: "asc" },
       take: MAX_RUNS_PER_TICK,
@@ -63,7 +65,7 @@ async function main() {
       // Atomic claim: only the updateMany that still matches the due filter
       // wins, and bumping nextRunAt takes the task off every other worker's
       // due list for the duration of the run.
-      const claim = await prisma.scheduledTask.updateMany({
+      const claim = await prismaUnguarded.scheduledTask.updateMany({
         where: { id: task.id, enabled: true, nextRunAt: { lte: now } },
         data: { nextRunAt: computeNextRunAt(task, new Date()) },
       });

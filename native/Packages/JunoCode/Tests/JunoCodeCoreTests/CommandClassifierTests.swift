@@ -31,11 +31,57 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("/tmp/project-doctor --fix"), .destructive)
         XCTAssertEqual(risk("python3 scripts/check.py --verbose"), .critical)
         XCTAssertEqual(risk("node scripts/check.js"), .critical)
-        XCTAssertEqual(risk("ruby -e 'puts 1'"), .critical)
+        // `ruby -e` moved to .destructive — see testInlineInterpreterProgramsEscapeTheClassifier.
         XCTAssertEqual(risk("java -jar tools/check.jar"), .critical)
         XCTAssertEqual(risk("npx eslint ."), .critical)
         XCTAssertEqual(risk("swift run Tool"), .critical)
         XCTAssertEqual(risk("swift script.swift"), .critical)
+    }
+
+    func testInlineInterpreterProgramsEscapeTheClassifier() {
+        // Running a file from the workspace is ordinary development: the code is
+        // from the folder the session was granted, which is what `critical`
+        // means and why full access proceeds without asking.
+        XCTAssertEqual(risk("python3 scripts/check.py"), .critical)
+        XCTAssertEqual(risk("node build.js --watch"), .critical)
+        XCTAssertEqual(risk("bash scripts/deploy.sh"), .critical)
+
+        // An INLINE program is different in kind. The string is written by the
+        // model, not read from the workspace, and every rule in the classifier
+        // is blind to its contents — an rm -rf, a chmod, a curl | sh inside it
+        // is never seen. That escapes the workspace boundary, so it is
+        // `destructive` and asks in every mode, full access included.
+        XCTAssertEqual(risk("python3 -c 'import os; os.system(\"rm -rf /\")'"), .destructive)
+        XCTAssertEqual(risk("node -e 'require(\"child_process\").exec(\"whoami\")'"), .destructive)
+        XCTAssertEqual(risk("bash -c 'rm -rf ~'"), .destructive)
+        XCTAssertEqual(risk("ruby -e 'puts 1'"), .destructive)
+        XCTAssertEqual(risk("perl -e 'print 1'"), .destructive)
+        XCTAssertEqual(risk("sh -lc 'echo hi'"), .destructive)
+        XCTAssertEqual(risk("deno --eval 'console.log(1)'"), .destructive)
+        XCTAssertEqual(risk("node --eval=\'console.log(1)\'"), .destructive)
+    }
+
+    /// The same letters mean unrelated things to different interpreters, and
+    /// `.destructive` asks for approval in EVERY mode — full access included. So
+    /// a shared flag set does not just mis-label these, it stops an agent dead on
+    /// the commands a TypeScript or Java repo runs on nearly every turn.
+    func testFlagsThatOnlyLookLikeInlinePrograms() {
+        // -cp is the classpath; -c/-p are config and project files.
+        XCTAssertEqual(risk("java -cp build/classes Main"), .critical)
+        XCTAssertEqual(risk("npx tsc -p tsconfig.json"), .critical)
+        XCTAssertEqual(risk("npx eslint . -c .eslintrc.json"), .critical)
+        XCTAssertEqual(risk("npx jest -c jest.config.js"), .critical)
+        XCTAssertEqual(risk("deno -c deno.json run main.ts"), .critical)
+        // -p here selects a pytest plugin, -E ignores PYTHONPATH; neither is code.
+        XCTAssertEqual(risk("python3 -m pytest -p no:cacheprovider"), .critical)
+        XCTAssertEqual(risk("python3 -E scripts/check.py"), .critical)
+        // perl/ruby -c is `--check`: it parses the file and runs nothing at all.
+        XCTAssertEqual(risk("perl -c script.pl"), .critical)
+        XCTAssertEqual(risk("ruby -c app.rb"), .critical)
+
+        // Still caught when a value-taking flag comes first, which a scan that
+        // stopped at the leading flag run would walk straight past.
+        XCTAssertEqual(risk("python3 -W ignore -c 'import os'"), .destructive)
     }
 
     func testForbiddenProgramsAreRejectedEverywhere() {
@@ -103,12 +149,17 @@ final class CommandClassifierTests: XCTestCase {
         XCTAssertEqual(risk("terraform apply"), .destructive)
     }
 
-    /// Substitution and interpreters hide code but run it here; changing file
-    /// permissions or killing a process acts on the machine.
+    /// Substitution hides code but runs it here; an inline interpreter program
+    /// hides it from the classifier entirely; changing file permissions or
+    /// killing a process acts on the machine.
     func testShellEscapes() {
         XCTAssertEqual(risk("echo $(cat /etc/passwd)"), .critical)
         XCTAssertEqual(risk("echo `id`"), .critical)
-        XCTAssertEqual(risk("bash -c 'rm -rf x'"), .critical)
+        // Was .critical. The `rm -rf` inside the quoted string is invisible to
+        // every rule in the classifier, which is the whole reason an inline
+        // program is now .destructive — see
+        // testInlineInterpreterProgramsEscapeTheClassifier.
+        XCTAssertEqual(risk("bash -c 'rm -rf x'"), .destructive)
         XCTAssertEqual(risk("eval ls"), .critical)
         XCTAssertEqual(risk("cat <(python3 -c 'print(1)')"), .critical)
 

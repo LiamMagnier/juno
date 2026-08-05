@@ -148,6 +148,38 @@ public extension View {
     func junoSidebarRowInk() -> some View {
         foregroundStyle(Color.primary)
     }
+
+    /// A source-list row's mark, in the column's ink rather than the accent.
+    ///
+    /// This has to be stated on the glyph itself. A `Label` inside a `.sidebar`
+    /// list resolves its icon slot against the *system accent*, and neither
+    /// ``junoSidebarRowInk()`` on the row nor a `foregroundStyle` on the `Label`
+    /// reaches it — which is how both navigation columns ended up drawing coral
+    /// glyphs nobody had asked for. The web's rail is greyscale: the mark rests
+    /// on `--sidebar-foreground` and lifts to `--foreground` with its label.
+    func junoSidebarMarkInk(selected: Bool = false) -> some View {
+        foregroundStyle(selected ? Color.primary : Color.junoSidebarForeground)
+    }
+
+    /// Seals a source list's pinned footer against the rows scrolling behind it.
+    ///
+    /// `safeAreaInset` reserves the space but paints nothing, so a footer with no
+    /// surface of its own lets the list run underneath it: the account row and
+    /// the last session row draw over each other, which reads as corruption
+    /// rather than as layering. It went unnoticed in the chat column only because
+    /// that column's fixture is three conversations long and never scrolls.
+    ///
+    /// Opaque rather than a material: the sidebar is already vibrant, and a
+    /// second translucent layer over it samples the desktop twice and comes out
+    /// lighter than the column it is meant to be part of.
+    func junoSidebarFooter() -> some View {
+        background(alignment: .top) {
+            ZStack(alignment: .top) {
+                Color.junoSidebar
+                Divider()
+            }
+        }
+    }
 }
 
 // MARK: - Liquid Glass

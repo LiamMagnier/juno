@@ -91,12 +91,10 @@ private struct JunoAttachmentSurfaces: ViewModifier {
 
     // MARK: Ingest
 
-    /// Dismisses first, then loads. The reader is done with the picker the
-    /// moment they tap Add, and holding it on screen while a dozen assets come
-    /// down from iCloud would read as the app having hung.
-    /// The panel stays open: with the picker's checkmarks doing the talking,
-    /// a second photo is one more tap rather than reopening the whole surface.
-    /// The chips appear underneath as each upload starts.
+    /// Loads after the reader confirms. The panel closes at that commit point,
+    /// while the asynchronous iCloud imports continue into the composer.
+    /// Keeping the load out of the picker avoids making a slow asset download
+    /// look like a stuck selection surface.
     private func importPhotos(_ items: [PhotosPickerItem]) {
         guard !items.isEmpty else { return }
         coordinator.clearImportError()

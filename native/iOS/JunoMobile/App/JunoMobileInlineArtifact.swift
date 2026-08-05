@@ -59,7 +59,7 @@ struct JunoMobileInlineArtifactView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 16)
         }
-        .background(Color.junoCanvas)
+        .junoScreenCanvas()
         .navigationTitle(reference.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

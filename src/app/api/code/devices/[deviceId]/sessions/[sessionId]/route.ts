@@ -85,7 +85,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ deviceId
     lastEventSequence: parsed.data.lastEventSequence,
     syncedAt: new Date(),
   };
-  await prisma.codeRemoteSession.update({ where: { id: session.id }, data });
+  await prisma.codeRemoteSession.update({ where: { id: session.id, userId: user.id }, data });
   return NextResponse.json({ ok: true, snapshotVersion: parsed.data.snapshotVersion });
 }
 

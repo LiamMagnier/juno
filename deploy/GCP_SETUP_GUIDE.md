@@ -101,8 +101,9 @@ SSH in and run `./deploy/deploy.sh` — it pulls, rebuilds, and reloads PM2.
 
 - **RAM is tight (1 GB + 3 GB swap).** `next start` idles fine (~200 MB). Builds lean on swap.
   If a build ever hangs, build on your Mac (`npm run build`) and `scp` the `.next/` folder up.
-- **US region ↔ your EU Neon database** adds ~100 ms per query. For a chatbot where the model
-  thinks for *seconds to minutes*, this is unnoticeable. If it ever bothers you, create the
-  Neon project in a US region to co-locate.
+- **US region ↔ your EU database** adds ~100 ms per query (the reference deployment's
+  Supabase project is in `eu-west-1`). For a chatbot where the model thinks for *seconds
+  to minutes*, this is unnoticeable. If it ever bothers you, create the database project
+  in a US region to co-locate.
 - **Free egress is ~1 GB/month (North America).** SSE token streams are tiny text, so you
   won't get near it for personal use.

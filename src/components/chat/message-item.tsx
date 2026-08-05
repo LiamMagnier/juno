@@ -566,6 +566,10 @@ export function MessageItem({
   if (isUser) {
     return (
       <div className={cn("group flex flex-col items-end", animateIn && "motion-safe:animate-rise-in")}>
+        {/* Turn marker. On screen the alignment and bubble say who is speaking;
+            in a screen reader nothing did, and a transcript with no headings is
+            a wall of text with no way to move through it. */}
+        <h2 className="sr-only">You said</h2>
         <AttachmentList attachments={message.attachments} />
         {editing ? (
           <div className="w-full max-w-2xl space-y-2">
@@ -681,7 +685,17 @@ export function MessageItem({
 
   return (
     <div className={cn("group flex flex-col gap-2", animateIn && "motion-safe:animate-rise-in")}>
-      <div className="min-w-0 flex-1" aria-live={isVoice && message.streaming ? "off" : "polite"} aria-atomic="false">
+      {/* Turn marker — see the note on the user branch. */}
+      <h2 className="sr-only">Juno replied</h2>
+      {/*
+        Silent while streaming, polite once the turn is settled.
+        Markdown re-renders the final block on every delta, so a polite region
+        during streaming re-announces the growing paragraph token by token —
+        which is noise, not access. MessageList's role="status" announcer says
+        "Response complete, N words" on the finishing edge instead. This was
+        already the behaviour for realtime voice; it is right for every turn.
+      */}
+      <div className="min-w-0 flex-1" aria-live={message.streaming ? "off" : "polite"} aria-atomic="false">
         <ActivityTimeline
           messageId={message.id}
           events={view.activity}
@@ -794,7 +808,10 @@ export function MessageItem({
         {!isVoice && !message.streaming && !message.error && (modelName || hasUsage) && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground/60">
+              {/* No /60 modifier: at this size it computes to 2.43:1 light /
+                  3.35:1 dark, and WCAG 1.4.3 wants 4.5:1. The token at full
+                  opacity is 5.32 / 7.07 and already reads as secondary. */}
+              <p className="mt-1 w-fit cursor-default font-mono text-caption text-muted-foreground">
                 {modelName}
                 {hasUsage ? `${modelName ? " · " : ""}${formatTokens((view.promptTokens ?? 0) + (view.completionTokens ?? 0))} tokens` : ""}
                 {view.costUsd != null && view.costUsd > 0 ? ` · ${formatUsd(view.costUsd)}` : ""}

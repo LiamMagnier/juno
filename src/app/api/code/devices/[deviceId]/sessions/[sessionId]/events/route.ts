@@ -56,7 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ deviceI
         skipDuplicates: true,
       });
       await tx.codeRemoteSession.update({
-        where: { id: session.id },
+        where: { id: session.id, userId: user.id },
         data: {
           lastEventSequence: plan.lastSeq,
           syncedAt: new Date(),
@@ -89,7 +89,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ deviceId
       try {
         while (!req.signal.aborted && Date.now() < deadline) {
           const events = await prisma.codeRemoteSessionEvent.findMany({
-            where: { remoteSessionId: session.id, seq: { gt: cursor } },
+            where: { userId: user.id, remoteSessionId: session.id, seq: { gt: cursor } },
             orderBy: { seq: "asc" },
             take: 500,
           });

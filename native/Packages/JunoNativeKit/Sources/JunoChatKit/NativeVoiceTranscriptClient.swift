@@ -31,10 +31,53 @@ public struct NativeVoiceTranscriptClient: Sendable {
     public struct Turn: Encodable, Equatable, Sendable {
         public let role: Role
         public let content: String
+        /// Uploaded `Attachment` ids for the images shown to the model on this
+        /// turn. The server moves each one onto the message it creates, which is
+        /// what puts the picture back in the conversation beside the words about
+        /// it — without them a call where someone held up a receipt saves as a
+        /// discussion of a receipt nobody can see.
+        public let attachmentIDs: [String]
 
-        public init(role: Role, content: String) {
+        /// The route's ceiling, and the relay's: four images to a turn.
+        public static let maximumAttachments = 4
+
+        /// - Parameter attachmentIDs: Clamped rather than validated. Every rule
+        ///   the route enforces is enforced here first, because breaking one
+        ///   fails the *whole* transcript with a 400 or a 409 — losing a
+        ///   conversation the relay no longer holds, over an image.
+        ///   Assistant turns carry none: the server claims attachments only onto
+        ///   `USER` messages, but counts every id it was sent when checking they
+        ///   are all available, so one hung on an assistant turn fails the save
+        ///   and is never claimed anyway.
+        public init(role: Role, content: String, attachmentIDs: [String] = []) {
             self.role = role
             self.content = content
+            guard role == .user else {
+                self.attachmentIDs = []
+                return
+            }
+            var seen = Set<String>()
+            self.attachmentIDs = Array(
+                attachmentIDs
+                    .filter { !$0.isEmpty && seen.insert($0).inserted }
+                    .prefix(Self.maximumAttachments)
+            )
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case role, content, attachmentIds
+        }
+
+        public func encode(to encoder: any Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(role, forKey: .role)
+            try container.encode(content, forKey: .content)
+            // Omitted when empty, which is almost every turn of almost every
+            // call: the route defaults the field, and a spoken conversation
+            // should not carry an empty array on all two hundred of its lines.
+            if !attachmentIDs.isEmpty {
+                try container.encode(attachmentIDs, forKey: .attachmentIds)
+            }
         }
     }
 
@@ -43,10 +86,21 @@ public struct NativeVoiceTranscriptClient: Sendable {
         /// one the server just created.
         public let conversationID: String
         public let messageCount: Int
+        /// The conversation was saved, but without its images — see
+        /// ``NativeVoiceTranscriptClient/save(sessionID:conversationID:modelID:projectID:connectors:turns:for:)``.
+        /// Callers must say so. It is the one outcome here that is neither a
+        /// success nor a failure, and left unmentioned it is exactly the silent
+        /// loss this field exists to end.
+        public let attachmentsDropped: Bool
 
-        public init(conversationID: String, messageCount: Int) {
+        public init(
+            conversationID: String,
+            messageCount: Int,
+            attachmentsDropped: Bool = false
+        ) {
             self.conversationID = conversationID
             self.messageCount = messageCount
+            self.attachmentsDropped = attachmentsDropped
         }
     }
 
@@ -64,6 +118,23 @@ public struct NativeVoiceTranscriptClient: Sendable {
     ///   - sessionID: Stable for the life of one voice call, so a retry is
     ///     recognised as the same save rather than a second one.
     ///   - conversationID: The chat that was open, or nil to have one created.
+    ///
+    /// ## When the images cannot be claimed
+    ///
+    /// The route attaches an image only while it is still unattached, and
+    /// answers 409 for the whole transcript if any one of them has already been
+    /// spoken for. That is a real state — the same picture staged into a typed
+    /// message before the call ended, or a save that partially raced — and the
+    /// route's transaction rolls back entirely when it happens.
+    ///
+    /// Letting the 409 through would mean losing a whole spoken conversation
+    /// over a duplicated picture, and the relay keeps nothing to try again from.
+    /// So this posts once more without the images and reports it as
+    /// ``Saved/attachmentsDropped``: the conversation is worth more than the
+    /// attachments, and the reader is owed the difference. Nothing is retried
+    /// when there were no images to remove — that 409 is
+    /// ``NativeVoiceTranscriptError/attachmentsUnavailable(message:)`` and is
+    /// thrown, because retrying the identical body would only fail again.
     public func save(
         sessionID: UUID,
         conversationID: String?,
@@ -76,7 +147,46 @@ public struct NativeVoiceTranscriptClient: Sendable {
         let usable = Array(turns.prefix(Self.maximumTurns))
         guard !usable.isEmpty else { throw NativeVoiceTranscriptError.nothingToSave }
 
-        let response = try await sender.send(
+        let response = try await post(
+            sessionID: sessionID,
+            conversationID: conversationID,
+            modelID: modelID,
+            projectID: projectID,
+            connectors: connectors,
+            turns: usable,
+            for: accountID
+        )
+
+        if response.statusCode == 409 {
+            let stripped = usable.map {
+                Turn(role: $0.role, content: $0.content)
+            }
+            guard stripped != usable else { throw failure(response) }
+            let retried = try await post(
+                sessionID: sessionID,
+                conversationID: conversationID,
+                modelID: modelID,
+                projectID: projectID,
+                connectors: connectors,
+                turns: stripped,
+                for: accountID
+            )
+            return try saved(retried, turnCount: stripped.count, attachmentsDropped: true)
+        }
+
+        return try saved(response, turnCount: usable.count, attachmentsDropped: false)
+    }
+
+    private func post(
+        sessionID: UUID,
+        conversationID: String?,
+        modelID: String,
+        projectID: String?,
+        connectors: [String],
+        turns: [Turn],
+        for accountID: AccountID
+    ) async throws -> HTTPResponse {
+        try await sender.send(
             try NativeBearerRequest(
                 path: "/api/voice/transcript",
                 method: .post,
@@ -94,13 +204,19 @@ public struct NativeVoiceTranscriptClient: Sendable {
                         // five and an empty array is a claim of "no apps"
                         // rather than no claim.
                         connectors: connectors.isEmpty ? nil : Array(connectors.prefix(5)),
-                        turns: usable
+                        turns: turns
                     )
                 )
             ),
             for: accountID
         )
+    }
 
+    private func saved(
+        _ response: HTTPResponse,
+        turnCount: Int,
+        attachmentsDropped: Bool
+    ) throws -> Saved {
         guard (200...299).contains(response.statusCode) else {
             throw failure(response)
         }
@@ -109,7 +225,8 @@ public struct NativeVoiceTranscriptClient: Sendable {
         else { throw NativeVoiceTranscriptError.malformedResponse }
         return Saved(
             conversationID: decoded.conversationId,
-            messageCount: decoded.messages?.count ?? usable.count
+            messageCount: decoded.messages?.count ?? turnCount,
+            attachmentsDropped: attachmentsDropped
         )
     }
 
@@ -117,6 +234,11 @@ public struct NativeVoiceTranscriptClient: Sendable {
     private func failure(_ response: HTTPResponse) -> NativeVoiceTranscriptError {
         let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
         let message = (object?["error"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        if response.statusCode == 409 {
+            return .attachmentsUnavailable(
+                message: message ?? "One or more voice images are unavailable."
+            )
+        }
         return .server(
             statusCode: response.statusCode,
             message: message
@@ -129,12 +251,16 @@ public struct NativeVoiceTranscriptClient: Sendable {
 public enum NativeVoiceTranscriptError: Error, Equatable, LocalizedError, Sendable {
     case nothingToSave
     case malformedResponse
+    /// The route refused to claim an image (409) on a transcript that carried
+    /// none to remove, so there was no smaller save to fall back to.
+    case attachmentsUnavailable(message: String)
     case server(statusCode: Int, message: String)
 
     public var errorDescription: String? {
         switch self {
         case .nothingToSave: "There was nothing said to save."
         case .malformedResponse: "Juno returned an invalid response saving the transcript."
+        case .attachmentsUnavailable(let message): message
         case .server(_, let message): message
         }
     }
