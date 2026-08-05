@@ -1,0 +1,25 @@
+{
+  "runtimes": [
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-16-4",
+      "name": "iOS 16.4",
+      "version": "16.4",
+      "availability": "(available)",
+      "buildversion": "20E247"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-9-3",
+      "name": "iOS 9.3",
+      "version": "9.3",
+      "availability": "(available)",
+      "buildversion": "13E233"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.watchOS-9-4",
+      "name": "watchOS 9.4",
+      "version": "9.4",
+      "availability": "(available)",
+      "buildversion": "20T248"
+    }
+  ]
+}

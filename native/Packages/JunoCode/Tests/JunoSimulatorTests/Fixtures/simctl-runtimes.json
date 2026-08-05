@@ -1,0 +1,36 @@
+{
+  "runtimes": [
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "name": "iOS 27.0",
+      "version": "27.0",
+      "platform": "iOS",
+      "isAvailable": true,
+      "buildversion": "24A5390f"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.tvOS-27-0",
+      "name": "tvOS 27.0",
+      "version": "27.0",
+      "platform": "tvOS",
+      "isAvailable": true,
+      "buildversion": "24J5325d"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.watchOS-27-0",
+      "name": "watchOS 27.0",
+      "version": "27.0",
+      "platform": "watchOS",
+      "isAvailable": true,
+      "buildversion": "24R5325f"
+    },
+    {
+      "identifier": "com.apple.CoreSimulator.SimRuntime.xrOS-27-0",
+      "name": "visionOS 27.0",
+      "version": "27.0",
+      "platform": "xrOS",
+      "isAvailable": true,
+      "buildversion": "24M5326f"
+    }
+  ]
+}

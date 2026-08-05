@@ -1782,6 +1782,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "Document"
         case .svg: "Graphic"
         case .mermaid: "Diagram"
+        case .design: "Design"
         }
     }
 
@@ -1801,6 +1802,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "Documents"
         case .svg: "Graphics"
         case .mermaid: "Diagrams"
+        case .design: "Designs"
         }
     }
 
@@ -1812,6 +1814,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "doc.text"
         case .svg: "scribble.variable"
         case .mermaid: "flowchart"
+        case .design: "pencil.and.outline"
         }
     }
 
@@ -1856,6 +1859,7 @@ private enum DesktopArtifactKindName {
         case .markdown: "md"
         case .svg: "svg"
         case .mermaid: "mmd"
+        case .design: "juno.design.json"
         case .code: codeExtension(language)
         }
     }

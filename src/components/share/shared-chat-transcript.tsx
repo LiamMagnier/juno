@@ -1,4 +1,4 @@
-import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon } from "lucide-react";
+import { Code2, FileCode2, FileText, GitBranch, Globe, Image as ImageIcon, PenTool } from "lucide-react";
 import { Markdown } from "@/components/chat/markdown";
 import { splitMessageContent, type ArtifactType } from "@/lib/message-content";
 import { runtimeFor } from "@/lib/artifact-runtime";
@@ -20,6 +20,7 @@ const TYPE_ICON: Record<ArtifactType, typeof Code2> = {
   SVG: ImageIcon,
   MARKDOWN: FileText,
   MERMAID: GitBranch,
+  DESIGN: PenTool,
 };
 
 /** Inert stand-in for an artifact tag inside the transcript. */

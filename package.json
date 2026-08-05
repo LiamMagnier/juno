@@ -38,7 +38,12 @@
     "sync:prune": "tsx scripts/prune-sync.ts",
     "sync:models:write": "tsx scripts/sync-models.ts --write --prune",
     "sync:benchmarks": "tsx scripts/fetch-benchmarks.ts",
-    "radar:models": "tsx scripts/model-radar.ts"
+    "radar:models": "tsx scripts/model-radar.ts",
+    "design:contract": "tsx scripts/generate-design-contract.ts",
+    "design:contract:check": "tsx scripts/generate-design-contract.ts --check",
+    "design:editor": "node scripts/build-design-editor.mjs",
+    "design:editor:check": "node scripts/build-design-editor.mjs --check",
+    "design:fixture": "tsx scripts/emit-design-fixture.ts"
   },
   "prisma": {
     "schema": "prisma/schema.prisma"

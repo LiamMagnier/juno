@@ -7,7 +7,7 @@ import type { ArtifactType } from "@/lib/message-content";
  *                panel (JavaScript, TypeScript, Python via Pyodide).
  *  - "none"    → no in-browser runtime; the code is shown, not run.
  */
-export type RunMode = "web" | "console" | "none";
+export type RunMode = "web" | "console" | "none" | "design";
 
 export interface RuntimeInfo {
   mode: RunMode;
@@ -18,7 +18,8 @@ export interface RuntimeInfo {
   /** console sub-runtime, when mode === "console". */
   engine?: "js" | "python" | "unsupported";
   /** Verb shown on the action button: "Preview" for web, "Run" for console. */
-  runVerb: "Preview" | "Run";
+  /** "Edit" for a design document, which is opened rather than executed. */
+  runVerb: "Preview" | "Run" | "Edit";
 }
 
 // Alias table → canonical language key.
@@ -46,6 +47,7 @@ const ALIASES: Record<string, string> = {
 };
 
 const LABELS: Record<string, string> = {
+  design: "Design",
   javascript: "JavaScript", typescript: "TypeScript", jsx: "React", tsx: "React",
   python: "Python", html: "HTML", svg: "SVG", css: "CSS", mermaid: "Mermaid", markdown: "Markdown",
   bash: "Shell", sql: "SQL", go: "Go", rust: "Rust", c: "C", cpp: "C++", csharp: "C#",
@@ -63,6 +65,7 @@ export function canonicalLang(raw?: string | null): string {
 // Canonical language key → file extension for downloads. The stored `language`
 // is a language NAME ("python", "typescript"), never a usable suffix.
 const FILE_EXTENSIONS: Record<string, string> = {
+  design: "juno.design.json",
   javascript: "js", typescript: "ts", jsx: "jsx", tsx: "tsx",
   python: "py", html: "html", svg: "svg", css: "css", mermaid: "mmd", markdown: "md",
   bash: "sh", sql: "sql", go: "go", rust: "rs", c: "c", cpp: "cpp", csharp: "cs",
@@ -90,7 +93,9 @@ export function langLabel(lang: string): string {
 export function runtimeFor(type: ArtifactType, language?: string | null): RuntimeInfo {
   const lang = canonicalLang(language);
 
-  // Registry types with a fixed meaning win first.
+  // Registry types with a fixed meaning win first. A design document is data
+  // the editor owns, not code the sandbox executes.
+  if (type === "DESIGN") return { mode: "design", lang: "design", label: "Design", runVerb: "Edit" };
   if (type === "REACT") return { mode: "web", lang: "tsx", label: "React", runVerb: "Preview" };
   if (type === "HTML") return { mode: "web", lang: "html", label: "HTML", runVerb: "Preview" };
   if (type === "SVG") return { mode: "web", lang: "svg", label: "SVG", runVerb: "Preview" };

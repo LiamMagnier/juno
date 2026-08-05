@@ -1,0 +1,14 @@
+[
+  {
+    "action" : "build",
+    "target" : "DesktopThing",
+    "buildSettings" : {
+      "PRODUCT_TYPE" : "com.apple.product-type.application",
+      "FULL_PRODUCT_NAME" : "DesktopThing.app",
+      "PRODUCT_BUNDLE_IDENTIFIER" : "com.example.DesktopThing",
+      "TARGET_BUILD_DIR" : "/tmp/juno-derived/Build/Products/Debug",
+      "MACOSX_DEPLOYMENT_TARGET" : "14.0",
+      "SUPPORTED_PLATFORMS" : "macosx"
+    }
+  }
+]

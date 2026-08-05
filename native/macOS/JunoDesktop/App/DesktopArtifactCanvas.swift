@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import JunoChatKit
+import JunoDesignKit
 import JunoDesignSystem
 import SwiftUI
 import UniformTypeIdentifiers
@@ -117,6 +118,7 @@ enum DesktopArtifactKindLabel {
         case .markdown: "md"
         case .svg: "svg"
         case .mermaid: "mmd"
+        case .design: "juno.design.json"
         case .code: codeExtension(language)
         }
     }
@@ -418,6 +420,11 @@ struct DesktopArtifactCanvas: View {
     let close: () -> Void
 
     @State private var mode = NativeArtifactDisplayMode.preview
+    /// Created once per design artifact. Held here rather than rebuilt on every
+    /// render, because rebuilding would discard the editor's viewport, selection
+    /// and undo stack on each keystroke elsewhere in the window.
+    @State private var designHost: DesktopDesignEditorHost?
+    @State private var designError: String?
     @State private var pendingDownload: DesktopChatArtifactDownload?
     @State private var downloadError: String?
 
@@ -441,6 +448,8 @@ struct DesktopArtifactCanvas: View {
         // has to say so.
         .onChange(of: artifact.id) { _, _ in
             mode = .preview
+            designHost = nil
+            designError = nil
             downloadError = nil
         }
         .fileExporter(
@@ -576,7 +585,16 @@ struct DesktopArtifactCanvas: View {
 
     private var viewBar: some View {
         HStack(spacing: JunoSpace.snug) {
-            if artifact.kind.supportsRenderedPreview {
+            if artifact.kind.isDesignDocument {
+                // No Preview/Source switch: a design document has one view, and its
+                // JSON body is not something anyone reads by choice. The editor's
+                // own header carries the tools.
+                Text("Design")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.junoMutedForeground)
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+            } else if artifact.kind.supportsRenderedPreview {
                 DesktopCanvasSegmented(
                     options: [
                         .init(NativeArtifactDisplayMode.preview, "Preview"),
@@ -614,7 +632,9 @@ struct DesktopArtifactCanvas: View {
 
     @ViewBuilder
     private var canvasBody: some View {
-        if mode == .preview, artifact.kind == .markdown {
+        if artifact.kind.isDesignDocument {
+            designBody
+        } else if mode == .preview, artifact.kind == .markdown {
             // Markdown is prose, and prose is what `NativeArtifactPreview` gets
             // wrong: its markdown branch is `AttributedString(markdown:)`, which
             // flattens headings, lists, tables and fences into one run of body
@@ -634,6 +654,56 @@ struct DesktopArtifactCanvas: View {
                 content: artifact.reference.content,
                 mode: mode
             )
+        }
+    }
+}
+
+// MARK: - The design surface
+
+extension DesktopArtifactCanvas {
+    /// The bundled design editor, or an honest reason why it is not showing.
+    ///
+    /// The document is decoded here, natively, before the editor ever sees it: a
+    /// body that is not a valid `DesignDocument` — or was written by a newer
+    /// build of Juno — is refused with a stated reason rather than handed to a
+    /// web view that would render an empty canvas indistinguishable from a
+    /// document whose contents were lost.
+    @ViewBuilder
+    var designBody: some View {
+        if let designError {
+            JunoEmptyState(title: "This design can\u{2019}t be opened", message: designError, icon: .error)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let designHost {
+            ZStack {
+                DesktopDesignEditorView(host: designHost)
+                switch designHost.status {
+                case .loading:
+                    ProgressView().controlSize(.small)
+                case .unavailable(let reason), .failed(let reason):
+                    JunoEmptyState(title: "Design editor unavailable", message: reason, icon: .error)
+                        .background(Color.junoCanvasWarm)
+                case .ready:
+                    EmptyView()
+                }
+            }
+        } else {
+            Color.clear.onAppear { openDesignDocument() }
+        }
+    }
+
+    private func openDesignDocument() {
+        do {
+            let document = try DesignDocumentCodec.load(Data(artifact.reference.content.utf8))
+            let host = DesktopDesignEditorHost(document: document, readOnly: false)
+            // A transcript-carried artifact has no stored row yet (see this file's
+            // header), so edits live in the editor's own copy until the artifact
+            // syncs. Committing them to the server is the next slice; claiming
+            // otherwise would be the dishonest option.
+            host.onTransaction = { _, _, _ in }
+            designHost = host
+            designError = nil
+        } catch {
+            designError = "\(error)"
         }
     }
 }

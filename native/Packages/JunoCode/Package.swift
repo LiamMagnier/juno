@@ -13,6 +13,10 @@ let package = Package(
         .library(name: "JunoCodeRuntime", targets: ["JunoCodeRuntime"]),
         .library(name: "JunoCodeUI", targets: ["JunoCodeUI"]),
         .library(name: "JunoCodeBridge", targets: ["JunoCodeBridge"]),
+        // Juno Simulator: Xcode/simctl discovery, the build-and-run state machine,
+        // frame capture and the capability advertisement. No SwiftUI — the pane
+        // lives in JunoCodeUI, so this stays testable headlessly.
+        .library(name: "JunoSimulator", targets: ["JunoSimulator"]),
     ],
     dependencies: [
         .package(path: "../JunoNativeKit")
@@ -20,6 +24,9 @@ let package = Package(
     targets: [
         .target(name: "JunoCodeCore"),
         .target(name: "JunoCodeLocal", dependencies: ["JunoCodeCore"]),
+        // Depends on Core only, for SecretRedactor — build logs routinely carry
+        // tokens, and they are redacted before reaching the UI or the model.
+        .target(name: "JunoSimulator", dependencies: ["JunoCodeCore"]),
         .target(name: "JunoCodeRuntime", dependencies: ["JunoCodeCore"]),
         .target(
             name: "JunoCodeUI",
@@ -28,6 +35,7 @@ let package = Package(
                 // The remote-command protocols. UI depends on the bridge, never
                 // the reverse — the bridge must stay usable without a window.
                 "JunoCodeBridge",
+                "JunoSimulator",
                 // Shared design tokens, so Code and Chat cannot drift apart on
                 // spacing, radii, surfaces or type.
                 .product(name: "JunoDesignSystem", package: "JunoNativeKit"),
@@ -48,6 +56,11 @@ let package = Package(
             ]
         ),
         .testTarget(name: "JunoCodeCoreTests", dependencies: ["JunoCodeCore"]),
+        .testTarget(
+            name: "JunoSimulatorTests",
+            dependencies: ["JunoSimulator"],
+            resources: [.copy("Fixtures")]
+        ),
         .testTarget(name: "JunoCodeLocalTests", dependencies: ["JunoCodeCore", "JunoCodeLocal"]),
         .testTarget(
             name: "JunoCodeRuntimeTests",

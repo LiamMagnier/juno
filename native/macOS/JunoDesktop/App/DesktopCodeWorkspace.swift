@@ -86,6 +86,10 @@ struct DesktopCodeWorkspace: View {
     @State private var renamingSession: CodeSession?
     @State private var renameText = ""
     @State private var isOpeningQuickly = false
+    /// Owns the simulator session for the selected workspace. Created lazily —
+    /// discovery spawns `xcodebuild`, which is not something to do for every
+    /// Code session on every Mac.
+    @State private var simulatorHost = DesktopSimulatorHost()
     /// Whether the dictation capsule is up over the Code canvas.
     @State private var isDictating = false
     /// The Code composer can host the same realtime voice dock as Chat. The
@@ -223,7 +227,15 @@ struct DesktopCodeWorkspace: View {
             )
             .junoSidebarColumn()
         } detail: {
-            detail
+            // A real docked sibling column, never a second `.inspector` — see the
+            // crash note below and `DesktopSimulatorDock`'s own. Web projects are
+            // untouched: `CodePreviewScene` still owns those.
+            DesktopSimulatorDock(
+                model: simulatorHost.isOpen ? simulatorHost.model : nil,
+                close: { withAnimation(JunoMotion.fast) { simulatorHost.closePane() } }
+            ) {
+                detail
+            }
                 .junoReadingCanvas()
                 .navigationTitle("")
                 // No `.navigationSubtitle`.
@@ -309,6 +321,10 @@ struct DesktopCodeWorkspace: View {
         .task { await bootstrap() }
         .task(id: liveRunCount) { await readPlan() }
         .task(id: selectedSessionID) { await resolveController() }
+        // A simulator belongs to one workspace. Changing workspace or session ends
+        // the previous build, log stream and capture before anything new starts.
+        .onChange(of: targetRepository?.id) { _, _ in simulatorHost.tearDown() }
+        .onChange(of: selectedSessionID) { _, _ in simulatorHost.tearDown() }
         .task(id: selectedTask?.id) { followSelectedTask() }
         .task(id: remoteDeviceID) { await loadRemoteSessions() }
         .task(id: selection.wrappedValue) { await followSelectedRemoteSession() }
@@ -353,6 +369,7 @@ struct DesktopCodeWorkspace: View {
         // Re-entering re-attaches, because `WorkbenchModel.controller(for:)` now
         // re-attaches a cached controller.
         .onDisappear {
+            simulatorHost.tearDown()
             guard let controller else { return }
             Task { await controller.detach() }
         }
@@ -921,6 +938,21 @@ struct DesktopCodeWorkspace: View {
             .accessibilityLabel(reviewVisible ? "Close review" : "Open review")
             .accessibilityIdentifier("juno.code.review.toggle")
             .disabled(controller == nil)
+
+            if let repository = targetRepository {
+                Button {
+                    withAnimation(JunoMotion.fast) {
+                        simulatorHost.open(
+                            workspaceKey: repository.id.value,
+                            workspaceRoot: URL(fileURLWithPath: repository.descriptor.localPathHint)
+                        )
+                    }
+                } label: {
+                    Label("Simulator", systemImage: "iphone")
+                }
+                .help("Build and run this project's iOS app in a simulator")
+                .accessibilityIdentifier("juno.code.simulator")
+            }
 
             Button { inspectorVisible.toggle() } label: {
                 Image(systemName: "sidebar.trailing")

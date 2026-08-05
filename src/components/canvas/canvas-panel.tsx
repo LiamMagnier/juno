@@ -41,6 +41,7 @@ import { Markdown } from "@/components/chat/markdown";
 import { ShareDialog } from "@/components/share/share-dialog";
 import { SandboxFrame, type SandboxElementSelection, type ConsoleEntry, type RunStatus } from "@/components/canvas/sandbox-frame";
 import { CodeSurface, type CodeSelection } from "@/components/canvas/code-surface";
+import { DesignEditor, type DesignEditorHandle } from "@/components/design/design-editor";
 import { timeAgo } from "@/components/roadmap/roadmap-ui";
 import { diffLines, unifiedDiff } from "@/lib/line-diff";
 import { clampQuoteText, type ComposerQuote } from "@/lib/quote-context";
@@ -54,6 +55,7 @@ const EXTENSIONS: Record<string, string> = {
   SVG: "svg",
   MARKDOWN: "md",
   MERMAID: "mmd",
+  DESIGN: "juno.design.json",
   CODE: "txt",
 };
 
@@ -174,6 +176,10 @@ export function CanvasPanel({
 }) {
   const rt = React.useMemo(() => runtimeFor(artifact.type, artifact.language), [artifact.type, artifact.language]);
   const isMarkdown = artifact.type === "MARKDOWN";
+  // A design document is data the editor owns, not code the sandbox executes:
+  // it gets the design surface in place of the preview, and no run controls.
+  const isDesign = rt.mode === "design";
+  const designRef = React.useRef<DesignEditorHandle | null>(null);
   // Incognito artifacts are never persisted, so there is no row for the route to export.
   const canExportOffice = isMarkdown && !!shareable;
 
@@ -933,7 +939,7 @@ export function CanvasPanel({
             <TabsList className="h-8">
               <TabsTrigger value="preview" className="gap-1.5">
                 {rt.mode === "console" ? <Terminal className="h-3.5 w-3.5" aria-hidden /> : null}
-                {rt.mode === "console" ? "Output" : "Preview"}
+                {rt.mode === "console" ? "Output" : isDesign ? "Design" : "Preview"}
               </TabsTrigger>
               <TabsTrigger value="code" className="gap-1.5">
                 Code
@@ -970,7 +976,7 @@ export function CanvasPanel({
 
             {/* Contextual actions for the active view only. Markdown renders
                 natively (no sandbox), so run controls would be decorative. */}
-            {tab === "preview" && rt.mode !== "none" && !isMarkdown && (
+            {tab === "preview" && rt.mode !== "none" && !isMarkdown && !isDesign && (
               <>
                 {canInspect && (
                   <Tooltip>
@@ -1024,7 +1030,29 @@ export function CanvasPanel({
                 </Button>
               </div>
             )}
-            {isMarkdown ? (
+            {isDesign ? (
+              <div key={selectedVersion} className="h-full motion-safe:animate-fade-in">
+                <DesignEditor
+                  artifactId={artifact.id}
+                  content={versionContent}
+                  readOnly={!isLatest}
+                  editorRef={designRef}
+                  onCommitted={(version) => {
+                    // The editor holds the authoritative document; this only
+                    // keeps the artifact envelope (version rail, history) in step.
+                    if (version <= artifact.currentVersion) return;
+                    onArtifactUpdated({
+                      ...artifact,
+                      currentVersion: version,
+                      versions: [
+                        ...artifact.versions,
+                        { version, content: "", origin: "edit", createdAt: new Date().toISOString() },
+                      ],
+                    });
+                  }}
+                />
+              </div>
+            ) : isMarkdown ? (
               <div
                 key={selectedVersion}
                 ref={previewScrollRef}
@@ -1087,10 +1115,13 @@ export function CanvasPanel({
               <div key={artifact.id} className="min-h-0 flex-1">
                 <CodeSurface
                   value={displayedContent}
-                  language={rt.lang || artifact.language}
-                  readOnly={!isLatest}
+                  language={isDesign ? "json" : rt.lang || artifact.language}
+                  // A design document may only change through validated
+                  // operations — a hand-edited body could not be inverted, so
+                  // the source view is a reader, not a second write path.
+                  readOnly={!isLatest || isDesign}
                   onChange={handleDraftChange}
-                  onSave={isLatest ? () => saveEdit() : undefined}
+                  onSave={isLatest && !isDesign ? () => saveEdit() : undefined}
                   onSelect={onQuote && isLatest && !dirty ? handleCodeSelect : undefined}
                   wrap={isMarkdown}
                   ariaLabel={`${artifact.title} source${isLatest ? "" : ` (v${selectedVersion}, read-only)`}`}

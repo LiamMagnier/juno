@@ -16,6 +16,10 @@ let package = Package(
         .library(name: "JunoSync", targets: ["JunoSync"]),
         .library(name: "JunoSearch", targets: ["JunoSearch"]),
         .library(name: "JunoDesignSystem", targets: ["JunoDesignSystem"]),
+        // The Juno Design scene contract: the same document the website edits,
+        // decoded natively, plus the validated Swift<->JavaScript bridge the
+        // hosted editor speaks. No editor engine lives here — that is shared.
+        .library(name: "JunoDesignKit", targets: ["JunoDesignKit"]),
         .library(name: "JunoChatKit", targets: ["JunoChatKit"]),
         .library(name: "JunoCodeKit", targets: ["JunoCodeKit"]),
         .library(name: "JunoWorkKit", targets: ["JunoWorkKit"]),
@@ -35,6 +39,9 @@ let package = Package(
         ),
         .target(name: "JunoSearch", dependencies: ["JunoCore", "JunoStorage"]),
         .target(name: "JunoDesignSystem", dependencies: ["JunoCore"]),
+        // Deliberately dependency-free: the design contract must be decodable
+        // without dragging in auth, storage or sync.
+        .target(name: "JunoDesignKit"),
         .target(
             name: "JunoChatKit",
             dependencies: [
@@ -90,6 +97,11 @@ let package = Package(
         .testTarget(
             name: "JunoDesignSystemTests",
             dependencies: ["JunoDesignSystem"]
+        ),
+        .testTarget(
+            name: "JunoDesignKitTests",
+            dependencies: ["JunoDesignKit"],
+            resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "JunoChatKitTests",

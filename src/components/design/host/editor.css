@@ -1,0 +1,101 @@
+/*
+ * Base styles for the hosted design editor.
+ *
+ * The Mac window has no `globals.css`, so the design tokens the editor's
+ * components reference are declared here — the same names and the same values
+ * the website's theme uses, so a document looks identical on both. Light and
+ * dark follow the system, because the host web view inherits the Mac's
+ * appearance and an editor that ignored it would be the only light panel in a
+ * dark window.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --background: 0 0% 100%;
+  --foreground: 240 10% 4%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 10% 4%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 10% 4%;
+  --primary: 231 82% 63%;
+  --primary-foreground: 0 0% 100%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+  --accent: 240 5% 96%;
+  --accent-foreground: 240 6% 10%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 231 82% 63%;
+  --success: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 38 40% 20%;
+  --radius: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: 240 10% 6%;
+    --foreground: 0 0% 96%;
+    --card: 240 8% 9%;
+    --card-foreground: 0 0% 96%;
+    --popover: 240 8% 11%;
+    --popover-foreground: 0 0% 96%;
+    --primary: 231 82% 68%;
+    --primary-foreground: 240 10% 6%;
+    --muted: 240 5% 16%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 5% 18%;
+    --accent-foreground: 0 0% 96%;
+    --destructive: 0 72% 58%;
+    --border: 240 5% 20%;
+    --input: 240 5% 20%;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
+  /* The window's own scroll is the canvas's; the page must never scroll. */
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The web app's utility aliases, which the shared components use by name. */
+.text-caption {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.pressable {
+  transition: transform 120ms cubic-bezier(0.2, 0, 0, 1), background-color 120ms;
+}
+.pressable:active {
+  transform: scale(0.97);
+}
+
+/* A design canvas is a pointer surface: a stray text selection while dragging a
+   node is never what was meant. Real text fields opt back in below. */
+[data-juno-design-canvas] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* The host is a chromeless panel; a rubber-band bounce reveals the window
+   behind the editor and reads as a rendering fault. */
+body {
+  overscroll-behavior: none;
+}

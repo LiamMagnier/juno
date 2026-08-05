@@ -1,0 +1,59 @@
+{
+  "devices": {
+    "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+      {
+        "udid": "8DDC140C-7953-4E85-898B-98EB44EDB1D7",
+        "lastUsedAt": "2026-08-05T17:25:56Z",
+        "isAvailable": true,
+        "logPathSize": 446464,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+        "state": "Booted",
+        "name": "iPhone 17 Pro"
+      },
+      {
+        "udid": "AB1DC8DE-9C37-41CF-9FE4-07313B356899",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro-Max",
+        "state": "Shutdown",
+        "name": "iPhone 17 Pro Max"
+      },
+      {
+        "udid": "269CA830-5778-4795-BE17-B512046769E2",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17e",
+        "state": "Shutdown",
+        "name": "iPhone 17e"
+      },
+      {
+        "udid": "C9822A75-CD05-4E83-BCF6-DA64DF04FC9B",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-Air",
+        "state": "Shutdown",
+        "name": "iPhone Air"
+      },
+      {
+        "udid": "310AE78E-7645-4874-83C9-5E87F785558A",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17",
+        "state": "Shutdown",
+        "name": "iPhone 17"
+      }
+    ],
+    "com.apple.CoreSimulator.SimRuntime.watchOS-27-0": [
+      {
+        "udid": "A532D0D7-6F58-4B14-B3C3-925F7B5176A2",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-46mm",
+        "state": "Shutdown",
+        "name": "Apple Watch Series 11 (46mm)"
+      },
+      {
+        "udid": "29CFE58C-D7F2-4124-A9E2-859366376FEC",
+        "isAvailable": true,
+        "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.Apple-Watch-Series-11-42mm",
+        "state": "Shutdown",
+        "name": "Apple Watch Series 11 (42mm)"
+      }
+    ]
+  }
+}

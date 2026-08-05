@@ -1,0 +1,14 @@
+Command line invocation:
+    /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild build -scheme Aurora
+
+/Users/dev/Aurora/Sources/ContentView.swift:42:9: error: cannot find 'titel' in scope
+        titel = "Sign in"
+        ^~~~~
+/Users/dev/Aurora/Sources/ContentView.swift:51:13: warning: variable 'unused' was never used; consider replacing with '_'
+            let unused = compute()
+            ^
+/Users/dev/Aurora/Sources/Model.swift:8: error: unterminated string literal
+error: Signing for "Aurora" requires a development team.
+note: Using new build system
+
+** BUILD FAILED **
