@@ -45,13 +45,10 @@ import { prisma, prismaUnguarded } from "@/lib/db";
 import { getUserPlan } from "@/lib/usage";
 import { checkBudget } from "@/lib/spend";
 import { createRun, createWorkSession, appendEvents, finishRun } from "@/lib/work/store";
-import { recordWorkAudit } from "@/lib/work/audit";
 import {
   WORK_LIVE_STATUSES,
-  WORK_PERMISSION_POLICIES,
   defaultVisibilityFor,
   narrowestPolicy,
-  type WorkPermissionPolicy,
   type WorkTerminalReason,
 } from "@/lib/work/domain";
 import {
@@ -62,6 +59,7 @@ import {
   missedRunPolicyOf,
   nextFireForTriggers,
   parseScheduleRunConfig,
+  permissionPolicyOf,
   planScheduleDispatch,
   planTaskMigration,
   scheduleRunIdempotencyKey,
@@ -92,6 +90,8 @@ const SCHEDULER_ID = `work-scheduler:${process.pid}:${process.env.HOSTNAME ?? "l
 
 let stopping = false;
 let nextMigrationSweepAt = 0;
+/** Where the last migration sweep stopped. See `sweepMigrations`. */
+let migrationCursor: string | null = null;
 
 function log(message: string, extra?: Record<string, unknown>): void {
   const suffix = extra ? ` ${JSON.stringify(extra)}` : "";
@@ -152,17 +152,33 @@ function migratedSessionId(taskId: string): string {
  * `WorkSchedule.legacyScheduledTaskId` is what makes it so, not this function's
  * pre-read: the read is an optimisation that keeps the common sweep from
  * attempting inserts it knows will fail.
+ *
+ * One page per sweep, walked by a cursor that wraps at the end. Reading only
+ * the oldest page every time would be worse than useless once those are all
+ * adopted — the sweep would find nothing to do for ever while newer tasks it
+ * never reaches go unmigrated — and reading the whole table every five minutes
+ * to avoid that is a full scan in exchange for nothing.
  */
 async function sweepMigrations(): Promise<void> {
   // Cross-account by nature: this walks every user's legacy tasks, so it says
   // so rather than tripping a guard whose entire job is to notice a query that
   // forgot its userId.
   const tasks = await prismaUnguarded.scheduledTask.findMany({
-    orderBy: { createdAt: "asc" },
-    take: MAX_MIGRATIONS_PER_SWEEP * 4,
+    // By id rather than by creation time, because the cursor needs a total
+    // order it can resume from and two tasks created in the same millisecond
+    // would otherwise be an ambiguous resume point.
+    orderBy: { id: "asc" },
+    ...(migrationCursor ? { cursor: { id: migrationCursor }, skip: 1 } : {}),
+    take: MIGRATION_PAGE,
   });
+  // A short page is the end of the table; the next sweep starts again from the
+  // beginning, which is what picks up tasks created since the last pass.
+  migrationCursor = tasks.length < MIGRATION_PAGE ? null : tasks[tasks.length - 1].id;
   if (tasks.length === 0) return;
 
+  // Also cross-account, and for the same reason: the page above spans users, so
+  // the question "which of these are already adopted" cannot be scoped to one.
+  // Nothing but the ids leaves this query.
   const adopted = await prismaUnguarded.workSchedule.findMany({
     where: { legacyScheduledTaskId: { in: tasks.map((task) => task.id) } },
     select: { legacyScheduledTaskId: true },
@@ -172,7 +188,7 @@ async function sweepMigrations(): Promise<void> {
   let migrated = 0;
   let unmappable = 0;
   for (const task of tasks) {
-    if (stopping || migrated >= MAX_MIGRATIONS_PER_SWEEP) break;
+    if (stopping) break;
     if (already.has(task.id)) continue;
 
     const plan = planTaskMigration(task);
@@ -238,8 +254,11 @@ async function sweepMigrations(): Promise<void> {
       migrated += 1;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        // Another scheduler adopted this task between the read above and the
-        // insert. Nothing to do: the row it created is the same row.
+        // Another scheduler got between the read above and one of these two
+        // inserts. Both keys are derived from the task, so whichever row it
+        // created is the row this sweep was going to create; if it won the
+        // session and lost the schedule, the next sweep finds the session and
+        // completes the adoption.
         continue;
       }
       // One task that cannot be adopted must not stop the sweep. It keeps
@@ -256,14 +275,6 @@ async function sweepMigrations(): Promise<void> {
 // ---------------------------------------------------------------------------
 // Dispatch
 // ---------------------------------------------------------------------------
-
-/** Narrows the session's stored policy the way `serializers.ts` does: never
- *  widen a value this build cannot read. */
-function permissionPolicyOf(value: string): WorkPermissionPolicy {
-  return (WORK_PERMISSION_POLICIES as readonly string[]).includes(value)
-    ? (value as WorkPermissionPolicy)
-    : "conservative";
-}
 
 /**
  * Whether cloud Work is accepting runs.
@@ -475,9 +486,19 @@ async function dispatchOne(
 
   switch (decision.outcome) {
     case "dispatch": {
+      // The policy the executor will enforce, after narrowing. `narrowestPolicy`
+      // is a `min`, so no layer can widen another: a Mac pinned to
+      // `conservative` stays conservative under a `permissive` session, which is
+      // what makes the toggle on that Mac mean anything at all.
+      const host = decision.hostId
+        ? ordered.find((candidate) => candidate.id === decision.hostId)
+        : undefined;
+      const sessionPolicy = permissionPolicyOf(schedule.session.permissionPolicy);
+      const hostPolicy = host ? permissionPolicyOf(host.approvalPolicy) : null;
       const policy: JsonObject = {
-        policy: narrowestPolicy(permissionPolicyOf(schedule.session.permissionPolicy), null),
-        session: permissionPolicyOf(schedule.session.permissionPolicy),
+        policy: narrowestPolicy(sessionPolicy, hostPolicy),
+        session: sessionPolicy,
+        host: hostPolicy,
         // The schedule's unattended policy, stamped onto the run so the
         // executor enforces it per action through `decideUnattendedAction`.
         // `unattendedPolicyOf` returns one of three values, none of which
@@ -662,14 +683,6 @@ async function tick(): Promise<void> {
           // own and the schedule is picked up then.
           log("could not release the lease", { scheduleId: schedule.id, error: String(releaseError) });
         });
-      await recordWorkAudit({
-        userId: schedule.userId,
-        sessionId: schedule.sessionId,
-        kind: "policy_narrowed",
-        severity: "warning",
-        actor: "scheduler",
-        detail: { scheduleId: schedule.id, reason: message },
-      });
     }
   }
 }

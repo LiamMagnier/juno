@@ -25,7 +25,13 @@ import {
   type HostCapabilityView,
   type WorkTriggerKind,
 } from "@/lib/work/domain";
-import type { JsonObject } from "@/lib/work/schedule";
+import { canonicalize } from "@/lib/work/digests";
+import {
+  configForTimeTrigger,
+  isTimeTriggerKind,
+  parseTimeTrigger,
+  type JsonObject,
+} from "@/lib/work/schedule";
 
 // ---------------------------------------------------------------------------
 // Kinds
@@ -743,4 +749,122 @@ export function configForEventTrigger(parsed: TriggerConfig): JsonObject {
     case "manual":
       return {};
   }
+}
+
+/** `WorkTrigger.dedupeWindowSec`'s column default, repeated here because a
+ *  draft has to carry a value and the row's default only applies to an insert
+ *  that omits the column entirely. */
+export const DEFAULT_DEDUPE_WINDOW_SEC = 3600;
+
+/** One trigger row, ready to be written. */
+export interface TriggerDraft {
+  kind: WorkTriggerKind;
+  config: JsonObject;
+  enabled: boolean;
+  dedupeWindowSec: number;
+}
+
+/**
+ * The trigger fields a client submits.
+ *
+ * Structural, so the zod schema in `schedule.ts`, a stored row being
+ * re-validated after a timezone change, and the tests can all satisfy it.
+ * `kind` is a plain string for that last reason: a row written by a newer
+ * deployment holds a kind this build does not know, and the two parsers below
+ * already refuse one with a message worth showing.
+ */
+export interface TriggerDraftInput {
+  kind: string;
+  config: unknown;
+  enabled?: boolean;
+  dedupeWindowSec?: number;
+}
+
+export type TriggerDraftsResult =
+  | { ok: true; drafts: TriggerDraft[] }
+  /** Which trigger was wrong and what to tell whoever is editing it. */
+  | { ok: false; index: number; message: string };
+
+/**
+ * Validates a submitted trigger set and renders it into rows.
+ *
+ * Both halves of the vocabulary meet here — the clock kinds go through
+ * `parseTimeTrigger` and the rest through `parseTriggerConfig` — because a
+ * `WorkTrigger` row can be either and a route should not have to know which
+ * parser to reach for. It lives on this side of the pair so the dependency runs
+ * one way: this module knows about `schedule.ts`, and `schedule.ts` knows
+ * nothing about this one.
+ *
+ * What comes back is what gets stored: the normalised configuration, not the
+ * body the client sent. Storing the body means a `{ hour: "9" }` is accepted at
+ * write time and refused at fire time, which the user experiences as a schedule
+ * that was created without complaint and then never ran.
+ */
+export function normalizeTriggerDrafts(
+  inputs: readonly TriggerDraftInput[],
+  timezone: string
+): TriggerDraftsResult {
+  const drafts: TriggerDraft[] = [];
+
+  for (const [index, input] of inputs.entries()) {
+    const enabled = input.enabled ?? true;
+    // Zero is a legitimate window — "never suppress a repeat" — so it must
+    // survive the `??`, which is why this is not `|| DEFAULT`.
+    const dedupeWindowSec = input.dedupeWindowSec ?? DEFAULT_DEDUPE_WINDOW_SEC;
+
+    if (isTimeTriggerKind(input.kind)) {
+      const parsed = parseTimeTrigger(input.kind, input.config, timezone);
+      if (!parsed.ok) return { ok: false, index, message: parsed.message };
+      drafts.push({
+        kind: input.kind,
+        config: configForTimeTrigger(parsed.spec),
+        enabled,
+        dedupeWindowSec,
+      });
+      continue;
+    }
+
+    const parsed = parseTriggerConfig(input.kind, input.config);
+    if (!parsed.ok) return { ok: false, index, message: parsed.message };
+    drafts.push({
+      // The parser's narrowed kind, not the caller's string: they are the same
+      // value, and taking it from the parser is what carries the proof.
+      kind: parsed.parsed.kind,
+      config: configForEventTrigger(parsed.parsed),
+      enabled,
+      dedupeWindowSec,
+    });
+  }
+
+  return { ok: true, drafts };
+}
+
+/**
+ * Whether a submitted trigger set is the one already stored.
+ *
+ * The question a PATCH has to answer before it decides whether to move the
+ * schedule's next fire. A client that re-sends the whole schedule on every save
+ * — which is what every form in this codebase does — would otherwise mark the
+ * triggers as changed each time the user renamed it, and each of those would
+ * discard an overdue run.
+ *
+ * Compared on the canonical encoding rather than on `JSON.stringify`, so two
+ * configurations that differ only in key order are recognised as the same one.
+ * Order within the set matters: the rows are re-created from the submitted list,
+ * so a reordering is a real change to what will be stored.
+ */
+export function sameTriggerSet(
+  stored: readonly { kind: string; config: unknown; enabled: boolean; dedupeWindowSec: number }[],
+  drafts: readonly TriggerDraft[]
+): boolean {
+  if (stored.length !== drafts.length) return false;
+  return stored.every((row, index) => {
+    const draft = drafts[index];
+    return (
+      row.kind === draft.kind &&
+      row.enabled === draft.enabled &&
+      row.dedupeWindowSec === draft.dedupeWindowSec &&
+      canonicalize(row.config) === canonicalize(draft.config)
+    );
+  });
 }

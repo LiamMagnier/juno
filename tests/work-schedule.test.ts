@@ -10,21 +10,42 @@ import {
 } from "@/lib/work/domain";
 import {
   DEFAULT_USER_CONCURRENCY_CAP,
+  LEGACY_TASK_TIMEZONE,
   MAX_CATCH_UP_RUNS,
   MISSED_RUN_GRACE_MS,
+  SCHEDULE_LIST_MAX_LIMIT,
+  TIME_TRIGGER_KINDS,
+  configForTimeTrigger,
+  createScheduleSchema,
   daysInMonth,
   decideUnattendedAction,
+  hostCapabilityView,
+  hostOfflinePolicyOf,
+  missedRunPolicyOf,
   nextFireAfter,
   nextFireForTriggers,
   parseCron,
+  parseScheduleListQuery,
+  parseScheduleRunConfig,
+  parseScheduleRunListQuery,
   parseTimeTrigger,
+  patchScheduleSchema,
+  permissionPolicyOf,
   planMissedRuns,
   planScheduleDispatch,
+  planScheduleEdit,
+  planTaskMigration,
   resolveWallTime,
   scheduleRunIdempotencyKey,
+  scheduleTargetOf,
   serializeSchedule,
+  triggerOwningFire,
+  unattendedPolicyOf,
+  type LegacyScheduledTaskRow,
   type ScheduleDispatchInput,
+  type ScheduleEditInput,
   type TimeTriggerSpec,
+  type WorkHostRow,
   type WorkScheduleRow,
   type WorkTriggerRow,
 } from "@/lib/work/schedule";
@@ -893,4 +914,421 @@ test("a schedule with only event triggers has no next fire", () => {
     new Date("2026-08-05T00:00:00Z")
   );
   assert.equal(next, null);
+});
+
+test("each way a fire is held back or dropped names its own cause", () => {
+  // The explanation beside the cause is written for the user and will be
+  // rewritten the first time somebody improves the wording. A dispatcher that
+  // decided what to record by looking for the word "Mac" in it would break
+  // silently that day, so the cause is what it reads.
+  const busy = planScheduleDispatch(dispatchInput({ inFlightForSchedule: 1 }));
+  assert.equal(busy.outcome === "delayed" && busy.cause, "schedule_concurrency");
+
+  const crowded = planScheduleDispatch(
+    dispatchInput({ inFlightForUser: DEFAULT_USER_CONCURRENCY_CAP })
+  );
+  assert.equal(crowded.outcome === "delayed" && crowded.cause, "account_concurrency");
+
+  const waiting = planScheduleDispatch(
+    dispatchInput({
+      schedule: { ...dispatchInput().schedule, target: "local", hostOfflinePolicy: "wait" },
+      hosts: [host({ state: "offline" })],
+      requiredCapabilities: ["local_files"],
+    })
+  );
+  assert.equal(waiting.outcome === "delayed" && waiting.cause, "host_offline");
+
+  const skipped = planScheduleDispatch(
+    dispatchInput({
+      schedule: { ...dispatchInput().schedule, target: "local", hostOfflinePolicy: "skip" },
+      hosts: [host({ state: "offline" })],
+      requiredCapabilities: ["local_files"],
+    })
+  );
+  assert.equal(skipped.outcome === "skipped" && skipped.cause, "host_offline");
+
+  const dropped = planScheduleDispatch(
+    dispatchInput({
+      now: new Date("2026-08-05T13:00:00Z"),
+      schedule: {
+        ...dispatchInput().schedule,
+        missedRunPolicy: "skip",
+        nextRunAt: new Date("2026-08-03T09:00:00Z"),
+      },
+    })
+  );
+  assert.equal(dropped.outcome === "skipped" && dropped.cause, "missed_run_policy");
+});
+
+// ---------------------------------------------------------------------------
+// Which trigger owns a fire
+// ---------------------------------------------------------------------------
+
+test("the trigger that produced the due fire is the one identified", () => {
+  const triggers = [
+    triggerRow({ id: "morning", kind: "daily", config: { hour: 8, minute: 0 } }),
+    triggerRow({ id: "monday", kind: "weekly", config: { weekday: 1, hour: 17, minute: 0 } }),
+  ];
+  // 17:00 Paris on Monday 3 August 2026 is 15:00 UTC.
+  const owner = triggerOwningFire(triggers, PARIS, new Date("2026-08-03T15:00:00Z"));
+  assert.equal(owner?.trigger.id, "monday");
+});
+
+test("a fire no trigger claims is reported as unowned rather than guessed at", () => {
+  // What an edited schedule looks like: the column still holds a fire computed
+  // from a trigger the user has since replaced. Dispatching it would run the
+  // schedule they deliberately changed.
+  const triggers = [triggerRow({ kind: "daily", config: { hour: 8, minute: 0 } })];
+  assert.equal(triggerOwningFire(triggers, PARIS, new Date("2026-08-03T15:00:00Z")), null);
+});
+
+// ---------------------------------------------------------------------------
+// Reading columns back
+// ---------------------------------------------------------------------------
+
+test("no string can be read back as an unattended policy that grants anything", () => {
+  // The point of the type, restated as a test. `auto_approve` is the value
+  // somebody will eventually try to put in this column, by hand or through a
+  // half-finished feature, and it must not survive the read.
+  for (const attempt of ["auto_approve", "allow", "", "PAUSE_FOR_APPROVAL", "skip"]) {
+    assert.equal(
+      (WORK_UNATTENDED_POLICIES as readonly string[]).includes(unattendedPolicyOf(attempt)),
+      true
+    );
+  }
+  assert.equal(unattendedPolicyOf("auto_approve"), "pause_for_approval");
+  assert.equal(unattendedPolicyOf("skip_irreversible"), "skip_irreversible");
+});
+
+test("unreadable columns never widen what a schedule may do", () => {
+  // An unreadable target must not become permission to drive the user's Mac,
+  // an unreadable missed-run policy must not authorise a burst of catch-ups,
+  // and an unreadable permission policy must not exceed the narrowest.
+  assert.equal(scheduleTargetOf("quantum"), "cloud");
+  assert.equal(missedRunPolicyOf("run_everything"), "skip");
+  assert.equal(hostOfflinePolicyOf("carry_on"), "skip");
+  assert.equal(permissionPolicyOf("unrestricted"), "conservative");
+  // A value this build DOES know is passed through untouched.
+  assert.equal(scheduleTargetOf("local"), "local");
+  assert.equal(missedRunPolicyOf("run_all"), "run_all");
+  assert.equal(permissionPolicyOf("permissive"), "permissive");
+});
+
+test("a run configuration drops capabilities this build cannot check", () => {
+  // Carrying an unknown capability into `selectTarget` would make every target
+  // fail to satisfy it, turning a schedule that should run in the cloud into
+  // one that never runs anywhere.
+  const parsed = parseScheduleRunConfig({
+    model: " anthropic:claude ",
+    requiredCapabilities: ["web_research", "telepathy", 7],
+    skillVersionIds: ["skv-1", ""],
+  });
+  assert.equal(parsed.model, "anthropic:claude");
+  assert.deepEqual(parsed.requiredCapabilities, ["web_research"]);
+  assert.deepEqual(parsed.skillVersionIds, ["skv-1"]);
+});
+
+test("a run configuration that is not an object is read as an empty one", () => {
+  for (const junk of [null, undefined, 7, "daily", []]) {
+    assert.deepEqual(parseScheduleRunConfig(junk).requiredCapabilities, []);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Host capabilities
+// ---------------------------------------------------------------------------
+
+function hostRow(overrides: Partial<WorkHostRow> = {}): WorkHostRow {
+  return {
+    id: "hst-1",
+    displayName: "MacBook",
+    enabled: true,
+    revokedAt: null,
+    allowsFileWork: true,
+    allowsBrowser: false,
+    allowsComputerUse: false,
+    allowsShell: false,
+    allowsBackground: false,
+    allowedApps: [],
+    ...overrides,
+  };
+}
+
+test("a host advertises only what it claimed, and app control needs an allowlist", () => {
+  const bare = hostCapabilityView(hostRow(), "idle");
+  assert.deepEqual(bare.capabilities, ["local_files"]);
+  // App control with an empty allowlist can drive nothing, so advertising it
+  // would offer a capability whose every use is refused.
+  assert.equal(bare.capabilities.includes("local_apps"), false);
+
+  const withApps = hostCapabilityView(hostRow({ allowedApps: ["com.apple.mail"] }), "online");
+  assert.equal(withApps.capabilities.includes("local_apps"), true);
+  assert.equal(withApps.state, "online");
+});
+
+test("a revoked host says so rather than losing its capabilities", () => {
+  // `selectTarget` needs both facts: a revoked Mac that still advertises file
+  // work must be refused as revoked, not silently reported as incapable.
+  const view = hostCapabilityView(hostRow({ revokedAt: new Date("2026-08-01T00:00:00Z") }), "idle");
+  assert.equal(view.revoked, true);
+  assert.deepEqual(view.capabilities, ["local_files"]);
+});
+
+// ---------------------------------------------------------------------------
+// Storing a time trigger
+// ---------------------------------------------------------------------------
+
+test("every time trigger round-trips through storage unchanged", () => {
+  const configs: Record<string, Record<string, unknown>> = {
+    once: { year: 2026, month: 8, day: 5, hour: 9, minute: 30 },
+    hourly: { minute: 15 },
+    daily: { hour: 9, minute: 0 },
+    weekdays: { hour: 7, minute: 45 },
+    weekly: { weekday: 3, hour: 17, minute: 0 },
+    monthly: { monthday: 31, hour: 9, minute: 0 },
+    yearly: { month: 2, monthday: 29, hour: 9, minute: 0 },
+    cron: { expression: "30 5 1,15 * *" },
+  };
+  const from = new Date("2026-01-01T00:00:00Z");
+
+  for (const kind of TIME_TRIGGER_KINDS) {
+    const first = spec(kind, configs[kind], PARIS);
+    const stored = configForTimeTrigger(first);
+    const second = spec(kind, stored, PARIS);
+    // The fire is the property that matters: a schedule whose stored form fires
+    // at a different time from the one the user submitted is worse than one
+    // that was refused outright.
+    assert.deepEqual(nextFireAfter(second, from), nextFireAfter(first, from), kind);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Editing a schedule
+// ---------------------------------------------------------------------------
+
+/*
+ * The legacy scheduled-task PATCH recomputes nextRunAt from now on every write,
+ * including a body of just `{ name }`. If the worker was down and a fire is
+ * overdue, renaming the task moves the schedule forward and that run never
+ * happens. These tests are that bug, stated as a property.
+ */
+
+const OVERDUE = new Date("2026-08-05T07:00:00Z");
+const EDIT_NOW = new Date("2026-08-05T13:00:00Z");
+const RECOMPUTED = new Date("2026-08-06T07:00:00Z");
+
+function edit(overrides: Partial<ScheduleEditInput> = {}): ScheduleEditInput {
+  return {
+    now: EDIT_NOW,
+    currentNextRunAt: OVERDUE,
+    firingChanged: false,
+    enabledBefore: true,
+    enabledAfter: true,
+    recomputed: RECOMPUTED,
+    ...overrides,
+  };
+}
+
+test("renaming a schedule does not discard an overdue run", () => {
+  const plan = planScheduleEdit(edit());
+  assert.equal(plan.write, false);
+  assert.equal(plan.nextRunAt?.getTime(), OVERDUE.getTime());
+});
+
+test("pausing a schedule leaves its fire exactly where it was", () => {
+  const plan = planScheduleEdit(edit({ enabledAfter: false }));
+  assert.equal(plan.write, false);
+  assert.equal(plan.nextRunAt?.getTime(), OVERDUE.getTime());
+});
+
+test("resuming starts from now rather than catching up the pause", () => {
+  // Pausing is an instruction to stop. Catching up a fire from the middle of a
+  // two-week pause would run work the user explicitly suspended.
+  const plan = planScheduleEdit(edit({ enabledBefore: false, enabledAfter: true }));
+  assert.equal(plan.write, true);
+  assert.equal(plan.nextRunAt?.getTime(), RECOMPUTED.getTime());
+});
+
+test("changing when a schedule fires replaces the fire the old definition made", () => {
+  const plan = planScheduleEdit(edit({ firingChanged: true }));
+  assert.equal(plan.write, true);
+  assert.equal(plan.nextRunAt?.getTime(), RECOMPUTED.getTime());
+});
+
+test("a schedule edited to fire never again is written as never, not left owing", () => {
+  const plan = planScheduleEdit(edit({ firingChanged: true, recomputed: null }));
+  assert.equal(plan.write, true);
+  assert.equal(plan.nextRunAt, null);
+});
+
+// ---------------------------------------------------------------------------
+// Migrating a legacy scheduled task
+// ---------------------------------------------------------------------------
+
+function legacyTask(overrides: Partial<LegacyScheduledTaskRow> = {}): LegacyScheduledTaskRow {
+  return {
+    id: "task-1",
+    userId: "usr-1",
+    name: "Morning brief",
+    prompt: "Summarise overnight email.",
+    model: "anthropic:claude",
+    cadence: "DAILY",
+    hour: 8,
+    minute: 0,
+    weekday: null,
+    monthday: null,
+    timezone: PARIS,
+    webSearch: true,
+    enabled: true,
+    lastRunAt: new Date("2026-08-04T06:00:00Z"),
+    nextRunAt: new Date("2026-08-05T06:00:00Z"),
+    conversationId: "cnv-1",
+    ...overrides,
+  };
+}
+
+test("a migrated task keeps the exact fire it was owed", () => {
+  // The whole point. A task due at 08:00 being adopted at 08:04 has a fire
+  // owed; recomputing here would lose it inside the migration that exists to
+  // preserve it.
+  const plan = planTaskMigration(legacyTask());
+  assert.equal(plan?.schedule.nextRunAt.getTime(), new Date("2026-08-05T06:00:00Z").getTime());
+  assert.equal(plan?.schedule.lastRunAt?.getTime(), new Date("2026-08-04T06:00:00Z").getTime());
+  assert.equal(plan?.schedule.legacyScheduledTaskId, "task-1");
+  assert.equal(plan?.session.conversationId, "cnv-1");
+});
+
+test("a migrated task fires on the same day it has always fired on", () => {
+  // The legacy cadence walk reads `weekday ?? 1` and `monthday ?? 1`, so a
+  // WEEKLY task with no weekday has been running on Mondays. Choosing anything
+  // else here would move it, quietly, during the migration.
+  const weekly = planTaskMigration(legacyTask({ cadence: "WEEKLY", weekday: null }));
+  assert.deepEqual(weekly?.trigger, { kind: "weekly", config: { hour: 8, minute: 0, weekday: 1 } });
+
+  const monthly = planTaskMigration(legacyTask({ cadence: "MONTHLY", monthday: null }));
+  assert.deepEqual(monthly?.trigger, { kind: "monthly", config: { hour: 8, minute: 0, monthday: 1 } });
+
+  const stated = planTaskMigration(legacyTask({ cadence: "WEEKLY", weekday: 4 }));
+  assert.equal((stated?.trigger.config as { weekday: number }).weekday, 4);
+});
+
+test("every legacy cadence maps to a trigger that fires at the same wall time", () => {
+  const from = new Date("2026-08-05T12:00:00Z");
+  for (const cadence of ["DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY"]) {
+    const plan = planTaskMigration(legacyTask({ cadence, weekday: 2, monthday: 12, hour: 8, minute: 30 }));
+    assert.notEqual(plan, null, cadence);
+    if (!plan) throw new Error("unreachable");
+    const migrated = spec(plan.trigger.kind, plan.trigger.config, plan.schedule.timezone);
+    const fire = nextFireAfter(migrated, from);
+    assert.notEqual(fire, null, cadence);
+    if (!fire) throw new Error("unreachable");
+    assert.match(wall(fire, PARIS), /08:30$/, cadence);
+  }
+});
+
+test("a cadence this build cannot express is left on the legacy runner", () => {
+  // Mapping it onto `daily` would produce a schedule that fires at a different
+  // time from the task it claims to be, and the user would have no way to tell.
+  assert.equal(planTaskMigration(legacyTask({ cadence: "FORTNIGHTLY" })), null);
+});
+
+test("a migrated task falls back to the legacy default timezone, not to UTC", () => {
+  // `computeNextRunAt` substitutes Europe/Paris for an unreadable zone, so the
+  // task has been firing on Paris time; migrating it to UTC would move it.
+  const plan = planTaskMigration(legacyTask({ timezone: "Mars/Olympus" }));
+  assert.equal(plan?.schedule.timezone, LEGACY_TASK_TIMEZONE);
+});
+
+test("a migrated task gains no permission it did not have", () => {
+  const plan = planTaskMigration(legacyTask());
+  assert.equal(plan?.schedule.unattendedPolicy, "pause_for_approval");
+  assert.equal(plan?.schedule.target, "cloud");
+  // Faithful to what the legacy runner did: one overdue fire on the next tick,
+  // then advance.
+  assert.equal(plan?.schedule.missedRunPolicy, "run_once");
+  assert.deepEqual(parseScheduleRunConfig(plan?.schedule.runConfig).requiredCapabilities, [
+    "web_research",
+  ]);
+  assert.deepEqual(
+    parseScheduleRunConfig(planTaskMigration(legacyTask({ webSearch: false }))?.schedule.runConfig)
+      .requiredCapabilities,
+    []
+  );
+});
+
+test("a disabled task migrates as a disabled schedule", () => {
+  assert.equal(planTaskMigration(legacyTask({ enabled: false }))?.schedule.enabled, false);
+});
+
+// ---------------------------------------------------------------------------
+// Request shapes
+// ---------------------------------------------------------------------------
+
+test("a schedule cannot be created asking for an unattended policy that grants anything", () => {
+  const base = {
+    name: "Morning brief",
+    instructions: "Summarise overnight email.",
+    timezone: PARIS,
+    target: "cloud",
+    triggers: [{ kind: "daily", config: { hour: 9, minute: 0 } }],
+  };
+  assert.equal(createScheduleSchema.safeParse({ ...base, unattendedPolicy: "auto_approve" }).success, false);
+  const defaulted = createScheduleSchema.safeParse(base);
+  assert.equal(defaulted.success, true);
+  if (!defaulted.success) throw new Error("unreachable");
+  assert.equal(defaulted.data.unattendedPolicy, "pause_for_approval");
+});
+
+test("a schedule needs at least one trigger", () => {
+  assert.equal(
+    createScheduleSchema.safeParse({
+      name: "Morning brief",
+      instructions: "Summarise overnight email.",
+      timezone: PARIS,
+      target: "cloud",
+      triggers: [],
+    }).success,
+    false
+  );
+});
+
+test("an empty patch is refused rather than answered with an unchanged schedule", () => {
+  assert.equal(patchScheduleSchema.safeParse({}).success, false);
+  // Unknown keys are stripped by zod, so a misspelled field arrives as `{}`.
+  assert.equal(patchScheduleSchema.safeParse({ nmae: "typo" }).success, false);
+  assert.equal(patchScheduleSchema.safeParse({ name: "Renamed" }).success, true);
+});
+
+test("a patch can clear the host but an absent key leaves it alone", () => {
+  const cleared = patchScheduleSchema.safeParse({ hostId: null });
+  assert.equal(cleared.success, true);
+  if (!cleared.success) throw new Error("unreachable");
+  assert.equal(cleared.data.hostId, null);
+
+  const untouched = patchScheduleSchema.safeParse({ name: "Renamed" });
+  assert.equal(untouched.success, true);
+  if (!untouched.success) throw new Error("unreachable");
+  assert.equal("hostId" in untouched.data, false);
+});
+
+test("list queries clamp what they can and refuse what they cannot", () => {
+  const clamped = parseScheduleListQuery(new URLSearchParams("limit=100000"));
+  assert.equal(clamped.ok, true);
+  if (!clamped.ok) throw new Error("unreachable");
+  assert.equal(clamped.query.limit, SCHEDULE_LIST_MAX_LIMIT);
+
+  assert.equal(parseScheduleListQuery(new URLSearchParams("enabled=yes")).ok, false);
+  assert.equal(parseScheduleListQuery(new URLSearchParams("enabled=false")).ok, true);
+});
+
+test("a run-history cursor that does not parse is refused, not dropped", () => {
+  // Reading it as "no cursor" hands the client page one again, and a client
+  // that pages until it sees a short page then loops over the first page for
+  // ever without either side reporting an error.
+  assert.equal(parseScheduleRunListQuery(new URLSearchParams("before=yesterday")).ok, false);
+
+  const valid = parseScheduleRunListQuery(new URLSearchParams("before=2026-08-05T09:00:00.000Z"));
+  assert.equal(valid.ok, true);
+  if (!valid.ok) throw new Error("unreachable");
+  assert.equal(valid.query.before?.toISOString(), "2026-08-05T09:00:00.000Z");
 });

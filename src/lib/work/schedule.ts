@@ -28,6 +28,7 @@ import {
   WORK_CAPABILITIES,
   WORK_HOST_OFFLINE_POLICIES,
   WORK_MISSED_RUN_POLICIES,
+  WORK_PERMISSION_POLICIES,
   WORK_TARGETS,
   WORK_TRIGGER_KINDS,
   WORK_UNATTENDED_POLICIES,
@@ -40,6 +41,7 @@ import {
   type WorkHostOfflinePolicy,
   type WorkHostState,
   type WorkMissedRunPolicy,
+  type WorkPermissionPolicy,
   type WorkRiskLevel,
   type WorkTarget,
   type WorkTriggerKind,
@@ -1272,6 +1274,20 @@ export function serializeSchedule(
 }
 
 /**
+ * The trigger fields a next-fire question needs.
+ *
+ * Narrower than `WorkTriggerRow` on purpose: the schedule routes have to ask
+ * "when would this fire next" about a trigger set the user has submitted but
+ * which is not in the database yet, and a parameter typed as the full row would
+ * force them to invent an id and two timestamps to ask it.
+ */
+export interface TimeTriggerSource {
+  kind: string;
+  config: unknown;
+  enabled: boolean;
+}
+
+/**
  * The earliest next fire across a schedule's time-based triggers.
  *
  * A schedule may carry several (daily at 08:00 AND every Monday at 17:00), and
@@ -1281,7 +1297,7 @@ export function serializeSchedule(
  * rather than treated as "never", so one bad row cannot stop the others.
  */
 export function nextFireForTriggers(
-  triggers: readonly WorkTriggerRow[],
+  triggers: readonly TimeTriggerSource[],
   timezone: string,
   from: Date
 ): Date | null {
@@ -1312,11 +1328,11 @@ export function nextFireForTriggers(
  * is real and owed, and the honest fallback is the soonest-firing trigger,
  * which is what the dispatcher uses.
  */
-export function triggerOwningFire(
-  triggers: readonly WorkTriggerRow[],
+export function triggerOwningFire<T extends TimeTriggerSource>(
+  triggers: readonly T[],
   timezone: string,
   dueAt: Date
-): { trigger: WorkTriggerRow; spec: TimeTriggerSpec } | null {
+): { trigger: T; spec: TimeTriggerSpec } | null {
   const probe = new Date(dueAt.getTime() - 1);
   for (const trigger of triggers) {
     if (!trigger.enabled || !isTimeTriggerKind(trigger.kind)) continue;
@@ -1390,6 +1406,19 @@ export function missedRunPolicyOf(value: string): WorkMissedRunPolicy {
 /** Falls back to `skip`, which is also the column's default. */
 export function hostOfflinePolicyOf(value: string): WorkHostOfflinePolicy {
   return narrow(WORK_HOST_OFFLINE_POLICIES, value, "skip");
+}
+
+/**
+ * Falls back to `conservative`, the narrowest policy there is.
+ *
+ * Unlike the four above, this one reads a column that decides what a run may do
+ * without asking, so the fallback is the only one available: a value this build
+ * cannot read must not be resolved into more permission than the narrowest.
+ * `src/app/api/work/sessions/[id]/runs/route.ts` holds an equivalent private
+ * copy; the two must not disagree about that fallback.
+ */
+export function permissionPolicyOf(value: string): WorkPermissionPolicy {
+  return narrow(WORK_PERMISSION_POLICIES, value, "conservative");
 }
 
 // ---------------------------------------------------------------------------

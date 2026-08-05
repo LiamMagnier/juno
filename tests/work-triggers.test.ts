@@ -2,10 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { LOCAL_ONLY_TRIGGER_KINDS, type HostCapabilityView } from "@/lib/work/domain";
 import {
+  DEFAULT_DEDUPE_WINDOW_SEC,
   EVENT_TRIGGER_KINDS,
+  configForEventTrigger,
   evaluateTrigger,
   isEventTriggerKind,
+  normalizeTriggerDrafts,
   parseTriggerConfig,
+  sameTriggerSet,
   triggerRunIdempotencyKey,
   type CalendarTriggerEvent,
   type ConnectorTriggerEvent,
@@ -554,5 +558,162 @@ test("different triggers and different events never share a run key", () => {
   assert.notEqual(
     triggerRunIdempotencyKey("trg-1", "thread-1", NOW, 3600),
     triggerRunIdempotencyKey("trg-1", "thread-2", NOW, 3600)
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Writing a trigger set
+// ---------------------------------------------------------------------------
+
+/*
+ * What gets stored is what the parser produced, not what the client sent. The
+ * property is worth pinning because its failure mode is entirely silent: a
+ * configuration accepted at write time and refused at fire time is a schedule
+ * the user created without complaint and which then never runs.
+ */
+
+test("a submitted trigger is stored in the shape the evaluator reads back", () => {
+  const drafts = normalizeTriggerDrafts(
+    [
+      {
+        kind: "email_filter",
+        // Mixed case and whitespace on the way in; the matcher compares
+        // lower-cased, so the stored form has to be lower-cased too.
+        config: { from: ["  Accounts@Example.com "], requireAttachment: true, nonsense: 7 },
+      },
+    ],
+    "Europe/Paris"
+  );
+  assert.equal(drafts.ok, true);
+  if (!drafts.ok) throw new Error("unreachable");
+
+  assert.deepEqual(drafts.drafts[0].config.from, ["accounts@example.com"]);
+  assert.equal(drafts.drafts[0].config.requireAttachment, true);
+  // A key the parser does not know is dropped rather than carried, so nothing
+  // downstream can come to depend on a field nothing validates.
+  assert.equal("nonsense" in (drafts.drafts[0].config as Record<string, unknown>), false);
+});
+
+test("a time trigger is stored as its flat configuration, not as its expansion", () => {
+  const drafts = normalizeTriggerDrafts(
+    [{ kind: "cron", config: { expression: "*/15 9-17 * * 1-5" } }],
+    "Europe/Paris"
+  );
+  assert.equal(drafts.ok, true);
+  if (!drafts.ok) throw new Error("unreachable");
+  // Ninety-six expanded minute values would be something the user never wrote
+  // and could not edit back into a crontab line.
+  assert.deepEqual(drafts.drafts[0].config, { expression: "*/15 9-17 * * 1-5" });
+});
+
+test("a bad trigger names which one it was", () => {
+  const drafts = normalizeTriggerDrafts(
+    [
+      { kind: "daily", config: { hour: 9, minute: 0 } },
+      { kind: "weekly", config: { hour: 9, minute: 0 } },
+    ],
+    "Europe/Paris"
+  );
+  assert.equal(drafts.ok, false);
+  if (drafts.ok) throw new Error("unreachable");
+  assert.equal(drafts.index, 1);
+  assert.match(drafts.message, /weekday/);
+});
+
+test("a kind this build does not know is refused rather than stored", () => {
+  const drafts = normalizeTriggerDrafts([{ kind: "moon_phase", config: {} }], "Europe/Paris");
+  assert.equal(drafts.ok, false);
+});
+
+test("a zero dedupe window survives the default", () => {
+  // `?? DEFAULT` and `|| DEFAULT` differ by exactly this case, and zero is a
+  // legitimate answer: never suppress a repeat.
+  const drafts = normalizeTriggerDrafts(
+    [{ kind: "manual", config: {}, dedupeWindowSec: 0 }],
+    "Europe/Paris"
+  );
+  assert.equal(drafts.ok, true);
+  if (!drafts.ok) throw new Error("unreachable");
+  assert.equal(drafts.drafts[0].dedupeWindowSec, 0);
+
+  const defaulted = normalizeTriggerDrafts([{ kind: "manual", config: {} }], "Europe/Paris");
+  assert.equal(defaulted.ok, true);
+  if (!defaulted.ok) throw new Error("unreachable");
+  assert.equal(defaulted.drafts[0].dedupeWindowSec, DEFAULT_DEDUPE_WINDOW_SEC);
+});
+
+test("every event kind round-trips through storage unchanged", () => {
+  for (const kind of EVENT_TRIGGER_KINDS) {
+    const first = parseTriggerConfig(kind, { connector: "gmail", grantId: "gr-1" });
+    assert.equal(first.ok, true, kind);
+    if (!first.ok) throw new Error("unreachable");
+    const stored = configForEventTrigger(first.parsed);
+    const second = parseTriggerConfig(kind, stored);
+    assert.equal(second.ok, true, kind);
+    if (!second.ok) throw new Error("unreachable");
+    // Re-reading what was written must produce the same configuration, or a
+    // schedule quietly means something different after its first edit.
+    assert.deepEqual(configForEventTrigger(second.parsed), stored, kind);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Deciding whether an edit changed anything
+// ---------------------------------------------------------------------------
+
+const STORED_DAILY = { kind: "daily", config: { hour: 9, minute: 0 }, enabled: true, dedupeWindowSec: 3600 };
+
+function draftsFor(inputs: Parameters<typeof normalizeTriggerDrafts>[0]) {
+  const result = normalizeTriggerDrafts(inputs, "Europe/Paris");
+  assert.equal(result.ok, true);
+  if (!result.ok) throw new Error("unreachable");
+  return result.drafts;
+}
+
+test("re-sending the same trigger set is not a change", () => {
+  // Every form in this codebase re-sends the whole object on save. If this
+  // returned false, renaming a schedule would move its next fire and an overdue
+  // run would be discarded — the legacy bug, reintroduced through the back door.
+  assert.equal(
+    sameTriggerSet([STORED_DAILY], draftsFor([{ kind: "daily", config: { hour: 9, minute: 0 } }])),
+    true
+  );
+});
+
+test("key order in a stored configuration is not a change", () => {
+  assert.equal(
+    sameTriggerSet(
+      [{ ...STORED_DAILY, config: { minute: 0, hour: 9 } }],
+      draftsFor([{ kind: "daily", config: { hour: 9, minute: 0 } }])
+    ),
+    true
+  );
+});
+
+test("a different hour, a different kind, a pause, or an extra trigger all count as changes", () => {
+  assert.equal(
+    sameTriggerSet([STORED_DAILY], draftsFor([{ kind: "daily", config: { hour: 10, minute: 0 } }])),
+    false
+  );
+  assert.equal(
+    sameTriggerSet([STORED_DAILY], draftsFor([{ kind: "weekdays", config: { hour: 9, minute: 0 } }])),
+    false
+  );
+  assert.equal(
+    sameTriggerSet(
+      [STORED_DAILY],
+      draftsFor([{ kind: "daily", config: { hour: 9, minute: 0 }, enabled: false }])
+    ),
+    false
+  );
+  assert.equal(
+    sameTriggerSet(
+      [STORED_DAILY],
+      draftsFor([
+        { kind: "daily", config: { hour: 9, minute: 0 } },
+        { kind: "weekly", config: { weekday: 1, hour: 17, minute: 0 } },
+      ])
+    ),
+    false
   );
 });
