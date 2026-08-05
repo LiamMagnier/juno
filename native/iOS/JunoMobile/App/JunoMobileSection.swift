@@ -7,6 +7,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     case chat
     case search
     case code
+    case work
     case tasks
     case projects
     case library
@@ -21,6 +22,12 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .chat: "navigation.chat"
         case .search: "navigation.search"
         case .code: "navigation.code"
+        // A literal rather than a `navigation.work` key. Every other title here
+        // resolves through `Resources/Localizable.xcstrings`, and a dotted key
+        // the catalog does not carry renders as the key itself — a row reading
+        // "navigation.work" in the drawer. The literal is its own English
+        // default and becomes a key the moment the catalog gains one.
+        case .work: "Work"
         case .tasks: "navigation.tasks"
         case .projects: "navigation.projects"
         case .library: "navigation.library"
@@ -49,6 +56,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .chat: .home
         case .search: .search
         case .code: .code
+        case .work: .work
         case .tasks: .tasks
         case .projects: .projects
         case .library: .library
@@ -64,6 +72,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
         case .chat: "square.and.pencil"
         case .search: "magnifyingglass"
         case .code: "chevron.left.forwardslash.chevron.right"
+        case .work: "macbook.and.iphone"
         case .tasks: "clock.badge.checkmark"
         case .projects: "folder"
         case .library: "books.vertical"
@@ -78,10 +87,14 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
     /// own controls in its header and footer.
     ///
     /// The order is the owner's: the three places your *content* lives first
-    /// (projects, library, artifacts), then the two that *do work* for you
-    /// (code, tasks), then the account-level one (connections).
+    /// (projects, library, artifacts), then the three that *do work* for you
+    /// (work, code, tasks), then the account-level one (connections).
+    ///
+    /// Work leads that second group because it is the one that goes and does
+    /// something on your behalf while you are elsewhere — Code and Tasks are
+    /// both things you sit with.
     static let drawerDestinations: [JunoMobileSection] = [
-        .projects, .library, .artifacts, .code, .tasks, .connections,
+        .projects, .library, .artifacts, .work, .code, .tasks, .connections,
     ]
 
     /// Sidebar-adaptable grouping used on regular width (iPad). On iPhone the
@@ -103,7 +116,7 @@ enum JunoMobileSection: String, CaseIterable, Hashable, Identifiable {
 
         var sections: [JunoMobileSection] {
             switch self {
-            case .workspace: [.chat, .search, .code, .tasks]
+            case .workspace: [.chat, .search, .work, .code, .tasks]
             case .content: [.projects, .library, .artifacts, .connections]
             case .account: [.settings]
             }

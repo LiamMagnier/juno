@@ -17,21 +17,22 @@ final class JunoMobileNavigationTests: XCTestCase {
         XCTAssertEqual(
             identifiers,
             [
-                "chat", "search", "code", "tasks",
+                "chat", "search", "code", "work", "tasks",
                 "projects", "library", "artifacts", "connections", "settings",
             ]
         )
         XCTAssertEqual(Set(identifiers).count, identifiers.count)
     }
 
-    /// Juno Code, Tasks and Connections used to be absent because their backends
-    /// had no native client. They have one now — `/api/code/*`, `/api/tasks` and
-    /// `/api/connectors` are all bearer-capable — so each is a real destination
-    /// and this test guards that they stay reachable.
+    /// Juno Code, Work, Tasks and Connections used to be absent because their
+    /// backends had no native client. They have one now — `/api/code/*`,
+    /// `/api/work/*`, `/api/tasks` and `/api/connectors` are all bearer-capable
+    /// — so each is a real destination and this test guards that they stay
+    /// reachable.
     func testTheServerBackedDestinationsAreOffered() {
         let identifiers = Set(JunoMobileSection.allCases.map(\.id))
 
-        for expected in ["code", "tasks", "connections"] {
+        for expected in ["code", "work", "tasks", "connections"] {
             XCTAssertTrue(identifiers.contains(expected), "\(expected) is not navigable")
         }
     }
@@ -47,6 +48,20 @@ final class JunoMobileNavigationTests: XCTestCase {
         XCTAssertEqual(
             JunoMobileSection.drawerDestinations.count, drawer.count, "a destination is listed twice"
         )
+    }
+
+    /// The drawer draws `junoIcon` when a destination has one and falls back to
+    /// an SF Symbol when it does not. One system glyph in a column of Lucide
+    /// marks reads as a row borrowed from another product — the exact drift
+    /// Settings was fixed for — so every row the drawer lists must have the
+    /// website's own mark.
+    func testEveryDrawerDestinationCarriesTheSharedGlyph() {
+        for destination in JunoMobileSection.drawerDestinations {
+            XCTAssertNotNil(
+                destination.junoIcon,
+                "\(destination.id) would fall back to \(destination.systemImage) in the drawer"
+            )
+        }
     }
 
     func testEverySectionAppearsInExactlyOneSidebarGroup() {
