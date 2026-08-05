@@ -59,7 +59,7 @@ import type { ClientConversation } from "@/types/chat";
 type ConfirmState = { title: string; description: string; confirmLabel: string; onConfirm: () => void } | null;
 
 /** The product mode the whole sidebar is threaded through. */
-type SidebarMode = "home" | "work" | "code";
+type SidebarMode = "home" | "work" | "code" | "design";
 
 /** Landing route per mode — what switching the toggle actually navigates to. */
 const MODE_HOME: Record<SidebarMode, string> = {
@@ -68,6 +68,7 @@ const MODE_HOME: Record<SidebarMode, string> = {
   // has to land on `/code/new`.
   work: "/work",
   code: "/code/new",
+  design: "/design",
 };
 
 type SidebarProject = {
@@ -336,7 +337,10 @@ export function AppSidebar({
     // Conversation, so there is no `kind` to filter on and nothing here to
     // show. Giving Work a conversation kind purely to reuse this list would
     // put every Work task into the chat sidebar of anyone on an older client.
-    if (mode === "work") return [];
+    // Design, like Work, lists its own objects rather than conversations: a
+    // design is an Artifact, not a Conversation, so there is no `kind` to
+    // filter on and nothing here to show.
+    if (mode === "work" || mode === "design") return [];
     return conversations.filter((c) => (mode === "code" ? c.kind === "code" : c.kind !== "code"));
   }, [conversations, mode]);
 
@@ -1051,7 +1055,7 @@ export function AppSidebar({
   );
 }
 
-/** Home/Work/Code switch. A thin wrapper over the shared SegmentedControl: same
+/** Home/Work/Code/Design switch. A thin wrapper over the shared SegmentedControl: same
  *  depth idiom (well track + raised thumb) and radiogroup semantics, laid out
  *  vertically (icon-only) in the collapsed rail. The segment icons keep the
  *  sidebar's hover micro-motion. SegmentedControl measures its own geometry, so
@@ -1074,14 +1078,18 @@ function ModeToggle({
       orientation={compact ? "vertical" : "horizontal"}
       labelHidden={compact}
       ringOffsetClassName="focus-visible:ring-offset-sidebar"
-      // Narrower labels than the two-up version: at the 240px minimum sidebar
-      // width three segments of `px-3` overflow the track and the thumb lands
-      // short of the segment it is meant to sit under.
-      optionClassName={compact ? undefined : "gap-1.5 px-2"}
+      // Tighter again for the four-up version. At the 240px minimum sidebar
+      // width three segments of `px-3` already overflowed the track; four
+      // segments have roughly 56px each, which fits an icon and a short label
+      // only at this padding. The labels stay rather than going icon-only
+      // because "Design" and "Code" are not guessable from a glyph, and a mode
+      // switch nobody can read is a mode switch nobody uses.
+      optionClassName={compact ? undefined : "gap-1 px-1.5 text-[11px]"}
       options={[
         { value: "home", label: "Home", icon: <SidebarMotionIcon kind="home" className="h-3.5 w-3.5" /> },
         { value: "work", label: "Work", icon: <SidebarMotionIcon kind="work" className="h-3.5 w-3.5" /> },
         { value: "code", label: "Code", icon: <SidebarMotionIcon kind="code" className="h-3.5 w-3.5" /> },
+        { value: "design", label: "Design", icon: <SidebarMotionIcon kind="design" className="h-3.5 w-3.5" /> },
       ]}
     />
   );

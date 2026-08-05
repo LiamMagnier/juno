@@ -29,6 +29,7 @@ import {
   MessageCircle,
   NotebookPen,
   Paperclip,
+  PenTool,
   Pin,
   Plug,
   Plus,
@@ -49,6 +50,10 @@ export const AppIcons = {
    *  machine-shaped mark (Code2) on the Code mode beside it. */
   work: Briefcase,
   code: Code2,
+  /** Juno Design — the visual design surface. A pen nib rather than a paint
+   *  brush or a square: the mode is about drawing something precise that
+   *  becomes real, and the brush reads as illustration. */
+  design: PenTool,
   library: Library,
   artifacts: Layers3,
   projects: Folder,
