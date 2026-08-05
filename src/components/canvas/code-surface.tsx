@@ -1,7 +1,41 @@
 "use client";
 
 import * as React from "react";
-import hljs from "highlight.js/lib/common";
+import hljs from "highlight.js/lib/core";
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import xml from "highlight.js/lib/languages/xml";
+import css from "highlight.js/lib/languages/css";
+import markdown from "highlight.js/lib/languages/markdown";
+import bash from "highlight.js/lib/languages/bash";
+import sql from "highlight.js/lib/languages/sql";
+import go from "highlight.js/lib/languages/go";
+import rust from "highlight.js/lib/languages/rust";
+import c from "highlight.js/lib/languages/c";
+import cpp from "highlight.js/lib/languages/cpp";
+import csharp from "highlight.js/lib/languages/csharp";
+import java from "highlight.js/lib/languages/java";
+import kotlin from "highlight.js/lib/languages/kotlin";
+import swift from "highlight.js/lib/languages/swift";
+import ruby from "highlight.js/lib/languages/ruby";
+import php from "highlight.js/lib/languages/php";
+import perl from "highlight.js/lib/languages/perl";
+import json from "highlight.js/lib/languages/json";
+import yaml from "highlight.js/lib/languages/yaml";
+import ini from "highlight.js/lib/languages/ini";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import makefile from "highlight.js/lib/languages/makefile";
+import graphql from "highlight.js/lib/languages/graphql";
+import dart from "highlight.js/lib/languages/dart";
+import r from "highlight.js/lib/languages/r";
+import lua from "highlight.js/lib/languages/lua";
+import scala from "highlight.js/lib/languages/scala";
+import elixir from "highlight.js/lib/languages/elixir";
+import haskell from "highlight.js/lib/languages/haskell";
+import plaintext from "highlight.js/lib/languages/plaintext";
+import diff from "highlight.js/lib/languages/diff";
+import shell from "highlight.js/lib/languages/shell";
 import { canonicalLang } from "@/lib/artifact-runtime";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +53,59 @@ import { cn } from "@/lib/utils";
 // Beyond this size skip highlighting entirely — plain text keeps huge files usable.
 const HIGHLIGHT_LIMIT = 60_000;
 
-/** Canonical language key → the grammar hljs/common actually ships. */
+/*
+ * Register grammars from the per-language ESM entry points — the exact
+ * specifiers lowlight uses — rather than importing "highlight.js/lib/common".
+ *
+ * That barrel resolves, under the `import` condition, to es/common.js, which is
+ * a one-line facade re-exporting the CJS lib/common.js. So its grammars form a
+ * completely separate module graph from the ESM ones rehype-highlight pulls in
+ * through lowlight for the markdown renderer, and BOTH full grammar sets were
+ * being bundled — on /share, /chat and /chat/[id] alike. Same specifiers here
+ * means one copy.
+ *
+ * The list is deliberately explicit: it is the set this surface highlights, and
+ * it covers every language in artifact-runtime's FILE_EXTENSIONS map.
+ */
+function registerGrammars() {
+  hljs.registerLanguage("javascript", javascript);
+  hljs.registerLanguage("typescript", typescript);
+  hljs.registerLanguage("python", python);
+  hljs.registerLanguage("xml", xml);
+  hljs.registerLanguage("css", css);
+  hljs.registerLanguage("markdown", markdown);
+  hljs.registerLanguage("bash", bash);
+  hljs.registerLanguage("sql", sql);
+  hljs.registerLanguage("go", go);
+  hljs.registerLanguage("rust", rust);
+  hljs.registerLanguage("c", c);
+  hljs.registerLanguage("cpp", cpp);
+  hljs.registerLanguage("csharp", csharp);
+  hljs.registerLanguage("java", java);
+  hljs.registerLanguage("kotlin", kotlin);
+  hljs.registerLanguage("swift", swift);
+  hljs.registerLanguage("ruby", ruby);
+  hljs.registerLanguage("php", php);
+  hljs.registerLanguage("perl", perl);
+  hljs.registerLanguage("json", json);
+  hljs.registerLanguage("yaml", yaml);
+  hljs.registerLanguage("ini", ini);
+  hljs.registerLanguage("dockerfile", dockerfile);
+  hljs.registerLanguage("makefile", makefile);
+  hljs.registerLanguage("graphql", graphql);
+  hljs.registerLanguage("dart", dart);
+  hljs.registerLanguage("r", r);
+  hljs.registerLanguage("lua", lua);
+  hljs.registerLanguage("scala", scala);
+  hljs.registerLanguage("elixir", elixir);
+  hljs.registerLanguage("haskell", haskell);
+  hljs.registerLanguage("plaintext", plaintext);
+  hljs.registerLanguage("diff", diff);
+  hljs.registerLanguage("shell", shell);
+}
+registerGrammars();
+
+/** Canonical language key → a grammar registered above. */
 const HLJS_ALIASES: Record<string, string> = {
   tsx: "typescript",
   jsx: "javascript",

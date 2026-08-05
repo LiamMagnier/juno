@@ -252,6 +252,33 @@ async function main(): Promise<number> {
     );
   } else {
     const okProviders = new Set(reports.filter((r) => r.state === "ok").map((r) => r.provider));
+
+    /*
+     * A total blackout is not "nothing changed" — it is "we learned nothing".
+     *
+     * Writing the file anyway stamps it with a fresh SYNC_STAMP, so the run
+     * commits, the diff looks like routine churn, no `model-watch` issue is
+     * opened, and the workflow stays green. Every provider being unreachable —
+     * an expired secret set, a network fault, a bad deploy of this script —
+     * would look exactly like a quiet night.
+     *
+     * Exit 2, distinct from the 1 used for partial failures below, so the
+     * workflow can fail on this while still tolerating individual providers
+     * being down (which is the documented intent of its `|| true`).
+     */
+    // "Attempted" excludes providers with no key and gen-only ones: a
+    // deployment configured with no keys at all is an unconfigured environment,
+    // not an outage, and must not go red.
+    const attempted = reports.filter((r) => r.state !== "no-key" && r.state !== "gen-only");
+    if (attempted.length > 0 && okProviders.size === 0) {
+      console.error(
+        `\nBLACKOUT: all ${attempted.length} provider(s) with credentials failed to respond ` +
+          `(${attempted.map((r) => `${r.provider}=${r.state}`).join(", ")}).\n` +
+          `Leaving src/lib/models.generated.ts untouched — writing it would stamp a fresh ` +
+          `sync time and make a total outage indistinguishable from a night with no changes.`
+      );
+      return 2;
+    }
     let unavailable = [...UNAVAILABLE];
     if (PRUNE) {
       // Recompute for successfully-fetched providers; keep everyone else's

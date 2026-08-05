@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prismaUnguarded } from "@/lib/prisma";
 import { getOwnerUser } from "@/lib/admin";
 
 export const runtime = "nodejs";
@@ -25,8 +25,10 @@ export async function GET(req: Request) {
         ? { action: "banned" }
         : {};
 
+  // Unguarded by design: this is the owner-only moderation queue, so reading
+  // every user's flags is the whole point (getOwnerUser above is the gate).
   const [flags, total] = await Promise.all([
-    prisma.moderationFlag.findMany({
+    prismaUnguarded.moderationFlag.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * PAGE_SIZE,
@@ -46,7 +48,7 @@ export async function GET(req: Request) {
         user: { select: { name: true, email: true, bannedAt: true } },
       },
     }),
-    prisma.moderationFlag.count({ where }),
+    prismaUnguarded.moderationFlag.count({ where }),
   ]);
 
   return NextResponse.json({

@@ -6,15 +6,20 @@
  * a failed deploy rather than a stream of 500s: a process that starts happily
  * and then throws on every chat is discovered by users, while one that refuses
  * to start is discovered by whoever ran the deploy.
+ *
+ * Imports only `message-crypto-config`, never `message-crypto`. This file is
+ * compiled for every runtime Next.js targets, and the cipher module imports
+ * Node's `crypto` — which the edge bundle cannot resolve under any spelling.
+ * Reaching for it here broke the production build.
  */
 export async function register(): Promise<void> {
-  // Edge and browser bundles have neither `crypto` nor the env this checks.
+  // Edge and browser bundles have neither the env nor the process this checks.
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { assertMessageCryptoConfigured } = await import("@/lib/message-crypto");
+  const { assertDataEncryptionKeyConfigured } = await import("@/lib/message-crypto-config");
 
   try {
-    assertMessageCryptoConfigured();
+    assertDataEncryptionKeyConfigured();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`[boot] ${message}`);

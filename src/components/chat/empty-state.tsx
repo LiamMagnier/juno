@@ -52,7 +52,12 @@ export function EmptyGreeting() {
           onClick={() => setPopping(true)}
           onAnimationEnd={() => setPopping(false)}
           className={cn(
-            "shrink-0 outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in",
+            // The GLYPH is 1.32rem (21px) at mobile size, which is the visual
+            // weight the greeting wants. The TARGET must not be: WCAG 2.2 2.5.8
+            // asks for 24x24 CSS px. grid + place-items keeps the mark exactly
+            // where it was and grows only the hit area around it, so nothing
+            // moves and the button becomes tappable.
+            "grid size-6 shrink-0 place-items-center outline-none [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in sm:size-8",
             popping && "juno-mark-popping",
           )}
         >
@@ -69,8 +74,17 @@ export function EmptyGreeting() {
         className="empty-greeting text-center font-serif text-[1.7rem] font-normal leading-[1.12] tracking-tight sm:text-[2.35rem]"
         suppressHydrationWarning
       >
-        {/* The greeting and the name rise as two beats rather than one block. */}
-        <span className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in">
+        {/* The greeting and the name rise as two beats rather than one block.
+            suppressHydrationWarning belongs HERE, not only on the <h1>: React
+            does not apply it to deeply nested children, and this is the node
+            whose text differs. The server picks its bucket from UTC and the
+            client from the visitor's own clock, so any timezone that crosses a
+            bucket boundary hydrates with different words — which is the whole
+            point of the effect below, not a bug to fix. */}
+        <span
+          suppressHydrationWarning
+          className="inline-block [animation-fill-mode:backwards] [animation-delay:60ms] motion-safe:animate-rise-in"
+        >
           {phrase}
           {firstName ? "," : null}
         </span>

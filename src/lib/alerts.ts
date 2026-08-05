@@ -1,5 +1,6 @@
 import "server-only";
 import { sendEmail } from "@/lib/email";
+import { logAsync } from "@/lib/logger";
 
 /**
  * Operator alerts — the "something is wrong with the deployment" channel, as
@@ -37,6 +38,32 @@ export interface AlertInput {
   severity?: AlertSeverity;
   /** Structured context. Never put a secret or a user's email in here. */
   detail?: Record<string, unknown>;
+  /**
+   * Whether this alert is worth an email. Defaults to true.
+   *
+   * Set false for conditions that are real, worth recording, and *already
+   * known to the person who would receive the mail* — a provider account with
+   * no credit left is the case this exists for. It is not an incident to be
+   * paged about; it is a funding state only the owner can change, it persists
+   * for as long as the account is dry, and the log line still records it.
+   */
+  mail?: boolean;
+}
+
+/**
+ * Alert kinds the operator has muted, as `kind` or `kind:key`, comma-separated.
+ *
+ * An escape hatch that does not need a deploy: mail can be silenced from the
+ * environment when a known condition starts producing noise, without editing
+ * the call site or losing the log line.
+ */
+function mutedKinds(): Set<string> {
+  return new Set(
+    (process.env.ALERT_MUTED_KINDS ?? "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
 }
 
 /** One mail per kind:key per hour. The log line is never suppressed. */
@@ -102,13 +129,19 @@ export function alertOperator(input: AlertInput): void {
   const dedupeKey = input.key ? `${input.kind}:${input.key}` : input.kind;
   const severity = input.severity ?? "critical";
 
-  console.error("[alert]", {
+  logAsync("error", "alert", {
     kind: input.kind,
     ...(input.key ? { key: input.key } : {}),
     severity,
     title: input.title,
     ...(input.detail ?? {}),
   });
+
+  // The log line above is unconditional; only delivery is suppressed. An alert
+  // that is not worth waking someone for is still worth being able to grep.
+  if (input.mail === false) return;
+  const muted = mutedKinds();
+  if (muted.has(input.kind) || muted.has(dedupeKey)) return;
 
   if (!shouldMail(dedupeKey, Date.now())) return;
 

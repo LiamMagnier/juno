@@ -118,8 +118,17 @@ jobs:
           set -euo pipefail
           newest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
           sudo xcode-select -s "$newest/Contents/Developer"
-          xcodebuild -version
-          major=$(xcodebuild -version | head -1 | sed -E 's/Xcode ([0-9]+).*/\1/')
+          # Captured once, then parsed from the variable — never piped into
+          # `head`. `head` closes the pipe after the first line, `xcodebuild`
+          # writes into it anyway and dies with an uncaught
+          # NSFileHandleOperationException ("Broken pipe"), and under `pipefail`
+          # that non-zero status fails the whole pipeline. So this step reported
+          # a version gate FAILURE on a runner that satisfied it — Xcode 26.6
+          # against a floor of 26. `native/Scripts/release-macos.sh` carries the
+          # same warning about `codesign | grep -q` for the same reason.
+          version=$(xcodebuild -version)
+          printf '%s\n' "$version"
+          major=$(printf '%s\n' "$version" | sed -n -E '1s/Xcode ([0-9]+).*/\1/p')
           if [ "$major" -lt "$REQUIRED_XCODE_MAJOR" ]; then
             echo "::error::JunoDesktop targets macOS $REQUIRED_XCODE_MAJOR and needs Xcode $REQUIRED_XCODE_MAJOR or newer; this runner has Xcode $major."
             echo "::error::Pin a runner image that ships it, or lower MACOSX_DEPLOYMENT_TARGET (which would remove Liquid Glass)."
@@ -211,18 +220,27 @@ jobs:
         run: |
           # `SWIFT_COMPILATION_MODE=wholemodule` is a TOOLCHAIN WORKAROUND, not
           # a preference. Swift 6.3.3 — the newest on the runner image — crashes
-          # in IRGen emitting the reabstraction thunk for an `@isolated(any)
-          # async () -> Bool` closure (`@$sSbScA_pSgIeAghyg_SbIeAghn_TR`) while
-          # batch compiling this target. The crash is in the compiler, not the
-          # source: the same tree builds clean on Xcode 27, and whole-module
-          # changes how the thunk is emitted and steps around it.
+          # in IRGen emitting the reabstraction thunk
+          # `@$sSbScA_pSgIeAghyg_SbIeAghn_TR`. The crash is in the compiler, not
+          # the source: the same tree builds clean on Xcode 27.
           #
-          # This was added in 89faf77, removed in e67840c in favour of a source
-          # fix, and that fix was reverted with an unrelated rewrite in 9c84d4c,
-          # leaving iOS CI red ever since. The source fix is back too — the two
-          # are belt and braces, because the shape is easy to reintroduce and
-          # `async -> Bool` is an ordinary thing to write. Remove this when the
-          # runner image ships a toolchain that does not crash.
+          # On its own it does not work. This was added in 89faf77, removed in
+          # e67840c in favour of a source fix, and that fix was reverted with an
+          # unrelated rewrite in 9c84d4c; when it was restored in ae4b1b2 only
+          # this half came back, and every run since has crashed on the same
+          # symbol with whole-module already set. The source fix is what
+          # actually removes the thunk; this is kept as the second layer.
+          #
+          # Note also that the symbol is *not* an `async () -> Bool` closure, as
+          # earlier notes here read — demangled it is `@isolated(any) @Sendable
+          # (Bool) -> ()` reabstracted to `(@in_guaranteed Bool) -> ()`, a
+          # closure that *takes* a Bool. That misreading is why previous
+          # attempts went looking in the camera service. It comes from passing
+          # an already-`@MainActor` closure value into `Binding.init(set:)`; see
+          # the note at the call site in JunoMobileAttachmentMenu.
+          #
+          # Remove this when the runner image ships a toolchain that does not
+          # crash.
           xcodebuild \
             -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
             -scheme JunoMobile \
@@ -233,3 +251,31 @@ jobs:
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+      - name: Unit tests
+        # The iOS job compiled and stopped. JunoMobileTests — 56 tests across
+        # seven files — had never been run by CI, while the macOS job has run
+        # its equivalent all along. A test suite nothing executes is not
+        # coverage, it is a file.
+        #
+        # A concrete simulator, not `generic/platform=iOS Simulator`: the build
+        # above can target the generic destination, but `test` needs a device to
+        # run on. The name is resolved from what the runner image actually has
+        # rather than pinned, so a new image with a newer iPhone does not turn
+        # this red.
+        run: |
+          set -euo pipefail
+          device=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys; ds=json.load(sys.stdin)['devices']; \
+                print(next(d['name'] for rt in sorted(ds) if 'iOS' in rt for d in ds[rt] if d['name'].startswith('iPhone')))")
+          echo "Running JunoMobileTests on $device"
+          xcodebuild \
+            -project native/iOS/JunoMobile/JunoMobile.xcodeproj \
+            -scheme JunoMobile \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=$device" \
+            -derivedDataPath "$RUNNER_TEMP/mobile-dd" \
+            -only-testing:JunoMobileTests \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            CODE_SIGNING_ALLOWED=NO \
+            test

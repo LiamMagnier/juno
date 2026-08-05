@@ -127,6 +127,11 @@ export function nativeModelCatalog(models: ModelInfo[], plan?: Plan) {
         imageEdit: model.modality === "image" ? imageEditSupport(model.provider) : "none",
       },
       deprecationNote: model.deprecationNote ?? null,
+      // The day the provider stops serving it, "YYYY-MM-DD", so a client can
+      // say "Available until 23 Oct 2026" instead of parsing it back out of the
+      // English sentence above. Null for everything that is not retiring, which
+      // is most of the catalog.
+      retiresOn: auto ? null : model.retiresOn ?? null,
     };
   });
   const digest = createHash("sha256").update(JSON.stringify(payload)).digest("hex");

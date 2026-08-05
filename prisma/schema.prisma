@@ -242,7 +242,10 @@ model EntityRevision {
   parentEntityId String?
   revision       Int       @default(1)
   deletedAt      DateTime?
-  updatedAt      DateTime  @updatedAt
+  // Defaulted in the database as well as stamped by the client: rows here are
+  // written by the juno_record_account_change() trigger, not only by Prisma,
+  // so the column keeps a server-side default for writers outside the client.
+  updatedAt      DateTime  @default(now()) @updatedAt
 
   account User @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -551,10 +554,14 @@ model Attachment {
   project      Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([userId])
-  @@index([userId, idempotencyKey])
   @@index([conversationId])
   @@index([messageId])
   @@index([projectId])
+  // Unique, not a plain index: /api/v1/attachments resolves a retry by reading
+  // the prior row and only then inserting, so the database constraint is what
+  // actually stops two concurrent retries of one upload from both landing.
+  // Nullable key + NULLs-are-distinct keeps every keyless web upload legal.
+  @@unique([userId, idempotencyKey])
   // /api/files resolves authorization by object key, once per request — and
   // media is served over HTTP Range, so one video is several requests.
   @@index([storageKey])

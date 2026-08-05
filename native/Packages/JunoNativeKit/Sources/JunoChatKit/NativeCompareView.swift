@@ -286,7 +286,13 @@ struct NativeComparePane: View {
     @State private var copied = false
 
     private var modelBinding: Binding<String> {
-        Binding(get: { pane.modelID }, set: setModel)
+        // A literal closure rather than passing `setModel` itself. SwiftUI's
+        // `Binding.init(get:set:)` wants an `@isolated(any) @Sendable` setter,
+        // and a stored `(String) -> Void` carries no isolation — converting it
+        // is a data-race diagnostic that the CI toolchain treats as an error
+        // even where a local one only warns. Written out, the closure inherits
+        // this view's main-actor isolation and the conversion disappears.
+        Binding(get: { pane.modelID }, set: { setModel($0) })
     }
 
     var body: some View {

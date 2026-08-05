@@ -285,7 +285,12 @@ public final class SessionController {
     public private(set) var events: [SessionEvent] = []
     public private(set) var pendingApprovals: [ApprovalRequest] = []
     public private(set) var changes: [TrackedChange] = []
-    public private(set) var terminal: [TerminalLine] = []
+    /// Console lines, assembled by ``SessionTerminalLog``. Reading through the
+    /// coordinator keeps `@Observable` tracking intact: the struct is a stored
+    /// property, so a mutation publishes exactly as the five separate stored
+    /// properties this replaced did.
+    public var terminal: [TerminalLine] { terminalLog.lines }
+    private var terminalLog = SessionTerminalLog()
     public private(set) var lastTestRun: TestRunCompletedEvent?
     /// The tool call `lastTestRun` came from, so the Tests pane can show that
     /// run's own output instead of the tail of the terminal.
@@ -311,6 +316,18 @@ public final class SessionController {
     /// and empty whenever nothing is streaming. Never persisted: the
     /// `assistantMessage` event is the record, and this is replaced by it.
     public private(set) var liveAssistantText = ""
+    /// What each running sub-agent is doing at this moment, keyed by its own
+    /// session.
+    ///
+    /// Read live off the shared store rather than persisted into this
+    /// transcript. The child records every one of its tool calls in its own
+    /// event file; copying each of them up would double the write volume of a
+    /// delegated run to restate something already on disk one directory over.
+    /// The lifecycle transitions *are* persisted — see `SubagentUpdateEvent` —
+    /// so reopening a session still shows what each agent was and how it ended;
+    /// only the step-by-step ticker is transient, which is the correct lifetime
+    /// for a sentence that is only true for four seconds.
+    public var subagentActivity: [CodeSessionID: String] { subagentIndex.activity }
     public var composerText = ""
     /// Files explicitly selected through the composer's `@file` typeahead.
     ///
@@ -368,14 +385,14 @@ public final class SessionController {
     /// built on first send and replaced whenever that contract changes.
     private var orchestrator: AgentOrchestrator?
     private var orchestratorContract: TurnContract?
-    private var terminalLineCounter = 0
-    /// The last console line, when it ended without a line break and the rest of
-    /// it is still to arrive.
-    private var pendingTerminalLine: (id: Int, channel: ToolOutputChannel, toolCallID: String?)?
     /// The tool call that has started and not yet completed. Side effects are
     /// appended while the call is still open, which is what lets a test result
     /// be attributed to the run that produced it.
     private var openToolCallID: String?
+    /// The delegated sub-agents that have not finished, and the line each is
+    /// showing. The store observer sees every session's events, so this is what
+    /// tells a child's step apart from an unrelated session's.
+    private var subagentIndex = SessionSubagentIndex()
     private var reviewStates: [String: TrackedChange.ReviewState] = [:]
     private var lineStatsOverrides: [String: (added: Int, removed: Int)] = [:]
     private var hunkReviewCheckpointIDs: Set<String> = []
@@ -729,6 +746,7 @@ public final class SessionController {
         let restored = await live.store.events(for: sessionID)
         events = restored
         rebuildTerminal()
+        subagentIndex.rebuild(from: events)
         rebuildDerivedState()
         if let current = try? await live.store.session(id: sessionID) {
             session = current
@@ -2039,11 +2057,11 @@ public final class SessionController {
 
     /// One sub-agent's own transcript, read from the shared session store.
     ///
-    /// `DelegateTaskTool` creates its children as ordinary sessions and returns
-    /// the child's identifier on the first line of its result. `CodeSession` has
-    /// no parent link, so that line is the only correlation there is — which is
-    /// also why a child is loaded on demand here rather than nested in the
-    /// parent's own event list.
+    /// A child is a real session — hidden from every list, but a full record —
+    /// so its rows render through the same views as its parent's rather than
+    /// through a summary of them. Loaded on demand rather than mirrored into the
+    /// parent's event list, because a run can delegate several times and eagerly
+    /// reading every child's transcript would mean a disk read per row.
     public func subAgentTranscript(_ childID: CodeSessionID) async -> [SessionEvent] {
         guard let live else { return [] }
         return await live.store.events(for: childID)
@@ -2061,6 +2079,12 @@ public final class SessionController {
         case let .eventAppended(event) where event.sessionID == sessionID:
             events.append(event)
             integrate(event)
+        // A sub-agent's own step. It belongs to a different session's transcript
+        // and is never appended to this one — it only updates the line the panel
+        // and the delegating row show while that agent is working.
+        case let .eventAppended(event)
+        where subagentIndex.isRunning(event.sessionID):
+            subagentIndex.applyStep(event)
         default:
             break
         }
@@ -2108,6 +2132,8 @@ public final class SessionController {
             if let openToolCallID {
                 lastTestRunToolCallID = openToolCallID
             }
+        case let .subagentUpdated(update):
+            subagentIndex.apply(update)
         case .assistantMessage:
             // The persisted message is the same text that was streaming into
             // `liveAssistantText`; keeping both would render the reply twice.
@@ -2128,114 +2154,34 @@ public final class SessionController {
         appendTerminalChunk(channel: channel, text: text, toolCallID: toolCallID)
     }
 
-    /// Replays the transcript's recorded output into the console.
-    ///
-    /// Reopening a session used to show an empty log beside a transcript full of
-    /// tool output, because the console was only ever fed by events arriving live.
-    /// The output is part of the record, so it is rebuilt from the record.
-    private func rebuildTerminal() {
-        terminal = []
-        terminalLineCounter = 0
-        pendingTerminalLine = nil
-        for event in events {
-            guard case let .toolOutput(output) = event.payload else { continue }
-            appendTerminalChunk(
-                channel: output.channel,
-                text: output.text,
-                toolCallID: output.toolCallID
-            )
-        }
-    }
-
-    /// Turns streamed output into console lines.
-    ///
-    /// Output arrives as pipe reads, not as lines: one chunk can carry twenty
-    /// newlines and can end mid-line, with the rest of that line arriving in the
-    /// next chunk. Splitting on newlines and continuing the previous partial line
-    /// is what makes the console a line-oriented log — and what makes the
-    /// 2,000-entry bound mean two thousand *lines* rather than two thousand
-    /// arbitrary reads. Carriage returns are treated as line breaks: the executor
-    /// runs commands with `TERM=dumb` and `NO_COLOR`, so a lone `\r` is a
-    /// progress redraw with no cursor to honour it.
+    /// Turns streamed output into console lines. The line assembly itself lives
+    /// in ``SessionTerminalLog`` — see there for why a chunk is not a line.
     private func appendTerminalChunk(
         channel: ToolOutputChannel,
         text: String,
         toolCallID: String?
     ) {
-        guard !text.isEmpty else { return }
-        var buffer = text
-            .replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-
-        if let pending = pendingTerminalLine,
-           pending.channel == channel,
-           pending.toolCallID == toolCallID,
-           let index = terminal.lastIndex(where: { $0.id == pending.id })
-        {
-            buffer = terminal[index].text + buffer
-            terminal.remove(at: index)
-        }
-        pendingTerminalLine = nil
-
-        let endsOnLineBreak = buffer.hasSuffix("\n")
-        var pieces = buffer.components(separatedBy: "\n")
-        if endsOnLineBreak {
-            pieces.removeLast()
-        }
-        for (offset, piece) in pieces.enumerated() {
-            terminalLineCounter += 1
-            terminal.append(
-                TerminalLine(
-                    id: terminalLineCounter,
-                    channel: channel,
-                    text: piece,
-                    toolCallID: toolCallID
-                )
-            )
-            if offset == pieces.count - 1, !endsOnLineBreak {
-                pendingTerminalLine = (terminalLineCounter, channel, toolCallID)
-            }
-        }
-        if terminal.count > 2_000 {
-            terminal.removeFirst(terminal.count - 2_000)
-        }
+        terminalLog.append(channel: channel, text: text, toolCallID: toolCallID)
     }
 
-    /// Aggregates fileChanged events into per-path tracked changes.
+    /// Replays the transcript's recorded output into the console.
+    ///
+    /// Reopening a session used to show an empty log beside a transcript full of
+    /// tool output, because the console was only ever fed by events arriving
+    /// live. The output is part of the record, so it is rebuilt from the record.
+    private func rebuildTerminal() {
+        terminalLog.rebuild(from: events)
+    }
+
+    /// Recomputes everything derived from the transcript. The per-path
+    /// aggregation is ``TrackedChangeProjection``; what stays here is the state
+    /// that belongs to the controller rather than to the projection.
     private func rebuildDerivedState() {
-        var byPath: [String: TrackedChange] = [:]
-        var order: [String] = []
-        for event in events {
-            guard case let .fileChanged(change) = event.payload else { continue }
-            let key = change.path.value
-            if var existing = byPath[key] {
-                existing.kind = change.kind
-                existing.linesAdded += change.linesAdded
-                existing.linesRemoved += change.linesRemoved
-                if let checkpointID = change.checkpointID {
-                    existing.checkpointIDs.append(checkpointID)
-                }
-                byPath[key] = existing
-            } else {
-                order.append(key)
-                byPath[key] = TrackedChange(
-                    path: key,
-                    kind: change.kind,
-                    linesAdded: change.linesAdded,
-                    linesRemoved: change.linesRemoved,
-                    checkpointIDs: change.checkpointID.map { [$0] } ?? []
-                )
-            }
-        }
-        changes = order.compactMap { key in
-            guard var change = byPath[key] else { return nil }
-            if let stats = lineStatsOverrides[key] {
-                change.linesAdded = stats.added
-                change.linesRemoved = stats.removed
-            }
-            change.reviewState = reviewStates[key] ?? .pending
-            return change
-        }
+        changes = TrackedChangeProjection.project(
+            events: events,
+            reviewStates: reviewStates,
+            lineStatsOverrides: lineStatsOverrides
+        )
 
         // A restored transcript has to project its last test run too. Without
         // this a reopened session claims no tests have ever run, even though the
@@ -2277,8 +2223,7 @@ public final class SessionController {
         self.previewFixture = fixture
         self.events = fixture.events
         self.pendingApprovals = fixture.pendingApprovals
-        self.terminal = fixture.terminal
-        self.terminalLineCounter = fixture.terminal.last?.id ?? 0
+        self.terminalLog.adopt(lines: fixture.terminal)
         self.lastTestRun = fixture.lastTestRun
         self.gitStatus = fixture.gitStatus
         self.gitHistory = fixture.gitHistory
@@ -2288,6 +2233,7 @@ public final class SessionController {
         self.transientError = fixture.transientError
         self.composerText = fixture.composerText
         self.runStartedAt = fixture.runStartedAt
+        subagentIndex.rebuild(from: events)
         rebuildDerivedState()
     }
 

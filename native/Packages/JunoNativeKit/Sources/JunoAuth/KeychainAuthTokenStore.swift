@@ -43,7 +43,13 @@ public enum SecurityKeychainClientError: Error, Equatable, Sendable, LocalizedEr
         case errSecInteractionNotAllowed:
             "the device is locked"
         case errSecAuthFailed:
-            "authentication failed"
+            // Almost always a re-signing rather than anything the user did
+            // wrong: Keychain ACLs name the code signature, so a build signed
+            // with a different certificate cannot read the previous build's
+            // saved credential. "Authentication failed" sent users looking for
+            // a password problem that does not exist; signing in again is the
+            // fix, and `upsert` now clears the unreachable item so it works.
+            "the saved sign-in was stored by a different version of Juno — sign in again"
         case errSecDecode:
             "the stored item could not be decoded"
         case errSecNotAvailable:
@@ -183,6 +189,24 @@ public struct SystemSecurityKeychainClient: SecurityKeychainClient {
             )
         }
         guard updateStatus == errSecSuccess else {
+            // The item is there and this signature may not touch it — the same
+            // re-signing case the read path handles. Updating in place is not
+            // possible, but replacing it is: deleting does not require
+            // decrypting the value, so remove the unreachable item and add the
+            // new one. Without this, signing in again fails exactly where the
+            // read did and the user cannot get past the sign-in screen at all.
+            if updateStatus == errSecAuthFailed {
+                _ = withKeychainFallback {
+                    SecItemDelete(baseQuery(for: item) as CFDictionary)
+                }
+                let replaced = withKeychainFallback {
+                    SecItemAdd(newItemAttributes(data, for: item) as CFDictionary, nil)
+                }
+                guard replaced == errSecSuccess else {
+                    throw SecurityKeychainClientError.unexpectedStatus(Int32(replaced))
+                }
+                return
+            }
             throw SecurityKeychainClientError.unexpectedStatus(Int32(updateStatus))
         }
     }
@@ -434,6 +458,37 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         try loadStored(for: accountID)
     }
 
+    /// Writes a credential, replacing one this build is not allowed to touch.
+    ///
+    /// Keychain ACLs name the *code signature*, not the bundle id, so an app
+    /// re-signed with a different certificate cannot update the credential its
+    /// predecessor saved — `SecItemAdd` answers `errSecDuplicateItem` and the
+    /// `SecItemUpdate` behind it answers `errSecAuthFailed`.
+    ///
+    /// The read side of that is handled deliberately elsewhere: the runtime
+    /// keeps the cached session visible rather than signing the user out, since
+    /// the same status also covers transient conditions. What was missing was
+    /// the way out. Signing in again failed exactly where the read did, so no
+    /// action available to the user recovered the app — which is how "Keychain
+    /// error -25293" became terminal for anyone upgrading into a build signed
+    /// with a different certificate.
+    ///
+    /// Deleting does not require decrypting the value, so it succeeds where
+    /// updating does not. Scoped to that one status on purpose: a delete-then-add
+    /// on the ordinary path would open a window where the credential is simply
+    /// gone if the add then failed.
+    private func writeReplacingUnreachable(
+        _ data: Data,
+        for item: SecurityKeychainItem
+    ) throws {
+        do {
+            try securityClient.upsert(data, for: item)
+        } catch SecurityKeychainClientError.unexpectedStatus(errSecAuthFailed) {
+            _ = try? securityClient.delete(item)
+            try securityClient.upsert(data, for: item)
+        }
+    }
+
     private func loadStored(for accountID: AccountID) throws -> AuthTokenSet? {
         guard let data = try securityClient.read(item(for: accountID)) else {
             return nil
@@ -495,7 +550,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         let data = try encode(tokenSet)
         let tokenItem = item(for: tokenSet.accountID)
         do {
-            try securityClient.upsert(data, for: tokenItem)
+            try writeReplacingUnreachable(data, for: tokenItem)
             try securityClient.upsert(
                 Data(tokenSet.accountID.rawValue.utf8),
                 for: activeAccountItem()
@@ -530,7 +585,7 @@ public actor KeychainAuthTokenStore: AuthTokenStore {
         }
 
         let data = try encode(tokenSet)
-        try securityClient.upsert(data, for: item(for: accountID))
+        try writeReplacingUnreachable(data, for: item(for: accountID))
         return true
     }
 

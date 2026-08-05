@@ -32,6 +32,19 @@ targets:
         buildPhase: resources
       - path: ../../iOS/JunoMobile/Resources/Fonts
         buildPhase: resources
+      # The SAME string catalog the iOS app ships, not a copy.
+      #
+      # The shared packages call String(localized:) without a `bundle:`, so the
+      # lookup goes to Bundle.main — the app bundle. iOS has this catalog and
+      # resolves; macOS had none, so all 40 dotted keys rendered as literals on
+      # screen: a user saw "connections.blocked.not-configured" and
+      # "diagnostics.phase.idle" instead of English.
+      #
+      # Referenced across rather than duplicated, for the same reason Fonts is
+      # above: two catalogs would drift, and a key added for one app would go
+      # missing on the other.
+      - path: ../../iOS/JunoMobile/Resources/Localizable.xcstrings
+        buildPhase: resources
     dependencies:
       - package: JunoNativeKit
         product: JunoAPI

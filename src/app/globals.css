@@ -3,6 +3,35 @@
 @tailwind utilities;
 
 /*
+ * WHY THIS IS ONE 2,600-LINE FILE, AND WHY SPLITTING IT IS NOT FREE.
+ *
+ * The obvious refactor — move each @layer into its own file and @import them
+ * back in order — was tried, measured, and reverted. It silently DROPS THE
+ * ENTIRE `@layer components` BLOCK.
+ *
+ * What was tried: postcss-import added ahead of tailwindcss in
+ * postcss.config.mjs, this file reduced to the three @tailwind directives plus
+ * five @imports in cascade order.
+ *
+ * What happened, measured by diffing the emitted stylesheets before and after:
+ * the main CSS bundle fell from 203,074 to 140,901 bytes. The :root tokens
+ * survived; every component rule did not — `field-well`, `aicss-*`,
+ * `juno-mark-popping`, `empty-greeting`, 235 named classes in total. Tailwind's
+ * own `@tailwind components` directive had already claimed that layer, so the
+ * imported file's `@layer components { … }` had nothing to merge into.
+ *
+ * It is not a purge problem: those classes are used in .tsx files and the
+ * content glob in tailwind.config.ts (src, ts + tsx) finds them. Written out
+ * rather than pasted: the glob contains a star-slash, which ends this comment
+ * and makes the rest of the file parse as CSS — "Unknown word", whole build.
+ *
+ * So: any split has to solve the layer-ownership problem first — not merely put
+ * the imports in the right order. Verify the same way if you attempt it. Build,
+ * diff the emitted CSS, and treat anything short of byte-identical as a
+ * regression.
+ */
+
+/*
  * The composer aura's two animated inputs, registered so they can interpolate.
  *
  * Both are read inside a gradient, and an unregistered custom property is a raw

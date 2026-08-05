@@ -62,7 +62,7 @@ function extract(err: unknown): ExtractedError {
     name?: string;
     message?: string;
     code?: string;
-    error?: { message?: string; type?: string; code?: string } | string;
+    error?: { message?: string; type?: string; code?: string; status?: string | number } | string;
   };
   const errObj = typeof e?.error === "object" && e.error !== null ? e.error : undefined;
   const parts = [
@@ -71,6 +71,10 @@ function extract(err: unknown): ExtractedError {
     e?.message,
     errObj?.type,
     errObj?.code,
+    // Google puts its machine-readable class here rather than in `type` or
+    // `code` — RESOURCE_EXHAUSTED is the one signal that separates its throttle
+    // from an out-of-credit account, whose prose is word-for-word identical.
+    typeof errObj?.status === "string" ? errObj.status : "",
     e?.code,
   ].filter((s): s is string => typeof s === "string" && s.length > 0);
   return {
@@ -82,14 +86,21 @@ function extract(err: unknown): ExtractedError {
 
 // "You exceeded your current quota", "credit balance is too low",
 // "Insufficient Balance", "no credits remaining", 余额不足 / 请充值.
-//
-// The negated forms are spelled out because xAI phrases an unfunded team as
-// "The team does not have any credits." — which contains neither "no credits"
-// nor "balance", and so used to fall through to the 403 rule below and be
-// reported as a dead key.
-const BILLING = /balance|insufficient|recharge|billing|out of credit|no credits|(?:not have any|have no|hasn't got any|without any)\s+credits?|credit.{0,20}too low|exceeded your current quota|quota.{0,20}exceed|arrearage|余额|充值/i;
+// Covers, verbatim: "Your credit balance is too low" (Anthropic), "You have no
+// credits remaining" (OpenAI), "Insufficient Balance" (DeepSeek), "The team
+// does not have any credits" (xAI), plus the Chinese-provider phrasings.
+const BILLING = /balance|insufficient|recharge|billing.?error|arrearage|(?:out of|no|any|zero|without)\s+(?:remaining\s+)?credits?|credit.{0,20}too low|余额|充值/i;
+// "You exceeded your current quota, please check your plan and billing details"
+// is sent BOTH by OpenAI for a genuinely unfunded account and by Google for an
+// ordinary free-tier or per-minute rate limit. The sentence cannot separate
+// them; only OpenAI tags it `insufficient_quota`, which BILLING catches above on
+// `insufficient`. So the bare wording is deliberately NOT in BILLING — matching
+// it there made one throttled Gemini probe mark the whole provider account
+// faulted for the 30-minute unhealthy TTL, reroute live chats off it, and page
+// the operator about a provider that was fine.
+const QUOTA = /exceeded your current quota|quota.{0,20}exceed|billing/i;
 const AUTH = /invalid.*api.?key|invalid x-api-key|authentication|unauthenticated|unauthorized|api key not valid|incorrect api key|expired.*(key|token)/i;
-const RATE = /rate.?limit|too many requests|overloaded|concurrent|tpm|rpm/i;
+const RATE = /rate.?limit|too many requests|overloaded|concurrent|tpm|rpm|resource_exhausted/i;
 const CONTEXT = /context length|context window|maximum context|too many tokens|prompt is too long|input is too long|reduce the length|string too long|exceeds.{0,20}token/i;
 const FILTER = /content.?(filter|policy)|safety|blocked by|prohibited|risk control|data_inspection/i;
 const NOT_FOUND = /not found|does not exist|unknown model|no such model|model_not_found|unsupported model/i;
@@ -100,6 +111,11 @@ const NETWORK = /econnreset|econnrefused|enotfound|etimedout|socket hang up|netw
  * Classify without composing a message. Ordering matters: several providers
  * report an unfunded account as 429, so the billing test must beat the
  * rate-limit test, and Anthropic reports it as a 400 `billing_error`.
+ *
+ * The exception is bare quota wording, which is checked AFTER the rate-limit
+ * test — see QUOTA. Misreading a throttle as a billing fault is expensive here:
+ * `isAccountFault` turns it into a 30-minute unhealthy verdict for the whole
+ * provider, plus a reroute and an operator page.
  */
 export function classifyProviderError(err: unknown): {
   class: ProviderErrorClass;
@@ -111,14 +127,17 @@ export function classifyProviderError(err: unknown): {
   if (name === "AbortError" || NETWORK.test(raw)) return { class: "network", status, raw };
   if (BILLING.test(raw) || status === 402) return { class: "billing", status, raw };
   if (status === 401 || AUTH.test(raw)) return { class: "auth", status, raw };
-  // 403 is the provider saying this key may not do this. An unfunded team also
-  // answers 403 on xAI, but that body is caught by the billing test above; what
-  // reaches here is a genuine permission refusal. Either way it is an account
-  // fault: an operator has to touch the provider account before it works again.
+  // 403 is the provider saying this key may not do this. xAI answers 403 on an
+  // unfunded team. Treat it as an account fault either way: both mean an
+  // operator has to touch the provider account before it works again.
   if (status === 403) return { class: "auth", status, raw };
   if (CONTEXT.test(raw)) return { class: "context", status, raw };
   if (FILTER.test(raw)) return { class: "content_filter", status, raw };
   if (status === 429 || RATE.test(raw)) return { class: "rate_limit", status, raw };
+  // Quota wording that survived the 429 test above. Nothing throttles with a
+  // non-429, so at this point "quota"/"billing" is the account fault it sounds
+  // like rather than Google's throttle phrasing.
+  if (QUOTA.test(raw)) return { class: "billing", status, raw };
   if (status === 404 || NOT_FOUND.test(raw)) return { class: "not_found", status, raw };
   if ((typeof status === "number" && status >= 500) || CAPACITY.test(raw)) {
     return { class: "capacity", status, raw };

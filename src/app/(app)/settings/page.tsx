@@ -146,6 +146,12 @@ function formatDate(ms: number): string {
 }
 
 /** Claude-style usage row: label + reset subtitle, a bar, and "N% used". */
+/** Euro amounts, with enough precision to be believed at the low end. */
+function formatEur(amount: number): string {
+  if (amount > 0 && amount < 0.01) return "<0,01 €";
+  return `${amount.toFixed(2).replace(".", ",")} €`;
+}
+
 function UsageMeter({ label, subtitle, pct }: { label: string; subtitle: string; pct: number }) {
   const shown = Math.min(100, Math.round(pct * 100));
   const hot = pct >= 0.9;
@@ -345,6 +351,26 @@ export default function SettingsPage() {
   const weeklySubtitle =
     nowMs == null ? "7-day window" : `Resets ${formatResetMoment(windows.weekly.resetsAtMs)}`;
 
+  /*
+   * The euro figures, shown rather than withheld.
+   *
+   * Juno computes an exact per-request cost, writes an ApiSpend ledger row for
+   * every call, and enforces a monthly budget in euros — and this dashboard
+   * showed percentages only. Seven of eight incumbents publish nothing but
+   * relative multipliers ("4x higher"), and Google removed its numeric quotas
+   * outright; on the indie side the closest comparable dashboards carry no
+   * currency at all. The number exists here and is the clearest thing Juno can
+   * say that nobody else does, so it says it.
+   *
+   * Formatted from the same micro-USD the ledger stores, converted at the same
+   * rate the server bills at — no second source of truth.
+   */
+  const eurPerUsd = spend.eurPerUsd > 0 ? spend.eurPerUsd : 1;
+  const spentEur = (spend.spentMicroUsd / 1_000_000) * eurPerUsd;
+  const budgetEur =
+    spend.budgetMicroUsd == null ? null : (spend.budgetMicroUsd / 1_000_000) * eurPerUsd;
+  const remainingEur = budgetEur == null ? null : Math.max(0, budgetEur - spentEur);
+
   const renewsAtMs = spend.billing.renewsAtMs;
   const cancelAtPeriodEnd = spend.billing.cancelAtPeriodEnd;
 
@@ -404,7 +430,8 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* Usage windows (Right) — rolling session + weekly, percentages only */}
+              {/* Usage windows (Right) — euros remaining this period, then the
+                  rolling session + weekly percentages */}
               <div className="field-well md:col-span-3 flex flex-col justify-center rounded-[12px] border border-border/50 p-4 bg-card">
                 {unlimited ? (
                   <div>
@@ -434,6 +461,19 @@ export default function SettingsPage() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-4">
+                    {budgetEur != null && (
+                      <div className="flex items-baseline justify-between gap-3">
+                        <span className="font-serif text-heading font-medium tabular-nums">
+                          {formatEur(remainingEur ?? 0)}{" "}
+                          <span className="font-sans text-caption font-normal text-muted-foreground">
+                            left this month
+                          </span>
+                        </span>
+                        <span className="font-mono text-caption tabular-nums text-muted-foreground">
+                          {formatEur(spentEur)} of {formatEur(budgetEur)}
+                        </span>
+                      </div>
+                    )}
                     <UsageMeter label="Current session" subtitle={sessionSubtitle} pct={windows.session.pct} />
                     <div className="border-t border-border/40" />
                     <span className="block font-mono text-[10px] text-muted-foreground/80">

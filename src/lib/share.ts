@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "crypto";
 import { cache } from "react";
 import type { Share, ShareKind } from "@prisma/client";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { decryptMessageTextSafe } from "@/lib/message-crypto";
 import type { ArtifactType } from "@/lib/message-content";
@@ -132,7 +132,9 @@ export async function listShares(userId: string): Promise<Share[]> {
 const findActiveShare = cache(async (token: string): Promise<Share | null> => {
   // Tokens are 32 chars; a cheap length gate skips the DB for junk URLs.
   if (token.length < 16 || token.length > 128) return null;
-  const share = await prisma.share.findUnique({ where: { token } });
+  // Unguarded by design: the token IS the capability, and the public page has
+  // no signed-in user to scope to.
+  const share = await prismaUnguarded.share.findUnique({ where: { token } });
   if (!share || share.revokedAt) return null;
   return share;
 });
@@ -149,7 +151,9 @@ export async function peekPublicShare(token: string): Promise<Share | null> {
 export async function getPublicShare(token: string): Promise<Share | null> {
   const share = await findActiveShare(token);
   if (!share) return null;
-  void prisma.share
+  // Unguarded for the same reason as the lookup: the viewer is a member of the
+  // public, and the id being bumped is one this request just resolved by token.
+  void prismaUnguarded.share
     .update({ where: { id: share.id }, data: { views: { increment: 1 } } })
     .catch(() => {});
   return share;

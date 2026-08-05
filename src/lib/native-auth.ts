@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { env } from "@/lib/env";
-import { prisma } from "@/lib/prisma";
+import { prisma, prismaUnguarded } from "@/lib/prisma";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   NATIVE_AUTH_CODE_TTL_MS,
@@ -87,7 +87,10 @@ export async function exchangeNativeAuthorizationCode(input: {
   const familyId = randomSecret(18);
   const installHash = installationHash(input.installationId);
 
-  const result = await prisma.$transaction(async (tx) => {
+  // Unguarded by design: redemption is keyed by the code hash because the code
+  // is what identifies the user — there is no session yet to scope the lookup
+  // to. The consume below re-states the owner it resolved.
+  const result = await prismaUnguarded.$transaction(async (tx) => {
     const grant = await tx.nativeAuthorizationCode.findUnique({
       where: { codeHash: hashSecret(input.code) },
       include: { user: { select: { id: true, sessionVersion: true, bannedAt: true } } },
@@ -104,7 +107,7 @@ export async function exchangeNativeAuthorizationCode(input: {
       return null;
     }
     const consumed = await tx.nativeAuthorizationCode.updateMany({
-      where: { id: grant.id, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { id: grant.id, userId: grant.userId, usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
     });
     if (consumed.count !== 1) return null;
@@ -270,7 +273,7 @@ export async function rotateNativeRefreshToken(rawToken: string) {
     if (!current) return { kind: "invalid" as const };
     if (current.usedAt || current.revokedAt) {
       await tx.nativeDeviceSession.updateMany({
-        where: { id: current.deviceSessionId, revokedAt: null },
+        where: { id: current.deviceSessionId, userId: current.deviceSession.userId, revokedAt: null },
         data: { revokedAt: new Date(), revocationReason: "refresh_token_reuse" },
       });
       await tx.nativeRefreshToken.updateMany({
@@ -300,7 +303,7 @@ export async function rotateNativeRefreshToken(rawToken: string) {
       },
     });
     await tx.nativeDeviceSession.update({
-      where: { id: current.deviceSessionId },
+      where: { id: current.deviceSessionId, userId: current.deviceSession.userId },
       data: { lastSeenAt: new Date() },
     });
     return { kind: "ok" as const, current };
@@ -308,10 +311,15 @@ export async function rotateNativeRefreshToken(rawToken: string) {
 
   if (outcome.kind === "reuse" || outcome.kind === "race") {
     if (outcome.kind === "race") {
-      const found = await prisma.nativeRefreshToken.findUnique({ where: { tokenHash: hashSecret(rawToken) } });
+      // The token row carries no userId of its own; pull the owner off the
+      // device session so the revocation below can be scoped to it.
+      const found = await prisma.nativeRefreshToken.findUnique({
+        where: { tokenHash: hashSecret(rawToken) },
+        include: { deviceSession: { select: { userId: true } } },
+      });
       if (found) {
         await prisma.$transaction([
-          prisma.nativeDeviceSession.updateMany({ where: { id: found.deviceSessionId, revokedAt: null }, data: { revokedAt: new Date(), revocationReason: "refresh_token_reuse" } }),
+          prisma.nativeDeviceSession.updateMany({ where: { id: found.deviceSessionId, userId: found.deviceSession.userId, revokedAt: null }, data: { revokedAt: new Date(), revocationReason: "refresh_token_reuse" } }),
           prisma.nativeRefreshToken.updateMany({ where: { deviceSessionId: found.deviceSessionId, familyId: found.familyId, revokedAt: null }, data: { revokedAt: new Date() } }),
         ]);
       }
@@ -338,8 +346,12 @@ export async function authenticateNativeBearer(value: string) {
     const expired = error instanceof Error && "code" in error && error.code === "expired";
     throw new NativeAuthError(expired ? "token_expired" : "unauthenticated", 401, expired ? "The access token expired." : "The access token is invalid.");
   }
+  // Both halves of the pair come from the verified token, so scoping the lookup
+  // by userId costs nothing and turns a mismatched pair into a miss. The
+  // explicit equality check below stays: it is the security invariant, and it
+  // must not become something only the guard enforces.
   const session = await prisma.nativeDeviceSession.findUnique({
-    where: { id: claims.deviceSessionId },
+    where: { id: claims.deviceSessionId, userId: claims.userId },
     include: { user: { select: { id: true, name: true, email: true, image: true, bannedAt: true, sessionVersion: true } } },
   });
   if (!session || session.userId !== claims.userId || session.revokedAt) {
@@ -348,7 +360,7 @@ export async function authenticateNativeBearer(value: string) {
   if (session.user.bannedAt || session.user.sessionVersion !== claims.sessionVersion) {
     throw new NativeAuthError("unauthenticated", 401, "This account session is no longer active.");
   }
-  void prisma.nativeDeviceSession.update({ where: { id: session.id }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
+  void prisma.nativeDeviceSession.update({ where: { id: session.id, userId: session.userId }, data: { lastSeenAt: new Date() } }).catch(() => undefined);
   return { user: session.user, deviceSession: session, accessTokenExpiresAt: claims.expiresAt };
 }
 

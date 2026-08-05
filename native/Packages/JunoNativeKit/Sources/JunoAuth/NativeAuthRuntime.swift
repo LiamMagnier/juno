@@ -179,7 +179,7 @@ public actor NativeAuthRuntime {
                 return nil
             }
             stored = active
-        } catch {
+        } catch let error as SecurityKeychainClientError {
             // A Keychain read can be transiently unavailable while macOS is
             // replacing or re-signing the app bundle. Keep the last confirmed
             // account open locally and let the normal retry path reconnect it;
@@ -187,6 +187,12 @@ public actor NativeAuthRuntime {
             if let cached = await sessionCache.loadLast() {
                 return .unverified(cached, cause: error.localizedDescription)
             }
+            throw error
+        } catch {
+            // Malformed or cross-account credential data is not a transient
+            // update condition. Preserve the fail-closed behavior for corrupt
+            // credentials and only use the cached session for Security.framework
+            // access failures.
             throw error
         }
         do {

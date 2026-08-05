@@ -78,7 +78,20 @@ function serializeActivity(raw: unknown): ClientActivityEvent[] | undefined {
   return events.length ? events : undefined;
 }
 
-export async function serializeAttachment(att: Attachment): Promise<ClientAttachment> {
+/**
+ * The only attachment columns the client shape needs.
+ *
+ * Notably NOT `extractedText`, which holds up to 200,000 characters of document
+ * text per row and is used solely to build model context. Selecting it into a
+ * thread load pulled it out of Postgres and discarded it — see
+ * ATTACHMENT_CLIENT_SELECT in lib/queries.
+ */
+export type AttachmentForClient = Pick<
+  Attachment,
+  "id" | "kind" | "fileName" | "mimeType" | "size" | "storageKey" | "width" | "height"
+>;
+
+export async function serializeAttachment(att: AttachmentForClient): Promise<ClientAttachment> {
   return {
     id: att.id,
     kind: att.kind,
@@ -95,7 +108,7 @@ export async function serializeAttachment(att: Attachment): Promise<ClientAttach
 type MessageVersionMeta = Pick<MessageVersion, "id" | "model" | "createdAt">;
 
 export async function serializeMessage(
-  msg: Message & { attachments: Attachment[]; versions?: MessageVersionMeta[] }
+  msg: Message & { attachments: AttachmentForClient[]; versions?: MessageVersionMeta[] }
 ): Promise<ClientMessage> {
   // Prefer the exact cost written at generation time (includes cache writes +
   // tool fees). Recomputing from token counts alone systematically under-bills

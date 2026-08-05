@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
-import { z } from "zod";
 import { admitChatRequest } from "@/lib/chat-admission";
+import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -9,7 +9,7 @@ import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
-import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
+import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
@@ -38,7 +38,6 @@ import {
   formatPreflightClarificationVisibleMessage,
 } from "@/lib/preflight-clarification";
 import { serializeMessage } from "@/lib/serializers";
-import { appendReasoningDelta } from "@/lib/reasoning-parts";
 import { encryptMessageText, decryptMessageText } from "@/lib/message-crypto";
 import { checkBudget, recordSpend, budgetExceededMessage, modelRatesMicroUsdPerToken } from "@/lib/spend";
 import { runDeepResearch } from "@/lib/deep-research";
@@ -48,7 +47,6 @@ import { truncate, currentPeriod } from "@/lib/utils";
 import { coerceTitleSource } from "@/lib/title-ownership";
 import { DEFAULT_PERSONALITY } from "@/lib/personalities";
 import { supportsFastMode } from "@/lib/pricing";
-import { mergeUsage, type UsageAccumulator } from "@/lib/usage-merge";
 import { buildUsage } from "@/lib/chat-usage";
 import { logDebug } from "@/lib/logger";
 import { createStallWatchdog, stallDetail, stallMessageFor } from "@/lib/chat-stall";
@@ -61,14 +59,11 @@ import {
   classifyErrorFinishReason,
   effectiveReasoningEffort,
   firstSubmissionRecoveryResponse,
-  generationFailureCode,
   idempotencyKeyConflictResponse,
   plural,
   searchToolLabel,
   sourceHost,
 } from "@/lib/chat-responses";
-import { REASONING_TIERS } from "@/lib/model-metrics";
-import { MAX_ATTACHMENTS } from "@/lib/uploads";
 import { getActiveConnectors } from "@/lib/mcp";
 import { quickScreen, moderateUserMessages } from "@/lib/moderation-ai";
 import { recordFlag } from "@/lib/moderation";
@@ -82,13 +77,46 @@ import {
   hashFirstSubmission,
 } from "@/lib/chat-first-submission";
 import { findFirstSubmissionReceipt } from "@/lib/chat-first-submission-receipt";
+import { legacyChatClientForOrigin } from "@/lib/chat-origin";
 import {
-  chatOriginSchema,
-  clientIdempotencyKeySchema,
-  clientSubmissionMetadataIssue,
-  legacyChatClientForOrigin,
-} from "@/lib/chat-origin";
-import type { ClientSource, ChatFinishReason } from "@/types/chat";
+  assistantTurnFields,
+  assistantWriteMode,
+  reasoningPartsColumn,
+  versionSnapshot,
+} from "@/lib/chat/assistant-turn";
+import {
+  applyHiddenUserContent,
+  buildPrivateHistory,
+  buildProjectContext,
+  contextActivityDetail,
+  historyWindowStart,
+  HISTORY_LIMIT,
+  promptChars,
+  replaceLastUserTurn,
+} from "@/lib/chat/context-assembly";
+import {
+  codeSessionRefusal,
+  emptySubmissionRefusal,
+  privateAttachmentsRefusal,
+  privateModeFeatureRefusal,
+  type EntitlementRejection,
+} from "@/lib/chat/entitlements";
+import { postGenerationPlan } from "@/lib/chat/post-processing";
+import { composeSystemPrompt } from "@/lib/chat/prompt-sections";
+import { chatBodySchema } from "@/lib/chat/request";
+import { GenerationAccumulator } from "@/lib/chat/stream-accumulator";
+import {
+  recoverFirstSubmission,
+  type FirstSubmissionRecoveryPort,
+} from "@/lib/chat/submission-recovery";
+import {
+  INTERNAL_ERROR_FAILURE_CODE,
+  PERSISTENCE_FAILED_FAILURE_CODE,
+  START_FAILED_FAILURE_CODE,
+  resolveTerminalState,
+  terminalFailureCode,
+} from "@/lib/chat/terminal-state";
+import type { ChatFinishReason, ClientActivityEvent } from "@/types/chat";
 import type { MessageForModel } from "@/types/llm";
 
 export const runtime = "nodejs";
@@ -100,140 +128,69 @@ export const runtime = "nodejs";
 // which the 15s SSE heartbeat below keeps resetting so it effectively never
 // fires. Keep RECOVERY_WINDOW_MS in use-chat.ts in sync with that nginx value.
 
-const HISTORY_LIMIT = 24;
-// When a conversation outgrows HISTORY_LIMIT, drop the oldest messages in
-// blocks of this size instead of one per turn. A per-turn sliding window
-// changes the prompt prefix on every request, which defeats provider-side
-// implicit prompt caching (Zhipu/DeepSeek/Moonshot/OpenAI all cache on
-// stable prefixes) — chunked truncation keeps the prefix byte-identical for
-// HISTORY_STEP consecutive turns at the cost of a slightly larger window.
-const HISTORY_STEP = 8;
+/** Turns an entitlement verdict into the response it describes. */
+function refuse(rejection: EntitlementRejection) {
+  return NextResponse.json(rejection.body, { status: rejection.status });
+}
 
-const WEB_SEARCH_NUDGE =
-  "Web search is ENABLED for this message. You have a live web search tool that returns current, real-world results with citations — use it to answer with up-to-date information and cite your sources. Do NOT claim you lack internet access, real-time data, or the ability to browse; you can search right now.";
+/**
+ * The assistant message a private turn reports.
+ *
+ * There is no row to serialise — nothing is stored — so the shape is built
+ * here. It was built twice inside the branch, once for the completed turn and
+ * once for a stopped one, and the two had to be kept identical by hand.
+ */
+function privateAssistantMessage(
+  acc: GenerationAccumulator,
+  model: string,
+  usage: { totalInput: number; output: number; cost: number },
+  finishReason: ChatFinishReason,
+  activity: ClientActivityEvent[]
+) {
+  return {
+    id: `private-${Date.now()}`,
+    role: "ASSISTANT" as const,
+    content: acc.text,
+    reasoning: acc.reasoning || undefined,
+    reasoningParts: acc.reasoningParts.length ? acc.reasoningParts : undefined,
+    model,
+    feedback: null,
+    createdAt: new Date().toISOString(),
+    attachments: [],
+    sources: acc.sources.length ? acc.sources : undefined,
+    activity,
+    finishReason,
+    promptTokens: usage.totalInput || undefined,
+    completionTokens: usage.output || undefined,
+    costUsd: usage.cost || undefined,
+  };
+}
 
-const SELECTION_ANCHOR_NUDGE =
-  'Selection anchors: when a user message contains a [Selection from artifact "…"] block, treat the quoted text or element as a precise anchor into that artifact. For a modify request, change ONLY that region, keep the rest of the artifact byte-identical where possible, and re-emit the COMPLETE artifact under the same identifier. For a question about the selection, answer directly and do not re-emit the artifact unless asked.';
-
-const clarificationAnswerValueSchema = z.union([z.string().max(1000), z.array(z.string().max(500)).max(12), z.boolean()]);
-const clarificationAnswerSchema = z.object({
-  id: z.string().trim().min(1).max(80),
-  question: z.string().trim().max(500).optional(),
-  value: clarificationAnswerValueSchema.optional(),
-  skipped: z.boolean().optional(),
-});
-const clarificationSchema = z.object({
-  messageId: z.string().cuid(),
-  blockId: z.string().trim().min(3).max(120),
-  originalUserMessage: z.string(),
-  answers: z.array(clarificationAnswerSchema).max(10),
-  skippedQuestions: z.array(z.string().trim().max(500)).max(10),
-});
-const preflightClarificationAnswerSchema = z.object({
-  questionId: z.string().trim().min(1).max(80),
-  question: z.string().trim().max(500).optional(),
-  source: z.enum(["option", "else", "skip"]),
-  value: clarificationAnswerValueSchema.optional(),
-});
-const preflightClarificationSchema = z.object({
-  originalUserMessage: z.string(),
-  answers: z.array(preflightClarificationAnswerSchema).max(10),
-  skipped: z.boolean().optional(),
-});
-const artifactEditSchema = z.object({
-  artifactId: z.string().cuid(),
-  identifier: z.string().trim().min(1).max(240),
-  baseVersion: z.number().int().positive(),
-  kind: z.enum(["text", "element"]),
-  text: z.string().min(1).max(4_000),
-  lineStart: z.number().int().positive().max(1_000_000).optional(),
-  lineEnd: z.number().int().positive().max(1_000_000).optional(),
-  selector: z.string().trim().min(1).max(1_000).optional(),
-});
-
-const bodySchema = z
-  .object({
-    conversationId: z.string().cuid().optional(),
-    projectId: z.string().cuid().optional(),
-    // No character cap — model context is the only real limit.
-    message: z.string().optional(),
-    clarification: clarificationSchema.optional(),
-    preflightClarification: preflightClarificationSchema.optional(),
-    // A modify action from Canvas. Unlike a normal artifact request, this is
-    // resolved to one owned artifact and applied as exact source patches.
-    artifactEdit: artifactEditSchema.optional(),
-    attachmentIds: z.array(z.string().cuid()).max(MAX_ATTACHMENTS).optional(),
-    model: z.string().optional(),
-    regenerate: z.boolean().optional(),
-    voiceMode: z.boolean().optional(),
-    canvasEnabled: z.boolean().optional(),
-    webSearch: z.boolean().optional(),
-    // Premium "fast mode" (Anthropic speed:"fast" / OpenAI service_tier:
-    // "priority"). Honored only on models that support it (supportsFastMode).
-    fastMode: z.boolean().optional(),
-    // Durable creation metadata used by native clients and Juno Quick. The
-    // legacy `client` field below remains for spend-ledger compatibility.
-    origin: chatOriginSchema.optional(),
-    // These keys are paired intentionally: the request key deduplicates a new
-    // conversation while the message key deduplicates its first persisted turn.
-    clientRequestId: clientIdempotencyKeySchema.optional(),
-    clientMessageId: clientIdempotencyKeySchema.optional(),
-    // Deep research mode: plan → search → read → cited report (saved chats only;
-    // ignored in private mode, where the toggle is hidden client-side).
-    deepResearch: z.boolean().optional(),
-    // Built from REASONING_TIERS, never repeated literals: this enum listed only
-    // low|medium|high|max while reasoningOptions() advertised "minimal" (gpt-5,
-    // gpt-5-mini, the Gemini flash line, glm-5.2) and "xhigh" (every GPT-5.2+,
-    // every Claude Opus 4.7+/Sonnet, grok multi-agent, glm-5.2) — 26 models whose
-    // top tier 400'd here, inside Juno, before any provider was called. Per-model
-    // support is NOT this schema's job; it is enforced by effectiveReasoningEffort
-    // -> clampReasoningEffort below, which coerces to what the model accepts.
-    reasoningEffort: z.enum(REASONING_TIERS).optional(),
-    connectors: z.array(z.string()).max(5).optional(),
-    generationId: z.string().trim().min(8).max(120).optional(),
-    privateMode: z.boolean().optional(),
-    // Which surface sent the request — tags the spend ledger so admin can split
-    // website vs native-app spending. Defaults to "web".
-    client: z.enum(["web", "app"]).optional(),
-    privateHistory: z
-      .array(
-        z.object({
-          role: z.enum(["USER", "ASSISTANT"]),
-          content: z.string(),
-        })
-      )
-      .max(HISTORY_LIMIT)
-      .optional(),
-  })
-  .superRefine((input, ctx) => {
-    if (
-      input.artifactEdit &&
-      (!input.message?.trim() || input.regenerate || input.clarification || input.preflightClarification || input.deepResearch)
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["artifactEdit"],
-        message: "A canvas edit requires one direct message and cannot be combined with regenerate, clarification, or deep research.",
-      });
-    }
-    const issue = clientSubmissionMetadataIssue({
-      origin: input.origin,
-      conversationId: input.conversationId,
-      regenerate: input.regenerate,
-      privateMode: input.privateMode,
-      clarificationReply: input.clarification !== undefined,
-      clientRequestId: input.clientRequestId,
-      clientMessageId: input.clientMessageId,
-    });
-    if (issue) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: [issue.path],
-        message: issue.message,
-      });
-    }
-  });
-
+/**
+ * The database side of idempotent submission recovery.
+ *
+ * Account-scoped by construction: the user id is bound once, here, rather than
+ * repeated at four call sites — which is what makes a cross-account read
+ * something you would have to go out of your way to write.
+ */
+function firstSubmissionRecoveryPort(userId: string): FirstSubmissionRecoveryPort {
+  return {
+    receiptForRequest: (clientRequestId) => findFirstSubmissionReceipt(userId, { clientRequestId }),
+    receiptForMessage: (clientMessageId) =>
+      prisma.chatFirstSubmissionReceipt.findUnique({
+        where: { userId_clientMessageId: { userId, clientMessageId } },
+        select: { conversationId: true },
+      }),
+    legacyConversation: (clientRequestId) =>
+      prisma.conversation.findFirst({ where: { userId, clientRequestId }, select: { id: true } }),
+    firstMessage: (conversationId) =>
+      prisma.message.findFirst({
+        where: { conversationId },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        select: { id: true, clientId: true },
+      }),
+  };
+}
 
 async function handleChat(req: Request) {
   const user = await getCurrentUser();
@@ -244,57 +201,28 @@ async function handleChat(req: Request) {
   // whole into `chat-admission.ts` so the rules can be characterised without a
   // request, a session or a network.
   const rawBody = await req.text().catch(() => null);
-  const admission = admitChatRequest(rawBody, (value) => bodySchema.safeParse(value));
+  const admission = admitChatRequest(rawBody, (value) => chatBodySchema.safeParse(value));
   if (!admission.ok) {
     return NextResponse.json(admission.body, { status: admission.status });
   }
+  const input = admission.input;
 
-  // Valid durable retries are recovered below before rate limiting;
-  // invalid/legacy requests preserve the historical rate-limit order.
-  const parsed = { success: true as const, data: admission.input };
+  // Valid durable retries are recovered here, before rate limiting; a legacy
+  // caller without both keys falls through and keeps the historical order.
   let firstSubmissionHash: string | null = null;
   let legacyOrphanConversationId: string | null = null;
-  if (parsed.success && parsed.data.clientRequestId && parsed.data.clientMessageId) {
-    const durableInput = parsed.data;
-    const clientRequestId = durableInput.clientRequestId!;
-    const clientMessageId = durableInput.clientMessageId!;
-    firstSubmissionHash = hashFirstSubmission(durableInput);
-    const existingReceipt = await findFirstSubmissionReceipt(user.id, { clientRequestId });
-    if (existingReceipt) {
-      return firstSubmissionRecoveryResponse(
-        classifyFirstSubmissionRecovery(existingReceipt, clientMessageId, firstSubmissionHash)
-      );
-    }
-    const reusedMessageKey = await prisma.chatFirstSubmissionReceipt.findUnique({
-      where: {
-        userId_clientMessageId: {
-          userId: user.id,
-          clientMessageId,
-        },
-      },
-      select: { conversationId: true },
+  if (input.clientRequestId && input.clientMessageId) {
+    firstSubmissionHash = hashFirstSubmission(input);
+    const verdict = await recoverFirstSubmission(firstSubmissionRecoveryPort(user.id), {
+      clientRequestId: input.clientRequestId,
+      clientMessageId: input.clientMessageId,
+      requestHash: firstSubmissionHash,
     });
-    if (reusedMessageKey) return idempotencyKeyConflictResponse(reusedMessageKey.conversationId);
-
-    // Compatibility for a narrow rollout window where Conversation/Message
-    // keys were written before durable receipts existed. Completed rows are
-    // adopted into the ledger before rate limiting; a conversation with no
-    // first message is finished later by the atomic acceptance transaction.
-    const legacyConversation = await prisma.conversation.findFirst({
-      where: { userId: user.id, clientRequestId },
-      select: { id: true },
-    });
-    if (legacyConversation) {
-      const firstMessage = await prisma.message.findFirst({
-        where: { conversationId: legacyConversation.id },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: { id: true, clientId: true },
-      });
-      if (classifyReceiptlessFirstSubmission(firstMessage) === "ambiguous") {
-        return idempotencyKeyConflictResponse(legacyConversation.id, true);
-      }
-      legacyOrphanConversationId = legacyConversation.id;
+    if (verdict.kind === "recovered") return firstSubmissionRecoveryResponse(verdict.recovery);
+    if (verdict.kind === "conflict") {
+      return idempotencyKeyConflictResponse(verdict.conversationId, verdict.legacyReceiptMissing);
     }
+    legacyOrphanConversationId = verdict.legacyOrphanConversationId;
   }
 
   if (!isOwnerEmail(user.email)) {
@@ -304,54 +232,26 @@ async function handleChat(req: Request) {
     }
   }
 
-  if (!parsed.success) return NextResponse.json({ error: "Invalid request." }, { status: 400 });
-  const input = parsed.data;
   const legacyClient = legacyChatClientForOrigin(input);
 
-  // Uploads use the persistent account attachment store. Until an explicitly
-  // ephemeral upload path exists, accepting them in private mode would make the
-  // no-history promise misleading even though the chat branch ignores the IDs.
-  if (input.privateMode && (input.attachmentIds?.length ?? 0) > 0) {
-    return NextResponse.json(
-      {
-        error: "private_attachments_unsupported",
-        code: "PRIVATE_ATTACHMENTS_UNSUPPORTED",
-        message: "Attachments are not available in private chat.",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!input.regenerate && !input.message?.trim() && !input.clarification && (input.attachmentIds?.length ?? 0) === 0) {
-    return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
-  }
+  const admissible = privateAttachmentsRefusal(input) ?? emptySubmissionRefusal(input);
+  if (admissible) return refuse(admissible);
 
   // Build private model history once, before moderation, so the policy screen
   // sees the exact user turns the provider will receive (including preflight
   // clarification content replacing the last private user turn).
-  const privateHistory: MessageForModel[] = input.privateMode
-    ? (input.privateHistory ?? [])
-        .filter((message) => message.content.trim())
-        .slice(-HISTORY_LIMIT)
-        .map((message) => ({ role: message.role, content: message.content.trim(), attachments: [] }))
+  const basePrivateHistory = input.privateMode
+    ? buildPrivateHistory(input.privateHistory, HISTORY_LIMIT)
     : [];
-  if (input.privateMode && (input.clarification || input.preflightClarification)) {
-    let lastUserIndex = -1;
-    for (let i = privateHistory.length - 1; i >= 0; i--) {
-      if (privateHistory[i].role === "USER") {
-        lastUserIndex = i;
-        break;
-      }
-    }
-    if (lastUserIndex >= 0) {
-      privateHistory[lastUserIndex] = {
-        ...privateHistory[lastUserIndex],
-        content: input.clarification
-          ? formatClarificationModelMessage(input.clarification)
-          : formatPreflightClarificationModelMessage(input.preflightClarification!),
-      };
-    }
-  }
+  const privateHistory: MessageForModel[] =
+    input.privateMode && (input.clarification || input.preflightClarification)
+      ? replaceLastUserTurn(
+          basePrivateHistory,
+          input.clarification
+            ? formatClarificationModelMessage(input.clarification)
+            : formatPreflightClarificationModelMessage(input.preflightClarification!)
+        )
+      : basePrivateHistory;
 
   const moderationTexts = effectiveModerationTexts({
     message: input.message,
@@ -459,7 +359,12 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
-  // Fallback must stay plan-aware: only pick a configured model the plan allows.
+  // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
+  // decide what a turn costs, and inline here they were reachable only by
+  // standing up a request with auth, quota and a database behind it.
+  //
+  // `pickAutoModel` does not consult provider health, so Auto lands in the same
+  // reroute branch as an explicit request on a dead provider.
   const eligible = (m: ModelInfo) =>
     m.modality === "chat" &&
     !m.comingSoon &&
@@ -467,56 +372,29 @@ async function handleChat(req: Request) {
     isProviderConfigured(m.provider) &&
     canUseModel(plan, m.id);
 
-  /**
-   * Cheapest eligible model, NOT the first in registry order.
-   *
-   * Registry order is a display order — its first chat entry is a frontier
-   * model. Falling back to it costs roughly 40x the cheapest capable model per
-   * request, silently, on the path taken precisely when something has already
-   * gone wrong. Nobody chose that model, so nobody should be billed as if they
-   * had.
-   */
-  const cheapestEligible = (requireHealthy: boolean): ModelInfo | undefined =>
-    MODEL_LIST.filter((m) => eligible(m) && (!requireHealthy || providerHealthy(m.provider))).sort(
-      (a, b) => a.cost - b.cost
-    )[0];
-
-  if (
-    !modelInfo ||
-    isAutoModelId(modelInfo.id) ||
-    modelInfo.comingSoon ||
-    !isProviderConfigured(modelInfo.provider) ||
-    !canUseModel(plan, modelInfo.id)
-  ) {
-    // Prefer a provider that is actually answering; a configured-but-dead one
-    // is better than nothing, so it stays as the second choice.
-    modelInfo = cheapestEligible(true) ?? cheapestEligible(false);
-  } else if (!providerHealthy(modelInfo.provider)) {
-    // The requested model's provider is failing auth or billing, so this
-    // generation cannot succeed. DEFAULT_MODEL is Anthropic, so an Anthropic
-    // outage would otherwise route every new chat straight into an error.
-    // Reroute rather than stream a guaranteed failure — but only if there is
-    // somewhere healthy to go.
-    //
-    // pickAutoModel does not consult provider health, so Auto lands here too:
-    // it picks the cheapest model overall, which may sit on a dead provider.
-    const alternative = cheapestEligible(true);
-    if (alternative) {
-      console.warn("[chat] rerouting off an unhealthy provider", {
-        from: modelInfo.id,
-        to: alternative.id,
-        provider: modelInfo.provider,
-      });
-      routingWarning = `${modelInfo.name} is unavailable right now — answered with ${alternative.name} instead.`;
-      modelInfo = alternative;
-    }
+  const selection = selectModel<ModelInfo>({
+    requestedId,
+    requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
+    catalogue: MODEL_LIST,
+    isEligible: eligible,
+    isProviderHealthy: (provider) => providerHealthy(provider as Provider),
+  });
+  if (selection.reason === "rerouted_unhealthy_provider") {
+    console.warn("[chat] rerouting off an unhealthy provider", {
+      from: modelInfo?.id,
+      to: selection.model?.id,
+      provider: modelInfo?.provider,
+    });
   }
+  modelInfo = selection.model ?? undefined;
+  routingWarning = selection.warning ?? routingWarning;
   // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
   // set). Degrade to the cheapest capable model rather than refusing: a slower
   // answer beats a 500, and it keeps the product usable while an operator
   // decides what to do. Per-user budgets are enforced separately by checkBudget.
   if (modelInfo && (await isPlatformBudgetExceeded())) {
-    const cheapest = cheapestEligible(true);
+    const cheapest =
+      cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
     if (cheapest && cheapest.cost < modelInfo.cost) {
       console.warn("[chat] platform budget exceeded — degrading model", {
         from: modelInfo.id,
@@ -545,10 +423,8 @@ async function handleChat(req: Request) {
     !input.privateMode && input.connectors?.length ? await getActiveConnectors(user.id, input.connectors) : [];
 
   if (input.privateMode) {
-    if (input.artifactEdit) {
-      return NextResponse.json({ error: "Canvas edits are not available in private chat." }, { status: 400 });
-    }
-    if (input.regenerate) return NextResponse.json({ error: "Regenerate is not available in private chat." }, { status: 400 });
+    const unavailable = privateModeFeatureRefusal(input);
+    if (unavailable) return refuse(unavailable);
 
     const budget = await checkBudget(user.id, plan);
     if (!budget.allowed) {
@@ -579,7 +455,9 @@ async function handleChat(req: Request) {
       // outside content like any other.
       untrustedContent: useWebSearch,
     });
-    const system = useWebSearch ? `${baseSystem}\n\n${WEB_SEARCH_NUDGE}` : baseSystem;
+    // Same composition the saved path uses. The two used to be hand-written
+    // expressions that happened to agree.
+    const system = composeSystemPrompt({ base: baseSystem, webSearch: useWebSearch, canvasOn: false });
     const generationId = input.generationId ?? crypto.randomUUID();
     const generationController = new AbortController();
     const unregisterGeneration = registerGeneration(generationId, {
@@ -592,34 +470,11 @@ async function handleChat(req: Request) {
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const { send, sendActivity, activityLog } = createSseSender(controller);
-        const sourceUrls = new Set<string>();
-        let full = "";
-        let reasoning = "";
-        // Parallel to `reasoning`, not a replacement for it: the flat text is
-        // what every provider has and what the disclosure renders; these are the
-        // boundaries only some providers send. Empty stays empty — see
-        // lib/reasoning-parts.
-        let reasoningParts: string[] = [];
-        let lastReasoningPart: number | null = null;
-        let usageAcc: UsageAccumulator = {};
-        // Back-compat names for budget enforcement / logging.
-        let promptTokens: number | undefined;
-        let completionTokens: number | undefined;
-        let reasoningTokens: number | undefined;
-        let totalTokens: number | undefined;
-        let cacheReadTokens: number | undefined;
-        let cacheWriteTokens: number | undefined;
-        let cacheWrite5mTokens: number | undefined;
-        let cacheWrite1hTokens: number | undefined;
-        let webSearchRequests: number | undefined;
-        let xSearchRequests: number | undefined;
-        // Which speed actually served (fast adapters may fall back to standard);
-        // defaults to the requested value and is refined from the usage stream.
-        let servedFast = useFastMode;
-        let writingStarted = false;
-        let finishReason: ChatFinishReason = "stop";
+        // One accumulator for text, reasoning, sources, usage and served speed
+        // — the same one the saved path folds its stream into.
+        const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
         let spendRecorded = false;
-        const webSources: ClientSource[] = [];
+        const privatePromptChars = () => promptChars(system, privateHistory);
 
         send({ type: "meta", conversationId: "private", userMessageId: null, title: "Private chat", generationId });
         // Heartbeat: models with hidden reasoning can stream nothing for
@@ -698,18 +553,15 @@ async function handleChat(req: Request) {
           // Hard mid-stream budget ceiling: the instant the running cost of THIS
           // generation would push the user past their remaining plan budget, abort
           // the provider stream so they cannot be billed a cent beyond it.
-          const budgetRates = modelRatesMicroUsdPerToken(modelId);
-          const budgetCeilingMicro = budget.remainingMicroUsd;
-          const inputCharsForBudget = system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0);
           const budgetGuard = createStreamBudgetGuard({
-            ceilingMicroUsd: budgetCeilingMicro,
-            rates: budgetRates,
-            inputChars: inputCharsForBudget,
+            ceilingMicroUsd: budget.remainingMicroUsd,
+            rates: modelRatesMicroUsdPerToken(modelId),
+            inputChars: privatePromptChars(),
             usage: () => ({
-              promptTokens,
-              completionTokens,
-              outputChars: full.length,
-              reasoningChars: reasoning.length,
+              promptTokens: acc.tokens.promptTokens,
+              completionTokens: acc.tokens.completionTokens,
+              outputChars: acc.text.length,
+              reasoningChars: acc.reasoning.length,
             }),
             onHalt: () => {
               budgetHalted = true;
@@ -735,31 +587,22 @@ async function handleChat(req: Request) {
             fastMode: useFastMode,
           })) {
             stallWatchdog.touch();
-            if (ev.type === "text") {
-              if (!writingStarted) {
-                writingStarted = true;
+            const effect = acc.apply(ev);
+            if (effect.kind === "text") {
+              if (effect.startedWriting) {
                 sendActivity({ kind: "write", title: "Writing the private answer", detail: "Streaming response text" });
               }
-              full += ev.text;
-              send({ type: "delta", text: ev.text });
+              send({ type: "delta", text: effect.text });
               enforceStreamBudget();
-            } else if (ev.type === "tool") {
-              if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
-            } else if (ev.type === "reasoning") {
-              ({
-                text: reasoning,
-                parts: reasoningParts,
-                lastPart: lastReasoningPart,
-              } = appendReasoningDelta({ text: reasoning, parts: reasoningParts, lastPart: lastReasoningPart }, ev.text, ev.part));
+            } else if (effect.kind === "tool_call") {
+              sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+            } else if (effect.kind === "reasoning") {
               // `part` rides the SSE so the panel can build steps AS THEY
               // ARRIVE, from the same boundaries the API gave the adapter.
-              send({ type: "reasoning", text: ev.text, part: ev.part });
+              send({ type: "reasoning", text: effect.text, part: effect.part });
               enforceStreamBudget();
-            } else if (ev.type === "sources") {
-              for (const source of ev.sources) {
-                if (!source.url || sourceUrls.has(source.url)) continue;
-                sourceUrls.add(source.url);
-                webSources.push(source);
+            } else if (effect.kind === "sources") {
+              for (const source of effect.added) {
                 sendActivity({
                   kind: "visit",
                   title: "Visited source",
@@ -767,56 +610,17 @@ async function handleChat(req: Request) {
                   url: source.url,
                 });
               }
-              if (webSources.length) send({ type: "sources", sources: webSources });
-            } else if (ev.type === "usage") {
-              usageAcc = mergeUsage(usageAcc, {
-                input: ev.input,
-                output: ev.output,
-                reasoning: ev.reasoning,
-                total: ev.total,
-                cacheRead: ev.cacheRead,
-                cacheWrite: ev.cacheWrite,
-                cacheWrite5m: ev.cacheWrite5m,
-                cacheWrite1h: ev.cacheWrite1h,
-                webSearchRequests: ev.webSearchRequests,
-                xSearchRequests: ev.xSearchRequests,
-                fast: ev.fast,
-              });
-              promptTokens = usageAcc.input;
-              completionTokens = usageAcc.output;
-              reasoningTokens = usageAcc.reasoning;
-              totalTokens = usageAcc.total;
-              cacheReadTokens = usageAcc.cacheRead;
-              cacheWriteTokens = usageAcc.cacheWrite;
-              cacheWrite5mTokens = usageAcc.cacheWrite5m;
-              cacheWrite1hTokens = usageAcc.cacheWrite1h;
-              webSearchRequests = usageAcc.webSearchRequests;
-              xSearchRequests = usageAcc.xSearchRequests;
-              if (usageAcc.fast != null) servedFast = usageAcc.fast;
+              if (effect.all.length) send({ type: "sources", sources: effect.all });
+            } else if (effect.kind === "usage") {
               enforceStreamBudget();
-            } else if (ev.type === "finish") {
-              finishReason = ev.reason;
             }
           }
           // Provider done — stop measuring silence before Juno's own work. See
           // the same call on the persisted path.
           stallWatchdog.stop();
 
-          const usage = buildUsage(modelInfo, {
-            input: usageAcc.input,
-            output: usageAcc.output,
-            reasoning: usageAcc.reasoning,
-            total: usageAcc.total,
-            cacheRead: usageAcc.cacheRead,
-            cacheWrite: usageAcc.cacheWrite,
-            cacheWrite5m: usageAcc.cacheWrite5m,
-            cacheWrite1h: usageAcc.cacheWrite1h,
-            webSearchRequests: usageAcc.webSearchRequests,
-            xSearchRequests: usageAcc.xSearchRequests,
-            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
-            reasoningChars: reasoning.length,
-          }, servedFast);
+          const finishReason = acc.finishReason;
+          const usage = buildUsage(modelInfo, acc.rawUsage({ promptChars: privatePromptChars() }), acc.servedFast);
           if (usage.totalInput || usage.output) {
             sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
           }
@@ -824,28 +628,12 @@ async function handleChat(req: Request) {
           sendActivity({
             kind: "done",
             title: finishReason === "stop" ? "Finished private response" : finishReasonTitle(finishReason),
-            detail: webSources.length ? plural(webSources.length, "source") : "Not saved",
+            detail: acc.sources.length ? plural(acc.sources.length, "source") : "Not saved",
           });
 
           send({
             type: "done",
-            message: {
-              id: `private-${Date.now()}`,
-              role: "ASSISTANT",
-              content: full,
-              reasoning: reasoning || undefined,
-              reasoningParts: reasoningParts.length ? reasoningParts : undefined,
-              model: modelId,
-              feedback: null,
-              createdAt: new Date().toISOString(),
-              attachments: [],
-              sources: webSources.length ? webSources : undefined,
-              activity: activityLog,
-              finishReason,
-              promptTokens: usage.totalInput || undefined,
-              completionTokens: usage.output || undefined,
-              costUsd: usage.cost || undefined,
-            },
+            message: privateAssistantMessage(acc, modelId, usage, finishReason, activityLog),
             artifacts: [],
             memoryUpdated: false,
             quota: consumed.quota,
@@ -858,19 +646,19 @@ async function handleChat(req: Request) {
             source: legacyClient,
             promptTokens: usage.totalInput || undefined,
             completionTokens: usage.output || undefined,
-            reasoningTokens: reasoningTokens || undefined,
-            totalTokens: totalTokens || undefined,
-            cacheRead: cacheReadTokens,
-            cacheWrite: cacheWriteTokens,
-            cacheWrite5m: cacheWrite5mTokens,
-            cacheWrite1h: cacheWrite1hTokens,
-            webSearchRequests,
-            xSearchRequests,
+            reasoningTokens: acc.tokens.reasoningTokens || undefined,
+            totalTokens: acc.tokens.totalTokens || undefined,
+            cacheRead: acc.tokens.cacheReadTokens,
+            cacheWrite: acc.tokens.cacheWriteTokens,
+            cacheWrite5m: acc.tokens.cacheWrite5mTokens,
+            cacheWrite1h: acc.tokens.cacheWrite1hTokens,
+            webSearchRequests: acc.tokens.webSearchRequests,
+            xSearchRequests: acc.tokens.xSearchRequests,
             costUsd: usage.cost || undefined,
-            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
-            reasoningChars: reasoning.length,
-            fastMode: servedFast,
+            promptChars: privatePromptChars(),
+            completionChars: acc.text.length,
+            reasoningChars: acc.reasoning.length,
+            fastMode: acc.servedFast,
           });
           spendRecorded = true;
           console.info("[chat] private generation complete", {
@@ -878,26 +666,30 @@ async function handleChat(req: Request) {
             provider: modelInfo.provider,
             model: modelInfo.providerModel,
             finishReason,
-            promptTokens: promptTokens ?? null,
-            completionTokens: completionTokens ?? null,
-            cacheReadTokens: cacheReadTokens ?? null,
-            cacheWriteTokens: cacheWriteTokens ?? null,
-            webSearchRequests: webSearchRequests ?? null,
+            promptTokens: acc.tokens.promptTokens ?? null,
+            completionTokens: acc.tokens.completionTokens ?? null,
+            cacheReadTokens: acc.tokens.cacheReadTokens ?? null,
+            cacheWriteTokens: acc.tokens.cacheWriteTokens ?? null,
+            webSearchRequests: acc.tokens.webSearchRequests ?? null,
           });
         } catch (err) {
-          // A budget-triggered abort saves the partial answer + bills it, exactly
-          // like a user-initiated stop; the "usage limit" warning was already sent.
-          // A stall must be checked BEFORE the stop cases: aborting the
-          // controller makes the SDK throw its user-abort error, so without
-          // this a wedged provider would be recorded and shown as though the
-          // user had pressed Stop.
-          const reason = stallWatchdog.stalled
-            ? "error"
-            : budgetHalted
-              ? "user_stopped"
-              : wasGenerationStopped(generationId)
-                ? "user_stopped"
-                : classifyErrorFinishReason(err);
+          // One terminal-state model, shared with the saved path. A stall must
+          // be classified BEFORE the stop cases: aborting the controller makes
+          // the SDK throw its own user-abort error, so without that ordering a
+          // wedged provider is recorded and shown as though the user had
+          // pressed Stop. A budget-triggered abort saves the partial answer and
+          // bills it, exactly like a user-initiated stop.
+          const terminal = resolveTerminalState(
+            {
+              stalled: stallWatchdog.stalled,
+              budgetHalted,
+              userStopped: wasGenerationStopped(generationId),
+              leaseLost: false,
+              error: err,
+            },
+            { hasText: !!acc.text, hasReasoning: !!acc.reasoning, artifactEdit: false }
+          );
+          const reason = terminal.finishReason;
           console.error("[chat] private generation error", {
             generationId,
             provider: modelInfo.provider,
@@ -905,42 +697,16 @@ async function handleChat(req: Request) {
             finishReason: reason,
             message: err instanceof Error ? err.message : String(err),
           });
-          if ((reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
+          if (terminal.persistsPartial) {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, {
-            input: usageAcc.input,
-            output: usageAcc.output,
-            reasoning: usageAcc.reasoning,
-            total: usageAcc.total,
-            cacheRead: usageAcc.cacheRead,
-            cacheWrite: usageAcc.cacheWrite,
-            cacheWrite5m: usageAcc.cacheWrite5m,
-            cacheWrite1h: usageAcc.cacheWrite1h,
-            webSearchRequests: usageAcc.webSearchRequests,
-            xSearchRequests: usageAcc.xSearchRequests,
-            promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-            completionChars: full.length,
-            reasoningChars: reasoning.length,
-          }, servedFast);
+            const partialUsage = buildUsage(
+              modelInfo,
+              acc.rawUsage({ promptChars: privatePromptChars() }),
+              acc.servedFast
+            );
             send({
               type: "done",
-              message: {
-                id: `private-${Date.now()}`,
-                role: "ASSISTANT",
-                content: full,
-                reasoning: reasoning || undefined,
-                reasoningParts: reasoningParts.length ? reasoningParts : undefined,
-                model: modelId,
-                feedback: null,
-                createdAt: new Date().toISOString(),
-                attachments: [],
-                sources: webSources.length ? webSources : undefined,
-                activity: activityLog,
-                finishReason: reason,
-                promptTokens: partialUsage.totalInput || undefined,
-                completionTokens: partialUsage.output || undefined,
-                costUsd: partialUsage.cost || undefined,
-              },
+              message: privateAssistantMessage(acc, modelId, partialUsage, reason, activityLog),
               artifacts: [],
               memoryUpdated: false,
               quota: consumed.quota,
@@ -954,19 +720,19 @@ async function handleChat(req: Request) {
                 source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
-                reasoningTokens: reasoningTokens || undefined,
-                totalTokens: totalTokens || undefined,
-                cacheRead: cacheReadTokens,
-                cacheWrite: cacheWriteTokens,
-                cacheWrite5m: cacheWrite5mTokens,
-                cacheWrite1h: cacheWrite1hTokens,
-                webSearchRequests,
-                xSearchRequests,
+                reasoningTokens: acc.tokens.reasoningTokens || undefined,
+                totalTokens: acc.tokens.totalTokens || undefined,
+                cacheRead: acc.tokens.cacheReadTokens,
+                cacheWrite: acc.tokens.cacheWriteTokens,
+                cacheWrite5m: acc.tokens.cacheWrite5mTokens,
+                cacheWrite1h: acc.tokens.cacheWrite1hTokens,
+                webSearchRequests: acc.tokens.webSearchRequests,
+                xSearchRequests: acc.tokens.xSearchRequests,
                 costUsd: partialUsage.cost || undefined,
-                promptChars: system.length + privateHistory.reduce((sum, m) => sum + m.content.length, 0),
-                completionChars: full.length,
-                reasoningChars: reasoning.length,
-                fastMode: servedFast,
+                promptChars: privatePromptChars(),
+                completionChars: acc.text.length,
+                reasoningChars: acc.reasoning.length,
+                fastMode: acc.servedFast,
               });
               spendRecorded = true;
             }
@@ -977,7 +743,9 @@ async function handleChat(req: Request) {
               finishReason: reason,
             });
           } else {
-            const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
+            const quota = terminal.refunds
+              ? await refundMessage(user.id, plan).catch(() => consumed.quota)
+              : consumed.quota;
             const message = stallWatchdog.stalled
               ? stallMessageFor(stallWatchdog)
               : reason === "user_stopped"
@@ -1005,7 +773,7 @@ async function handleChat(req: Request) {
 
     // Fire-and-forget moderation of the private message (never stored, but the
     // policy still applies). Runs after the response settles so it adds no latency.
-    if (moderate) {
+    if (postGenerationPlan({ moderate, memoryEnabled: false, producedAnswer: false }).moderates) {
       // redactPreview stays — private content must never reach a flag preview
       // (tests/chat-moderation.test.ts pins this). The .catch does not: without
       // it a moderation failure here is an unhandled rejection, where the saved
@@ -1052,25 +820,11 @@ async function handleChat(req: Request) {
   if (input.conversationId && !conversation) {
     return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
   }
-  // A Juno Code session that has somewhere to run never goes through the chat
-  // pipeline: its prompts are tasks executed on the user's Mac or in the cloud
-  // (POST /api/code/tasks + the task event stream). Refuse those here so no
-  // client path can bill such a session against chat models or append
-  // chat-generated messages to it.
-  //
-  // A code conversation with NO workspace is the exception, and the condition
-  // below is exactly its inverse. It is the "not in a project" conversation
-  // Juno Code offers before you have opened anything: there is no runner that
-  // could execute it — /api/code/queue needs a device id and the cloud path
-  // needs a repo — so the chat pipeline is not a shortcut around the task
-  // system, it is the only thing that can answer at all. Both conditions read
-  // the same two columns, so a session can never be answerable by both.
-  if (conversation?.kind === "code" && (conversation.codeWorkspacePath || conversation.codeWorkspaceKey)) {
-    return NextResponse.json(
-      { error: "This is a Juno Code session — prompts run on your Mac via /api/code/tasks, not /api/chat." },
-      { status: 409 }
-    );
-  }
+  // Refused here so no client path can bill a Code session against chat models
+  // or append chat-generated messages to it. The rule, and why a workspaceless
+  // Code conversation is the exception, is stated in chat/entitlements.
+  const codeSession = codeSessionRefusal(conversation);
+  if (codeSession) return refuse(codeSession);
   let artifactEditTarget: (ArtifactSourceForEdit & { id: string }) | null = null;
   if (input.artifactEdit) {
     if (!conversation) {
@@ -1457,27 +1211,23 @@ async function handleChat(req: Request) {
 
   try {
   // Build context from the most recent messages, excluding the answer being
-  // regenerated. The window start is anchored to HISTORY_STEP blocks (see
-  // HISTORY_STEP above) so the prompt prefix stays cache-stable across turns;
-  // the window holds between HISTORY_LIMIT and HISTORY_LIMIT+HISTORY_STEP-1
-  // messages.
+  // regenerated. `historyWindowStart` anchors the window to blocks so the
+  // prompt prefix stays cache-stable across turns — see chat/context-assembly.
   const totalMessages = await prisma.message.count({ where: { conversationId: conversation.id } });
-  const windowStart =
-    totalMessages > HISTORY_LIMIT ? Math.floor((totalMessages - HISTORY_LIMIT) / HISTORY_STEP) * HISTORY_STEP : 0;
   const recent = await prisma.message.findMany({
     where: { conversationId: conversation.id },
     orderBy: { createdAt: "asc" },
     include: { attachments: true },
-    skip: windowStart,
+    skip: historyWindowStart(totalMessages),
   });
   const history = recent
     .filter((m) => m.id !== staleAssistantId)
     .map((m) => ({ ...m, content: decryptMessageText(m.content) }));
-  const hiddenUserContent = clarificationModelContent ?? preflightClarificationModelContent;
-  const modelHistory =
-    hiddenUserContent && userMessageId
-      ? history.map((message) => (message.id === userMessageId ? { ...message, content: hiddenUserContent } : message))
-      : history;
+  const modelHistory = applyHiddenUserContent(
+    history,
+    userMessageId,
+    clarificationModelContent ?? preflightClarificationModelContent
+  );
 
   const memoryEnabled = settings?.memoryEnabled ?? true;
   // Prefer the consolidated summary (deduped, sectioned); fall back to the raw
@@ -1485,23 +1235,14 @@ async function handleChat(req: Request) {
   const memoryProfile = memoryEnabled ? await getMemoryProfile(user.id) : { summary: null, recent: [] };
 
   // Project context: instructions + reference file contents injected into the system prompt.
-  let projectContext = "";
-  if (conversation.projectId) {
-    const project = await prisma.project.findUnique({
-      where: { id: conversation.projectId },
-      select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
-    });
-    if (project) {
-      const sections = [`# Project: ${project.name}`];
-      if (project.instructions.trim()) sections.push(`## Project instructions\n${project.instructions.trim()}`);
-      const fileTexts = project.files.filter((f) => f.extractedText?.trim());
-      if (fileTexts.length) {
-        sections.push("## Project reference files");
-        for (const f of fileTexts) sections.push(`### ${f.fileName}\n${f.extractedText!}`);
-      }
-      projectContext = sections.join("\n\n");
-    }
-  }
+  const projectContext = conversation.projectId
+    ? buildProjectContext(
+        await prisma.project.findUnique({
+          where: { id: conversation.projectId },
+          select: { name: true, instructions: true, files: { select: { fileName: true, extractedText: true } } },
+        })
+      )
+    : "";
 
   // Deep research: Tavily plan → search → read before synthesis. It replaces
   // native web search for this turn — the researched corpus IS the live web
@@ -1513,7 +1254,6 @@ async function handleChat(req: Request) {
   // collect the sources it returns from the stream below — no third-party search.
   const useWebSearch = !researchActive && !!input.webSearch && PLANS[plan].webSearch && modelInfo.webSearch;
   const useFastMode = !!input.fastMode && supportsFastMode(modelInfo);
-  const webSources: ClientSource[] = [];
 
   const canvasOn = !input.voiceMode && (input.canvasEnabled ?? true);
   const baseSystem = buildSystemPrompt({
@@ -1537,13 +1277,12 @@ async function handleChat(req: Request) {
     artifactEditTarget && input.artifactEdit
       ? buildArtifactEditPrompt(artifactEditTarget, input.artifactEdit)
       : null;
-  const system = [
-    baseSystem,
-    useWebSearch ? WEB_SEARCH_NUDGE : null,
-    targetedArtifactEditPrompt ?? (canvasOn ? SELECTION_ANCHOR_NUDGE : null),
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const system = composeSystemPrompt({
+    base: baseSystem,
+    webSearch: useWebSearch,
+    targetedArtifactEditPrompt,
+    canvasOn,
+  });
   const conversationId = conversation.id;
   const convoTitle = conversation.title;
   const convoTitleSource = coerceTitleSource(conversation.titleSource);
@@ -1671,31 +1410,10 @@ async function handleChat(req: Request) {
       // Once the client disconnects the controller is closed; swallow the enqueue
       // error so generation and persistence keep running regardless.
       const { send, sendActivity, activityLog } = createSseSender(controller);
-      const sourceUrls = new Set<string>();
-      let full = "";
-      let providerOutputChars = 0;
+      // One accumulator for text, reasoning, sources, usage and served speed —
+      // the same one the private branch folds its stream into.
+      const acc = new GenerationAccumulator({ requestedFastMode: useFastMode });
       let targetedArtifactContent: string | null = null;
-      let reasoning = "";
-      // See the private branch: flat text for everyone, boundaries only from
-      // providers that actually send them.
-      let reasoningParts: string[] = [];
-      let lastReasoningPart: number | null = null;
-      let usageAcc: UsageAccumulator = {};
-      let promptTokens: number | undefined;
-      let completionTokens: number | undefined;
-      let reasoningTokens: number | undefined;
-      let totalTokens: number | undefined;
-      let cacheReadTokens: number | undefined;
-      let cacheWriteTokens: number | undefined;
-      let cacheWrite5mTokens: number | undefined;
-      let cacheWrite1hTokens: number | undefined;
-      let webSearchRequests: number | undefined;
-      let xSearchRequests: number | undefined;
-      // Which speed actually served (fast adapters may fall back to standard);
-      // defaults to the requested value and is refined from the usage stream.
-      let servedFast = useFastMode;
-      let writingStarted = false;
-      let finishReason: ChatFinishReason = "stop";
       let spendRecorded = false;
 
       /**
@@ -1722,64 +1440,57 @@ async function handleChat(req: Request) {
         /** Exact generation cost (tokens + cache + tool fees), micro-USD. */
         costMicroUsd?: number | null;
       }) => {
-        // Each part is encrypted individually, exactly like `reasoning` — same
-        // message-crypto path, same key. The array shape stays in plaintext
-        // because the count of steps is not the secret; their contents are.
-        const encryptedParts = data.reasoningParts.length
-          ? (data.reasoningParts.map(encryptMessageText) as unknown as Prisma.InputJsonValue)
+        // The stale row can vanish mid-generation — deleted from another tab,
+        // or with the whole conversation — and when it does this appends
+        // rather than failing. See chat/assistant-turn for the write rules.
+        const stale = staleAssistantId
+          ? await prisma.message.findUnique({ where: { id: staleAssistantId } })
           : null;
+        const mode = assistantWriteMode(staleAssistantId, !!stale);
+        const parts = reasoningPartsColumn(data.reasoningParts, encryptMessageText, mode);
         const base = {
-          content: encryptMessageText(data.content),
-          model: modelId,
-          promptTokens: data.promptTokens,
-          completionTokens: data.completionTokens,
-          costMicroUsd: data.costMicroUsd ?? null,
+          ...assistantTurnFields({ ...data, model: modelId }, encryptMessageText),
           activity: activityLog as unknown as Prisma.InputJsonValue,
         };
+        const sources = acc.sources;
         // Metadata for the pager rides along on the done chunk.
         const include = {
           attachments: true,
           versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" as const } },
         };
-        if (staleAssistantId) {
-          const stale = await prisma.message.findUnique({ where: { id: staleAssistantId } });
-          if (stale) {
-            // Snapshot the answer being replaced BEFORE overwriting it — a
-            // regenerate must never lose what the user already had. Atomic with
-            // the overwrite so a crash can't leave a duplicate version behind.
-            const [, , updated] = await prisma.$transaction([
-              prisma.messageVersion.create({
-                data: {
-                  messageId: stale.id,
-                  content: stale.content, // already encrypted — copied verbatim
-                  reasoning: stale.reasoning,
-                  model: stale.model,
-                  promptTokens: stale.promptTokens,
-                  completionTokens: stale.completionTokens,
-                  ...(stale.sources !== null ? { sources: stale.sources as unknown as Prisma.InputJsonValue } : {}),
-                },
+        if (mode === "supersede" && stale) {
+          // Snapshot the answer being replaced BEFORE overwriting it — a
+          // regenerate must never lose what the user already had. Atomic with
+          // the overwrite so a crash can't leave a duplicate version behind.
+          const [, , updated] = await prisma.$transaction([
+            prisma.messageVersion.create({
+              data: versionSnapshot({
+                ...stale,
+                sources: stale.sources as unknown as Prisma.InputJsonValue | null,
               }),
-              prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
-              prisma.message.update({
-                where: { id: stale.id },
-                data: {
-                  ...base,
-                  reasoning: data.reasoning ? encryptMessageText(data.reasoning) : null,
-                  // MUST clear, not skip. A regenerate can swap a part-emitting
-                  // model for one that sends none; leaving the old array behind
-                  // would show the PREVIOUS answer's steps above the new one's
-                  // reasoning — the exact fabrication this work exists to avoid.
-                  reasoningParts: encryptedParts ?? Prisma.DbNull,
-                  feedback: null, // a fresh answer starts with clean feedback
-                  sources: webSources.length ? (webSources as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
-                  createdAt: new Date(), // the timestamp reflects the current version
-                },
-                include,
-              }),
-            ]);
-            return updated;
-          }
-          // The stale row vanished mid-generation (deleted elsewhere) — append instead.
+            }),
+            prisma.artifact.deleteMany({ where: { messageId: stale.id } }),
+            prisma.message.update({
+              where: { id: stale.id },
+              data: {
+                ...base,
+                reasoning: data.reasoning ? encryptMessageText(data.reasoning) : null,
+                // CLEAR, never skip — see reasoningPartsColumn. A regenerate can
+                // swap a part-emitting model for one that sends none, and leaving
+                // the old array behind shows the PREVIOUS answer's steps above the
+                // new one's reasoning.
+                reasoningParts:
+                  parts.action === "set"
+                    ? (parts.values as unknown as Prisma.InputJsonValue)
+                    : Prisma.DbNull,
+                feedback: null, // a fresh answer starts with clean feedback
+                sources: sources.length ? (sources as unknown as Prisma.InputJsonValue) : Prisma.DbNull,
+                createdAt: new Date(), // the timestamp reflects the current version
+              },
+              include,
+            }),
+          ]);
+          return updated;
         }
         return prisma.message.create({
           data: {
@@ -1787,8 +1498,10 @@ async function handleChat(req: Request) {
             role: "ASSISTANT",
             ...base,
             ...(data.reasoning ? { reasoning: encryptMessageText(data.reasoning) } : {}),
-            ...(encryptedParts ? { reasoningParts: encryptedParts } : {}),
-            ...(webSources.length ? { sources: webSources as unknown as Prisma.InputJsonValue } : {}),
+            ...(parts.action === "set"
+              ? { reasoningParts: parts.values as unknown as Prisma.InputJsonValue }
+              : {}),
+            ...(sources.length ? { sources: sources as unknown as Prisma.InputJsonValue } : {}),
           },
           include,
         });
@@ -1836,16 +1549,15 @@ async function handleChat(req: Request) {
           });
       }, 15_000);
 
-      const attachmentCount = modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0);
-      const contextDetails = [plural(modelHistory.length, "message")];
-      if (attachmentCount) contextDetails.push(plural(attachmentCount, "attachment"));
-      if (memoryEnabled && memoryProfile.recent.length)
-        contextDetails.push(plural(memoryProfile.recent.length, "memory", "memories"));
-      if (projectContext) contextDetails.push("project context");
       sendActivity({
         kind: "context",
         title: input.regenerate ? "Rebuilding the conversation context" : "Reading the conversation context",
-        detail: contextDetails.join(" · "),
+        detail: contextActivityDetail({
+          messages: modelHistory.length,
+          attachments: modelHistory.reduce((sum, msg) => sum + msg.attachments.length, 0),
+          memories: memoryEnabled ? memoryProfile.recent.length : 0,
+          hasProjectContext: !!projectContext,
+        }),
       });
       if (artifactEditTarget) {
         sendActivity({
@@ -1918,13 +1630,10 @@ async function handleChat(req: Request) {
           synthesisSystem = `${system}\n\n${research.context}`;
           // Sources are known up front (unlike native search, which streams
           // them): publish the numbered list now so citations resolve as the
-          // report streams. Order must match the corpus numbering exactly.
-          for (const source of research.sources) {
-            if (!source.url || sourceUrls.has(source.url)) continue;
-            sourceUrls.add(source.url);
-            webSources.push(source);
-          }
-          if (webSources.length) send({ type: "sources", sources: webSources });
+          // report streams. Order must match the corpus numbering exactly, so
+          // the accumulator is seeded rather than told about them later.
+          acc.seedSources(research.sources);
+          if (acc.sources.length) send({ type: "sources", sources: acc.sources });
         } else {
           sendActivity({
             kind: "warning",
@@ -1943,19 +1652,17 @@ async function handleChat(req: Request) {
       // Hard mid-stream budget ceiling (see the private path for rationale):
       // abort the provider stream the instant this generation's running cost
       // would take the user past their remaining plan budget.
-      const budgetRates = modelRatesMicroUsdPerToken(modelId);
-      const budgetCeilingMicro = budget.remainingMicroUsd;
-      const inputCharsForBudget = synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0);
+      const synthesisPromptChars = () => promptChars(synthesisSystem, modelHistory);
       let budgetHalted = false;
       const budgetGuard = createStreamBudgetGuard({
-        ceilingMicroUsd: budgetCeilingMicro,
-        rates: budgetRates,
-        inputChars: inputCharsForBudget,
+        ceilingMicroUsd: budget.remainingMicroUsd,
+        rates: modelRatesMicroUsdPerToken(modelId),
+        inputChars: synthesisPromptChars(),
         usage: () => ({
-          promptTokens,
-          completionTokens,
-          outputChars: full.length,
-          reasoningChars: reasoning.length,
+          promptTokens: acc.tokens.promptTokens,
+          completionTokens: acc.tokens.completionTokens,
+          outputChars: acc.text.length,
+          reasoningChars: acc.reasoning.length,
         }),
         onHalt: () => {
           budgetHalted = true;
@@ -1996,37 +1703,27 @@ async function handleChat(req: Request) {
           audit: { userId: user.id, conversationId },
         })) {
           stallWatchdog.touch();
-          if (ev.type === "text") {
-            if (!writingStarted) {
-              writingStarted = true;
+          const effect = acc.apply(ev);
+          if (effect.kind === "text") {
+            if (effect.startedWriting) {
               sendActivity({
                 kind: "write",
                 title: artifactEditTarget ? "Preparing targeted changes" : "Writing the answer",
                 detail: artifactEditTarget ? "Building an exact source patch" : "Streaming response text",
               });
             }
-            full += ev.text;
-            providerOutputChars += ev.text.length;
             // Patch protocol output is server-internal. The client receives a
             // normal same-identifier artifact only after every source anchor is
             // validated and the version is saved.
-            if (!artifactEditTarget) send({ type: "delta", text: ev.text });
+            if (!artifactEditTarget) send({ type: "delta", text: effect.text });
             enforceStreamBudget();
-          } else if (ev.type === "tool") {
-            if (ev.phase === "call") sendActivity({ kind: "tool", title: `Using ${ev.server}`, detail: ev.name });
-          } else if (ev.type === "reasoning") {
-            ({
-              text: reasoning,
-              parts: reasoningParts,
-              lastPart: lastReasoningPart,
-            } = appendReasoningDelta({ text: reasoning, parts: reasoningParts, lastPart: lastReasoningPart }, ev.text, ev.part));
-            send({ type: "reasoning", text: ev.text, part: ev.part });
+          } else if (effect.kind === "tool_call") {
+            sendActivity({ kind: "tool", title: `Using ${effect.server}`, detail: effect.name });
+          } else if (effect.kind === "reasoning") {
+            send({ type: "reasoning", text: effect.text, part: effect.part });
             enforceStreamBudget();
-          } else if (ev.type === "sources") {
-            for (const source of ev.sources) {
-              if (!source.url || sourceUrls.has(source.url)) continue;
-              sourceUrls.add(source.url);
-              webSources.push(source);
+          } else if (effect.kind === "sources") {
+            for (const source of effect.added) {
               sendActivity({
                 kind: "visit",
                 title: "Visited source",
@@ -2034,35 +1731,9 @@ async function handleChat(req: Request) {
                 url: source.url,
               });
             }
-            if (webSources.length) send({ type: "sources", sources: webSources });
-          } else if (ev.type === "usage") {
-            usageAcc = mergeUsage(usageAcc, {
-              input: ev.input,
-              output: ev.output,
-              reasoning: ev.reasoning,
-              total: ev.total,
-              cacheRead: ev.cacheRead,
-              cacheWrite: ev.cacheWrite,
-              cacheWrite5m: ev.cacheWrite5m,
-              cacheWrite1h: ev.cacheWrite1h,
-              webSearchRequests: ev.webSearchRequests,
-              xSearchRequests: ev.xSearchRequests,
-              fast: ev.fast,
-            });
-            promptTokens = usageAcc.input;
-            completionTokens = usageAcc.output;
-            reasoningTokens = usageAcc.reasoning;
-            totalTokens = usageAcc.total;
-            cacheReadTokens = usageAcc.cacheRead;
-            cacheWriteTokens = usageAcc.cacheWrite;
-            cacheWrite5mTokens = usageAcc.cacheWrite5m;
-            cacheWrite1hTokens = usageAcc.cacheWrite1h;
-            webSearchRequests = usageAcc.webSearchRequests;
-            xSearchRequests = usageAcc.xSearchRequests;
-            if (usageAcc.fast != null) servedFast = usageAcc.fast;
+            if (effect.all.length) send({ type: "sources", sources: effect.all });
+          } else if (effect.kind === "usage") {
             enforceStreamBudget();
-          } else if (ev.type === "finish") {
-            finishReason = ev.reason;
           }
         }
         // The provider is done. Everything below is Juno's own persistence, and
@@ -2072,36 +1743,22 @@ async function handleChat(req: Request) {
         stallWatchdog.stop();
 
         if (artifactEditTarget) {
-          const patch = parseArtifactPatch(full);
+          const patch = parseArtifactPatch(acc.text);
           targetedArtifactContent = applyArtifactPatch(artifactEditTarget.content, patch);
-          full = buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary);
+          // Replaces the persisted text but NOT the emitted-character count the
+          // accumulator holds: the model wrote the patch, not the whole
+          // artifact, and billing the rebuilt text inflates the receipt.
+          acc.replaceText(buildArtifactEditMessage(artifactEditTarget, targetedArtifactContent, patch.summary));
         }
 
+        const finishReason = acc.finishReason;
         // Reconcile token usage across providers and estimate the $ cost once.
-        const usage = buildUsage(modelInfo, {
-            input: usageAcc.input,
-            output: usageAcc.output,
-            reasoning: usageAcc.reasoning,
-            total: usageAcc.total,
-            cacheRead: usageAcc.cacheRead,
-            cacheWrite: usageAcc.cacheWrite,
-            cacheWrite5m: usageAcc.cacheWrite5m,
-            cacheWrite1h: usageAcc.cacheWrite1h,
-            webSearchRequests: usageAcc.webSearchRequests,
-            xSearchRequests: usageAcc.xSearchRequests,
-            // Floor on real prompt size when the provider under-reports input.
-            promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            // providerOutputChars, NOT full.length: on a canvas edit `full` is
-            // replaced above by buildArtifactEditMessage — the whole rebuilt
-            // artifact — while the model only emitted the patch. pricing.ts
-            // floors the completion estimate on this (charOut > completion), so
-            // full.length inflated the receipt the user sees. recordSpend below
-            // already used the right value; these two disagreed.
-            // Identical to full.length on every non-canvas turn, since both
-            // accumulate exactly ev.text.
-            completionChars: providerOutputChars,
-            reasoningChars: reasoning.length,
-          }, servedFast);
+        // The prompt-character floor covers a provider that under-reports input.
+        const usage = buildUsage(
+          modelInfo,
+          acc.rawUsage({ promptChars: synthesisPromptChars() }),
+          acc.servedFast
+        );
 
         // Persist the assistant message — generation succeeded, so it's safe to
         // version-and-overwrite the answer being regenerated (see the helper).
@@ -2117,22 +1774,22 @@ async function handleChat(req: Request) {
               )
             : null;
         const assistant = await persistAssistantTurn({
-          content: full,
-          reasoning,
-          reasoningParts,
-          promptTokens: usage.totalInput || promptTokens || null,
-          completionTokens: usage.output || completionTokens || null,
+          content: acc.text,
+          reasoning: acc.reasoning,
+          reasoningParts: acc.reasoningParts,
+          promptTokens: usage.totalInput || acc.tokens.promptTokens || null,
+          completionTokens: usage.output || acc.tokens.completionTokens || null,
           costMicroUsd: usage.costMicroUsd || null,
         });
 
         // Artifacts + memory side effects.
         const artifacts = targetedArtifact
           ? [targetedArtifact]
-          : await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
-        if (targetedArtifact) send({ type: "delta", text: full });
+          : await persistArtifacts(conversationId, assistant.id, parseArtifacts(acc.text));
+        if (targetedArtifact) send({ type: "delta", text: acc.text });
         let memoryUpdated = false;
         if (memoryEnabled) {
-          const created = await saveAutoMemories(user.id, parseMemories(full), conversationId);
+          const created = await saveAutoMemories(user.id, parseMemories(acc.text), conversationId);
           memoryUpdated = created > 0;
         }
 
@@ -2146,7 +1803,7 @@ async function handleChat(req: Request) {
           },
         });
 
-        assistantFull = full;
+        assistantFull = acc.text;
 
         if (usage.totalInput || usage.output) {
           sendActivity({ kind: "usage", title: "Token usage recorded", detail: usage.detail });
@@ -2160,7 +1817,7 @@ async function handleChat(req: Request) {
           // the identical private chat should not describe themselves
           // differently.
           title: finishReason === "stop" ? "Finished response" : finishReasonTitle(finishReason),
-          detail: webSources.length ? plural(webSources.length, "source") : undefined,
+          detail: acc.sources.length ? plural(acc.sources.length, "source") : undefined,
         });
         const assistantWithActivity = await prisma.message.update({
           where: { id: assistant.id },
@@ -2193,19 +1850,19 @@ async function handleChat(req: Request) {
           source: legacyClient,
           promptTokens: usage.totalInput || undefined,
           completionTokens: usage.output || undefined,
-          reasoningTokens: reasoningTokens || undefined,
-          totalTokens: totalTokens || undefined,
-          cacheRead: cacheReadTokens,
-          cacheWrite: cacheWriteTokens,
-          cacheWrite5m: cacheWrite5mTokens,
-          cacheWrite1h: cacheWrite1hTokens,
-          webSearchRequests,
-          xSearchRequests,
+          reasoningTokens: acc.tokens.reasoningTokens || undefined,
+          totalTokens: acc.tokens.totalTokens || undefined,
+          cacheRead: acc.tokens.cacheReadTokens,
+          cacheWrite: acc.tokens.cacheWriteTokens,
+          cacheWrite5m: acc.tokens.cacheWrite5mTokens,
+          cacheWrite1h: acc.tokens.cacheWrite1hTokens,
+          webSearchRequests: acc.tokens.webSearchRequests,
+          xSearchRequests: acc.tokens.xSearchRequests,
           costUsd: usage.cost || undefined,
-          promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-          completionChars: providerOutputChars,
-          reasoningChars: reasoning.length,
-          fastMode: servedFast,
+          promptChars: synthesisPromptChars(),
+          completionChars: acc.providerOutputChars,
+          reasoningChars: acc.reasoning.length,
+          fastMode: acc.servedFast,
         });
         spendRecorded = true;
         console.info("[chat] generation complete", {
@@ -2214,26 +1871,31 @@ async function handleChat(req: Request) {
           provider: modelInfo.provider,
           model: modelInfo.providerModel,
           finishReason,
-          promptTokens: promptTokens ?? null,
-          completionTokens: completionTokens ?? null,
+          promptTokens: acc.tokens.promptTokens ?? null,
+          completionTokens: acc.tokens.completionTokens ?? null,
           // Prompt-cache instrumentation (read = hit, write = Anthropic-only creation).
-          cacheReadTokens: cacheReadTokens ?? null,
-          cacheWriteTokens: cacheWriteTokens ?? null,
-          webSearchRequests: webSearchRequests ?? null,
+          cacheReadTokens: acc.tokens.cacheReadTokens ?? null,
+          cacheWriteTokens: acc.tokens.cacheWriteTokens ?? null,
+          webSearchRequests: acc.tokens.webSearchRequests ?? null,
         });
       } catch (err) {
-        // Checked before the stop cases — see the note on the private path.
-        const reason = stallWatchdog.stalled
-          ? "error"
-          : budgetHalted
-            ? "user_stopped"
-            : wasGenerationStopped(generationId)
-              ? "user_stopped"
-              : classifyErrorFinishReason(err);
-        const terminalFailureCode =
-          durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError
-            ? "GENERATION_LEASE_EXPIRED"
-            : generationFailureCode(reason);
+        // One terminal-state model, shared with the private path. The stall
+        // check comes before the stop cases for the reason recorded there.
+        const terminal = resolveTerminalState(
+          {
+            stalled: stallWatchdog.stalled,
+            budgetHalted,
+            userStopped: wasGenerationStopped(generationId),
+            leaseLost: durableReceiptLeaseLost || err instanceof DurableReceiptLeaseLostError,
+            error: err,
+          },
+          {
+            hasText: !!acc.text,
+            hasReasoning: !!acc.reasoning,
+            artifactEdit: !!artifactEditTarget,
+          }
+        );
+        const reason = terminal.finishReason;
         console.error("[chat] generation error", {
           generationId,
           conversationId,
@@ -2243,38 +1905,26 @@ async function handleChat(req: Request) {
           message: err instanceof Error ? err.message : String(err),
         });
 
-        if (!artifactEditTarget && (reason === "user_stopped" || reason === "network_error") && (full || reasoning)) {
+        if (terminal.persistsPartial) {
           try {
             appendFinishWarning(reason, sendActivity);
-            const partialUsage = buildUsage(modelInfo, {
-            input: usageAcc.input,
-            output: usageAcc.output,
-            reasoning: usageAcc.reasoning,
-            total: usageAcc.total,
-            cacheRead: usageAcc.cacheRead,
-            cacheWrite: usageAcc.cacheWrite,
-            cacheWrite5m: usageAcc.cacheWrite5m,
-            cacheWrite1h: usageAcc.cacheWrite1h,
-            webSearchRequests: usageAcc.webSearchRequests,
-            xSearchRequests: usageAcc.xSearchRequests,
-            promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-            // See the note on the success path: providerOutputChars is what the
-            // model actually emitted, and is what recordSpend below already uses.
-            completionChars: providerOutputChars,
-            reasoningChars: reasoning.length,
-          }, servedFast);
+            const partialUsage = buildUsage(
+              modelInfo,
+              acc.rawUsage({ promptChars: synthesisPromptChars() }),
+              acc.servedFast
+            );
             // Same version-preserving persistence as the success path — a
             // partial answer still supersedes (never destroys) the previous one.
             if (!(await renewDurableReceiptLease())) throw new DurableReceiptLeaseLostError();
             const assistant = await persistAssistantTurn({
-              content: full,
-              reasoning,
-              reasoningParts,
-              promptTokens: partialUsage.totalInput || promptTokens || null,
-              completionTokens: partialUsage.output || completionTokens || null,
+              content: acc.text,
+              reasoning: acc.reasoning,
+              reasoningParts: acc.reasoningParts,
+              promptTokens: partialUsage.totalInput || acc.tokens.promptTokens || null,
+              completionTokens: partialUsage.output || acc.tokens.completionTokens || null,
               costMicroUsd: partialUsage.costMicroUsd || null,
             });
-            const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(full));
+            const artifacts = await persistArtifacts(conversationId, assistant.id, parseArtifacts(acc.text));
             await prisma.conversation.updateMany({
               where: { id: conversationId, userId: user.id },
               data: { lastMessageAt: new Date(), model: conversationModelId },
@@ -2287,7 +1937,7 @@ async function handleChat(req: Request) {
                 versions: { select: { id: true, model: true, createdAt: true }, orderBy: { createdAt: "asc" } },
               },
             });
-            assistantFull = full;
+            assistantFull = acc.text;
             if (!(await markDurableReceiptCompleted(assistant.id, reason))) {
               durableReceiptLeaseLost = true;
               throw new DurableReceiptLeaseLostError();
@@ -2310,19 +1960,19 @@ async function handleChat(req: Request) {
                 source: legacyClient,
                 promptTokens: partialUsage.totalInput || undefined,
                 completionTokens: partialUsage.output || undefined,
-                reasoningTokens: reasoningTokens || undefined,
-                totalTokens: totalTokens || undefined,
-                cacheRead: cacheReadTokens,
-                cacheWrite: cacheWriteTokens,
-                cacheWrite5m: cacheWrite5mTokens,
-                cacheWrite1h: cacheWrite1hTokens,
-                webSearchRequests,
-                xSearchRequests,
+                reasoningTokens: acc.tokens.reasoningTokens || undefined,
+                totalTokens: acc.tokens.totalTokens || undefined,
+                cacheRead: acc.tokens.cacheReadTokens,
+                cacheWrite: acc.tokens.cacheWriteTokens,
+                cacheWrite5m: acc.tokens.cacheWrite5mTokens,
+                cacheWrite1h: acc.tokens.cacheWrite1hTokens,
+                webSearchRequests: acc.tokens.webSearchRequests,
+                xSearchRequests: acc.tokens.xSearchRequests,
                 costUsd: partialUsage.cost || undefined,
-                promptChars: synthesisSystem.length + modelHistory.reduce((sum, m) => sum + m.content.length, 0),
-                completionChars: providerOutputChars,
-                reasoningChars: reasoning.length,
-                fastMode: servedFast,
+                promptChars: synthesisPromptChars(),
+                completionChars: acc.providerOutputChars,
+                reasoningChars: acc.reasoning.length,
+                fastMode: acc.servedFast,
               });
               spendRecorded = true;
             }
@@ -2340,10 +1990,10 @@ async function handleChat(req: Request) {
               message: persistErr instanceof Error ? persistErr.message : String(persistErr),
             });
             const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
-            const failureCode =
-              durableReceiptLeaseLost || persistErr instanceof DurableReceiptLeaseLostError
-                ? "GENERATION_LEASE_EXPIRED"
-                : "GENERATION_PERSISTENCE_FAILED";
+            const failureCode = terminalFailureCode(
+              durableReceiptLeaseLost || persistErr instanceof DurableReceiptLeaseLostError,
+              PERSISTENCE_FAILED_FAILURE_CODE
+            );
             await markDurableReceiptFailed("error", failureCode);
             send({
               type: "error",
@@ -2363,8 +2013,11 @@ async function handleChat(req: Request) {
           }
         } else {
           // Generation failed before useful output, so refund the consumed message
-          // and report the corrected quota so the UI doesn't go stale.
-          const quota = reason === "user_stopped" ? consumed.quota : await refundMessage(user.id, plan).catch(() => consumed.quota);
+          // and report the corrected quota so the UI doesn't go stale. A user who
+          // stopped their own generation keeps the charge — see terminal-state.
+          const quota = terminal.refunds
+            ? await refundMessage(user.id, plan).catch(() => consumed.quota)
+            : consumed.quota;
           const message =
             reason === "user_stopped"
               ? artifactEditTarget
@@ -2382,7 +2035,7 @@ async function handleChat(req: Request) {
             title: finishReasonTitle(reason),
             detail: message,
           });
-          const failureCode = terminalFailureCode;
+          const failureCode = terminal.failureCode;
           await markDurableReceiptFailed(reason, failureCode);
           send({
             type: "error",
@@ -2422,9 +2075,7 @@ async function handleChat(req: Request) {
         if (generationHeartbeat) clearInterval(generationHeartbeat);
         generationHeartbeat = null;
         const finishReason = classifyErrorFinishReason(error);
-        const failureCode = durableReceiptLeaseLost
-          ? "GENERATION_LEASE_EXPIRED"
-          : "GENERATION_INTERNAL_ERROR";
+        const failureCode = terminalFailureCode(durableReceiptLeaseLost, INTERNAL_ERROR_FAILURE_CODE);
         await markDurableReceiptFailed(finishReason, failureCode);
         const quota = await refundMessage(user.id, plan).catch(() => consumed.quota);
         const message = providerErrorMessage(error, PROVIDERS[modelInfo.provider].label);
@@ -2463,20 +2114,23 @@ async function handleChat(req: Request) {
   // disconnects. Awaiting genPromise keeps the serverless function alive until the
   // answer is fully generated and saved, then extracts durable memories.
   after(async () => {
-    // Moderate the user's message independently of whether generation succeeded —
-    // a violation must be caught even if the model errored. Fire-and-forget so it
-    // never delays the reply.
-    if (moderate) {
+    // Moderation is decided before the answer is known and memory work after:
+    // a policy violation must be caught even when the model errored, while
+    // memory must not record a turn the user never got. See
+    // chat/post-processing, where both rules live with their reasons.
+    if (postGenerationPlan({ moderate, memoryEnabled, producedAnswer: false }).moderates) {
       await moderateUserMessages({ userId: user.id, texts: moderationTexts }).catch(() => {});
     }
 
     await genPromise?.catch(() => {});
-    if (!assistantFull) return;
 
-    // Incremental extraction: distill this conversation's unprocessed user
-    // messages into memory facts (advances its high-water mark).
-    if (memoryEnabled) {
+    const postWork = postGenerationPlan({ moderate, memoryEnabled, producedAnswer: !!assistantFull });
+    if (postWork.extractsMemory) {
+      // Incremental extraction: distill this conversation's unprocessed user
+      // messages into memory facts (advances its high-water mark).
       await extractConversationMemory({ userId: user.id, conversationId: conversation.id }).catch(() => {});
+    }
+    if (postWork.consolidates) {
       // Periodically re-summarize so the memory stays tidy and deduped.
       await maybeConsolidate(user.id, cheapModel).catch(() => {});
     }
@@ -2485,7 +2139,7 @@ async function handleChat(req: Request) {
   return new Response(stream, { headers: SSE_HEADERS });
   } catch (error) {
     if (!durableGenerationId || !userMessageId || !conversation) throw error;
-    const failureCode = "GENERATION_START_FAILED";
+    const failureCode = START_FAILED_FAILURE_CODE;
     await prisma.chatFirstSubmissionReceipt
       .updateMany({
         where: {

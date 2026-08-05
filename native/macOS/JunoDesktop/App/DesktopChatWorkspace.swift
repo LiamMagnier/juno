@@ -169,8 +169,7 @@ struct DesktopChatWorkspace: View {
             // `DesktopDestinationView` — which has nothing of its own to hand it.
             .environment(tasksSurface)
             .junoReadingCanvas()
-            .navigationTitle(windowTitle)
-            .navigationSubtitle(windowSubtitle)
+            .navigationTitle("")
             .toolbar { detailToolbar }
         }
         // `.inspector` goes on the split view, **not** on the detail column, and
@@ -295,22 +294,6 @@ struct DesktopChatWorkspace: View {
         destination.wrappedValue = .chat
     }
 
-    private var windowTitle: String {
-        DesktopNavigationState.windowTitle(
-            destination: currentDestination,
-            conversationTitle: model.selectedConversation?.title
-        )
-    }
-
-    /// The subtitle carries provenance, never the model id.
-    private var windowSubtitle: String {
-        let current = currentDestination
-        guard current == .chat, let conversation = model.selectedConversation else {
-            return ""
-        }
-        return conversation.updatedAt.formatted(date: .abbreviated, time: .shortened)
-    }
-
     /// Every item is present in every state and disables rather than vanishing.
     ///
     /// A `ToolbarItem` that appears and disappears makes SwiftUI rebuild the
@@ -347,7 +330,7 @@ struct DesktopChatWorkspace: View {
             DesktopProductSwitcher(selection: $product)
         }
 
-        ToolbarItem(placement: .navigation) {
+        ToolbarItem(placement: .primaryAction) {
             Button {
                 beginDraft()
             } label: {
@@ -472,7 +455,7 @@ private struct DesktopChatSidebar: View {
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: 28)
+            Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             accountFooter.junoSidebarFooter()

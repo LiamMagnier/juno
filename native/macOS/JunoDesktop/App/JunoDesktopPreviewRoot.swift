@@ -54,6 +54,11 @@ private struct JunoDesktopPreviewWorkspace: View {
     init(world: PreviewWorld) {
         self.world = world
         let sender = world.chatTransport
+#if DEBUG
+        if JunoPreviewEnvironment.updateReady {
+            DesktopUpdateModel.shared.setPreviewReady(version: "0.1.3")
+        }
+#endif
         let codeModel = NativeCodeModel(
             client: NativeCodeTaskClient(sender: sender, streamer: sender)
         )

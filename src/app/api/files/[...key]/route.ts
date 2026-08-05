@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { prismaUnguarded } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
-import { getObjectBytes } from "@/lib/storage";
-import { sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { headObject, openObjectStream } from "@/lib/storage";
+import { MIME_SNIFF_BYTES, sniffImageMime, sniffVideoMime } from "@/lib/uploads";
+import { contentRangeHeader, parseRangeHeader, unsatisfiedRangeHeader } from "@/lib/http-range";
 
 export const runtime = "nodejs";
 
@@ -52,52 +53,62 @@ export async function GET(req: Request, { params }: { params: Promise<{ key: str
     return new NextResponse("Not found", { status: 404 });
   }
 
+  // Reading the prefix rather than the object is what keeps memory flat: a 1 GB
+  // video used to be pulled entirely into RSS just to decide its content type,
+  // and PM2 restarts the backend at ~1400 MB — taking every in-flight SSE stream
+  // on the box with it.
+  let head;
   try {
-    const { bytes } = await getObjectBytes(k);
-    const img = sniffImageMime(bytes);
-    const video = img ? null : sniffVideoMime(bytes);
+    head = await headObject(k, MIME_SNIFF_BYTES);
+  } catch {
+    return new NextResponse("Not found", { status: 404 });
+  }
 
-    const headers = new Headers();
-    headers.set("Cache-Control", "private, max-age=3600");
-    if (img) {
-      headers.set("Content-Type", img);
-    } else if (video) {
-      // Served inline so <video> can stream it; media bytes can't execute scripts.
-      headers.set("Content-Type", video);
-    } else {
-      headers.set("Content-Type", "application/octet-stream");
-      headers.set("Content-Disposition", "attachment");
-      headers.set("Content-Length", String(bytes.byteLength));
-      return new NextResponse(bytes as unknown as BodyInit, { headers });
-    }
+  const { size: total, prefix } = head;
+  const img = sniffImageMime(prefix);
+  const video = img ? null : sniffVideoMime(prefix);
 
-    // Media: advertise + honor HTTP Range. Safari won't play <video> without it —
-    // it sends `Range: bytes=0-1` and expects a 206 Partial Content response.
-    const total = bytes.byteLength;
-    headers.set("Accept-Ranges", "bytes");
-    const rangeHeader = req.headers.get("range");
-    if (rangeHeader) {
-      const match = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader.trim());
-      if (match) {
-        let start = match[1] ? parseInt(match[1], 10) : 0;
-        let end = match[2] ? parseInt(match[2], 10) : total - 1;
-        if (Number.isNaN(start)) start = 0;
-        if (Number.isNaN(end) || end >= total) end = total - 1;
-        if (start > end || start >= total) {
-          return new NextResponse(null, {
-            status: 416,
-            headers: { "Content-Range": `bytes */${total}`, "Accept-Ranges": "bytes" },
-          });
-        }
-        const chunk = bytes.subarray(start, end + 1);
-        headers.set("Content-Range", `bytes ${start}-${end}/${total}`);
-        headers.set("Content-Length", String(chunk.byteLength));
-        return new NextResponse(chunk as unknown as BodyInit, { status: 206, headers });
-      }
-    }
+  const headers = new Headers();
+  headers.set("Cache-Control", "private, max-age=3600");
+  if (img) {
+    headers.set("Content-Type", img);
+  } else if (video) {
+    // Served inline so <video> can stream it; media bytes can't execute scripts.
+    headers.set("Content-Type", video);
+  } else {
+    headers.set("Content-Type", "application/octet-stream");
+    headers.set("Content-Disposition", "attachment");
+  }
 
-    headers.set("Content-Length", String(total));
-    return new NextResponse(bytes as unknown as BodyInit, { headers });
+  // Media: advertise + honor HTTP Range. Safari won't play <video> without it —
+  // it sends `Range: bytes=0-1` and expects a 206 Partial Content response, and
+  // it uses a suffix range (`bytes=-N`) to find the moov atom of an mp4 that
+  // wasn't written faststart.
+  const isMedia = Boolean(img || video);
+  if (isMedia) headers.set("Accept-Ranges", "bytes");
+
+  const range = isMedia ? parseRangeHeader(req.headers.get("range"), total) : ({ kind: "none" } as const);
+  if (range.kind === "unsatisfiable") {
+    return new NextResponse(null, {
+      status: 416,
+      headers: { "Content-Range": unsatisfiedRangeHeader(total), "Accept-Ranges": "bytes" },
+    });
+  }
+
+  const slice = range.kind === "satisfiable" ? { start: range.start, end: range.end } : null;
+  const length = slice ? slice.end - slice.start + 1 : total;
+  headers.set("Content-Length", String(length));
+  if (slice) headers.set("Content-Range", contentRangeHeader(slice.start, slice.end, total));
+
+  // Next serves HEAD by running GET and discarding the body. Answering with a
+  // null body keeps that from opening a storage stream nobody will consume.
+  if (req.method === "HEAD") {
+    return new NextResponse(null, { status: slice ? 206 : 200, headers });
+  }
+
+  try {
+    const body = await openObjectStream(k, slice ?? undefined);
+    return new NextResponse(body, { status: slice ? 206 : 200, headers });
   } catch {
     return new NextResponse("Not found", { status: 404 });
   }

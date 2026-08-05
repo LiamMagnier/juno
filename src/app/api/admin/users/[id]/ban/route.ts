@@ -26,7 +26,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   await banUser(id, parsed.data.reason, owner.email!);
-  console.log(`[admin] ban by ${owner.email}: ${user.email}`);
+  // Ids, not emails — see the note in the unban route.
+  console.log(`[admin] ban by ${owner.id}: ${user.id}`);
 
   return NextResponse.json({ ok: true });
 }

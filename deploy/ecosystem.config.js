@@ -24,15 +24,39 @@ function loadEnv(file) {
   return out;
 }
 
+/*
+ * Explicit allowlist, derived from `grep -o 'process\.env\.[A-Z_0-9]*' relay/src`.
+ *
+ * This used to pass anything matching `_API_KEY`, which handed the process that
+ * terminates untrusted public WebSockets every provider key Juno holds —
+ * ANTHROPIC_API_KEY, COMPOSIO_API_KEY, TAVILY_API_KEY, RESEND_API_KEY and the
+ * rest — none of which the relay has any use for. The relay speaks to exactly
+ * four realtime voice providers.
+ *
+ * Keep this in sync with what relay/src actually reads. Adding a key the relay
+ * does not use costs nothing but blast radius; omitting one it does use breaks
+ * that voice provider silently at runtime.
+ */
+const RELAY_ENV_ALLOWLIST = [
+  "AUTH_SECRET",
+  "ALLOWED_ORIGINS",
+  // OpenAI realtime
+  "OPENAI_API_KEY",
+  // Gemini Live
+  "GEMINI_LIVE_API_KEY",
+  "GOOGLE_API_KEY",
+  // MiniMax realtime
+  "MINIMAX_API_KEY",
+  "MINIMAX_BASE_URL",
+  // Qwen (DashScope) realtime
+  "DASHSCOPE_API_KEY",
+];
+
 const rootEnv = loadEnv(path.join(__dirname, "..", ".env"));
 const relayEnv = {};
 for (const [key, value] of Object.entries(rootEnv)) {
-  if (
-    key === "AUTH_SECRET" ||
-    key === "ALLOWED_ORIGINS" ||
-    key.endsWith("_API_KEY") ||
-    key.startsWith("RELAY_")
-  ) {
+  // RELAY_* are the relay's own model/feature overrides.
+  if (RELAY_ENV_ALLOWLIST.includes(key) || key.startsWith("RELAY_")) {
     relayEnv[key] = value;
   }
 }

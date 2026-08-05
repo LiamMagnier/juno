@@ -55,6 +55,7 @@ const ICONS = {
   conversation: "message-circle",
   new: "plus",
   search: "search",
+  settings: "settings",
 
   cloud: "cloud",
   device: "laptop",
@@ -67,15 +68,7 @@ const ICONS = {
   external: "arrow-up-right",
   file: "file-text",
 
-  // Settings is reached from the user menu rather than the rail, so it has no
-  // row in `AppIcons` — `src/components/app/user-menu.tsx` is its source.
-  settings: "settings",
-
-  // The composer's "+" menu, from `src/components/chat/composer.tsx`: what it
-  // adds to a message, then the tools it arms. `canvas` is the "Create a
-  // canvas" action and `artifactsTool` the "Canvas & artifacts" toggle — two
-  // rows, two marks on the web, so two here. Connectors is not listed: that
-  // row draws Plug, which `connections` above already generates.
+  // ComposerIcons — what the "+" menu adds to a message, and the tools it arms.
   attach: "paperclip",
   photos: "image-plus",
   files: "file-up",
