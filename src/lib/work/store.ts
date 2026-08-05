@@ -65,37 +65,90 @@ export interface CreateWorkSessionInput {
   requestedTarget?: WorkTarget;
   preferredHostId?: string | null;
   requestedModel?: string | null;
+  /**
+   * How much thinking the reader asked for: `minimal` … `max`, or null for
+   * Instant.
+   *
+   * Written to the column, and read by nothing. There is no seam in the runtime
+   * to hand it to. `WorkSessionOptions` in
+   * runner/agent-core/src/work/session.ts takes a provider, a model, a budget,
+   * a policy and a system suffix; `ProviderRequest` in
+   * runner/agent-core/src/providers/types.ts carries `model`, `system`,
+   * `messages`, `tools`, `maxTokens` and `signal`, and nothing else. The
+   * Anthropic adapter never sends a `thinking` block and the OpenAI-compatible
+   * one never sends `reasoning_effort`; both only read reasoning back off the
+   * stream as `thinking_delta`. `ModelCapabilities.reasoningLevels` describes
+   * what a model could be asked for and is wired to no request at all — the
+   * proxy adapter reports it empty.
+   *
+   * Passing it through `systemSuffix` was the available alternative and is
+   * rejected here: a sentence asking a model to think harder is not the
+   * six-tier control the composer draws, and dressing one up as the other is
+   * exactly how a preference comes to look saved and have no effect. The two
+   * honest options are to give the runtime a reasoning parameter and thread it
+   * through every adapter, or to take the control out of the composer. Until
+   * one of them happens this column records a request nothing acts on, and the
+   * popover promises a reader something Juno does not do.
+   */
   reasoningEffort?: string | null;
   /** The session's requested policy. Runs intersect it with host and project. */
   permissionPolicy?: WorkPermissionPolicy;
+  /**
+   * The files this session starts life with, granted alongside it.
+   *
+   * Ownership must already have been re-checked against the user — see the
+   * grant shape below for why this function will not do it for you.
+   */
+  attachments?: readonly SessionAttachmentGrant[];
 }
 
 /**
- * Creates a session in `draft`.
+ * Creates a session in `draft`, with its file grants, in one transaction.
  *
  * Draft, not queued: composing a session costs nothing and holds no executor,
  * and a session that reaches `queued` the instant it is created cannot be
  * edited before it runs — which is the state a user is in for the whole time
  * they are still writing the goal.
+ *
+ * The grants are in the transaction rather than in a second statement after it,
+ * and that is the whole reason this function opens one. The two writes used to
+ * be sequential and independent: a transient failure on the second left a
+ * session that existed, was returned to the composer as created, and had none
+ * of the reader's files attached to it. The retry made it worse rather than
+ * better — a retry carries the same idempotency key, so it landed on the replay
+ * path, which returned the session that already existed and never wrote the
+ * grants at all. The attachment was gone for good, the reader was told the task
+ * was saved, and the only visible symptom was an agent that behaved as though
+ * the spreadsheet it was asked to reconcile had never been mentioned.
  */
 export async function createWorkSession(input: CreateWorkSessionInput): Promise<WorkSession> {
-  return prisma.workSession.create({
-    data: {
-      ...(input.id ? { id: input.id } : {}),
-      userId: input.userId,
-      title: input.title,
-      titleSource: input.titleSource ?? "default",
-      goal: input.goal,
-      projectId: input.projectId ?? null,
-      conversationId: input.conversationId ?? null,
-      status: "draft",
-      needsAttention: false,
-      requestedTarget: input.requestedTarget ?? "automatic",
-      preferredHostId: input.preferredHostId ?? null,
-      requestedModel: input.requestedModel ?? null,
-      reasoningEffort: input.reasoningEffort ?? null,
-      permissionPolicy: input.permissionPolicy ?? "balanced",
-    },
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.workSession.create({
+      data: {
+        ...(input.id ? { id: input.id } : {}),
+        userId: input.userId,
+        title: input.title,
+        titleSource: input.titleSource ?? "default",
+        goal: input.goal,
+        projectId: input.projectId ?? null,
+        conversationId: input.conversationId ?? null,
+        status: "draft",
+        needsAttention: false,
+        requestedTarget: input.requestedTarget ?? "automatic",
+        preferredHostId: input.preferredHostId ?? null,
+        requestedModel: input.requestedModel ?? null,
+        reasoningEffort: input.reasoningEffort ?? null,
+        permissionPolicy: input.permissionPolicy ?? "balanced",
+      },
+    });
+
+    const attachments = input.attachments ?? [];
+    if (attachments.length > 0) {
+      await tx.workFileGrant.createMany({
+        data: attachmentGrantRows(input.userId, session.id, attachments),
+      });
+    }
+    return session;
   });
 }
 
@@ -277,6 +330,212 @@ function uniqueConflict(err: unknown): string[] | null {
   const target = (err.meta as { target?: unknown } | undefined)?.target;
   if (Array.isArray(target)) return target.filter((entry): entry is string => typeof entry === "string");
   return typeof target === "string" ? [target] : [];
+}
+
+// ---------------------------------------------------------------------------
+// Files
+// ---------------------------------------------------------------------------
+
+export interface SessionAttachmentGrant {
+  /** The `Attachment` row's id. Ownership must already have been re-checked. */
+  attachmentId: string;
+  /** The name the reader uploaded it under. Shown to them, and to the agent. */
+  fileName: string;
+}
+
+/**
+ * The `kind` an attached upload is granted under.
+ *
+ * Named rather than repeated, because it is also the filter the reconcile below
+ * sweeps with: the two have to be the same string or a reconcile would revoke
+ * grants it did not write.
+ */
+const ATTACHMENT_GRANT_KIND = "cloud_file";
+
+/**
+ * The `WorkFileGrant` rows a set of attachments becomes.
+ *
+ * These are the first `WorkFileGrant` rows anything in the tree writes, and the
+ * shape is a decision rather than a formality. A cloud attachment is
+ * `kind: "cloud_file"` with the attachment id in `remoteRef` — the column the
+ * schema describes as "stable identity for a cloud source" — and `localPath`
+ * stays null, because there is no path: the file lives in the bucket, and a
+ * grant that invented a path for it would be a grant `serializeGrantForRemote`
+ * has to redact and a host could try to resolve.
+ *
+ * `read`, never `read_write`. Attaching a file to a task is a statement about
+ * what the agent may look at, not permission to edit the reader's library in
+ * place. A run that produces a changed version of an attached workbook writes
+ * a new artifact, which the reader can compare against the original — an
+ * in-place write leaves them nothing to compare it against.
+ *
+ * Scoped to the session (`sessionId` set, `hostId` null) rather than
+ * account-wide. An account-wide grant would make a spreadsheet attached to one
+ * task readable by every later task in the account, which is not what dropping
+ * a file into a composer means.
+ *
+ * A pure row builder, taking no client, so the two callers that write these —
+ * `createWorkSession` inside its transaction and `reconcileSessionAttachments`
+ * inside its own — share the shape without either of them owning it. Neither
+ * re-checks that the attachment ids belong to the user: the route does that
+ * before it builds a `SessionAttachmentGrant`, and a store function that took
+ * raw ids and checked them itself would make the check look optional at the
+ * call site where it is not.
+ */
+function attachmentGrantRows(
+  userId: string,
+  sessionId: string,
+  attachments: readonly SessionAttachmentGrant[]
+): Prisma.WorkFileGrantCreateManyInput[] {
+  return attachments.map((attachment) => ({
+    userId,
+    sessionId,
+    hostId: null,
+    kind: ATTACHMENT_GRANT_KIND,
+    displayName: attachment.fileName,
+    localPath: null,
+    remoteRef: attachment.attachmentId,
+    accessMode: "read",
+  }));
+}
+
+export interface ReconcileSessionAttachmentsInput {
+  userId: string;
+  sessionId: string;
+  /**
+   * The whole set the client last sent, not a delta. An empty array is a
+   * reader who has removed every file, and is honoured as such.
+   */
+  attachments: readonly SessionAttachmentGrant[];
+  now?: Date;
+}
+
+export interface ReconcileSessionAttachmentsResult {
+  granted: number;
+  revoked: number;
+}
+
+/**
+ * Brings a session's attachment grants in line with what the client last sent.
+ *
+ * A grant used to be write-once: the create route granted on the path that
+ * created the session and never anywhere else. That is defensible right up
+ * until the composer reuses a draft, which it does whenever the goal has not
+ * changed — so a reader who attached the wrong spreadsheet, removed it, and
+ * pressed the button again got a session whose grant list still held the file
+ * they had taken out of the UI. It was mirrored onto the run's input manifest
+ * at dispatch and read out to the model, and nothing on any surface said so.
+ *
+ * Reconciled rather than appended, because appending cannot express a removal
+ * and a set that only grows is not a set the reader is editing.
+ *
+ * Revoked, never deleted. `revokedAt` is what makes the history readable — a
+ * grant that was held and withdrawn is a different answer to "what was this
+ * agent allowed to read" than a grant that never existed, and it is the second
+ * question an incident asks. For the same reason a file that is removed and
+ * then re-added becomes a second row rather than a cleared `revokedAt`: the
+ * history should read granted, revoked, granted again, which is what happened.
+ *
+ * Scoped to `ATTACHMENT_GRANT_KIND`. A session can carry grants this route
+ * never wrote — a folder on a Mac, a connector scope — and a composer that has
+ * never heard of them must not revoke them by failing to mention them.
+ */
+export async function reconcileSessionAttachments(
+  input: ReconcileSessionAttachmentsInput
+): Promise<ReconcileSessionAttachmentsResult> {
+  const now = input.now ?? new Date();
+
+  // One transaction so the revokes and the grants are one edit. A reader who
+  // swapped one file for another and saw only the revoke commit would have a
+  // session with neither file and no way to tell that from having attached
+  // nothing.
+  return prisma.$transaction(async (tx) => {
+    const live = await tx.workFileGrant.findMany({
+      where: {
+        userId: input.userId,
+        sessionId: input.sessionId,
+        kind: ATTACHMENT_GRANT_KIND,
+        revokedAt: null,
+      },
+      select: { id: true, remoteRef: true },
+    });
+
+    const wanted = new Set(input.attachments.map((attachment) => attachment.attachmentId));
+    // A live attachment grant with no `remoteRef` names no file, so nothing can
+    // ever ask for it again; it is swept with the rest rather than left behind
+    // as a row the reconcile can never converge on.
+    const stale = live.filter((grant) => grant.remoteRef === null || !wanted.has(grant.remoteRef));
+    const held = new Set(
+      live.map((grant) => grant.remoteRef).filter((ref): ref is string => ref !== null)
+    );
+    const missing = input.attachments.filter((attachment) => !held.has(attachment.attachmentId));
+
+    let revoked = 0;
+    if (stale.length > 0) {
+      const swept = await tx.workFileGrant.updateMany({
+        where: { id: { in: stale.map((grant) => grant.id) }, userId: input.userId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      revoked = swept.count;
+    }
+
+    let granted = 0;
+    if (missing.length > 0) {
+      const created = await tx.workFileGrant.createMany({
+        data: attachmentGrantRows(input.userId, input.sessionId, missing),
+      });
+      granted = created.count;
+    }
+
+    return { granted, revoked };
+  });
+}
+
+export interface RecordRunInputsInput {
+  runId: string;
+  sessionId: string;
+  userId: string;
+}
+
+/**
+ * Copies the session's live grants onto the run as its input manifest.
+ *
+ * A snapshot, taken at dispatch, and that is the point of the table: a grant
+ * can be revoked the minute after a run starts, and a run whose inputs were
+ * re-derived from the grant list afterwards would report a set of files that
+ * is not the set it read. `WorkRunIO` answers "what went in", once, for ever.
+ *
+ * Only grants that name a cloud source are mirrored. `label` is documented in
+ * the schema as "display label safe for any client. Never an absolute path.",
+ * and a local grant's whole identity is its path — there is nothing else to put
+ * in `refId` that a client could act on, and putting the path there would put
+ * it on every phone that renders the run. The Mac resolves its own grants when
+ * it claims the command, which is the only place a path is allowed to exist.
+ *
+ * Idempotent by intent rather than by constraint: called once per created run,
+ * and skipped entirely on the replay path, because a replayed dispatch is the
+ * same run and its manifest was written when the run was.
+ */
+export async function recordRunInputsFromGrants(input: RecordRunInputsInput): Promise<number> {
+  const grants = await prisma.workFileGrant.findMany({
+    where: { userId: input.userId, sessionId: input.sessionId, revokedAt: null },
+    select: { remoteRef: true, displayName: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const rows = grants
+    .filter((grant): grant is { remoteRef: string; displayName: string } => grant.remoteRef !== null)
+    .map((grant) => ({
+      runId: input.runId,
+      direction: "input",
+      refKind: "attachment",
+      refId: grant.remoteRef,
+      label: grant.displayName,
+    }));
+  if (rows.length === 0) return 0;
+
+  const created = await prisma.workRunIO.createMany({ data: rows });
+  return created.count;
 }
 
 // ---------------------------------------------------------------------------

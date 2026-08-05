@@ -32,6 +32,8 @@ import {
 } from "@/lib/work/domain";
 import { hostCapabilityView, type WorkHostRow } from "@/lib/work/schedule";
 import { verifyApproval } from "@/lib/work/digests";
+import { REASONING_TIERS } from "@/lib/model-metrics";
+import { MAX_ATTACHMENTS } from "@/lib/uploads";
 
 // ---------------------------------------------------------------------------
 // Bounds
@@ -58,6 +60,21 @@ const idempotencyKey = z.string().trim().min(8).max(MAX_ID_CHARS);
 
 const id = z.string().trim().min(1).max(MAX_ID_CHARS);
 
+/**
+ * How much thinking the reader asked for, or `null` for none at all.
+ *
+ * Built from `REASONING_TIERS` rather than repeating the six literals, which is
+ * the lesson `/api/chat`'s body schema already paid for: it listed four of them
+ * and silently 400'd every request that asked for the other two, on 26 models,
+ * for as long as it took somebody to notice.
+ *
+ * Nullable and optional mean different things and both are needed. Absent is
+ * "the reader expressed no preference", and leaves whatever the session
+ * already carries alone. `null` is a preference — Instant, no extra reasoning —
+ * and is the only way to turn a tier back off once one has been set.
+ */
+const reasoningEffort = z.enum(REASONING_TIERS).nullable();
+
 // ---------------------------------------------------------------------------
 // Session bodies
 // ---------------------------------------------------------------------------
@@ -78,6 +95,17 @@ export const createSessionSchema = z.object({
   // here would reject a model this deployment does not know but the executor
   // does, which is exactly the case a rolling deploy produces.
   model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
+  reasoningEffort: reasoningEffort.optional(),
+  // Files the reader picked in the composer, by attachment id. The route
+  // re-checks each one against `Attachment{id, userId}` before it becomes a
+  // grant — an id in a request body is a claim about ownership, and the only
+  // thing that makes it true is a row that also carries this user's id.
+  //
+  // Bounded by the same `MAX_ATTACHMENTS` the chat composer and `/api/chat`
+  // use, imported rather than restated: a cap that disagreed with the one the
+  // picker enforces would reject a selection the UI had already accepted, and
+  // the reader would have no way to tell which of their files was the problem.
+  attachmentIds: z.array(id).max(MAX_ATTACHMENTS).optional(),
   idempotencyKey: idempotencyKey.optional(),
 });
 
@@ -109,14 +137,21 @@ export const CLIENT_RUN_ORIGINS = ["manual", "retry", "resume", "fork"] as const
 
 export const startRunSchema = z.object({
   origin: z.enum(CLIENT_RUN_ORIGINS).optional(),
-  // What the plan says this attempt needs. Empty means "nothing local", which
-  // `selectTarget` resolves to the cloud — the correct reading for a client
-  // that has not planned yet.
+  // What the plan says this attempt needs. A client that names capabilities is
+  // making a request, not a suggestion, and the route honours it. Absent — or
+  // an empty array, which is the same statement made less carefully — means
+  // "you work it out", and the route reads the goal with `inferCapabilities`.
+  //
+  // The browser takes the second path now: the composer's chip asked the reader
+  // to answer a question about Juno's architecture before describing their own
+  // work, and the answer was always either "anything it needs" or nothing.
+  // The native client still names them, because by then it has planned.
   requiredCapabilities: z.array(z.enum(WORK_CAPABILITIES)).max(WORK_CAPABILITIES.length).optional(),
   // Overrides the session's target for this attempt only, which is how "it
   // failed on the Mac, run it in the cloud" works without editing the session.
   requestedTarget: z.enum(WORK_TARGETS).optional(),
   model: z.string().trim().min(1).max(MAX_ID_CHARS).optional(),
+  reasoningEffort: reasoningEffort.optional(),
   idempotencyKey: idempotencyKey.optional(),
 });
 

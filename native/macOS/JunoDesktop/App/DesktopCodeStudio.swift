@@ -486,6 +486,11 @@ struct DesktopCodeSidebar: View {
     let remote: CodeRemoteBrowserModel
     @Binding var selection: DesktopCodeSidebarItem?
     @Binding var remoteDeviceID: String
+    /// Which half of the app the window is showing, so the switch at the top of
+    /// this column can move it. The column does not otherwise read it — it exists
+    /// here for the same reason Chat's has always existed, to give the header
+    /// something to write through.
+    @Binding var product: DesktopProductMode
     let isBootstrapping: Bool
     /// The signed-in account, its photo, its synchronisation state and its plan
     /// meters — the four facts Chat's own column has always shown and this one
@@ -747,7 +752,11 @@ struct DesktopCodeSidebar: View {
             // first drew its title level with the traffic lights and behind the
             // window's own title, while the rows underneath sat correctly below
             // them. Raising the inset could not fix it: the header does not move
-            // with the content it heads.
+            // with the content it heads. The opaque strip the switch now sits in
+            // changes what that looks like, not whether it is wrong — a pinned
+            // header no longer lands on the traffic lights, it lands behind the
+            // strip and is never seen at all, which is a worse thing to ship than
+            // no header.
             //
             // Nothing is lost by dropping it. "All Projects" is the first row and
             // names the group better than a static caption did, and adding a
@@ -769,12 +778,18 @@ struct DesktopCodeSidebar: View {
         }
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
-        // Keep the source list below the full titlebar, including the traffic
-        // lights and the toolbar controls. The inset is intentionally empty:
-        // product identity belongs in the window chrome, not as a duplicate
-        // row inside the navigation column.
+        // The Chat / Code switch, on the column it switches, in the strip that
+        // used to be reserved and empty.
+        //
+        // The empty strip's note said product identity belonged in the window
+        // chrome. What the strip could not do then was *hold* anything: it was
+        // `Color.clear`, so scrolled rows and the section headers this list pins
+        // to its own top both slid through it. See
+        // ``DesktopSidebarProductHeader`` — the backing is what makes the strip
+        // able to carry a control, and it is why the pinned-header note above no
+        // longer describes a visible failure.
         .safeAreaInset(edge: .top, spacing: 0) {
-            Color.clear.frame(height: DesktopSidebarChromeMetrics.titlebarClearance)
+            DesktopSidebarProductHeader(product: $product)
         }
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
@@ -1629,10 +1644,7 @@ struct DesktopCodeDraftDetail: View {
     /// this replaces.
     private var noProjectBar: some View {
         HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.projects, size: 19)
-                .foregroundStyle(.tertiary)
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
+            projectMark
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("No project")
@@ -1661,12 +1673,43 @@ struct DesktopCodeDraftDetail: View {
         .accessibilityIdentifier("juno.code.no-project-context")
     }
 
+    /// The leading mark both context bars open with.
+    ///
+    /// **One definition, because the two bars are the same bar.** They occupy the
+    /// same 52pt strip above the same composer and differ only in what they have
+    /// to say; a mark written out twice is a mark that disagrees with itself the
+    /// first time either is touched, which is how the two ended up as the app's
+    /// only 19pt glyphs — the sidebar draws this same icon at 15, the menu at 14,
+    /// this bar's own button label at 13.
+    ///
+    /// A 19pt outline glyph tinted `.tertiary`, floating in a 28pt slot of
+    /// whitespace, was the largest and least resolved thing in the bar: nothing
+    /// held it, so it read as an unfinished placeholder beside a 13pt title. The
+    /// fix is the treatment the rest of the app already uses for a mark that
+    /// stands for a thing rather than labelling an action — a quiet fill with the
+    /// glyph centred at roughly half the tile, which is the website's own row
+    /// idiom and the sidebar's "Add project…" chip idiom in a square. `junoMuted`
+    /// is the resting-chip fill by definition, and it is one step off
+    /// `windowBackgroundColor` rather than a competing surface.
+    ///
+    /// Identical in both bars on purpose. The tile is the *slot* a project
+    /// occupies; whether one is open is said by the words beside it, which is
+    /// where a reader looks for it. Two different inks for the same glyph said
+    /// nothing legible and cost the pair their symmetry.
+    private var projectMark: some View {
+        JunoIconView(.projects, size: 14)
+            .foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: JunoRadius.row, style: .continuous)
+                    .fill(Color.junoMuted)
+            )
+            .accessibilityHidden(true)
+    }
+
     private func projectContextBar(_ record: WorkspaceRecord) -> some View {
         HStack(spacing: JunoSpace.cozy) {
-            JunoIconView(.projects, size: 19)
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
+            projectMark
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(record.descriptor.displayName)

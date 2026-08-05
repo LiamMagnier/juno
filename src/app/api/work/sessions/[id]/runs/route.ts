@@ -1,9 +1,13 @@
 import { NextResponse } from "next/server";
-import type { Prisma, WorkHost } from "@prisma/client";
+import type { Plan, Prisma, WorkHost } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { isOwnerEmail } from "@/lib/owner";
 import { rateLimit } from "@/lib/rate-limit";
+import { pickAutoModel } from "@/lib/auto-model";
+import { MODEL_LIST, resolveModel } from "@/lib/models";
+import { getUserPlan } from "@/lib/usage";
+import { canUseModel } from "@/lib/plans";
 import {
   WORK_LIVE_STATUSES,
   WORK_PERMISSION_POLICIES,
@@ -12,10 +16,19 @@ import {
   selectTarget,
   type HostCapabilityView,
   type WorkCapability,
+  type WorkDegradation,
   type WorkPermissionPolicy,
   type WorkTarget,
 } from "@/lib/work/domain";
-import { createRun, type CreateRunResult } from "@/lib/work/store";
+import { inferCapabilities, selectForInferred } from "@/lib/work/inference";
+import {
+  cheapestWorkModel,
+  defaultWorkModelId,
+  isAutoModelId,
+  isWorkCapableModel,
+  isWorkModelAllowed,
+} from "@/lib/work/models";
+import { createRun, recordRunInputsFromGrants, type CreateRunResult } from "@/lib/work/store";
 import { serializeRun } from "@/lib/work/serializers";
 import { effectiveHostState, refusalForSelection, startRunSchema } from "@/app/api/work/protocol";
 
@@ -84,6 +97,109 @@ function policyOf(value: string): WorkPermissionPolicy {
     : "conservative";
 }
 
+// ---------------------------------------------------------------------------
+// Model resolution
+// ---------------------------------------------------------------------------
+
+interface RunModel {
+  /** What was asked for, verbatim, including the Auto sentinel. */
+  requested: string;
+  /** A concrete `provider:model` the executor can split and drive. */
+  effective: string;
+  degradation: WorkDegradation[];
+}
+
+/** The reader-facing name of a model id, or the id when nothing knows it. */
+function modelLabel(id: string): string {
+  return resolveModel(id)?.name ?? id;
+}
+
+/**
+ * Raised when the account's plan admits no model the agent runtime can drive.
+ *
+ * Distinct from the throw `pickAutoModel` makes, and answered differently: that
+ * one means the deployment has no provider configured, which is nobody's fault
+ * on this side of the request, while this one means the reader is not entitled
+ * to any model that could run a Work task. One is a 503 and one is a 403, and
+ * telling a person to "try again later" when the answer is "this needs a plan"
+ * is how a wall gets mistaken for a wobble.
+ */
+class NoEntitledModelError extends Error {}
+
+/**
+ * Decides which model this attempt actually runs on, before the row is written.
+ *
+ * This is the fix for a bug that killed every cloud run started from a browser.
+ * `scripts/work-runner.ts` resolves its provider by splitting the run's model id
+ * on `:`, and an empty string throws — "The run has no model" — before the first
+ * token. Nothing had ever written `effectiveModel`, and no web client had ever
+ * sent `model`, so every one of those runs died in `preparing`. The dispatch
+ * route is the right place to end that: it is the only layer holding the goal
+ * (which Auto routes on), the account (whose plan bounds the choice), and the
+ * authority to refuse rather than queue something that cannot run.
+ *
+ * Auto is resolved here rather than passed through. The sentinel is a promise to
+ * choose, and choosing needs `isProviderConfigured`, which only the server can
+ * answer. Resolving it is emphatically NOT a substitution and records no
+ * degradation: the reader asked to be routed, and being routed is the answer to
+ * that request, not a shortfall in it. A degradation on every Auto run would
+ * teach people to ignore the one that matters.
+ *
+ * What IS a substitution is a model this run cannot actually have — either one
+ * the agent runtime cannot drive, or one the account is not entitled to. Auto's
+ * own pool guards against neither: it filters for chat, not for
+ * `isWorkCapableModel`, so it can land on a Responses-API-only entry the Work
+ * runtime has no adapter for; and its last resort abandons the plan filter
+ * altogether, so on an account with an empty eligible pool it returns whatever
+ * chat model comes first in the catalog. Either way the run proceeds on the
+ * cheapest model the account may actually use and says so, because a run that
+ * quietly used a different model from the one on its own detail page is a
+ * result nobody can account for afterwards.
+ *
+ * Two different throws, answered two different ways by the caller. `pickAutoModel`
+ * throws when the deployment has no configured provider — a 503, nobody's fault
+ * on this side. ``NoEntitledModelError`` means the account's plan admits no model
+ * that could run a Work task at all — a 403, and a different sentence.
+ */
+function resolveRunModel(input: { requested: string; goal: string; plan: Plan }): RunModel {
+  const auto = isAutoModelId(input.requested);
+  const chosen = auto ? pickAutoModel({ message: input.goal, plan: input.plan }).model.id : input.requested;
+
+  const info = resolveModel(chosen);
+  // Both halves, and the second one is not redundant. `isWorkModelAllowed`
+  // above has already vetted anything the reader *named*, but it lets the Auto
+  // sentinel through — and `pickAutoModel`'s last resort ignores the plan
+  // entirely, so on an account with an empty eligible pool it hands back a
+  // frontier model. Checking only the shape here is what let a free account run
+  // an agent loop on the most expensive model in the catalog, on the
+  // deployment's key. The resolved id is the only id worth checking.
+  if (info && isWorkCapableModel(info) && canUseModel(input.plan, info.id)) {
+    return { requested: input.requested, effective: chosen, degradation: [] };
+  }
+
+  const fallback = cheapestWorkModel(MODEL_LIST, input.plan);
+  if (!fallback) throw new NoEntitledModelError();
+
+  const why =
+    info && isWorkCapableModel(info)
+      ? `${modelLabel(chosen)} is not included in your plan`
+      : `${modelLabel(chosen)} cannot be driven as an agent`;
+
+  return {
+    requested: input.requested,
+    effective: fallback.id,
+    degradation: [
+      {
+        kind: "model_substituted",
+        subject: chosen,
+        explanation: auto
+          ? `Auto chose ${modelLabel(chosen)}, but ${why}, so this task runs on ${fallback.name} instead.`
+          : `${why}, so this task runs on ${fallback.name} instead.`,
+      },
+    ],
+  };
+}
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { user, error } = await requireUser();
   if (!user) return error;
@@ -112,6 +228,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }
   }
 
+  // The plan gate, on the id this attempt would actually ask for. The session's
+  // stored model is checked too, not just the body's: a session drafted while
+  // the account was on Pro is still there after it lapses, and dispatching it
+  // would be a paid model started by an unpaid account without anybody choosing
+  // that. `protocol.ts` deliberately does not check the model against the
+  // catalog — the executor may substitute, and a rolling deploy legitimately
+  // sees ids this build does not carry — but that is a question about whether
+  // the id exists, and this is a question about whether this reader may use it.
+  const requestedModel = body.model ?? session.requestedModel ?? defaultWorkModelId();
+  const plan = await getUserPlan(user.id);
+  if (!isWorkModelAllowed(requestedModel, plan)) {
+    return NextResponse.json(
+      {
+        error: "plan_locked",
+        message: "Your plan does not include that model, so nothing was started. Pick another one, or upgrade.",
+      },
+      { status: 403 }
+    );
+  }
+
   const now = new Date();
   const hosts = await prisma.workHost.findMany({ where: { userId: user.id } });
   // Preferred host first: `selectTarget` picks the first fully capable host in
@@ -123,13 +259,48 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     : hosts;
 
   const requestedTarget = body.requestedTarget ?? targetOf(session.requestedTarget);
-  const required = body.requiredCapabilities ?? [];
-  const selection = selectTarget({
-    requested: requestedTarget,
-    required,
-    hosts: ordered.map((host) => hostCapabilityView(host, now)),
-    cloudAvailable: CLOUD_WORK_AVAILABLE,
-  });
+  // A client that named capabilities is making a request, and it is honoured
+  // exactly as sent — the Mac plans before it dispatches, and second-guessing a
+  // plan with a regex would be worse than the regex is good.
+  //
+  // A client that named none is asking Juno to work it out, which the composer
+  // has promised in as many words since it was written and which nothing has
+  // ever done: the field said "Leave this empty and Juno works it out from the
+  // task", and an empty field meant an empty list, which meant every task was
+  // treated as needing nothing local. `inferCapabilities` reads the goal, and
+  // the browser runs the same pure function on the same text before the button
+  // is pressed, so the sentence the reader saw is the one acted on here.
+  //
+  // An empty array is treated as absent rather than as an assertion. It is what
+  // a client sends when it has nothing to say, not a considered claim that this
+  // task needs nothing — and the cost of reading it as one is the bug above.
+  //
+  // The two are then selected on differently, and that asymmetry is the whole
+  // point of separating them. A named capability is a request, and `selectTarget`
+  // refuses when nothing can serve a request. An inferred one is a reading of
+  // some prose, and `selectForInferred` will not let a reading refuse: it drops
+  // the local guesses, runs what the cloud can serve, and says which parts will
+  // not happen. Refusing on a regex would mean a person who wrote "tidy my
+  // downloads folder" is told, by a machine that was never asked about their
+  // computer, that they cannot start — with no chip left to overrule it.
+  const explicit = body.requiredCapabilities ?? [];
+  const offers = ordered.map((host) => hostCapabilityView(host, now));
+  const required: readonly WorkCapability[] =
+    explicit.length > 0 ? explicit : inferCapabilities(session.goal).capabilities;
+  const selection =
+    explicit.length > 0
+      ? selectTarget({
+          requested: requestedTarget,
+          required,
+          hosts: offers,
+          cloudAvailable: CLOUD_WORK_AVAILABLE,
+        })
+      : selectForInferred({
+          requested: requestedTarget,
+          inferred: required,
+          hosts: offers,
+          cloudAvailable: CLOUD_WORK_AVAILABLE,
+        });
 
   // No executor can serve this. Refusing is the entire reason `selectTarget`
   // returns a null target: a queued run with nothing able to claim it is a
@@ -139,6 +310,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // the user is shown.
   const refusal = refusalForSelection(selection);
   if (refusal) return NextResponse.json(refusal, { status: 409 });
+
+  // Before the rate limit, because a deployment with no configured provider is
+  // not the reader's fault and should not cost them one of their ten runs a
+  // minute to discover.
+  let model: RunModel;
+  try {
+    model = resolveRunModel({ requested: requestedModel, goal: session.goal, plan });
+  } catch (err) {
+    if (err instanceof NoEntitledModelError) {
+      return NextResponse.json(
+        {
+          error: "plan_locked",
+          message:
+            "Your plan doesn’t include a model that can run a Work task, so nothing was started.",
+        },
+        { status: 403 }
+      );
+    }
+    // `pickAutoModel` throws when nothing at all survives its filters. The only
+    // honest answer is that nothing was started, and that the reason is on this
+    // side: a 500 would send the reader to retry a request that cannot succeed
+    // until somebody configures a provider.
+    return NextResponse.json(
+      {
+        error: "no_model_available",
+        message: "Juno has no model available to run this right now, so nothing was started.",
+      },
+      { status: 503 }
+    );
+  }
 
   if (!isOwnerEmail(user.email)) {
     const limited = await rateLimit({
@@ -211,13 +412,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         requestedTarget,
         effectiveTarget: selection.target,
         hostId: selection.hostId,
-        requestedModel: body.model ?? session.requestedModel,
+        // Both, always. `requestedModel` is what was asked for and may be the
+        // Auto sentinel; `effectiveModel` is the concrete id the executor
+        // splits into a provider and a model name. Keeping only one of them
+        // would lose the difference between a run that asked for Opus and a run
+        // that asked to be routed and was routed to it.
+        requestedModel: model.requested,
+        effectiveModel: model.effective,
         requiredCapabilities: required,
         availableCapabilities: selection.available,
         // Carried onto the run so the client can show, before any work starts,
         // that this attempt will do less than was asked. Recomputing it later
-        // describes the fleet as it is then, not as it was at dispatch.
-        degradation: selection.degradation,
+        // describes the fleet as it is then, not as it was at dispatch. The
+        // model's degradation joins the target's here rather than being kept
+        // apart: from the reader's side there is one list of ways this run
+        // differs from the one they asked for.
+        degradation: [...selection.degradation, ...model.degradation],
         permissionPolicy,
         idempotencyKey: body.idempotencyKey ?? null,
       });
@@ -249,6 +459,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       );
     }
     throw err;
+  }
+
+  if (!created.replay) {
+    // The files this attempt is being given, frozen onto the run. Skipped on a
+    // replay because a replayed dispatch is the same run, and its manifest was
+    // written when the run was — writing it twice would show the reader every
+    // attachment twice for no reason they could work out.
+    await recordRunInputsFromGrants({
+      runId: created.run.id,
+      sessionId: session.id,
+      userId: user.id,
+    });
+
+    // The thinking depth, when this attempt asked for one. It lands on the
+    // session rather than the run because `WorkRun` has no column for it, which
+    // means — unlike `requestedTarget` — it is not attempt-scoped: setting it
+    // here changes it for the next attempt too. That is a schema gap, not a
+    // decision, and it is written down here rather than left to be rediscovered
+    // by whoever notices their retry thinking as hard as the run before it.
+    if (body.reasoningEffort !== undefined && body.reasoningEffort !== session.reasoningEffort) {
+      await prisma.workSession.updateMany({
+        where: { id: session.id, userId: user.id },
+        data: { reasoningEffort: body.reasoningEffort },
+      });
+    }
   }
 
   return NextResponse.json(

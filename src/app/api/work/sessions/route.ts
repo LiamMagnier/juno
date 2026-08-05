@@ -1,10 +1,16 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { Prisma } from "@prisma/client";
+import { Prisma, type WorkSession } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/code-remote";
 import { serializeSession } from "@/lib/work/serializers";
-import { createWorkSession } from "@/lib/work/store";
+import {
+  createWorkSession,
+  reconcileSessionAttachments,
+  type SessionAttachmentGrant,
+} from "@/lib/work/store";
+import { isWorkModelAllowed } from "@/lib/work/models";
+import { getUserPlan } from "@/lib/usage";
 import { createSessionSchema, parseSessionListQuery } from "@/app/api/work/protocol";
 
 export const runtime = "nodejs";
@@ -26,6 +32,52 @@ export const runtime = "nodejs";
  */
 function idempotentSessionId(userId: string, key: string): string {
   return `wsi_${createHash("sha256").update(`${userId}\n${key}`, "utf8").digest("hex").slice(0, 32)}`;
+}
+
+/**
+ * Answers a create that landed on a session which already exists, after
+ * bringing its file grants back in line with what this request carried.
+ *
+ * A replay used to skip granting altogether, on the reasoning that an
+ * idempotency key promises the first request's outcome stands. It does, for the
+ * session. It does not for the files, because the composer reuses a draft
+ * whenever the goal is unchanged: the second press of a task whose attachment
+ * the reader has since removed lands here, and until now the removed file
+ * stayed granted, was copied onto the run's input manifest at dispatch, and was
+ * read out to the model. The reader had deleted it from the UI and had no way
+ * to find out otherwise.
+ *
+ * A failed reconcile cannot be answered with 200 and `replay: true`. That is
+ * the composer being told the task is saved with the file list it is showing,
+ * while the list in the database is the previous one — the same silent loss
+ * from the other direction. 503 rather than 500: the session is intact, the
+ * next press carries the same key and lands here again, and the reconcile is
+ * the only thing that has to succeed.
+ */
+async function replaySession(
+  session: WorkSession,
+  userId: string,
+  attachments: readonly SessionAttachmentGrant[] | null
+): Promise<NextResponse> {
+  if (attachments) {
+    try {
+      await reconcileSessionAttachments({ userId, sessionId: session.id, attachments });
+    } catch (err) {
+      console.error("[work] could not reconcile the session's attachments", {
+        sessionId: session.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return NextResponse.json(
+        {
+          error: "attachments_not_saved",
+          message:
+            "The task is saved but its file list is not, so nothing was started. Try again.",
+        },
+        { status: 503 }
+      );
+    }
+  }
+  return NextResponse.json({ session: serializeSession(session), replay: true }, { status: 200 });
 }
 
 export async function GET(req: Request) {
@@ -67,7 +119,40 @@ export async function POST(req: Request) {
 
   const parsed = createSessionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-  const { goal, title, requestedTarget, preferredHostId, projectId, model, idempotencyKey } = parsed.data;
+  const {
+    goal,
+    title,
+    requestedTarget,
+    preferredHostId,
+    projectId,
+    model,
+    reasoningEffort,
+    attachmentIds,
+    idempotencyKey,
+  } = parsed.data;
+
+  // The plan gate, server-side. `createSessionSchema` deliberately does not
+  // check the model against the catalog — the comment there explains why, and
+  // it is a good reason — but "unvalidated against the catalog" was never meant
+  // to mean "unvalidated against what this account has paid for". Until this
+  // existed, a direct POST could name any model in the catalog and the lock in
+  // the picker was the only thing in the way, which is to say nothing at all.
+  //
+  // Read only when a model was actually named. `isWorkModelAllowed` answers
+  // true for an absent id, so the plan lookup would be a query asked in order
+  // to be ignored.
+  if (model) {
+    const plan = await getUserPlan(user.id);
+    if (!isWorkModelAllowed(model, plan)) {
+      return NextResponse.json(
+        {
+          error: "plan_locked",
+          message: "Your plan does not include that model, so nothing was created. Pick another one, or upgrade.",
+        },
+        { status: 403 }
+      );
+    }
+  }
 
   // Cross-entity ownership is re-checked here rather than trusted from the
   // body: a host id or a project id in a request is a claim, and the only thing
@@ -87,15 +172,51 @@ export async function POST(req: Request) {
     if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
   }
 
+  // Attachments get the same treatment, and it matters more here than for the
+  // host or the project: a grant is the row that says the agent may read a
+  // file, so an id accepted on trust would be a way to have Juno read somebody
+  // else's upload out loud. Missing and not-yours are answered identically —
+  // distinguishing them would turn this route into an oracle for which
+  // attachment ids exist.
+  //
+  // Deduplicated first, and the grants are built in the order the reader sent
+  // them rather than the order Postgres returned them, because that order is
+  // the order the files are listed back to them and the order they are put in
+  // front of the agent.
+  //
+  // Absent and empty are different requests, and null is how the difference is
+  // carried past this block. An absent `attachmentIds` is a client with nothing
+  // to say about files, and leaves whatever the session already holds alone; a
+  // present `[]` is a client stating that the set is now empty, which is what a
+  // reader who has removed their last file means. Reading them the same way
+  // would make every caller that has never heard of attachments revoke the
+  // grants of a session it is only trying to re-create.
+  let attachments: SessionAttachmentGrant[] | null = null;
+  if (attachmentIds) {
+    attachments = [];
+    const wanted = [...new Set(attachmentIds)];
+    if (wanted.length > 0) {
+      const rows = await prisma.attachment.findMany({
+        where: { id: { in: wanted }, userId: user.id },
+        select: { id: true, fileName: true },
+      });
+      if (rows.length !== wanted.length) {
+        return NextResponse.json({ error: "Attachment not found" }, { status: 404 });
+      }
+      const byId = new Map(rows.map((row) => [row.id, row.fileName]));
+      for (const attachmentId of wanted) {
+        attachments.push({ attachmentId, fileName: byId.get(attachmentId) ?? attachmentId });
+      }
+    }
+  }
+
   const sessionId = idempotencyKey ? idempotentSessionId(user.id, idempotencyKey) : undefined;
   if (sessionId) {
     // Turns the common sequential retry into a clean replay instead of a 500
     // from the unique violation. The catch below is what handles the two
     // requests that raced past this read.
     const existing = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-    if (existing) {
-      return NextResponse.json({ session: serializeSession(existing), replay: true }, { status: 200 });
-    }
+    if (existing) return replaySession(existing, user.id, attachments);
   }
 
   try {
@@ -111,21 +232,29 @@ export async function POST(req: Request) {
       requestedTarget,
       preferredHostId: preferredHostId ?? null,
       requestedModel: model ?? null,
+      reasoningEffort: reasoningEffort ?? null,
+      // Written in the same transaction as the session rather than by a second
+      // call after it, so a session never comes back as created while the files
+      // the reader attached to it are missing. See `createWorkSession`.
+      attachments: attachments ?? [],
     });
     return NextResponse.json({ session: serializeSession(session) }, { status: 201 });
   } catch (err) {
     // Two identical creates raced past the pre-check above: the primary key
     // rejects the loser, which then reads the winner. From the caller's point
-    // of view the session it asked for now exists, which is what it wanted.
+    // of view the session it asked for now exists, which is what it wanted. It
+    // goes through the same replay path as the pre-check, so the loser confirms
+    // the grants rather than assuming the winner's set matched its own — the
+    // reconcile is a no-op when they agree, and the two requests only agree
+    // because they share an idempotency key, which is a convention rather than
+    // a constraint.
     if (
       sessionId &&
       err instanceof Prisma.PrismaClientKnownRequestError &&
       err.code === "P2002"
     ) {
       const winner = await prisma.workSession.findFirst({ where: { id: sessionId, userId: user.id } });
-      if (winner) {
-        return NextResponse.json({ session: serializeSession(winner), replay: true }, { status: 200 });
-      }
+      if (winner) return replaySession(winner, user.id, attachments);
     }
     throw err;
   }

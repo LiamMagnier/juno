@@ -90,10 +90,13 @@ final class JunoDesktopLaunchUITests: XCTestCase {
             .matching(NSPredicate(format: "label == %@", "Add project…"))
             .firstMatch
         XCTAssertTrue(addProject.exists)
-        XCTAssertGreaterThan(
+        XCTAssertLessThan(
             productSwitch.frame.minX,
             addProject.frame.maxX,
-            "The Chat / Code switch belongs to the detail toolbar, not over the Code sidebar."
+            """
+            The Chat / Code switch belongs at the top of the sidebar, over the \
+            column it switches — not in the detail toolbar.
+            """
         )
         XCTAssertFalse(app.buttons["juno.code.new-chat"].exists)
         XCTAssertFalse(app.buttons["juno.code.sidebar-search"].exists)

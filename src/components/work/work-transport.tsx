@@ -22,12 +22,15 @@ import {
  * other. The endpoints, exactly as they exist under src/app/api/work:
  *
  *   GET  /api/work/sessions?limit=N        → { sessions: ClientWorkSession[] }
- *   POST /api/work/sessions                { goal, requestedTarget, preferredHostId?,
- *                                            model?, idempotencyKey? }
+ *   POST /api/work/sessions                { goal, title?, requestedTarget,
+ *                                            preferredHostId?, projectId?, model?,
+ *                                            reasoningEffort?, attachmentIds?,
+ *                                            idempotencyKey? }
  *          201 → { session }               ← a DRAFT. Nothing is dispatched.
  *   GET  /api/work/sessions/[id]           → { session, run }   (run = newest attempt)
  *   POST /api/work/sessions/[id]/runs      { origin?, requiredCapabilities?,
- *                                            requestedTarget?, model?, idempotencyKey? }
+ *                                            requestedTarget?, model?,
+ *                                            reasoningEffort?, idempotencyKey? }
  *          201 → { run, selection }
  *          409 → { error: "no_executor_available" | "session_already_running",
  *                  message, missing?, degradation? }
@@ -102,6 +105,18 @@ export interface WorkTransportFailure {
   kind: "failed";
   /** `offline` when the fetch itself never completed, `server` otherwise. */
   cause: "offline" | "server" | "not_found" | "unauthorized" | "rejected";
+  /**
+   * The server's own sentence about this failure, when it wrote one.
+   *
+   * Null for a fetch that never completed, and for the routes that answer with a
+   * bare code and no prose — `requireUser`'s 401 is the common one — so a caller
+   * that puts this in front of a reader needs a sentence of its own for that
+   * case. It is carried because it is usually the only actionable part of the
+   * failure: the dispatch route's 403 says which plan and what to do about it,
+   * while `cause` says only "unauthorized", which is true of being signed out
+   * too.
+   */
+  message: string | null;
 }
 
 export type WorkResult<T> = { kind: "ok"; value: T } | WorkBlocked | WorkTransportFailure;
@@ -172,26 +187,37 @@ function capabilitiesFrom(raw: unknown): WorkCapability[] {
  * The sentence is read from `message` rather than invented here. The dispatch
  * route passes `TargetSelection.explanation` through untouched precisely so that
  * the words naming the user's own Mac and its state reach them unaltered.
+ *
+ * The body is read for every status, not only for those two. Reading it after
+ * the 401/403 and 404 branches — which is how this was written — meant returning
+ * before the one sentence the reader could have acted on had been looked at, and
+ * the routes below have grown several: 403 `plan_locked` says "Your plan doesn't
+ * include a model that can run a Work task", 503 `no_model_available` says the
+ * deployment has none, and both arrived at the composer as an unexplained
+ * failure with a Try again button on it.
  */
 async function refusal(res: Response): Promise<WorkBlocked | WorkTransportFailure> {
-  if (res.status === 401 || res.status === 403) return { kind: "failed", cause: "unauthorized" };
-  if (res.status === 404) return { kind: "failed", cause: "not_found" };
-  if (res.status !== 409 && res.status !== 429) {
-    // A 400 means this client sent something the route would not accept, which
-    // no amount of retrying fixes. It is kept distinct from a 5xx so the UI can
-    // stop offering a button that cannot work.
-    return { kind: "failed", cause: res.status === 400 ? "rejected" : "server" };
-  }
   const data = await body(res);
-  return {
-    kind: "blocked",
-    reason: text(data, "error") ?? "unavailable",
-    explanation:
-      text(data, "message") ??
-      "Juno cannot run this right now and did not say why. Try again in a moment.",
-    missing: capabilitiesFrom(data.missing),
-    degradation: degradationsFrom(data.degradation),
-  };
+  const message = text(data, "message");
+
+  if (res.status === 409 || res.status === 429) {
+    return {
+      kind: "blocked",
+      reason: text(data, "error") ?? "unavailable",
+      explanation:
+        message ?? "Juno cannot run this right now and did not say why. Try again in a moment.",
+      missing: capabilitiesFrom(data.missing),
+      degradation: degradationsFrom(data.degradation),
+    };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { kind: "failed", cause: "unauthorized", message };
+  }
+  if (res.status === 404) return { kind: "failed", cause: "not_found", message };
+  // A 400 means this client sent something the route would not accept, which
+  // no amount of retrying fixes. It is kept distinct from a 5xx so the UI can
+  // stop offering a button that cannot work.
+  return { kind: "failed", cause: res.status === 400 ? "rejected" : "server", message };
 }
 
 async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): Promise<WorkResult<T>> {
@@ -199,7 +225,9 @@ async function get<T>(url: string, pick: (data: Record<string, unknown>) => T): 
   try {
     res = await fetch(url);
   } catch {
-    return { kind: "failed", cause: "offline" };
+    // No response, so no sentence: a fetch that never completed has nothing the
+    // server said about it, and inventing one here would put words in its mouth.
+    return { kind: "failed", cause: "offline", message: null };
   }
   if (!res.ok) return refusal(res);
   return { kind: "ok", value: pick(await body(res)) };
@@ -218,7 +246,7 @@ async function post<T>(
       body: JSON.stringify(payload),
     });
   } catch {
-    return { kind: "failed", cause: "offline" };
+    return { kind: "failed", cause: "offline", message: null };
   }
   if (!res.ok) return refusal(res);
   return { kind: "ok", value: pick(await body(res)) };
@@ -252,10 +280,38 @@ export interface CreateWorkSessionInput {
   goal: string;
   requestedTarget: "automatic" | "cloud" | "local";
   preferredHostId: string | null;
+  /** The Project this task belongs to, so its files and instructions apply. */
+  projectId?: string | null;
+  /** A catalog id, or the Auto sentinel for "you choose when you dispatch". */
+  model?: string | null;
+  /**
+   * `minimal` … `max`, or `null` for Instant.
+   *
+   * Absent and null are different requests and the route reads them that way:
+   * absent leaves whatever the session carries alone, and null is the reader
+   * asking for no extra reasoning at all — the only way to turn a tier back
+   * off once one has been set.
+   */
+  reasoningEffort?: string | null;
+  /** Already-uploaded attachments the run should be handed. */
+  attachmentIds?: readonly string[];
   idempotencyKey: string;
 }
 
-/** Writes the draft. Nothing runs until `startWorkRun` is called against it. */
+/**
+ * Writes the draft. Nothing runs until `startWorkRun` is called against it.
+ *
+ * Optional fields are spread in rather than assigned, so a composer with
+ * nothing to say about one stays silent about it: an absent `model` leaves the
+ * account default in place, while an explicit null would be a caller stating
+ * that this session has no model — the exact state `scripts/work-runner.ts`
+ * throws on before the first token.
+ *
+ * `reasoningEffort` is the one field where null is a sentence rather than a
+ * silence, so it is tested against `undefined` and not for truthiness. Instant
+ * IS null, and dropping it would leave the one tier a reader can pick that the
+ * server never hears about.
+ */
 export function createWorkSession(
   input: CreateWorkSessionInput
 ): Promise<WorkResult<ClientWorkSession>> {
@@ -265,6 +321,12 @@ export function createWorkSession(
       goal: input.goal,
       requestedTarget: input.requestedTarget,
       ...(input.preferredHostId === null ? {} : { preferredHostId: input.preferredHostId }),
+      ...(input.projectId ? { projectId: input.projectId } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
+      ...(input.attachmentIds && input.attachmentIds.length > 0
+        ? { attachmentIds: [...input.attachmentIds] }
+        : {}),
       idempotencyKey: input.idempotencyKey,
     },
     (data) => data.session as ClientWorkSession
@@ -283,9 +345,28 @@ export interface WorkRunSelection {
 export interface StartWorkRunInput {
   /** `manual` for a first dispatch, `retry` for another attempt at the same goal. */
   origin: "manual" | "retry" | "resume" | "fork";
-  requiredCapabilities: readonly WorkCapability[];
+  /**
+   * What this attempt must be able to do — and, now, optional.
+   *
+   * The composer used to send a list the user had assembled from a checklist of
+   * Juno's own capability names. It no longer sends anything: the server infers
+   * the requirements from the goal (`inferCapabilities`, src/lib/work/inference.ts),
+   * which is both a better list and the same list the local preview was drawn
+   * from. Omitting the key entirely is what asks for that; sending `[]` would
+   * be a caller asserting the task needs nothing, which reads as "cloud" and
+   * would quietly override the inference.
+   *
+   * A caller that genuinely knows still passes one, and one does: the task
+   * detail page carries the previous attempt's requirements into a retry, so
+   * the retry is judged against the bar the first attempt was.
+   */
+  requiredCapabilities?: readonly WorkCapability[];
   /** Overrides the session's own target for this attempt only. */
   requestedTarget?: "automatic" | "cloud" | "local";
+  /** Overrides the session's model for this attempt only. */
+  model?: string | null;
+  /** Absent, a tier, or null for Instant — read the way `CreateWorkSessionInput` describes. */
+  reasoningEffort?: string | null;
   idempotencyKey: string;
 }
 
@@ -312,8 +393,12 @@ export function startWorkRun(
     `/api/work/sessions/${sessionId}/runs`,
     {
       origin: input.origin,
-      requiredCapabilities: [...input.requiredCapabilities],
+      ...(input.requiredCapabilities === undefined
+        ? {}
+        : { requiredCapabilities: [...input.requiredCapabilities] }),
       ...(input.requestedTarget === undefined ? {} : { requestedTarget: input.requestedTarget }),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.reasoningEffort === undefined ? {} : { reasoningEffort: input.reasoningEffort }),
       idempotencyKey: input.idempotencyKey,
     },
     (data) => {

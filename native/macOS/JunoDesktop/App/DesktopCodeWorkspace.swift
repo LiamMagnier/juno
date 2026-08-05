@@ -216,6 +216,7 @@ struct DesktopCodeWorkspace: View {
                 remote: remoteModel,
                 selection: selection,
                 remoteDeviceID: $remoteDeviceID,
+                product: $product,
                 isBootstrapping: isBootstrapping,
                 session: session,
                 avatarModel: configuration?.avatarModel,
@@ -244,7 +245,9 @@ struct DesktopCodeWorkspace: View {
                 // one line below — the same path, the same "Folder"/"Git repository"
                 // — so the window said it twice. It also made the titlebar two lines
                 // tall, which is what pushed the leading title block wide enough to
-                // shove the `.principal` product switcher off centre.
+                // shove the `.principal` product switcher off centre — a symptom the
+                // switch's move to the sidebar has taken away, and the reason to
+                // leave it out that has not moved is the first one.
                 .toolbar { detailToolbar }
                 // The search field belongs to the **detail** column, not to the
                 // split view and not to the sidebar.
@@ -592,6 +595,14 @@ struct DesktopCodeWorkspace: View {
             connectorModel: configuration?.connectorModel,
             voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
         )
+        // Applied to the draft view itself, not around it.
+        //
+        // The single reading canvas this window owns is on the detail column
+        // above, and `.junoReadingCanvas()` is an opaque `.background` — so a
+        // field mounted anywhere outside that canvas stacks behind an opaque
+        // fill and draws nothing. Here it is a descendant of the canvas rather
+        // than a sibling of it, which is the arrangement Chat gets for free.
+        .junoVoiceField(voiceColumn)
     }
 
     // MARK: - The session surface
@@ -624,6 +635,20 @@ struct DesktopCodeWorkspace: View {
     // The two disclosure flags cross as bindings rather than as values so the
     // toolbar's toggles and the canvas's own affordances — clicking a changed file
     // opens Review — cannot disagree about what is showing.
+    //
+    // **Both halves of voice cross as erased views**, and for one reason:
+    // `JunoCodeUI` depends on neither this target nor `JunoVoiceKit`, so it
+    // cannot name a `DesktopVoiceColumn` or a `JunoRealtimeVoiceController`.
+    // The dock has always crossed that way; the field now crosses beside it.
+    //
+    // The field could not simply be wrapped around `CodeSessionCanvas(…)` from
+    // out here, which is the obvious thing and the thing that draws nothing at
+    // all: the canvas paints `junoReadingCanvas()` — an opaque background —
+    // inside its own body, and successive `.background` layers stack further
+    // back, so a field written outside it lands behind an opaque fill. Handed in
+    // through the initialiser it is mounted between that fill and the transcript,
+    // which is where the light belongs. Chat never had to solve this because its
+    // canvas sits on an ancestor of the column it lights, not on the column.
 
     private func localSession(_ controller: SessionController) -> some View {
         CodeSessionCanvas(
@@ -639,7 +664,8 @@ struct DesktopCodeWorkspace: View {
             beginVoice: {
                 startVoice(for: controller)
             },
-            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) }
+            voiceDock: voiceColumn.map { AnyView(DesktopVoiceDock(column: $0)) },
+            voiceField: voiceColumn?.erasedField
         )
         // The same capsule the Chat composer uses, over the Code canvas.
         //
@@ -881,31 +907,24 @@ struct DesktopCodeWorkspace: View {
     /// pointer does not have to re-find.
     @ToolbarContentBuilder
     private var detailToolbar: some ToolbarContent {
-        // In the toolbar rather than at the top of the sidebar: as a
-        // `safeAreaInset` on the column the switch had no opaque backing, so a
-        // scrolled source list slid its rows under both the switch and the
-        // window's traffic lights. It also stays reachable here when the sidebar
-        // is collapsed.
-        // `.principal`, not `.navigation`.
+        // **No product switch here.** It is the first thing in the sidebar now —
+        // `DesktopSidebarProductHeader`, drawn identically by both columns.
         //
-        // `.navigation` placement in a `NavigationSplitView` puts an item in the
-        // **sidebar's** titlebar, alongside the traffic lights — so the top-level
-        // Chat/Code switch sat inside the navigation column, crowding the window
-        // controls and reading as though it belonged to the project list under it.
-        // It is a window-level control, not a sidebar one. `.principal` places it in
-        // the content area's toolbar, where it is still always visible with the
-        // sidebar collapsed.
+        // It was in the toolbar because the first sidebar version was a bare
+        // `safeAreaInset` with nothing painted behind it, so scrolled rows slid
+        // under the switch and on under the traffic lights. That failure was the
+        // missing backing, not the placement, and the header fixes it there. What
+        // the toolbar cost in exchange was real: `.principal` shares the leading
+        // half of the bar with the window's title block — the reason
+        // `.navigationSubtitle` had to go was that a two-line titlebar shoved this
+        // item off centre — and a control that changes what the *navigation*
+        // column lists is a strange thing to have to reach for at the top of the
+        // *content* column. `.navigation` was never an option: in a
+        // `NavigationSplitView` it lands in the sidebar's titlebar, beside the
+        // traffic lights.
         //
-        // Both windows move together: this is the one control that occupies the same
-        // spot in Chat and Code, and a different placement in each would make it jump
-        // on every mode change.
-        ToolbarItem(placement: .principal) {
-            // No width imposed here: the switcher owns its own metrics (see
-            // `DesktopProductSwitcher`). A flat width from the toolbar is what
-            // squeezed the two labels against their segment edges and stopped the
-            // control growing with Dynamic Type.
-            DesktopProductSwitcher(selection: $product)
-        }
+        // Both windows still move together: the header is one view, so the switch
+        // cannot sit in one place in Chat and another in Code.
 
         // Trailing, not `.navigation`: that placement draws into the *sidebar's*
         // titlebar beside the traffic lights, which is how a window action ended up

@@ -46,7 +46,10 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
 /// focusable container takes initial focus and wears a permanent accent ring. It
 /// was reverted by preference: the native control's behaviour is worth more than
 /// the material. Do not re-derive the glass version from the old comment's premise
-/// without re-checking it against a screenshot.
+/// without re-checking it against a screenshot. The control has since left the
+/// toolbar for the sidebar (see ``DesktopSidebarProductHeader``), which retires
+/// the *premise* of that note but not its finding: the traversal cost came from
+/// the focusable container, and a container is focusable wherever it is put.
 ///
 /// **Metrics.** The control used to be pinned to a flat `.frame(width: 148)` by
 /// its toolbar item, which is where the cramped look came from: 148pt split
@@ -110,10 +113,85 @@ struct DesktopProductSwitcher: View {
     }
 }
 
-/// Shared measurements for the titlebar clearance above the two native source
-/// lists. Keeping this here prevents Chat and Code from drifting when one of
-/// their sidebars is refreshed.
+/// Shared measurements for the strip above the two native source lists. Keeping
+/// this here prevents Chat and Code from drifting when one of their sidebars is
+/// refreshed.
+///
+/// The strip used to be empty and had one number. It now carries the product
+/// switch, so it has two: what the *window* owns and what *Juno* draws under it.
+/// Stated separately because they answer to different things — the first to
+/// AppKit's titlebar geometry, the second to the height of a segmented control —
+/// and adding them at the bottom is what keeps a change to either from silently
+/// moving the other.
 enum DesktopSidebarChromeMetrics {
-    /// Clears the titlebar row before the first source-list row begins.
-    static let titlebarClearance: CGFloat = 76
+    /// The band the window's own chrome owns: the titlebar and the toolbar row
+    /// under it, with the traffic lights centred across them.
+    ///
+    /// Nothing of Juno's may be drawn above this line. A source list starts at
+    /// the very top of the window on macOS — it is inset downward, not laid out
+    /// below the chrome — so anything not cleared past this point is drawn behind
+    /// the toolbar and under the window controls, which is exactly what the Code
+    /// column did before it was inset at all.
+    static let trafficLightClearance: CGFloat = 52
+
+    /// The product switch's own row: a `.regular` segmented control, the shoulder
+    /// it needs to clear the traffic lights above it, and the gap to the first
+    /// source-list row below.
+    static let productSwitcherRow: CGFloat = 24 + JunoSpace.tight + JunoSpace.snug
+
+    /// Everything above the first source-list row: the window's chrome, then the
+    /// switch. Both columns inset by this and both draw
+    /// ``DesktopSidebarProductHeader`` in it, so the switch cannot end up at two
+    /// heights in the two products.
+    static let titlebarClearance: CGFloat = trafficLightClearance + productSwitcherRow
+}
+
+/// The Chat / Code switch, at the top of a source list.
+///
+/// **Why it is here rather than in the toolbar.** It is a switch between two
+/// halves of the app, and the thing it switches is the column it now sits on top
+/// of — the website has always drawn it that way (`app-sidebar.tsx`, a segmented
+/// control as the sidebar's first element). In the titlebar it read as a window
+/// control, `.principal` placement put it in permanent competition with the
+/// window's own title for the centre of the bar, and moving between products
+/// meant travelling to the top of the *content* column to change what the
+/// *navigation* column was listing.
+///
+/// **Why it is opaque, which is the whole of the engineering.** This is where the
+/// switch was the first time, as a bare `safeAreaInset` with nothing painted
+/// behind it, and scrolled rows slid under it and on under the traffic lights.
+/// The inset positions the scrolling *content*; it does not shorten the list. A
+/// `.sidebar` List additionally **pins** its section headers to the top of its own
+/// bounds, and a pinned header is not subject to the inset at all — so "Today" or
+/// "Cloud & devices" arrives level with the window controls the moment the reader
+/// scrolls, whatever the inset is set to. Only something opaque across the full
+/// strip hides both. `Color.junoSidebar` rather than an arbitrary fill: it is the
+/// column's own colour — the same one ``DesktopCodeAddProjectLabel`` knocks its
+/// badge out against — so the strip reads as the column continuing rather than as
+/// a bar laid on it.
+///
+/// This is a deliberate, scoped exception to the desktop vocabulary's first rule
+/// (nothing paints a background behind a sidebar). The rule is about the *column*,
+/// which stays vibrant from this strip down; the platform's own answer for the
+/// other end, the soft scroll-edge effect, has no counterpart that survives a
+/// pinned header.
+///
+/// **When the sidebar is collapsed** the switch goes with it. The answer is the
+/// Product menu in ``JunoDesktopCommands`` — an inline `Picker` in the menu bar
+/// that reads and writes the focused window's mode — which is reachable with the
+/// column closed and shows a checkmark against the mode the window is in.
+struct DesktopSidebarProductHeader: View {
+    @Binding var product: DesktopProductMode
+
+    var body: some View {
+        DesktopProductSwitcher(selection: $product)
+            .padding(.horizontal, JunoSpace.cozy)
+            .padding(.bottom, JunoSpace.snug)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(
+                height: DesktopSidebarChromeMetrics.titlebarClearance,
+                alignment: .bottom
+            )
+            .background(Color.junoSidebar)
+    }
 }

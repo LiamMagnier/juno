@@ -3,10 +3,10 @@
 import * as React from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useApp } from "@/components/app/app-provider";
 import { JunoMark } from "@/components/brand/logo";
 import { WorkComposer } from "@/components/work/work-composer";
-import { WorkHostPanel } from "@/components/work/work-host-panel";
 import {
   WorkSection,
   WorkSessionRow,
@@ -19,6 +19,7 @@ import {
   fetchWorkSessions,
 } from "@/components/work/work-transport";
 import { WorkStateNote } from "@/components/work/work-vocabulary";
+import { isLiveStatus, isTerminalStatus } from "@/lib/work/domain";
 import type { ClientWorkHost, ClientWorkSession } from "@/lib/work/serializers";
 import { cn } from "@/lib/utils";
 
@@ -32,11 +33,27 @@ import { cn } from "@/lib/utils";
  * list the composer cannot promise that anything will pick a task up. Folding
  * them together would make one failure hide the other.
  *
+ * The host list is loaded and never displayed. It exists so the composer can run
+ * `selectTarget` before the button is pressed; the page itself has no "where
+ * work can run" board, because a person on a website cannot see, reach or wake
+ * the machines such a board would list, and the one fact they need from it —
+ * that a task cannot start, and why — reaches them as a sentence under the
+ * composer instead.
+ *
  * Polled on the same trio the Code sidebar uses — interval, visibility, sync
  * event — because a queued task becomes a running task without anybody
  * clicking, and a page that only loads on mount freezes on whatever it saw
  * first.
  */
+
+/** Which slice of the already-loaded sessions "Recent tasks" is showing. */
+type RecentFilter = "all" | "live" | "done";
+
+const RECENT_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "live", label: "In progress" },
+  { value: "done", label: "Done" },
+] as const satisfies readonly { value: RecentFilter; label: string }[];
 
 export default function WorkHomePage() {
   const { user } = useApp();
@@ -44,6 +61,7 @@ export default function WorkHomePage() {
   const [sessionsFailed, setSessionsFailed] = React.useState(false);
   const [hosts, setHosts] = React.useState<ClientWorkHost[] | null>(null);
   const [hostsFailed, setHostsFailed] = React.useState(false);
+  const [filter, setFilter] = React.useState<RecentFilter>("all");
 
   const loadSessions = React.useCallback(async () => {
     const result = await fetchWorkSessions();
@@ -64,9 +82,10 @@ export default function WorkHomePage() {
       return;
     }
     // What we last knew is left standing rather than blanked. A dropped request
-    // says nothing about whether a Mac is awake, and replacing a real answer
-    // with "unavailable" would state something the failure did not establish.
-    // The failure itself is carried separately, in `hostsFailed`.
+    // says nothing about what could run a task, and replacing a real answer with
+    // "unavailable" would state something the failure did not establish. The
+    // failure itself is carried separately, in `hostsFailed`, which is what lets
+    // the composer hold back rather than guess.
     setHostsFailed(true);
   }, []);
 
@@ -98,6 +117,39 @@ export default function WorkHomePage() {
     () => (sessions ?? []).filter((session) => !session.needsAttention && !session.archived),
     [sessions]
   );
+
+  // The control is only offered once there is something to filter, and while it
+  // is absent the list is unfiltered no matter what the state last held — a
+  // hidden "Done" would otherwise empty a list the reader has no way to refill.
+  const filterable = recent.length > 0;
+  const activeFilter: RecentFilter = filterable ? filter : "all";
+  const visible = React.useMemo(() => {
+    // `isLiveStatus` / `isTerminalStatus` rather than a partition written out
+    // again here: the two lists in domain.ts are the definition, and a third
+    // copy would drift the first time a status is added to one of them.
+    if (activeFilter === "live") return recent.filter((session) => isLiveStatus(session.status));
+    if (activeFilter === "done") return recent.filter((session) => isTerminalStatus(session.status));
+    return recent;
+  }, [activeFilter, recent]);
+
+  /**
+   * What to say when the filtered list is empty — which is never the same
+   * sentence twice. "No tasks yet" is an invitation; "nothing is running" is a
+   * status; and either one used in the other's place is a lie about the account.
+   * `null` means the account genuinely has nothing at all, which is the only
+   * case that earns the full empty card.
+   */
+  const emptyNote =
+    activeFilter === "live"
+      ? attention.length > 0
+        ? "Nothing is running unattended — everything you have going is waiting on you, above."
+        : "Nothing is running right now."
+      : activeFilter === "done"
+        ? "Nothing has finished yet."
+        : attention.length > 0
+          ? "Everything you have going is waiting on you, above."
+          : null;
+
   const firstName = user.name?.split(" ")[0];
 
   return (
@@ -157,16 +209,27 @@ export default function WorkHomePage() {
         <WorkSection
           title="Recent tasks"
           action={
-            sessionsFailed ? null : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void loadSessions()}
-                className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
-              >
-                <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
-              </Button>
-            )
+            <div className="flex items-center gap-2">
+              {filterable && (
+                <SegmentedControl
+                  value={activeFilter}
+                  onChange={setFilter}
+                  options={RECENT_FILTERS}
+                  ariaLabel="Filter recent tasks"
+                  optionClassName="gap-1.5 px-2.5 py-0.5 text-[12px]"
+                />
+              )}
+              {sessionsFailed ? null : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void loadSessions()}
+                  className="h-7 gap-1.5 px-2 font-mono text-[10px] text-muted-foreground"
+                >
+                  <RefreshCw className="h-3 w-3" aria-hidden="true" /> Refresh
+                </Button>
+              )}
+            </div>
           }
         >
           {sessionsFailed ? (
@@ -188,7 +251,7 @@ export default function WorkHomePage() {
             </WorkStateNote>
           ) : sessions === null ? (
             <WorkSessionSkeletons />
-          ) : recent.length === 0 && attention.length === 0 ? (
+          ) : visible.length === 0 && emptyNote === null ? (
             <div className="rounded-xl border border-dashed border-border/70 px-4 py-8 text-center">
               <p className="font-serif text-heading">No tasks yet</p>
               <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-muted-foreground">
@@ -197,24 +260,17 @@ export default function WorkHomePage() {
                 anything it cannot undo.
               </p>
             </div>
-          ) : recent.length === 0 ? (
+          ) : visible.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border/70 px-4 py-6 text-center text-sm text-muted-foreground">
-              Everything you have going is waiting on you, above.
+              {emptyNote}
             </p>
           ) : (
             <div className="space-y-2.5">
-              {recent.map((session, index) => (
+              {visible.map((session, index) => (
                 <WorkSessionRow key={session.id} session={session} index={index} />
               ))}
             </div>
           )}
-        </WorkSection>
-
-        <WorkSection
-          title="Where work can run"
-          hint="What each executor is offering right now, rather than what it can do in principle."
-        >
-          <WorkHostPanel hosts={hosts} failed={hostsFailed} onRetry={() => void loadHosts()} />
         </WorkSection>
       </div>
     </div>

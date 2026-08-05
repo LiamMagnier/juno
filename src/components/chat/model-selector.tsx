@@ -120,10 +120,13 @@ function retirementCountdown(iso: string): string | null {
 function ModelDetailPanel({
   model,
   reasoningEffort,
+  showReasoning = true,
   onCommit,
 }: {
   model: ModelInfo | null;
   reasoningEffort: ReasoningEffort;
+  /** See ``ModelSelector``'s own `showReasoning`. */
+  showReasoning?: boolean;
   // Clicking a thinking pill commits: select THIS model + apply the effort + close.
   onCommit?: (effort: ReasoningEffort) => void;
 }) {
@@ -269,7 +272,13 @@ function ModelDetailPanel({
         </div>
 
         {/* Thinking — the same slider as the composer; dragging previews the
-            metrics live and commits without closing the picker. */}
+            metrics live and commits without closing the picker.
+
+            Omitted entirely, rather than disabled, on a surface whose executor
+            cannot carry an effort. A greyed-out slider still says the setting
+            exists and is merely unavailable here; nothing at all is the truthful
+            shape when the concept does not apply to this run. */}
+        {showReasoning && (
         <div className="mt-auto border-t p-5 pt-4">
           {options.length > 1 ? (
             <ReasoningSlider
@@ -294,6 +303,7 @@ function ModelDetailPanel({
             </>
           )}
         </div>
+        )}
       </div>
     </div>
   );
@@ -334,11 +344,46 @@ export function ModelSelector({
   onChange,
   reasoningEffort = null,
   onReasoningChange,
+  showReasoning = true,
+  // Destructured under a second name because `filter` is already this
+  // component's provider-rail state. The prop keeps the plain name — callers
+  // are asking to filter models, not to filter something called a model filter.
+  filter: modelFilter,
 }: {
   value: ModelId;
   onChange: (m: ModelId) => void;
   reasoningEffort?: ReasoningEffort;
   onReasoningChange?: (effort: ReasoningEffort) => void;
+  /**
+   * Whether the detail pane offers a thinking-effort control.
+   *
+   * For a surface whose executor has nowhere to put one. Juno Work is the case
+   * that produced it: `WorkSessionOptions` carries no thinking budget and no
+   * provider adapter could send one, so a slider here would have been a control
+   * the reader sets, the database stores, and the run ignores — which is worse
+   * than no control, because it is a promise rather than an absence.
+   */
+  showReasoning?: boolean;
+  /**
+   * Narrows the catalog to the models this surface's runtime can actually drive.
+   *
+   * Juno Work is the case it was added for. A Work run is an agent loop against
+   * `/chat/completions` or `/v1/messages`, so the image models, the video
+   * models, the entries that are listed but not yet callable and OpenAI's
+   * Responses-only models are not a poor choice there — the runner cannot call
+   * them at all, and offering one produces a task that dies before its first
+   * token. `isWorkCapableModel` (src/lib/work/models.ts) draws that line once;
+   * this prop is how the picker is told about it, rather than by growing a
+   * second copy of this component with two of its panes missing.
+   *
+   * It is not a permissions mechanism and must not be used as one. A model the
+   * reader is entitled to and would go looking for — a plan-locked flagship, a
+   * lab they hold a key for — stays in the list wearing its lock and sending
+   * them to /upgrade, because a row that is simply absent answers "where is
+   * Opus?" with nothing at all. Hide a model only when choosing it could not
+   * have worked.
+   */
+  filter?: (model: ModelInfo) => boolean;
 }) {
   const router = useRouter();
   const { quota, features, models } = useApp();
@@ -362,6 +407,7 @@ export function ModelSelector({
   // web selector looks identical even before the API response lands.
   const visible: ModelInfo[] = sortModelsForDisplay(
     models
+      .filter((m) => (modelFilter ? modelFilter(m) : true))
       .filter((m) => (providerFilter ? m.provider === providerFilter : true))
       .filter(
         (m) =>
@@ -373,8 +419,13 @@ export function ModelSelector({
           (PROVIDERS[m.provider]?.label ?? "").toLowerCase().includes(q)
       )
   );
+  // Auto is a real `ModelInfo` and is put through the same test as the rest: a
+  // surface that cannot drive every model cannot promise "whichever is best"
+  // either, and an Auto row left standing above a filtered list would be the
+  // one row in the picker whose outcome nobody had checked.
   const showAutoRow =
     filter === "all" &&
+    (modelFilter ? modelFilter(AUTO_MODEL_INFO) : true) &&
     (!q || "auto".includes(q) || "cheap".includes(q) || "route".includes(q) || "smart".includes(q));
   const hoveredModel = React.useMemo(() => {
     if (hoveredId === AUTO_MODEL_ID || (!hoveredId && autoSelected)) return AUTO_MODEL_INFO;
@@ -647,6 +698,7 @@ export function ModelSelector({
           <ModelDetailPanel
             model={hoveredModel}
             reasoningEffort={reasoningEffort}
+            showReasoning={showReasoning}
             onCommit={(effort) => {
               // Slider drag: apply effort AND the hovered model, but keep the
               // picker open so the user can keep comparing tiers.

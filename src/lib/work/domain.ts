@@ -341,7 +341,17 @@ export function selectTarget(input: TargetSelectionInput): TargetSelection {
         available: [],
         missing: required,
         degradation: [{ kind: "host_offline", explanation: why }],
-        explanation: `${why} This task needs ${localNeeded.map(describeCapability).join(", ")}, which only a Mac can do.`,
+        // `localNeeded` is empty only when a caller asked for `local` outright
+        // and named no local capability — the automatic branch cannot reach
+        // here with an empty list. The general sentence rendered that as "This
+        // task needs , which only a Mac can do." and handed it to the user
+        // verbatim. There is nothing to name in that case, because the Mac was
+        // the request rather than the requirement, so the second sentence says
+        // that instead and says what did not happen.
+        explanation:
+          localNeeded.length === 0
+            ? `${why} This task was set to run on a Mac, so nothing has been started.`
+            : `${why} This task needs ${localNeeded.map(describeCapability).join(", ")}, which only a Mac can do.`,
       };
     }
 

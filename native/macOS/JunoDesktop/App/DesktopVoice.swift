@@ -190,6 +190,30 @@ private struct DesktopVoiceDockLayer: ViewModifier {
 private struct DesktopVoiceFieldLayer: ViewModifier {
     let column: DesktopVoiceColumn?
 
+    func body(content: Content) -> some View {
+        content.background(alignment: .bottom) {
+            if let column {
+                DesktopVoiceColumnField(controller: column.controller)
+            }
+        }
+    }
+}
+
+/// The field as a column wears it: sized from the column, clipped to it.
+///
+/// A view of its own rather than three lines inside ``DesktopVoiceFieldLayer``,
+/// because two kinds of host need the same arrangement and only one of them can
+/// take a modifier. Chat's two columns and Code's draft column reach it through
+/// ``SwiftUI/View/junoVoiceField(_:)``; Code's *session* surface is built inside
+/// `JunoCodeUI`, which cannot name a ``DesktopVoiceColumn``, and is handed the
+/// finished view instead — see ``DesktopVoiceColumn/erasedField``.
+///
+/// Written out at both sites the two would agree today and disagree the first
+/// time the proportion below is tuned, and the proportion is not an
+/// implementation detail: it is what the effect *is*.
+private struct DesktopVoiceColumnField: View {
+    let controller: JunoRealtimeVoiceController
+
     /// `.voice-aura`'s `height: min(30rem, 46vh)`, in points.
     ///
     /// Both halves matter. The proportion is what makes the field frame the
@@ -199,29 +223,36 @@ private struct DesktopVoiceFieldLayer: ViewModifier {
     private static let heightCap: CGFloat = 460
     private static let heightRatio: CGFloat = 0.46
 
-    func body(content: Content) -> some View {
-        content.background(alignment: .bottom) {
-            if let column {
-                // Sized from the column it is behind, not from a number. The
-                // aura's band reaches `min(height * 0.46, 150)` and its arms
-                // `min(width * 0.15, 96)`, so the box is the whole design: hand
-                // it the column and it draws the web's field, hand it a strip
-                // and it draws a strip's worth of it.
-                GeometryReader { proxy in
-                    DesktopVoiceField(controller: column.controller)
-                        .frame(
-                            height: min(Self.heightCap, proxy.size.height * Self.heightRatio)
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                }
-                // The field now reaches both edges of the column, and its 9pt
-                // blur reaches a little past them. Clipped, so the softening
-                // cannot put a glow on the sidebar's side of the divider —
-                // which is the whole reason the aura is scoped here at all.
-                .clipped()
-            }
+    var body: some View {
+        // Sized from the column it is behind, not from a number. The aura's
+        // band reaches `min(height * 0.46, 150)` and its arms
+        // `min(width * 0.15, 96)`, so the box is the whole design: hand it the
+        // column and it draws the web's field, hand it a strip and it draws a
+        // strip's worth of it.
+        GeometryReader { proxy in
+            DesktopVoiceField(controller: controller)
+                .frame(height: min(Self.heightCap, proxy.size.height * Self.heightRatio))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
+        // The field reaches both edges of the column, and its 9pt blur reaches a
+        // little past them. Clipped, so the softening cannot put a glow on the
+        // sidebar's side of the divider — which is the whole reason the aura is
+        // scoped to a column at all.
+        .clipped()
     }
+}
+
+extension DesktopVoiceColumn {
+    /// The field, type-erased for a host that cannot name this type.
+    ///
+    /// `JunoCodeUI` owns the Code session surface and depends on neither this
+    /// target nor `JunoVoiceKit`; that is why the dock already crosses the
+    /// package boundary as an `AnyView`, and the field crosses it the same way
+    /// rather than dragging the voice stack into a package that has no other use
+    /// for it. What it must not become is a *second* field: this is the same view
+    /// ``SwiftUI/View/junoVoiceField(_:)`` mounts, so a call lights the Code
+    /// transcript exactly as it lights the Code draft and both Chat columns.
+    var erasedField: AnyView { AnyView(DesktopVoiceColumnField(controller: controller)) }
 }
 
 /// The composer-scoped arrangement: the dock above, the field behind the pair.

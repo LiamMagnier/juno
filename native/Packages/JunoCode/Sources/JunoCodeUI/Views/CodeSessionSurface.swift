@@ -10,7 +10,8 @@ import SwiftUI
 /// arrangement of these five things relative to one another is a property of the
 /// session surface rather than of the window:
 ///
-/// - the transcript (or the review editor) is the reading canvas, and is opaque;
+/// - this surface paints the one opaque reading canvas the transcript and the
+///   review editor share, and neither of them paints another;
 /// - the console drawer sits between that content and the composer, so a burst of
 ///   output pushes nothing off screen and never covers the last thing the reader
 ///   typed;
@@ -43,6 +44,18 @@ public struct CodeSessionCanvas: View {
     /// Host-owned voice dock rendered directly above the Code composer.
     /// `AnyView` keeps JunoCodeUI independent of the app's voice implementation.
     private let voiceDock: AnyView?
+    /// Host-owned voice field: the accent light that hugs the bottom edge of this
+    /// canvas and climbs its sides while a call is live.
+    ///
+    /// Erased for the same reason the dock is — it is drawn by the app's voice
+    /// stack, which this package deliberately knows nothing about — and it has to
+    /// come through the initialiser rather than being wrapped around
+    /// ``CodeSessionCanvas`` from outside, because this view paints its own
+    /// opaque reading canvas. A `.background` written by the caller stacks
+    /// *behind* that canvas and is never seen; mounted here, the order is
+    /// canvas, then field, then content. Chat has no such problem: its canvas
+    /// sits on an ancestor of the column it lights.
+    private let voiceField: AnyView?
 
     public init(
         controller: SessionController,
@@ -51,7 +64,8 @@ public struct CodeSessionCanvas: View {
         showsConsole: Binding<Bool>,
         beginDictation: (() -> Void)? = nil,
         beginVoice: (() -> Void)? = nil,
-        voiceDock: AnyView? = nil
+        voiceDock: AnyView? = nil,
+        voiceField: AnyView? = nil
     ) {
         self.controller = controller
         self.model = model
@@ -60,6 +74,7 @@ public struct CodeSessionCanvas: View {
         self.beginDictation = beginDictation
         self.beginVoice = beginVoice
         self.voiceDock = voiceDock
+        self.voiceField = voiceField
     }
 
     public var body: some View {
@@ -89,6 +104,27 @@ public struct CodeSessionCanvas: View {
                     .safeAreaInset(edge: .bottom, spacing: 0) { console }
                     .safeAreaInset(edge: .bottom, spacing: 0) { approvals }
                     .safeAreaInset(edge: .bottom, spacing: 0) { composer }
+            }
+            // Before the canvas, and the order is the whole of it: successive
+            // `.background` layers stack further back, so the canvas applied on
+            // the next line paints behind the light and the light stays behind
+            // the transcript. Bottom-aligned because the field is a floor lamp —
+            // it belongs to the edge the composer sits on, not to the middle of
+            // the reading area.
+            //
+            // That canvas is the *only* one permitted anywhere under this
+            // surface, and the rule is what keeps the light on across a switch
+            // to Review. `ReviewCanvasView` used to paint a second one over its
+            // whole frame; drawn from inside `content` it landed in front of the
+            // field, so a live call lit the transcript and went dark for exactly
+            // as long as the diff was open — and came back when the reader
+            // closed it, which reads as a fault in the call rather than in the
+            // layout. Both branches now put their own cards, rows and bars on
+            // this one ground, and neither fills it.
+            .background(alignment: .bottom) {
+                if let voiceField {
+                    voiceField
+                }
             }
             .junoReadingCanvas()
             .animation(JunoMotion.fast, value: controller.review.isPresented)

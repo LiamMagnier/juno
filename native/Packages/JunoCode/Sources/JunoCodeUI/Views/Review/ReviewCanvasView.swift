@@ -12,8 +12,11 @@ import JunoDesignSystem
 /// to Juno about the diff they are reading, and the agent keeps running while
 /// they read.
 ///
-/// Opaque throughout. Code over a translucent surface loses contrast the moment
-/// the window moves.
+/// Opaque where the text is, and only there: the pinned file headers, the diff
+/// rows and the document editor each carry their own fill, because code over a
+/// translucent surface loses contrast the moment the window moves. The ground
+/// around and between them belongs to ``CodeSessionCanvas``, which is the single
+/// view under this surface that paints a reading canvas — see the omission below.
 public struct ReviewCanvasView: View {
     @Bindable private var controller: SessionController
     @Bindable private var review: ReviewModel
@@ -47,7 +50,16 @@ public struct ReviewCanvasView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .junoReadingCanvas()
+        // No `junoReadingCanvas()` here, and the absence is load-bearing.
+        //
+        // This view used to paint one across its whole frame. It changed nothing
+        // visually — the session surface already paints the same colour behind
+        // it — but it did cover the host's voice field, which that surface mounts
+        // between its canvas and its content. A live call therefore lit the
+        // transcript and went dark for exactly as long as Review was open,
+        // returning when the reader closed it: a layering fault that reads as a
+        // fault in the call. Everything here that carries text brings its own
+        // fill, so the diff is no less legible on the shared ground.
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { canvasWidth = $0 }
         .task(id: ReviewModel.signature(of: controller.changes)) {
             await review.load(from: controller)
