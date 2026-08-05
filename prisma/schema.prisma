@@ -417,6 +417,20 @@ model Project {
   // Starred projects surface in the sidebar's Pinned section. Server-side so
   // stars follow the account across devices (was localStorage-only).
   starred      Boolean  @default(false)
+  /// The defaults a Work session inherits when it is started in this project:
+  /// target, model, budget, permission policy, and which connectors and grants
+  /// are in scope.
+  ///
+  /// A typed, versioned payload rather than eight columns, because these move
+  /// together and are read as a unit — and rather than an untyped bag, because
+  /// `workDefaultsVersion` is what lets an older client read the parts it
+  /// understands instead of failing on a shape it has never seen. The schema
+  /// for it lives in src/lib/work/projects.ts.
+  ///
+  /// Defaults, never grants. A project can only narrow what the account and the
+  /// host already allow; the resolver intersects, and nothing here can widen.
+  workDefaults        Json     @default("{}")
+  workDefaultsVersion Int      @default(1)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
