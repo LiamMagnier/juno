@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { serializeGrantForRemote, serializeGrantForHost } from "@/lib/work/serializers";
+import {
+  serializeGrantForRemote,
+  serializeGrantForHost,
+  serializeCommand,
+  serializeCommandForRemote,
+  serializeCommandForHost,
+} from "@/lib/work/serializers";
 
 /*
  * The one thing a phone must never learn.
@@ -119,4 +125,89 @@ test("the remote serialiser does not spread the row", () => {
     "spreading the row means the next column added to WorkFileGrant leaves for a phone"
   );
   assert.doesNotMatch(body, /delete /, "a delete list is a list somebody forgets to update");
+});
+
+// ---------------------------------------------------------------------------
+// The other way a path escapes: the host's answer to a command.
+// ---------------------------------------------------------------------------
+
+const GRANT_COMMAND = {
+  id: "cmd_1",
+  userId: "user_1",
+  hostId: "host_1",
+  sessionId: "sess_1",
+  runId: null,
+  kind: "grant_folder",
+  // What the phone sent.
+  payload: { displayName: "Downloads", accessMode: "read_write" },
+  payloadVersion: 1,
+  status: "succeeded",
+  // What the Mac answered after the user picked a folder in a file dialog.
+  result: {
+    grantId: "grant_1",
+    displayName: "Downloads",
+    accessMode: "read_write",
+    localPath: "/Users/liam/Downloads",
+    resolvedRealPath: "/Users/liam/Downloads",
+  },
+  error: null,
+  idempotencyKey: "idem_1",
+  expiresAt: new Date("2026-08-05T12:05:00.000Z"),
+  leaseExpiresAt: null,
+  attempts: 1,
+  createdAt: new Date("2026-08-05T12:00:00.000Z"),
+  claimedAt: new Date("2026-08-05T12:00:01.000Z"),
+  completedAt: new Date("2026-08-05T12:00:09.000Z"),
+} as unknown as Parameters<typeof serializeCommandForHost>[0];
+
+test("a host's answer to grant_folder does not carry its path back to a phone", () => {
+  const remote = serializeCommandForRemote(GRANT_COMMAND);
+  const serialised = JSON.stringify(remote);
+
+  assert.doesNotMatch(
+    serialised,
+    /\/Users\//,
+    `the Mac's resolved path travelled back through a command result: ${serialised}`
+  );
+  assert.deepEqual(remote.result, {
+    grantId: "grant_1",
+    displayName: "Downloads",
+    accessMode: "read_write",
+  });
+  assert.deepEqual(
+    remote.redacted,
+    ["localPath", "resolvedRealPath"],
+    "withholding is stated, so a surface can say the Mac returned more than this"
+  );
+});
+
+test("the host shape keeps the answer intact, because the Mac needs it", () => {
+  const host = serializeCommandForHost(GRANT_COMMAND);
+  assert.equal(
+    (host.result as Record<string, unknown>).localPath,
+    "/Users/liam/Downloads"
+  );
+});
+
+test("a command kind nobody has classified says nothing rather than everything", () => {
+  const unclassified = {
+    ...(GRANT_COMMAND as unknown as Record<string, unknown>),
+    kind: "ping",
+    payload: { secret: "/Users/liam/Documents", hostState: "online" },
+    result: { hostState: "online", uptimePath: "/Users/liam" },
+  } as unknown as Parameters<typeof serializeCommandForRemote>[0];
+
+  const remote = serializeCommandForRemote(unclassified);
+  assert.deepEqual(remote.payload, {}, "ping declares no readable payload keys");
+  assert.deepEqual(remote.result, { hostState: "online" });
+  assert.ok(remote.redacted.includes("uptimePath"));
+});
+
+test("the unqualified serializeCommand is the filtered one", () => {
+  const viaDefault = serializeCommand(GRANT_COMMAND);
+  assert.doesNotMatch(
+    JSON.stringify(viaDefault),
+    /\/Users\//,
+    "code that did not think about which side of the boundary it is on must get the safe shape"
+  );
 });

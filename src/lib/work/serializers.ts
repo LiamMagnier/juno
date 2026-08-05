@@ -588,19 +588,84 @@ export interface ClientWorkCommand {
   createdAt: string;
   claimedAt: string | null;
   completedAt: string | null;
+  /** Names of payload or result keys withheld from this shape. */
+  redacted?: never;
 }
 
 /**
- * A command, payload included.
+ * Payload and result keys a remote client may read, per command kind.
  *
- * The payload is passed through because a command is an instruction addressed
- * to a host, which cannot execute an instruction it is not allowed to read.
- * Deciding who may read a given command is the relay's job, not this
- * function's; what this file guarantees is narrower and load-bearing — the
- * paths a `grant_folder` command results in live on `WorkFileGrant`, and they
- * only ever leave through `serializeGrantForHost`.
+ * An allowlist rather than a denylist, for the same reason the grant serialiser
+ * names its fields instead of deleting from the row: the value that leaks is
+ * always the one added after the denylist was written. A `grant_folder`
+ * command is the concrete case — the client sends a display name and the host
+ * answers with the absolute path it resolved, and that answer has no business
+ * travelling back to a phone.
+ *
+ * A kind absent from this table yields an empty object rather than a
+ * pass-through, so a command kind added next quarter is silent to remote
+ * clients until somebody decides what it may say.
  */
-export function serializeCommand(command: WorkCommand): ClientWorkCommand {
+const REMOTE_PAYLOAD_KEYS: Partial<Record<WorkCommandKind, readonly string[]>> = {
+  // Everything here originated on the client, so echoing it discloses nothing
+  // it did not already have.
+  answer: ["questionId", "text"],
+  approve: ["approvalId", "actionDigest"],
+  deny: ["approvalId", "actionDigest", "reason"],
+  undo: ["batchId"],
+  start: ["runId", "target"],
+  pause: ["runId"],
+  resume: ["runId"],
+  stop: ["runId", "reason"],
+  grant_folder: ["displayName", "accessMode"],
+  revoke_grant: ["grantId"],
+  refresh_capabilities: [],
+  ping: [],
+};
+
+/** Result keys a remote client may read. Deliberately much smaller. */
+const REMOTE_RESULT_KEYS: Partial<Record<WorkCommandKind, readonly string[]>> = {
+  grant_folder: ["grantId", "displayName", "accessMode"],
+  revoke_grant: ["grantId"],
+  undo: ["reversedCount", "unreversedCount"],
+  start: ["runId"],
+  ping: ["hostState"],
+};
+
+function pick(
+  value: Prisma.JsonValue,
+  allowed: readonly string[]
+): { picked: Record<string, Prisma.JsonValue>; withheld: string[] } {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return { picked: {}, withheld: [] };
+  }
+  const source = value as Record<string, Prisma.JsonValue>;
+  const picked: Record<string, Prisma.JsonValue> = {};
+  const withheld: string[] = [];
+  for (const key of Object.keys(source)) {
+    if (allowed.includes(key)) picked[key] = source[key];
+    else withheld.push(key);
+  }
+  return { picked, withheld };
+}
+
+/** A command as a web or iOS client may see it, with the host's answers filtered. */
+export interface RemoteWorkCommand extends Omit<ClientWorkCommand, "redacted"> {
+  /**
+   * Keys that existed and were withheld. Present so a remote surface can say
+   * "the Mac returned more than this" rather than quietly showing a truncated
+   * result as though it were the whole one.
+   */
+  redacted: string[];
+}
+
+/**
+ * A command as the host that must execute it sees it: payload intact.
+ *
+ * A host cannot carry out an instruction it is not allowed to read, so this
+ * shape passes the payload through. It is the only shape that does.
+ */
+export function serializeCommandForHost(command: WorkCommand): ClientWorkCommand {
   return {
     id: command.id,
     hostId: command.hostId,
@@ -623,3 +688,45 @@ export function serializeCommand(command: WorkCommand): ClientWorkCommand {
     completedAt: iso(command.completedAt),
   };
 }
+
+/**
+ * A command as everyone other than the owning Mac sees it.
+ *
+ * The payload and the result are filtered through per-kind allowlists. The case
+ * this exists for is `grant_folder`: the phone sends a display name, the user
+ * at the Mac picks a folder in a file dialog, and the host answers with the
+ * absolute path it resolved. Echoing that answer back would hand the phone the
+ * very thing the whole grant design keeps from it, through a field nobody
+ * thinks of as a path.
+ */
+export function serializeCommandForRemote(command: WorkCommand): RemoteWorkCommand {
+  const kind = oneOf(WORK_COMMAND_KINDS, command.kind, "ping");
+  const payload = pick(command.payload, REMOTE_PAYLOAD_KEYS[kind] ?? []);
+  const result = pick(command.result ?? null, REMOTE_RESULT_KEYS[kind] ?? []);
+  return {
+    id: command.id,
+    hostId: command.hostId,
+    sessionId: command.sessionId,
+    runId: command.runId,
+    kind,
+    payload: payload.picked,
+    payloadVersion: command.payloadVersion,
+    status: oneOf(WORK_COMMAND_STATUSES, command.status, "failed"),
+    result: result.picked,
+    error: command.error,
+    idempotencyKey: command.idempotencyKey,
+    expiresAt: iso(command.expiresAt),
+    leaseExpiresAt: iso(command.leaseExpiresAt),
+    attempts: command.attempts,
+    createdAt: iso(command.createdAt),
+    claimedAt: iso(command.claimedAt),
+    completedAt: iso(command.completedAt),
+    redacted: [...payload.withheld, ...result.withheld].sort(),
+  };
+}
+
+/**
+ * The unqualified name, bound to the filtered half, exactly as `serializeGrant`
+ * is bound to the pathless one. Wanting the raw payload has to be said out loud.
+ */
+export const serializeCommand = serializeCommandForRemote;
