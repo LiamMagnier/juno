@@ -184,7 +184,26 @@ const ROUTE_FILES: string[] = readdirSync(WORK_API_DIR, { recursive: true })
   .sort();
 
 function routeSource(relative: string): string {
-  return readFileSync(join(WORK_API_DIR, relative), "utf8");
+  return stripComments(readFileSync(join(WORK_API_DIR, relative), "utf8"));
+}
+
+/**
+ * Removes comments before anything else looks at the source.
+ *
+ * The scanner reasons about bindings, and a comment is not one. Leaving them in
+ * cuts both ways and both ways are wrong: a comment quoting the correct pattern
+ * makes an unscoped query look scoped, and a comment quoting an incorrect one
+ * fails a file whose code is fine. The second is what actually happened — a
+ * comment explaining why a helper takes the whole user rather than an id had to
+ * name the shape it was arguing for, and naming it tripped the check.
+ *
+ * Replaced with spaces rather than deleted so every offset the brace matcher
+ * computes still lines up with the original text.
+ */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (match) =>
+    match.replace(/[^\n]/g, " ")
+  );
 }
 
 /** The index of the brace that closes the one at `open`. */
