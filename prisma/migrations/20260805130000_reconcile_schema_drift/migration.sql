@@ -48,13 +48,26 @@ ALTER TABLE "CodeTask"
 --
 -- Name-only: same table, same columns, same uniqueness. Renaming an index is a
 -- catalog update, so there is no rebuild and no table scan.
+--
+-- The guard matches what the rename itself will do. ALTER INDEX takes an
+-- unqualified name and resolves it through search_path, so a probe on relname
+-- alone can answer for a different object than the one the statement would
+-- touch — another schema's index of the same name, or a non-index relation
+-- that happens to share it. Both conditions therefore pin relkind = 'i' and
+-- require search_path visibility, so the object detected is the object
+-- renamed, and a same-named index parked in some other schema neither
+-- triggers a rename here nor suppresses one.
 DO $$ BEGIN
   IF EXISTS (
-    SELECT 1 FROM pg_class
-    WHERE relname = 'MutationReceipt_accountId_authenticatedDeviceId_clientMutationI'
+    SELECT 1 FROM pg_class c
+    WHERE c.relname = 'MutationReceipt_accountId_authenticatedDeviceId_clientMutationI'
+      AND c.relkind = 'i'
+      AND pg_catalog.pg_table_is_visible(c.oid)
   ) AND NOT EXISTS (
-    SELECT 1 FROM pg_class
-    WHERE relname = 'MutationReceipt_accountId_authenticatedDeviceId_clientMutat_key'
+    SELECT 1 FROM pg_class c
+    WHERE c.relname = 'MutationReceipt_accountId_authenticatedDeviceId_clientMutat_key'
+      AND c.relkind = 'i'
+      AND pg_catalog.pg_table_is_visible(c.oid)
   ) THEN
     ALTER INDEX "MutationReceipt_accountId_authenticatedDeviceId_clientMutationI"
       RENAME TO "MutationReceipt_accountId_authenticatedDeviceId_clientMutat_key";
