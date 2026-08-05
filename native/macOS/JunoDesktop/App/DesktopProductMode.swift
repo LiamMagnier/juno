@@ -4,6 +4,11 @@ import SwiftUI
 enum DesktopProductMode: String, CaseIterable, Identifiable {
     case chat
     case code
+    /// Juno Work — tasks that run somewhere, on a Mac or in the cloud, rather
+    /// than a conversation that runs here. It is a third top-level product and
+    /// not a Chat destination because it owns the window: its own source list of
+    /// tasks, its own thread, and its own toolbar.
+    case work
 
     var id: Self { self }
 
@@ -11,6 +16,7 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "Chat"
         case .code: "Code"
+        case .work: "Work"
         }
     }
 
@@ -18,6 +24,7 @@ enum DesktopProductMode: String, CaseIterable, Identifiable {
         switch self {
         case .chat: "bubble.left.and.bubble.right"
         case .code: "chevron.left.forwardslash.chevron.right"
+        case .work: "checklist"
         }
     }
 }
@@ -58,10 +65,12 @@ struct DesktopProductSwitcher: View {
     @Binding var selection: DesktopProductMode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Wide enough for "Chat"/"Code" plus the shoulders a segmented control
-    /// wants on each side. A minimum rather than a fixed size: the control may
-    /// grow for a longer localisation or a larger text size, it may not shrink
-    /// below legibility.
+    /// Wide enough for "Chat"/"Code"/"Work" plus the shoulders a segmented
+    /// control wants on each side. A minimum rather than a fixed size: the
+    /// control may grow for a longer localisation or a larger text size, it may
+    /// not shrink below legibility. The total is multiplied by
+    /// `allCases.count` below, so adding a product widens the pill instead of
+    /// squeezing the existing segments.
     private static let minimumSegmentWidth: CGFloat = 58
 
     private var animatedSelection: Binding<DesktopProductMode> {

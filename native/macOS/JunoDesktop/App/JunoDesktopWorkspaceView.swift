@@ -1,14 +1,15 @@
 import JunoAuth
 import JunoCodeUI
 import JunoDesignSystem
+import JunoWorkKit
 import SwiftUI
 
 /// The window's contents for the current product, and the one moment of motion
 /// between them.
 ///
-/// **Why the mode change is veiled rather than cross-faded.** Chat and Code are
-/// each a `NavigationSplitView`, and a SwiftUI transition between two of them
-/// keeps both alive for the length of the animation — two split views, two
+/// **Why the mode change is veiled rather than cross-faded.** Chat, Code and
+/// Work are each a `NavigationSplitView`, and a SwiftUI transition between two
+/// of them keeps both alive for the length of the animation — two split views, two
 /// AppKit split-view controllers, negotiating sizes against the same window at
 /// the same time. That is precisely the shape that produced the documented
 /// update-constraints crash (`docs/native/MACOS_CRASH_ROOT_CAUSE.md`), and a
@@ -33,9 +34,10 @@ struct JunoDesktopWorkspaceView: View {
     var consumeInitialDestination: (() -> Void)? = nil
 
     @State private var veilOpacity: Double = 0
-    /// A Code-sidebar "New chat" is deliberately not a Code session with no
-    /// folder. It is an ordinary Juno conversation, so it crosses the product
-    /// boundary and is consumed exactly once by the Chat workspace.
+    /// A "New chat" raised from Code or Work is deliberately not a session with
+    /// no folder or a task with no goal. It is an ordinary Juno conversation, so
+    /// it crosses the product boundary and is consumed exactly once by the Chat
+    /// workspace.
     ///
     /// A token rather than a Bool means two consecutive requests can never be
     /// coalesced into one by SwiftUI's state batching.
@@ -119,6 +121,25 @@ struct JunoDesktopWorkspaceView: View {
                     "Code unavailable",
                     systemImage: "exclamationmark.triangle",
                     description: Text("The authenticated Code transport could not be composed.")
+                )
+            }
+
+        case .work:
+            if let workModel = configuration.workModel {
+                DesktopWorkWorkspace(
+                    model: workModel,
+                    hostModel: configuration.workHostModel,
+                    product: $product,
+                    newChat: {
+                        unscopedChatRequestID = UUID()
+                        product = .chat
+                    }
+                )
+            } else {
+                ContentUnavailableView(
+                    "Juno Work unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text("The authenticated Work transport could not be composed.")
                 )
             }
         }

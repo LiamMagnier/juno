@@ -6,6 +6,7 @@ import JunoCore
 import JunoDesignSystem
 import JunoStorage
 import JunoSync
+import JunoWorkKit
 import SwiftUI
 
 struct JunoDesktopRootView: View {
@@ -15,14 +16,25 @@ struct JunoDesktopRootView: View {
     @State private var workbenchModel: WorkbenchModel?
     /// The main window is a launch surface, not a resume surface. Keep this
     /// pending until the Chat workspace has consumed the one-shot route so a
-    /// stored Code product or Chat destination cannot win the first frame.
+    /// stored Code or Work product, or a stored Chat destination, cannot win the
+    /// first frame.
     @State private var startupRoutePending = true
 
+    /// The launch policy is deliberately unchanged for Juno Work.
+    ///
+    /// Work is the product most likely to be mid-flight when the app opens — a
+    /// task running on this Mac, a task waiting on an approval — and that is
+    /// exactly the argument for *not* opening on it. Restoring straight into a
+    /// thread means the first thing a new window presents is an approval card
+    /// for an action the reader has no context for yet, decided in the second
+    /// after launch. Chat is where the app opens; one click on the switcher is
+    /// the whole cost of getting to Work, and the sidebar's attention section
+    /// is what says something is waiting.
     private var productBinding: Binding<DesktopProductMode> {
         Binding(
             get: {
-                // Do not let a restored Code selection paint even one launch
-                // frame. The route is released only after Chat has appeared.
+                // Do not let a restored Code or Work selection paint even one
+                // launch frame. The route is released only after Chat appears.
                 guard !startupRoutePending else { return .chat }
                 return DesktopProductMode(rawValue: storedProduct) ?? .chat
             },
@@ -174,6 +186,13 @@ struct JunoDesktopRootView: View {
             await configuration.connectorModel?.start(for: accountID)
             await configuration.scheduledTaskModel?.start(for: accountID)
             await configuration.codeModel?.start(for: accountID)
+            // Started at sign-in rather than when the Work product is first
+            // opened, because the model is also what answers "is anything
+            // waiting on me": its poll is the only thing that notices a task
+            // that has stopped for an approval, and a model started on first
+            // view would notice nothing until the reader had already gone
+            // looking.
+            await configuration.workModel?.start(for: accountID)
         }
         configuration.remoteCodeModel?.start(for: accountID)
         // Registration is presence, not capability — a signed-in Mac saying it
@@ -266,6 +285,13 @@ struct JunoDesktopRootView: View {
         configuration.codeModel?.stop()
         configuration.remoteCodeModel?.stop()
         configuration.codeHostModel?.stop()
+        configuration.workModel?.stop()
+        // Not `stopServingWork()`, which only writes the preference off.
+        // Sign-out has to take the claim loop down *without* rewriting the
+        // reader's standing decision about this machine, so that signing back
+        // in restores the Mac they had set up rather than a Mac with Juno Work
+        // silently switched off.
+        configuration.workHostModel?.detach()
         configuration.libraryModel?.stop()
     }
 }

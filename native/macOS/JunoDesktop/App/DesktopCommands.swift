@@ -58,7 +58,7 @@ struct JunoDesktopCommands: Commands {
 
         CommandGroup(replacing: .newItem) {
             if let actions {
-                Button(actions.currentProduct == .code ? "New Code Session" : "New Chat") {
+                Button(Self.newItemTitle(for: actions.currentProduct)) {
                     actions.newItem()
                 }
                 .keyboardShortcut("n", modifiers: [.command])
@@ -80,12 +80,15 @@ struct JunoDesktopCommands: Commands {
         }
 
         CommandGroup(after: .newItem) {
-            if actions?.currentProduct == .code {
+            // Offered from every product except Chat itself, where ⌘N already
+            // is this. Written as "not Chat" rather than "is Code" so a new
+            // product mode gets the way back to an ordinary conversation
+            // without anyone having to remember to add it here.
+            if let actions, actions.currentProduct != .chat {
                 Button("New Chat") {
-                    actions?.newChat()
+                    actions.newChat()
                 }
                 .keyboardShortcut("n", modifiers: [.command, .option])
-                .disabled(actions == nil)
             }
             Divider()
             Button("Find in Juno…") {
@@ -101,10 +104,18 @@ struct JunoDesktopCommands: Commands {
         SidebarCommands()
         ToolbarCommands()
 
+        // Driven by `allCases` rather than by a hand-written row per product.
+        //
+        // The three literals this replaces were the reason the menu could
+        // disagree with the toolbar's segmented control — that one already
+        // iterates `DesktopProductMode.allCases`, so a product added to the enum
+        // appeared in the titlebar and not in the menu bar, and the only way to
+        // reach it was with the pointer.
         CommandMenu("Product") {
             Picker("Mode", selection: productSelection) {
-                Text("Chat").tag(DesktopProductMode.chat)
-                Text("Code").tag(DesktopProductMode.code)
+                ForEach(DesktopProductMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
             }
             .pickerStyle(.inline)
             .disabled(actions == nil)
@@ -169,6 +180,20 @@ struct JunoDesktopCommands: Commands {
             updater.installAndRelaunch()
         } else {
             updater.checkNow()
+        }
+    }
+
+    /// What ⌘N makes in each product.
+    ///
+    /// A `switch` over the enum rather than a ternary, so a product added
+    /// without a name for its new object fails to compile here instead of
+    /// shipping a File menu that offers to make a chat in a window that cannot
+    /// hold one.
+    private static func newItemTitle(for product: DesktopProductMode) -> String {
+        switch product {
+        case .chat: "New Chat"
+        case .code: "New Code Session"
+        case .work: "New Task"
         }
     }
 
