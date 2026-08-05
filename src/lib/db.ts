@@ -15,31 +15,122 @@ import { PrismaClient } from "@prisma/client";
  * external id) must use `prismaUnguarded` — the raw client — so the intent is
  * explicit at the call site.
  *
- * Models scoped through a parent rather than a `userId` column (Message,
- * Artifact, ArtifactVersion, CodeTaskEvent — all reached via an
- * ownership-checked Conversation/CodeTask) and auth-adapter models
- * (User, Account, Session, VerificationToken) are intentionally not guarded.
+ * Ownership is not always `userId`: the native sync tables key on `accountId`,
+ * which the guard could not express at all before — it looked for a literal
+ * `userId` key, so those three models were unguardable rather than unguarded.
+ *
+ * Not guarded, on purpose:
+ *  - Models scoped through a parent (Message, MessageVersion, Artifact,
+ *    ArtifactVersion, CodeTaskEvent, NativeRefreshToken, ScheduledTaskRun —
+ *    reached via an ownership-checked Conversation / CodeTask / parent row).
+ *  - Auth-adapter models (User, Account, Session, VerificationToken), which
+ *    NextAuth queries by provider identifiers before a session exists.
+ *  - FeatureRequest and FeatureComment, owned via `authorId` and deliberately
+ *    world-readable (the public roadmap).
+ *
+ * tests/ownership-guard.test.ts reads prisma/schema.prisma and fails when a
+ * model carrying an ownership column is in neither list — so this stops being a
+ * thing anyone has to remember.
+ *
+ * Known gap: GUARDED_OPERATIONS covers reads, updates and deletes but not
+ * `upsert`, `count`, `aggregate` or `groupBy`, all of which take a `where`.
+ * Closing it is its own audit rather than a one-line addition — the sync PUT in
+ * api/code/devices/[deviceId]/sessions/route.ts upserts by the
+ * `deviceId_sessionId` key with no userId in the where, and would start
+ * throwing in development the moment `upsert` joins the set.
  */
 
-const GUARDED_MODELS = new Set([
-  "Conversation",
-  "Folder",
-  "Project",
-  "MemoryEntry",
-  "MemorySummary",
-  "ConversationMemory",
-  "Attachment",
-  "Usage",
-  "Subscription",
-  "Settings",
-  "Connection",
-  "CodeDevice",
-  "CodeTask",
-  "ApiSpend",
-  "ChatFirstSubmissionReceipt",
-  "FeatureVote",
-  "AnnouncementDismissal",
+/**
+ * Guarded models and the column that carries ownership.
+ *
+ * A map rather than a set because ownership is not always `userId`: the native
+ * sync tables key on `accountId`. Pairing each model with its own column stops
+ * a query on one model from being accepted because it happened to filter on the
+ * other model's ownership column.
+ */
+export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
+  ["Conversation", "userId"],
+  ["Folder", "userId"],
+  ["Project", "userId"],
+  ["MemoryEntry", "userId"],
+  ["MemorySummary", "userId"],
+  ["ConversationMemory", "userId"],
+  ["Attachment", "userId"],
+  ["Usage", "userId"],
+  ["Subscription", "userId"],
+  ["Settings", "userId"],
+  ["Connection", "userId"],
+  ["CodeDevice", "userId"],
+  ["CodeTask", "userId"],
+  ["ApiSpend", "userId"],
+  ["ChatFirstSubmissionReceipt", "userId"],
+  ["FeatureVote", "userId"],
+  ["AnnouncementDismissal", "userId"],
+  // Every query against these three already scopes by userId — verified call
+  // site by call site — so guarding them is a pure tripwire with no behaviour
+  // change.
+  ["SavedPrompt", "userId"],
+  ["VoiceTranscriptSession", "userId"],
+  ["CodeWorkspace", "userId"],
+  // The native sync feed. All call sites already scope through the
+  // `accountId_*` compound uniques, and the pruner already uses
+  // prismaUnguarded, so this is likewise a no-op addition.
+  ["AccountChange", "accountId"],
+  ["EntityRevision", "accountId"],
+  ["MutationReceipt", "accountId"],
+  // Added by the tool-audit work; its only unscoped write is a settle-by-primary-key
+  // that deliberately uses prismaUnguarded (see src/lib/tool-audit.ts).
+  ["ToolInvocation", "userId"],
+  // The last eight. Each had call sites that reached the database without a
+  // userId — not leaks (every one was already behind an ownership check, an
+  // owner-only admin gate, or a capability like a share token), but nothing
+  // stopped the next one from being a leak. The genuinely global paths now say
+  // so with prismaUnguarded: public share pages, PKCE redemption, the admin
+  // moderation queue, and the cross-user scheduler sweep. Everything else had
+  // the userId in hand already and now puts it in the where.
+  ["Share", "userId"],
+  ["ScheduledTask", "userId"],
+  ["ModerationFlag", "userId"],
+  ["CodeRemoteSession", "userId"],
+  ["CodeRemoteSessionEvent", "userId"],
+  ["CodeSessionCommand", "userId"],
+  ["NativeDeviceSession", "userId"],
+  ["NativeAuthorizationCode", "userId"],
+  // Juno Work. Guarded from the first commit rather than retrofitted, because
+  // this is the subsystem where an unscoped read is worst: a WorkEvent carries
+  // what an agent did with someone's files, and a WorkFileGrant is the thing
+  // that says whose files they were.
+  //
+  // The scheduler and the host-claim endpoints legitimately sweep across
+  // accounts. Those use prismaUnguarded explicitly (src/lib/work/scheduler.ts,
+  // src/lib/work/relay.ts) rather than being waived here — the whole point of
+  // the guard is that a cross-user query has to say so.
+  ["WorkSession", "userId"],
+  ["WorkRun", "userId"],
+  ["WorkEvent", "userId"],
+  ["WorkApproval", "userId"],
+  ["WorkArtifact", "userId"],
+  ["WorkFileGrant", "userId"],
+  ["WorkHost", "userId"],
+  ["WorkCommand", "userId"],
+  ["WorkSkill", "userId"],
+  ["WorkSchedule", "userId"],
+  ["WorkTrigger", "userId"],
+  ["WorkAuditEvent", "userId"],
 ]);
+
+/**
+ * User-owned models that are deliberately NOT guarded yet, and why.
+ *
+ * A waiver in code rather than a silence: tests/ownership-guard.test.ts asserts
+ * that every model carrying an ownership column is either guarded or listed
+ * here, so a new one cannot be added without someone making this choice.
+ *
+ * Empty, and worth keeping empty. The eight models that used to sit here are
+ * all guarded now; adding a name back is a deliberate act that needs a reason
+ * on the same line.
+ */
+export const UNGUARDED_OWNED_MODELS = new Set<string>([]);
 
 const GUARDED_OPERATIONS = new Set([
   "findMany",
@@ -53,14 +144,15 @@ const GUARDED_OPERATIONS = new Set([
   "deleteMany",
 ]);
 
-/** True when the where clause constrains userId somewhere (top-level, nested
- *  compound unique, relation filter, or inside AND/OR/NOT arrays). */
-function whereHasUserId(where: unknown, depth = 0): boolean {
+/** True when the where clause constrains the given ownership column somewhere
+ *  (top-level, nested compound unique, relation filter, or inside AND/OR/NOT
+ *  arrays). The column is per-model — see OWNER_COLUMN. */
+function whereHasOwner(where: unknown, column: "userId" | "accountId", depth = 0): boolean {
   if (depth > 6 || where === null || typeof where !== "object") return false;
-  if (Array.isArray(where)) return where.some((w) => whereHasUserId(w, depth + 1));
+  if (Array.isArray(where)) return where.some((w) => whereHasOwner(w, column, depth + 1));
   for (const [key, value] of Object.entries(where as Record<string, unknown>)) {
-    if (key === "userId" && value !== undefined) return true;
-    if (whereHasUserId(value, depth + 1)) return true;
+    if (key === column && value !== undefined) return true;
+    if (whereHasOwner(value, column, depth + 1)) return true;
   }
   return false;
 }
@@ -85,11 +177,12 @@ export const prisma = prismaUnguarded.$extends({
   query: {
     $allModels: {
       $allOperations({ model, operation, args, query }) {
-        if (GUARDED_MODELS.has(model) && GUARDED_OPERATIONS.has(operation)) {
+        const ownerColumn = OWNER_COLUMN.get(model);
+        if (ownerColumn && GUARDED_OPERATIONS.has(operation)) {
           const where = (args as { where?: unknown }).where;
-          if (!whereHasUserId(where)) {
+          if (!whereHasOwner(where, ownerColumn)) {
             const err = new Error(
-              `[ownership-guard] ${model}.${operation} executed without a userId filter — ` +
+              `[ownership-guard] ${model}.${operation} executed without a ${ownerColumn} filter — ` +
                 `scope the query to the requesting user or use prismaUnguarded for intentional global access.`
             );
             if (process.env.NODE_ENV === "development") throw err;
