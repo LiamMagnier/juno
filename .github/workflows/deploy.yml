@@ -83,8 +83,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Both are required: the datasource block names DATABASE_URL *and*
+      # DIRECT_URL, and `prisma validate` resolves every `env()` in it before
+      # it will say anything about the schema. Without them the job fails on a
+      # missing variable and never reaches the check it exists to run.
       - name: Schema is valid
         run: npx prisma validate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
 
       # `--exit-code` makes a non-empty diff a failure. An empty diff means the
       # migrations, replayed from nothing, produce exactly schema.prisma.
@@ -97,6 +104,8 @@ jobs:
             --exit-code
         env:
           SHADOW_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/shadow
+          DIRECT_URL: postgresql://postgres:postgres@localhost:5432/shadow
 
   # The vendored Cloud Code runner drives arbitrary agent-authored bash, so its
   # containment tests are a release gate rather than a nicety: they are what
