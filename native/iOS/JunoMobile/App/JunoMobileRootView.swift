@@ -432,8 +432,7 @@ struct JunoMobileRootView: View {
                         syncModel: syncModel,
                         outbox: outbox,
                         accountDataClient: accountDataClient,
-                        requestSender: requestSender,
-                        shareClient: shareClient
+                        requestSender: requestSender
                     )
                 } else {
                     unavailable
@@ -814,8 +813,7 @@ struct JunoMobileRootView: View {
                     syncModel: syncModel,
                     outbox: outbox,
                     accountDataClient: accountDataClient,
-                    requestSender: requestSender,
-                        shareClient: shareClient
+                    requestSender: requestSender
                 )
             } else { unavailable }
         }

@@ -1325,6 +1325,21 @@ enum DesktopCodeLaunchTarget: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The website's mark for this destination, where it has one.
+    ///
+    /// The web offers two targets, Device and Cloud, and draws them as a laptop
+    /// and a cloud. The Mac has a third — *another* of your computers — which
+    /// the web cannot express and therefore has no mark for, so that one keeps
+    /// a system symbol. Giving all three the laptop would say the wrong thing
+    /// twice over.
+    var junoIcon: JunoIcon? {
+        switch self {
+        case .local: .device
+        case .cloud: .cloud
+        case .device: nil
+        }
+    }
+
     var nativeTarget: NativeCodeTarget? {
         switch self {
         case .local: nil
@@ -1857,10 +1872,16 @@ struct DesktopCodeDraftDetail: View {
             // and keeps `--primary` for the send button at the other end of the
             // same row. A composer with a coral glyph on each side has two
             // primary actions and therefore none.
-            Image(systemName: target.symbol)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.secondary)
-                .contentTransition(.symbolEffect(.replace))
+            if let junoIcon = target.junoIcon {
+                JunoIconView(junoIcon, size: 15)
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
+                    .id(target)
+            } else {
+                Image(systemName: target.symbol)
+                    .foregroundStyle(.secondary)
+                    .contentTransition(.symbolEffect(.replace))
+            }
             Text(destinationTitle)
                 .junoRowLabel()
                 .lineLimit(1)
@@ -1905,8 +1926,10 @@ struct DesktopCodeDraftDetail: View {
             .keyboardShortcut("o", modifiers: [.command])
         } label: {
             HStack(spacing: JunoSpace.snug) {
-                Image(systemName: record == nil ? "bubble.left" : "folder")
-                    .font(.system(size: 13, weight: .medium))
+                // Same rule as `destinationIdentity`: the web's project chip is
+                // `text-muted-foreground` and the coral in this row belongs to
+                // the send button.
+                JunoIconView(record == nil ? .conversation : .projects, size: 14)
                     .foregroundStyle(.secondary)
                 Text(destinationTitle)
                     .junoRowLabel()

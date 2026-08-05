@@ -96,6 +96,27 @@ export const OWNER_COLUMN = new Map<string, "userId" | "accountId">([
   ["CodeSessionCommand", "userId"],
   ["NativeDeviceSession", "userId"],
   ["NativeAuthorizationCode", "userId"],
+  // Juno Work. Guarded from the first commit rather than retrofitted, because
+  // this is the subsystem where an unscoped read is worst: a WorkEvent carries
+  // what an agent did with someone's files, and a WorkFileGrant is the thing
+  // that says whose files they were.
+  //
+  // The scheduler and the host-claim endpoints legitimately sweep across
+  // accounts. Those use prismaUnguarded explicitly (src/lib/work/scheduler.ts,
+  // src/lib/work/relay.ts) rather than being waived here — the whole point of
+  // the guard is that a cross-user query has to say so.
+  ["WorkSession", "userId"],
+  ["WorkRun", "userId"],
+  ["WorkEvent", "userId"],
+  ["WorkApproval", "userId"],
+  ["WorkArtifact", "userId"],
+  ["WorkFileGrant", "userId"],
+  ["WorkHost", "userId"],
+  ["WorkCommand", "userId"],
+  ["WorkSkill", "userId"],
+  ["WorkSchedule", "userId"],
+  ["WorkTrigger", "userId"],
+  ["WorkAuditEvent", "userId"],
 ]);
 
 /**

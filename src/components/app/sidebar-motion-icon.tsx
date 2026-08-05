@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 export type SidebarMotionIconKind =
   | "new"
   | "home"
+  | "work"
   | "code"
   | "library"
   | "artifacts"
@@ -35,10 +36,16 @@ export type SidebarMotionIconKind =
  *
  * Kinds with a closed → open morph (`folder`, `projects`) stack a second glyph
  * and crossfade under CSS — see `.sidebar-motion-icon__glyph--alternate`.
+ *
+ * A kind with no bespoke rule in globals.css still animates: the shared
+ * `:hover` lift applies to every kind except the three it excludes by name. So
+ * a new mark is never inert, it just has no per-part choreography until someone
+ * writes it.
  */
 const ICONS: Record<SidebarMotionIconKind, LucideIcon> = {
   new: AppIcons.new,
   home: AppIcons.home,
+  work: AppIcons.work,
   code: AppIcons.code,
   library: AppIcons.library,
   artifacts: AppIcons.artifacts,

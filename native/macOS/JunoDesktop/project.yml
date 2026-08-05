@@ -17,6 +17,8 @@ packages:
     path: ../../Packages/JunoNativeKit
   JunoCode:
     path: ../../Packages/JunoCode
+  JunoWork:
+    path: ../../Packages/JunoWork
 targets:
   JunoDesktop:
     type: application
@@ -53,6 +55,8 @@ targets:
       - package: JunoNativeKit
         product: JunoCodeKit
       - package: JunoNativeKit
+        product: JunoWorkKit
+      - package: JunoNativeKit
         product: JunoCore
       - package: JunoNativeKit
         product: JunoDesignSystem
@@ -68,6 +72,10 @@ targets:
         product: JunoCodeBridge
       - package: JunoCode
         product: JunoCodeUI
+      - package: JunoWork
+        product: JunoWorkCore
+      - package: JunoWork
+        product: JunoWorkLocal
     configFiles:
       Debug: ../../Config/JunoDesktop-Debug.xcconfig
       Stable: ../../Config/JunoDesktop-Stable.xcconfig

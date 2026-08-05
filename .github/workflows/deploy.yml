@@ -32,6 +32,18 @@ jobs:
       - name: Generate the i18n catalog
         run: npm run i18n:extract
 
+      # Same reason, one directory over: `runner/agent-core/dist` is build
+      # output and gitignored, and `scripts/work-runner.ts` imports it by path.
+      # The `runner` job below builds it, but that is a *different* job with a
+      # different checkout, so its dist never reaches this one — leaving the
+      # typecheck to fail on two unresolvable modules. Build it here too rather
+      # than excluding the script, which would stop typechecking the one file
+      # that drives the cloud Work executor.
+      - name: Build the vendored runner core
+        run: |
+          npm ci --prefix runner/agent-core
+          npm run build --prefix runner/agent-core
+
       - name: Typecheck
         run: npx tsc --noEmit
 
@@ -48,6 +60,19 @@ jobs:
       # nothing rather than something wrong.
       - name: Capability contract is not stale
         run: npm run capabilities:check
+
+      # The Work vocabulary is generated into Swift from the same JSON the
+      # TypeScript reads, so the two cannot disagree — but only if the
+      # checked-in Swift is actually regenerated. A stale enum is silent
+      # exactly where it matters: a client that does not recognise a status or
+      # a degradation kind shows the user nothing rather than something wrong.
+      #
+      # In deploy.yml rather than only native.yml because native.yml is path
+      # filtered: a commit touching only contracts/work/juno-work-v1.json or
+      # src/lib/work/domain.ts would never trigger it. That is the same gap
+      # the capability contract has, and there was no reason to reproduce it.
+      - name: Work contract is not stale
+        run: npm run work:contract:check
 
   # A migration whose SQL does not reproduce the schema is discovered at deploy
   # time, against the production database, with half the release already out.

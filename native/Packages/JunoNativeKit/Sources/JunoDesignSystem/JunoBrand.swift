@@ -87,7 +87,7 @@ public struct JunoLogo: View {
 /// the mark names something in the product or something in the OS: a pull
 /// request is Juno's, a disclosure chevron is Apple's.
 public enum JunoIcon: String, CaseIterable, Sendable {
-    case home, code, library, artifacts, projects
+    case home, work, code, library, artifacts, projects
     case tasks, connections, pulls, conversation, new, search
 
     /// The web reaches Settings from the user menu rather than the rail, so this

@@ -88,6 +88,18 @@ model User {
   codeWorkspaces           CodeWorkspace[]
   chatFirstSubmissionReceipts ChatFirstSubmissionReceipt[]
   toolInvocations          ToolInvocation[]
+  workSessions             WorkSession[]
+  workRuns                 WorkRun[]
+  workEvents               WorkEvent[]
+  workApprovals            WorkApproval[]
+  workArtifacts            WorkArtifact[]
+  workFileGrants           WorkFileGrant[]
+  workHosts                WorkHost[]
+  workCommands             WorkCommand[]
+  workSkills               WorkSkill[]
+  workSchedules            WorkSchedule[]
+  workTriggers             WorkTrigger[]
+  workAuditEvents          WorkAuditEvent[]
 
   @@index([image])
 }
@@ -408,12 +420,28 @@ model Project {
   // Starred projects surface in the sidebar's Pinned section. Server-side so
   // stars follow the account across devices (was localStorage-only).
   starred      Boolean  @default(false)
+  /// The defaults a Work session inherits when it is started in this project:
+  /// target, model, budget, permission policy, and which connectors and grants
+  /// are in scope.
+  ///
+  /// A typed, versioned payload rather than eight columns, because these move
+  /// together and are read as a unit — and rather than an untyped bag, because
+  /// `workDefaultsVersion` is what lets an older client read the parts it
+  /// understands instead of failing on a shape it has never seen. The schema
+  /// for it lives in src/lib/work/projects.ts.
+  ///
+  /// Defaults, never grants. A project can only narrow what the account and the
+  /// host already allow; the resolver intersects, and nothing here can widen.
+  workDefaults        Json     @default("{}")
+  workDefaultsVersion Int      @default(1)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   conversations Conversation[]
   files         Attachment[]
+  workSessions  WorkSession[]
+  workSkills    WorkSkill[]
 
   @@index([userId, updatedAt])
 }
@@ -957,6 +985,10 @@ model CodeDevice {
   sessions CodeRemoteSession[]
   commands CodeSessionCommand[]
   sessionEvents CodeRemoteSessionEvent[]
+  // Juno Work reuses this row as the device's identity and pairing, and keeps
+  // its own explicitly-activated grant alongside it. Optional: a Mac that has
+  // Juno Code and has never switched Work on has no WorkHost at all.
+  workHost WorkHost?
 
   @@unique([userId, name])
 }
@@ -1333,4 +1365,789 @@ model ToolInvocation {
   @@index([userId, createdAt])
   @@index([userId, status, createdAt])
   @@index([conversationId, createdAt])
+}
+
+// ----------------------------------------------------------------------------
+// Juno Work — long-running knowledge work.
+//
+// Work is NOT a flag on a chat. A chat is a request/response the user is
+// present for; a Work task outlives the tab that started it, runs again on a
+// schedule, moves between a cloud container and an opted-in Mac, and has to be
+// answerable about what it did months later. Those are different lifetimes, so
+// they are different rows.
+//
+// Three levels, deliberately:
+//
+//   WorkSession  the user's durable thread and goal. Survives everything.
+//   WorkRun      one attempt at it. A retry, a scheduled firing, a resume
+//                after a host came back — each is its own run, with its own
+//                budget, its own target and its own terminal reason.
+//   WorkEvent    what actually happened, ordered and replayable.
+//
+// Collapsing run into session is the mistake that makes "why did last
+// Tuesday's run cost £4" unanswerable, because the second run has already
+// overwritten the first one's columns.
+//
+// Statuses and kinds are TEXT with a canonical list in TypeScript
+// (src/lib/work/domain.ts) and a generated Swift mirror, not PostgreSQL enums.
+// A new status must be deployable as code: with an enum, the migration adding
+// the value has to land strictly before any writer emits it, and a rollback of
+// the code leaves the value stranded in the type. Every existing status set in
+// this schema that grows (CodeTask.status, ToolInvocation.status) is already
+// TEXT for the same reason; TaskCadence is an enum because it is closed.
+// ----------------------------------------------------------------------------
+
+/// A user's durable Work thread: the goal, the settings it inherits, and the
+/// pointer to whichever run is current.
+///
+/// Deliberately separate from Conversation. A Work session's transcript is its
+/// event stream, not a list of chat messages, and forcing it into Message rows
+/// would mean either lying about `role` or inventing a parallel meaning for it.
+/// The two are linked instead: `conversationId` is set when a user started this
+/// from a chat, so the thread they were reading stays reachable.
+model WorkSession {
+  id        String  @id @default(cuid())
+  userId    String
+  projectId String?
+  /// The chat this was started from, when it was. Null for sessions created in
+  /// Work itself. A plain pointer rather than a relation: the conversation may
+  /// be private-mode and never mirrored server-side.
+  conversationId String?
+
+  title       String
+  titleSource String @default("default")
+  /// What the user actually asked for, verbatim. The runs paraphrase it into
+  /// plans; this is the thing a plan is checked back against.
+  goal        String @db.Text
+
+  /// draft | queued | preparing | running | waiting_input | waiting_approval |
+  /// paused | completed | failed | cancelled | interrupted | host_offline |
+  /// budget_exceeded | timed_out. Denormalised from the current run so the
+  /// list view does not need a join per row; the run stays authoritative.
+  status String @default("draft")
+  /// True when the session cannot progress without the user: a question, an
+  /// approval, or a host that must be woken. This is what "Needs attention"
+  /// filters on, and it is stored rather than derived because deriving it
+  /// meant every client re-implemented the same three-way test differently.
+  needsAttention Boolean @default(false)
+
+  /// Requested execution target: cloud | local | automatic.
+  requestedTarget String @default("automatic")
+  /// The host the user picked for local/automatic work, when they picked one.
+  preferredHostId String?
+
+  requestedModel  String?
+  reasoningEffort String?
+
+  /// Default permission policy for runs in this session:
+  /// conservative | balanced | permissive. Never grants more than the host or
+  /// project policy allows — it can only narrow.
+  permissionPolicy String @default("balanced")
+
+  pinned   Boolean   @default(false)
+  archived Boolean   @default(false)
+  lastActivityAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?     @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  host     WorkHost?    @relation(fields: [preferredHostId], references: [id], onDelete: SetNull)
+  runs     WorkRun[]
+  artifacts WorkArtifact[]
+  grants   WorkFileGrant[]
+  commands WorkCommand[]
+  schedules WorkSchedule[]
+  audit    WorkAuditEvent[]
+
+  @@index([userId, lastActivityAt])
+  @@index([userId, status, lastActivityAt])
+  @@index([userId, needsAttention, lastActivityAt])
+  @@index([projectId, lastActivityAt])
+  @@index([conversationId])
+}
+
+/// One execution attempt of a WorkSession.
+///
+/// Everything that can differ between attempts lives here, not on the session:
+/// which target actually ran, which model actually answered, what it was
+/// allowed to do, what it cost, and why it stopped. `terminalReason` is stored
+/// at the moment the run ends rather than inferred later from the last event —
+/// the last event of a run killed by an OOM is whatever it happened to be
+/// mid-sentence, and inferring from it produces a confident wrong answer.
+model WorkRun {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+  /// 1-based, unique within the session. `attempt` is what a user means by
+  /// "the second try"; run ids are opaque.
+  attempt   Int    @default(1)
+
+  /// Why this run exists: manual | retry | schedule | trigger | resume | fork.
+  origin     String @default("manual")
+  /// The schedule or trigger that fired it, when it was not a person.
+  scheduleId String?
+
+  status         String  @default("queued")
+  /// Authoritative, set exactly once when the run leaves a live status.
+  /// completed | failed | cancelled | budget_exceeded | timed_out |
+  /// host_offline | interrupted | superseded.
+  terminalReason String?
+  /// Operator-facing detail behind terminalReason. Never the model's text.
+  terminalDetail String? @db.Text
+
+  // --- execution target and capability plan ---------------------------------
+  // Requested vs effective, both stored. A run that asked for the Mac and got
+  // cloud is a materially different run from one that asked for cloud, and a
+  // single `target` column cannot tell the two apart after the fact.
+  requestedTarget String @default("automatic")
+  effectiveTarget String?
+  hostId          String?
+
+  requestedModel String?
+  effectiveModel String?
+
+  /// Capabilities the plan says this run needs, e.g. ["local_files",
+  /// "web_research"]. Typed payload, versioned by `planVersion`.
+  requiredCapabilities Json @default("[]")
+  /// Capabilities the chosen target actually advertised at dispatch time.
+  availableCapabilities Json @default("[]")
+  /// Why the effective target/model differ from the requested ones, in the
+  /// user's words. Empty when nothing was degraded. Stored rather than
+  /// re-derived: the host's capability manifest changes, and an explanation
+  /// recomputed a week later describes a machine that no longer exists.
+  degradation Json @default("[]")
+  planVersion Int  @default(1)
+
+  /// Resolved permission policy for this run, after narrowing by host,
+  /// project, schedule and session. The value the executor enforced.
+  permissionPolicy Json @default("{}")
+
+  // --- budgets --------------------------------------------------------------
+  maxCostMicroUsd Int  @default(0)
+  maxTokens       Int  @default(0)
+  maxRuntimeMs    Int  @default(0)
+  costMicroUsd    Int  @default(0)
+  inputTokens     Int  @default(0)
+  outputTokens    Int  @default(0)
+
+  /// Highest sensitivity seen on the way in / produced on the way out:
+  /// public | internal | confidential | restricted. Drives what may be shown
+  /// in a screenshot, put in a log, or sent to a background utility model.
+  inputSensitivity  String @default("internal")
+  outputSensitivity String @default("internal")
+
+  /// Monotonic event counter for this run — the cursor clients resume from.
+  lastSeq Int @default(0)
+
+  /// Set when an executor claims the run, with a lease that expires. Two
+  /// executors claiming the same run is the failure this prevents; a lease
+  /// rather than a boolean is what lets a crashed executor's run be reclaimed
+  /// instead of stranded in `running` forever.
+  claimedBy      String?
+  claimedAt      DateTime?
+  leaseExpiresAt DateTime?
+
+  /// Idempotency for dispatch: a schedule firing twice, or a retried POST,
+  /// resolves to the same run rather than a second one.
+  idempotencyKey String?
+
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  session   WorkSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  host      WorkHost?     @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  schedule  WorkSchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  events    WorkEvent[]
+  approvals WorkApproval[]
+  io        WorkRunIO[]
+  commands  WorkCommand[]
+
+  @@unique([sessionId, attempt])
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([status, leaseExpiresAt])
+  @@index([hostId, status])
+  @@index([scheduleId, createdAt])
+}
+
+/// The ordered, replayable record of a run.
+///
+/// Shape follows src/lib/event-envelope.ts exactly, because Work is the fourth
+/// stream and the envelope exists so the fourth one does not re-solve ordering,
+/// deduplication, replay and visibility for itself. `eventKey` is the
+/// producer's idempotency key: a runner that retried a batch whose POST
+/// succeeded but whose response was lost presents the same key, and the unique
+/// index drops the duplicate instead of showing the user everything twice.
+model WorkEvent {
+  id     String @id @default(cuid())
+  runId  String
+  userId String
+  seq    Int
+  kind   String
+  /// Payload shape version, independent of the envelope's. A consumer that
+  /// does not understand a newer payload can still order and count events.
+  payloadVersion Int @default(1)
+  /// user | operator | internal. Defaults to the most restrictive: an event
+  /// kind whose author forgot to classify it is invisible rather than
+  /// over-shared, and an invisible event is a bug someone reports.
+  visibility String @default("internal")
+  payload    Json
+  eventKey   String?
+  /// Present when the event came from a subagent rather than the root agent.
+  agentId    String?
+  createdAt  DateTime @default(now())
+
+  run  WorkRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, seq])
+  @@unique([runId, eventKey])
+  @@index([runId, seq])
+  @@index([userId, createdAt])
+}
+
+/// One request for the user to authorise one exact action.
+///
+/// The digest is the point. An approval that says "allow file writes" can be
+/// replayed against a different write than the one shown; an approval bound to
+/// a hash of the exact normalised action cannot. Expiry is the second half:
+/// approving a Gmail send at 09:00 must not still authorise it at 17:00 after
+/// the draft has been rewritten.
+model WorkApproval {
+  id     String @id @default(cuid())
+  runId  String
+  userId String
+
+  /// Tool/action identifier, e.g. "work.file.batch_move" or "connector.gmail.send".
+  action String
+  /// safe | edit | command | sensitive | irreversible.
+  risk   String @default("edit")
+  /// Human-readable, exactly what the user is shown. Stored so an audit can
+  /// prove what was on screen, not what the code would render today.
+  summary String @db.Text
+  /// Typed, versioned description of the action for the UI (paths as display
+  /// names, counts, before/after). Never raw absolute paths for remote clients.
+  detail        Json @default("{}")
+  detailVersion Int  @default(1)
+  /// SHA-256 over the canonical serialisation of the action. The executor
+  /// recomputes it immediately before acting and refuses on mismatch.
+  actionDigest String
+  /// The permission policy in force when the approval was requested. An
+  /// approval granted under one policy must not execute after the policy
+  /// narrowed — this is what makes that check possible.
+  policyDigest String
+
+  /// pending | allowed | allowed_always | denied | expired | superseded.
+  decision   String @default("pending")
+  decidedAt  DateTime?
+  /// Which client answered: web | macos | ios | schedule_policy.
+  decidedVia String?
+  expiresAt  DateTime
+
+  createdAt DateTime @default(now())
+
+  run  WorkRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  user User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([runId, createdAt])
+  @@index([userId, decision, expiresAt])
+}
+
+/// A deliverable a run produced.
+///
+/// Separate from Artifact (the chat/Canvas one) rather than an extra type on
+/// it: chat artifacts are text documents keyed to a conversation and versioned
+/// as strings, while a Work deliverable can be a 4 MB workbook in object
+/// storage with an export that must be validated before download. Sharing one
+/// table would mean `content String @db.Text` holding a base64 xlsx.
+model WorkArtifact {
+  id        String @id @default(cuid())
+  sessionId String
+  userId    String
+  /// Stable identifier the agent uses to update the same deliverable across
+  /// runs, e.g. "q3-report". Unique per session.
+  identifier String
+  title      String
+  /// document | spreadsheet | presentation | pdf | report | bundle | image |
+  /// site | archive.
+  kind      String
+  mimeType  String
+  currentVersion Int @default(1)
+  /// Set once the export validator has opened the file back up and confirmed
+  /// it parses. A deliverable that has never been validated is shown as such
+  /// rather than offered for download as though it were fine.
+  validatedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  session  WorkSession           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versions WorkArtifactVersion[]
+
+  @@unique([sessionId, identifier])
+  @@index([userId, updatedAt])
+}
+
+model WorkArtifactVersion {
+  id         String @id @default(cuid())
+  artifactId String
+  version    Int
+  /// Object-storage key. Bytes never live in the row: a presentation is
+  /// megabytes and Postgres is not a blob store.
+  storageKey String
+  byteSize   Int    @default(0)
+  /// SHA-256 of the stored bytes, so a download can be proven to be the
+  /// version the run produced.
+  contentHash String
+  /// generated | edit | restore | import.
+  origin      String @default("generated")
+  /// Where the content came from: source URLs, connector records, files read.
+  /// This is the provenance the UI cites and the reviewer checks.
+  provenance     Json @default("[]")
+  provenanceVersion Int @default(1)
+  /// Validator verdict for THIS version: null = not yet run.
+  validation Json?
+  /// The run that produced it. Nullable for user edits made outside a run.
+  runId     String?
+  createdAt DateTime @default(now())
+
+  artifact WorkArtifact @relation(fields: [artifactId], references: [id], onDelete: Cascade)
+
+  @@unique([artifactId, version])
+  @@index([runId])
+}
+
+/// An opaque handle to a file source a run may use.
+///
+/// The opacity is the security property, not an implementation detail. A phone
+/// supervising a Mac must be able to say "organise the folder you called
+/// Downloads" without ever learning that it is /Users/liam/Downloads: a path
+/// on a remote screen is a path in a screenshot, a support ticket and a
+/// prompt-injection payload. `displayName` goes to clients; `localPath` is
+/// readable only by the host that owns the grant, and the serializers enforce
+/// that split.
+model WorkFileGrant {
+  id     String  @id @default(cuid())
+  userId String
+  /// Null for account-wide grants (a cloud Drive folder available to any
+  /// session); set when the user granted it to one session only.
+  sessionId String?
+  /// Set for local grants. Which Mac this path exists on.
+  hostId    String?
+
+  /// local_folder | local_file | cloud_folder | cloud_file | connector_scope.
+  kind        String
+  displayName String
+  /// Absolute path on the host. NEVER serialised to web or iOS — see
+  /// serializeGrantForRemote in src/lib/work/serializers.ts.
+  localPath   String? @db.Text
+  /// Stable identity for a cloud source (Drive file id, connector resource id).
+  remoteRef   String?
+
+  /// read | read_write_no_delete | read_write. Delete-to-Trash is part of
+  /// read_write; permanent delete is never part of any grant and always asks.
+  accessMode String @default("read")
+  /// Whether the host resolved symlinks and confirmed the real path is inside
+  /// the grant at the time it was created. Re-checked per operation too — this
+  /// records that the grant was sane when made.
+  resolvedRealPath String? @db.Text
+
+  revokedAt DateTime?
+  lastUsedAt DateTime?
+  createdAt DateTime @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session WorkSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  host    WorkHost?    @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([userId, revokedAt])
+  @@index([hostId, revokedAt])
+  @@index([sessionId])
+}
+
+/// A Mac that has been explicitly switched on for Juno Work.
+///
+/// Deliberately its own row rather than a flag on CodeDevice. Device identity,
+/// pairing and revocation are reused from CodeDevice — reimplementing them
+/// would be the "second protocol" the work order forbids — but Work activation
+/// is a separate, revocable grant that defaults to off. Folding it into the
+/// Code device row would mean signing into Juno Code silently made the Mac
+/// available for filesystem and computer-use work, which is exactly the
+/// default nobody would choose if asked.
+model WorkHost {
+  id       String @id @default(cuid())
+  userId   String
+  /// The paired device this host runs on. One host per device.
+  deviceId String @unique
+
+  displayName String
+  platform    String @default("macos")
+  appVersion  String @default("")
+  /// Wire-protocol generation the host registered with. The relay refuses
+  /// commands it knows the host cannot parse rather than sending them and
+  /// hoping.
+  protocolVersion Int @default(1)
+
+  /// The master switch. False means every Work capability on this Mac is off,
+  /// regardless of the toggles below.
+  enabled Boolean @default(false)
+
+  // --- advertised capabilities ---------------------------------------------
+  // Truthful, host-authored, and re-sent on every heartbeat. The backend never
+  // infers a capability the host did not claim: a target selector that guesses
+  // is a target selector that queues local work at a Mac which cannot do it.
+  allowsFileWork    Boolean @default(false)
+  allowsBrowser     Boolean @default(false)
+  allowsComputerUse Boolean @default(false)
+  allowsShell       Boolean @default(false)
+  /// Whether remote-dispatched runs may execute while the app is in the
+  /// background / the Mac is unattended.
+  allowsBackground  Boolean @default(false)
+  /// Typed manifest: tool families, versions, limits. Versioned so an older
+  /// backend can still read the parts it understands.
+  capabilities        Json @default("{}")
+  capabilitiesVersion Int  @default(1)
+
+  /// Bundle identifiers the user allowed / blocked for app control.
+  allowedApps Json @default("[]")
+  blockedApps Json @default("[]")
+  /// Domains the browser tool may drive.
+  allowedDomains Json @default("[]")
+
+  /// Default approval policy this host enforces regardless of what a session
+  /// or schedule asks for: conservative | balanced | permissive.
+  approvalPolicy String @default("conservative")
+
+  /// online | idle | stale | offline. Stored rather than derived from
+  /// lastSeenAt alone so "stale" (heartbeating but not claiming) is
+  /// distinguishable from "offline", which is what tells a user whether to
+  /// wait or to switch to cloud.
+  state      String   @default("offline")
+  lastSeenAt DateTime @default(now())
+  activeRunCount Int  @default(0)
+  queuedRunCount Int  @default(0)
+
+  /// Set when the user revokes this host. Revocation must take effect during
+  /// an in-flight long poll, so the claim endpoint checks it on every call
+  /// rather than only at connect time.
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device    CodeDevice      @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  runs      WorkRun[]
+  sessions  WorkSession[]
+  grants    WorkFileGrant[]
+  commands  WorkCommand[]
+  schedules WorkSchedule[]
+
+  @@index([userId, state])
+  @@index([userId, revokedAt])
+}
+
+/// An idempotent instruction from a client to a host.
+///
+/// Leased, not just claimed: a host that dies holding a command must not
+/// deadlock the session, and a command whose lease expired can be handed to
+/// the host again on reconnect without the user re-issuing it. The unique key
+/// is (userId, idempotencyKey) so a phone retrying a "stop" over a flaky
+/// connection issues one stop, not five.
+model WorkCommand {
+  id        String  @id @default(cuid())
+  userId    String
+  hostId    String
+  sessionId String
+  runId     String?
+
+  /// start | pause | resume | stop | answer | approve | deny | undo |
+  /// grant_folder | revoke_grant | refresh_capabilities | ping.
+  kind    String
+  payload Json @default("{}")
+  payloadVersion Int @default(1)
+
+  /// pending | claimed | succeeded | failed | expired | cancelled.
+  status String @default("pending")
+  result Json?
+  error  String? @db.Text
+
+  idempotencyKey String
+  /// Commands are not valid forever. A "stop" claimed by a host that had been
+  /// offline for an hour would stop a run the user has since restarted.
+  expiresAt      DateTime
+  leaseExpiresAt DateTime?
+
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+  claimedAt   DateTime?
+  completedAt DateTime?
+
+  user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  host    WorkHost    @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  session WorkSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  run     WorkRun?    @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, idempotencyKey])
+  @@index([hostId, status, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+/// A reusable, versioned instruction set with its own tool policy.
+///
+/// The head row is stable identity + enablement; every edit mints a
+/// WorkSkillVersion. A run records the exact version it used, so "which skill
+/// ran" has an answer that does not change when the skill is edited afterwards.
+model WorkSkill {
+  id        String  @id @default(cuid())
+  userId    String
+  /// Set when the skill belongs to one project rather than the account.
+  projectId String?
+
+  /// Slash-invocation name, unique per user. Lowercase, hyphenated.
+  slug        String
+  name        String
+  description String @db.Text
+
+  /// Which version is used when the skill is invoked without pinning one.
+  currentVersion Int @default(1)
+  enabled        Boolean @default(true)
+  /// untrusted | user_authored | verified. An imported skill starts untrusted
+  /// and cannot be auto-selected until the user says otherwise.
+  trust     String @default("user_authored")
+  /// Whether the planner may select this skill on its own when confidence is
+  /// high, or only on explicit invocation.
+  autoSelect Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project  Project?           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  versions WorkSkillVersion[]
+
+  @@unique([userId, slug])
+  @@index([userId, enabled])
+  @@index([projectId])
+}
+
+model WorkSkillVersion {
+  id      String @id @default(cuid())
+  skillId String
+  version Int
+
+  instructions String @db.Text
+  /// Typed declarations, all versioned together by `contractVersion`:
+  /// inputs, outputs, allowed tools/connectors/apps/domains, preferred
+  /// target/model, budget, approval policy, test examples.
+  contract        Json @default("{}")
+  contractVersion Int  @default(1)
+
+  /// A skill declares what it WANTS. It can only ever narrow what the user,
+  /// project and host already granted — this column records the request, and
+  /// the resolver intersects it. A skill that could widen permissions would be
+  /// a permission-escalation primitive shipped as a convenience feature.
+  requestedTools Json @default("[]")
+
+  createdAt DateTime @default(now())
+
+  skill WorkSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@unique([skillId, version])
+}
+
+/// When and why a Work session runs without a person asking.
+///
+/// Migrated from ScheduledTask rather than replacing it: the old rows keep
+/// working through a backfill that gives each one an equivalent schedule, and
+/// `legacyScheduledTaskId` records the link so a user's existing tasks are
+/// recognisably the same tasks afterwards.
+model WorkSchedule {
+  id        String @id @default(cuid())
+  userId    String
+  sessionId String
+
+  name    String
+  enabled Boolean @default(true)
+
+  /// The instructions this schedule runs, versioned independently of the
+  /// session goal so editing the schedule does not silently rewrite history.
+  instructions        String @db.Text
+  instructionsVersion Int    @default(1)
+
+  /// cloud | local | automatic.
+  target String @default("cloud")
+  /// Required when target is local.
+  hostId String?
+
+  /// IANA zone. DST is resolved at computation time against this zone, never
+  /// by adding 24h to the previous fire — that is how a daily 09:00 task ends
+  /// up at 08:00 for half the year.
+  timezone String @default("UTC")
+
+  /// Pinned skill versions, connector/file context, model and reasoning.
+  /// Typed and versioned rather than a bag: a schedule that silently follows
+  /// `currentVersion` of a skill changes behaviour when the skill is edited.
+  runConfig        Json @default("{}")
+  runConfigVersion Int  @default(1)
+
+  maxCostMicroUsd Int @default(0)
+  maxTokens       Int @default(0)
+  maxRuntimeMs    Int @default(0)
+
+  /// What an unattended run may do without a person: pause_for_approval |
+  /// skip_irreversible | disallow_irreversible. Never "auto-approve" — a
+  /// scheduled task must not gain permissions because nobody is watching.
+  unattendedPolicy String @default("pause_for_approval")
+  /// wait | skip | cloud_subset. What to do when a local schedule fires and
+  /// its host is offline. Explicit because all three are reasonable and
+  /// guessing produces the wrong one half the time.
+  hostOfflinePolicy String @default("skip")
+  /// Cap on runs of THIS schedule in flight at once.
+  maxConcurrentRuns Int @default(1)
+  /// none | on_finish | on_attention | all.
+  notifyPolicy String @default("on_attention")
+
+  /// Missed-run behaviour after downtime: skip | run_once | run_all.
+  missedRunPolicy String @default("run_once")
+  retryPolicy     Json   @default("{}")
+
+  lastRunAt  DateTime?
+  nextRunAt  DateTime?
+  /// Guards against two schedulers firing the same schedule. Held for the
+  /// duration of dispatch, not the run.
+  lockedUntil DateTime?
+
+  /// The ScheduledTask this was migrated from, when it was.
+  legacyScheduledTaskId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session  WorkSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  host     WorkHost?     @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  triggers WorkTrigger[]
+  runs     WorkRun[]
+
+  @@index([enabled, nextRunAt])
+  @@index([userId, createdAt])
+  @@index([hostId, enabled])
+}
+
+/// One firing condition attached to a schedule.
+///
+/// A schedule can have several (daily at 08:00 AND when a matching email
+/// arrives), which is why this is a table and not columns on WorkSchedule.
+/// `dedupeWindowSec` plus `lastEventKey` is what stops a Gmail filter that
+/// matches a thread three times from starting three runs.
+model WorkTrigger {
+  id         String @id @default(cuid())
+  scheduleId String
+  userId     String
+
+  /// once | hourly | daily | weekdays | weekly | monthly | yearly | cron |
+  /// email_filter | calendar_window | topic_monitor | connector_event |
+  /// folder_change | manual.
+  kind   String
+  /// Typed per-kind configuration, versioned. A cron trigger's config is not
+  /// an email filter's, and one untyped column that is sometimes both is how
+  /// a scheduler ends up parsing a string to decide what it is looking at.
+  config        Json @default("{}")
+  configVersion Int  @default(1)
+
+  enabled Boolean @default(true)
+
+  /// Event-trigger deduplication. The producer's stable key for the last
+  /// event that fired this trigger, plus how long a repeat of it is ignored.
+  lastEventKey    String?
+  lastFiredAt     DateTime?
+  dedupeWindowSec Int @default(3600)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schedule WorkSchedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([scheduleId, enabled])
+  @@index([userId, kind])
+}
+
+/// What a run read and what it produced, as references rather than copies.
+///
+/// A run that consumed a 40 MB spreadsheet should not store it again; a run
+/// that produced one should point at the artifact version, not duplicate the
+/// bytes. Keeping both directions in one table makes "what touched this file"
+/// a single query instead of a union.
+model WorkRunIO {
+  id    String @id @default(cuid())
+  runId String
+
+  /// input | output.
+  direction String
+  /// file_grant | artifact_version | connector_record | url | attachment |
+  /// skill_version.
+  refKind String
+  /// The referenced row's id, or the URL for `url`.
+  refId   String
+  /// Display label safe for any client. Never an absolute path.
+  label   String
+  /// Typed detail: byte size, mime, connector name, citation range.
+  detail  Json @default("{}")
+
+  createdAt DateTime @default(now())
+
+  run WorkRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, direction])
+  @@index([refKind, refId])
+}
+
+/// The security and compliance log for Work.
+///
+/// Separate from WorkEvent on purpose. WorkEvent is the user's transcript and
+/// is cascade-deleted with the session; this is the record of who granted
+/// what, which host claimed what, what was refused and why — the questions
+/// asked after an incident, when the session may well have been deleted. It
+/// therefore keeps only identifiers and verdicts, never file contents or model
+/// text, so retaining it longer is not retaining the user's work.
+model WorkAuditEvent {
+  id     String @id @default(cuid())
+  userId String
+  /// All nullable: an audit event can precede a session (granting a folder) or
+  /// outlive it (revoking a host).
+  sessionId String?
+  runId     String?
+  hostId    String?
+
+  /// grant_created | grant_revoked | host_enabled | host_disabled |
+  /// host_revoked | command_claimed | command_refused | approval_requested |
+  /// approval_decided | approval_replay_refused | policy_narrowed |
+  /// egress_blocked | injection_detected | path_escape_refused |
+  /// permanent_delete_requested | screenshot_captured | skill_applied.
+  kind     String
+  /// info | warning | refusal | violation.
+  severity String @default("info")
+  /// Identifiers and verdicts only. Enforced by the writer in
+  /// src/lib/work/audit.ts, which strips anything not on the allowed key list.
+  detail   Json   @default("{}")
+  /// web | macos | ios | cloud_runner | scheduler.
+  actor    String @default("cloud_runner")
+
+  createdAt DateTime @default(now())
+
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session WorkSession? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([userId, kind, createdAt])
+  @@index([sessionId, createdAt])
+  @@index([hostId, createdAt])
 }
