@@ -85,13 +85,53 @@ export function routingWarningFor(change: RoutingChange): string | null {
   return null;
 }
 
+function withWarning(model: ModelInfo | null, changes: RoutingChange[]): ExecutionModelResolution {
+  let routingWarning: string | null = null;
+  for (const change of changes) {
+    const warning = routingWarningFor(change);
+    if (warning) routingWarning = warning;
+  }
+  return { model, changes, routingWarning };
+}
+
+/**
+ * The platform ceiling's rung, separately callable.
+ *
+ * The route has to `await` the ledger between the health rung and this one, and
+ * the original only consulted it once a model had actually resolved — with
+ * nothing eligible the request is a 503 and a platform-wide aggregate is not
+ * worth reading. Splitting the rung out is what lets the route keep that
+ * short-circuit without making the whole resolver async.
+ */
+export function degradeForPlatformBudget(
+  resolution: ExecutionModelResolution,
+  candidates: readonly ModelInfo[],
+  policy: ModelPolicy
+): ExecutionModelResolution {
+  const { model } = resolution;
+  if (!model) return resolution;
+  // Degrade rather than refuse: a slower answer beats a 503, and it keeps the
+  // product usable while an operator decides what to do. Per-user budgets are
+  // enforced separately.
+  const alternative = cheapestEligible(candidates, policy, true);
+  if (!alternative || alternative.cost >= model.cost) return resolution;
+  return withWarning(alternative, [
+    ...resolution.changes,
+    { kind: "platform_budget", from: model, to: alternative },
+  ]);
+}
+
 export function resolveExecutionModel(input: {
   /** The model asked for, already looked up; undefined when unknown or Auto failed. */
   requested: ModelInfo | undefined;
   candidates: readonly ModelInfo[];
   policy: ModelPolicy;
-  /** Platform-wide daily spend ceiling has been reached. */
-  platformBudgetExceeded: boolean;
+  /**
+   * Platform-wide daily spend ceiling has been reached. Callers that need to
+   * await the ledger first should omit this and call
+   * `degradeForPlatformBudget` on the result instead.
+   */
+  platformBudgetExceeded?: boolean;
 }): ExecutionModelResolution {
   const { candidates, policy } = input;
   const cheapest = (requireHealthy: boolean) => cheapestEligible(candidates, policy, requireHealthy);
@@ -121,24 +161,10 @@ export function resolveExecutionModel(input: {
     }
   }
 
-  // Degrade rather than refuse: a slower answer beats a 503, and it keeps the
-  // product usable while an operator decides what to do. Per-user budgets are
-  // enforced separately.
-  if (model && input.platformBudgetExceeded) {
-    const alternative = cheapest(true);
-    if (alternative && alternative.cost < model.cost) {
-      changes.push({ kind: "platform_budget", from: model, to: alternative });
-      model = alternative;
-    }
-  }
-
-  let routingWarning: string | null = null;
-  for (const change of changes) {
-    const warning = routingWarningFor(change);
-    if (warning) routingWarning = warning;
-  }
-
-  return { model, changes, routingWarning };
+  const resolved = withWarning(model, changes);
+  return input.platformBudgetExceeded
+    ? degradeForPlatformBudget(resolved, candidates, policy)
+    : resolved;
 }
 
 /**

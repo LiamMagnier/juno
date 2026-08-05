@@ -89,7 +89,7 @@ export function assistantTurnFields(
   };
 }
 
-export interface StaleAssistantRow {
+export interface StaleAssistantRow<Sources = unknown> {
   id: string;
   /** Already ciphertext. */
   content: string;
@@ -97,7 +97,21 @@ export interface StaleAssistantRow {
   model: string | null;
   promptTokens: number | null;
   completionTokens: number | null;
-  sources: unknown;
+  sources: Sources | null;
+}
+
+/**
+ * Generic in the sources column so this module stays free of Prisma while the
+ * route still gets a value its ORM accepts.
+ */
+export interface MessageVersionSnapshot<Sources = unknown> {
+  messageId: string;
+  content: string;
+  reasoning: string | null;
+  model: string | null;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  sources?: Sources;
 }
 
 /**
@@ -110,7 +124,9 @@ export interface StaleAssistantRow {
  * are different states in the column and only one of them means "this answer
  * cited nothing".
  */
-export function versionSnapshot(stale: StaleAssistantRow): Record<string, unknown> {
+export function versionSnapshot<Sources>(
+  stale: StaleAssistantRow<Sources>
+): MessageVersionSnapshot<Sources> {
   return {
     messageId: stale.id,
     content: stale.content,
