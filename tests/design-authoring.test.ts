@@ -168,3 +168,42 @@ test("a design a model authors can be opened, edited and re-saved", () => {
   const resaved = normalizeDesignArtifact(serializeDesignDocument(document), "sign-in");
   assert.equal(parseStoredDesignDocument(resaved).nodes[button.id].name, "Sign in button");
 });
+
+// ---------------------------------------------------------------------------
+// The "New design" presets
+// ---------------------------------------------------------------------------
+
+test("each device preset expands into a real, openable canvas", () => {
+  // Mirrors POST /api/design. The route's database writes are not exercised
+  // here; what is exercised is the part that decides what the user sees on
+  // arrival — a blank design that opens at a believable device size.
+  const presets = [
+    { key: "phone", width: 375, height: 812, name: "iPhone" },
+    { key: "tablet", width: 834, height: 1_194, name: "iPad" },
+    { key: "desktop", width: 1_440, height: 900, name: "Desktop" },
+    { key: "square", width: 1_080, height: 1_080, name: "Square" },
+  ];
+
+  for (const preset of presets) {
+    const document = expandAuthoredDesign(
+      authoredDesignSchema.parse({
+        name: "Untitled design",
+        background: "#f5f5f7",
+        nodes: [{ type: "frame", name: preset.name, width: preset.width, height: preset.height, fill: "#ffffff", clip: true }],
+      }),
+      `design-${preset.key}`
+    );
+
+    assert.doesNotThrow(() => parseStoredDesignDocument(serializeDesignDocument(document)));
+    const frame = Object.values(document.nodes)[0];
+    assert.equal(frame.type, "frame");
+    assert.equal(frame.name, preset.name);
+
+    const box = layoutPage(document, document.pages[0].id).get(frame.id)!;
+    assert.equal(box.width, preset.width, `${preset.key} opens at its real width`);
+    assert.equal(box.height, preset.height, `${preset.key} opens at its real height`);
+
+    // It renders, so the canvas is not blank-white-on-blank-white.
+    assert.ok(renderPageSvg(document, document.pages[0].id).svg.includes("<rect"));
+  }
+});
