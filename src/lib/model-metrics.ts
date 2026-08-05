@@ -176,8 +176,8 @@ const FAMILY_RULES: Partial<Record<Provider, FamilyRule[]>> = {
     { hints: ["pro"], metric: official(0.435, 0.87, 256_000, 3, 7) }, // II 42.2 · 46 tok/s — arena-overperforms (#31)
   ],
   qwen: [
-    // 3.8 is Token Plan / credits-only publicly — no official $/MTok list yet.
-    // Estimate a notch above 3.7 Max until Alibaba publishes payg rates.
+    // 3.8 Max has no official $/MTok list yet. Estimate a notch above 3.7 Max
+    // until Alibaba publishes pay-as-you-go rates for it.
     { hints: ["qwen3.8-max"], metric: metric(3.0, 9.0, 983_616, 8, 8) },
     { hints: ["qwen3.7-max"], metric: official(2.5, 7.5, 1_000_000, 9, 7) }, // II 46.0 · 192 tok/s · arena #17
     { hints: ["qwen3.7-plus"], metric: official(0.4, 1.6, 1_000_000, 3, 6) }, // II 39.0 · 52 tok/s
@@ -705,7 +705,7 @@ export function reasoningCaps(model: ModelInfo): ReasoningCaps {
     case "qwen":
       if (id.includes("qwq")) return caps([], false); // QwQ always reasons, no control
       if (id.includes("coder")) return caps([], true); // Qwen3-Coder: non-thinking
-      // Qwen3.8 Max Preview: thinking always on (docs — no Instant). Budget tiers still apply.
+      // Qwen3.8 Max: thinking always on (docs — no Instant). Budget tiers still apply.
       if (id.includes("qwen3.8-max")) return caps(LMH, false);
       // enable_thinking + thinking_budget: depth tiers are mapped to budgets.
       return caps(LMH, true);

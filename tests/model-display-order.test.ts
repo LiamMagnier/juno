@@ -31,7 +31,7 @@ describe("modelGeneration", () => {
     assert.equal(modelGeneration("Gemini 3.6 Flash"), 3.6);
     assert.equal(modelGeneration("Claude Opus 4.8"), 4.8);
     assert.equal(modelGeneration("Kimi K3"), 3);
-    assert.equal(modelGeneration("Qwen3.8 Max Preview"), 3.8);
+    assert.equal(modelGeneration("Qwen3.8 Max"), 3.8);
   });
 
   it("returns null when the name carries no version", () => {

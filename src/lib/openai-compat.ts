@@ -291,8 +291,8 @@ export async function* streamOpenAICompat(
   }
   if (isQwenThinking) {
     // Instant (no effort) turns Qwen thinking off for hybrid models. Qwen3.8 Max
-    // Preview is thinking-only (canDisable:false) so always send enable_thinking
-    // true and a budget (default high when the UI sent nothing).
+    // is thinking-only (canDisable:false) so always send enable_thinking true
+    // and a budget (default high when the UI sent nothing).
     const qwenAlwaysThinks = modelId.includes("qwen3.8-max") || !reasoningCaps(model).canDisable;
     const qwenEffort = effectiveReasoningEffort ?? (qwenAlwaysThinks ? "high" : null);
     params.enable_thinking = qwenAlwaysThinks ? true : !!qwenEffort;

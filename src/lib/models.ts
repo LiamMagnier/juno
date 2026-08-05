@@ -355,10 +355,12 @@ const CURATED: ModelInfo[] = [
   def({ provider: "mimo", id: "mimo-v2-flash", name: "MiMo V2 Flash", family: "mimo-flash", status: "current", released: "2026-01", minPlan: "FREE", cost: 1, contextWindow: 256_000, description: "Efficient reasoning and coding at high speed." }),
 
   // —— Alibaba · Qwen (DashScope / Model Studio, OpenAI-compatible) ——
-  // qwen3.8-max-preview: Alibaba Model Studio / Token Plan only (Beijing Token Plan
-  // keys, and listed on international docs as Token Plan). Thinking always on;
-  // no public pay-as-you-go $/MTok yet — billed via Token Plan credits.
-  def({ provider: "qwen", id: "qwen3.8-max-preview", name: "Qwen3.8 Max Preview", family: "qwen-max", status: "current", released: "2026-07", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship preview — always-on deep thinking, vision, and ~1M context. Model Studio Token Plan access only." }),
+  // qwen3.8-max: the GA of the 3.8 Max preview, which this replaces — same
+  // always-on thinking, vision and ~1M context, on a stable Model Studio id
+  // instead of a preview snapshot. Alibaba has not published pay-as-you-go
+  // $/MTok for it, so pricing.ts and model-metrics.ts still carry an estimate a
+  // notch above 3.7 Max rather than an `official()` rate.
+  def({ provider: "qwen", id: "qwen3.8-max", name: "Qwen3.8 Max", family: "qwen-max", status: "current", released: "2026-08", minPlan: "PRO", vision: true, reasoning: true, cost: 3, contextWindow: 983_616, description: "Newest Qwen flagship — always-on deep thinking, vision, and ~1M context." }),
   def({ provider: "qwen", id: "qwen3.7-max", name: "Qwen3.7 Max", family: "qwen-max", status: "legacy", released: "2026-05", minPlan: "PRO", reasoning: true, cost: 3, contextWindow: 1_000_000, description: "Previous Max flagship — strong reasoning served extremely fast (~190 tok/s). Standard Model Studio pay-as-you-go API." }),
   def({ provider: "qwen", id: "qwen3.7-plus", name: "Qwen3.7 Plus", family: "qwen-plus", status: "current", released: "2026-05", minPlan: "PRO", vision: true, reasoning: true, cost: 2, contextWindow: 1_000_000, description: "Balanced multimodal hybrid-thinking model with 1M context." }),
   def({ provider: "qwen", id: "qwen3.6-flash", name: "Qwen3.6 Flash", family: "qwen-flash", status: "current", released: "2026-03", minPlan: "FREE", vision: true, reasoning: true, cost: 1, contextWindow: 1_000_000, description: "Fastest, cheapest Qwen tier for high-volume multimodal tasks." }),
@@ -534,13 +536,13 @@ export const RETIRED_MODELS: Record<string, ModelId> = {
   "xai:grok-3-image": "xai:grok-imagine-image-quality", // never existed
   "xai:grok-2-image": "xai:grok-imagine-image-quality", // retired 2026-02-28 (real id grok-2-image-1212)
   // Qwen — older aliases/snapshots replaced by versioned Model Studio ids.
-  // Was pinned to 3.7 Max because 3.8-max-preview is Token Plan only, but 3.7
-  // Max is `legacy` — so this migrated a retired id onto a model the pickers do
-  // not offer, which `validate:models` has been failing on. A retired id has to
-  // land somewhere selectable; Token Plan is a billing question for the account,
-  // not a reason to strand the migration on a hidden model.
-  "qwen:qwen3-max": "qwen:qwen3.8-max-preview",
-  "qwen:qwen3.8-max": "qwen:qwen3.8-max-preview",
+  // A retired id has to land somewhere selectable (`validate:models` enforces
+  // that the target is `current`), which is why these point at the Max family's
+  // live flagship rather than at 3.7 Max, which is `legacy` and hidden.
+  "qwen:qwen3-max": "qwen:qwen3.8-max",
+  // The 3.8 preview is gone now that the GA id serves the same model; anyone
+  // holding the preview id in a stored conversation lands on the GA one.
+  "qwen:qwen3.8-max-preview": "qwen:qwen3.8-max",
   "qwen:qwen-plus": "qwen:qwen3.7-plus",
   "qwen:qwen-flash": "qwen:qwen3.6-flash",
 };

@@ -632,7 +632,7 @@ Google Gemini 3.5 Flash, 3.1 Pro, 3.1 Flash-Lite; Zhipu GLM-5.2 + turbo/vision/f
 tiers; Moonshot Kimi K3 (flagship), K2.6, K2.7 Code (+ high-speed); DeepSeek V4
 Flash/Pro; Mistral Medium 3.5 / Large 3 / Small 4 / Codestral / Ministral;
 xAI Grok 4.5 (+ Build 0.1, Multi-Agent); MiniMax M3 / M2.7 Highspeed;
-MiMo V2.5 Pro / V2 Flash; Qwen 3.8 Max Preview / 3.7 Plus / 3.6 Flash / Long.
+MiMo V2.5 Pro / V2 Flash; Qwen 3.8 Max / 3.7 Plus / 3.6 Flash / Long.
 Image/video generation models (GPT Image, Nano Banana, Grok Imagine, GLM Image,
 Veo 3.1, Seedance, Hailuo, CogVideoX) require the **MAX** plan for video.
 
