@@ -304,3 +304,75 @@ final class WorkRemoteHostTests: XCTestCase {
         )
     }
 }
+
+/// Decoding a command off the relay.
+///
+/// The defaults are the whole point. Every field this build cannot read has to
+/// fail towards refusing the command, because the alternative — a malformed
+/// value producing a command that is valid for ever — makes the wire format the
+/// easiest way to bypass expiry.
+final class WorkCommandDecodingTests: XCTestCase {
+    private func payload(_ over: [String: JunoJSONValue] = [:]) -> [String: JunoJSONValue] {
+        var base: [String: JunoJSONValue] = [
+            "id": .string("cmd_1"),
+            "sessionId": .string("sess_1"),
+            "runId": .string("run_1"),
+            "kind": .string("start"),
+            "status": .string("claimed"),
+            "expiresAt": .string("2026-08-05T12:05:00.000Z"),
+            "leaseExpiresAt": .string("2026-08-05T12:01:00.000Z"),
+            "payload": .object(["target": .string("local")]),
+        ]
+        for (key, value) in over { base[key] = value }
+        return base
+    }
+
+    func testAWellFormedCommandDecodes() throws {
+        let command = try WorkCommand(relayPayload: payload())
+        XCTAssertEqual(command.id, "cmd_1")
+        XCTAssertEqual(command.sessionID, "sess_1")
+        XCTAssertEqual(command.runID, "run_1")
+        XCTAssertEqual(command.kind, "start")
+        XCTAssertEqual(command.payload["target"], .string("local"))
+        XCTAssertNotNil(command.leaseExpiresAt)
+    }
+
+    func testAnUnreadableExpiryMakesTheCommandAlreadyExpired() throws {
+        let command = try WorkCommand(relayPayload: payload(["expiresAt": .string("not a date")]))
+        XCTAssertFalse(
+            command.isStillValid(at: Date(timeIntervalSince1970: 0)),
+            "defaulting the other way would make a malformed timestamp the one reliable way to "
+                + "obtain a command that never stops being valid"
+        )
+    }
+
+    func testAMissingRequiredFieldIsRefusedRatherThanGuessed() {
+        for missing in ["id", "sessionId", "kind", "status"] {
+            var fields = payload()
+            fields.removeValue(forKey: missing)
+            XCTAssertThrowsError(
+                try WorkCommand(relayPayload: fields),
+                "a command with no \(missing) was accepted"
+            )
+        }
+    }
+
+    func testAnAbsentPayloadDecodesAsEmptyRatherThanFailing() throws {
+        var fields = payload()
+        fields.removeValue(forKey: "payload")
+        let command = try WorkCommand(relayPayload: fields)
+        XCTAssertTrue(command.payload.isEmpty, "ping and refresh carry no payload at all")
+    }
+
+    func testAnAbsentRunIdIsAllowed() throws {
+        var fields = payload()
+        fields.removeValue(forKey: "runId")
+        XCTAssertNil(try WorkCommand(relayPayload: fields).runID, "a grant_folder command names no run")
+    }
+
+    func testBothIsoFormsParse() {
+        XCTAssertNotNil(WorkCommand.parseTimestamp("2026-08-05T12:00:00Z"))
+        XCTAssertNotNil(WorkCommand.parseTimestamp("2026-08-05T12:00:00.123Z"))
+        XCTAssertNil(WorkCommand.parseTimestamp("yesterday"))
+    }
+}

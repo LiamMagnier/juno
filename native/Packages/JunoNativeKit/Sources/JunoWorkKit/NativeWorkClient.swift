@@ -423,6 +423,41 @@ public struct NativeWorkClient: Sendable {
 
     // MARK: - Transport
 
+
+    // MARK: - Seams for the relay conformance
+    //
+    // `get`, `send`, `decodeObject` and `validate` are private, which is right:
+    // they are this type's plumbing and nothing outside the module should reach
+    // them. The relay conformance lives in NativeWorkRelay.swift rather than
+    // here because its three methods answer to a loop rather than to a person,
+    // and Swift's `private` is file-scoped — so these four forwarders are what
+    // let that separation exist without widening the real helpers to the module.
+
+    func relayGet(
+        _ path: String,
+        query: [URLQueryItem] = [],
+        for accountID: AccountID
+    ) async throws -> HTTPResponse {
+        try await get(path, query: query, for: accountID)
+    }
+
+    func relaySend(
+        _ method: HTTPMethod,
+        _ path: String,
+        body: JunoJSONValue?,
+        for accountID: AccountID
+    ) async throws -> HTTPResponse {
+        try await send(method, path, body: body, for: accountID)
+    }
+
+    func relayObject(_ response: HTTPResponse) throws -> [String: JunoJSONValue]? {
+        try decodeObject(response)
+    }
+
+    func validateRelayIdentifier(_ identifier: String) throws {
+        try validate(identifier)
+    }
+
     private func get(
         _ path: String,
         query: [URLQueryItem] = [],
