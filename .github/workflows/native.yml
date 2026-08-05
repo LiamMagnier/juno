@@ -78,7 +78,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [JunoNativeKit, JunoCode]
+        # JunoWork is the local-Work engine. Added here rather than left to the
+        # app builds because a package outside this matrix is never built or
+        # tested by CI at all — the matrix is the whole gate for the packages.
+        package: [JunoNativeKit, JunoCode, JunoWork]
     steps:
       - uses: actions/checkout@v4
 
