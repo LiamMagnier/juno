@@ -44,6 +44,17 @@ import {
 
 export interface CreateWorkSessionInput {
   userId: string;
+  /**
+   * A caller-chosen primary key, for idempotent creation.
+   *
+   * WorkSession has no idempotencyKey column, so its primary key is the only
+   * uniqueness constraint a retry can collide on. A caller that derives the id
+   * from the user and its own key — see idempotentSessionId in the sessions
+   * route — turns a retried tap on a flaky connection into a P2002 it can
+   * recover from, instead of a second session. Omit it and a cuid is allocated
+   * as before.
+   */
+  id?: string;
   title: string;
   /** What the user actually asked for, verbatim. Plans are checked against it. */
   goal: string;
@@ -70,6 +81,7 @@ export interface CreateWorkSessionInput {
 export async function createWorkSession(input: CreateWorkSessionInput): Promise<WorkSession> {
   return prisma.workSession.create({
     data: {
+      ...(input.id ? { id: input.id } : {}),
       userId: input.userId,
       title: input.title,
       titleSource: input.titleSource ?? "default",
