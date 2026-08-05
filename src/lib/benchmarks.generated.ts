@@ -19,7 +19,7 @@ export interface ModelBenchmark {
 }
 
 /** ISO timestamp of the last successful fetch (null = never fetched). */
-export const BENCHMARK_STAMP: string | null = "2026-08-04T06:43:06.843Z";
+export const BENCHMARK_STAMP: string | null = "2026-08-05T06:44:16.272Z";
 
 /** Canonical Juno model id → live leaderboard data. */
 export const BENCHMARKS: Record<string, ModelBenchmark> = {
@@ -44,7 +44,7 @@ export const BENCHMARKS: Record<string, ModelBenchmark> = {
   "longcat:LongCat-2.0": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "meituan/longcat-2.0" },
   "mimo:mimo-v2.5-pro": { priceInPerMTok: 0.435, priceOutPerMTok: 0.87, source: "openrouter", slug: "xiaomi/mimo-v2.5-pro" },
   "minimax:MiniMax-M2.5": { priceInPerMTok: 0.15, priceOutPerMTok: 0.8999999999999999, source: "openrouter", slug: "minimax/minimax-m2.5" },
-  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.25, priceOutPerMTok: 1, source: "openrouter", slug: "minimax/minimax-m2.7" },
+  "minimax:MiniMax-M2.7": { priceInPerMTok: 0.27, priceOutPerMTok: 1.08, source: "openrouter", slug: "minimax/minimax-m2.7" },
   "minimax:MiniMax-M3": { priceInPerMTok: 0.3, priceOutPerMTok: 1.2, source: "openrouter", slug: "minimax/minimax-m3" },
   "mistral:mistral-large-latest": { priceInPerMTok: 2, priceOutPerMTok: 6, source: "openrouter", slug: "mistralai/mistral-large" },
   "mistral:mistral-medium-latest": { priceInPerMTok: 1.5, priceOutPerMTok: 7.5, source: "openrouter", slug: "mistralai/mistral-medium-3-5" },
