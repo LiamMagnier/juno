@@ -191,10 +191,14 @@ final class DesktopDesignEditorHost: NSObject, ObservableObject {
 // MARK: - Navigation policy
 
 extension DesktopDesignEditorHost: WKNavigationDelegate, WKUIDelegate {
+    // `@MainActor` on the handler is part of the signature under Swift 6. Without
+    // it this only *nearly* matches the optional requirement — so it would never
+    // be called, and every navigation would be allowed by default. That is the
+    // opposite of what this method exists to do, and strict mode is what caught it.
     func webView(
         _ webView: WKWebView,
         decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         guard let url = navigationAction.request.url else { return decisionHandler(.cancel) }
         // The editor's own local files, and nothing else — not http, not

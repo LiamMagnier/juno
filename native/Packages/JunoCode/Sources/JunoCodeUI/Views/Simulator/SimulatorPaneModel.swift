@@ -225,12 +225,19 @@ public final class SimulatorPaneModel {
     /// sent anywhere — it only repaints this pane.
     private func startFrameLoop() {
         guard frameTask == nil else { return }
-        frameTask = Task { [weak self, session] in
+        // The loop reads its stop condition from the *session*, not from this
+        // model. Reaching back to a `@MainActor` property from here needed a
+        // hop per frame purely to re-read something the session already knows —
+        // and whether that hop counted as an `await` differed between Xcode
+        // versions, so it built locally and failed CI. The session is the
+        // authority on whether the app is running; asking it directly is both
+        // correct and version-independent.
+        frameTask = Task { [session] in
             let interval = UInt64(1_000_000_000 / max(1, Int(SimulatorFrameService.maxFramesPerSecond)))
             while !Task.isCancelled {
+                guard await session.state.isRunning else { return }
                 _ = try? await session.captureFrame()
                 try? await Task.sleep(nanoseconds: interval)
-                if await self?.state.isRunning != true { return }
             }
         }
     }
