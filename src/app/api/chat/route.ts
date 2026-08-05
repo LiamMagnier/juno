@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { z } from "zod";
 import { admitChatRequest } from "@/lib/chat-admission";
+import { cheapestEligible, selectModel } from "@/lib/model-selection";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser } from "@/lib/session";
@@ -9,7 +10,7 @@ import { getUserPlan, consumeMessage, refundMessage } from "@/lib/usage";
 import { canUseModel, PLANS } from "@/lib/plans";
 import { isModelId, getModel, DEFAULT_MODEL, MODEL_LIST, type ModelInfo } from "@/lib/models";
 import { AUTO_MODEL_ID, isAutoModelId, pickAutoModel } from "@/lib/auto-model";
-import { isProviderConfigured, configuredProviders, PROVIDERS } from "@/lib/providers";
+import { isProviderConfigured, configuredProviders, PROVIDERS, type Provider } from "@/lib/providers";
 import { providerHealthy } from "@/lib/provider-health";
 import { isPlatformBudgetExceeded } from "@/lib/platform-budget";
 import { isOwnerEmail } from "@/lib/owner";
@@ -459,7 +460,12 @@ async function handleChat(req: Request) {
     modelInfo = getModel(requestedId);
   }
 
-  // Fallback must stay plan-aware: only pick a configured model the plan allows.
+  // Eligibility and fallback now live in `lib/model-selection.ts`. The rules
+  // decide what a turn costs, and inline here they were reachable only by
+  // standing up a request with auth, quota and a database behind it.
+  //
+  // `pickAutoModel` does not consult provider health, so Auto lands in the same
+  // reroute branch as an explicit request on a dead provider.
   const eligible = (m: ModelInfo) =>
     m.modality === "chat" &&
     !m.comingSoon &&
@@ -467,56 +473,29 @@ async function handleChat(req: Request) {
     isProviderConfigured(m.provider) &&
     canUseModel(plan, m.id);
 
-  /**
-   * Cheapest eligible model, NOT the first in registry order.
-   *
-   * Registry order is a display order — its first chat entry is a frontier
-   * model. Falling back to it costs roughly 40x the cheapest capable model per
-   * request, silently, on the path taken precisely when something has already
-   * gone wrong. Nobody chose that model, so nobody should be billed as if they
-   * had.
-   */
-  const cheapestEligible = (requireHealthy: boolean): ModelInfo | undefined =>
-    MODEL_LIST.filter((m) => eligible(m) && (!requireHealthy || providerHealthy(m.provider))).sort(
-      (a, b) => a.cost - b.cost
-    )[0];
-
-  if (
-    !modelInfo ||
-    isAutoModelId(modelInfo.id) ||
-    modelInfo.comingSoon ||
-    !isProviderConfigured(modelInfo.provider) ||
-    !canUseModel(plan, modelInfo.id)
-  ) {
-    // Prefer a provider that is actually answering; a configured-but-dead one
-    // is better than nothing, so it stays as the second choice.
-    modelInfo = cheapestEligible(true) ?? cheapestEligible(false);
-  } else if (!providerHealthy(modelInfo.provider)) {
-    // The requested model's provider is failing auth or billing, so this
-    // generation cannot succeed. DEFAULT_MODEL is Anthropic, so an Anthropic
-    // outage would otherwise route every new chat straight into an error.
-    // Reroute rather than stream a guaranteed failure — but only if there is
-    // somewhere healthy to go.
-    //
-    // pickAutoModel does not consult provider health, so Auto lands here too:
-    // it picks the cheapest model overall, which may sit on a dead provider.
-    const alternative = cheapestEligible(true);
-    if (alternative) {
-      console.warn("[chat] rerouting off an unhealthy provider", {
-        from: modelInfo.id,
-        to: alternative.id,
-        provider: modelInfo.provider,
-      });
-      routingWarning = `${modelInfo.name} is unavailable right now — answered with ${alternative.name} instead.`;
-      modelInfo = alternative;
-    }
+  const selection = selectModel<ModelInfo>({
+    requestedId,
+    requested: modelInfo && !isAutoModelId(modelInfo.id) ? modelInfo : null,
+    catalogue: MODEL_LIST,
+    isEligible: eligible,
+    isProviderHealthy: (provider) => providerHealthy(provider as Provider),
+  });
+  if (selection.reason === "rerouted_unhealthy_provider") {
+    console.warn("[chat] rerouting off an unhealthy provider", {
+      from: modelInfo?.id,
+      to: selection.model?.id,
+      provider: modelInfo?.provider,
+    });
   }
+  modelInfo = selection.model ?? undefined;
+  routingWarning = selection.warning ?? routingWarning;
   // Platform-wide daily spend ceiling (off unless PLATFORM_DAILY_BUDGET_USD is
   // set). Degrade to the cheapest capable model rather than refusing: a slower
   // answer beats a 500, and it keeps the product usable while an operator
   // decides what to do. Per-user budgets are enforced separately by checkBudget.
   if (modelInfo && (await isPlatformBudgetExceeded())) {
-    const cheapest = cheapestEligible(true);
+    const cheapest =
+      cheapestEligible(MODEL_LIST, eligible, (p) => providerHealthy(p as Provider));
     if (cheapest && cheapest.cost < modelInfo.cost) {
       console.warn("[chat] platform budget exceeded — degrading model", {
         from: modelInfo.id,
