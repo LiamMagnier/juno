@@ -784,13 +784,10 @@ struct DesktopCodeSidebar: View {
         // The empty strip's note said product identity belonged in the window
         // chrome. What the strip could not do then was *hold* anything: it was
         // `Color.clear`, so scrolled rows and the section headers this list pins
-        // to its own top both slid through it. See
-        // ``DesktopSidebarProductHeader`` — the backing is what makes the strip
-        // able to carry a control, and it is why the pinned-header note above no
-        // longer describes a visible failure.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            DesktopSidebarProductHeader(product: $product)
-        }
+        // to its own top both slid through it. The strip is now laid out above
+        // the list rather than inset into it, which is what finally settles the
+        // pinned-header note above: the list's own top begins below the strip.
+        .junoSidebarProductHeader(product: $product)
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
         // effect is what lets the footer sit on a translucent column without an

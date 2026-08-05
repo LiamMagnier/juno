@@ -51,6 +51,7 @@
 		8EA636AE2ABF0429645101CB /* editor.css in Resources */ = {isa = PBXBuildFile; fileRef = D9EB13875731628203A4F315 /* editor.css */; };
 		920EBFD18DE90BC1BD60CC8E /* JunoPreviewSupport in Frameworks */ = {isa = PBXBuildFile; productRef = 35AB29EB28C0B56EEAD2AAAB /* JunoPreviewSupport */; };
 		92B937323764063EA9C4214E /* DesktopUsageModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE662C8AAB794BA99D7E03F /* DesktopUsageModelTests.swift */; };
+		9542990B0387C601D6DB550B /* DesktopSegmented.swift in Sources */ = {isa = PBXBuildFile; fileRef = 524F462202D5559551BED6F0 /* DesktopSegmented.swift */; };
 		9D75E980D81ADDC7975A56F9 /* JunoWorkKit in Frameworks */ = {isa = PBXBuildFile; productRef = 0FD1B5C83E81A48727EDB93C /* JunoWorkKit */; };
 		9F557E5FA44FA90F49F145FB /* DesktopIncognito.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3EC56B8C293F8C8B49E027 /* DesktopIncognito.swift */; };
 		A30222FE187C44D417955604 /* DesktopNavigationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87DDC6F2406B896D29731CCE /* DesktopNavigationStateTests.swift */; };
@@ -124,6 +125,7 @@
 		50B52B2ED47181984DAA60FA /* DesktopAccountScreens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopAccountScreens.swift; sourceTree = "<group>"; };
 		51D7DEFA18FA775DFB14FA34 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5207DEC5805B173ADFB8E6E6 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		524F462202D5559551BED6F0 /* DesktopSegmented.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopSegmented.swift; sourceTree = "<group>"; };
 		53235B497624DA5B65F9B902 /* DesktopUsageScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopUsageScreen.swift; sourceTree = "<group>"; };
 		5F1AD59AF5368F1B3A84D0F2 /* JunoDesktop-Next.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "JunoDesktop-Next.xcconfig"; sourceTree = "<group>"; };
 		6210C6C1160169228FB44B4F /* editor.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = editor.js; sourceTree = "<group>"; };
@@ -259,6 +261,7 @@
 				3937DD015DAB7C6F68939F1F /* DesktopProductMode.swift */,
 				ECACB2996FDFAD5AC00D7C58 /* DesktopProjectsScreen.swift */,
 				18E25C3C510164E4281E592D /* DesktopSearchScreen.swift */,
+				524F462202D5559551BED6F0 /* DesktopSegmented.swift */,
 				A5B8BB4BEB0D113319C846F6 /* DesktopSettingsScreen.swift */,
 				7BAC4F4FD70D084FA11CD9B6 /* DesktopSimulatorDock.swift */,
 				3458DF7440C720D367898D6F /* DesktopTasksScreen.swift */,
@@ -545,6 +548,7 @@
 				2155687BD62CFDED5F0224D5 /* DesktopProductMode.swift in Sources */,
 				79B232CCF1311D4C40B8C24C /* DesktopProjectsScreen.swift in Sources */,
 				157B182726D958C47128E4B3 /* DesktopSearchScreen.swift in Sources */,
+				9542990B0387C601D6DB550B /* DesktopSegmented.swift in Sources */,
 				6C5FD3E41B08E1098C21DEFB /* DesktopSettingsScreen.swift in Sources */,
 				5D359FC7643D014651342734 /* DesktopSimulatorDock.swift in Sources */,
 				634A3EE040814C3EC8D5DD51 /* DesktopTasksScreen.swift in Sources */,

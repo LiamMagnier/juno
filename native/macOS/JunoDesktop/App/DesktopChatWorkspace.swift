@@ -444,13 +444,7 @@ private struct DesktopChatSidebar: View {
         .listStyle(.sidebar)
         // The selection is still the platform's — only its colour is Juno's.
         .junoSidebarSelectionTint()
-        // The Chat / Code switch, on the column it switches, in the strip that
-        // was previously reserved and empty. See ``DesktopSidebarProductHeader``
-        // for why the strip is opaque and what stands in for the switch when this
-        // column is collapsed.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            DesktopSidebarProductHeader(product: $product)
-        }
+        .junoSidebarProductHeader(product: $product)
         // `safeAreaBar`, not `safeAreaInset`: the bar variant is what the
         // system's bottom scroll-edge effect is measured against, and that
         // effect is what lets the footer sit on a translucent column without an

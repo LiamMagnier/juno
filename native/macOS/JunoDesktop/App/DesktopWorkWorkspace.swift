@@ -450,15 +450,11 @@ private struct DesktopWorkSidebar: View {
         .listStyle(.sidebar)
         .junoSidebarSelectionTint()
         // The strip at the top of the column, which is the product switch and
-        // not merely the space one would need. It is opaque for the same reason
-        // the footer below it is: an inset reserves space and paints nothing, so
-        // a scrolled list slides its rows through it — and a `.sidebar` List
-        // pins its section headers to its own top, where no inset reaches them
-        // at all. "Waiting on you" arriving level with the traffic lights is the
-        // failure this prevents.
-        .safeAreaInset(edge: .top, spacing: 0) {
-            DesktopSidebarProductHeader(product: $product)
-        }
+        // not merely the space one would need. Laid out above the list rather
+        // than inset into it, so "Waiting on you" — which a `.sidebar` List pins
+        // to the top of its own bounds, where no inset reaches it — pins below
+        // the strip instead of over the traffic lights.
+        .junoSidebarProductHeader(product: $product)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Opaque backing, not just an inset. Without it a scrolled source
             // list slides its rows under the footer, which is the same defect
