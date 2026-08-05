@@ -461,8 +461,14 @@ struct DesktopWorkHostTile: View {
         _ get: @escaping @MainActor () -> Bool,
         set: @escaping @MainActor (Bool) -> Void
     ) -> Binding<Bool> {
+        // Both accessors are closure LITERALS that call through, never the
+        // isolated closures themselves. Passing `get` directly emits the
+        // reabstraction thunk that the CI toolchain crashes on in IRGen — with
+        // no diagnostic at all, just a failed compile command, which is how
+        // this reached CI green locally and red there. JunoMobileTasksView
+        // carries the same note beside the same construction.
         Binding(
-            get: get,
+            get: { get() },
             set: { value in
                 set(value)
                 switchGeneration &+= 1
