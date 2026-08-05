@@ -606,7 +606,13 @@ export interface ClientWorkCommand {
  * pass-through, so a command kind added next quarter is silent to remote
  * clients until somebody decides what it may say.
  */
-const REMOTE_PAYLOAD_KEYS: Partial<Record<WorkCommandKind, readonly string[]>> = {
+// Exhaustive over WorkCommandKind, deliberately not Partial. A kind absent from
+// a Partial map yields an empty payload, which is silent in the worst way: the
+// host claims the command, receives nothing to act on, and reports a failure
+// that names none of this. Making the map total turns "somebody added a command
+// kind and did not decide what a remote client may read of it" into a compile
+// error, which is the moment the decision is actually being made.
+const REMOTE_PAYLOAD_KEYS: Record<WorkCommandKind, readonly string[]> = {
   // Everything here originated on the client, so echoing it discloses nothing
   // it did not already have.
   answer: ["questionId", "text"],
@@ -623,13 +629,27 @@ const REMOTE_PAYLOAD_KEYS: Partial<Record<WorkCommandKind, readonly string[]>> =
   ping: [],
 };
 
-/** Result keys a remote client may read. Deliberately much smaller. */
-const REMOTE_RESULT_KEYS: Partial<Record<WorkCommandKind, readonly string[]>> = {
+/**
+ * Result keys a remote client may read. Deliberately much smaller, and total for
+ * the same reason as the payload map above.
+ */
+const REMOTE_RESULT_KEYS: Record<WorkCommandKind, readonly string[]> = {
   grant_folder: ["grantId", "displayName", "accessMode"],
   revoke_grant: ["grantId"],
   undo: ["reversedCount", "unreversedCount"],
   start: ["runId"],
   ping: ["hostState"],
+  // The control plane answers with nothing a client needs beyond the
+  // acknowledgement itself: whether a pause took effect is a fact about the
+  // run, which the client is already streaming, and repeating it here would be
+  // a second place for it to be wrong.
+  pause: [],
+  resume: [],
+  stop: [],
+  answer: [],
+  approve: [],
+  deny: [],
+  refresh_capabilities: [],
 };
 
 function pick(
@@ -701,8 +721,8 @@ export function serializeCommandForHost(command: WorkCommand): ClientWorkCommand
  */
 export function serializeCommandForRemote(command: WorkCommand): RemoteWorkCommand {
   const kind = oneOf(WORK_COMMAND_KINDS, command.kind, "ping");
-  const payload = pick(command.payload, REMOTE_PAYLOAD_KEYS[kind] ?? []);
-  const result = pick(command.result ?? null, REMOTE_RESULT_KEYS[kind] ?? []);
+  const payload = pick(command.payload, REMOTE_PAYLOAD_KEYS[kind]);
+  const result = pick(command.result ?? null, REMOTE_RESULT_KEYS[kind]);
   return {
     id: command.id,
     hostId: command.hostId,
