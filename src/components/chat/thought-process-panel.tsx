@@ -373,6 +373,117 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * SUMMARY OR FULL — a choice, and only where there is genuinely one to make.
+ *
+ * The panel used to answer this for the reader in two places at once: the steps
+ * list showed the provider's part TITLES and silently discarded their bodies,
+ * while the prose behind "Full thinking" was the flat trace with the structure
+ * flattened out of it. So the summary was never readable as a summary — it was
+ * a table of contents — and the only way to read what the model actually said
+ * at a step was to open the wall of text and find it again by eye.
+ *
+ * Both halves already exist in the data. `reasoning-parts.ts` keeps the
+ * provider's own parts verbatim alongside the flat text, and a part carries a
+ * title and a body. This turns that into the two views it always was.
+ *
+ * WHERE THERE IS NO CHOICE, THERE IS NO CONTROL. `toSteps` returns null for
+ * every provider that streamed unbroken prose — Anthropic, Zhipu, Mistral,
+ * Google — and for every message persisted before parts were carried. Those
+ * runs render exactly what they rendered before: the wrapped trace and the
+ * disclosure. A two-option switch with one honest option would be an invitation
+ * to a summary this app would then have to invent, which is precisely what
+ * reasoning-parts.ts exists to prevent.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+type ReasoningView = "summary" | "full";
+
+const VIEW_KEY = "juno.reasoning-view";
+
+/**
+ * The reader's standing preference, not a per-message toggle.
+ *
+ * Someone who wants the raw trace wants it on the next message too; making them
+ * re-choose on every run is the same as not offering the choice. Read lazily on
+ * mount rather than during render so the server-rendered markup and the first
+ * client paint agree — reading `localStorage` in the initial state is a
+ * hydration mismatch waiting to happen.
+ */
+function useReasoningView(): [ReasoningView, (next: ReasoningView) => void] {
+  const [view, setView] = React.useState<ReasoningView>("summary");
+
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VIEW_KEY);
+      if (stored === "summary" || stored === "full") setView(stored);
+    } catch {
+      // Private mode, or storage disabled. The default stands; a preference we
+      // cannot persist is not a reason to fail to render the panel.
+    }
+  }, []);
+
+  const choose = React.useCallback((next: ReasoningView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      /* as above */
+    }
+  }, []);
+
+  return [view, choose];
+}
+
+/**
+ * The switch itself: two segments, in the panel's own chip vocabulary.
+ *
+ * A `radiogroup` rather than two buttons or a checkbox, because that is what it
+ * is — one of two mutually exclusive views — and it is what gives a screen
+ * reader arrow-key traversal and "1 of 2" for free.
+ */
+function ReasoningViewToggle({
+  value,
+  onChange,
+}: {
+  value: ReasoningView;
+  onChange: (next: ReasoningView) => void;
+}) {
+  const options: { key: ReasoningView; label: string; hint: string }[] = [
+    { key: "summary", label: "Summary", hint: "The model's own summary steps" },
+    { key: "full", label: "Full", hint: "The complete reasoning trace" },
+  ];
+
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Reasoning detail"
+      className="flex shrink-0 items-center gap-0.5 rounded-full bg-muted/70 p-0.5"
+    >
+      {options.map((option) => {
+        const selected = value === option.key;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            title={option.hint}
+            onClick={() => onChange(option.key)}
+            className={cn(
+              "rounded-full px-2.5 py-1 font-mono text-[10px] font-medium transition-[background-color,color,box-shadow] duration-base ease-out-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-card motion-reduce:transition-none",
+              selected
+                ? "bg-background text-foreground shadow-soft"
+                : "text-muted-foreground/70 hover:text-foreground",
+            )}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Shared receipt geometry. The label stays scannable while the value owns the
  *  flexible measure and the time remains right-aligned. */
 const ROW = "grid grid-cols-[4rem_minmax(0,1fr)_auto] items-baseline gap-3 py-2";
@@ -420,7 +531,13 @@ export function ThoughtProcessPanel({
   // COLLAPSED BY DEFAULT. The prose was the loudest thing in the panel; it is
   // evidence, not the headline. It stays mounted-on-demand: when closed the
   // scroller is unmounted, which the autoscroll effect below already tolerates.
+  //
+  // Only the no-steps path still uses this. Where the provider sent parts the
+  // disclosure is replaced by the Summary/Full switch, and "Full" IS the
+  // disclosure — nesting one inside the other would make the reader press two
+  // controls to reach one body of text.
   const [rawOpen, setRawOpen] = React.useState(false);
+  const [view, setView] = useReasoningView();
 
   /**
    * STEPS — the model's own words, or nothing.
@@ -451,6 +568,10 @@ export function ThoughtProcessPanel({
     [steps, streaming, reasoning, reasoningParts],
   );
 
+  /** Whether the verbatim trace is on screen, however the reader got there —
+   *  the switch when this run has steps, the disclosure when it does not. */
+  const showFull = steps ? view === "full" : rawOpen;
+
   // Focus moves in on open — the user pressed a control to get here, so the
   // caret follows. Nothing holds it: Tab leaves the panel normally, and
   // ActivityTimeline hands focus back to the trigger on close. preventScroll
@@ -461,16 +582,16 @@ export function ThoughtProcessPanel({
 
   // Keep the live thinking pinned to the latest token while it streams.
   //
-  // The null check is now load-bearing rather than defensive: while collapsed
-  // the scroller is UNMOUNTED, so this no-ops for the whole time the disclosure
-  // is shut. `rawOpen` is in the deps because opening mid-stream must pin to the
-  // tail immediately — without it the effect would not run again until the next
-  // delta, and a paused stream would open scrolled to the top.
+  // The null check is now load-bearing rather than defensive: while the trace is
+  // not shown the scroller is UNMOUNTED, so this no-ops for the whole time.
+  // `showFull` is in the deps because switching to Full mid-stream must pin to
+  // the tail immediately — without it the effect would not run again until the
+  // next delta, and a paused stream would open scrolled to the top.
   React.useEffect(() => {
     if (streaming && reasoningRef.current) {
       reasoningRef.current.scrollTop = reasoningRef.current.scrollHeight;
     }
-  }, [reasoning, streaming, rawOpen]);
+  }, [reasoning, streaming, showFull]);
 
   // Soft edge on the newest reasoning text so the stream reads as live. The
   // boundary sits on whitespace so the dimmed tail never splits a word; on
@@ -636,15 +757,31 @@ export function ThoughtProcessPanel({
               section is just the disclosure, and its absence is the design. */}
           {hasReasoning && (
             <section className="flex flex-col gap-3">
-              <SectionLabel>Reasoning</SectionLabel>
+              <div className="flex items-center justify-between gap-3">
+                <SectionLabel>Reasoning</SectionLabel>
+                {/* Only where both views exist. See ReasoningViewToggle. */}
+                {steps && <ReasoningViewToggle value={view} onChange={setView} />}
+              </div>
 
-              {steps && (
+              {/* THE SUMMARY, now readable as one.
+                  Each step keeps its number and its title, and gains the body the
+                  provider sent with it — which the titles-only list had been
+                  discarding, so the "summary" was a table of contents and the
+                  only way to read a step was to open the full trace and find it
+                  again by eye. A title-only part stays title-only: several
+                  models emit those, and `toStep` returns an empty body for them
+                  rather than a placeholder. */}
+              {steps && view === "summary" && (
                 <ol className="flex flex-col rounded-2xl border border-border/45 bg-card/65 px-3.5 py-2.5">
                   {steps.map((s, i) => {
                     // Only the LAST step can be in flight, and only while the run
                     // is live. Coral is ACTIVE/SELECTED ONLY — the same rule as
                     // the run overview.
                     const active = !!streaming && i === steps.length - 1;
+                    const title = s.title ?? s.body.split("\n")[0];
+                    // With no title of its own the opening line IS the label, so
+                    // repeating the body underneath would print it twice.
+                    const body = s.title ? s.body : "";
                     return (
                       // Keyed by ARRAY POSITION, never by the provider's index or
                       // the title: OpenAI repeats summary_index within one
@@ -652,8 +789,17 @@ export function ThoughtProcessPanel({
                       // so either would collide two steps into one and drop text.
                       <li key={i} className="relative grid grid-cols-[1.5rem_minmax(0,1fr)] gap-3 py-2.5 motion-safe:animate-fade-in">
                         {i < steps.length - 1 && <span aria-hidden="true" className="absolute bottom-[-0.65rem] left-[0.71875rem] top-[2rem] w-px bg-border/65" />}
-                        <span className={cn("relative z-10 flex h-6 w-6 items-center justify-center rounded-full border bg-background font-mono text-[9px] tabular-nums transition-[border-color,color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", active ? "border-primary/45 text-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]" : "border-border/70 text-muted-foreground/60")}>{String(i + 1).padStart(2, "0")}</span>
-                        <span className="min-w-0 self-center truncate text-body text-foreground/82">{s.title ?? s.body.split("\n")[0]}</span>
+                        <span className={cn("relative z-10 mt-[0.0625rem] flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-background font-mono text-[9px] tabular-nums transition-[border-color,color,box-shadow] duration-slow ease-out-soft motion-reduce:transition-none", active ? "border-primary/45 text-primary shadow-[0_0_0_4px_hsl(var(--primary)/0.08)]" : "border-border/70 text-muted-foreground/60")}>{String(i + 1).padStart(2, "0")}</span>
+                        <span className="min-w-0">
+                          {/* No truncation any more. The line was clipped because
+                              it was the only thing standing in for the step; with
+                              the body present the title can wrap and say what it
+                              says. */}
+                          <span className="block text-body leading-5 text-foreground/82">{title}</span>
+                          {body && (
+                            <span className="mt-1 block whitespace-pre-wrap break-words font-serif text-[0.8125rem] leading-6 text-foreground/62">{body}</span>
+                          )}
+                        </span>
                       </li>
                     );
                   })}
@@ -671,23 +817,29 @@ export function ThoughtProcessPanel({
               )}
 
               <div className="flex flex-col gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => setRawOpen((v) => !v)}
-                  aria-expanded={rawOpen}
-                  aria-controls={rawOpen ? `${id}-reasoning-full` : undefined}
-                  className="group flex min-h-11 w-full items-center gap-3 rounded-xl border border-border/45 bg-card/60 px-3 text-left transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-body leading-5 text-foreground/82">Full thinking</span>
-                    <span className="block font-mono text-[9px] text-muted-foreground/55">Model-provided reasoning</span>
-                  </span>
-                  <ChevronRight aria-hidden="true" className={cn("size-3.5 text-muted-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none", rawOpen && "rotate-90")} />
-                </button>
+                {/* The disclosure survives only for runs with no steps, where
+                    there is no switch to carry the choice. */}
+                {!steps && (
+                  <button
+                    type="button"
+                    onClick={() => setRawOpen((v) => !v)}
+                    aria-expanded={rawOpen}
+                    aria-controls={rawOpen ? `${id}-reasoning-full` : undefined}
+                    className="group flex min-h-11 w-full items-center gap-3 rounded-xl border border-border/45 bg-card/60 px-3 text-left transition-[background-color,border-color] duration-base ease-out-soft hover:border-border hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card motion-reduce:transition-none"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body leading-5 text-foreground/82">Full thinking</span>
+                      {/* Says why there is no Summary to switch to, rather than
+                          leaving its absence to be read as a missing feature. */}
+                      <span className="block font-mono text-[9px] text-muted-foreground/55">This model streams one unbroken trace</span>
+                    </span>
+                    <ChevronRight aria-hidden="true" className={cn("size-3.5 text-muted-foreground/55 transition-transform duration-base ease-out-soft motion-reduce:transition-none", rawOpen && "rotate-90")} />
+                  </button>
+                )}
 
                 {/* Frame/scroller split: the 4px inlay gutter keeps the fade mask off
                     the border, and 2xl(16) − p-1(4) = xl(12) keeps it concentric. */}
-                {rawOpen && (
+                {showFull && (
                   <div
                     id={`${id}-reasoning-full`}
                     className="rounded-2xl border border-border/50 bg-background/55 p-1 duration-base ease-out-soft motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-top-1"
